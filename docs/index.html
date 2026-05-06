@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flora Validator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./style.css">
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+</head>
+<body>
+
+<div id="banner" class="banner hidden">
+  <strong>Work in progress</strong> · prototype only — your judgements live in this browser and disappear when you clear it
+</div>
+
+<div id="login-screen" class="screen">
+  <div class="login-card">
+    <h1>Flora<br><em>Validator</em></h1>
+    <p class="tagline">A coding game for replication studies. Three calls per paper, points for the careful eye.</p>
+    <div class="login-row">
+      <label for="name-input">Handle</label>
+      <input id="name-input" placeholder="your.name" autofocus autocomplete="off">
+      <button id="login-btn">Enter →</button>
+    </div>
+    <div class="login-meta">v0.1 · prototype · 161 pairs loaded</div>
+  </div>
+</div>
+
+<div id="game-screen" class="screen hidden">
+  <header>
+    <div class="brand">Flora <em>·</em> Validator</div>
+    <div class="stats-bar">
+      <div class="stat"><span class="label">Coder</span><span id="stat-name" class="value"></span></div>
+      <div class="stat"><span class="label">Points</span><span id="stat-points" class="value">0</span></div>
+      <div class="stat"><span class="label">Rank</span><span id="stat-rank" class="value">—</span></div>
+      <div class="stat progress">
+        <span class="label">Progress</span>
+        <span id="stat-progress" class="value">0 / 0</span>
+        <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+      </div>
+      <button id="logout-btn" class="ghost-btn" title="Switch coder">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="game-area">
+      <div id="pair-card" class="card"></div>
+      <div id="done-screen" class="card hidden">
+        <h2>All caught up.</h2>
+        <p>You've judged every available pair. Stake your claim on the leaderboard, or sign out and let someone else have a turn.</p>
+      </div>
+    </div>
+
+    <aside class="leaderboard">
+      <h3>Leaderboard</h3>
+      <ol id="leaderboard-list"></ol>
+      <div class="legend">
+        <h4>Scoring</h4>
+        <ul>
+          <li><span>False positive</span><b>5</b></li>
+          <li><span>Type confirmed</span><b>10</b></li>
+          <li><span>+ Original verified</span><b>5</b></li>
+          <li><span>+ Outcome verified</span><b>5</b></li>
+          <li><span>+ Note added</span><b>3</b></li>
+        </ul>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="./app.js"></script>
+</body>
+</html>
