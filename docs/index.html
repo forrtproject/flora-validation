@@ -16,19 +16,56 @@
   <strong>Work in progress</strong> · prototype only — your judgements live in this browser and disappear when you clear it
 </div>
 
+<!-- ------------ LOGIN ------------ -->
 <div id="login-screen" class="screen">
   <div class="login-card">
     <h1>Flora<br><em>Validator</em></h1>
     <p class="tagline">A coding game for replication studies. Three calls per paper, points for the careful eye.</p>
-    <div class="login-row">
-      <label for="name-input">Handle</label>
-      <input id="name-input" placeholder="your.name" autofocus autocomplete="off">
-      <button id="login-btn">Enter →</button>
+    <div class="login-fields">
+      <div class="login-row">
+        <label for="email-input">Email</label>
+        <input id="email-input" type="email" placeholder="you@example.org" autofocus autocomplete="email">
+      </div>
+      <div class="login-row">
+        <label for="handle-input">Handle</label>
+        <input id="handle-input" placeholder="your.name" autocomplete="username">
+        <button id="login-btn">Enter →</button>
+      </div>
+      <div class="login-note">Email is so nobody can claim your handle. It's never shown publicly.</div>
     </div>
-    <div class="login-meta">v0.1 · prototype · 161 pairs loaded</div>
+    <div class="login-meta">v0.2 · prototype</div>
   </div>
 </div>
 
+<!-- ------------ ONBOARDING ------------ -->
+<div id="onboarding-screen" class="screen hidden">
+  <header class="onboarding-header">
+    <div class="brand">Flora <em>·</em> Validator</div>
+    <div class="onboarding-progress">
+      <span class="label">Onboarding</span>
+      <span id="onb-counter">1 / 5</span>
+      <div class="progress-bar"><div class="progress-fill" id="onb-progress-fill"></div></div>
+    </div>
+    <button id="onb-logout-btn" class="ghost-btn" title="Switch coder">Sign out</button>
+  </header>
+  <main class="onboarding-area">
+    <div class="onb-intro" id="onb-intro">
+      <h2>First, a quick calibration.</h2>
+      <p>Five worked examples to get your eye in. Two are clean; three have errors of the kind FLoRA's automated pipeline tends to make. After each, you'll see whether your call was right and why.</p>
+      <p>This doesn't count toward the leaderboard. You can't proceed without finishing.</p>
+      <button class="btn-primary" id="onb-start-btn">Begin →</button>
+    </div>
+    <div id="onb-card" class="card hidden"></div>
+    <div id="onb-feedback" class="onb-feedback hidden"></div>
+    <div id="onb-done" class="card hidden">
+      <h2>Calibration complete.</h2>
+      <p>You're cleared to start scoring real entries.</p>
+      <button class="btn-primary" id="onb-finish-btn">Enter the main game →</button>
+    </div>
+  </main>
+</div>
+
+<!-- ------------ GAME ------------ -->
 <div id="game-screen" class="screen hidden">
   <header>
     <div class="brand">Flora <em>·</em> Validator</div>
@@ -41,34 +78,40 @@
         <span id="stat-progress" class="value">0 / 0</span>
         <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
       </div>
+      <button id="mode-toggle" class="ghost-btn" title="Switch between normal and hard mode">Normal mode</button>
+      <button id="sidebar-toggle" class="ghost-btn" title="Show/hide leaderboard">Leaderboard ▸</button>
       <button id="logout-btn" class="ghost-btn" title="Switch coder">Sign out</button>
     </div>
   </header>
 
-  <main>
-    <div class="game-area">
+  <div class="layout">
+    <main class="game-area">
       <div id="pair-card" class="card"></div>
       <div id="done-screen" class="card hidden">
         <h2>All caught up.</h2>
-        <p>You've judged every available pair. Stake your claim on the leaderboard, or sign out and let someone else have a turn.</p>
+        <p>You've judged every available pair in this mode. Try the other mode, or sign out and let someone else have a turn.</p>
       </div>
-    </div>
+    </main>
 
-    <aside class="leaderboard">
+    <aside class="leaderboard" id="sidebar">
+      <button class="sidebar-close" id="sidebar-close" title="Hide">×</button>
       <h3>Leaderboard</h3>
       <ol id="leaderboard-list"></ol>
       <div class="legend">
         <h4>Scoring</h4>
         <ul>
-          <li><span>False positive</span><b>5</b></li>
-          <li><span>Type confirmed</span><b>10</b></li>
+          <li><span>Skip</span><b>0</b></li>
+          <li><span>Type confirmed (replication/reproduction)</span><b>10</b></li>
+          <li><span>Neither (false positive caught)</span><b>10</b></li>
           <li><span>+ Original verified</span><b>5</b></li>
           <li><span>+ Outcome verified</span><b>5</b></li>
           <li><span>+ Note added</span><b>3</b></li>
+          <li><span>+ Edited abstract or quote</span><b>2</b></li>
+          <li><span>Hard-mode entry (no abstract)</span><b>25</b></li>
         </ul>
       </div>
     </aside>
-  </main>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>

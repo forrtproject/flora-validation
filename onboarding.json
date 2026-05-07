@@ -1,0 +1,151 @@
+{
+  "_note": "Curated onboarding pairs. Sources: FLoRA sheet rows 3829, 3806, 3812, 3019 (https://docs.google.com/spreadsheets/d/1yxdCTETI-xa1HwblWtmo9S8RszKe_9i14RBjXz0uTFE/edit?gid=863031634). Pairs 1 and 2 are presented as the system actually has them (correct calls). Pairs 3 and 4 inject the errors specified by Lukas Röseler. Pair 5 is a synthetic false-positive practice example.",
+  "pairs": [
+    {
+      "pair_id": "onboarding-1-fossen-nicolaou",
+      "type": "replication",
+      "doi_r": "10.1177/1042258720985478",
+      "title_r": "2D:4D and self-employment: A Preregistered replication study in a large general population sample",
+      "authors_r": "Fossen, F. M.; Neyse, L.; Johannesson, M.; Dreber, A.",
+      "year_r": "2022",
+      "journal_r": "Entrepreneurship Theory and Practice",
+      "url_r": "https://doi.org/10.1177/1042258720985478",
+      "abstract_r": "The 2D:4D digit ratio, the ratio of the length of the second finger to the length of the fourth finger, is often considered a proxy for testosterone exposure in utero. A recent study reported, among other things, an association between the left-hand 2D:4D and self-employment in a sample of 974 adults. In this preregistered study, we replicate the 2D:4D results on a sample of more than 2100 adults from the German Socioeconomic Panel-Innovation Sample (SOEP-IS). We find no statistically significant associations between 2D:4D and self-employment.",
+      "doi_o": "10.1287/mnsc.2016.2664",
+      "title_o": "Testosterone and tendency to engage in self-employment",
+      "authors_o": "Nicolaou, N.; Patel, P. C.; Wolfe, M. T.",
+      "year_o": "2018",
+      "link_evidence": "Replication paper preregisters and runs the same 2D:4D ↔ self-employment test as Nicolaou et al. (2018), in a substantially larger sample.",
+      "outcome": "failed",
+      "outcome_phrase": "We find no statistically significant associations between 2D:4D and self-employment.",
+      "out_quote_source": "abstract",
+      "expected": {
+        "type": "validation",
+        "original": "correct",
+        "outcome": "correct"
+      },
+      "feedback": {
+        "intro": "Clean entry: a real preregistered replication, the linked original is exactly the paper being tested, and the system's 'failed' label is supported by the quoted sentence.",
+        "type_wrong": "The paper preregisters a replication of Nicolaou et al. (2018) on a larger sample — that's a replication, not a false positive.",
+        "original_wrong": "The 2D:4D ↔ self-employment claim being tested comes directly from Nicolaou et al. 2018. The link is correct.",
+        "outcome_wrong": "The quote says no significant associations were found. That's a clean failed-replication outcome — agreeing with the system is the right call."
+      }
+    },
+    {
+      "pair_id": "onboarding-2-kaicher-lupyan",
+      "type": "replication",
+      "doi_r": "10.31234/osf.io/5e8mz_v1",
+      "title_r": "Are Redundant Labels Helpful during Category Learning? Replication of Lupyan, Rakison, & McClelland (2007)",
+      "authors_r": "Kaicher, C.; Markman, E.; Gwilliams, L.",
+      "year_r": "2026",
+      "journal_r": "PsyArXiv preprint",
+      "url_r": "https://osf.io/preprints/psyarxiv/5e8mz_v1",
+      "abstract_r": "Labels are often advantageous for category learning. However, this may not be true for children as they learn subordinate, fine-grained object categories. In preparation for future research on subordinate category learning in children, we aimed to refine a procedure investigating the label advantage during subordinate category learning in adults. Thus, we conducted an online replication of Experiment 2 from Lupyan, Rakison, & McClelland (2007), which compares category learning under an auditory or written label condition versus a no label and non-linguistic cue condition in adults. We failed to replicate the key result, that those who received labels learned the categories faster.",
+      "doi_o": "10.1111/j.1467-9280.2007.02028.x",
+      "title_o": "Language is not Just for Talking: Redundant Labels Facilitate Learning of Novel Categories",
+      "authors_o": "Lupyan, G.; Rakison, D. H.; McClelland, J. L.",
+      "year_o": "2007",
+      "link_evidence": "Replication paper explicitly names Lupyan, Rakison, & McClelland (2007) Experiment 2 as the target.",
+      "outcome": "mixed",
+      "outcome_phrase": "Even though the replication data show a partial replication of the primary analysis of interest (the main effect of Condition), the lack of a Condition x Block interaction fails to support the main claim made in the original paper: adults learn categories quicker if they have labels versus when they do not.",
+      "out_quote_source": "manuscript",
+      "expected": {
+        "type": "validation",
+        "original": "correct",
+        "outcome": "correct"
+      },
+      "feedback": {
+        "intro": "Clean entry: real replication, correct linked original, and the 'mixed' outcome label fits the quote (partial main effect, but no interaction → the main claim isn't supported).",
+        "type_wrong": "The title literally says 'Replication of Lupyan, Rakison, & McClelland (2007)' — this is a replication.",
+        "original_wrong": "The linked original is the Lupyan et al. paper named in the title; the link is correct.",
+        "outcome_wrong": "The quote describes a partial main effect but a missing interaction that's needed to support the main claim — that's the textbook definition of 'mixed', and matches the system's call."
+      }
+    },
+    {
+      "pair_id": "onboarding-3-peters-webb",
+      "type": "replication",
+      "doi_r": "10.1111/lang.12621",
+      "title_r": "Repetition and Incidental Learning of Multiword Units: A Conceptual Multisite Replication Study of Webb, Newton, and Chang (2013)",
+      "authors_r": "Peters, E.; Puimège, E.; Szudarski, P.",
+      "year_r": "2023",
+      "journal_r": "Language Learning",
+      "url_r": "https://doi.org/10.1111/lang.12621",
+      "abstract_r": "This multisite study replicates Webb, Newton, and Chang's (2013) study on the effect of repetition on incidental learning of multiword units (MWUs). Even though more researchers have started to investigate MWUs, most data have been collected from university students. Furthermore, the large effect of MWU repetition on learning reported by Webb et al. has not yet been corroborated. Data in our study were collected from two university samples (EFL students in Poland and Flanders) and one nonuniversity sample (Flemish EFL learners in secondary schools). Unlike Webb et al., we adopted a counterbalanced within-participants design. Participants read and listened to a modified graded reader in which target MWUs occurred 1, 5, 10, or 15 times. In line with the initial study, we found a positive effect of repetition. However, the learning gains were smaller, and the number of repetitions needed was different. The findings were consistent across the university and nonuniversity samples. The study concludes with a discussion of these findings in relation to both pedagogical implications and the benefits of multisite replication research.",
+      "doi_o": "10.1111/j.1467-9922.2012.00729.x",
+      "title_o": "Incidental Learning of Collocation",
+      "authors_o": "Webb, S.; Newton, J.; Chang, A.",
+      "year_o": "2012",
+      "link_evidence": "Replication paper names Webb, Newton, and Chang (2013) as the target — same authors and study, paginated edition of the 2012 online-first version.",
+      "outcome": "success",
+      "outcome_phrase": "In line with the initial study, we found a positive effect of repetition.",
+      "out_quote_source": "abstract",
+      "expected": {
+        "type": "validation",
+        "original": "correct",
+        "outcome": "wrong"
+      },
+      "feedback": {
+        "intro": "This entry is tagged as 'success' with a quote that sounds positive in isolation. But the abstract is a classic 'in line with the original, however …' case — partial confirmation with caveats. Spotting that distinction is the point of this exercise.",
+        "type_wrong": "The paper is a multisite conceptual replication of Webb, Newton, and Chang. Type-wise it's a clear replication.",
+        "original_wrong": "Same authors, same study, same intervention. The link is correct.",
+        "outcome_wrong": "Read past the truncated quote: the abstract continues 'However, the learning gains were smaller, and the number of repetitions needed was different.' That qualification makes it a mixed outcome, not a clean success. Mark the outcome as 'mischaracterised', and ideally extend the quote to include the 'However' sentence."
+      }
+    },
+    {
+      "pair_id": "onboarding-4-andermane-brady",
+      "type": "replication",
+      "doi_r": "10.3758/s13423-015-0800-0",
+      "title_r": "Detailed and gist-like visual memories are forgotten at similar rates over the course of a week",
+      "authors_r": "Andermane, N.; Bowers, J. S.",
+      "year_r": "2015",
+      "journal_r": "Psychonomic Bulletin & Review",
+      "url_r": "https://doi.org/10.3758/s13423-015-0800-0",
+      "abstract_r": "A number of recent studies have highlighted the exceptional capacity and fidelity of visual long-term memory. For instance, Brady, Konkle, Alvarez, and Oliva (Proceedings of the National Academy of Sciences, 105, 14325–14329, 2008) presented participants with thousands of images for nearly 6 h and then tested their memory in a two-alternative forced choice (2AFC) task. Participants were 87% accurate, even when the foil was extremely similar to the target (e.g., when the same object was presented in a different state). In the present investigation, we extended these findings by including a one-week delay condition and by testing memory in a yes-no as well as a 2AFC task. We replicated the exceptional memory results at a short delay. However, following a week delay, recognition accuracy was greatly reduced in both tasks, with comparable reductions in performance when the foils were both similar and dissimilar. These findings suggest that detailed and gist-like visual memories decay at similar rates, which highlights important limitations of visual long-term memory.",
+      "doi_o": "10.1037/a0029649",
+      "title_o": "Real-world objects are not represented as bound units: Independent forgetting of different object details from visual memory.",
+      "authors_o": "Brady, T. F.; Konkle, T.; Alvarez, G. A.; Oliva, A.",
+      "year_o": "2013",
+      "link_evidence": "Same first-author cluster (Brady, Konkle, Alvarez, Oliva) on visual long-term memory; linked by author and topic match.",
+      "outcome": "success",
+      "outcome_phrase": "We replicated the exceptional memory results at a short delay.",
+      "out_quote_source": "abstract",
+      "expected": {
+        "type": "validation",
+        "original": "wrong",
+        "outcome": "wrong"
+      },
+      "feedback": {
+        "intro": "Two errors are baked into this entry: the linked original is the wrong Brady paper, and the outcome is mischaracterised by truncating the quote. Both are common failure modes of automated linkage.",
+        "type_wrong": "The abstract literally says 'we replicated the exceptional memory results' — this is a replication, not a false positive.",
+        "original_wrong": "The abstract cites Brady, Konkle, Alvarez, and Oliva (2008, PNAS) — a different paper from the same authors. The Brady et al. (2013) paper on object detail binding linked here is not the actual target study. Mark the original as 'Wrong paper'.",
+        "outcome_wrong": "Read past the first sentence of the quote. The abstract continues: 'However, following a week delay, recognition accuracy was greatly reduced in both tasks, with comparable reductions in performance when the foils were both similar and dissimilar.' That's a mixed outcome — short-delay success, week-delay failure — not a clean 'success'. Mark the outcome as 'mischaracterised', and ideally extend the quote to include the second sentence."
+      }
+    },
+    {
+      "pair_id": "onboarding-5-fp-practice",
+      "type": "replication",
+      "doi_r": "10.0000/scratch-onboarding-fp",
+      "title_r": "Replication of mitochondrial DNA in aging hippocampal neurons: A bibliometric review",
+      "authors_r": "Smith, J.; Müller, A.",
+      "year_r": "2021",
+      "journal_r": "Journal of Synthetic Neuroscience",
+      "url_r": null,
+      "abstract_r": "We surveyed 312 articles published between 2010 and 2020 indexed under the MeSH term 'DNA replication' in hippocampal tissue. Citation patterns, methodological diversity, and journal coverage were summarised using standard bibliometric indicators. The corpus reveals a steady increase in publication volume and a growing concentration of methodological standards around mtDNA copy-number assays. We discuss implications for the design of future molecular ageing studies.",
+      "doi_o": "10.0000/scratch-onboarding-fp-original",
+      "title_o": "Mitochondrial DNA copy number declines with age in human hippocampus",
+      "authors_o": "Tanaka, H.; Lee, K.",
+      "year_o": "2014",
+      "link_evidence": "Title of present paper contains 'replication'; linked by keyword match.",
+      "outcome": "success",
+      "outcome_phrase": "The corpus reveals a steady increase in publication volume and a growing concentration of methodological standards around mtDNA copy-number assays.",
+      "out_quote_source": "abstract",
+      "expected": {
+        "type": "not_validation"
+      },
+      "feedback": {
+        "intro": "This is a false positive: the FLoRA pipeline matched on the word 'replication' in the title, but the paper is a bibliometric review of *molecular* DNA replication — not a study replication at all. Spotting these matters: leaving them in pollutes the dataset.",
+        "type_wrong": "The abstract describes a bibliometric survey of molecular biology articles. There's no original finding being re-tested. Mark this as 'Neither'."
+      }
+    }
+  ]
+}
