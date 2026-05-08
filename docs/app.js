@@ -100,18 +100,18 @@ async function staticApi(path, method, body) {
   const coders = readJSON(STORAGE.CODERS, {});
 
   if (route === "/login") {
-    const email = (body.email || "").trim().toLowerCase();
+    const code = (body.code || "").trim();
     const handle = (body.handle || "").trim();
-    if (!email || !handle) throw new Error("Email and handle required");
-    if (coders[email] && coders[email].handle !== handle) {
-      throw new Error(`This email is already linked to handle '${coders[email].handle}'.`);
+    if (!code || !handle) throw new Error("Code and handle required");
+    if (coders[code] && coders[code].handle !== handle) {
+      throw new Error(`This code is already linked to handle '${coders[code].handle}'.`);
     }
-    if (!coders[email]) {
+    if (!coders[code]) {
       const id = Date.now() + Math.floor(Math.random() * 1000);
-      coders[email] = { coder_id: id, email, handle, onboarded: false };
+      coders[code] = { coder_id: id, code, handle, onboarded: false };
       writeJSON(STORAGE.CODERS, coders);
     }
-    return coders[email];
+    return coders[code];
   }
 
   if (route === "/onboarding") {
@@ -204,19 +204,40 @@ function showToast(num, label) {
 }
 
 /* ---------- Auth ---------- */
+function getCode() {
+  return ["#cp1", "#cp2", "#cp3", "#cp4"].map((id) => $(id).value.trim()).join("");
+}
+
+document.querySelectorAll(".code-part").forEach((input, i, arr) => {
+  input.addEventListener("input", () => {
+    const code = getCode();
+    $("#code-preview").textContent = code || "——";
+    if (input.value.length === 2 && i + 1 < arr.length) arr[i + 1].focus();
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      if (i + 1 < arr.length) arr[i + 1].focus();
+      else $("#handle-input").focus();
+    }
+  });
+});
+
 $("#login-btn").onclick = doLogin;
-$("#email-input").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#handle-input").focus(); });
 $("#handle-input").addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
 
 async function doLogin() {
-  const email = $("#email-input").value.trim().toLowerCase();
+  const code = getCode();
   const handle = $("#handle-input").value.trim();
-  if (!email || !handle) {
-    alert("Email and handle are both required.");
+  if (code.length < 6) {
+    alert("Please fill in all four parts of your code.");
+    return;
+  }
+  if (!handle) {
+    alert("Please enter a handle.");
     return;
   }
   try {
-    const resp = await api("/login", "POST", { email, handle });
+    const resp = await api("/login", "POST", { code, handle });
     state.coder = resp;
     localStorage.setItem(STORAGE.CODER, JSON.stringify(resp));
     routeAfterLogin();

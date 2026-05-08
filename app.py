@@ -1,16 +1,22 @@
 import csv
 import json
+import os
 import re
-import sqlite3
-from datetime import datetime
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
+import psycopg2
+import psycopg2.extras
+import psycopg2.errors
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+
+load_dotenv()
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 ROOT = Path(__file__).parent
-DB_PATH = ROOT / "data.db"
 CSV_PATH = ROOT / "extracted.csv"
 ONBOARDING_PATH = ROOT / "onboarding.json"
 OA_CACHE_PATH = ROOT / "oa_cache.json"
@@ -18,33 +24,46 @@ OA_CACHE_PATH = ROOT / "oa_cache.json"
 VALID_TYPES = {"replication", "reproduction", "not_validation", "skip"}
 CONFIRMING_TYPES = {"replication", "reproduction"}
 
+DATABASE_URL = os.environ["DATABASE_URL"]
+
 app = FastAPI(title="Flora Validator")
 
 
+@contextmanager
 def db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        yield cur
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def init_db():
-    with db() as conn:
-        conn.executescript(
-            """
+    with db() as cur:
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS pairs (
                 pair_id TEXT PRIMARY KEY,
                 data_json TEXT NOT NULL,
                 is_hard INTEGER NOT NULL DEFAULT 0
-            );
+            )
+        """)
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS coders (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT UNIQUE NOT NULL,
+                id SERIAL PRIMARY KEY,
+                code TEXT UNIQUE NOT NULL,
                 handle TEXT UNIQUE NOT NULL,
                 created_at TEXT NOT NULL,
                 onboarded_at TEXT
-            );
+            )
+        """)
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS judgements (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 coder_id INTEGER NOT NULL,
                 pair_id TEXT NOT NULL,
                 type_judgement TEXT NOT NULL,
@@ -58,18 +77,17 @@ def init_db():
                 points INTEGER NOT NULL,
                 created_at TEXT NOT NULL,
                 UNIQUE(coder_id, pair_id)
-            );
-            """
-        )
-        if conn.execute("SELECT COUNT(*) FROM pairs").fetchone()[0] == 0:
-            with open(CSV_PATH, newline="") as f:
+            )
+        """)
+        cur.execute("SELECT COUNT(*) AS n FROM pairs")
+        if cur.fetchone()["n"] == 0:
+            with open(CSV_PATH, newline="", encoding="utf-8") as f:
                 for row in csv.DictReader(f):
                     is_hard = 0 if (row.get("abstract_r") or "").strip() else 1
-                    conn.execute(
-                        "INSERT OR IGNORE INTO pairs(pair_id, data_json, is_hard) VALUES (?, ?, ?)",
+                    cur.execute(
+                        "INSERT INTO pairs(pair_id, data_json, is_hard) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
                         (row["pair_id"], json.dumps(row), is_hard),
                     )
-        conn.commit()
 
 
 init_db()
@@ -96,14 +114,13 @@ def oa_url_for(doi: str | None) -> str | None:
 
 
 def with_oa(pair: dict) -> dict:
-    """Decorate a pair dict with oa_url_r / oa_url_o (None if gated/unknown)."""
     pair["oa_url_r"] = oa_url_for(pair.get("doi_r"))
     pair["oa_url_o"] = oa_url_for(pair.get("doi_o"))
     return pair
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    code: str
     handle: str
 
 
@@ -127,7 +144,6 @@ def points_for(req: JudgeRequest) -> int:
     if req.type_judgement == "skip":
         return 0
     if req.hard_mode:
-        # Hard-mode entries reward research effort: high base, plus notes/edits bonus.
         pts = 25
         if req.comment and req.comment.strip():
             pts += 3
@@ -148,56 +164,58 @@ def points_for(req: JudgeRequest) -> int:
     return pts
 
 
-def rank_for(conn, points: int) -> int:
-    return conn.execute(
+def rank_for(cur, points: int) -> int:
+    cur.execute(
         """
-        SELECT COUNT(*) + 1 FROM (
-            SELECT coder_id, SUM(points) AS p
+        SELECT COUNT(*) + 1 AS rank FROM (
+            SELECT coder_id
             FROM judgements
             WHERE type_judgement != 'skip'
             GROUP BY coder_id
-            HAVING p > ?
-        )
+            HAVING SUM(points) > %s
+        ) sub
         """,
         (points,),
-    ).fetchone()[0]
+    )
+    return cur.fetchone()["rank"]
 
 
 @app.post("/api/login")
 def login(req: LoginRequest):
-    email = req.email.strip().lower()
+    code = req.code.strip()
     handle = req.handle.strip()
+    if len(code) < 4:
+        raise HTTPException(400, "Code too short — fill in all four parts")
     if not HANDLE_RE.match(handle):
         raise HTTPException(400, "Handle must be 2–32 chars: letters, digits, . _ -")
-    with db() as conn:
-        by_email = conn.execute(
-            "SELECT id, email, handle, onboarded_at FROM coders WHERE email = ?", (email,)
-        ).fetchone()
-        if by_email:
-            if by_email["handle"] != handle:
+    with db() as cur:
+        cur.execute(
+            "SELECT id, code, handle, onboarded_at FROM coders WHERE code = %s", (code,)
+        )
+        by_code = cur.fetchone()
+        if by_code:
+            if by_code["handle"] != handle:
                 raise HTTPException(
                     400,
-                    f"This email is already linked to handle '{by_email['handle']}'. Use that handle.",
+                    f"This code is already linked to handle '{by_code['handle']}'. Use that handle.",
                 )
             return {
-                "coder_id": by_email["id"],
-                "email": by_email["email"],
-                "handle": by_email["handle"],
-                "onboarded": bool(by_email["onboarded_at"]),
+                "coder_id": by_code["id"],
+                "code": by_code["code"],
+                "handle": by_code["handle"],
+                "onboarded": bool(by_code["onboarded_at"]),
             }
-        by_handle = conn.execute(
-            "SELECT 1 FROM coders WHERE handle = ?", (handle,)
-        ).fetchone()
-        if by_handle:
-            raise HTTPException(400, "That handle is already taken by another email.")
-        cur = conn.execute(
-            "INSERT INTO coders(email, handle, created_at) VALUES (?, ?, ?)",
-            (email, handle, datetime.utcnow().isoformat()),
+        cur.execute("SELECT 1 FROM coders WHERE handle = %s", (handle,))
+        if cur.fetchone():
+            raise HTTPException(400, "That handle is already taken.")
+        cur.execute(
+            "INSERT INTO coders(code, handle, created_at) VALUES (%s, %s, %s) RETURNING id",
+            (code, handle, datetime.now(timezone.utc).isoformat()),
         )
-        conn.commit()
+        new_id = cur.fetchone()["id"]
         return {
-            "coder_id": cur.lastrowid,
-            "email": email,
+            "coder_id": new_id,
+            "code": code,
             "handle": handle,
             "onboarded": False,
         }
@@ -208,30 +226,31 @@ def next_pair(coder_id: int, mode: str = "normal"):
     if mode not in {"normal", "hard"}:
         raise HTTPException(400, "mode must be normal or hard")
     is_hard = 1 if mode == "hard" else 0
-    with db() as conn:
-        row = conn.execute(
+    with db() as cur:
+        cur.execute(
             """
             SELECT p.pair_id, p.data_json,
                    (SELECT COUNT(*) FROM judgements j2 WHERE j2.pair_id = p.pair_id) AS judge_count
             FROM pairs p
-            WHERE p.is_hard = ?
-              AND p.pair_id NOT IN (SELECT pair_id FROM judgements WHERE coder_id = ?)
+            WHERE p.is_hard = %s
+              AND p.pair_id NOT IN (SELECT pair_id FROM judgements WHERE coder_id = %s)
             ORDER BY judge_count ASC, RANDOM()
             LIMIT 1
             """,
             (is_hard, coder_id),
-        ).fetchone()
-        total = conn.execute(
-            "SELECT COUNT(*) FROM pairs WHERE is_hard = ?", (is_hard,)
-        ).fetchone()[0]
-        done = conn.execute(
+        )
+        row = cur.fetchone()
+        cur.execute("SELECT COUNT(*) AS n FROM pairs WHERE is_hard = %s", (is_hard,))
+        total = cur.fetchone()["n"]
+        cur.execute(
             """
-            SELECT COUNT(*) FROM judgements j
+            SELECT COUNT(*) AS n FROM judgements j
             JOIN pairs p ON p.pair_id = j.pair_id
-            WHERE j.coder_id = ? AND p.is_hard = ?
+            WHERE j.coder_id = %s AND p.is_hard = %s
             """,
             (coder_id, is_hard),
-        ).fetchone()[0]
+        )
+        done = cur.fetchone()["n"]
         if not row:
             return {"pair": None, "done": done, "total": total}
         return {
@@ -247,16 +266,16 @@ def judge(req: JudgeRequest):
     if req.type_judgement not in VALID_TYPES:
         raise HTTPException(400, "Invalid type judgement")
     pts = points_for(req)
-    with db() as conn:
+    with db() as cur:
         try:
-            conn.execute(
+            cur.execute(
                 """
                 INSERT INTO judgements(coder_id, pair_id, type_judgement,
                     original_judgement, outcome_judgement, comment,
                     edited_abstract, edited_outcome_quote,
                     hard_mode, hard_mode_entry_json,
                     points, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     req.coder_id,
@@ -270,20 +289,20 @@ def judge(req: JudgeRequest):
                     1 if req.hard_mode else 0,
                     json.dumps(req.hard_mode_entry) if req.hard_mode_entry else None,
                     pts,
-                    datetime.utcnow().isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
                 ),
             )
-            conn.commit()
-        except sqlite3.IntegrityError:
+        except psycopg2.errors.UniqueViolation:
             raise HTTPException(400, "Already judged this pair")
-        total = conn.execute(
+        cur.execute(
             """
-            SELECT COALESCE(SUM(points), 0) FROM judgements
-            WHERE coder_id = ? AND type_judgement != 'skip'
+            SELECT COALESCE(SUM(points), 0) AS total FROM judgements
+            WHERE coder_id = %s AND type_judgement != 'skip'
             """,
             (req.coder_id,),
-        ).fetchone()[0]
-        return {"points_earned": pts, "total_points": total, "rank": rank_for(conn, total)}
+        )
+        total = cur.fetchone()["total"]
+        return {"points_earned": pts, "total_points": total, "rank": rank_for(cur, total)}
 
 
 @app.get("/api/onboarding")
@@ -297,25 +316,22 @@ class OnboardingComplete(BaseModel):
 
 @app.post("/api/onboarding/complete")
 def onboarding_complete(req: OnboardingComplete):
-    with db() as conn:
-        cur = conn.execute(
-            "UPDATE coders SET onboarded_at = ? WHERE id = ? AND onboarded_at IS NULL",
-            (datetime.utcnow().isoformat(), req.coder_id),
+    with db() as cur:
+        cur.execute(
+            "UPDATE coders SET onboarded_at = %s WHERE id = %s AND onboarded_at IS NULL",
+            (datetime.now(timezone.utc).isoformat(), req.coder_id),
         )
-        conn.commit()
         if cur.rowcount == 0:
-            row = conn.execute(
-                "SELECT onboarded_at FROM coders WHERE id = ?", (req.coder_id,)
-            ).fetchone()
-            if not row:
+            cur.execute("SELECT onboarded_at FROM coders WHERE id = %s", (req.coder_id,))
+            if not cur.fetchone():
                 raise HTTPException(404, "Coder not found")
         return {"onboarded": True}
 
 
 @app.get("/api/leaderboard")
 def leaderboard():
-    with db() as conn:
-        rows = conn.execute(
+    with db() as cur:
+        cur.execute(
             """
             SELECT c.handle AS name,
                    COALESCE(SUM(CASE WHEN j.type_judgement != 'skip' THEN j.points ELSE 0 END), 0) AS points,
@@ -325,29 +341,28 @@ def leaderboard():
             GROUP BY c.id, c.handle
             ORDER BY points DESC, pairs DESC, c.handle ASC
             """
-        ).fetchall()
-        return [dict(r) for r in rows]
+        )
+        return [dict(r) for r in cur.fetchall()]
 
 
 @app.get("/api/stats")
 def stats(coder_id: int):
-    with db() as conn:
-        row = conn.execute(
+    with db() as cur:
+        cur.execute(
             """
             SELECT
                 COUNT(CASE WHEN type_judgement != 'skip' THEN 1 END) AS done,
                 COALESCE(SUM(CASE WHEN type_judgement != 'skip' THEN points ELSE 0 END), 0) AS points,
                 COUNT(CASE WHEN type_judgement = 'skip' THEN 1 END) AS skipped
-            FROM judgements WHERE coder_id = ?
+            FROM judgements WHERE coder_id = %s
             """,
             (coder_id,),
-        ).fetchone()
-        normal_total = conn.execute(
-            "SELECT COUNT(*) FROM pairs WHERE is_hard = 0"
-        ).fetchone()[0]
-        hard_total = conn.execute(
-            "SELECT COUNT(*) FROM pairs WHERE is_hard = 1"
-        ).fetchone()[0]
+        )
+        row = cur.fetchone()
+        cur.execute("SELECT COUNT(*) AS n FROM pairs WHERE is_hard = 0")
+        normal_total = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) AS n FROM pairs WHERE is_hard = 1")
+        hard_total = cur.fetchone()["n"]
         return {
             "done": row["done"],
             "points": row["points"],
@@ -355,7 +370,7 @@ def stats(coder_id: int):
             "total": normal_total + hard_total,
             "normal_total": normal_total,
             "hard_total": hard_total,
-            "rank": rank_for(conn, row["points"]),
+            "rank": rank_for(cur, row["points"]),
         }
 
 

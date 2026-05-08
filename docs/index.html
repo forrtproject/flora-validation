@@ -21,19 +21,34 @@
   <div class="login-card">
     <h1>Flora<br><em>Validator</em></h1>
     <p class="tagline">A coding game for replication studies. Three calls per paper, points for the careful eye.</p>
+
+    <div class="code-builder">
+      <p class="code-label">Generate your personal anonymous code — you'll need it each time you return:</p>
+      <ol class="code-steps">
+        <li>First <b>2 letters</b> of your <b>city of birth</b> <em>(e.g. Am for Amsterdam)</em></li>
+        <li>Last <b>2 letters</b> of your <b>father's first name</b> <em>(e.g. in for Martin)</em></li>
+        <li>Last <b>2 digits</b> of your <b>birth year</b> <em>(e.g. 01 for 2001)</em></li>
+        <li>First <b>2 letters</b> of your <b>current street</b> <em>(e.g. Br for Broadway)</em></li>
+      </ol>
+      <div class="code-inputs">
+        <input class="code-part" id="cp1" maxlength="2" placeholder="Am" autocomplete="off" autofocus>
+        <input class="code-part" id="cp2" maxlength="2" placeholder="in" autocomplete="off">
+        <input class="code-part" id="cp3" maxlength="2" placeholder="01" autocomplete="off">
+        <input class="code-part" id="cp4" maxlength="2" placeholder="Br" autocomplete="off">
+        <span class="code-eq">→</span>
+        <span id="code-preview" class="code-result">——</span>
+      </div>
+    </div>
+
     <div class="login-fields">
       <div class="login-row">
-        <label for="email-input">Email</label>
-        <input id="email-input" type="email" placeholder="you@example.org" autofocus autocomplete="email">
-      </div>
-      <div class="login-row">
         <label for="handle-input">Handle</label>
-        <input id="handle-input" placeholder="your.name" autocomplete="username">
+        <input id="handle-input" placeholder="your.name" autocomplete="off">
         <button id="login-btn">Enter →</button>
       </div>
-      <div class="login-note">Email is so nobody can claim your handle. It's never shown publicly.</div>
     </div>
-    <div class="login-meta">v0.2 · prototype</div>
+
+    <div class="login-meta">v0.2 · <a href="https://github.com/forrtproject/fred-data/blob/main/output/flora_faq.md" target="_blank" rel="noopener">FAQ</a></div>
   </div>
 </div>
 
@@ -80,6 +95,7 @@
       </div>
       <button id="mode-toggle" class="ghost-btn" title="Switch between normal and hard mode">Normal mode</button>
       <button id="sidebar-toggle" class="ghost-btn" title="Show/hide leaderboard">Leaderboard ▸</button>
+      <a href="https://github.com/forrtproject/fred-data/blob/main/output/flora_faq.md" target="_blank" rel="noopener" class="ghost-btn" style="text-decoration:none">FAQ</a>
       <button id="logout-btn" class="ghost-btn" title="Switch coder">Sign out</button>
     </div>
   </header>
