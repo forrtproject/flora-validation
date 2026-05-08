@@ -610,6 +610,7 @@ function wireEditButtons(container, p) {
 }
 
 function onChoice(btn) {
+  const pairBody = btn.closest(".pair-body");
   const parent = btn.parentElement;
   parent.querySelectorAll(".choice").forEach((b) => b.classList.remove("selected"));
   btn.classList.add("selected");
@@ -617,27 +618,27 @@ function onChoice(btn) {
   if (btn.dataset.type) {
     state.judgement.type = btn.dataset.type;
     if (btn.dataset.type === "not_validation") {
-      $("#gate-2").classList.add("hidden");
-      $("#gate-3").classList.add("hidden");
+      pairBody.querySelector("#gate-2").classList.add("hidden");
+      pairBody.querySelector("#gate-3").classList.add("hidden");
       state.judgement.original = null;
       state.judgement.outcome = null;
     } else {
-      $("#gate-2").classList.remove("hidden");
+      pairBody.querySelector("#gate-2").classList.remove("hidden");
     }
-    document.querySelector(".comment").classList.remove("hidden");
+    pairBody.querySelector(".comment").classList.remove("hidden");
   } else if (btn.dataset.original) {
     state.judgement.original = btn.dataset.original;
-    $("#gate-3").classList.remove("hidden");
+    pairBody.querySelector("#gate-3").classList.remove("hidden");
   } else if (btn.dataset.outcome) {
     state.judgement.outcome = btn.dataset.outcome;
   }
-  updateSubmitState();
+  updateSubmitState(pairBody);
 }
 
-function updateSubmitState() {
+function updateSubmitState(pairBody) {
   const j = state.judgement;
   const ready = j.type === "not_validation" || (j.type && j.original && j.outcome);
-  const btn = $("#submit-btn");
+  const btn = (pairBody || document).querySelector("#submit-btn");
   if (btn) btn.disabled = !ready;
 }
 
