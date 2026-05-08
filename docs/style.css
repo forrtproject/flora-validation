@@ -157,44 +157,65 @@ a:hover { text-decoration-thickness: 2px; }
 }
 
 /* ---------- Code builder ---------- */
-.code-builder { margin-bottom: 2rem; max-width: 460px; }
 .code-label {
   font-family: 'Fraunces', Georgia, serif;
   font-style: italic;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   color: var(--muted);
-  margin-bottom: 0.85rem;
+  margin: 1.5rem 0 0.5rem;
+  max-width: 460px;
 }
-.code-steps {
-  margin: 0 0 1.25rem 1.1rem;
+.code-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--rule);
+  max-width: 460px;
+}
+.code-step {
   font-size: 0.88rem;
   color: var(--ink-soft);
-  line-height: 1.7;
+  line-height: 1.4;
 }
-.code-steps em { color: var(--muted); }
-.code-inputs { display: flex; align-items: center; gap: 0.5rem; }
+.code-step em { color: var(--muted); }
 .code-part {
-  width: 2.8rem;
-  border: none;
-  border-bottom: 2px solid var(--ink);
+  flex-shrink: 0;
+  width: 3.2rem;
+  border: 1.5px solid var(--rule);
+  border-radius: 999px;
   background: transparent;
-  padding: 0.4rem 0.3rem;
+  padding: 0.35rem 0.5rem;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 1.2rem;
+  font-size: 1rem;
   text-align: center;
   outline: none;
   color: var(--ink);
+  transition: border-color 0.15s;
 }
-.code-part:focus { border-bottom-color: var(--accent); }
+.code-part:focus { border-color: var(--accent); }
 .code-part::placeholder { color: var(--muted); font-style: italic; }
-.code-eq { color: var(--muted); font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; margin: 0 0.25rem; }
-.code-result {
+.code-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 1.5rem;
+  max-width: 460px;
+}
+.code-preview-label {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 1.1rem;
-  font-weight: 500;
+  font-size: 0.75rem;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.code-preview-label strong {
   color: var(--ink);
-  letter-spacing: 0.06em;
-  min-width: 9ch;
+  font-size: 1rem;
+  letter-spacing: 0.1em;
+  margin-left: 0.4rem;
+  text-transform: none;
 }
 
 /* ---------- Header ---------- */

@@ -217,13 +217,13 @@ document.querySelectorAll(".code-part").forEach((input, i, arr) => {
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       if (i + 1 < arr.length) arr[i + 1].focus();
-      else $("#handle-input").focus();
+      else doLogin();
     }
   });
 });
 
 $("#login-btn").onclick = doLogin;
-$("#handle-input").addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
+$("#handle-input").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#cp1").focus(); });
 
 async function doLogin() {
   const code = getCode();
