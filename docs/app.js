@@ -347,6 +347,9 @@ function showOnboardingPair() {
   $("#onb-card").classList.remove("hidden");
   renderPairInto($("#onb-card"), pair, { onboarding: true, judgeCount: 0 });
   updateOnbProgress();
+  const header = document.querySelector(".onboarding-header");
+  const y = $("#onb-card").getBoundingClientRect().top + window.scrollY - (header?.offsetHeight || 60) - 8;
+  window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
 }
 
 function evaluateOnboarding(pair, j) {
