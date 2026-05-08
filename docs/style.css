@@ -629,15 +629,18 @@ header {
   height: 3px;
   background: var(--rule);
   margin-top: 6px;
+  border-radius: 999px;
 }
 .progress-fill {
   height: 100%;
   background: var(--accent);
+  border-radius: 999px;
   transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .ghost-btn {
   background: transparent;
   border: 1px solid var(--ink);
+  border-radius: 999px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.65rem;
   text-transform: uppercase;
@@ -715,20 +718,23 @@ body:has(.banner:not(.hidden)) .pair-header { top: calc(var(--header-h) + 2.6rem
 .pair-meta .onboarding-tag {
   background: var(--accent);
   color: var(--bg);
-  padding: 0.18rem 0.55rem;
+  padding: 0.18rem 0.65rem;
   letter-spacing: 0.18em;
+  border-radius: 999px;
 }
 .pair-meta .hard-tag {
   background: var(--ink);
   color: var(--bg);
-  padding: 0.18rem 0.55rem;
+  padding: 0.18rem 0.65rem;
   letter-spacing: 0.18em;
+  border-radius: 999px;
 }
 
 .skip-btn {
   margin-left: auto;
   background: transparent;
   border: 1px solid var(--rule);
+  border-radius: 999px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.62rem;
   text-transform: uppercase;
@@ -776,6 +782,7 @@ body:has(.banner:not(.hidden)) .pair-header { top: calc(var(--header-h) + 2.6rem
   line-height: 1.55;
   padding: 0.6rem 0.85rem;
   border: 1px solid var(--ink);
+  border-radius: 0.75rem;
   background: var(--bg-alt);
   resize: vertical;
   min-height: 140px;
@@ -858,6 +865,8 @@ body:has(.banner:not(.hidden)) .pair-header { top: calc(var(--header-h) + 2.6rem
   gap: 0;
   flex-wrap: wrap;
   border: 1px solid var(--ink);
+  border-radius: 0.75rem;
+  overflow: hidden;
   max-width: 65ch;
 }
 .choice {
@@ -938,6 +947,7 @@ body:has(.banner:not(.hidden)) .pair-header { top: calc(var(--header-h) + 2.6rem
   padding: 1.1rem 1.4rem;
   margin-bottom: 1.25rem;
   max-width: 65ch;
+  border-radius: 0.75rem;
 }
 .outcome-label {
   display: inline-block;
@@ -949,6 +959,7 @@ body:has(.banner:not(.hidden)) .pair-header { top: calc(var(--header-h) + 2.6rem
   font-weight: 500;
   margin-bottom: 0.7rem;
   border: 1px solid currentColor;
+  border-radius: 999px;
 }
 .outcome-label.replication, .outcome-label.success { color: var(--green); }
 .outcome-label.failed, .outcome-label.failure { color: var(--red); }
@@ -982,6 +993,7 @@ body:has(.banner:not(.hidden)) .pair-header { top: calc(var(--header-h) + 2.6rem
   font-size: 1rem;
   padding: 0.6rem 0.85rem;
   border: 1px solid var(--ink);
+  border-radius: 0.75rem;
   background: var(--bg);
   resize: vertical;
   outline: none;
@@ -993,6 +1005,7 @@ textarea.comment {
   max-width: 65ch;
   padding: 0.85rem 1rem;
   border: 1px solid var(--ink);
+  border-radius: 0.75rem;
   background: transparent;
   font-family: 'Inter Tight', sans-serif;
   font-size: 0.95rem;
@@ -1025,6 +1038,7 @@ textarea.comment:focus { background: var(--bg-alt); }
   color: var(--bg);
   border: none;
   padding: 0.85rem 1.75rem;
+  border-radius: 999px;
   font-family: 'Inter Tight', sans-serif;
   font-weight: 500;
   font-size: 0.78rem;
@@ -1068,6 +1082,7 @@ textarea.comment:focus { background: var(--bg-alt); }
 }
 .hard-row input, .hard-row textarea {
   border: 1px solid var(--rule);
+  border-radius: 0.5rem;
   background: var(--bg);
   padding: 0.55rem 0.75rem;
   font-family: 'Inter Tight', sans-serif;
@@ -1148,6 +1163,7 @@ body:has(.banner:not(.hidden)) .onboarding-header { top: 2.6rem; }
   background: var(--bg-alt);
   padding: 1.5rem 1.75rem;
   max-width: 65ch;
+  border-radius: 1rem;
   animation: fadeIn 0.3s ease-out;
 }
 .feedback-card.incorrect { border-top-color: var(--red); }
@@ -1320,6 +1336,7 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
   background: var(--ink);
   color: var(--bg);
   padding: 0.85rem 2rem;
+  border-radius: 0 0 1.25rem 1.25rem;
   font-family: 'Fraunces', Georgia, serif;
   font-style: italic;
   font-size: 1.35rem;
