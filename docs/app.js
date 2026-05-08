@@ -101,17 +101,20 @@ async function staticApi(path, method, body) {
 
   if (route === "/login") {
     const code = (body.code || "").trim();
+    const email = (body.email || "").trim().toLowerCase();
     const handle = (body.handle || "").trim();
-    if (!code || !handle) throw new Error("Code and handle required");
-    if (coders[code] && coders[code].handle !== handle) {
-      throw new Error(`This code is already linked to handle '${coders[code].handle}'.`);
+    const key = email || code;
+    if (!key || !handle) throw new Error("Handle and email or code required");
+    if (coders[key] && coders[key].handle !== handle) {
+      const method = email ? "email" : "code";
+      throw new Error(`This ${method} is already linked to handle '${coders[key].handle}'.`);
     }
-    if (!coders[code]) {
+    if (!coders[key]) {
       const id = Date.now() + Math.floor(Math.random() * 1000);
-      coders[code] = { coder_id: id, code, handle, onboarded: false };
+      coders[key] = { coder_id: id, code: code || null, email: email || null, handle, onboarded: false };
       writeJSON(STORAGE.CODERS, coders);
     }
-    return coders[code];
+    return coders[key];
   }
 
   if (route === "/onboarding") {
@@ -204,6 +207,11 @@ function showToast(num, label) {
 }
 
 /* ---------- Auth ---------- */
+let loginMode = "email";
+document.addEventListener("DOMContentLoaded", () => {
+  $("#toggle-label-email").classList.add("toggle-active");
+});
+
 function getCode() {
   return ["#cp1", "#cp2", "#cp3", "#cp4"].map((id) => $(id).value.trim()).join("");
 }
@@ -222,22 +230,50 @@ document.querySelectorAll(".code-part").forEach((input, i, arr) => {
   });
 });
 
+$("#email-input").addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
 $("#login-btn").onclick = doLogin;
-$("#handle-input").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#cp1").focus(); });
+$("#handle-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    if (loginMode === "email") $("#email-input").focus();
+    else $("#cp1").focus();
+  }
+});
+
+$("#login-mode-toggle").addEventListener("change", (e) => {
+  loginMode = e.target.checked ? "code" : "email";
+  const isEmail = loginMode === "email";
+  $("#email-section").classList.toggle("hidden", !isEmail);
+  $("#code-section").classList.toggle("hidden", isEmail);
+  $("#code-preview-wrap").classList.toggle("hidden", isEmail);
+  $("#auth-sep-label").textContent = isEmail
+    ? "// sign in with email"
+    : "// personal code · stays constant";
+  $("#toggle-label-email").classList.toggle("toggle-active", isEmail);
+  $("#toggle-label-code").classList.toggle("toggle-active", !isEmail);
+  setTimeout(() => (isEmail ? $("#email-input") : $("#cp1")).focus(), 50);
+});
 
 async function doLogin() {
-  const code = getCode();
   const handle = $("#handle-input").value.trim();
-  if (code.length < 6) {
-    alert("Please fill in all four parts of your code.");
-    return;
-  }
-  if (!handle) {
-    alert("Please enter a handle.");
-    return;
+  if (!handle) { alert("Please enter a handle."); return; }
+  let body;
+  if (loginMode === "email") {
+    const email = $("#email-input").value.trim();
+    if (!email || !email.includes("@")) {
+      alert("Please enter a valid email address.");
+      return;
+    }
+    body = { handle, email };
+  } else {
+    const code = getCode();
+    if (code.length < 6) {
+      alert("Please fill in all four parts of your code.");
+      return;
+    }
+    body = { handle, code };
   }
   try {
-    const resp = await api("/login", "POST", { code, handle });
+    const resp = await api("/login", "POST", body);
     state.coder = resp;
     localStorage.setItem(STORAGE.CODER, JSON.stringify(resp));
     routeAfterLogin();

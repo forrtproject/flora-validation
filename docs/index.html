@@ -34,41 +34,62 @@
   <div class="login-right">
     <div class="login-card">
       <p class="login-intro">Choose a handle and generate your personal code to begin.</p>
-      <div class="login-fields">
-        <div class="login-row">
+
+      <div class="login-circle">
+        <div class="circle-handle">
           <label for="handle-input">Handle</label>
           <input id="handle-input" placeholder="your.name" autocomplete="off" autofocus>
         </div>
 
-        <div class="code-section">
-          <div class="code-section-hdr">
-            <span class="code-section-tag">// personal code</span>
-            <span class="code-section-note">stays constant across sessions</span>
+        <div class="circle-sep">
+          <span id="auth-sep-label">// sign in with email</span>
+        </div>
+
+        <!-- Email section (default) -->
+        <div id="email-section" class="circle-auth-section">
+          <div class="circle-email-row">
+            <label for="email-input">Email</label>
+            <input id="email-input" type="email" placeholder="you@example.com" autocomplete="email">
           </div>
-          <div class="code-row">
-            <span class="code-row-num">01</span>
-            <span class="code-step">First 2 letters · <b>city of birth</b> <em>(e.g. Am)</em></span>
-            <input class="code-part" id="cp1" maxlength="2" placeholder="Am" autocomplete="off">
+        </div>
+
+        <!-- Code section (hidden by default) -->
+        <div id="code-section" class="circle-auth-section hidden">
+          <div class="circle-codes">
+            <div class="code-row">
+              <span class="code-row-num">01</span>
+              <span class="code-step">city of birth <em>· first 2</em></span>
+              <input class="code-part" id="cp1" maxlength="2" placeholder="Am" autocomplete="off">
+            </div>
+            <div class="code-row">
+              <span class="code-row-num">02</span>
+              <span class="code-step">father's first name <em>· last 2</em></span>
+              <input class="code-part" id="cp2" maxlength="2" placeholder="in" autocomplete="off">
+            </div>
+            <div class="code-row">
+              <span class="code-row-num">03</span>
+              <span class="code-step">birth year <em>· last 2 digits</em></span>
+              <input class="code-part" id="cp3" maxlength="2" placeholder="01" autocomplete="off">
+            </div>
+            <div class="code-row">
+              <span class="code-row-num">04</span>
+              <span class="code-step">current street <em>· first 2</em></span>
+              <input class="code-part" id="cp4" maxlength="2" placeholder="Br" autocomplete="off">
+            </div>
           </div>
-          <div class="code-row">
-            <span class="code-row-num">02</span>
-            <span class="code-step">Last 2 letters · <b>father's first name</b> <em>(e.g. in)</em></span>
-            <input class="code-part" id="cp2" maxlength="2" placeholder="in" autocomplete="off">
-          </div>
-          <div class="code-row">
-            <span class="code-row-num">03</span>
-            <span class="code-step">Last 2 digits · <b>birth year</b> <em>(e.g. 01)</em></span>
-            <input class="code-part" id="cp3" maxlength="2" placeholder="01" autocomplete="off">
-          </div>
-          <div class="code-row">
-            <span class="code-row-num">04</span>
-            <span class="code-step">First 2 letters · <b>current street</b> <em>(e.g. Br)</em></span>
-            <input class="code-part" id="cp4" maxlength="2" placeholder="Br" autocomplete="off">
-          </div>
-          <div class="code-footer">
-            <span class="code-preview-label">→ <strong id="code-preview">——</strong></span>
-            <button id="login-btn">Enter →</button>
-          </div>
+        </div>
+
+        <div class="code-footer">
+          <span id="code-preview-wrap" class="code-preview-label hidden">→ <strong id="code-preview">——</strong></span>
+          <button id="login-btn">Enter →</button>
+        </div>
+        <div class="login-toggle-row">
+          <span class="toggle-label" id="toggle-label-email">Email</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="login-mode-toggle">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+          <span class="toggle-label" id="toggle-label-code">Code</span>
         </div>
       </div>
     </div>

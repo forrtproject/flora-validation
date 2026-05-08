@@ -25,6 +25,7 @@ VALID_TYPES = {"replication", "reproduction", "not_validation", "skip"}
 CONFIRMING_TYPES = {"replication", "reproduction"}
 
 DATABASE_URL = os.environ["DATABASE_URL"]
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 app = FastAPI(title="Flora Validator")
 
@@ -55,7 +56,8 @@ def init_db():
         cur.execute("""
             CREATE TABLE IF NOT EXISTS coders (
                 id SERIAL PRIMARY KEY,
-                code TEXT UNIQUE NOT NULL,
+                code TEXT UNIQUE,
+                email TEXT UNIQUE,
                 handle TEXT UNIQUE NOT NULL,
                 created_at TEXT NOT NULL,
                 onboarded_at TEXT
@@ -93,6 +95,30 @@ def init_db():
 init_db()
 
 
+def migrate_db():
+    with db() as cur:
+        cur.execute("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'coders' AND column_name = 'email'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE coders ADD COLUMN email TEXT")
+            cur.execute("""
+                CREATE UNIQUE INDEX coders_email_key ON coders(email)
+                WHERE email IS NOT NULL
+            """)
+        cur.execute("""
+            SELECT is_nullable FROM information_schema.columns
+            WHERE table_name = 'coders' AND column_name = 'code'
+        """)
+        row = cur.fetchone()
+        if row and row["is_nullable"] == "NO":
+            cur.execute("ALTER TABLE coders ALTER COLUMN code DROP NOT NULL")
+
+
+migrate_db()
+
+
 def load_onboarding():
     with open(ONBOARDING_PATH) as f:
         return json.load(f)["pairs"]
@@ -120,8 +146,9 @@ def with_oa(pair: dict) -> dict:
 
 
 class LoginRequest(BaseModel):
-    code: str
     handle: str
+    code: str | None = None
+    email: str | None = None
 
 
 class JudgeRequest(BaseModel):
@@ -182,40 +209,68 @@ def rank_for(cur, points: int) -> int:
 
 @app.post("/api/login")
 def login(req: LoginRequest):
-    code = req.code.strip()
     handle = req.handle.strip()
-    if len(code) < 4:
-        raise HTTPException(400, "Code too short — fill in all four parts")
     if not HANDLE_RE.match(handle):
         raise HTTPException(400, "Handle must be 2–32 chars: letters, digits, . _ -")
+
+    use_email = bool(req.email and req.email.strip())
+    use_code = bool(req.code and req.code.strip())
+    if not use_email and not use_code:
+        raise HTTPException(400, "Provide either an email or a personal code")
+
+    if use_email:
+        email = req.email.strip().lower()
+        if not EMAIL_RE.match(email):
+            raise HTTPException(400, "Invalid email address")
+    else:
+        code = req.code.strip()
+        if len(code) < 4:
+            raise HTTPException(400, "Code too short — fill in all four parts")
+
     with db() as cur:
-        cur.execute(
-            "SELECT id, code, handle, onboarded_at FROM coders WHERE code = %s", (code,)
-        )
-        by_code = cur.fetchone()
-        if by_code:
-            if by_code["handle"] != handle:
+        if use_email:
+            cur.execute(
+                "SELECT id, code, email, handle, onboarded_at FROM coders WHERE email = %s",
+                (email,),
+            )
+        else:
+            cur.execute(
+                "SELECT id, code, email, handle, onboarded_at FROM coders WHERE code = %s",
+                (code,),
+            )
+        existing = cur.fetchone()
+        if existing:
+            if existing["handle"] != handle:
+                method = "email" if use_email else "code"
                 raise HTTPException(
                     400,
-                    f"This code is already linked to handle '{by_code['handle']}'. Use that handle.",
+                    f"This {method} is already linked to handle '{existing['handle']}'. Use that handle.",
                 )
             return {
-                "coder_id": by_code["id"],
-                "code": by_code["code"],
-                "handle": by_code["handle"],
-                "onboarded": bool(by_code["onboarded_at"]),
+                "coder_id": existing["id"],
+                "code": existing["code"],
+                "email": existing["email"],
+                "handle": existing["handle"],
+                "onboarded": bool(existing["onboarded_at"]),
             }
         cur.execute("SELECT 1 FROM coders WHERE handle = %s", (handle,))
         if cur.fetchone():
             raise HTTPException(400, "That handle is already taken.")
-        cur.execute(
-            "INSERT INTO coders(code, handle, created_at) VALUES (%s, %s, %s) RETURNING id",
-            (code, handle, datetime.now(timezone.utc).isoformat()),
-        )
+        if use_email:
+            cur.execute(
+                "INSERT INTO coders(email, handle, created_at) VALUES (%s, %s, %s) RETURNING id",
+                (email, handle, datetime.now(timezone.utc).isoformat()),
+            )
+        else:
+            cur.execute(
+                "INSERT INTO coders(code, handle, created_at) VALUES (%s, %s, %s) RETURNING id",
+                (code, handle, datetime.now(timezone.utc).isoformat()),
+            )
         new_id = cur.fetchone()["id"]
         return {
             "coder_id": new_id,
-            "code": code,
+            "code": req.code,
+            "email": email if use_email else None,
             "handle": handle,
             "onboarded": False,
         }
