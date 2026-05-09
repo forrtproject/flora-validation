@@ -523,6 +523,7 @@ function renderPairInto(container, p, { onboarding, judgeCount }) {
 
       <div class="abstract-block">
         <div class="abstract" id="abstract-text">${escapeHtml(p.abstract_r || "(no abstract available)")}</div>
+        <button class="abstract-toggle link-btn" id="abstract-toggle-btn">show abstract ↓</button>
         <textarea class="abstract-edit hidden" id="abstract-edit" rows="6"></textarea>
         <div class="abstract-tools">
           <button class="link-btn" id="edit-abstract-btn">edit abstract</button>
@@ -536,51 +537,69 @@ function renderPairInto(container, p, { onboarding, judgeCount }) {
 
     <div class="pair-body">
       <div class="gate" id="gate-1">
-        <h3><span class="gate-num">i.</span>Type check</h3>
-        <p class="question">Is this paper actually validating a previous finding?</p>
-        <div class="choices">
-          <button class="choice success" data-type="replication">Replication<small>different data</small></button>
-          <button class="choice success" data-type="reproduction">Reproduction<small>same data</small></button>
-          <button class="choice danger" data-type="not_validation">Neither<small>not a validation</small></button>
+        <div class="gate-header-row">
+          <h3><span class="gate-num">i.</span>Type check</h3>
+          <span class="gate-chip hidden"></span>
+          <button class="gate-change-btn link-btn hidden">change ↩</button>
+        </div>
+        <div class="gate-body">
+          <p class="question">Is this paper actually validating a previous finding?</p>
+          <div class="choices">
+            <button class="choice success" data-type="replication">Replication<small>different data</small></button>
+            <button class="choice success" data-type="reproduction">Reproduction<small>same data</small></button>
+            <button class="choice danger" data-type="not_validation">Neither<small>not a validation</small></button>
+          </div>
         </div>
       </div>
 
       <div class="gate hidden" id="gate-2">
-        <h3><span class="gate-num">ii.</span>Original check</h3>
-        <p class="question">Does this match the paper actually being validated?</p>
-        <div class="original-info">
-          <div class="title">${escapeHtml(p.title_o || "(no title)")}</div>
-          <div class="meta">
-            ${escapeHtml(p.authors_o || "?")} · ${escapeHtml(String(p.year_o || "?"))}
-            ${oOaUrl ? ` · <a href="${escapeHtml(oOaUrl)}" target="_blank" rel="noopener" title="Open access PDF">${lockIcon(true)} OA</a>` : ""}
-            ${oUrl ? ` · <a href="${escapeHtml(oUrl)}" target="_blank" rel="noopener" title="${oOaUrl ? "DOI page" : "Publisher page (likely paywalled)"}">${oOaUrl ? "" : lockIcon(false) + " "}${escapeHtml(p.doi_o)}</a>` : ""}
-          </div>
-          ${p.link_evidence ? `<div class="evidence">Evidence: ${escapeHtml(p.link_evidence)}</div>` : ""}
+        <div class="gate-header-row">
+          <h3><span class="gate-num">ii.</span>Original check</h3>
+          <span class="gate-chip hidden"></span>
+          <button class="gate-change-btn link-btn hidden">change ↩</button>
         </div>
-        <div class="choices">
-          <button class="choice success" data-original="correct">Correct match</button>
-          <button class="choice danger" data-original="wrong">Wrong paper</button>
-          <button class="choice warn" data-original="unsure">Can't tell</button>
+        <div class="gate-body">
+          <p class="question">Does this match the paper actually being validated?</p>
+          <div class="original-info">
+            <div class="title">${escapeHtml(p.title_o || "(no title)")}</div>
+            <div class="meta">
+              ${escapeHtml(p.authors_o || "?")} · ${escapeHtml(String(p.year_o || "?"))}
+              ${oOaUrl ? ` · <a href="${escapeHtml(oOaUrl)}" target="_blank" rel="noopener" title="Open access PDF">${lockIcon(true)} OA</a>` : ""}
+              ${oUrl ? ` · <a href="${escapeHtml(oUrl)}" target="_blank" rel="noopener" title="${oOaUrl ? "DOI page" : "Publisher page (likely paywalled)"}">${oOaUrl ? "" : lockIcon(false) + " "}${escapeHtml(p.doi_o)}</a>` : ""}
+            </div>
+            ${p.link_evidence ? `<div class="evidence">Evidence: ${escapeHtml(p.link_evidence)}</div>` : ""}
+          </div>
+          <div class="choices">
+            <button class="choice success" data-original="correct">Correct match</button>
+            <button class="choice danger" data-original="wrong">Wrong paper</button>
+            <button class="choice warn" data-original="unsure">Can't tell</button>
+          </div>
         </div>
       </div>
 
       <div class="gate hidden" id="gate-3">
-        <h3><span class="gate-num">iii.</span>Outcome check</h3>
-        <p class="question">Does the system's outcome judgement match the authors' actual conclusion?</p>
-        <div class="outcome-info">
-          <span class="outcome-label ${escapeHtml(outcomeLabel)}">${escapeHtml(outcomeLabel)}</span>
-          <div class="outcome-quote-wrap">
-            ${hasQuote
-              ? `<div class="outcome-quote" id="outcome-quote-text">"${escapeHtml(p.outcome_phrase)}"</div>`
-              : '<p style="margin:0.4rem 0"><em>No outcome quote was extracted.</em></p>'}
-            <textarea class="outcome-quote-edit hidden" id="outcome-quote-edit" rows="3"></textarea>
-            <button class="link-btn small" id="edit-quote-btn">edit / extend quote</button>
-          </div>
+        <div class="gate-header-row">
+          <h3><span class="gate-num">iii.</span>Outcome check</h3>
+          <span class="gate-chip hidden"></span>
+          <button class="gate-change-btn link-btn hidden">change ↩</button>
         </div>
-        <div class="choices">
-          <button class="choice success" data-outcome="correct">Looks right</button>
-          <button class="choice danger" data-outcome="wrong">Mischaracterised</button>
-          <button class="choice warn" data-outcome="unsure">Can't tell</button>
+        <div class="gate-body">
+          <p class="question">Does the system's outcome judgement match the authors' actual conclusion?</p>
+          <div class="outcome-info">
+            <span class="outcome-label ${escapeHtml(outcomeLabel)}">${escapeHtml(outcomeLabel)}</span>
+            <div class="outcome-quote-wrap">
+              ${hasQuote
+                ? `<div class="outcome-quote" id="outcome-quote-text">"${escapeHtml(p.outcome_phrase)}"</div>`
+                : '<p style="margin:0.4rem 0"><em>No outcome quote was extracted.</em></p>'}
+              <textarea class="outcome-quote-edit hidden" id="outcome-quote-edit" rows="3"></textarea>
+              <button class="link-btn small" id="edit-quote-btn">edit / extend quote</button>
+            </div>
+          </div>
+          <div class="choices">
+            <button class="choice success" data-outcome="correct">Looks right</button>
+            <button class="choice danger" data-outcome="wrong">Mischaracterised</button>
+            <button class="choice warn" data-outcome="unsure">Can't tell</button>
+          </div>
         </div>
       </div>
 
@@ -602,11 +621,34 @@ function renderPairInto(container, p, { onboarding, judgeCount }) {
   }
 
   wireEditButtons(container, p);
+
+  // Click answered gate header to toggle its body open/closed
+  container.querySelectorAll(".gate-header-row").forEach((row) => {
+    row.addEventListener("click", () => {
+      const gate = row.closest(".gate");
+      if (!gate.classList.contains("gate-answered")) return;
+      const body = gate.querySelector(".gate-body");
+      const changeBtn = gate.querySelector(".gate-change-btn");
+      const opening = !body.classList.contains("open");
+      body.classList.toggle("open", opening);
+      if (changeBtn) changeBtn.textContent = opening ? "collapse ↑" : "change ↩";
+    });
+  });
 }
 
 function wireEditButtons(container, p) {
-  const editAbstractBtn = container.querySelector("#edit-abstract-btn");
+  const abstractToggleBtn = container.querySelector("#abstract-toggle-btn");
   const abstractText = container.querySelector("#abstract-text");
+  if (abstractToggleBtn && abstractText) {
+    abstractText.classList.add("expanded");
+    abstractToggleBtn.textContent = "hide abstract ↑";
+    abstractToggleBtn.onclick = () => {
+      const expanded = abstractText.classList.toggle("expanded");
+      abstractToggleBtn.textContent = expanded ? "hide abstract ↑" : "show abstract ↓";
+    };
+  }
+
+  const editAbstractBtn = container.querySelector("#edit-abstract-btn");
   const abstractEdit = container.querySelector("#abstract-edit");
   editAbstractBtn.onclick = () => {
     if (abstractEdit.classList.contains("hidden")) {
@@ -651,27 +693,86 @@ function wireEditButtons(container, p) {
 function onChoice(btn) {
   const pairBody = btn.closest(".pair-body");
   const parent = btn.parentElement;
+  const gate = btn.closest(".gate");
+  const wasAnswered = gate.classList.contains("gate-answered");
+
   parent.querySelectorAll(".choice").forEach((b) => b.classList.remove("selected"));
   btn.classList.add("selected");
 
   if (btn.dataset.type) {
     state.judgement.type = btn.dataset.type;
     if (btn.dataset.type === "not_validation") {
-      pairBody.querySelector("#gate-2").classList.add("hidden");
-      pairBody.querySelector("#gate-3").classList.add("hidden");
+      const g2 = pairBody.querySelector("#gate-2");
+      const g3 = pairBody.querySelector("#gate-3");
+      unanswerGate(g2); g2.classList.add("hidden");
+      unanswerGate(g3); g3.classList.add("hidden");
       state.judgement.original = null;
       state.judgement.outcome = null;
     } else {
+      if (wasAnswered) {
+        unanswerGate(pairBody.querySelector("#gate-2"));
+        unanswerGate(pairBody.querySelector("#gate-3"));
+        pairBody.querySelector("#gate-3").classList.add("hidden");
+      }
       pairBody.querySelector("#gate-2").classList.remove("hidden");
     }
     pairBody.querySelector(".comment").classList.remove("hidden");
   } else if (btn.dataset.original) {
     state.judgement.original = btn.dataset.original;
+    if (wasAnswered) unanswerGate(pairBody.querySelector("#gate-3"));
     pairBody.querySelector("#gate-3").classList.remove("hidden");
   } else if (btn.dataset.outcome) {
     state.judgement.outcome = btn.dataset.outcome;
   }
+
   updateSubmitState(pairBody);
+  setTimeout(() => answerGate(gate, getAnswerLabel(btn), getAnswerClass(btn)), 300);
+}
+
+function answerGate(gate, label, cls) {
+  gate.classList.add("gate-answered");
+  const chip = gate.querySelector(".gate-chip");
+  if (chip) {
+    chip.textContent = label;
+    chip.className = `gate-chip${cls ? " " + cls : ""}`;
+    chip.classList.remove("hidden");
+  }
+  const changeBtn = gate.querySelector(".gate-change-btn");
+  if (changeBtn) { changeBtn.textContent = "change ↩"; changeBtn.classList.remove("hidden"); }
+  const body = gate.querySelector(".gate-body");
+  if (body) body.classList.remove("open");
+}
+
+function unanswerGate(gate) {
+  if (!gate) return;
+  gate.classList.remove("gate-answered");
+  const chip = gate.querySelector(".gate-chip");
+  if (chip) { chip.textContent = ""; chip.classList.add("hidden"); }
+  const changeBtn = gate.querySelector(".gate-change-btn");
+  if (changeBtn) { changeBtn.classList.add("hidden"); }
+  const body = gate.querySelector(".gate-body");
+  if (body) body.classList.remove("open");
+  gate.querySelectorAll(".choice.selected").forEach((b) => b.classList.remove("selected"));
+}
+
+function getAnswerLabel(btn) {
+  if (btn.dataset.type) {
+    return { replication: "Replication", reproduction: "Reproduction", not_validation: "Neither" }[btn.dataset.type] || btn.dataset.type;
+  }
+  if (btn.dataset.original) {
+    return { correct: "Correct match", wrong: "Wrong paper", unsure: "Can't tell" }[btn.dataset.original] || btn.dataset.original;
+  }
+  if (btn.dataset.outcome) {
+    return { correct: "Looks right", wrong: "Mischaracterised", unsure: "Can't tell" }[btn.dataset.outcome] || btn.dataset.outcome;
+  }
+  return "";
+}
+
+function getAnswerClass(btn) {
+  if (btn.classList.contains("success")) return "success";
+  if (btn.classList.contains("danger")) return "danger";
+  if (btn.classList.contains("warn")) return "warn";
+  return "";
 }
 
 function updateSubmitState(pairBody) {
