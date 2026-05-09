@@ -764,7 +764,7 @@ body:has(.banner:not(.hidden)) .pair-header { top: calc(var(--header-h) + 2.6rem
 }
 .abstract-block { display: flex; flex-direction: column; gap: 0.4rem; max-width: 65ch; }
 .abstract {
-  font-size: clamp(0.75rem, 1.2vw, 0.9rem);
+  font-size: 0.8rem;
   line-height: 1.55;
   max-height: 4.65em;
   overflow: hidden;
