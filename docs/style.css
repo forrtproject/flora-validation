@@ -764,18 +764,18 @@ body:has(.banner:not(.hidden)) .pair-header { top: calc(var(--header-h) + 2.6rem
 }
 .abstract-block { display: flex; flex-direction: column; gap: 0.4rem; max-width: 65ch; }
 .abstract {
-  font-size: 0.88rem;
-  line-height: 1.6;
-  max-height: 4.8em;
+  font-size: clamp(0.75rem, 1.2vw, 0.9rem);
+  line-height: 1.55;
+  max-height: 4.65em;
   overflow: hidden;
-  padding: 0.1rem 0.85rem 0.1rem 1rem;
+  padding: 0.1rem 0.75rem 0.1rem 0.85rem;
   border-left: 2px solid var(--ink);
   color: var(--ink-soft);
   position: relative;
   transition: max-height 0.35s ease;
 }
 .abstract.expanded {
-  max-height: 500px;
+  max-height: 20vh;
   overflow-y: auto;
 }
 .abstract:not(.expanded)::after {
@@ -787,8 +787,8 @@ body:has(.banner:not(.hidden)) .pair-header { top: calc(var(--header-h) + 2.6rem
   pointer-events: none;
 }
 .abstract.muted-empty { color: var(--muted); font-style: italic; border-left-color: var(--rule); }
-.abstract.expanded::-webkit-scrollbar { width: 4px; }
-.abstract.expanded::-webkit-scrollbar-thumb { background: var(--rule); }
+.abstract.expanded::-webkit-scrollbar { width: 3px; }
+.abstract.expanded::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 999px; }
 .abstract-toggle {
   font-size: 0.68rem;
   letter-spacing: 0.06em;
@@ -850,17 +850,17 @@ body:has(.banner:not(.hidden)) .pair-header { top: calc(var(--header-h) + 2.6rem
 
 /* Gates */
 .gate {
-  margin-top: 2rem;
-  padding-top: 1.5rem;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
   border-top: 1px solid var(--rule);
 }
-.gate:first-of-type { margin-top: 0.75rem; padding-top: 0.5rem; border-top: none; }
+.gate:first-of-type { margin-top: 0.5rem; padding-top: 0.25rem; border-top: none; }
 .gate h3 {
   font-family: 'Fraunces', Georgia, serif;
   font-weight: 400;
-  font-size: 1.5rem;
+  font-size: clamp(1rem, 1.8vw, 1.35rem);
   letter-spacing: -0.01em;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.3rem;
   display: flex;
   align-items: baseline;
   gap: 0.6rem;
@@ -869,13 +869,13 @@ body:has(.banner:not(.hidden)) .pair-header { top: calc(var(--header-h) + 2.6rem
   font-style: italic;
   color: var(--accent);
   font-weight: 400;
-  font-size: 1.05rem;
+  font-size: 0.9rem;
   font-feature-settings: 'lnum';
 }
 .gate .question {
   color: var(--muted);
-  margin-bottom: 1.25rem;
-  font-size: 1rem;
+  margin-bottom: 1rem;
+  font-size: clamp(0.82rem, 1.3vw, 1rem);
   max-width: 55ch;
   font-family: 'Fraunces', Georgia, serif;
   font-style: italic;

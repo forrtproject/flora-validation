@@ -511,10 +511,7 @@ function renderPairInto(container, p, { onboarding, judgeCount }) {
   container.innerHTML = `
     <div class="pair-header">
       <div class="pair-meta">
-        <span class="meta-item">id <b>${escapeHtml(String(p.pair_id).slice(0, 8))}</b></span>
-        ${onboarding
-          ? `<span class="meta-item onboarding-tag">onboarding</span>`
-          : `<span class="meta-item">${judgeCount} other coder${judgeCount === 1 ? "" : "s"}</span>`}
+${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
         ${onboarding ? "" : `<button class="skip-btn" id="skip-btn">Skip — broken / unclear</button>`}
       </div>
 
@@ -849,8 +846,7 @@ function renderHardPair(container, p) {
   container.innerHTML = `
     <div class="pair-header">
       <div class="pair-meta">
-        <span class="meta-item">id <b>${escapeHtml(String(p.pair_id).slice(0, 8))}</b></span>
-        <span class="meta-item hard-tag">hard mode · 25 pts</span>
+<span class="meta-item hard-tag">hard mode · 25 pts</span>
         <button class="skip-btn" id="skip-btn">Skip</button>
       </div>
       <h2>${escapeHtml(p.title_r || "(untitled)")}</h2>
