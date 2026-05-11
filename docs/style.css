@@ -33,23 +33,22 @@ body {
 .banner {
   background: var(--accent);
   color: var(--bg);
-  padding: 0.45rem 1.4rem;
+  padding: clamp(0.3rem, 0.5vw, 0.45rem) clamp(0.8rem, 1.5vw, 1.4rem);
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.7rem;
+  font-size: clamp(0.5rem, 0.65vw, 0.7rem);
   text-transform: uppercase;
   letter-spacing: 0.16em;
   text-align: center;
   border-radius: 999px;
-  position: sticky;
-  top: 0.6rem;
-  z-index: 20;
-  width: fit-content;
-  max-width: calc(100% - 3rem);
-  margin: 0.6rem auto 0;
+  width: clamp(200px, 43vw, 660px);
+  max-width: calc(100% - 4rem);
   box-shadow: 0 2px 14px rgba(181,70,20,0.25);
+  position: absolute;
+  top: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
 }
 .banner strong { color: white; font-weight: 600; margin-right: 0.4rem; letter-spacing: 0.08em; }
-body:has(.banner:not(.hidden)) header { top: 2.6rem; }
 
 a {
   color: var(--accent);
@@ -203,6 +202,7 @@ a:hover { text-decoration-thickness: 2px; }
 /* ---- Right form panel ---- */
 .login-right {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 4rem 5rem;
@@ -218,8 +218,7 @@ a:hover { text-decoration-thickness: 2px; }
   overflow: hidden;
 }
 .login-card {
-  width: 100%;
-  max-width: 460px;
+  width: clamp(300px, 45vw, 700px);
   animation: fadeUp 0.55s 0.1s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 @keyframes fadeUp {
@@ -261,7 +260,7 @@ a:hover { text-decoration-thickness: 2px; }
 
 .login-circle {
   position: relative;
-  width: min(100%, 440px);
+  width: 100%;
   margin: 1.5rem auto 0;
   border-radius: 2.5rem;
   background: rgba(30, 28, 26, 0.96);
@@ -271,7 +270,7 @@ a:hover { text-decoration-thickness: 2px; }
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
-  padding: 2.2rem 2.5rem;
+  padding: 2.75rem 3rem;
   overflow: hidden;
   animation: fadeUp 0.55s 0.1s cubic-bezier(0.4, 0, 0.2, 1) both,
              orb-pulse 4.5s 0.7s ease-in-out infinite;

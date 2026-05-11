@@ -12,10 +12,6 @@
 </head>
 <body>
 
-<div id="banner" class="banner hidden">
-  <strong>Work in progress</strong> · prototype only — your judgements live in this browser and disappear when you clear it
-</div>
-
 <!-- ------------ LOGIN ------------ -->
 <div id="login-screen" class="screen">
 
@@ -32,12 +28,15 @@
   </div>
 
   <div class="login-right">
+    <div id="banner" class="banner">
+      <strong>Work in progress</strong> · prototype only — your judgements live in this browser and disappear when you clear it
+    </div>
     <div class="login-card">
-      <p class="login-intro">Choose a handle and generate your personal code to begin.</p>
+      <p class="login-intro">Choose a username and generate your personal code to begin.</p>
 
       <div class="login-circle">
         <div class="circle-handle">
-          <label for="handle-input">Handle</label>
+          <label for="handle-input">Username</label>
           <input id="handle-input" placeholder="your.name" autocomplete="off" autofocus>
         </div>
 

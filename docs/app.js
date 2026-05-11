@@ -39,7 +39,6 @@ async function detectMode() {
     }
   } catch {}
   API_MODE = "static";
-  $("#banner").classList.remove("hidden");
   const [normal, hard, onb] = await Promise.all([
     fetch("./pairs.json").then((r) => r.json()),
     fetch("./hard_pairs.json").then((r) => r.json()).catch(() => []),
