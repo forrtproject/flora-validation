@@ -383,6 +383,14 @@ function evaluateOnboarding(pair, j) {
 
 function showOnboardingFeedback(pair, errors) {
   const correct = errors.length === 0;
+
+  // Keep the abstract header visible but collapse the interactive sections
+  const card = $("#onb-card");
+  [".pair-body", ".note-section", ".actions"].forEach(sel => {
+    const el = card.querySelector(sel);
+    if (el) el.classList.add("hidden");
+  });
+
   const fb = $("#onb-feedback");
   fb.classList.remove("hidden");
   fb.innerHTML = `
@@ -407,6 +415,7 @@ function showOnboardingFeedback(pair, errors) {
       </div>
     </div>
   `;
+  fb.scrollIntoView({ behavior: "smooth", block: "nearest" });
   $("#onb-next-btn").onclick = () => {
     state.onboardingResults.push({ correct, idx: state.onboardingIdx });
     state.onboardingIdx += 1;
@@ -599,7 +608,14 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
         </div>
       </div>
 
-      <textarea class="comment hidden" placeholder="Optional notes / why? (+3 pts)"></textarea>
+      <div class="note-section">
+        <button class="note-toggle" id="note-toggle-btn" type="button">
+          <span class="note-toggle-icon">＋</span> Add a note <span class="note-pts">(+3 pts)</span>
+        </button>
+        <div class="note-body hidden">
+          <textarea class="comment" placeholder="Optional notes / why?"></textarea>
+        </div>
+      </div>
 
       <div class="actions">
         <span class="shortcut-hint">↵ submit · ⌘↵ from notes</span>
@@ -611,6 +627,14 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
   container.querySelectorAll(".choice").forEach((b) => (b.onclick = () => onChoice(b)));
   container.querySelector(".comment").oninput = (e) => (state.judgement.comment = e.target.value);
   container.querySelector("#submit-btn").onclick = onboarding ? submitOnboarding : submitJudgement;
+
+  const noteToggleBtn = container.querySelector("#note-toggle-btn");
+  const noteBody = container.querySelector(".note-body");
+  noteToggleBtn.addEventListener("click", () => {
+    const open = noteBody.classList.toggle("hidden") === false;
+    noteToggleBtn.querySelector(".note-toggle-icon").textContent = open ? "−" : "＋";
+    if (open) container.querySelector(".comment").focus();
+  });
 
   if (!onboarding) {
     container.querySelector("#skip-btn").onclick = onSkip;
