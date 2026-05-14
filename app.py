@@ -1,4 +1,3 @@
-import csv
 import json
 import os
 import re
@@ -9,26 +8,33 @@ from pathlib import Path
 import psycopg2
 import psycopg2.extras
 import psycopg2.errors
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-
-load_dotenv()
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+load_dotenv()
+
 ROOT = Path(__file__).parent
-CSV_PATH = ROOT / "extracted.csv"
+SCHEMA_PATH = ROOT / "db_schema.sql"
 ONBOARDING_PATH = ROOT / "onboarding.json"
 OA_CACHE_PATH = ROOT / "oa_cache.json"
-
-VALID_TYPES = {"replication", "reproduction", "not_validation", "skip"}
-CONFIRMING_TYPES = {"replication", "reproduction"}
+DATA_DIR = ROOT / "data"
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+HANDLE_RE = re.compile(r"^[A-Za-z0-9._\-]{2,32}$")
+
+VALID_CHECKS = {"correct", "incorrect"}
 
 app = FastAPI(title="Flora Validator")
 
+
+# ---------------------------------------------------------------------------
+# Database helpers
+# ---------------------------------------------------------------------------
 
 @contextmanager
 def db():
@@ -45,84 +51,29 @@ def db():
 
 
 def init_db():
+    """Apply db_schema.sql (idempotent) and seed from extracted_latest.csv if DB is empty."""
     with db() as cur:
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS pairs (
-                pair_id TEXT PRIMARY KEY,
-                data_json TEXT NOT NULL,
-                is_hard INTEGER NOT NULL DEFAULT 0
-            )
-        """)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS coders (
-                id SERIAL PRIMARY KEY,
-                code TEXT UNIQUE,
-                email TEXT UNIQUE,
-                handle TEXT UNIQUE NOT NULL,
-                created_at TEXT NOT NULL,
-                onboarded_at TEXT
-            )
-        """)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS judgements (
-                id SERIAL PRIMARY KEY,
-                coder_id INTEGER NOT NULL,
-                pair_id TEXT NOT NULL,
-                type_judgement TEXT NOT NULL,
-                original_judgement TEXT,
-                outcome_judgement TEXT,
-                comment TEXT,
-                edited_abstract TEXT,
-                edited_outcome_quote TEXT,
-                hard_mode INTEGER NOT NULL DEFAULT 0,
-                hard_mode_entry_json TEXT,
-                points INTEGER NOT NULL,
-                created_at TEXT NOT NULL,
-                UNIQUE(coder_id, pair_id)
-            )
-        """)
-        cur.execute("SELECT COUNT(*) AS n FROM pairs")
+        cur.execute(SCHEMA_PATH.read_text())
+
+    # Seed unvalidated table from latest CSV if it has never been loaded
+    with db() as cur:
+        cur.execute("SELECT COUNT(*) AS n FROM unvalidated")
         if cur.fetchone()["n"] == 0:
-            with open(CSV_PATH, newline="", encoding="utf-8") as f:
-                for row in csv.DictReader(f):
-                    is_hard = 0 if (row.get("abstract_r") or "").strip() else 1
-                    cur.execute(
-                        "INSERT INTO pairs(pair_id, data_json, is_hard) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
-                        (row["pair_id"], json.dumps(row), is_hard),
-                    )
+            latest_csv = DATA_DIR / "extracted_latest.csv"
+            if latest_csv.exists():
+                import subprocess, sys
+                subprocess.run(
+                    [sys.executable, str(ROOT / "csv_to_db.py"), "--input", str(latest_csv)],
+                    check=False,
+                )
 
 
 init_db()
 
 
-def migrate_db():
-    with db() as cur:
-        cur.execute("""
-            SELECT column_name FROM information_schema.columns
-            WHERE table_name = 'coders' AND column_name = 'email'
-        """)
-        if not cur.fetchone():
-            cur.execute("ALTER TABLE coders ADD COLUMN email TEXT")
-            cur.execute("""
-                CREATE UNIQUE INDEX coders_email_key ON coders(email)
-                WHERE email IS NOT NULL
-            """)
-        cur.execute("""
-            SELECT is_nullable FROM information_schema.columns
-            WHERE table_name = 'coders' AND column_name = 'code'
-        """)
-        row = cur.fetchone()
-        if row and row["is_nullable"] == "NO":
-            cur.execute("ALTER TABLE coders ALTER COLUMN code DROP NOT NULL")
-
-
-migrate_db()
-
-
-def load_onboarding():
-    with open(ONBOARDING_PATH) as f:
-        return json.load(f)["pairs"]
-
+# ---------------------------------------------------------------------------
+# OpenAlex URL cache
+# ---------------------------------------------------------------------------
 
 _OA_CACHE: dict[str, dict] | None = None
 
@@ -139,11 +90,21 @@ def oa_url_for(doi: str | None) -> str | None:
     return (_OA_CACHE.get(doi.strip()) or {}).get("oa_url")
 
 
-def with_oa(pair: dict) -> dict:
+def _enrich_pair(pair: dict) -> dict:
+    """Add OA URLs and legacy field aliases for frontend compatibility."""
+    pair = dict(pair)
     pair["oa_url_r"] = oa_url_for(pair.get("doi_r"))
     pair["oa_url_o"] = oa_url_for(pair.get("doi_o"))
+    # Aliases: frontend still uses title_r / title_o / outcome_phrase
+    pair.setdefault("title_r", pair.get("study_r", ""))
+    pair.setdefault("title_o", pair.get("study_o", ""))
+    pair.setdefault("outcome_phrase", pair.get("outcome_quote", ""))
     return pair
 
+
+# ---------------------------------------------------------------------------
+# Pydantic models
+# ---------------------------------------------------------------------------
 
 class LoginRequest(BaseModel):
     handle: str
@@ -152,60 +113,56 @@ class LoginRequest(BaseModel):
 
 
 class JudgeRequest(BaseModel):
+    coder_id: int                       # maps to validators.id
+    pair_id: str                        # looks up unvalidated.pair_id
+    type_check: str                     # "correct" | "incorrect"
+    original_check: str                 # "correct" | "incorrect"
+    outcome_check: str                  # "correct" | "incorrect"
+    corrected_doi_o: str | None = None
+    corrected_study_o: str | None = None
+    corrected_outcome: str | None = None
+    corrected_type: str | None = None
+    validator_notes: str | None = None
+
+
+class OnboardingComplete(BaseModel):
     coder_id: int
-    pair_id: str
-    type_judgement: str
-    original_judgement: str | None = None
-    outcome_judgement: str | None = None
-    comment: str | None = None
-    edited_abstract: str | None = None
-    edited_outcome_quote: str | None = None
-    hard_mode: bool = False
-    hard_mode_entry: dict | None = None
 
 
-HANDLE_RE = re.compile(r"^[A-Za-z0-9._\-]{2,32}$")
+# ---------------------------------------------------------------------------
+# Business logic
+# ---------------------------------------------------------------------------
 
-
-def points_for(req: JudgeRequest) -> int:
-    if req.type_judgement == "skip":
-        return 0
-    if req.hard_mode:
-        pts = 25
-        if req.comment and req.comment.strip():
-            pts += 3
-        return pts
-    if req.type_judgement == "not_validation":
-        return 10
-    pts = 10
-    if req.original_judgement:
-        pts += 5
-    if req.outcome_judgement:
-        pts += 5
-    if req.comment and req.comment.strip():
-        pts += 3
-    if (req.edited_abstract and req.edited_abstract.strip()) or (
-        req.edited_outcome_quote and req.edited_outcome_quote.strip()
-    ):
+def _points_for(req: JudgeRequest, vote_score: int) -> int:
+    """Calculate points for a submission. Base = validator's vote_score."""
+    pts = vote_score
+    if req.original_check == "correct":
         pts += 2
+    if req.outcome_check == "correct":
+        pts += 2
+    if req.validator_notes and req.validator_notes.strip():
+        pts += 1
     return pts
 
 
-def rank_for(cur, points: int) -> int:
+def _rank_for(cur, validator_id: int) -> int:
+    """Return 1-based rank among all validators by total_points."""
     cur.execute(
-        """
-        SELECT COUNT(*) + 1 AS rank FROM (
-            SELECT coder_id
-            FROM judgements
-            WHERE type_judgement != 'skip'
-            GROUP BY coder_id
-            HAVING SUM(points) > %s
-        ) sub
-        """,
-        (points,),
+        "SELECT total_points FROM validators WHERE id = %s",
+        (validator_id,),
+    )
+    row = cur.fetchone()
+    my_points = row["total_points"] if row else 0
+    cur.execute(
+        "SELECT COUNT(*) + 1 AS rank FROM validators WHERE total_points > %s",
+        (my_points,),
     )
     return cur.fetchone()["rank"]
 
+
+# ---------------------------------------------------------------------------
+# Login / onboarding endpoints
+# ---------------------------------------------------------------------------
 
 @app.post("/api/login")
 def login(req: LoginRequest):
@@ -230,15 +187,16 @@ def login(req: LoginRequest):
     with db() as cur:
         if use_email:
             cur.execute(
-                "SELECT id, code, email, handle, onboarded_at FROM coders WHERE email = %s",
+                "SELECT id, code, email, handle, onboarded_at FROM validators WHERE email = %s",
                 (email,),
             )
         else:
             cur.execute(
-                "SELECT id, code, email, handle, onboarded_at FROM coders WHERE code = %s",
+                "SELECT id, code, email, handle, onboarded_at FROM validators WHERE code = %s",
                 (code,),
             )
         existing = cur.fetchone()
+
         if existing:
             if existing["handle"] != handle:
                 method = "email" if use_email else "code"
@@ -253,18 +211,20 @@ def login(req: LoginRequest):
                 "handle": existing["handle"],
                 "onboarded": bool(existing["onboarded_at"]),
             }
-        cur.execute("SELECT 1 FROM coders WHERE handle = %s", (handle,))
+
+        cur.execute("SELECT 1 FROM validators WHERE handle = %s", (handle,))
         if cur.fetchone():
             raise HTTPException(400, "That handle is already taken.")
+
         if use_email:
             cur.execute(
-                "INSERT INTO coders(email, handle, created_at) VALUES (%s, %s, %s) RETURNING id",
-                (email, handle, datetime.now(timezone.utc).isoformat()),
+                "INSERT INTO validators(email, handle) VALUES (%s, %s) RETURNING id",
+                (email, handle),
             )
         else:
             cur.execute(
-                "INSERT INTO coders(code, handle, created_at) VALUES (%s, %s, %s) RETURNING id",
-                (code, handle, datetime.now(timezone.utc).isoformat()),
+                "INSERT INTO validators(code, handle) VALUES (%s, %s) RETURNING id",
+                (code, handle),
             )
         new_id = cur.fetchone()["id"]
         return {
@@ -276,40 +236,125 @@ def login(req: LoginRequest):
         }
 
 
+@app.get("/api/onboarding")
+def onboarding_pairs():
+    with open(ONBOARDING_PATH) as f:
+        pairs = json.load(f)["pairs"]
+    return {"pairs": [_enrich_pair(p) for p in pairs]}
+
+
+@app.post("/api/onboarding/complete")
+def onboarding_complete(req: OnboardingComplete):
+    with db() as cur:
+        cur.execute(
+            "UPDATE validators SET onboarded_at = NOW() WHERE id = %s AND onboarded_at IS NULL",
+            (req.coder_id,),
+        )
+        if cur.rowcount == 0:
+            cur.execute("SELECT onboarded_at FROM validators WHERE id = %s", (req.coder_id,))
+            if not cur.fetchone():
+                raise HTTPException(404, "Validator not found")
+    return {"onboarded": True}
+
+
+# ---------------------------------------------------------------------------
+# Validation workflow endpoints
+# ---------------------------------------------------------------------------
+
 @app.get("/api/next-pair")
 def next_pair(coder_id: int, mode: str = "normal"):
     if mode not in {"normal", "hard"}:
         raise HTTPException(400, "mode must be normal or hard")
-    is_hard = 1 if mode == "hard" else 0
+
     with db() as cur:
+        # Count how many the validator has already completed
         cur.execute(
             """
-            SELECT p.pair_id, p.data_json,
-                   (SELECT COUNT(*) FROM judgements j2 WHERE j2.pair_id = p.pair_id) AS judge_count
-            FROM pairs p
-            WHERE p.is_hard = %s
-              AND p.pair_id NOT IN (SELECT pair_id FROM judgements WHERE coder_id = %s)
-            ORDER BY judge_count ASC, RANDOM()
+            SELECT COUNT(*) AS done
+            FROM validation_queue
+            WHERE validator_id = %s
+              AND is_validated = TRUE
+              AND validator_slot IN ('human_1', 'human_2')
+            """,
+            (coder_id,),
+        )
+        done = cur.fetchone()["done"]
+
+        cur.execute(
+            "SELECT COUNT(*) AS total FROM unvalidated WHERE validation_status != 'validated'"
+        )
+        total = cur.fetchone()["total"]
+
+        # Find a record that:
+        # 1. Is not yet fully validated
+        # 2. This validator has not already been assigned to
+        # 3. Has a free human slot
+        cur.execute(
+            """
+            SELECT u.record_id, u.pair_id,
+                   u.doi_r, u.study_r, u.year_r, u.url_r, u.ref_r, u.abstract_r,
+                   u.doi_o, u.study_o, u.year_o, u.url_o, u.ref_o,
+                   u.type, u.outcome, u.outcome_quote, u.out_quote_source,
+                   rm.authors_r, rm.authors_o, rm.journal_r, rm.openalex_id_r,
+                   (SELECT COUNT(*) FROM validation_queue vq2
+                    WHERE vq2.record_id = u.record_id AND vq2.is_validated = TRUE
+                   ) AS judge_count
+            FROM unvalidated u
+            LEFT JOIN record_metadata rm ON rm.record_id = u.record_id
+            WHERE u.validation_status IN ('unvalidated', 'validation_inprogress')
+              AND u.record_id NOT IN (
+                  SELECT record_id FROM validation_queue WHERE validator_id = %s
+              )
+              AND EXISTS (
+                  SELECT 1 FROM validation_queue vq
+                  WHERE vq.record_id = u.record_id
+                    AND vq.validator_slot IN ('human_1', 'human_2')
+                    AND vq.validator_id IS NULL
+              )
+            ORDER BY judge_count DESC, RANDOM()
             LIMIT 1
             """,
-            (is_hard, coder_id),
+            (coder_id,),
         )
         row = cur.fetchone()
-        cur.execute("SELECT COUNT(*) AS n FROM pairs WHERE is_hard = %s", (is_hard,))
-        total = cur.fetchone()["n"]
-        cur.execute(
-            """
-            SELECT COUNT(*) AS n FROM judgements j
-            JOIN pairs p ON p.pair_id = j.pair_id
-            WHERE j.coder_id = %s AND p.is_hard = %s
-            """,
-            (coder_id, is_hard),
-        )
-        done = cur.fetchone()["n"]
+
         if not row:
             return {"pair": None, "done": done, "total": total}
+
+        record_id = row["record_id"]
+
+        # Assign this validator to the first free human slot
+        cur.execute(
+            """
+            UPDATE validation_queue
+            SET is_shown = TRUE, validator_id = %s, validator_name = (
+                SELECT handle FROM validators WHERE id = %s
+            ), shown_at = NOW()
+            WHERE queue_id = (
+                SELECT queue_id FROM validation_queue
+                WHERE record_id = %s
+                  AND validator_slot IN ('human_1', 'human_2')
+                  AND validator_id IS NULL
+                ORDER BY validator_slot
+                LIMIT 1
+            )
+            """,
+            (coder_id, coder_id, record_id),
+        )
+
+        # Update unvalidated status to inprogress
+        cur.execute(
+            """
+            UPDATE unvalidated
+            SET validation_status = 'validation_inprogress'
+            WHERE record_id = %s AND validation_status = 'unvalidated'
+            """,
+            (record_id,),
+        )
+
+        pair = _enrich_pair(dict(row))
         return {
-            "pair": with_oa(json.loads(row["data_json"])),
+            "pair": pair,
             "judge_count": row["judge_count"],
             "done": done,
             "total": total,
@@ -318,69 +363,166 @@ def next_pair(coder_id: int, mode: str = "normal"):
 
 @app.post("/api/judge")
 def judge(req: JudgeRequest):
-    if req.type_judgement not in VALID_TYPES:
-        raise HTTPException(400, "Invalid type judgement")
-    pts = points_for(req)
+    if req.type_check not in VALID_CHECKS:
+        raise HTTPException(400, "type_check must be 'correct' or 'incorrect'")
+    if req.original_check not in VALID_CHECKS:
+        raise HTTPException(400, "original_check must be 'correct' or 'incorrect'")
+    if req.outcome_check not in VALID_CHECKS:
+        raise HTTPException(400, "outcome_check must be 'correct' or 'incorrect'")
+
     with db() as cur:
+        # Look up the record and the validator
+        cur.execute(
+            "SELECT record_id FROM unvalidated WHERE pair_id = %s",
+            (req.pair_id,),
+        )
+        rec = cur.fetchone()
+        if not rec:
+            raise HTTPException(404, f"pair_id '{req.pair_id}' not found")
+        record_id = rec["record_id"]
+
+        cur.execute(
+            "SELECT id, handle, vote_score, total_points, total_judgements FROM validators WHERE id = %s",
+            (req.coder_id,),
+        )
+        validator = cur.fetchone()
+        if not validator:
+            raise HTTPException(404, "Validator not found")
+
+        # Find the slot assigned to this validator
+        cur.execute(
+            """
+            SELECT queue_id, validator_slot
+            FROM validation_queue
+            WHERE record_id = %s
+              AND validator_id = %s
+              AND validator_slot IN ('human_1', 'human_2')
+              AND is_validated = FALSE
+            LIMIT 1
+            """,
+            (record_id, req.coder_id),
+        )
+        slot_row = cur.fetchone()
+        if not slot_row:
+            raise HTTPException(400, "No open slot found for this validator on this record")
+
+        queue_id = slot_row["queue_id"]
+        validator_slot = slot_row["validator_slot"]
+        pts = _points_for(req, validator["vote_score"])
+
+        # Record the judgment in validation_queue
         try:
             cur.execute(
                 """
-                INSERT INTO judgements(coder_id, pair_id, type_judgement,
-                    original_judgement, outcome_judgement, comment,
-                    edited_abstract, edited_outcome_quote,
-                    hard_mode, hard_mode_entry_json,
-                    points, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                UPDATE validation_queue SET
+                    is_validated = TRUE,
+                    type_check = %s,
+                    original_check = %s,
+                    outcome_check = %s,
+                    corrected_doi_o = %s,
+                    corrected_study_o = %s,
+                    corrected_outcome = %s,
+                    corrected_type = %s,
+                    validator_notes = %s,
+                    points = %s,
+                    validated_at = NOW()
+                WHERE queue_id = %s
                 """,
                 (
-                    req.coder_id,
-                    req.pair_id,
-                    req.type_judgement,
-                    req.original_judgement,
-                    req.outcome_judgement,
-                    req.comment,
-                    req.edited_abstract,
-                    req.edited_outcome_quote,
-                    1 if req.hard_mode else 0,
-                    json.dumps(req.hard_mode_entry) if req.hard_mode_entry else None,
+                    req.type_check,
+                    req.original_check,
+                    req.outcome_check,
+                    req.corrected_doi_o,
+                    req.corrected_study_o,
+                    req.corrected_outcome,
+                    req.corrected_type,
+                    req.validator_notes,
                     pts,
-                    datetime.now(timezone.utc).isoformat(),
+                    queue_id,
                 ),
             )
         except psycopg2.errors.UniqueViolation:
-            raise HTTPException(400, "Already judged this pair")
+            raise HTTPException(400, "Already judged this record")
+
+        # Build JSONB summary for unvalidated
+        summary = {
+            "validator_id": req.coder_id,
+            "validator_name": validator["handle"],
+            "vote_score": validator["vote_score"],
+            "type_check": req.type_check,
+            "original_check": req.original_check,
+            "outcome_check": req.outcome_check,
+            "corrected_doi_o": req.corrected_doi_o,
+            "corrected_study_o": req.corrected_study_o,
+            "corrected_outcome": req.corrected_outcome,
+            "corrected_type": req.corrected_type,
+            "validator_notes": req.validator_notes or "",
+            "points": pts,
+            "validated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        jsonb_col = "validator_1" if validator_slot == "human_1" else "validator_2"
         cur.execute(
-            """
-            SELECT COALESCE(SUM(points), 0) AS total FROM judgements
-            WHERE coder_id = %s AND type_judgement != 'skip'
-            """,
-            (req.coder_id,),
+            f"UPDATE unvalidated SET {jsonb_col} = %s WHERE record_id = %s",
+            (json.dumps(summary), record_id),
         )
-        total = cur.fetchone()["total"]
-        return {"points_earned": pts, "total_points": total, "rank": rank_for(cur, total)}
+
+        # Update validator totals
+        new_total = validator["total_points"] + pts
+        new_judgements = validator["total_judgements"] + 1
+        cur.execute(
+            "UPDATE validators SET total_points = %s, total_judgements = %s WHERE id = %s",
+            (new_total, new_judgements, req.coder_id),
+        )
+
+        # Trigger consensus engine now that a slot is complete
+        from consensus_engine import evaluate_consensus
+        evaluate_consensus(cur, record_id)
+
+        cur.execute("SELECT COUNT(*) + 1 AS rank FROM validators WHERE total_points > %s", (new_total,))
+        rank = cur.fetchone()["rank"]
+
+        return {"points_earned": pts, "total_points": new_total, "rank": rank}
 
 
-@app.get("/api/onboarding")
-def onboarding_pairs():
-    return {"pairs": [with_oa(p) for p in load_onboarding()]}
+# ---------------------------------------------------------------------------
+# Stats and leaderboard
+# ---------------------------------------------------------------------------
 
-
-class OnboardingComplete(BaseModel):
-    coder_id: int
-
-
-@app.post("/api/onboarding/complete")
-def onboarding_complete(req: OnboardingComplete):
+@app.get("/api/stats")
+def stats(coder_id: int):
     with db() as cur:
         cur.execute(
-            "UPDATE coders SET onboarded_at = %s WHERE id = %s AND onboarded_at IS NULL",
-            (datetime.now(timezone.utc).isoformat(), req.coder_id),
+            """
+            SELECT total_points AS points,
+                   total_judgements AS done,
+                   skipped_count AS skipped
+            FROM validators WHERE id = %s
+            """,
+            (coder_id,),
         )
-        if cur.rowcount == 0:
-            cur.execute("SELECT onboarded_at FROM coders WHERE id = %s", (req.coder_id,))
-            if not cur.fetchone():
-                raise HTTPException(404, "Coder not found")
-        return {"onboarded": True}
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Validator not found")
+
+        cur.execute(
+            "SELECT COUNT(*) AS total FROM unvalidated WHERE validation_status != 'validated'"
+        )
+        total = cur.fetchone()["total"]
+
+        cur.execute(
+            "SELECT COUNT(*) + 1 AS rank FROM validators WHERE total_points > %s",
+            (row["points"],),
+        )
+        rank = cur.fetchone()["rank"]
+
+        return {
+            "done": row["done"],
+            "points": row["points"],
+            "skipped": row["skipped"],
+            "total": total,
+            "rank": rank,
+        }
 
 
 @app.get("/api/leaderboard")
@@ -388,46 +530,33 @@ def leaderboard():
     with db() as cur:
         cur.execute(
             """
-            SELECT c.handle AS name,
-                   COALESCE(SUM(CASE WHEN j.type_judgement != 'skip' THEN j.points ELSE 0 END), 0) AS points,
-                   SUM(CASE WHEN j.type_judgement != 'skip' THEN 1 ELSE 0 END) AS pairs
-            FROM coders c
-            LEFT JOIN judgements j ON j.coder_id = c.id
-            GROUP BY c.id, c.handle
-            ORDER BY points DESC, pairs DESC, c.handle ASC
+            SELECT handle AS name,
+                   total_points AS points,
+                   total_judgements AS pairs
+            FROM validators
+            ORDER BY total_points DESC, total_judgements DESC, handle ASC
             """
         )
         return [dict(r) for r in cur.fetchall()]
 
 
-@app.get("/api/stats")
-def stats(coder_id: int):
-    with db() as cur:
-        cur.execute(
-            """
-            SELECT
-                COUNT(CASE WHEN type_judgement != 'skip' THEN 1 END) AS done,
-                COALESCE(SUM(CASE WHEN type_judgement != 'skip' THEN points ELSE 0 END), 0) AS points,
-                COUNT(CASE WHEN type_judgement = 'skip' THEN 1 END) AS skipped
-            FROM judgements WHERE coder_id = %s
-            """,
-            (coder_id,),
-        )
-        row = cur.fetchone()
-        cur.execute("SELECT COUNT(*) AS n FROM pairs WHERE is_hard = 0")
-        normal_total = cur.fetchone()["n"]
-        cur.execute("SELECT COUNT(*) AS n FROM pairs WHERE is_hard = 1")
-        hard_total = cur.fetchone()["n"]
-        return {
-            "done": row["done"],
-            "points": row["points"],
-            "skipped": row["skipped"],
-            "total": normal_total + hard_total,
-            "normal_total": normal_total,
-            "hard_total": hard_total,
-            "rank": rank_for(cur, row["points"]),
-        }
+# ---------------------------------------------------------------------------
+# Nightly CSV sync scheduler
+# ---------------------------------------------------------------------------
 
+def _start_scheduler() -> None:
+    from sync_csv import sync_once
+    scheduler = BackgroundScheduler(timezone="UTC")
+    scheduler.add_job(sync_once, CronTrigger(hour=2, minute=0))
+    scheduler.start()
+
+
+_start_scheduler()
+
+
+# ---------------------------------------------------------------------------
+# Static files (frontend)
+# ---------------------------------------------------------------------------
 
 DOCS = ROOT / "docs"
 app.mount("/", StaticFiles(directory=str(DOCS), html=True), name="docs")
