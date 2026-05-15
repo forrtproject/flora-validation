@@ -103,7 +103,7 @@ def _build_metadata_row(record_id: str, pair_id: str, row: pd.Series) -> dict:
     }
 
 
-def _insert_unvalidated(cur, row: dict) -> None:
+def _insert_unvalidated(cur, row: dict) -> bool:
     cur.execute(
         """
         INSERT INTO unvalidated (
@@ -117,9 +117,11 @@ def _insert_unvalidated(cur, row: dict) -> None:
             %(doi_o)s, %(study_o)s, %(year_o)s, %(url_o)s, %(ref_o)s,
             %(type)s, %(outcome)s, %(outcome_quote)s, %(out_quote_source)s, %(validation_status)s
         )
+        ON CONFLICT (pair_id) DO NOTHING
         """,
         row,
     )
+    return cur.rowcount > 0
 
 
 def _insert_metadata(cur, row: dict) -> None:
@@ -215,13 +217,14 @@ def run_import(csv_path: Path, dry_run: bool = False) -> None:
 
                     record_id = str(uuid.uuid4())
 
-                    _insert_unvalidated(cur, _build_unvalidated_row(record_id, pair_id, row))
-                    _insert_metadata(cur, _build_metadata_row(record_id, pair_id, row))
-                    _insert_queue_slots(cur, record_id)
-
-                    inserted += 1
-                    if inserted % 10 == 0:
-                        print(f"  … imported {inserted} records")
+                    if _insert_unvalidated(cur, _build_unvalidated_row(record_id, pair_id, row)):
+                        _insert_metadata(cur, _build_metadata_row(record_id, pair_id, row))
+                        _insert_queue_slots(cur, record_id)
+                        inserted += 1
+                        if inserted % 10 == 0:
+                            print(f"  … imported {inserted} records")
+                    else:
+                        skipped_dup += 1
 
         print(f"\nDone. Inserted: {inserted}  |  Skipped (already in DB): {skipped_dup}")
     finally:
