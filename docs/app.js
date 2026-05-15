@@ -54,7 +54,15 @@ async function api(path, method = "GET", body = null) {
   const res = await fetch("/api" + path, opts);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || res.statusText);
+    let msg = res.statusText;
+    if (err.detail) {
+      if (Array.isArray(err.detail)) {
+        msg = err.detail.map((e) => e.msg || JSON.stringify(e)).join("; ");
+      } else {
+        msg = String(err.detail);
+      }
+    }
+    throw new Error(msg);
   }
   return res.json();
 }
@@ -155,6 +163,19 @@ async function staticApi(path, method, body) {
       .filter((j) => j.coder_id === body.coder_id && j.type_judgement !== "skip")
       .reduce((a, b) => a + b.points, 0);
     return { points_earned: points, total_points: totalPts, rank: staticRank(totalPts) };
+  }
+
+  if (route === "/skip") {
+    const judgements = readJSON(STORAGE.JUDGEMENTS, []);
+    judgements.push({
+      coder_id: body.coder_id,
+      pair_id: body.pair_id,
+      type_judgement: "skip",
+      points: 0,
+      created_at: new Date().toISOString(),
+    });
+    writeJSON(STORAGE.JUDGEMENTS, judgements);
+    return { skipped: true };
   }
 
   if (route === "/leaderboard") {
@@ -516,6 +537,29 @@ function renderPairInto(container, p, { onboarding, judgeCount }) {
   const hasQuote = p.outcome_phrase && p.outcome_phrase.trim();
   const lockIcon = (open) => `<span class="oa-lock ${open ? "open" : "gated"}" aria-label="${open ? "open access" : "gated"}">${open ? "🔓" : "🔒"}</span>`;
 
+  const pType = (p.type || "replication").toLowerCase();
+  const oppositeType = pType === "replication" ? "reproduction" : "replication";
+  const oppositeLabel = pType === "replication" ? "same data" : "different data";
+  const gate1Body = onboarding
+    ? `<p class="question">Is this paper actually validating a previous finding?</p>
+       <div class="choices">
+         <button class="choice success" data-type="replication">Replication<small>different data</small></button>
+         <button class="choice success" data-type="reproduction">Reproduction<small>same data</small></button>
+         <button class="choice danger" data-type="not_validation">Neither<small>not a validation</small></button>
+       </div>`
+    : `<p class="question">The system classified this as&ensp;<span class="outcome-label ${pType}">${pType}</span>&ensp;— is that correct?</p>
+       <div class="choices">
+         <button class="choice success" data-type="${pType}">✓ Correct</button>
+         <button class="choice warn" data-type="${oppositeType}">Actually ${oppositeType}<small>${oppositeLabel}</small></button>
+         <button class="choice danger" data-type="not_validation">✗ Not a validation<small>not studying replication</small></button>
+       </div>`;
+  const gate2Question = onboarding
+    ? "Does this match the paper actually being validated?"
+    : "The system identified this as the original study — is this the right paper?";
+  const gate3Question = onboarding
+    ? "Does the system's outcome judgement match the authors' actual conclusion?"
+    : "Is the extracted outcome correct? Check the quote below against the paper.";
+
   container.innerHTML = `
     <div class="pair-header">
       <div class="pair-meta">
@@ -548,12 +592,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
           <button class="gate-change-btn link-btn hidden">change ↩</button>
         </div>
         <div class="gate-body">
-          <p class="question">Is this paper actually validating a previous finding?</p>
-          <div class="choices">
-            <button class="choice success" data-type="replication">Replication<small>different data</small></button>
-            <button class="choice success" data-type="reproduction">Reproduction<small>same data</small></button>
-            <button class="choice danger" data-type="not_validation">Neither<small>not a validation</small></button>
-          </div>
+          ${gate1Body}
         </div>
       </div>
 
@@ -564,7 +603,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
           <button class="gate-change-btn link-btn hidden">change ↩</button>
         </div>
         <div class="gate-body">
-          <p class="question">Does this match the paper actually being validated?</p>
+          <p class="question">${gate2Question}</p>
           <div class="original-info">
             <div class="title">${escapeHtml(p.title_o || "(no title)")}</div>
             <div class="meta">
@@ -589,7 +628,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
           <button class="gate-change-btn link-btn hidden">change ↩</button>
         </div>
         <div class="gate-body">
-          <p class="question">Does the system's outcome judgement match the authors' actual conclusion?</p>
+          <p class="question">${gate3Question}</p>
           <div class="outcome-info">
             <span class="outcome-label ${escapeHtml(outcomeLabel)}">${escapeHtml(outcomeLabel)}</span>
             <div class="outcome-quote-wrap">
@@ -805,10 +844,9 @@ function updateSubmitState(pairBody) {
 async function onSkip() {
   if (!confirm("Skip this pair? You won't get points and it'll be re-served to others.")) return;
   try {
-    await api("/judge", "POST", {
+    await api("/skip", "POST", {
       coder_id: state.coder.coder_id,
       pair_id: state.currentPair.pair_id,
-      type_judgement: "skip",
     });
     showToast(0, "skipped");
     await refreshAll();
@@ -822,15 +860,27 @@ async function submitJudgement() {
   if (!btn || btn.disabled) return;
   btn.disabled = true;
   try {
+    const j = state.judgement;
+    const p = state.currentPair;
+    const isNotValidation = j.type === "not_validation";
+    const pType = (p.type || "").toLowerCase();
+
+    // Map gate answers → new API fields
+    const typeCheck = (!isNotValidation && j.type === pType) ? "correct" : "incorrect";
+    const correctedType = isNotValidation ? "not_validation"
+                        : (typeCheck === "incorrect" ? j.type : null);
+
     const resp = await api("/judge", "POST", {
       coder_id: state.coder.coder_id,
-      pair_id: state.currentPair.pair_id,
-      type_judgement: state.judgement.type,
-      original_judgement: state.judgement.original,
-      outcome_judgement: state.judgement.outcome,
-      comment: state.judgement.comment,
-      edited_abstract: state.judgement.edited_abstract,
-      edited_outcome_quote: state.judgement.edited_outcome_quote,
+      pair_id: p.pair_id,
+      type_check:     isNotValidation ? "incorrect" : typeCheck,
+      original_check: isNotValidation ? "incorrect" : (j.original === "correct" ? "correct" : "incorrect"),
+      outcome_check:  isNotValidation ? "incorrect" : (j.outcome  === "correct" ? "correct" : "incorrect"),
+      corrected_type:     correctedType || null,
+      corrected_doi_o:    null,
+      corrected_study_o:  null,
+      corrected_outcome:  null,
+      validator_notes:    j.comment || null,
     });
     showToast(resp.points_earned, "points");
     if (typeof confetti !== "undefined") {

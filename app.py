@@ -129,6 +129,11 @@ class OnboardingComplete(BaseModel):
     coder_id: int
 
 
+class SkipRequest(BaseModel):
+    coder_id: int
+    pair_id: str
+
+
 # ---------------------------------------------------------------------------
 # Business logic
 # ---------------------------------------------------------------------------
@@ -267,6 +272,34 @@ def next_pair(coder_id: int, mode: str = "normal"):
         raise HTTPException(400, "mode must be normal or hard")
 
     with db() as cur:
+        # Release any slots shown more than 30 minutes ago without a submission
+        cur.execute(
+            """
+            UPDATE validation_queue
+            SET validator_id = NULL, validator_name = NULL,
+                is_shown = FALSE, shown_at = NULL
+            WHERE is_validated = FALSE
+              AND is_shown = TRUE
+              AND shown_at < NOW() - INTERVAL '30 minutes'
+              AND validator_slot IN ('human_1', 'human_2')
+            """
+        )
+        if cur.rowcount:
+            # Reset unvalidated status for any records that now have no active slots
+            cur.execute(
+                """
+                UPDATE unvalidated u
+                SET validation_status = 'unvalidated'
+                WHERE validation_status = 'validation_inprogress'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM validation_queue vq
+                      WHERE vq.record_id = u.record_id
+                        AND vq.validator_id IS NOT NULL
+                        AND vq.is_validated = FALSE
+                  )
+                """
+            )
+
         # Count how many the validator has already completed
         cur.execute(
             """
@@ -483,6 +516,54 @@ def judge(req: JudgeRequest):
         rank = cur.fetchone()["rank"]
 
         return {"points_earned": pts, "total_points": new_total, "rank": rank}
+
+
+@app.post("/api/skip")
+def skip_pair(req: SkipRequest):
+    with db() as cur:
+        cur.execute("SELECT record_id FROM unvalidated WHERE pair_id = %s", (req.pair_id,))
+        rec = cur.fetchone()
+        if not rec:
+            raise HTTPException(404, f"pair_id '{req.pair_id}' not found")
+        record_id = rec["record_id"]
+
+        # Release the queue slot so another validator can claim this pair
+        cur.execute(
+            """
+            UPDATE validation_queue
+            SET validator_id = NULL, validator_name = NULL,
+                is_shown = FALSE, shown_at = NULL
+            WHERE record_id = %s
+              AND validator_id = %s
+              AND validator_slot IN ('human_1', 'human_2')
+              AND is_validated = FALSE
+            """,
+            (record_id, req.coder_id),
+        )
+
+        # If no validated slots remain, revert status to unvalidated
+        cur.execute(
+            """
+            UPDATE unvalidated
+            SET validation_status = 'unvalidated'
+            WHERE record_id = %s
+              AND validation_status = 'validation_inprogress'
+              AND NOT EXISTS (
+                  SELECT 1 FROM validation_queue
+                  WHERE record_id = %s
+                    AND validator_id IS NOT NULL
+                    AND is_validated = FALSE
+              )
+            """,
+            (record_id, record_id),
+        )
+
+        cur.execute(
+            "UPDATE validators SET skipped_count = skipped_count + 1 WHERE id = %s",
+            (req.coder_id,),
+        )
+
+    return {"skipped": True}
 
 
 # ---------------------------------------------------------------------------

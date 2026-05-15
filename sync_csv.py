@@ -22,7 +22,7 @@ load_dotenv()
 _DEFAULT_DATA_DIR = Path(__file__).parent / "data"
 
 _GITHUB_REPO = os.environ.get("GITHUB_REPO", "forrtproject/flora-extractor")
-_GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
+_GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "feature/extract")
 _CSV_FILE_PATH = "data/extracted.csv"
 
 

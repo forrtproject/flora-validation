@@ -1051,7 +1051,8 @@ body:has(.banner:not(.hidden)) .pair-header { top: calc(var(--header-h) + 2.6rem
   border: 1px solid currentColor;
   border-radius: 999px;
 }
-.outcome-label.replication, .outcome-label.success { color: var(--green); }
+.outcome-label.replication, .outcome-label.reproduction, .outcome-label.success { color: var(--green); }
+.question .outcome-label { margin-bottom: 0; vertical-align: middle; }
 .outcome-label.failed, .outcome-label.failure { color: var(--red); }
 .outcome-label.mixed { color: var(--amber); }
 .outcome-label.uninformative {
