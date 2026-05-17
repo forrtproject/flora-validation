@@ -86,31 +86,27 @@ def run_llm_validation(record: dict, context: str) -> dict:
         outcome_quote=record.get("outcome_quote") or "",
     )
 
-    last_error = None
-    for _ in range(2):
-        try:
-            raw = _call_gemini(prompt)
-            parsed = _parse_response(raw)
-            return {
-                "model": _MODEL_NAME,
-                "validated_at": datetime.now(timezone.utc).isoformat(),
-                "context": context,
-                "vote_score": _LLM_VOTE_SCORE,
-                "type_check": parsed.get("type_check", "correct"),
-                "original_check": parsed.get("original_check", "correct"),
-                "outcome_check": parsed.get("outcome_check", "correct"),
-                "corrected_outcome": parsed.get("corrected_outcome"),
-                "corrected_doi_o": parsed.get("corrected_doi_o"),
-                "corrected_type": parsed.get("corrected_type"),
-                "notes": str(parsed.get("notes") or "")[:200],
-            }
-        except Exception as exc:
-            last_error = str(exc)
-
-    return {
-        "model": _MODEL_NAME,
-        "validated_at": datetime.now(timezone.utc).isoformat(),
-        "context": context,
-        "vote_score": _LLM_VOTE_SCORE,
-        "error": last_error,
-    }
+    try:
+        raw = _call_gemini(prompt)
+        parsed = _parse_response(raw)
+        return {
+            "model": _MODEL_NAME,
+            "validated_at": datetime.now(timezone.utc).isoformat(),
+            "context": context,
+            "vote_score": _LLM_VOTE_SCORE,
+            "type_check": parsed.get("type_check", "correct"),
+            "original_check": parsed.get("original_check", "correct"),
+            "outcome_check": parsed.get("outcome_check", "correct"),
+            "corrected_outcome": parsed.get("corrected_outcome"),
+            "corrected_doi_o": parsed.get("corrected_doi_o"),
+            "corrected_type": parsed.get("corrected_type"),
+            "notes": str(parsed.get("notes") or "")[:200],
+        }
+    except Exception as exc:
+        return {
+            "model": _MODEL_NAME,
+            "validated_at": datetime.now(timezone.utc).isoformat(),
+            "context": context,
+            "vote_score": _LLM_VOTE_SCORE,
+            "error": str(exc),
+        }

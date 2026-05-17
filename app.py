@@ -122,6 +122,8 @@ class JudgeRequest(BaseModel):
     corrected_study_o: str | None = None
     corrected_outcome: str | None = None
     corrected_type: str | None = None
+    corrected_outcome_quote: str | None = None
+    corrected_abstract: str | None = None
     validator_notes: str | None = None
 
 
@@ -456,6 +458,8 @@ def judge(req: JudgeRequest):
                     corrected_study_o = %s,
                     corrected_outcome = %s,
                     corrected_type = %s,
+                    corrected_outcome_quote = %s,
+                    corrected_abstract = %s,
                     validator_notes = %s,
                     points = %s,
                     validated_at = NOW()
@@ -469,6 +473,8 @@ def judge(req: JudgeRequest):
                     req.corrected_study_o,
                     req.corrected_outcome,
                     req.corrected_type,
+                    req.corrected_outcome_quote,
+                    req.corrected_abstract,
                     req.validator_notes,
                     pts,
                     queue_id,
@@ -489,6 +495,8 @@ def judge(req: JudgeRequest):
             "corrected_study_o": req.corrected_study_o,
             "corrected_outcome": req.corrected_outcome,
             "corrected_type": req.corrected_type,
+            "corrected_outcome_quote": req.corrected_outcome_quote,
+            "corrected_abstract": req.corrected_abstract,
             "validator_notes": req.validator_notes or "",
             "points": pts,
             "validated_at": datetime.now(timezone.utc).isoformat(),
@@ -625,10 +633,32 @@ def leaderboard():
 # Nightly CSV sync scheduler
 # ---------------------------------------------------------------------------
 
+def _retry_tiebreakers() -> None:
+    """Re-run consensus on need_review tiebreaker records (LLM may have failed earlier)."""
+    from consensus_engine import evaluate_consensus
+    try:
+        with db() as cur:
+            cur.execute("""
+                SELECT record_id FROM unvalidated
+                WHERE validation_status = 'need_review' AND is_tiebreaker = TRUE
+            """)
+            ids = [str(r["record_id"]) for r in cur.fetchall()]
+        print(f"[retry_tiebreakers] Found {len(ids)} stuck tiebreaker record(s)")
+        for record_id in ids:
+            with db() as cur:
+                evaluate_consensus(cur, record_id)
+            print(f"[retry_tiebreakers] Re-evaluated {record_id}")
+    except Exception:
+        import traceback
+        print("[retry_tiebreakers] ERROR:")
+        traceback.print_exc()
+
+
 def _start_scheduler() -> None:
     from sync_csv import sync_once
     scheduler = BackgroundScheduler(timezone="UTC")
     scheduler.add_job(sync_once, CronTrigger(hour=2, minute=0))
+    scheduler.add_job(_retry_tiebreakers, CronTrigger(hour=12, minute=22))
     scheduler.start()
 
 

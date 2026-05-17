@@ -705,16 +705,12 @@ body.sidebar-collapsed .game-area { border-right: none; }
 
 /* ---------- Pair header (sticky) ---------- */
 .pair-header {
-  position: sticky;
-  top: 0;
   background: var(--bg);
   padding: 1rem 1.5rem 1.25rem;
   border: 1px solid var(--rule);
   border-radius: 1.5rem;
   margin-bottom: 1rem;
-  z-index: 5;
 }
-body:has(.banner:not(.hidden)) .pair-header { top: calc(var(--header-h) + 2.6rem); }
 
 .pair-meta {
   display: flex;
@@ -1527,9 +1523,20 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
     box-shadow: -8px 0 24px rgba(26, 22, 18, 0.08);
   }
   body.sidebar-open .sidebar-close { display: block; }
-  .game-area { border-right: none; }
+  .game-area { border-right: none; padding: 1.25rem 2.5rem 3rem; }
+  .brand { font-size: 1.15rem; }
+  .stat { padding: 0.35rem 0.75rem; min-width: 65px; }
+  .stat .label { font-size: 0.52rem; }
+  .stat .value { font-size: 0.82rem; }
+  .ghost-btn { padding: 0.4rem 0.65rem; font-size: 0.6rem; margin-left: 0.4rem; }
 }
 @media (max-width: 860px) {
+  .game-area { padding: 1rem 1.5rem 2.5rem; }
+  .brand { font-size: 0.95rem; }
+  .stat { padding: 0.3rem 0.55rem; min-width: 50px; }
+  .stat .label { display: none; }
+  .stat .value { font-size: 0.78rem; }
+  .ghost-btn { padding: 0.35rem 0.55rem; font-size: 0.58rem; letter-spacing: 0.08em; margin-left: 0.25rem; }
   #login-screen {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
@@ -1550,7 +1557,7 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
   }
 }
 @media (max-width: 760px) {
-  .game-area, .onboarding-area { padding: 1.5rem 1.25rem; }
+  .game-area, .onboarding-area { padding: 0.75rem 1rem 3rem; }
   .stats-bar { gap: 0; }
   .stat { padding: 0.5rem 0.7rem; min-width: auto; }
   .stat.progress { display: none; }
@@ -1566,6 +1573,8 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
   .choice { border-right: none; border-bottom: 1px solid var(--ink); }
   .choice:last-child { border-bottom: none; }
   header { padding: 0 1rem 0 1.25rem; }
-  .pair-header { padding-top: 0.5rem; }
+  .pair-header { padding: 0.6rem 1rem 0.75rem; margin-bottom: 0.5rem; }
+  .abstract.expanded { max-height: 10vh; }
+  #game-screen { padding: 0.6rem; }
   .hard-row.two-col { grid-template-columns: 1fr; }
 }

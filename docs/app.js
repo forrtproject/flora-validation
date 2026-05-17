@@ -699,8 +699,6 @@ function wireEditButtons(container, p) {
   const abstractToggleBtn = container.querySelector("#abstract-toggle-btn");
   const abstractText = container.querySelector("#abstract-text");
   if (abstractToggleBtn && abstractText) {
-    abstractText.classList.add("expanded");
-    abstractToggleBtn.textContent = "hide abstract ↑";
     abstractToggleBtn.onclick = () => {
       const expanded = abstractText.classList.toggle("expanded");
       abstractToggleBtn.textContent = expanded ? "hide abstract ↑" : "show abstract ↓";
@@ -876,11 +874,13 @@ async function submitJudgement() {
       type_check:     isNotValidation ? "incorrect" : typeCheck,
       original_check: isNotValidation ? "incorrect" : (j.original === "correct" ? "correct" : "incorrect"),
       outcome_check:  isNotValidation ? "incorrect" : (j.outcome  === "correct" ? "correct" : "incorrect"),
-      corrected_type:     correctedType || null,
-      corrected_doi_o:    null,
-      corrected_study_o:  null,
-      corrected_outcome:  null,
-      validator_notes:    j.comment || null,
+      corrected_type:          correctedType || null,
+      corrected_doi_o:         null,
+      corrected_study_o:       null,
+      corrected_outcome:       null,
+      corrected_outcome_quote: j.edited_outcome_quote || null,
+      corrected_abstract:      j.edited_abstract || null,
+      validator_notes:         j.comment || null,
     });
     showToast(resp.points_earned, "points");
     if (typeof confetti !== "undefined") {

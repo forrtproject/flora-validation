@@ -89,10 +89,12 @@ CREATE TABLE IF NOT EXISTS validation_queue (
     outcome_check       TEXT        CHECK (outcome_check  IN ('correct', 'incorrect')),
 
     -- Filled only when the corresponding check = 'incorrect'
-    corrected_doi_o     TEXT,
-    corrected_study_o   TEXT,
-    corrected_outcome   TEXT,
-    corrected_type      TEXT,
+    corrected_doi_o         TEXT,
+    corrected_study_o       TEXT,
+    corrected_outcome       TEXT,
+    corrected_type          TEXT,
+    corrected_outcome_quote TEXT,
+    corrected_abstract      TEXT,
 
     -- Extensible: {"was_unsure_original": true, "not_validation": true, …}
     additional_checks   JSONB,

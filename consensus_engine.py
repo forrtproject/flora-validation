@@ -7,6 +7,7 @@ Decision tree:
   3. checks differ → LLM tiebreaker → agrees with one human → validated, else → need_review
 """
 import json
+import random
 from datetime import datetime, timezone
 
 from llm_validator import run_llm_validation
@@ -29,13 +30,18 @@ def _llm_matches(llm: dict, human: dict) -> bool:
     return all(llm.get(f) == human.get(f) for f in _CHECK_FIELDS)
 
 
-def _resolve_final(record: dict, winner: dict) -> dict:
-    """Build final consensus values using winner's corrections, falling back to original record."""
+def _resolve_final(record: dict, winner: dict, other: dict | None = None) -> dict:
+    """Build final consensus values using winner's corrections, falling back to original record.
+    outcome_quote is picked randomly from whichever validators provided a correction."""
+    quotes = [h.get("corrected_outcome_quote") for h in [winner, other] if h and h.get("corrected_outcome_quote")]
+    abstracts = [h.get("corrected_abstract") for h in [winner, other] if h and h.get("corrected_abstract")]
     return {
         "doi_o": winner.get("corrected_doi_o") or record.get("doi_o"),
         "study_o": winner.get("corrected_study_o") or record.get("study_o"),
         "outcome": winner.get("corrected_outcome") or record.get("outcome"),
         "type": winner.get("corrected_type") or record.get("type"),
+        "outcome_quote": random.choice(quotes) if quotes else record.get("outcome_quote"),
+        "abstract_r": random.choice(abstracts) if abstracts else None,
     }
 
 
@@ -50,6 +56,9 @@ def _update_status(cur, record_id: str, status: str, is_tiebreaker: bool,
             "final_outcome = %s", "final_type = %s",
         ]
         params += [final["doi_o"], final["study_o"], final["outcome"], final["type"]]
+        if final.get("abstract_r"):
+            set_clauses.append("abstract_r = %s")
+            params.append(final["abstract_r"])
 
     if llm_summary is not None:
         set_clauses.append("llm_validator = %s")
@@ -82,7 +91,7 @@ def _insert_validated(cur, record: dict, final: dict) -> None:
             record.get("year_o"),
             final["type"],
             final["outcome"],
-            record.get("outcome_quote"),
+            final.get("outcome_quote") or record.get("outcome_quote"),
             record.get("out_quote_source"),
             datetime.now(timezone.utc).isoformat(),
         ),
@@ -139,7 +148,7 @@ def evaluate_consensus(cur, record_id: str) -> None:
     if checks_ok and corrections_ok:
         # Branch 1: full agreement — LLM sanity check (humans always win regardless)
         llm = run_llm_validation(record, context="sanity_check")
-        final = _resolve_final(record, h1)
+        final = _resolve_final(record, h1, h2)
         _update_status(cur, record_id, "validated", False, final, llm)
         _insert_validated(cur, record, final)
 
@@ -159,11 +168,11 @@ def evaluate_consensus(cur, record_id: str) -> None:
         matches_h2 = _llm_matches(llm, h2)
 
         if matches_h1 and not matches_h2:
-            final = _resolve_final(record, h1)
+            final = _resolve_final(record, h1, h2)
             _update_status(cur, record_id, "validated", True, final, llm)
             _insert_validated(cur, record, final)
         elif matches_h2 and not matches_h1:
-            final = _resolve_final(record, h2)
+            final = _resolve_final(record, h2, h1)
             _update_status(cur, record_id, "validated", True, final, llm)
             _insert_validated(cur, record, final)
         else:
