@@ -366,6 +366,7 @@ function showOnboardingPair() {
   $("#onb-feedback").classList.add("hidden");
   $("#onb-card").classList.remove("hidden");
   renderPairInto($("#onb-card"), pair, { onboarding: true, judgeCount: 0 });
+  applySplitLayout();
   updateOnbProgress();
   const header = document.querySelector(".onboarding-header");
   const y = $("#onb-card").getBoundingClientRect().top + window.scrollY - (header?.offsetHeight || 60) - 8;
@@ -407,7 +408,10 @@ function showOnboardingFeedback(pair, errors) {
 
   // Keep the abstract header visible but collapse the interactive sections
   const card = $("#onb-card");
-  [".pair-body", ".note-section", ".actions"].forEach(sel => {
+  const sectionsToHide = splitLayout
+    ? [".note-section", ".actions"]          // keep .pair-body so right panel stays filled
+    : [".pair-body", ".note-section", ".actions"];
+  sectionsToHide.forEach(sel => {
     const el = card.querySelector(sel);
     if (el) el.classList.add("hidden");
   });
@@ -468,6 +472,40 @@ $("#mode-toggle").onclick = async () => {
   await refreshStats();
 };
 
+/* ---------- Split-layout toggle ---------- */
+let splitLayout = localStorage.getItem("flora.splitLayout") === "1";
+
+function applySplitLayout() {
+  const cards = [$("#pair-card"), $("#onb-card")].filter(Boolean);
+  cards.forEach(c => c.classList.toggle("split-layout", splitLayout));
+
+  if (splitLayout) {
+    cards.forEach(c => {
+      const txt = c.querySelector("#abstract-text");
+      const btn = c.querySelector("#abstract-toggle-btn");
+      if (txt) txt.classList.add("expanded");
+      if (btn) btn.textContent = "hide abstract ↑";
+    });
+  }
+
+  const label = splitLayout ? "Column view" : "Split view";
+  [$("#layout-toggle"), $("#onb-layout-btn")].forEach(b => {
+    if (b) { b.textContent = label; b.classList.toggle("active", splitLayout); }
+  });
+}
+
+function toggleLayout() {
+  splitLayout = !splitLayout;
+  localStorage.setItem("flora.splitLayout", splitLayout ? "1" : "0");
+  applySplitLayout();
+}
+
+$("#layout-toggle").onclick   = toggleLayout;
+$("#onb-layout-btn").onclick  = toggleLayout;
+
+// Apply on startup
+applySplitLayout();
+
 $("#sidebar-toggle").onclick = () => {
   document.body.classList.toggle("sidebar-collapsed");
   const collapsed = document.body.classList.contains("sidebar-collapsed");
@@ -523,6 +561,7 @@ async function loadNextPair() {
   } else {
     renderPairInto($("#pair-card"), resp.pair, { onboarding: false, judgeCount: resp.judge_count });
   }
+  applySplitLayout();
 }
 
 /* ---------- Pair rendering (normal + onboarding) ---------- */
@@ -1091,5 +1130,6 @@ function closeFaq() {
 
 $("#login-faq-btn").onclick  = openFaq;
 $("#game-faq-btn").onclick   = openFaq;
+$("#onb-faq-btn").onclick    = openFaq;
 $("#faq-close-btn").onclick  = closeFaq;
 $("#faq-modal").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeFaq(); });

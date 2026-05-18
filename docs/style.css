@@ -596,6 +596,13 @@ header {
   min-height: var(--header-h);
   flex-shrink: 0;
 }
+.brand-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
 .brand {
   font-family: 'Fraunces', Georgia, serif;
   font-style: italic;
@@ -707,7 +714,15 @@ body.sidebar-collapsed .game-area { border-right: none; }
   background: var(--bg);
   padding: 1rem 1.5rem 1.25rem;
   border: 1px solid var(--rule);
-  border-radius: 1.5rem;
+  border-radius: 1.5rem 1.5rem 0 0;
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.pair-body {
+  border: 1px solid var(--rule);
+  border-radius: 0 0 1.5rem 1.5rem;
+  padding: 0 1.5rem 1.5rem;
   margin-bottom: 1rem;
 }
 
@@ -881,8 +896,41 @@ body.sidebar-collapsed .game-area { border-right: none; }
 .abstract-toggle:hover { background: var(--ink); color: var(--bg); text-decoration: none; }
 .original-info .meta a { white-space: nowrap; }
 
+/* ---------- Split layout ---------- */
+.card.split-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  align-items: stretch;
+}
+.card.split-layout .pair-header,
+.card.split-layout .pair-body {
+  min-width: 0;
+  box-sizing: border-box;
+  width: 100%;
+}
+.card.split-layout .pair-header {
+  border-radius: 1.5rem 0 0 1.5rem;
+  border-right: none;
+  border-bottom: 1px solid var(--rule); /* restore bottom border for side-by-side */
+  margin-bottom: 0;
+  overflow-y: auto;
+}
+.card.split-layout .pair-header .abstract.expanded {
+  max-height: none;
+  overflow: visible;
+}
+.card.split-layout .pair-body {
+  border-radius: 0 1.5rem 1.5rem 0;
+  border-top: 1px solid var(--rule); /* restore top border for side-by-side */
+  margin-bottom: 0;
+  padding: 1rem 1.5rem 1.5rem;
+  background: var(--bg);
+}
+/* In onboarding the card has no border of its own */
+#onb-card.split-layout { border: none; gap: 0; }
+
 /* ---------- Pair body ---------- */
-.pair-body { padding-top: 0.5rem; }
 
 /* Gates */
 .gate {
@@ -1255,9 +1303,9 @@ body:has(.banner:not(.hidden)) .onboarding-header { top: 2.6rem; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-height: calc(100vh - 7.5rem);
-  padding: 2rem 3rem 4rem;
+  padding: 2.5rem 3rem 4rem;
   background: var(--bg);
   background-image:
     radial-gradient(ellipse at 70% 40%, rgba(100,110,130,0.09) 0%, transparent 60%),

@@ -60,12 +60,12 @@
             </div>
             <div class="code-row">
               <span class="code-row-num">02</span>
-              <span class="code-step">The first two letters of father's first name <em>· last 2</em></span>
+              <span class="code-step">The first two letters of father's first name <em>· first 2</em></span>
               <input class="code-part" id="cp2" maxlength="2" placeholder="in" autocomplete="off">
             </div>
             <div class="code-row">
               <span class="code-row-num">03</span>
-              <span class="code-step">The first two digits of birth year <em>· last 2 digits</em></span>
+              <span class="code-step">The last two digits of birth year <em>· last 2 digits</em></span>
               <input class="code-part" id="cp3" maxlength="2" placeholder="01" autocomplete="off">
             </div>
             <div class="code-row">
@@ -97,7 +97,12 @@
 <!-- ------------ ONBOARDING ------------ -->
 <div id="onboarding-screen" class="screen hidden">
   <header class="onboarding-header">
-    <div class="brand">Flora <em>·</em> Validator</div>
+    <div class="brand-group">
+      <div class="brand">Flora <em>·</em> Validator</div>
+      <button id="onb-layout-btn" class="ghost-btn" title="Toggle split layout">Split view</button>
+      <button id="onb-faq-btn" class="ghost-btn">FAQ</button>
+      <a href="mailto:lukas.roeseler@uni-muenster.de" class="ghost-btn" style="text-decoration:none">Help</a>
+    </div>
     <div class="onboarding-progress">
       <span class="label">Onboarding</span>
       <span id="onb-counter">1 / 5</span>
@@ -127,7 +132,10 @@
 <!-- ------------ GAME ------------ -->
 <div id="game-screen" class="screen hidden">
   <header>
-    <div class="brand">Flora <em>·</em> Validator</div>
+    <div class="brand-group">
+      <div class="brand">Flora <em>·</em> Validator</div>
+      <button id="layout-toggle" class="ghost-btn" title="Toggle split layout">Split view</button>
+    </div>
     <div class="stats-bar">
       <div class="stat"><span class="label">Coder</span><span id="stat-name" class="value"></span></div>
       <div class="stat"><span class="label">Points</span><span id="stat-points" class="value">0</span></div>
