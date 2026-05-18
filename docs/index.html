@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="./style.css">
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 </head>
 <body>
 
@@ -19,20 +20,17 @@
     <div class="login-left-body">
       <div class="login-badge">FORRT · FLoRA Project</div>
       <h1>Flora<br><em>Validator</em></h1>
-      <p class="tagline">A coding game for replication studies. Three calls per paper, points for the careful eye.</p>
+      <p class="tagline">Validate replication studies. Read, judge, earn points — every call counts.</p>
     </div>
     <div class="login-left-footer">
       <span>v0.2</span>
-      <a href="https://github.com/forrtproject/fred-data/blob/main/output/flora_faq.md" target="_blank" rel="noopener">FAQ →</a>
+      <button id="login-faq-btn">FAQ →</button>
     </div>
   </div>
 
   <div class="login-right">
-    <div id="banner" class="banner">
-      <strong>Work in progress</strong> · prototype only — your judgements live in this browser and disappear when you clear it
-    </div>
     <div class="login-card">
-      <p class="login-intro">Choose a username and generate your personal code to begin.</p>
+      <p class="login-intro">Choose a username with an email or generate your personal code to begin.</p>
 
       <div class="login-circle">
         <div class="circle-handle">
@@ -57,22 +55,22 @@
           <div class="circle-codes">
             <div class="code-row">
               <span class="code-row-num">01</span>
-              <span class="code-step">city of birth <em>· first 2</em></span>
+              <span class="code-step">The first two letters of city of birth <em>· first 2</em></span>
               <input class="code-part" id="cp1" maxlength="2" placeholder="Am" autocomplete="off">
             </div>
             <div class="code-row">
               <span class="code-row-num">02</span>
-              <span class="code-step">father's first name <em>· last 2</em></span>
+              <span class="code-step">The first two letters of father's first name <em>· last 2</em></span>
               <input class="code-part" id="cp2" maxlength="2" placeholder="in" autocomplete="off">
             </div>
             <div class="code-row">
               <span class="code-row-num">03</span>
-              <span class="code-step">birth year <em>· last 2 digits</em></span>
+              <span class="code-step">The first two digits of birth year <em>· last 2 digits</em></span>
               <input class="code-part" id="cp3" maxlength="2" placeholder="01" autocomplete="off">
             </div>
             <div class="code-row">
               <span class="code-row-num">04</span>
-              <span class="code-step">current street <em>· first 2</em></span>
+              <span class="code-step">The first two letters of current street <em>· first 2</em></span>
               <input class="code-part" id="cp4" maxlength="2" placeholder="Br" autocomplete="off">
             </div>
           </div>
@@ -141,7 +139,7 @@
       </div>
       <button id="mode-toggle" class="ghost-btn" title="Switch between normal and hard mode">Normal mode</button>
       <button id="sidebar-toggle" class="ghost-btn" title="Show/hide leaderboard">Leaderboard ▸</button>
-      <a href="https://github.com/forrtproject/fred-data/blob/main/output/flora_faq.md" target="_blank" rel="noopener" class="ghost-btn" style="text-decoration:none">FAQ</a>
+      <button id="game-faq-btn" class="ghost-btn">FAQ</button>
       <button id="logout-btn" class="ghost-btn" title="Switch coder">Sign out</button>
     </div>
   </header>
@@ -177,6 +175,19 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- ------------ FAQ MODAL ------------ -->
+<div id="faq-modal" class="faq-overlay hidden" role="dialog" aria-modal="true" aria-label="FAQ">
+  <div class="faq-panel">
+    <div class="faq-panel-header">
+      <span class="faq-panel-title">FAQ</span>
+      <button id="faq-close-btn" class="faq-close" title="Close">×</button>
+    </div>
+    <div id="faq-body" class="faq-body">
+      <p class="faq-loading">Loading…</p>
+    </div>
+  </div>
+</div>
 
 <script src="./app.js"></script>
 </body>

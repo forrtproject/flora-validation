@@ -179,23 +179,22 @@ a:hover { text-decoration-thickness: 2px; }
   border-top: 1px solid var(--rule);
   animation: fadeLeft 0.7s 0.15s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
-.login-left-footer span {
+.login-left-footer span,
+.login-left-footer button {
   border: 1px solid var(--rule);
   border-radius: 999px;
   padding: 0.2rem 0.65rem;
+  background: none;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
 }
-.login-left-footer a {
-  color: var(--accent);
-  text-decoration: none;
-  letter-spacing: 0.12em;
-  border: 1px solid rgba(181,70,20,0.3);
-  border-radius: 999px;
-  padding: 0.2rem 0.75rem;
-  background: rgba(181,70,20,0.05);
-  transition: background 0.15s, color 0.15s;
-}
-.login-left-footer a:hover {
-  background: rgba(181,70,20,0.12);
+.login-left-footer button:hover {
+  border-color: var(--ink);
   color: var(--ink);
 }
 
@@ -521,7 +520,7 @@ a:hover { text-decoration-thickness: 2px; }
   border-color: var(--accent-soft);
   box-shadow: 0 0 14px rgba(181,70,20,0.5), inset 0 0 7px rgba(181,70,20,0.18);
 }
-.code-part::placeholder { color: rgba(181,70,20,0.2); }
+.code-part::placeholder { color: rgba(181,70,20,0.55); }
 
 /* Footer inside circle */
 .code-footer {
@@ -1577,4 +1576,89 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
   .abstract.expanded { max-height: 10vh; }
   #game-screen { padding: 0.6rem; }
   .hard-row.two-col { grid-template-columns: 1fr; }
+  .faq-panel { width: 100%; max-width: 100%; border-radius: 0; }
 }
+
+
+/* ---------- FAQ modal overlay ---------- */
+.faq-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(38,38,16,0.55);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  z-index: 200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 2rem 1rem;
+  overflow-y: auto;
+}
+
+.faq-panel {
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  width: 100%;
+  max-width: 740px;
+  box-shadow: 0 8px 40px rgba(38,38,16,0.18);
+  overflow: hidden;
+}
+
+.faq-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.4rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg-alt);
+}
+
+.faq-panel-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--muted);
+}
+
+.faq-close {
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 0 0.2rem;
+}
+.faq-close:hover { color: var(--ink); }
+
+.faq-body {
+  padding: 1.8rem 2rem 2.2rem;
+  max-height: 75vh;
+  overflow-y: auto;
+}
+
+.faq-loading {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.faq-error {
+  color: var(--red);
+}
+
+/* Markdown content styling inside the FAQ panel */
+.faq-body h1 { font-family: 'Fraunces', Georgia, serif; font-size: 1.6rem; margin-bottom: 1rem; }
+.faq-body h2 { font-family: 'Fraunces', Georgia, serif; font-size: 1.2rem; margin-top: 2rem; margin-bottom: 0.6rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--rule); }
+.faq-body h3 { font-size: 0.95rem; font-weight: 600; margin-top: 1.4rem; margin-bottom: 0.35rem; }
+.faq-body p { margin-bottom: 0.85rem; color: var(--ink-soft); }
+.faq-body ul, .faq-body ol { padding-left: 1.4rem; margin-bottom: 0.85rem; }
+.faq-body li { margin-bottom: 0.3rem; color: var(--ink-soft); }
+.faq-body a { color: var(--accent); }
+.faq-body code { font-family: 'JetBrains Mono', monospace; font-size: 0.82em; background: var(--bg-alt); padding: 0.1em 0.4em; border-radius: 4px; }
+.faq-body pre { background: var(--bg-alt); border: 1px solid var(--rule); border-radius: 8px; padding: 1rem; overflow-x: auto; margin-bottom: 0.85rem; }
+.faq-body pre code { background: none; padding: 0; }
+.faq-body blockquote { border-left: 3px solid var(--accent-soft); padding-left: 1rem; margin: 0.8rem 0; color: var(--muted); font-style: italic; }
+.faq-body hr { border: none; border-top: 1px solid var(--rule); margin: 1.5rem 0; }
+.faq-body strong { color: var(--ink); }

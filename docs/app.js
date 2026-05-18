@@ -1047,6 +1047,7 @@ async function submitHard(container) {
 document.addEventListener("keydown", (e) => {
   const onb = !$("#onboarding-screen").classList.contains("hidden");
   const game = !$("#game-screen").classList.contains("hidden");
+  if (e.key === "Escape") { closeFaq(); return; }
   if (!onb && !game) return;
   if (e.key === "Enter") {
     if (e.target.tagName === "TEXTAREA" && !(e.metaKey || e.ctrlKey)) return;
@@ -1056,3 +1057,39 @@ document.addEventListener("keydown", (e) => {
     if (btn && !btn.disabled) btn.click();
   }
 });
+
+/* ---------- FAQ Modal ---------- */
+const FAQ_URL = "https://raw.githubusercontent.com/forrtproject/fred-data/main/output/flora_faq.md";
+let faqCache = null;
+
+async function openFaq() {
+  const modal = $("#faq-modal");
+  const body  = $("#faq-body");
+  modal.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+
+  if (faqCache) { body.innerHTML = faqCache; return; }
+
+  body.innerHTML = '<p class="faq-loading">Loading…</p>';
+  try {
+    const res = await fetch(FAQ_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const md = await res.text();
+    faqCache = marked.parse(md);
+    body.innerHTML = faqCache;
+  } catch (err) {
+    body.innerHTML = `<p class="faq-error">Could not load FAQ (${err.message}). <a href="https://github.com/forrtproject/fred-data/blob/main/output/flora_faq.md" target="_blank" rel="noopener">Open on GitHub →</a></p>`;
+  }
+}
+
+function closeFaq() {
+  const modal = $("#faq-modal");
+  if (modal.classList.contains("hidden")) return;
+  modal.classList.add("hidden");
+  document.body.style.overflow = "";
+}
+
+$("#login-faq-btn").onclick  = openFaq;
+$("#game-faq-btn").onclick   = openFaq;
+$("#faq-close-btn").onclick  = closeFaq;
+$("#faq-modal").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeFaq(); });
