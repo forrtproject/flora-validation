@@ -51,20 +51,36 @@ async function api(path, method = "GET", body = null) {
   if (API_MODE === "static") return staticApi(path, method, body);
   const opts = { method, headers: { "Content-Type": "application/json" } };
   if (body) opts.body = JSON.stringify(body);
-  const res = await fetch("/api" + path, opts);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    let msg = res.statusText;
-    if (err.detail) {
-      if (Array.isArray(err.detail)) {
-        msg = err.detail.map((e) => e.msg || JSON.stringify(e)).join("; ");
-      } else {
-        msg = String(err.detail);
+
+  // Show "server waking up" toast if response takes more than 3 seconds
+  let slowTimer = setTimeout(() => showToast("Server waking up… hang tight.", 15000), 3000);
+  try {
+    const res = await fetch("/api" + path, opts);
+    clearTimeout(slowTimer);
+    hideToast();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      let msg = res.statusText;
+      if (err.detail) {
+        if (Array.isArray(err.detail)) {
+          msg = err.detail.map((e) => e.msg || JSON.stringify(e)).join("; ");
+        } else {
+          msg = String(err.detail);
+        }
       }
+      throw new Error(msg);
     }
-    throw new Error(msg);
+    return res.json();
+  } catch (e) {
+    clearTimeout(slowTimer);
+    hideToast();
+    throw e;
   }
-  return res.json();
+}
+
+function hideToast() {
+  const t = $("#toast");
+  t.classList.remove("show");
 }
 
 /* ---------- Static (localStorage) backend ---------- */
@@ -212,6 +228,12 @@ async function staticApi(path, method, body) {
   throw new Error("Unknown route: " + route);
 }
 
+function fmtYear(y) {
+  if (y === null || y === undefined || y === "") return "?";
+  const n = parseFloat(y);
+  return isNaN(n) ? String(y) : String(Math.round(n));
+}
+
 function escapeHtml(s) {
   if (s === null || s === undefined) return "";
   return String(s).replace(/[&<>"']/g, (c) => ({
@@ -276,6 +298,20 @@ $("#login-mode-toggle").addEventListener("change", (e) => {
 async function doLogin() {
   const handle = $("#handle-input").value.trim();
   if (!handle) { alert("Please enter a handle."); return; }
+
+  // Admin path: handle "admin" + email field used as password
+  if (handle === "admin" && loginMode === "email") {
+    const password = $("#email-input").value.trim();
+    if (!password) { alert("Enter the admin password in the Email field."); return; }
+    try {
+      const resp = await adminLogin(password);
+      if (resp) return;
+    } catch (e) {
+      alert("Admin login failed: " + e.message);
+      return;
+    }
+  }
+
   let body;
   if (loginMode === "email") {
     const email = $("#email-input").value.trim();
@@ -324,6 +360,8 @@ function routeAfterLogin() {
 }
 
 const logout = () => {
+  clearTimeout(_inactivityTimer);
+  clearPairTimer();
   localStorage.removeItem(STORAGE.CODER);
   location.reload();
 };
@@ -333,11 +371,17 @@ $("#onb-logout-btn").onclick = logout;
 /* ---------- Onboarding ---------- */
 async function enterOnboarding() {
   $("#onboarding-screen").classList.remove("hidden");
+  resetInactivityTimer();
   const resp = await api("/onboarding");
   state.onboardingPairs = resp.pairs;
   state.onboardingIdx = 0;
   state.onboardingResults = [];
   updateOnbProgress();
+  // Show guided tour using the first onboarding pair as a live preview
+  if (state.onboardingPairs.length > 0) {
+    $("#onb-intro").classList.add("hidden");
+    startTour(state.onboardingPairs[0]);
+  }
 }
 
 $("#onb-start-btn").onclick = () => {
@@ -350,6 +394,13 @@ $("#onb-finish-btn").onclick = async () => {
   state.coder.onboarded = true;
   localStorage.setItem(STORAGE.CODER, JSON.stringify(state.coder));
   $("#onboarding-screen").classList.add("hidden");
+  $("#welcome-modal").classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+};
+
+$("#welcome-enter-btn").onclick = () => {
+  $("#welcome-modal").classList.add("hidden");
+  document.body.style.overflow = "";
   enterGame();
 };
 
@@ -461,8 +512,10 @@ function showOnboardingFeedback(pair, errors) {
 async function enterGame() {
   $("#game-screen").classList.remove("hidden");
   $("#stat-name").textContent = state.coder.handle;
+  resetInactivityTimer();
   await refreshAll();
 }
+
 
 $("#mode-toggle").onclick = async () => {
   state.mode = state.mode === "normal" ? "hard" : "normal";
@@ -506,14 +559,17 @@ $("#onb-layout-btn").onclick  = toggleLayout;
 // Apply on startup
 applySplitLayout();
 
+// Leaderboard hidden by default
+document.body.classList.add("sidebar-collapsed");
+
 $("#sidebar-toggle").onclick = () => {
   document.body.classList.toggle("sidebar-collapsed");
   const collapsed = document.body.classList.contains("sidebar-collapsed");
-  $("#sidebar-toggle").textContent = collapsed ? "Leaderboard ◂" : "Leaderboard ▸";
+  $("#sidebar-toggle").textContent = collapsed ? "Leaderboard ▸" : "Leaderboard ◂";
 };
 $("#sidebar-close").onclick = () => {
   document.body.classList.add("sidebar-collapsed");
-  $("#sidebar-toggle").textContent = "Leaderboard ◂";
+  $("#sidebar-toggle").textContent = "Leaderboard ▸";
 };
 
 async function refreshAll() {
@@ -562,7 +618,84 @@ async function loadNextPair() {
     renderPairInto($("#pair-card"), resp.pair, { onboarding: false, judgeCount: resp.judge_count });
   }
   applySplitLayout();
+  startPairTimer();
 }
+
+/* ---------- Pair timer (25-min warning, 30-min auto-skip) ---------- */
+let _pairWarningTimer = null;
+let _pairExpireTimer  = null;
+let _countdownInterval = null;
+
+function startPairTimer() {
+  clearPairTimer();
+  const WARN_MS   = 25 * 60 * 1000;
+  const EXPIRE_MS = 30 * 60 * 1000;
+
+  _pairWarningTimer = setTimeout(() => {
+    openTimeoutModal();
+  }, WARN_MS);
+
+  _pairExpireTimer = setTimeout(async () => {
+    closeTimeoutModal();
+    showToast("Time's up — entry released to another validator.");
+    const btn = $("#skip-btn");
+    if (btn) btn.click();
+    else await loadNextPair();
+  }, EXPIRE_MS);
+}
+
+function clearPairTimer() {
+  clearTimeout(_pairWarningTimer);
+  clearTimeout(_pairExpireTimer);
+  clearInterval(_countdownInterval);
+  _pairWarningTimer = _pairExpireTimer = _countdownInterval = null;
+}
+
+function openTimeoutModal() {
+  let secsLeft = 5 * 60;
+  const countEl = $("#timeout-countdown");
+  const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  if (countEl) countEl.textContent = fmt(secsLeft);
+  _countdownInterval = setInterval(() => {
+    secsLeft--;
+    if (countEl) countEl.textContent = fmt(secsLeft);
+    if (secsLeft <= 0) clearInterval(_countdownInterval);
+  }, 1000);
+  $("#timeout-modal").classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+}
+
+function closeTimeoutModal() {
+  $("#timeout-modal").classList.add("hidden");
+  document.body.style.overflow = "";
+  clearInterval(_countdownInterval);
+}
+
+$("#timeout-continue-btn").onclick = () => closeTimeoutModal();
+$("#timeout-skip-btn").onclick = async () => {
+  closeTimeoutModal();
+  clearPairTimer();
+  const btn = $("#skip-btn");
+  if (btn) btn.click();
+  else await loadNextPair();
+};
+
+/* ---------- Inactivity auto-logout (30 min) ---------- */
+const INACTIVITY_MS = 30 * 60 * 1000;
+let _inactivityTimer = null;
+
+function resetInactivityTimer() {
+  clearTimeout(_inactivityTimer);
+  _inactivityTimer = setTimeout(() => {
+    clearPairTimer();
+    showToast("Signed out due to inactivity.");
+    setTimeout(logout, 1500);
+  }, INACTIVITY_MS);
+}
+
+["mousemove", "mousedown", "keydown", "touchstart", "scroll"].forEach(evt =>
+  document.addEventListener(evt, resetInactivityTimer, { passive: true })
+);
 
 /* ---------- Pair rendering (normal + onboarding) ---------- */
 function renderPairInto(container, p, { onboarding, judgeCount }) {
@@ -607,7 +740,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
       </div>
 
       <h2>${escapeHtml(p.title_r || "(untitled)")}</h2>
-      <div class="authors">${escapeHtml(p.authors_r || "?")} · ${escapeHtml(String(p.year_r || "?"))}${p.journal_r ? " · " + escapeHtml(p.journal_r) : ""}</div>
+      <div class="authors">${escapeHtml(p.authors_r || "?")} · ${fmtYear(p.year_r)}${p.journal_r ? " · " + escapeHtml(p.journal_r) : ""}</div>
 
       <div class="abstract-block">
         <div class="abstract" id="abstract-text">${escapeHtml(p.abstract_r || "(no abstract available)")}</div>
@@ -646,7 +779,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
           <div class="original-info">
             <div class="title">${escapeHtml(p.title_o || "(no title)")}</div>
             <div class="meta">
-              ${escapeHtml(p.authors_o || "?")} · ${escapeHtml(String(p.year_o || "?"))}
+              ${escapeHtml(p.authors_o || "?")} · ${fmtYear(p.year_o)}
               ${oOaUrl ? ` · <a href="${escapeHtml(oOaUrl)}" target="_blank" rel="noopener" title="Open access PDF">${lockIcon(true)} OA</a>` : ""}
               ${oUrl ? ` · <a href="${escapeHtml(oUrl)}" target="_blank" rel="noopener" title="${oOaUrl ? "DOI page" : "Publisher page (likely paywalled)"}">${oOaUrl ? "" : lockIcon(false) + " "}${escapeHtml(p.doi_o)}</a>` : ""}
             </div>
@@ -880,6 +1013,7 @@ function updateSubmitState(pairBody) {
 
 async function onSkip() {
   if (!confirm("Skip this pair? You won't get points and it'll be re-served to others.")) return;
+  clearPairTimer();
   try {
     await api("/skip", "POST", {
       coder_id: state.coder.coder_id,
@@ -896,6 +1030,7 @@ async function submitJudgement() {
   const btn = $("#submit-btn");
   if (!btn || btn.disabled) return;
   btn.disabled = true;
+  clearPairTimer();
   try {
     const j = state.judgement;
     const p = state.currentPair;
@@ -962,7 +1097,7 @@ function renderHardPair(container, p) {
         <button class="skip-btn" id="skip-btn">Skip</button>
       </div>
       <h2>${escapeHtml(p.title_r || "(untitled)")}</h2>
-      <div class="authors">${escapeHtml(p.authors_r || "?")} · ${escapeHtml(String(p.year_r || "?"))}${p.journal_r ? " · " + escapeHtml(p.journal_r) : ""}</div>
+      <div class="authors">${escapeHtml(p.authors_r || "?")} · ${fmtYear(p.year_r)}${p.journal_r ? " · " + escapeHtml(p.journal_r) : ""}</div>
       <div class="abstract-block">
         <div class="abstract muted-empty">No abstract available — fetch it from the source.</div>
         <div class="abstract-tools">
@@ -1082,6 +1217,150 @@ async function submitHard(container) {
   }
 }
 
+/* ---------- Guided Tour ---------- */
+const TOUR_STEPS = [
+  {
+    sel: null,
+    title: "Here's your workspace",
+    body: "Each entry is a replication study. You'll check three things the automated pipeline extracted: the study type, the original paper, and the reported outcome. Let's walk through it.",
+  },
+  {
+    sel: ".pair-header",
+    title: "The paper",
+    body: "Read the title, authors, and abstract. Use <em>OA full text</em>, <em>DOI</em>, or <em>Scholar</em> to open the full paper when you need more context.",
+  },
+  {
+    sel: "#gate-1",
+    title: "i. Type check",
+    body: "Is this a <em>Replication</em> (different data), a <em>Reproduction</em> (same data), or <em>Neither</em>? This is the first thing you verify.",
+  },
+  {
+    sel: "#gate-2",
+    title: "ii. Original check",
+    body: "The system found the original study being replicated. Confirm it's the right paper — most are correct, but flag it if something looks off.",
+  },
+  {
+    sel: "#gate-3",
+    title: "iii. Outcome check",
+    body: "Does the outcome label and supporting quote match what the authors actually concluded? You can <em>edit the quote</em> to extend or correct it.",
+  },
+  {
+    sel: ".note-section",
+    title: "Notes · +3 pts",
+    body: "Add an optional note to flag anything unusual — a correction, an ambiguity, or useful context. Notes earn bonus points.",
+  },
+  {
+    sel: ".actions",
+    title: "Submit",
+    body: "Once all three gates are answered, <em>Submit</em> becomes active. Your judgement is saved and the next entry loads straight away.",
+  },
+];
+
+let _tourStep = 0;
+
+function startTour(pair) {
+  const card = $("#onb-card");
+  card.classList.remove("hidden");
+  renderPairInto(card, pair, { onboarding: true, judgeCount: 0 });
+
+  // Reveal all gates so user can see the full layout
+  card.querySelector("#gate-2")?.classList.remove("hidden");
+  card.querySelector("#gate-3")?.classList.remove("hidden");
+
+  // Disable all interactive elements so clicks don't trigger real actions
+  card.querySelectorAll("button, input, textarea, a").forEach(el => {
+    el.dataset.tourDisabled = "1";
+    el.style.pointerEvents = "none";
+  });
+
+  applySplitLayout();
+  $("#tour-overlay").classList.remove("hidden");
+  showTourStep(0);
+}
+
+function showTourStep(idx) {
+  _tourStep = idx;
+  const step = TOUR_STEPS[idx];
+  const total = TOUR_STEPS.length;
+
+  $("#tour-step-label").textContent = `${idx + 1} / ${total}`;
+  $("#tour-title").textContent = step.title;
+  $("#tour-body").innerHTML = step.body;
+  $("#tour-next-btn").textContent = idx === total - 1 ? "Start calibration →" : "Next →";
+
+  // Dots
+  $("#tour-dots").innerHTML = TOUR_STEPS.map((_, i) =>
+    `<span class="tour-dot${i === idx ? " active" : ""}"></span>`
+  ).join("");
+
+  // Remove previous highlight
+  document.querySelectorAll(".tour-highlight").forEach(el => el.classList.remove("tour-highlight"));
+
+  // Apply highlight to target
+  const card = $("#onb-card");
+  let target = null;
+  if (step.sel) {
+    target = card.querySelector(step.sel);
+    if (target) {
+      target.classList.add("tour-highlight");
+      target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }
+
+  // Show & position callout
+  const callout = $("#tour-callout");
+  callout.classList.remove("hidden");
+  positionTourCallout(target);
+}
+
+function positionTourCallout(target) {
+  const callout = $("#tour-callout");
+  const CW = 320;
+  const MARGIN = 16;
+
+  if (!target) {
+    callout.style.cssText = `top:50%;left:50%;transform:translate(-50%,-50%)`;
+    return;
+  }
+
+  callout.style.transform = "";
+  const rect = target.getBoundingClientRect();
+  const vh = window.innerHeight;
+  const vw = window.innerWidth;
+
+  // Pick vertical position: prefer below, fall back to above
+  let top;
+  const calloutH = callout.offsetHeight || 200;
+  if (rect.bottom + calloutH + MARGIN < vh) {
+    top = rect.bottom + MARGIN;
+  } else {
+    top = Math.max(MARGIN, rect.top - calloutH - MARGIN);
+  }
+
+  const left = Math.max(MARGIN, Math.min(rect.left, vw - CW - MARGIN));
+
+  callout.style.top  = top + "px";
+  callout.style.left = left + "px";
+}
+
+function endTour() {
+  document.querySelectorAll(".tour-highlight").forEach(el => el.classList.remove("tour-highlight"));
+  $("#tour-overlay").classList.add("hidden");
+  $("#tour-callout").classList.add("hidden");
+
+  // Reset card and show calibration intro
+  const card = $("#onb-card");
+  card.classList.add("hidden");
+  card.innerHTML = "";
+  $("#onb-intro").classList.remove("hidden");
+}
+
+$("#tour-next-btn").onclick = () => {
+  if (_tourStep >= TOUR_STEPS.length - 1) endTour();
+  else showTourStep(_tourStep + 1);
+};
+$("#tour-skip-btn").onclick = endTour;
+
 /* ---------- Keyboard ---------- */
 document.addEventListener("keydown", (e) => {
   const onb = !$("#onboarding-screen").classList.contains("hidden");
@@ -1133,3 +1412,323 @@ $("#game-faq-btn").onclick   = openFaq;
 $("#onb-faq-btn").onclick    = openFaq;
 $("#faq-close-btn").onclick  = closeFaq;
 $("#faq-modal").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeFaq(); });
+
+/* ============================================================
+   ADMIN PANEL
+   ============================================================ */
+
+let _adminToken   = null;
+let _adminFilter  = "all";
+let _adminPage    = 1;
+const ADMIN_PER_PAGE = 50;
+
+async function adminApi(path, method = "GET", body = null) {
+  const opts = {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Admin-Token": _adminToken,
+    },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch("/api/admin" + path, opts);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || res.statusText);
+  }
+  return res.json();
+}
+
+async function adminLogin(password) {
+  const resp = await fetch("/api/admin/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.detail || resp.statusText);
+  }
+  const data = await resp.json();
+  _adminToken = data.token;
+  enterAdminScreen();
+  return true;
+}
+
+function enterAdminScreen() {
+  $("#login-screen").classList.add("hidden");
+  $("#game-screen").classList.add("hidden");
+  $("#onboarding-screen").classList.add("hidden");
+  $("#admin-screen").classList.remove("hidden");
+  fetchAdminEntries();
+}
+
+function exitAdminScreen() {
+  _adminToken = null;
+  _adminFilter = "all";
+  _adminPage = 1;
+  $("#admin-screen").classList.add("hidden");
+  $("#login-screen").classList.remove("hidden");
+}
+
+async function fetchAdminEntries() {
+  const body = $("#admin-table-body");
+  body.innerHTML = '<tr><td colspan="7" class="admin-loading">Loading…</td></tr>';
+  $("#admin-empty").classList.add("hidden");
+
+  try {
+    const data = await adminApi(
+      `/entries?filter=${_adminFilter}&page=${_adminPage}&per_page=${ADMIN_PER_PAGE}`
+    );
+    renderAdminCounts(data.counts);
+    renderAdminTable(data.entries, data.total);
+    renderAdminPagination(data.total, data.page);
+  } catch (e) {
+    body.innerHTML = `<tr><td colspan="7" class="admin-loading">Error: ${e.message}</td></tr>`;
+  }
+}
+
+function renderAdminCounts(counts) {
+  $("#fc-all").textContent          = counts.all;
+  $("#fc-needs-review").textContent = counts.needs_review;
+  $("#fc-llm-errors").textContent   = counts.llm_errors;
+  $("#fc-validated").textContent    = counts.validated;
+  $("#fc-admin-checked").textContent = counts.admin_checked;
+}
+
+const STATUS_LABELS = {
+  unvalidated:          { text: "Unvalidated",   cls: "status-unvalidated" },
+  validation_inprogress:{ text: "In progress",   cls: "status-inprogress"  },
+  validated:            { text: "Validated",      cls: "status-validated"   },
+  need_review:          { text: "Needs review",   cls: "status-review"      },
+};
+
+function renderAdminTable(entries, total) {
+  const body = $("#admin-table-body");
+
+  if (!entries.length) {
+    body.innerHTML = "";
+    $("#admin-empty").classList.remove("hidden");
+    return;
+  }
+  $("#admin-empty").classList.add("hidden");
+
+  const offset = (_adminPage - 1) * ADMIN_PER_PAGE;
+  body.innerHTML = entries.map((e, i) => {
+    const s      = STATUS_LABELS[e.validation_status] || { text: e.validation_status, cls: "" };
+    const flags  = [
+      e.has_llm_error  ? '<span class="admin-flag flag-llm" title="LLM error">LLM</span>' : "",
+      e.is_tiebreaker  ? '<span class="admin-flag flag-tie" title="Tiebreaker">TIE</span>' : "",
+      e.admin_checked  ? '<span class="admin-flag flag-admin" title="Admin checked">✓</span>' : "",
+    ].join("");
+    const validators = [
+      e.has_v1  ? "V1" : "—",
+      e.has_v2  ? "V2" : "—",
+      e.has_llm ? "LLM" : "—",
+    ].join(" ");
+    const study = (e.study_r || e.doi_r || "—").substring(0, 60);
+    return `<tr>
+      <td class="admin-cell-num">${offset + i + 1}</td>
+      <td class="admin-cell-study" title="${(e.study_r || "").replace(/"/g, "&quot;")}">${study}${flags}</td>
+      <td>${e.type || "—"}</td>
+      <td>${e.outcome || "—"}</td>
+      <td><span class="admin-status ${s.cls}">${s.text}</span></td>
+      <td class="admin-cell-validators">${validators}</td>
+      <td><button class="admin-review-btn ghost-btn" data-id="${e.record_id}">Review →</button></td>
+    </tr>`;
+  }).join("");
+
+  body.querySelectorAll(".admin-review-btn").forEach((btn) => {
+    btn.onclick = () => openAdminDetail(btn.dataset.id);
+  });
+}
+
+function renderAdminPagination(total, page) {
+  const pages = Math.ceil(total / ADMIN_PER_PAGE);
+  const el = $("#admin-pagination");
+  if (pages <= 1) { el.innerHTML = ""; return; }
+  el.innerHTML = `
+    <button class="ghost-btn" id="admin-prev" ${page <= 1 ? "disabled" : ""}>← Prev</button>
+    <span class="admin-page-info">Page ${page} of ${pages} (${total} entries)</span>
+    <button class="ghost-btn" id="admin-next" ${page >= pages ? "disabled" : ""}>Next →</button>
+  `;
+  $("#admin-prev").onclick = () => { _adminPage--; fetchAdminEntries(); };
+  $("#admin-next").onclick = () => { _adminPage++; fetchAdminEntries(); };
+}
+
+async function openAdminDetail(recordId) {
+  const modal = $("#admin-detail-modal");
+  const body  = $("#admin-detail-body");
+  modal.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+  body.innerHTML = '<p class="faq-loading">Loading…</p>';
+
+  try {
+    const data = await adminApi(`/entries/${recordId}`);
+    renderAdminDetail(data);
+  } catch (e) {
+    body.innerHTML = `<p class="faq-error">Error: ${e.message}</p>`;
+  }
+}
+
+function renderAdminDetail(data) {
+  const rec = data.record;
+  const v1  = rec.validator_1;
+  const v2  = rec.validator_2;
+  const llm = rec.llm_validator;
+
+  const valCard = (label, v) => {
+    if (!v) return `<div class="admin-val-card admin-val-empty"><strong>${label}</strong><p>Not yet submitted.</p></div>`;
+    const checks = [
+      `Type: <b>${v.type_check}</b>`,
+      `Original: <b>${v.original_check}</b>`,
+      `Outcome: <b>${v.outcome_check}</b>`,
+    ].join(" · ");
+    const corrections = [
+      v.corrected_type          ? `Type → ${v.corrected_type}` : "",
+      v.corrected_study_o       ? `Original → ${v.corrected_study_o}` : "",
+      v.corrected_outcome       ? `Outcome → ${v.corrected_outcome}` : "",
+      v.corrected_outcome_quote ? `Quote → ${v.corrected_outcome_quote}` : "",
+    ].filter(Boolean).join("; ");
+    const error = v.error ? `<p class="admin-val-error">LLM error: ${v.error}</p>` : "";
+    return `<div class="admin-val-card">
+      <div class="admin-val-label">${label}${v.validator_name ? ` · <em>${v.validator_name}</em>` : ""}</div>
+      <div class="admin-val-checks">${checks}</div>
+      ${corrections ? `<div class="admin-val-corrections">${corrections}</div>` : ""}
+      ${v.validator_notes ? `<div class="admin-val-note">Note: ${v.validator_notes}</div>` : ""}
+      ${error}
+    </div>`;
+  };
+
+  const outcomeOpts = ["success","failure","mixed","uninformative","descriptive"]
+    .map((o) => `<option value="${o}" ${rec.outcome === o ? "selected" : ""}>${o}</option>`).join("");
+  const typeOpts = ["replication","reproduction"]
+    .map((t) => `<option value="${t}" ${rec.type === t ? "selected" : ""}>${t}</option>`).join("");
+
+  $("#admin-detail-title").textContent = (rec.study_r || rec.doi_r || "Entry Review").substring(0, 80);
+  $("#admin-detail-body").innerHTML = `
+    <div class="admin-detail-cols">
+      <!-- Left: pair info -->
+      <div class="admin-detail-pair">
+        <div class="pair-header" style="border-radius:1rem;border:1px solid var(--rule);padding:1rem 1.25rem;margin-bottom:0.75rem">
+          <div class="pair-meta">
+            <span class="pair-type-badge">${rec.type || "?"}</span>
+            <span class="pair-outcome-badge">${rec.outcome || "?"}</span>
+            <span class="pair-status-badge">${rec.validation_status}</span>
+          </div>
+          <h2 class="pair-title">${rec.study_r || rec.doi_r || "—"}</h2>
+          <div class="pair-doi"><a href="https://doi.org/${rec.doi_r}" target="_blank" rel="noopener">${rec.doi_r}</a> · ${rec.year_r || "—"}</div>
+          ${rec.abstract_r ? `<details class="pair-abstract-details"><summary>Abstract</summary><p class="pair-abstract">${rec.abstract_r}</p></details>` : ""}
+          <hr class="pair-divider">
+          <div class="pair-original-label">Identified original study</div>
+          <div class="pair-original-title">${rec.study_o || rec.doi_o || "—"}</div>
+          ${rec.doi_o ? `<div class="pair-doi"><a href="https://doi.org/${rec.doi_o}" target="_blank" rel="noopener">${rec.doi_o}</a></div>` : ""}
+          ${rec.outcome_quote ? `<blockquote class="pair-quote">${rec.outcome_quote}</blockquote>` : ""}
+        </div>
+
+        <!-- Validator responses -->
+        <div class="admin-val-cards">
+          ${valCard("Validator 1", v1)}
+          ${valCard("Validator 2", v2)}
+          ${valCard("LLM", llm)}
+        </div>
+      </div>
+
+      <!-- Right: admin resolution form -->
+      <div class="admin-resolve-form">
+        <h3>Admin Resolution</h3>
+        <p class="admin-resolve-hint">Override the final values for this entry and mark it as resolved.</p>
+
+        <label class="admin-form-label">Type check</label>
+        <select id="ar-type-check" class="admin-select">
+          <option value="correct">correct</option>
+          <option value="incorrect">incorrect</option>
+        </select>
+        <input id="ar-corrected-type" class="admin-input" placeholder="Corrected type (if incorrect)">
+        <select id="ar-corrected-type-sel" class="admin-select" style="margin-top:0.25rem">
+          ${typeOpts}
+        </select>
+
+        <label class="admin-form-label" style="margin-top:1rem">Original study check</label>
+        <select id="ar-original-check" class="admin-select">
+          <option value="correct">correct</option>
+          <option value="incorrect">incorrect</option>
+        </select>
+        <input id="ar-corrected-study" class="admin-input" placeholder="Corrected original study title (if incorrect)">
+        <input id="ar-corrected-doi" class="admin-input" placeholder="Corrected DOI (if incorrect)" style="margin-top:0.25rem">
+
+        <label class="admin-form-label" style="margin-top:1rem">Outcome check</label>
+        <select id="ar-outcome-check" class="admin-select">
+          <option value="correct">correct</option>
+          <option value="incorrect">incorrect</option>
+        </select>
+        <select id="ar-corrected-outcome" class="admin-select" style="margin-top:0.25rem">
+          ${outcomeOpts}
+        </select>
+        <input id="ar-corrected-quote" class="admin-input" placeholder="Corrected outcome quote (optional)" style="margin-top:0.25rem">
+
+        <label class="admin-form-label" style="margin-top:1rem">Admin notes</label>
+        <textarea id="ar-notes" class="admin-textarea" placeholder="Notes for the record (optional)"></textarea>
+
+        <div class="admin-resolve-actions">
+          <button id="admin-resolve-btn" class="btn-primary" data-id="${rec.record_id}">Mark as Resolved →</button>
+          <button id="admin-detail-cancel" class="ghost-btn">Cancel</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  $("#admin-resolve-btn").onclick  = () => submitAdminResolve(rec.record_id);
+  $("#admin-detail-cancel").onclick = closeAdminDetail;
+}
+
+async function submitAdminResolve(recordId) {
+  const btn = $("#admin-resolve-btn");
+  btn.disabled = true;
+  btn.textContent = "Saving…";
+
+  const body = {
+    admin_name:              "admin",
+    type_check:              $("#ar-type-check").value,
+    original_check:          $("#ar-original-check").value,
+    outcome_check:           $("#ar-outcome-check").value,
+    corrected_type:          $("#ar-type-check").value === "incorrect" ? $("#ar-corrected-type-sel").value : null,
+    corrected_doi_o:         $("#ar-original-check").value === "incorrect" ? ($("#ar-corrected-doi").value.trim() || null) : null,
+    corrected_study_o:       $("#ar-original-check").value === "incorrect" ? ($("#ar-corrected-study").value.trim() || null) : null,
+    corrected_outcome:       $("#ar-outcome-check").value === "incorrect" ? $("#ar-corrected-outcome").value : null,
+    corrected_outcome_quote: $("#ar-corrected-quote").value.trim() || null,
+    admin_notes:             $("#ar-notes").value.trim() || null,
+  };
+
+  try {
+    await adminApi(`/entries/${recordId}/resolve`, "POST", body);
+    closeAdminDetail();
+    showToast("Entry resolved.", 2500);
+    fetchAdminEntries();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = "Mark as Resolved →";
+    alert("Error: " + e.message);
+  }
+}
+
+function closeAdminDetail() {
+  $("#admin-detail-modal").classList.add("hidden");
+  document.body.style.overflow = "";
+}
+
+// Wire up admin screen events
+$("#admin-logout-btn").onclick = exitAdminScreen;
+$("#admin-detail-close").onclick = closeAdminDetail;
+$("#admin-detail-modal").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) closeAdminDetail();
+});
+$("#admin-filters").addEventListener("click", (e) => {
+  const btn = e.target.closest(".admin-filter-btn");
+  if (!btn) return;
+  $("#admin-filters").querySelectorAll(".admin-filter-btn").forEach((b) => b.classList.remove("active"));
+  btn.classList.add("active");
+  _adminFilter = btn.dataset.filter;
+  _adminPage = 1;
+  fetchAdminEntries();
+});

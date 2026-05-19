@@ -135,6 +135,8 @@
     <div class="brand-group">
       <div class="brand">Flora <em>·</em> Validator</div>
       <button id="layout-toggle" class="ghost-btn" title="Toggle split layout">Split view</button>
+      <button id="game-faq-btn" class="ghost-btn">FAQ</button>
+      <a href="mailto:lukas.roeseler@uni-muenster.de" class="ghost-btn" style="text-decoration:none">Help</a>
     </div>
     <div class="stats-bar">
       <div class="stat"><span class="label">Coder</span><span id="stat-name" class="value"></span></div>
@@ -145,9 +147,11 @@
         <span id="stat-progress" class="value">0 / 0</span>
         <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
       </div>
-      <button id="mode-toggle" class="ghost-btn" title="Switch between normal and hard mode">Normal mode</button>
+    </div>
+    <div class="header-actions">
+      <button id="mode-toggle" class="ghost-btn hidden" title="Switch between normal and hard mode">Normal mode</button>
       <button id="sidebar-toggle" class="ghost-btn" title="Show/hide leaderboard">Leaderboard ▸</button>
-      <button id="game-faq-btn" class="ghost-btn">FAQ</button>
+
       <button id="logout-btn" class="ghost-btn" title="Switch coder">Sign out</button>
     </div>
   </header>
@@ -182,7 +186,103 @@
   </div>
 </div>
 
+<!-- ------------ ADMIN SCREEN ------------ -->
+<div id="admin-screen" class="screen hidden">
+  <header class="admin-header">
+    <div class="brand-group">
+      <div class="brand">Flora <em>·</em> Admin</div>
+    </div>
+    <button id="admin-logout-btn" class="ghost-btn">Sign out</button>
+  </header>
+
+  <div class="admin-body">
+    <div class="admin-filters" id="admin-filters">
+      <button class="admin-filter-btn active" data-filter="all">All <span class="filter-count" id="fc-all">—</span></button>
+      <button class="admin-filter-btn" data-filter="needs_review">Needs Review <span class="filter-count" id="fc-needs-review">—</span></button>
+      <button class="admin-filter-btn" data-filter="llm_errors">LLM Errors <span class="filter-count" id="fc-llm-errors">—</span></button>
+      <button class="admin-filter-btn" data-filter="validated">Validated <span class="filter-count" id="fc-validated">—</span></button>
+      <button class="admin-filter-btn" data-filter="admin_checked">Admin Checked <span class="filter-count" id="fc-admin-checked">—</span></button>
+    </div>
+
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Study</th>
+            <th>Type</th>
+            <th>Outcome</th>
+            <th>Status</th>
+            <th>Validators</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="admin-table-body"></tbody>
+      </table>
+      <p class="admin-empty hidden" id="admin-empty">No entries match this filter.</p>
+    </div>
+
+    <div class="admin-pagination" id="admin-pagination"></div>
+  </div>
+</div>
+
+<!-- ------------ ADMIN DETAIL MODAL ------------ -->
+<div id="admin-detail-modal" class="faq-overlay hidden" role="dialog" aria-modal="true">
+  <div class="admin-detail-panel">
+    <div class="faq-panel-header">
+      <span class="faq-panel-title" id="admin-detail-title">Entry Review</span>
+      <button id="admin-detail-close" class="faq-close" title="Close">×</button>
+    </div>
+    <div class="admin-detail-body" id="admin-detail-body"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
+
+<!-- ------------ GUIDED TOUR ------------ -->
+<div id="tour-overlay" class="tour-overlay hidden"></div>
+<div id="tour-callout" class="tour-callout hidden">
+  <div class="tour-step-bar">
+    <span id="tour-step-label" class="tour-step-label"></span>
+    <button id="tour-skip-btn" class="link-btn" style="font-size:0.8rem;color:var(--muted)">Skip tour</button>
+  </div>
+  <h3 id="tour-title" class="tour-title"></h3>
+  <p id="tour-body" class="tour-body"></p>
+  <div class="tour-footer">
+    <div id="tour-dots" class="tour-dots"></div>
+    <button id="tour-next-btn" class="btn-primary tour-next">Next →</button>
+  </div>
+</div>
+
+<!-- ------------ ONBOARDING COMPLETE MODAL ------------ -->
+<div id="welcome-modal" class="faq-overlay hidden" role="dialog" aria-modal="true">
+  <div class="faq-panel" style="max-width:460px;text-align:center">
+    <div class="faq-body" style="padding:2.5rem 2.5rem 2rem">
+      <div style="font-size:2rem;margin-bottom:1rem">🎉</div>
+      <h2 style="font-family:'Fraunces',Georgia,serif;font-weight:400;font-size:1.6rem;margin-bottom:0.75rem">You're ready.</h2>
+      <p style="color:var(--ink-soft);font-size:1.05rem;line-height:1.6;margin-bottom:0.5rem">Calibration complete — your eye is in. Every judgement you make from here helps build a cleaner, more reliable record of replication science.</p>
+      <p style="color:var(--muted);font-size:0.9rem;margin-bottom:2rem">Take your time, trust your reading, and skip anything that feels genuinely unclear.</p>
+      <button id="welcome-enter-btn" class="btn-primary" style="font-size:1rem;padding:0.75rem 2rem">Enter the game →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ------------ TIMEOUT WARNING MODAL ------------ -->
+<div id="timeout-modal" class="faq-overlay hidden" role="dialog" aria-modal="true">
+  <div class="faq-panel" style="max-width:420px;text-align:center">
+    <div class="faq-panel-header" style="justify-content:center">
+      <span class="faq-panel-title">Still there?</span>
+    </div>
+    <div class="faq-body" style="padding:1.75rem 2rem 2rem">
+      <p style="font-size:1.05rem;margin-bottom:1rem">You've had this entry open for <strong>25 minutes</strong>.</p>
+      <p style="color:var(--muted);margin-bottom:1.5rem">You have <strong id="timeout-countdown">5:00</strong> left to submit or skip — after that it will be released to another validator.</p>
+      <div style="display:flex;gap:0.75rem;justify-content:center">
+        <button id="timeout-continue-btn" class="btn-primary">Keep going →</button>
+        <button id="timeout-skip-btn" class="ghost-btn">Skip now</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ------------ FAQ MODAL ------------ -->
 <div id="faq-modal" class="faq-overlay hidden" role="dialog" aria-modal="true" aria-label="FAQ">

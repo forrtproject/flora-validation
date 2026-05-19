@@ -178,3 +178,8 @@ CREATE TABLE IF NOT EXISTS record_metadata (
 
     created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Admin columns (idempotent — safe to re-run on existing databases)
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS admin_checked BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS admin_name    TEXT;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS admin_notes   TEXT;

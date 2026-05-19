@@ -11,9 +11,11 @@ import psycopg2.errors
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+
+import hashlib
 
 load_dotenv()
 
@@ -24,10 +26,20 @@ OA_CACHE_PATH = ROOT / "oa_cache.json"
 DATA_DIR = ROOT / "data"
 
 DATABASE_URL = os.environ["DATABASE_URL"]
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "flora-admin-2025")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 HANDLE_RE = re.compile(r"^[A-Za-z0-9._\-]{2,32}$")
 
 VALID_CHECKS = {"correct", "incorrect"}
+
+
+def _admin_token() -> str:
+    return hashlib.sha256(f"{ADMIN_PASSWORD}:flora-admin-v1".encode()).hexdigest()
+
+
+def _require_admin(token: str):
+    if token != _admin_token():
+        raise HTTPException(401, "Unauthorized")
 
 app = FastAPI(title="Flora Validator")
 
@@ -134,6 +146,23 @@ class OnboardingComplete(BaseModel):
 class SkipRequest(BaseModel):
     coder_id: int
     pair_id: str
+
+
+class AdminLoginRequest(BaseModel):
+    password: str
+
+
+class AdminResolveRequest(BaseModel):
+    admin_name: str
+    type_check: str
+    original_check: str
+    outcome_check: str
+    corrected_doi_o: str | None = None
+    corrected_study_o: str | None = None
+    corrected_outcome: str | None = None
+    corrected_type: str | None = None
+    corrected_outcome_quote: str | None = None
+    admin_notes: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -627,6 +656,201 @@ def leaderboard():
             """
         )
         return [dict(r) for r in cur.fetchall()]
+
+
+# ---------------------------------------------------------------------------
+# Admin endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/api/admin/login")
+def admin_login(req: AdminLoginRequest):
+    if req.password != ADMIN_PASSWORD:
+        raise HTTPException(401, "Invalid admin password")
+    return {"token": _admin_token()}
+
+
+@app.get("/api/admin/entries")
+def admin_entries(
+    filter: str = "all",
+    page: int = 1,
+    per_page: int = 50,
+    x_admin_token: str = Header(...),
+):
+    _require_admin(x_admin_token)
+
+    where = {
+        "all":          "",
+        "needs_review": "WHERE u.validation_status = 'need_review'",
+        "llm_errors":   "WHERE u.llm_validator IS NOT NULL AND (u.llm_validator)::jsonb ? 'error'",
+        "validated":    "WHERE u.validation_status = 'validated' AND u.admin_checked = FALSE",
+        "admin_checked":"WHERE u.admin_checked = TRUE",
+    }.get(filter, "")
+
+    offset = (page - 1) * per_page
+
+    with db() as cur:
+        cur.execute(f"SELECT COUNT(*) AS n FROM unvalidated u {where}")
+        total = cur.fetchone()["n"]
+
+        cur.execute(
+            f"""
+            SELECT
+                u.record_id::text,
+                u.pair_id,
+                u.study_r,
+                u.year_r,
+                u.doi_r,
+                u.type,
+                u.outcome,
+                u.validation_status,
+                u.is_tiebreaker,
+                u.admin_checked,
+                u.admin_name,
+                (u.validator_1 IS NOT NULL)::boolean AS has_v1,
+                (u.validator_2 IS NOT NULL)::boolean AS has_v2,
+                (u.llm_validator IS NOT NULL)::boolean AS has_llm,
+                (u.llm_validator IS NOT NULL AND (u.llm_validator)::jsonb ? 'error')::boolean AS has_llm_error,
+                (SELECT COUNT(*) FROM validation_queue vq
+                 WHERE vq.record_id = u.record_id AND vq.is_validated = TRUE) AS validator_count
+            FROM unvalidated u
+            {where}
+            ORDER BY
+                CASE u.validation_status
+                    WHEN 'need_review'          THEN 0
+                    WHEN 'validation_inprogress' THEN 1
+                    WHEN 'unvalidated'           THEN 2
+                    WHEN 'validated'             THEN 3
+                END,
+                u.updated_at DESC
+            LIMIT %s OFFSET %s
+            """,
+            (per_page, offset),
+        )
+        entries = [dict(r) for r in cur.fetchall()]
+
+        # Count badges for each filter tab
+        cur.execute("SELECT COUNT(*) AS n FROM unvalidated")
+        c_all = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE validation_status = 'need_review'")
+        c_review = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE llm_validator IS NOT NULL AND (llm_validator)::jsonb ? 'error'")
+        c_llm = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE validation_status = 'validated' AND admin_checked = FALSE")
+        c_validated = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE admin_checked = TRUE")
+        c_admin = cur.fetchone()["n"]
+
+    return {
+        "entries": entries,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "counts": {
+            "all": c_all,
+            "needs_review": c_review,
+            "llm_errors": c_llm,
+            "validated": c_validated,
+            "admin_checked": c_admin,
+        },
+    }
+
+
+@app.get("/api/admin/entries/{record_id}")
+def admin_entry_detail(record_id: str, x_admin_token: str = Header(...)):
+    _require_admin(x_admin_token)
+
+    with db() as cur:
+        cur.execute("SELECT * FROM unvalidated WHERE record_id = %s", (record_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Record not found")
+
+        record = _enrich_pair(dict(row))
+        record["record_id"] = str(record["record_id"])
+
+        # psycopg2 already deserialises JSONB to dicts; guard for string fallback
+        for field in ("validator_1", "validator_2", "llm_validator"):
+            val = record.get(field)
+            if isinstance(val, str):
+                record[field] = json.loads(val)
+
+        cur.execute(
+            "SELECT * FROM validation_queue WHERE record_id = %s ORDER BY validator_slot",
+            (record_id,),
+        )
+        queue_slots = []
+        for r in cur.fetchall():
+            s = dict(r)
+            s["queue_id"] = str(s["queue_id"])
+            s["record_id"] = str(s["record_id"])
+            queue_slots.append(s)
+
+    return {"record": record, "queue_slots": queue_slots}
+
+
+@app.post("/api/admin/entries/{record_id}/resolve")
+def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str = Header(...)):
+    _require_admin(x_admin_token)
+
+    if req.type_check not in VALID_CHECKS:
+        raise HTTPException(400, "type_check must be 'correct' or 'incorrect'")
+    if req.original_check not in VALID_CHECKS:
+        raise HTTPException(400, "original_check must be 'correct' or 'incorrect'")
+    if req.outcome_check not in VALID_CHECKS:
+        raise HTTPException(400, "outcome_check must be 'correct' or 'incorrect'")
+
+    with db() as cur:
+        cur.execute("SELECT * FROM unvalidated WHERE record_id = %s", (record_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Record not found")
+        rec = dict(row)
+
+        final_type      = req.corrected_type      if req.type_check     == "incorrect" and req.corrected_type      else rec["type"]
+        final_doi_o     = req.corrected_doi_o     if req.original_check == "incorrect" and req.corrected_doi_o     else rec["doi_o"]
+        final_study_o   = req.corrected_study_o   if req.original_check == "incorrect" and req.corrected_study_o   else rec["study_o"]
+        final_outcome   = req.corrected_outcome   if req.outcome_check  == "incorrect" and req.corrected_outcome   else rec["outcome"]
+        final_outcome_q = req.corrected_outcome_quote if req.corrected_outcome_quote else rec["outcome_quote"]
+
+        cur.execute(
+            """
+            UPDATE unvalidated SET
+                admin_checked       = TRUE,
+                admin_name          = %s,
+                admin_notes         = %s,
+                validation_status   = 'validated',
+                final_type          = %s,
+                final_doi_o         = %s,
+                final_study_o       = %s,
+                final_outcome       = %s,
+                updated_at          = NOW()
+            WHERE record_id = %s
+            """,
+            (req.admin_name, req.admin_notes, final_type, final_doi_o, final_study_o, final_outcome, record_id),
+        )
+
+        cur.execute(
+            """
+            INSERT INTO validated (
+                record_id, doi_r, study_r, year_r, url_r, ref_r, abstract_r,
+                doi_o, study_o, year_o, url_o, ref_o,
+                type, outcome, outcome_quote, out_quote_source
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (doi_r, study_r, doi_o, study_o) DO UPDATE SET
+                type          = EXCLUDED.type,
+                outcome       = EXCLUDED.outcome,
+                outcome_quote = EXCLUDED.outcome_quote,
+                validated_at  = NOW()
+            """,
+            (
+                record_id,
+                rec["doi_r"], rec["study_r"], rec["year_r"], rec["url_r"], rec["ref_r"], rec["abstract_r"],
+                final_doi_o, final_study_o, rec["year_o"], rec["url_o"], rec["ref_o"],
+                final_type, final_outcome, final_outcome_q, rec.get("out_quote_source"),
+            ),
+        )
+
+    return {"resolved": True, "record_id": record_id}
 
 
 # ---------------------------------------------------------------------------
