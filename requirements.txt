@@ -9,3 +9,4 @@ requests>=2.31
 pandas>=2.0
 pytest>=8.0
 pytest-mock>=3.12
+resend>=2.0

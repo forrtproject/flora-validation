@@ -1732,3 +1732,15 @@ $("#admin-filters").addEventListener("click", (e) => {
   _adminPage = 1;
   fetchAdminEntries();
 });
+
+/* ---------- Forgot handle ---------- */
+$("#forgot-handle-btn").onclick = async () => {
+  const email = prompt("Enter the email address you registered with:");
+  if (!email || !email.includes("@")) return;
+  try {
+    await api("/forgot-handle", "POST", { email });
+    alert("If that email is registered, you'll receive your username shortly. Check your inbox (and spam folder).");
+  } catch (e) {
+    alert(e.message);
+  }
+};

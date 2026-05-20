@@ -413,6 +413,16 @@ a:hover { text-decoration-thickness: 2px; }
 .circle-email-row:focus-within label { color: var(--bg); background: rgba(181,70,20,0.35); }
 
 /* Toggle row */
+.login-forgot-row {
+  text-align: center;
+  margin-bottom: 0.5rem;
+}
+.login-forgot-row .link-btn {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.login-forgot-row .link-btn:hover { color: var(--accent); }
+
 .login-toggle-row {
   display: flex;
   align-items: center;

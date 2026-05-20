@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import hashlib
+import resend
 
 load_dotenv()
 
@@ -26,7 +27,9 @@ OA_CACHE_PATH = ROOT / "oa_cache.json"
 DATA_DIR = ROOT / "data"
 
 DATABASE_URL = os.environ["DATABASE_URL"]
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "flora-admin-2025")
+ADMIN_PASSWORD   = os.getenv("ADMIN_PASSWORD", "flora-admin-2025")
+RESEND_API_KEY   = os.getenv("RESEND_API_KEY", "")
+EMAIL_FROM       = os.getenv("EMAIL_FROM", "Flora Validator <noreply@forrt.org>")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 HANDLE_RE = re.compile(r"^[A-Za-z0-9._\-]{2,32}$")
 
@@ -148,6 +151,10 @@ class SkipRequest(BaseModel):
     pair_id: str
 
 
+class ForgotHandleRequest(BaseModel):
+    email: str
+
+
 class AdminLoginRequest(BaseModel):
     password: str
 
@@ -238,7 +245,7 @@ def login(req: LoginRequest):
                 method = "email" if use_email else "code"
                 raise HTTPException(
                     400,
-                    f"This {method} is already linked to handle '{existing['handle']}'. Use that handle.",
+                    f"This {method} is already registered. Please use the correct handle.",
                 )
             return {
                 "coder_id": existing["id"],
@@ -656,6 +663,68 @@ def leaderboard():
             """
         )
         return [dict(r) for r in cur.fetchall()]
+
+
+# ---------------------------------------------------------------------------
+# Forgot handle
+# ---------------------------------------------------------------------------
+
+@app.post("/api/forgot-handle")
+def forgot_handle(req: ForgotHandleRequest):
+    if not RESEND_API_KEY:
+        raise HTTPException(503, "Email service not configured")
+
+    email = req.email.strip().lower()
+    if not EMAIL_RE.match(email):
+        raise HTTPException(400, "Invalid email address")
+
+    with db() as cur:
+        cur.execute(
+            "SELECT id, handle, forgot_requests_today, forgot_requests_date FROM validators WHERE email = %s",
+            (email,),
+        )
+        validator = cur.fetchone()
+
+        # Always return success — don't reveal whether email exists
+        if not validator:
+            return {"sent": True}
+
+        from datetime import date
+        today = date.today()
+        last_date = validator["forgot_requests_date"]
+        count = validator["forgot_requests_today"] if last_date == today else 0
+
+        if count >= 2:
+            raise HTTPException(429, "Maximum 2 reminder emails per day. Please try again tomorrow.")
+
+        # Send email via Resend
+        resend.api_key = RESEND_API_KEY
+        resend.Emails.send({
+            "from": EMAIL_FROM,
+            "to": [email],
+            "subject": "Your Flora Validator username",
+            "html": f"""
+                <p>Hi,</p>
+                <p>You requested a reminder of your Flora Validator username.</p>
+                <p>Your username is: <strong>{validator['handle']}</strong></p>
+                <p>You can use this to sign in at <a href="https://validation.forrt.org">validation.forrt.org</a>.</p>
+                <p>If you did not request this, you can ignore this email.</p>
+                <br>
+                <p style="color:#888;font-size:0.85em">Flora Validator · FORRT</p>
+            """,
+        })
+
+        cur.execute(
+            """
+            UPDATE validators
+            SET forgot_requests_today = %s,
+                forgot_requests_date  = %s
+            WHERE id = %s
+            """,
+            (count + 1, today, validator["id"]),
+        )
+
+    return {"sent": True}
 
 
 # ---------------------------------------------------------------------------

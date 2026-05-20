@@ -183,3 +183,7 @@ CREATE TABLE IF NOT EXISTS record_metadata (
 ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS admin_checked BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS admin_name    TEXT;
 ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS admin_notes   TEXT;
+
+-- Forgot-handle rate limiting
+ALTER TABLE validators ADD COLUMN IF NOT EXISTS forgot_requests_today INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE validators ADD COLUMN IF NOT EXISTS forgot_requests_date  DATE;
