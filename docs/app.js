@@ -336,7 +336,9 @@ async function doLogin() {
   } catch (e) {
     if (e.message.includes("already registered")) {
       const result = await showDialog({
+        title: "Username not found",
         message: e.message,
+        layout: "row",
         buttons: [
           { label: "Forgot username →", value: "forgot" },
           { label: "OK", value: "ok", primary: true },
@@ -647,7 +649,7 @@ function showAlert(message) {
   return showDialog({ message, buttons: [{ label: "OK", value: true, primary: true }] });
 }
 
-function showDialog({ icon, title, message, buttons }) {
+function showDialog({ icon, title, message, buttons, layout = "column" }) {
   return new Promise(resolve => {
     const iconEl  = $("#dialog-icon");
     const titleEl = $("#dialog-title");
@@ -657,7 +659,10 @@ function showDialog({ icon, title, message, buttons }) {
     iconEl.textContent  = icon || "";
     iconEl.style.display = icon ? "" : "none";
     titleEl.textContent = title || "";
+    titleEl.style.display = title ? "" : "none";
     msgEl.textContent   = message || "";
+
+    btnsEl.style.flexDirection = layout === "row" ? "row" : "column";
 
     btnsEl.innerHTML = "";
     for (const btn of buttons) {
@@ -665,6 +670,7 @@ function showDialog({ icon, title, message, buttons }) {
       el.textContent = btn.label;
       el.className   = btn.primary ? "btn-primary" : "ghost-btn";
       if (btn.muted) el.style.color = "var(--muted)";
+      if (layout === "row") el.style.flex = "1";
       el.onclick = () => {
         $("#dialog-modal").classList.add("hidden");
         document.body.style.overflow = "";
