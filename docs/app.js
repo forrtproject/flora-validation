@@ -395,14 +395,6 @@ $("#onb-start-btn").onclick = () => {
   showOnboardingPair();
 };
 
-$("#onb-finish-btn").onclick = async () => {
-  await api("/onboarding/complete", "POST", { coder_id: state.coder.coder_id });
-  state.coder.onboarded = true;
-  localStorage.setItem(STORAGE.CODER, JSON.stringify(state.coder));
-  $("#onboarding-screen").classList.add("hidden");
-  $("#welcome-modal").classList.remove("hidden");
-  document.body.style.overflow = "hidden";
-};
 
 $("#welcome-enter-btn").onclick = () => {
   $("#welcome-modal").classList.add("hidden");
@@ -504,9 +496,14 @@ function showOnboardingFeedback(pair, errors) {
     if (state.onboardingIdx >= state.onboardingPairs.length) {
       $("#onb-card").classList.add("hidden");
       $("#onb-feedback").classList.add("hidden");
-      $("#onb-done").classList.remove("hidden");
       $("#onb-progress-fill").style.width = "100%";
       $("#onb-counter").textContent = `${state.onboardingPairs.length} / ${state.onboardingPairs.length}`;
+      await api("/onboarding/complete", "POST", { coder_id: state.coder.coder_id });
+      state.coder.onboarded = true;
+      localStorage.setItem(STORAGE.CODER, JSON.stringify(state.coder));
+      $("#onboarding-screen").classList.add("hidden");
+      $("#welcome-modal").classList.remove("hidden");
+      document.body.style.overflow = "hidden";
     } else {
       showOnboardingPair();
     }
@@ -616,67 +613,58 @@ async function loadNextPair() {
   startPairTimer();
 }
 
-/* ---------- Pair timer (25-min warning, 30-min auto-skip) ---------- */
-let _pairWarningTimer = null;
-let _pairExpireTimer  = null;
-let _countdownInterval = null;
+/* ---------- Pair timer (30-min auto-skip) ---------- */
+let _pairExpireTimer = null;
 
 function startPairTimer() {
   clearPairTimer();
-  const WARN_MS   = 25 * 60 * 1000;
-  const EXPIRE_MS = 30 * 60 * 1000;
-
-  _pairWarningTimer = setTimeout(() => {
-    openTimeoutModal();
-  }, WARN_MS);
-
   _pairExpireTimer = setTimeout(async () => {
-    closeTimeoutModal();
     showToast("Time's up — entry released to another validator.");
     const btn = $("#skip-btn");
     if (btn) btn.click();
     else await loadNextPair();
-  }, EXPIRE_MS);
+  }, 30 * 60 * 1000);
 }
 
 function clearPairTimer() {
-  clearTimeout(_pairWarningTimer);
   clearTimeout(_pairExpireTimer);
-  clearInterval(_countdownInterval);
-  _pairWarningTimer = _pairExpireTimer = _countdownInterval = null;
+  _pairExpireTimer = null;
 }
 
-function openTimeoutModal() {
-  let secsLeft = 5 * 60;
-  const countEl = $("#timeout-countdown");
-  const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-  if (countEl) countEl.textContent = fmt(secsLeft);
-  _countdownInterval = setInterval(() => {
-    secsLeft--;
-    if (countEl) countEl.textContent = fmt(secsLeft);
-    if (secsLeft <= 0) clearInterval(_countdownInterval);
-  }, 1000);
-  $("#timeout-modal").classList.remove("hidden");
-  document.body.style.overflow = "hidden";
-}
+/* ---------- Generic styled dialog (promise-based) ---------- */
+function showDialog({ icon, title, message, buttons }) {
+  return new Promise(resolve => {
+    const iconEl  = $("#dialog-icon");
+    const titleEl = $("#dialog-title");
+    const msgEl   = $("#dialog-message");
+    const btnsEl  = $("#dialog-buttons");
 
-function closeTimeoutModal() {
-  $("#timeout-modal").classList.add("hidden");
-  document.body.style.overflow = "";
-  clearInterval(_countdownInterval);
-}
+    iconEl.textContent  = icon || "";
+    iconEl.style.display = icon ? "" : "none";
+    titleEl.textContent = title || "";
+    msgEl.textContent   = message || "";
 
-$("#timeout-continue-btn").onclick = () => closeTimeoutModal();
-$("#timeout-skip-btn").onclick = async () => {
-  closeTimeoutModal();
-  clearPairTimer();
-  const btn = $("#skip-btn");
-  if (btn) btn.click();
-  else await loadNextPair();
-};
+    btnsEl.innerHTML = "";
+    for (const btn of buttons) {
+      const el = document.createElement("button");
+      el.textContent = btn.label;
+      el.className   = btn.primary ? "btn-primary" : "ghost-btn";
+      if (btn.muted) el.style.color = "var(--muted)";
+      el.onclick = () => {
+        $("#dialog-modal").classList.add("hidden");
+        document.body.style.overflow = "";
+        resolve(btn.value);
+      };
+      btnsEl.appendChild(el);
+    }
+
+    $("#dialog-modal").classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+  });
+}
 
 /* ---------- Inactivity auto-logout (25 min warn + 5 min countdown) ---------- */
-const INACTIVITY_WARN_MS = 25 * 60 * 1000;
+const INACTIVITY_WARN_MS    = 25 * 60 * 1000;
 const INACTIVITY_COUNTDOWN_S = 5 * 60;
 let _inactivityTimer = null;
 let _inactivityCountdownInterval = null;
@@ -694,13 +682,7 @@ function _startInactivityCountdown() {
   _inactivityWarningActive = true;
   let remaining = INACTIVITY_COUNTDOWN_S;
   const countdownEl = $("#inactivity-countdown");
-
-  function fmt(s) {
-    const m = Math.floor(s / 60);
-    const sec = String(s % 60).padStart(2, "0");
-    return `${m}:${sec}`;
-  }
-
+  const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   countdownEl.textContent = fmt(remaining);
   $("#inactivity-warn-modal").classList.remove("hidden");
   document.body.style.overflow = "hidden";
@@ -718,7 +700,7 @@ function _startInactivityCountdown() {
 }
 
 function resetInactivityTimer() {
-  if (_inactivityWarningActive) return; // don't reset while countdown is running
+  if (_inactivityWarningActive) return;
   clearTimeout(_inactivityTimer);
   _inactivityTimer = setTimeout(_startInactivityCountdown, INACTIVITY_WARN_MS);
 }
@@ -788,7 +770,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
 
       <div class="abstract-block">
         <div class="abstract expanded" id="abstract-text">${escapeHtml(p.abstract_r || "(no abstract available)")}</div>
-        <textarea class="abstract-edit hidden" id="abstract-edit" rows="6"></textarea>
+        <textarea class="abstract-edit hidden" id="abstract-edit"></textarea>
         <div class="abstract-tools">
           <button class="link-btn" id="edit-abstract-btn">edit abstract</button>
           <span class="abstract-tools-spacer"></span>
@@ -913,9 +895,11 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
 function wireEditButtons(container, p) {
   const editAbstractBtn = container.querySelector("#edit-abstract-btn");
   const abstractEdit = container.querySelector("#abstract-edit");
+  const abstractText = container.querySelector("#abstract-text");
   editAbstractBtn.onclick = () => {
     if (abstractEdit.classList.contains("hidden")) {
       abstractEdit.value = p.abstract_r || "";
+      abstractEdit.style.height = abstractText.offsetHeight + "px";
       abstractText.classList.add("hidden");
       abstractEdit.classList.remove("hidden");
       editAbstractBtn.textContent = "save edited abstract";
@@ -1046,7 +1030,15 @@ function updateSubmitState(pairBody) {
 }
 
 async function onSkip() {
-  if (!confirm("Skip this pair? You won't get points and it'll be re-served to others.")) return;
+  const ok = await showDialog({
+    title: "Skip this pair?",
+    message: "You won't get points and it'll be re-served to others.",
+    buttons: [
+      { label: "Skip →", value: true, primary: true },
+      { label: "Cancel", value: false },
+    ],
+  });
+  if (!ok) return;
   clearPairTimer();
   try {
     await api("/skip", "POST", {
@@ -1265,16 +1257,19 @@ const TOUR_STEPS = [
   },
   {
     sel: "#gate-1",
+    also: [".pair-header"],
     title: "i. Type check",
     body: "Is this a <em>Replication</em> (different data), a <em>Reproduction</em> (same data), or <em>Neither</em>? This is the first thing you verify.",
   },
   {
     sel: "#gate-2",
+    also: [".pair-header"],
     title: "ii. Original check",
     body: "The system found the original study being replicated. Confirm it's the right paper — most are correct, but flag it if something looks off.",
   },
   {
     sel: "#gate-3",
+    also: [".pair-header"],
     title: "iii. Outcome check",
     body: "Does the outcome label and supporting quote match what the authors actually concluded? You can <em>edit the quote</em> to extend or correct it.",
   },
@@ -1330,7 +1325,7 @@ function showTourStep(idx) {
   // Remove previous highlight
   document.querySelectorAll(".tour-highlight").forEach(el => el.classList.remove("tour-highlight"));
 
-  // Apply highlight to target
+  // Apply highlight to primary target and any additional elements
   const card = $("#onb-card");
   let target = null;
   if (step.sel) {
@@ -1339,6 +1334,12 @@ function showTourStep(idx) {
       target.classList.add("tour-highlight");
       target.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
+  }
+  if (step.also) {
+    step.also.forEach(sel => {
+      const el = card.querySelector(sel);
+      if (el) el.classList.add("tour-highlight");
+    });
   }
 
   // Show & position callout
@@ -1413,32 +1414,24 @@ document.addEventListener("keydown", (e) => {
 /* ---------- Too-fast guard ---------- */
 const TOO_FAST_THRESHOLD_MS = 17000;
 
-function guardedSubmit() {
+async function guardedSubmit() {
   const elapsed = _pairShownAt ? Date.now() - _pairShownAt : Infinity;
   if (elapsed < TOO_FAST_THRESHOLD_MS) {
-    $("#too-fast-modal").classList.remove("hidden");
-    document.body.style.overflow = "hidden";
-  } else {
-    submitJudgement();
+    const result = await showDialog({
+      icon: "⚡",
+      title: "That was fast.",
+      message: "You submitted in under 17 seconds. Are you sure you had enough time to read it?",
+      buttons: [
+        { label: "Yes, submit anyway →", value: "submit", primary: true },
+        { label: "Read it again",         value: "reread" },
+        { label: "Rest my eyes — log out", value: "logout", muted: true },
+      ],
+    });
+    if (result === "reread")  return;
+    if (result === "logout") { logout(); return; }
   }
-}
-
-$("#too-fast-submit-btn").onclick = () => {
-  $("#too-fast-modal").classList.add("hidden");
-  document.body.style.overflow = "";
   submitJudgement();
-};
-
-$("#too-fast-reread-btn").onclick = () => {
-  $("#too-fast-modal").classList.add("hidden");
-  document.body.style.overflow = "";
-};
-
-$("#too-fast-logout-btn").onclick = () => {
-  $("#too-fast-modal").classList.add("hidden");
-  document.body.style.overflow = "";
-  logout();
-};
+}
 
 /* ---------- FAQ Modal ---------- */
 const FAQ_URL = "https://raw.githubusercontent.com/forrtproject/fred-data/main/output/flora_faq.md";

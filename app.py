@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 import hashlib
 import resend
+from email_templates import forgot_handle_email
 
 load_dotenv()
 
@@ -699,19 +700,13 @@ def forgot_handle(req: ForgotHandleRequest):
 
         # Send email via Resend
         resend.api_key = RESEND_API_KEY
+        tmpl = forgot_handle_email(validator["handle"])
         resend.Emails.send({
             "from": EMAIL_FROM,
             "to": [email],
-            "subject": "Your Flora Validator username",
-            "html": f"""
-                <p>Hi,</p>
-                <p>You requested a reminder of your Flora Validator username.</p>
-                <p>Your username is: <strong>{validator['handle']}</strong></p>
-                <p>You can use this to sign in at <a href="https://validation.forrt.org">validation.forrt.org</a>.</p>
-                <p>If you did not request this, you can ignore this email.</p>
-                <br>
-                <p style="color:#888;font-size:0.85em">Flora Validator · FORRT</p>
-            """,
+            "subject": tmpl["subject"],
+            "html": tmpl["html"],
+            "text": tmpl["text"],
         })
 
         cur.execute(
