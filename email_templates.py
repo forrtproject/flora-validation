@@ -119,17 +119,41 @@ def _sign_off() -> str:
 
 def forgot_handle_email(handle: str) -> dict:
     """Email sent when a validator requests their handle reminder."""
+    handle_box = f"""
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
+         style="margin:24px 0;">
+    <tr>
+      <td align="center">
+        <div style="display:inline-block;background:{BG_ALT};border:1px solid {RULE};
+                    border-left:4px solid {ACCENT};border-radius:8px;
+                    padding:18px 32px;text-align:center;">
+          <p style="margin:0 0 6px;font-size:11px;font-weight:700;letter-spacing:0.2em;
+                    text-transform:uppercase;color:{ACCENT};font-family:'Courier New',monospace;">
+            Your username
+          </p>
+          <p style="margin:0;font-size:26px;font-weight:700;color:{INK};
+                    font-family:Georgia,serif;letter-spacing:0.02em;">
+            {handle}
+          </p>
+        </div>
+      </td>
+    </tr>
+  </table>"""
+
     body = "".join([
-        _paragraph("You requested a reminder of your <strong>FLoRA Validator username</strong>. Here it is:"),
-        _info_box([("Your username", handle)]),
+        f'<p style="margin:0 0 20px;font-size:16px;font-weight:600;color:{INK};">Good news — we found your account.</p>',
         _paragraph(
-            f'Use this username to sign in at '
-            f'<a href="{APP_URL}" style="color:{ACCENT};text-decoration:underline;">'
-            f'validation.forrt.org</a>.'
+            "Someone (hopefully you) requested a username reminder for this email address. "
+            "Your FLoRA Validator username is shown below."
         ),
-        f'<p style="margin:0 0 16px;font-size:13px;color:{MUTED};line-height:1.6;">'
-        f'If you did not request this reminder, you can safely ignore this email — '
-        f'no changes have been made to your account.</p>',
+        handle_box,
+        _paragraph(
+            f'Head to <a href="{APP_URL}" style="color:{ACCENT};text-decoration:underline;">'
+            f'validation.forrt.org</a> and use this username to sign back in. '
+            f'Your progress and points are exactly where you left them.'
+        ),
+        f'<p style="margin:24px 0 0;font-size:13px;color:{MUTED};line-height:1.7;">'
+        f'Didn\'t request this? No action needed — your account is safe and nothing has changed.</p>',
         _divider(),
         _sign_off(),
     ])
@@ -138,10 +162,11 @@ def forgot_handle_email(handle: str) -> dict:
         "subject": "Your FLoRA Validator username",
         "html": _base_layout(body),
         "text": (
-            f"You requested a reminder of your FLoRA Validator username.\n\n"
-            f"Your username is: {handle}\n\n"
+            f"Good news — we found your account.\n\n"
+            f"Your FLoRA Validator username is: {handle}\n\n"
             f"Sign in at: {APP_URL}\n\n"
-            f"If you did not request this, please ignore this email.\n\n"
+            f"Your progress and points are exactly where you left them.\n\n"
+            f"Didn't request this? No action needed — your account is safe.\n\n"
             f"— The FLoRA Validation team"
         ),
     }

@@ -246,7 +246,7 @@ def login(req: LoginRequest):
                 method = "email" if use_email else "code"
                 raise HTTPException(
                     400,
-                    f"This {method} is already registered. Please use the correct handle.",
+                    f"This {method} is already registered. Please use the correct username.",
                 )
             return {
                 "coder_id": existing["id"],

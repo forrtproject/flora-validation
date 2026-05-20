@@ -334,7 +334,18 @@ async function doLogin() {
     localStorage.setItem(STORAGE.CODER, JSON.stringify(resp));
     routeAfterLogin();
   } catch (e) {
-    await showAlert(e.message);
+    if (e.message.includes("already registered")) {
+      const result = await showDialog({
+        message: e.message,
+        buttons: [
+          { label: "Forgot username →", value: "forgot" },
+          { label: "OK", value: "ok", primary: true },
+        ],
+      });
+      if (result === "forgot") openForgotModal();
+    } else {
+      await showAlert(e.message);
+    }
   }
 }
 
@@ -1923,7 +1934,8 @@ $("#admin-filters").addEventListener("click", (e) => {
 
 /* ---------- Forgot handle ---------- */
 function openForgotModal() {
-  $("#forgot-email-input").value = "";
+  const loginEmail = $("#email-input")?.value.trim() || "";
+  $("#forgot-email-input").value = loginEmail;
   $("#forgot-msg").textContent = "";
   $("#forgot-msg").style.color = "";
   $("#forgot-submit-btn").disabled = false;

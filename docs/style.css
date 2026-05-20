@@ -1773,6 +1773,9 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
   overflow-y: auto;
 }
 
+#dialog-modal .faq-panel {
+  border: none;
+}
 .faq-panel {
   background: var(--bg);
   border: 1px solid var(--rule);
