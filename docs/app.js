@@ -297,17 +297,17 @@ $("#login-mode-toggle").addEventListener("change", (e) => {
 
 async function doLogin() {
   const handle = $("#handle-input").value.trim();
-  if (!handle) { alert("Please enter a handle."); return; }
+  if (!handle) { await showAlert("Please enter a handle."); return; }
 
   // Admin path: handle "admin" + email field used as password
   if (handle === "admin" && loginMode === "email") {
     const password = $("#email-input").value.trim();
-    if (!password) { alert("Enter the admin password in the Email field."); return; }
+    if (!password) { await showAlert("Enter the admin password in the Email field."); return; }
     try {
       const resp = await adminLogin(password);
       if (resp) return;
     } catch (e) {
-      alert("Admin login failed: " + e.message);
+      await showAlert("Admin login failed: " + e.message);
       return;
     }
   }
@@ -316,14 +316,14 @@ async function doLogin() {
   if (loginMode === "email") {
     const email = $("#email-input").value.trim();
     if (!email || !email.includes("@")) {
-      alert("Please enter a valid email address.");
+      await showAlert("Please enter a valid email address.");
       return;
     }
     body = { handle, email };
   } else {
     const code = getCode();
     if (code.length < 6) {
-      alert("Please fill in all four parts of your code.");
+      await showAlert("Please fill in all four parts of your code.");
       return;
     }
     body = { handle, code };
@@ -334,7 +334,7 @@ async function doLogin() {
     localStorage.setItem(STORAGE.CODER, JSON.stringify(resp));
     routeAfterLogin();
   } catch (e) {
-    alert(e.message);
+    await showAlert(e.message);
   }
 }
 
@@ -632,6 +632,10 @@ function clearPairTimer() {
 }
 
 /* ---------- Generic styled dialog (promise-based) ---------- */
+function showAlert(message) {
+  return showDialog({ message, buttons: [{ label: "OK", value: true, primary: true }] });
+}
+
 function showDialog({ icon, title, message, buttons }) {
   return new Promise(resolve => {
     const iconEl  = $("#dialog-icon");
@@ -1048,7 +1052,7 @@ async function onSkip() {
     showToast(0, "skipped");
     await refreshAll();
   } catch (e) {
-    alert(e.message);
+    await showAlert(e.message);
   }
 }
 
@@ -1094,7 +1098,7 @@ async function submitJudgement() {
     }
     await refreshAll();
   } catch (e) {
-    alert(e.message);
+    await showAlert(e.message);
     btn.disabled = false;
   }
 }
@@ -1238,7 +1242,7 @@ async function submitHard(container) {
     }
     await refreshAll();
   } catch (e) {
-    alert(e.message);
+    await showAlert(e.message);
     submitBtn.disabled = false;
   }
 }
@@ -1322,10 +1326,11 @@ function showTourStep(idx) {
     `<span class="tour-dot${i === idx ? " active" : ""}"></span>`
   ).join("");
 
-  // Remove previous highlight
+  // Remove previous highlights
   document.querySelectorAll(".tour-highlight").forEach(el => el.classList.remove("tour-highlight"));
+  document.querySelectorAll(".tour-highlight-secondary").forEach(el => el.classList.remove("tour-highlight-secondary"));
 
-  // Apply highlight to primary target and any additional elements
+  // Apply highlight to primary target (white/bright) and secondary elements (dimmed)
   const card = $("#onb-card");
   let target = null;
   if (step.sel) {
@@ -1338,7 +1343,7 @@ function showTourStep(idx) {
   if (step.also) {
     step.also.forEach(sel => {
       const el = card.querySelector(sel);
-      if (el) el.classList.add("tour-highlight");
+      if (el) el.classList.add("tour-highlight-secondary");
     });
   }
 
@@ -1363,14 +1368,15 @@ function positionTourCallout(target) {
   const vh = window.innerHeight;
   const vw = window.innerWidth;
 
-  // Pick vertical position: prefer below, fall back to above
+  // Always place below the target; if no room, pin to bottom of viewport
+  const calloutH = callout.offsetHeight || 220;
   let top;
-  const calloutH = callout.offsetHeight || 200;
   if (rect.bottom + calloutH + MARGIN < vh) {
     top = rect.bottom + MARGIN;
   } else {
-    top = Math.max(MARGIN, rect.top - calloutH - MARGIN);
+    top = vh - calloutH - MARGIN;
   }
+  top = Math.max(MARGIN, top);
 
   const left = Math.max(MARGIN, Math.min(rect.left, vw - CW - MARGIN));
 
@@ -1380,6 +1386,7 @@ function positionTourCallout(target) {
 
 function endTour() {
   document.querySelectorAll(".tour-highlight").forEach(el => el.classList.remove("tour-highlight"));
+  document.querySelectorAll(".tour-highlight-secondary").forEach(el => el.classList.remove("tour-highlight-secondary"));
   $("#tour-overlay").classList.add("hidden");
   $("#tour-callout").classList.add("hidden");
 
@@ -1644,7 +1651,7 @@ async function quickApprove(recordId, btn) {
   } catch (e) {
     btn.disabled = false;
     btn.textContent = "Approve ✓";
-    alert("Error: " + e.message);
+    await showAlert("Error: " + e.message);
   }
 }
 
@@ -1806,7 +1813,7 @@ async function submitAdminResolve(recordId) {
   } catch (e) {
     btn.disabled = false;
     btn.textContent = "Mark as Resolved →";
-    alert("Error: " + e.message);
+    await showAlert("Error: " + e.message);
   }
 }
 
@@ -1887,7 +1894,7 @@ function renderAdminStats(validators) {
         btn.classList.toggle("trusted", data.trusted);
         btn.textContent = data.trusted ? "⭐ Trusted" : "—";
         btn.title = data.trusted ? "Trusted — click to revoke" : "Click to mark as trusted";
-      } catch (e) { alert(e.message); }
+      } catch (e) { await showAlert(e.message); }
       btn.disabled = false;
     };
   });

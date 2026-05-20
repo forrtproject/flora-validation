@@ -1684,7 +1684,14 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
 .tour-highlight {
   position: relative !important;
   z-index: 16 !important;
-  box-shadow: 0 0 0 3px var(--accent-soft), 0 4px 24px rgba(38,38,16,0.15) !important;
+  background: #ffffff !important;
+  box-shadow: 0 0 0 3px var(--accent), 0 8px 32px rgba(38,38,16,0.25) !important;
+  border-radius: 1rem !important;
+}
+.tour-highlight-secondary {
+  position: relative !important;
+  z-index: 16 !important;
+  filter: brightness(0.78) !important;
   border-radius: 1rem !important;
 }
 
