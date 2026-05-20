@@ -490,7 +490,7 @@ function showOnboardingFeedback(pair, errors) {
     </div>
   `;
   fb.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  $("#onb-next-btn").onclick = () => {
+  $("#onb-next-btn").onclick = async () => {
     state.onboardingResults.push({ correct, idx: state.onboardingIdx });
     state.onboardingIdx += 1;
     if (state.onboardingIdx >= state.onboardingPairs.length) {
