@@ -179,10 +179,23 @@ CREATE TABLE IF NOT EXISTS record_metadata (
     created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Add consensus_reached to validation_status enum (drop + recreate constraint)
+ALTER TABLE unvalidated DROP CONSTRAINT IF EXISTS unvalidated_validation_status_check;
+ALTER TABLE unvalidated ADD CONSTRAINT unvalidated_validation_status_check
+    CHECK (validation_status IN (
+        'unvalidated', 'validation_inprogress',
+        'validated', 'need_review', 'consensus_reached'));
+
+-- Admin approval column on validated table
+ALTER TABLE validated ADD COLUMN IF NOT EXISTS admin_approved BOOLEAN NOT NULL DEFAULT FALSE;
+
 -- Admin columns (idempotent — safe to re-run on existing databases)
 ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS admin_checked BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS admin_name    TEXT;
 ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS admin_notes   TEXT;
+
+-- Trusted validator flag
+ALTER TABLE validators ADD COLUMN IF NOT EXISTS trusted BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Forgot-handle rate limiting
 ALTER TABLE validators ADD COLUMN IF NOT EXISTS forgot_requests_today INTEGER NOT NULL DEFAULT 0;

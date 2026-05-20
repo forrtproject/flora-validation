@@ -102,7 +102,6 @@
   <header class="onboarding-header">
     <div class="brand-group">
       <div class="brand">Flora <em>·</em> Validator</div>
-      <button id="onb-layout-btn" class="ghost-btn" title="Toggle split layout">Split view</button>
       <button id="onb-faq-btn" class="ghost-btn">FAQ</button>
       <a href="mailto:lukas.roeseler@uni-muenster.de" class="ghost-btn" style="text-decoration:none">Help</a>
     </div>
@@ -137,7 +136,6 @@
   <header>
     <div class="brand-group">
       <div class="brand">Flora <em>·</em> Validator</div>
-      <button id="layout-toggle" class="ghost-btn" title="Toggle split layout">Split view</button>
       <button id="game-faq-btn" class="ghost-btn">FAQ</button>
       <a href="mailto:lukas.roeseler@uni-muenster.de" class="ghost-btn" style="text-decoration:none">Help</a>
     </div>
@@ -199,8 +197,15 @@
   </header>
 
   <div class="admin-body">
+    <div class="admin-tabs" id="admin-tabs">
+      <button class="admin-tab-btn active" data-tab="entries">Entries</button>
+      <button class="admin-tab-btn" data-tab="stats">Validator Stats</button>
+    </div>
+
+    <div id="admin-tab-entries">
     <div class="admin-filters" id="admin-filters">
       <button class="admin-filter-btn active" data-filter="all">All <span class="filter-count" id="fc-all">—</span></button>
+      <button class="admin-filter-btn" data-filter="pending_approval">Pending Approval <span class="filter-count" id="fc-pending-approval">—</span></button>
       <button class="admin-filter-btn" data-filter="needs_review">Needs Review <span class="filter-count" id="fc-needs-review">—</span></button>
       <button class="admin-filter-btn" data-filter="llm_errors">LLM Errors <span class="filter-count" id="fc-llm-errors">—</span></button>
       <button class="admin-filter-btn" data-filter="validated">Validated <span class="filter-count" id="fc-validated">—</span></button>
@@ -226,6 +231,31 @@
     </div>
 
     <div class="admin-pagination" id="admin-pagination"></div>
+    </div><!-- end admin-tab-entries -->
+
+    <div id="admin-tab-stats" class="hidden">
+      <div class="admin-summary-bar" id="admin-summary-bar"></div>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Validator</th>
+              <th>Trusted</th>
+              <th>Joined</th>
+              <th>Judgements</th>
+              <th>Points</th>
+              <th>Avg time</th>
+              <th>Median</th>
+              <th>Min</th>
+              <th>Max</th>
+            </tr>
+          </thead>
+          <tbody id="admin-stats-body"></tbody>
+        </table>
+        <p class="admin-empty hidden" id="admin-stats-empty">No data yet.</p>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -237,6 +267,16 @@
       <button id="admin-detail-close" class="faq-close" title="Close">×</button>
     </div>
     <div class="admin-detail-body" id="admin-detail-body"></div>
+  </div>
+</div>
+
+<!-- ------------ MOBILE WARNING ------------ -->
+<div id="mobile-warning" class="mobile-warning-overlay">
+  <div class="mobile-warning-box">
+    <div style="font-size:2.5rem;margin-bottom:1rem">🖥️</div>
+    <h2>Desktop only for now</h2>
+    <p>Flora Validator isn't optimised for mobile yet. For the best experience, please open this on a desktop or laptop.</p>
+    <button id="mobile-continue-btn" class="ghost-btn" style="margin-top:1.25rem;font-size:0.85rem;color:var(--muted)">Continue anyway</button>
   </div>
 </div>
 
@@ -270,6 +310,50 @@
   </div>
 </div>
 
+<!-- ------------ INACTIVITY WARNING MODAL ------------ -->
+<div id="inactivity-warn-modal" class="faq-overlay hidden" role="dialog" aria-modal="true">
+  <div class="faq-panel" style="max-width:420px;text-align:center">
+    <div class="faq-panel-header" style="justify-content:center">
+      <span class="faq-panel-title">Still there?</span>
+    </div>
+    <div class="faq-body" style="padding:1.75rem 2rem 2rem">
+      <p style="font-size:1.05rem;margin-bottom:1rem">You've been inactive for <strong>25 minutes</strong>.</p>
+      <p style="color:var(--muted);margin-bottom:1.5rem">You'll be logged out in <strong id="inactivity-countdown">5:00</strong> unless you continue.</p>
+      <div style="display:flex;gap:0.75rem;justify-content:center">
+        <button id="inactivity-continue-btn" class="btn-primary">I'm still here →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ------------ INACTIVITY MODAL ------------ -->
+<div id="inactivity-modal" class="faq-overlay hidden" role="dialog" aria-modal="true">
+  <div class="faq-panel" style="max-width:400px;text-align:center">
+    <div class="faq-body" style="padding:2rem 2rem 1.75rem">
+      <div style="font-size:2rem;margin-bottom:0.75rem">💤</div>
+      <h2 style="font-family:'Fraunces',Georgia,serif;font-weight:400;font-size:1.4rem;margin-bottom:0.6rem">You've been away for a while.</h2>
+      <p style="color:var(--ink-soft);font-size:1rem;line-height:1.6;margin-bottom:1.5rem">Your session has expired due to inactivity. Please sign in again to continue.</p>
+      <button id="inactivity-ok-btn" class="btn-primary" style="width:100%">Back to login →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ------------ TOO FAST MODAL ------------ -->
+<div id="too-fast-modal" class="faq-overlay hidden" role="dialog" aria-modal="true">
+  <div class="faq-panel" style="max-width:420px;text-align:center">
+    <div class="faq-body" style="padding:2rem 2rem 1.75rem">
+      <div style="font-size:2rem;margin-bottom:0.75rem">⚡</div>
+      <h2 style="font-family:'Fraunces',Georgia,serif;font-weight:400;font-size:1.4rem;margin-bottom:0.6rem">That was fast.</h2>
+      <p style="color:var(--ink-soft);font-size:1rem;line-height:1.6;margin-bottom:1.5rem">You submitted in under 17 seconds. Are you sure you had enough time to read it?</p>
+      <div style="display:flex;flex-direction:column;gap:0.6rem">
+        <button id="too-fast-submit-btn" class="btn-primary">Yes, submit anyway →</button>
+        <button id="too-fast-reread-btn" class="ghost-btn">Read it again</button>
+        <button id="too-fast-logout-btn" class="ghost-btn" style="color:var(--muted)">Rest my eyes — log out</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ------------ TIMEOUT WARNING MODAL ------------ -->
 <div id="timeout-modal" class="faq-overlay hidden" role="dialog" aria-modal="true">
   <div class="faq-panel" style="max-width:420px;text-align:center">
@@ -282,6 +366,26 @@
       <div style="display:flex;gap:0.75rem;justify-content:center">
         <button id="timeout-continue-btn" class="btn-primary">Keep going →</button>
         <button id="timeout-skip-btn" class="ghost-btn">Skip now</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ------------ FORGOT HANDLE MODAL ------------ -->
+<div id="forgot-modal" class="faq-overlay hidden" role="dialog" aria-modal="true">
+  <div class="faq-panel" style="max-width:420px">
+    <div class="faq-panel-header">
+      <span class="faq-panel-title">Forgot your username?</span>
+      <button id="forgot-close-btn" class="faq-close" title="Close">×</button>
+    </div>
+    <div class="faq-body" style="padding:1.75rem 2rem 2rem">
+      <p style="margin-bottom:1.25rem;color:var(--ink-soft)">Enter the email address you registered with and we'll send your username to your inbox.</p>
+      <label class="admin-form-label">Email address</label>
+      <input id="forgot-email-input" type="email" class="admin-input" placeholder="you@example.com" autocomplete="email">
+      <p id="forgot-msg" style="font-size:0.85rem;margin-top:0.6rem;min-height:1.2em"></p>
+      <div style="display:flex;gap:0.75rem;margin-top:1rem">
+        <button id="forgot-submit-btn" class="btn-primary">Send →</button>
+        <button id="forgot-cancel-btn" class="ghost-btn">Cancel</button>
       </div>
     </div>
   </div>

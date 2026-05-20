@@ -731,6 +731,81 @@ def forgot_handle(req: ForgotHandleRequest):
 # Admin endpoints
 # ---------------------------------------------------------------------------
 
+@app.get("/api/admin/stats")
+def admin_stats(x_admin_token: str = Header(...)):
+    _require_admin(x_admin_token)
+
+    with db() as cur:
+        cur.execute(
+            """
+            SELECT
+                v.id,
+                v.handle,
+                v.trusted,
+                v.total_judgements,
+                v.total_points,
+                v.created_at::date AS joined,
+                COUNT(vq.queue_id)  AS timed_count,
+                ROUND(AVG(
+                    EXTRACT(EPOCH FROM (vq.validated_at - vq.shown_at)) / 60
+                )::numeric, 1)     AS avg_min,
+                ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (
+                    ORDER BY EXTRACT(EPOCH FROM (vq.validated_at - vq.shown_at)) / 60
+                )::numeric, 1)     AS median_min,
+                ROUND(MIN(
+                    EXTRACT(EPOCH FROM (vq.validated_at - vq.shown_at)) / 60
+                )::numeric, 1)     AS min_min,
+                ROUND(MAX(
+                    EXTRACT(EPOCH FROM (vq.validated_at - vq.shown_at)) / 60
+                )::numeric, 1)     AS max_min
+            FROM validators v
+            LEFT JOIN validation_queue vq
+                ON  vq.validator_id   = v.id
+                AND vq.is_validated   = TRUE
+                AND vq.validator_slot IN ('human_1', 'human_2')
+                AND vq.shown_at       IS NOT NULL
+                AND vq.validated_at   IS NOT NULL
+                AND EXTRACT(EPOCH FROM (vq.validated_at - vq.shown_at)) BETWEEN 10 AND 5400
+            GROUP BY v.id, v.handle, v.total_judgements, v.total_points, v.created_at
+            ORDER BY v.trusted DESC, v.total_judgements DESC
+            """
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+        for r in rows:
+            if r["joined"]:
+                r["joined"] = str(r["joined"])
+
+        # Overall summary
+        cur.execute(
+            """
+            SELECT
+                COUNT(*)  AS total_validators,
+                SUM(total_judgements) AS total_judgements,
+                (SELECT COUNT(*) FROM unvalidated WHERE validation_status = 'validated')  AS total_validated,
+                (SELECT COUNT(*) FROM unvalidated WHERE validation_status = 'need_review') AS total_review
+            FROM validators
+            WHERE total_judgements > 0
+            """
+        )
+        summary = dict(cur.fetchone())
+
+    return {"validators": rows, "summary": summary}
+
+
+@app.post("/api/admin/validators/{validator_id}/toggle-trust")
+def admin_toggle_trust(validator_id: int, x_admin_token: str = Header(...)):
+    _require_admin(x_admin_token)
+    with db() as cur:
+        cur.execute(
+            "UPDATE validators SET trusted = NOT trusted WHERE id = %s RETURNING handle, trusted",
+            (validator_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Validator not found")
+    return {"handle": row["handle"], "trusted": row["trusted"]}
+
+
 @app.post("/api/admin/login")
 def admin_login(req: AdminLoginRequest):
     if req.password != ADMIN_PASSWORD:
@@ -748,11 +823,12 @@ def admin_entries(
     _require_admin(x_admin_token)
 
     where = {
-        "all":          "",
-        "needs_review": "WHERE u.validation_status = 'need_review'",
-        "llm_errors":   "WHERE u.llm_validator IS NOT NULL AND (u.llm_validator)::jsonb ? 'error'",
-        "validated":    "WHERE u.validation_status = 'validated' AND u.admin_checked = FALSE",
-        "admin_checked":"WHERE u.admin_checked = TRUE",
+        "all":              "",
+        "pending_approval": "WHERE u.validation_status = 'consensus_reached'",
+        "needs_review":     "WHERE u.validation_status = 'need_review'",
+        "llm_errors":       "WHERE u.llm_validator IS NOT NULL AND (u.llm_validator)::jsonb ? 'error'",
+        "validated":        "WHERE u.validation_status = 'validated'",
+        "admin_checked":    "WHERE u.admin_checked = TRUE",
     }.get(filter, "")
 
     offset = (page - 1) * per_page
@@ -780,7 +856,12 @@ def admin_entries(
                 (u.llm_validator IS NOT NULL)::boolean AS has_llm,
                 (u.llm_validator IS NOT NULL AND (u.llm_validator)::jsonb ? 'error')::boolean AS has_llm_error,
                 (SELECT COUNT(*) FROM validation_queue vq
-                 WHERE vq.record_id = u.record_id AND vq.is_validated = TRUE) AS validator_count
+                 WHERE vq.record_id = u.record_id AND vq.is_validated = TRUE) AS validator_count,
+                (SELECT COUNT(*) FROM validation_queue vq
+                 JOIN validators tv ON tv.id = vq.validator_id AND tv.trusted = TRUE
+                 WHERE vq.record_id = u.record_id
+                   AND vq.is_validated = TRUE
+                   AND vq.validator_slot IN ('human_1', 'human_2')) AS trusted_validator_count
             FROM unvalidated u
             {where}
             ORDER BY
@@ -800,11 +881,13 @@ def admin_entries(
         # Count badges for each filter tab
         cur.execute("SELECT COUNT(*) AS n FROM unvalidated")
         c_all = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE validation_status = 'consensus_reached'")
+        c_pending = cur.fetchone()["n"]
         cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE validation_status = 'need_review'")
         c_review = cur.fetchone()["n"]
         cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE llm_validator IS NOT NULL AND (llm_validator)::jsonb ? 'error'")
         c_llm = cur.fetchone()["n"]
-        cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE validation_status = 'validated' AND admin_checked = FALSE")
+        cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE validation_status = 'validated'")
         c_validated = cur.fetchone()["n"]
         cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE admin_checked = TRUE")
         c_admin = cur.fetchone()["n"]
@@ -816,6 +899,7 @@ def admin_entries(
         "per_page": per_page,
         "counts": {
             "all": c_all,
+            "pending_approval": c_pending,
             "needs_review": c_review,
             "llm_errors": c_llm,
             "validated": c_validated,
@@ -854,7 +938,76 @@ def admin_entry_detail(record_id: str, x_admin_token: str = Header(...)):
             s["record_id"] = str(s["record_id"])
             queue_slots.append(s)
 
-    return {"record": record, "queue_slots": queue_slots}
+    # Detect abstract-only conflict
+    import re as _re
+    def _norm(t): return _re.sub(r'[^a-z0-9]', '', (t or "").lower())
+
+    v1, v2 = record.get("validator_1") or {}, record.get("validator_2") or {}
+    correction_fields = ["corrected_doi_o", "corrected_study_o", "corrected_outcome", "corrected_type"]
+    check_fields      = ["type_check", "original_check", "outcome_check"]
+
+    checks_agree      = all(v1.get(f) == v2.get(f) for f in check_fields)
+    corrections_agree = all(v1.get(f) == v2.get(f) for f in correction_fields)
+    abstracts_differ  = _norm(v1.get("corrected_abstract")) != _norm(v2.get("corrected_abstract"))
+
+    abstract_only_conflict = (
+        record.get("validation_status") == "need_review"
+        and checks_agree
+        and corrections_agree
+        and abstracts_differ
+        and bool(v1) and bool(v2)
+    )
+
+    return {"record": record, "queue_slots": queue_slots, "abstract_only_conflict": abstract_only_conflict}
+
+
+@app.post("/api/admin/entries/{record_id}/approve")
+def admin_approve(record_id: str, x_admin_token: str = Header(...)):
+    _require_admin(x_admin_token)
+
+    with db() as cur:
+        cur.execute("SELECT * FROM unvalidated WHERE record_id = %s AND validation_status = 'consensus_reached'", (record_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Record not found or not awaiting approval")
+        rec = dict(row)
+
+        cur.execute(
+            """
+            UPDATE unvalidated SET
+                validation_status = 'validated',
+                admin_checked     = TRUE,
+                admin_name        = 'admin',
+                updated_at        = NOW()
+            WHERE record_id = %s
+            """,
+            (record_id,),
+        )
+
+        cur.execute(
+            """
+            INSERT INTO validated (
+                record_id, doi_r, study_r, year_r, url_r, ref_r, abstract_r,
+                doi_o, study_o, year_o, url_o, ref_o,
+                type, outcome, outcome_quote, out_quote_source, admin_approved
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, TRUE)
+            ON CONFLICT (doi_r, study_r, doi_o, study_o) DO UPDATE SET
+                admin_approved = TRUE,
+                validated_at   = NOW()
+            """,
+            (
+                record_id,
+                rec["doi_r"], rec["study_r"], rec["year_r"], rec["url_r"], rec["ref_r"], rec["abstract_r"],
+                rec.get("final_doi_o") or rec["doi_o"],
+                rec.get("final_study_o") or rec["study_o"],
+                rec["year_o"], rec["url_o"], rec["ref_o"],
+                rec.get("final_type") or rec["type"],
+                rec.get("final_outcome") or rec["outcome"],
+                rec["outcome_quote"], rec.get("out_quote_source"),
+            ),
+        )
+
+    return {"approved": True, "record_id": record_id}
 
 
 @app.post("/api/admin/entries/{record_id}/resolve")
@@ -903,12 +1056,13 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
             INSERT INTO validated (
                 record_id, doi_r, study_r, year_r, url_r, ref_r, abstract_r,
                 doi_o, study_o, year_o, url_o, ref_o,
-                type, outcome, outcome_quote, out_quote_source
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                type, outcome, outcome_quote, out_quote_source, admin_approved
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, TRUE)
             ON CONFLICT (doi_r, study_r, doi_o, study_o) DO UPDATE SET
                 type          = EXCLUDED.type,
                 outcome       = EXCLUDED.outcome,
                 outcome_quote = EXCLUDED.outcome_quote,
+                admin_approved = TRUE,
                 validated_at  = NOW()
             """,
             (

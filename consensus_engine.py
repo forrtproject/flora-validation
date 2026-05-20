@@ -7,6 +7,7 @@ Decision tree:
   3. checks differ → LLM tiebreaker → agrees with one human → validated, else → need_review
 """
 import json
+import re
 import random
 from datetime import datetime, timezone
 
@@ -16,12 +17,22 @@ _CHECK_FIELDS = ["type_check", "original_check", "outcome_check"]
 _CORRECTION_FIELDS = ["corrected_doi_o", "corrected_study_o", "corrected_outcome", "corrected_type"]
 
 
+def _normalize(text: str | None) -> str:
+    """Lowercase, strip punctuation and whitespace — used for fuzzy abstract comparison."""
+    if not text:
+        return ""
+    return re.sub(r'[^a-z0-9]', '', text.lower())
+
+
 def _checks_agree(h1: dict, h2: dict) -> bool:
     return all(h1.get(f) == h2.get(f) for f in _CHECK_FIELDS)
 
 
 def _corrections_agree(h1: dict, h2: dict) -> bool:
-    return all(h1.get(f) == h2.get(f) for f in _CORRECTION_FIELDS)
+    if not all(h1.get(f) == h2.get(f) for f in _CORRECTION_FIELDS):
+        return False
+    # Normalize text fields before comparing so minor formatting differences don't cause conflicts
+    return _normalize(h1.get("corrected_abstract")) == _normalize(h2.get("corrected_abstract"))
 
 
 def _llm_matches(llm: dict, human: dict) -> bool:
@@ -40,7 +51,7 @@ def _resolve_final(record: dict, winner: dict, other: dict | None = None) -> dic
         "study_o": winner.get("corrected_study_o") or record.get("study_o"),
         "outcome": winner.get("corrected_outcome") or record.get("outcome"),
         "type": winner.get("corrected_type") or record.get("type"),
-        "outcome_quote": random.choice(quotes) if quotes else record.get("outcome_quote"),
+        "outcome_quote": max(quotes, key=len) if quotes else record.get("outcome_quote"),
         "abstract_r": random.choice(abstracts) if abstracts else None,
     }
 
@@ -147,10 +158,10 @@ def evaluate_consensus(cur, record_id: str) -> None:
 
     if checks_ok and corrections_ok:
         # Branch 1: full agreement — LLM sanity check (humans always win regardless)
+        # Sets consensus_reached; admin must approve before entering validated table.
         llm = run_llm_validation(record, context="sanity_check")
         final = _resolve_final(record, h1, h2)
-        _update_status(cur, record_id, "validated", False, final, llm)
-        _insert_validated(cur, record, final)
+        _update_status(cur, record_id, "consensus_reached", False, final, llm)
 
     elif checks_ok and not corrections_ok:
         # Branch 2: checks agree but corrections differ → need_review, no LLM
@@ -169,12 +180,10 @@ def evaluate_consensus(cur, record_id: str) -> None:
 
         if matches_h1 and not matches_h2:
             final = _resolve_final(record, h1, h2)
-            _update_status(cur, record_id, "validated", True, final, llm)
-            _insert_validated(cur, record, final)
+            _update_status(cur, record_id, "consensus_reached", True, final, llm)
         elif matches_h2 and not matches_h1:
             final = _resolve_final(record, h2, h1)
-            _update_status(cur, record_id, "validated", True, final, llm)
-            _insert_validated(cur, record, final)
+            _update_status(cur, record_id, "consensus_reached", True, final, llm)
         else:
             # 3-way split or LLM matches neither/both
             _update_status(cur, record_id, "need_review", True, None, llm)

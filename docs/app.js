@@ -359,10 +359,16 @@ function routeAfterLogin() {
   }
 }
 
-const logout = () => {
+function clearSession() {
   clearTimeout(_inactivityTimer);
+  _clearInactivityCountdown();
   clearPairTimer();
   localStorage.removeItem(STORAGE.CODER);
+  state.coder = null;
+}
+
+const logout = () => {
+  clearSession();
   location.reload();
 };
 $("#logout-btn").onclick = logout;
@@ -526,20 +532,11 @@ $("#mode-toggle").onclick = async () => {
 };
 
 /* ---------- Split-layout toggle ---------- */
-let splitLayout = localStorage.getItem("flora.splitLayout") === "1";
+let splitLayout = localStorage.getItem("flora.splitLayout") !== "0"; // default on
 
 function applySplitLayout() {
   const cards = [$("#pair-card"), $("#onb-card")].filter(Boolean);
   cards.forEach(c => c.classList.toggle("split-layout", splitLayout));
-
-  if (splitLayout) {
-    cards.forEach(c => {
-      const txt = c.querySelector("#abstract-text");
-      const btn = c.querySelector("#abstract-toggle-btn");
-      if (txt) txt.classList.add("expanded");
-      if (btn) btn.textContent = "hide abstract ↑";
-    });
-  }
 
   const label = splitLayout ? "Column view" : "Split view";
   [$("#layout-toggle"), $("#onb-layout-btn")].forEach(b => {
@@ -553,8 +550,6 @@ function toggleLayout() {
   applySplitLayout();
 }
 
-$("#layout-toggle").onclick   = toggleLayout;
-$("#onb-layout-btn").onclick  = toggleLayout;
 
 // Apply on startup
 applySplitLayout();
@@ -680,25 +675,74 @@ $("#timeout-skip-btn").onclick = async () => {
   else await loadNextPair();
 };
 
-/* ---------- Inactivity auto-logout (30 min) ---------- */
-const INACTIVITY_MS = 30 * 60 * 1000;
+/* ---------- Inactivity auto-logout (25 min warn + 5 min countdown) ---------- */
+const INACTIVITY_WARN_MS = 25 * 60 * 1000;
+const INACTIVITY_COUNTDOWN_S = 5 * 60;
 let _inactivityTimer = null;
+let _inactivityCountdownInterval = null;
+let _inactivityWarningActive = false;
+
+function _clearInactivityCountdown() {
+  clearInterval(_inactivityCountdownInterval);
+  _inactivityCountdownInterval = null;
+  _inactivityWarningActive = false;
+  $("#inactivity-warn-modal").classList.add("hidden");
+  document.body.style.overflow = "";
+}
+
+function _startInactivityCountdown() {
+  _inactivityWarningActive = true;
+  let remaining = INACTIVITY_COUNTDOWN_S;
+  const countdownEl = $("#inactivity-countdown");
+
+  function fmt(s) {
+    const m = Math.floor(s / 60);
+    const sec = String(s % 60).padStart(2, "0");
+    return `${m}:${sec}`;
+  }
+
+  countdownEl.textContent = fmt(remaining);
+  $("#inactivity-warn-modal").classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+
+  _inactivityCountdownInterval = setInterval(() => {
+    remaining -= 1;
+    countdownEl.textContent = fmt(remaining);
+    if (remaining <= 0) {
+      _clearInactivityCountdown();
+      clearSession();
+      $("#inactivity-modal").classList.remove("hidden");
+      document.body.style.overflow = "hidden";
+    }
+  }, 1000);
+}
 
 function resetInactivityTimer() {
+  if (_inactivityWarningActive) return; // don't reset while countdown is running
   clearTimeout(_inactivityTimer);
-  _inactivityTimer = setTimeout(() => {
-    clearPairTimer();
-    showToast("Signed out due to inactivity.");
-    setTimeout(logout, 1500);
-  }, INACTIVITY_MS);
+  _inactivityTimer = setTimeout(_startInactivityCountdown, INACTIVITY_WARN_MS);
 }
+
+$("#inactivity-continue-btn").onclick = () => {
+  _clearInactivityCountdown();
+  clearTimeout(_inactivityTimer);
+  _inactivityTimer = setTimeout(_startInactivityCountdown, INACTIVITY_WARN_MS);
+};
+
+$("#inactivity-ok-btn").onclick = () => {
+  document.body.style.overflow = "";
+  location.reload();
+};
 
 ["mousemove", "mousedown", "keydown", "touchstart", "scroll"].forEach(evt =>
   document.addEventListener(evt, resetInactivityTimer, { passive: true })
 );
 
 /* ---------- Pair rendering (normal + onboarding) ---------- */
+let _pairShownAt = null;
+
 function renderPairInto(container, p, { onboarding, judgeCount }) {
+  if (!onboarding) _pairShownAt = Date.now();
   const outcomeLabel = (p.outcome || "uninformative").toLowerCase();
   const doiUrl = p.doi_r ? `https://doi.org/${p.doi_r}` : null;
   const oaUrl = p.oa_url_r || (p.url_r && p.url_r !== doiUrl ? p.url_r : null);
@@ -743,8 +787,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
       <div class="authors">${escapeHtml(p.authors_r || "?")} · ${fmtYear(p.year_r)}${p.journal_r ? " · " + escapeHtml(p.journal_r) : ""}</div>
 
       <div class="abstract-block">
-        <div class="abstract" id="abstract-text">${escapeHtml(p.abstract_r || "(no abstract available)")}</div>
-        <button class="abstract-toggle link-btn" id="abstract-toggle-btn">show abstract ↓</button>
+        <div class="abstract expanded" id="abstract-text">${escapeHtml(p.abstract_r || "(no abstract available)")}</div>
         <textarea class="abstract-edit hidden" id="abstract-edit" rows="6"></textarea>
         <div class="abstract-tools">
           <button class="link-btn" id="edit-abstract-btn">edit abstract</button>
@@ -837,7 +880,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
 
   container.querySelectorAll(".choice").forEach((b) => (b.onclick = () => onChoice(b)));
   container.querySelector(".comment").oninput = (e) => (state.judgement.comment = e.target.value);
-  container.querySelector("#submit-btn").onclick = onboarding ? submitOnboarding : submitJudgement;
+  container.querySelector("#submit-btn").onclick = onboarding ? submitOnboarding : guardedSubmit;
 
   const noteToggleBtn = container.querySelector("#note-toggle-btn");
   const noteBody = container.querySelector(".note-body");
@@ -868,15 +911,6 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
 }
 
 function wireEditButtons(container, p) {
-  const abstractToggleBtn = container.querySelector("#abstract-toggle-btn");
-  const abstractText = container.querySelector("#abstract-text");
-  if (abstractToggleBtn && abstractText) {
-    abstractToggleBtn.onclick = () => {
-      const expanded = abstractText.classList.toggle("expanded");
-      abstractToggleBtn.textContent = expanded ? "hide abstract ↑" : "show abstract ↓";
-    };
-  }
-
   const editAbstractBtn = container.querySelector("#edit-abstract-btn");
   const abstractEdit = container.querySelector("#abstract-edit");
   editAbstractBtn.onclick = () => {
@@ -1376,6 +1410,36 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+/* ---------- Too-fast guard ---------- */
+const TOO_FAST_THRESHOLD_MS = 17000;
+
+function guardedSubmit() {
+  const elapsed = _pairShownAt ? Date.now() - _pairShownAt : Infinity;
+  if (elapsed < TOO_FAST_THRESHOLD_MS) {
+    $("#too-fast-modal").classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+  } else {
+    submitJudgement();
+  }
+}
+
+$("#too-fast-submit-btn").onclick = () => {
+  $("#too-fast-modal").classList.add("hidden");
+  document.body.style.overflow = "";
+  submitJudgement();
+};
+
+$("#too-fast-reread-btn").onclick = () => {
+  $("#too-fast-modal").classList.add("hidden");
+  document.body.style.overflow = "";
+};
+
+$("#too-fast-logout-btn").onclick = () => {
+  $("#too-fast-modal").classList.add("hidden");
+  document.body.style.overflow = "";
+  logout();
+};
+
 /* ---------- FAQ Modal ---------- */
 const FAQ_URL = "https://raw.githubusercontent.com/forrtproject/fred-data/main/output/flora_faq.md";
 let faqCache = null;
@@ -1406,6 +1470,9 @@ function closeFaq() {
   modal.classList.add("hidden");
   document.body.style.overflow = "";
 }
+
+$("#mobile-continue-btn").onclick = () =>
+  $("#mobile-warning").classList.add("dismissed");
 
 $("#login-faq-btn").onclick  = openFaq;
 $("#game-faq-btn").onclick   = openFaq;
@@ -1489,18 +1556,20 @@ async function fetchAdminEntries() {
 }
 
 function renderAdminCounts(counts) {
-  $("#fc-all").textContent          = counts.all;
-  $("#fc-needs-review").textContent = counts.needs_review;
-  $("#fc-llm-errors").textContent   = counts.llm_errors;
-  $("#fc-validated").textContent    = counts.validated;
-  $("#fc-admin-checked").textContent = counts.admin_checked;
+  $("#fc-all").textContent              = counts.all;
+  $("#fc-pending-approval").textContent = counts.pending_approval;
+  $("#fc-needs-review").textContent     = counts.needs_review;
+  $("#fc-llm-errors").textContent       = counts.llm_errors;
+  $("#fc-validated").textContent        = counts.validated;
+  $("#fc-admin-checked").textContent    = counts.admin_checked;
 }
 
 const STATUS_LABELS = {
-  unvalidated:          { text: "Unvalidated",   cls: "status-unvalidated" },
-  validation_inprogress:{ text: "In progress",   cls: "status-inprogress"  },
-  validated:            { text: "Validated",      cls: "status-validated"   },
-  need_review:          { text: "Needs review",   cls: "status-review"      },
+  unvalidated:          { text: "Unvalidated",      cls: "status-unvalidated" },
+  validation_inprogress:{ text: "In progress",      cls: "status-inprogress"  },
+  consensus_reached:    { text: "Pending approval", cls: "status-consensus"   },
+  validated:            { text: "Validated",         cls: "status-validated"   },
+  need_review:          { text: "Needs review",      cls: "status-review"      },
 };
 
 function renderAdminTable(entries, total) {
@@ -1527,19 +1596,35 @@ function renderAdminTable(entries, total) {
       e.has_llm ? "LLM" : "—",
     ].join(" ");
     const study = (e.study_r || e.doi_r || "—").substring(0, 60);
+    const tc = e.trusted_validator_count || 0;
+    const trustBadge = tc === 2
+      ? '<span class="admin-trust-badge trust-double" title="Both validators are trusted">⭐⭐</span>'
+      : tc === 1
+      ? '<span class="admin-trust-badge trust-single" title="One trusted validator">⭐</span>'
+      : "";
+    const needsAttentionFlag = e.validation_status === "need_review" && tc > 0
+      ? '<span class="admin-trust-badge trust-alert" title="Trusted validator involved — needs attention">🔴</span>'
+      : "";
+    const actions = e.validation_status === "consensus_reached"
+      ? `<button class="admin-approve-btn" data-id="${e.record_id}">Approve ✓</button>
+         <button class="admin-review-btn ghost-btn" data-id="${e.record_id}">Review</button>`
+      : `<button class="admin-review-btn ghost-btn" data-id="${e.record_id}">Review →</button>`;
     return `<tr>
       <td class="admin-cell-num">${offset + i + 1}</td>
-      <td class="admin-cell-study" title="${(e.study_r || "").replace(/"/g, "&quot;")}">${study}${flags}</td>
+      <td class="admin-cell-study" title="${(e.study_r || "").replace(/"/g, "&quot;")}">${study}${flags}${trustBadge}${needsAttentionFlag}</td>
       <td>${e.type || "—"}</td>
       <td>${e.outcome || "—"}</td>
       <td><span class="admin-status ${s.cls}">${s.text}</span></td>
       <td class="admin-cell-validators">${validators}</td>
-      <td><button class="admin-review-btn ghost-btn" data-id="${e.record_id}">Review →</button></td>
+      <td class="admin-cell-actions">${actions}</td>
     </tr>`;
   }).join("");
 
   body.querySelectorAll(".admin-review-btn").forEach((btn) => {
     btn.onclick = () => openAdminDetail(btn.dataset.id);
+  });
+  body.querySelectorAll(".admin-approve-btn").forEach((btn) => {
+    btn.onclick = () => quickApprove(btn.dataset.id, btn);
   });
 }
 
@@ -1554,6 +1639,20 @@ function renderAdminPagination(total, page) {
   `;
   $("#admin-prev").onclick = () => { _adminPage--; fetchAdminEntries(); };
   $("#admin-next").onclick = () => { _adminPage++; fetchAdminEntries(); };
+}
+
+async function quickApprove(recordId, btn) {
+  btn.disabled = true;
+  btn.textContent = "…";
+  try {
+    await adminApi(`/entries/${recordId}/approve`, "POST");
+    showToast("Entry approved.", 2000);
+    fetchAdminEntries();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = "Approve ✓";
+    alert("Error: " + e.message);
+  }
 }
 
 async function openAdminDetail(recordId) {
@@ -1573,6 +1672,11 @@ async function openAdminDetail(recordId) {
 
 function renderAdminDetail(data) {
   const rec = data.record;
+  const abstractBanner = data.abstract_only_conflict
+    ? `<div class="admin-abstract-banner">
+         <strong>Abstract conflict only</strong> — all checks and corrections agree. Only the edited abstract differs between the two validators.
+       </div>`
+    : "";
   const v1  = rec.validator_1;
   const v2  = rec.validator_2;
   const llm = rec.llm_validator;
@@ -1607,6 +1711,7 @@ function renderAdminDetail(data) {
 
   $("#admin-detail-title").textContent = (rec.study_r || rec.doi_r || "Entry Review").substring(0, 80);
   $("#admin-detail-body").innerHTML = `
+    ${abstractBanner}
     <div class="admin-detail-cols">
       <!-- Left: pair info -->
       <div class="admin-detail-pair">
@@ -1717,6 +1822,89 @@ function closeAdminDetail() {
   document.body.style.overflow = "";
 }
 
+/* ---------- Admin tabs ---------- */
+function switchAdminTab(tab) {
+  $("#admin-tab-entries").classList.toggle("hidden", tab !== "entries");
+  $("#admin-tab-stats").classList.toggle("hidden",   tab !== "stats");
+  $("#admin-tabs").querySelectorAll(".admin-tab-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.tab === tab);
+  });
+  if (tab === "stats") fetchAdminStats();
+}
+
+async function fetchAdminStats() {
+  const body = $("#admin-stats-body");
+  body.innerHTML = '<tr><td colspan="9" class="admin-loading">Loading…</td></tr>';
+  try {
+    const data = await adminApi("/stats");
+    renderAdminSummary(data.summary);
+    renderAdminStats(data.validators);
+  } catch (e) {
+    body.innerHTML = `<tr><td colspan="9" class="admin-loading">Error: ${e.message}</td></tr>`;
+  }
+}
+
+function renderAdminSummary(s) {
+  $("#admin-summary-bar").innerHTML = `
+    <div class="admin-summary-card"><span class="admin-summary-val">${s.total_validators}</span><span class="admin-summary-label">Active validators</span></div>
+    <div class="admin-summary-card"><span class="admin-summary-val">${s.total_judgements}</span><span class="admin-summary-label">Total judgements</span></div>
+    <div class="admin-summary-card"><span class="admin-summary-val">${s.total_validated}</span><span class="admin-summary-label">Validated entries</span></div>
+    <div class="admin-summary-card"><span class="admin-summary-val">${s.total_review}</span><span class="admin-summary-label">Needs review</span></div>
+  `;
+}
+
+function fmtMin(val) {
+  if (val === null || val === undefined) return "—";
+  return val < 1 ? `${Math.round(val * 60)}s` : `${val}m`;
+}
+
+function renderAdminStats(validators) {
+  const body = $("#admin-stats-body");
+  if (!validators.length) {
+    body.innerHTML = "";
+    $("#admin-stats-empty").classList.remove("hidden");
+    return;
+  }
+  $("#admin-stats-empty").classList.add("hidden");
+  body.innerHTML = validators.map((v, i) => `
+    <tr>
+      <td class="admin-cell-num">${i + 1}</td>
+      <td><strong>${v.handle}</strong></td>
+      <td>
+        <button class="trust-toggle-btn ${v.trusted ? "trusted" : ""}"
+                data-id="${v.id}" title="${v.trusted ? "Trusted — click to revoke" : "Click to mark as trusted"}">
+          ${v.trusted ? "⭐ Trusted" : "—"}
+        </button>
+      </td>
+      <td style="color:var(--muted);font-size:0.8rem">${v.joined || "—"}</td>
+      <td>${v.total_judgements}</td>
+      <td>${v.total_points}</td>
+      <td class="admin-time-cell">${fmtMin(v.avg_min)}</td>
+      <td class="admin-time-cell">${fmtMin(v.median_min)}</td>
+      <td class="admin-time-cell" style="color:var(--green)">${fmtMin(v.min_min)}</td>
+      <td class="admin-time-cell" style="color:var(--muted)">${fmtMin(v.max_min)}</td>
+    </tr>
+  `).join("");
+
+  body.querySelectorAll(".trust-toggle-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        const data = await adminApi(`/validators/${btn.dataset.id}/toggle-trust`, "POST");
+        btn.classList.toggle("trusted", data.trusted);
+        btn.textContent = data.trusted ? "⭐ Trusted" : "—";
+        btn.title = data.trusted ? "Trusted — click to revoke" : "Click to mark as trusted";
+      } catch (e) { alert(e.message); }
+      btn.disabled = false;
+    };
+  });
+}
+
+$("#admin-tabs").addEventListener("click", (e) => {
+  const btn = e.target.closest(".admin-tab-btn");
+  if (btn) switchAdminTab(btn.dataset.tab);
+});
+
 // Wire up admin screen events
 $("#admin-logout-btn").onclick = exitAdminScreen;
 $("#admin-detail-close").onclick = closeAdminDetail;
@@ -1734,13 +1922,51 @@ $("#admin-filters").addEventListener("click", (e) => {
 });
 
 /* ---------- Forgot handle ---------- */
-$("#forgot-handle-btn").onclick = async () => {
-  const email = prompt("Enter the email address you registered with:");
-  if (!email || !email.includes("@")) return;
+function openForgotModal() {
+  $("#forgot-email-input").value = "";
+  $("#forgot-msg").textContent = "";
+  $("#forgot-msg").style.color = "";
+  $("#forgot-submit-btn").disabled = false;
+  $("#forgot-submit-btn").textContent = "Send →";
+  $("#forgot-modal").classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+  setTimeout(() => $("#forgot-email-input").focus(), 50);
+}
+
+function closeForgotModal() {
+  $("#forgot-modal").classList.add("hidden");
+  document.body.style.overflow = "";
+}
+
+async function submitForgotHandle() {
+  const email = $("#forgot-email-input").value.trim();
+  const msg   = $("#forgot-msg");
+  if (!email || !email.includes("@")) {
+    msg.style.color = "var(--red)";
+    msg.textContent = "Please enter a valid email address.";
+    return;
+  }
+  const btn = $("#forgot-submit-btn");
+  btn.disabled = true;
+  btn.textContent = "Sending…";
+  msg.textContent = "";
   try {
     await api("/forgot-handle", "POST", { email });
-    alert("If that email is registered, you'll receive your username shortly. Check your inbox (and spam folder).");
+    msg.style.color = "var(--green)";
+    msg.textContent = "Sent! Check your inbox (and spam folder).";
+    btn.textContent = "Sent ✓";
+    setTimeout(closeForgotModal, 2500);
   } catch (e) {
-    alert(e.message);
+    msg.style.color = "var(--red)";
+    msg.textContent = e.message;
+    btn.disabled = false;
+    btn.textContent = "Send →";
   }
-};
+}
+
+$("#forgot-handle-btn").onclick  = openForgotModal;
+$("#forgot-close-btn").onclick   = closeForgotModal;
+$("#forgot-cancel-btn").onclick  = closeForgotModal;
+$("#forgot-modal").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeForgotModal(); });
+$("#forgot-submit-btn").onclick  = submitForgotHandle;
+$("#forgot-email-input").addEventListener("keydown", (e) => { if (e.key === "Enter") submitForgotHandle(); });
