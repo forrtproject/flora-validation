@@ -737,6 +737,7 @@ def admin_stats(x_admin_token: str = Header(...)):
                 v.id,
                 v.handle,
                 v.trusted,
+                v.senior,
                 v.total_judgements,
                 v.total_points,
                 v.created_at::date AS joined,
@@ -799,6 +800,20 @@ def admin_toggle_trust(validator_id: int, x_admin_token: str = Header(...)):
         if not row:
             raise HTTPException(404, "Validator not found")
     return {"handle": row["handle"], "trusted": row["trusted"]}
+
+
+@app.post("/api/admin/validators/{validator_id}/toggle-senior")
+def admin_toggle_senior(validator_id: int, x_admin_token: str = Header(...)):
+    _require_admin(x_admin_token)
+    with db() as cur:
+        cur.execute(
+            "UPDATE validators SET senior = NOT senior WHERE id = %s RETURNING handle, senior",
+            (validator_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Validator not found")
+    return {"handle": row["handle"], "senior": row["senior"]}
 
 
 @app.post("/api/admin/login")

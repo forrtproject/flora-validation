@@ -153,15 +153,35 @@ def evaluate_consensus(cur, record_id: str) -> None:
         record_cols = [d[0] for d in cur.description]
         record = dict(zip(record_cols, record_row))
 
+    # Check if both human validators are senior (bypasses admin review on agreement)
+    cur.execute(
+        """
+        SELECT COUNT(*) AS senior_count
+        FROM validation_queue vq
+        JOIN validators v ON v.id = vq.validator_id
+        WHERE vq.record_id = %s
+          AND vq.is_validated = TRUE
+          AND vq.validator_slot IN ('human_1', 'human_2')
+          AND v.senior = TRUE
+        """,
+        (record_id,),
+    )
+    senior_row = cur.fetchone()
+    has_senior = (senior_row["senior_count"] if isinstance(senior_row, dict) else senior_row[0]) >= 1
+
     checks_ok = _checks_agree(h1, h2)
     corrections_ok = _corrections_agree(h1, h2)
 
     if checks_ok and corrections_ok:
-        # Branch 1: full agreement — LLM sanity check (humans always win regardless)
-        # Sets consensus_reached; admin must approve before entering validated table.
         llm = run_llm_validation(record, context="sanity_check")
         final = _resolve_final(record, h1, h2)
-        _update_status(cur, record_id, "consensus_reached", False, final, llm)
+        if has_senior:
+            # At least one senior agreed — auto-validate, no admin review needed
+            _update_status(cur, record_id, "validated", False, final, llm)
+            _insert_validated(cur, record, final)
+        else:
+            # Normal agreement — admin must approve
+            _update_status(cur, record_id, "consensus_reached", False, final, llm)
 
     elif checks_ok and not corrections_ok:
         # Branch 2: checks agree but corrections differ → need_review, no LLM

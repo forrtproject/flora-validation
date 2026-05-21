@@ -197,6 +197,9 @@ ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS admin_notes   TEXT;
 -- Trusted validator flag
 ALTER TABLE validators ADD COLUMN IF NOT EXISTS trusted BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- Senior validator flag (bypasses admin review when two seniors agree)
+ALTER TABLE validators ADD COLUMN IF NOT EXISTS senior BOOLEAN NOT NULL DEFAULT FALSE;
+
 -- Forgot-handle rate limiting
 ALTER TABLE validators ADD COLUMN IF NOT EXISTS forgot_requests_today INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE validators ADD COLUMN IF NOT EXISTS forgot_requests_date  DATE;

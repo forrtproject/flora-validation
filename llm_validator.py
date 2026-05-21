@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from google import genai
 
 _LLM_VOTE_SCORE = 15
-_MODEL_NAME = "gemini-2.0-flash-lite"
+_MODEL_NAME = "gemini-3.1-flash-lite"
 
 _PROMPT_TEMPLATE = """You are a research quality checker for a database of replication studies.
 

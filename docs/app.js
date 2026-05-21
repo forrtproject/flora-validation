@@ -1705,8 +1705,8 @@ function renderAdminTable(entries, total) {
       : tc === 1
       ? '<span class="admin-trust-badge trust-single" title="One trusted validator">⭐</span>'
       : "";
-    const needsAttentionFlag = e.validation_status === "need_review" && tc > 0
-      ? '<span class="admin-trust-badge trust-alert" title="Trusted validator involved — needs attention">🔴</span>'
+    const needsAttentionFlag = e.validation_status === "need_review" && tc === 0
+      ? '<span class="admin-trust-badge trust-alert" title="No trusted validator involved — needs careful review">🔴</span>'
       : "";
     const actions = e.validation_status === "consensus_reached"
       ? `<button class="admin-approve-btn" data-id="${e.record_id}">Approve ✓</button>
@@ -1979,6 +1979,12 @@ function renderAdminStats(validators) {
           ${v.trusted ? "⭐ Trusted" : "—"}
         </button>
       </td>
+      <td>
+        <button class="senior-toggle-btn ${v.senior ? "senior" : ""}"
+                data-id="${v.id}" title="${v.senior ? "Senior — click to revoke" : "Click to mark as senior"}">
+          ${v.senior ? "🏅 Senior" : "—"}
+        </button>
+      </td>
       <td style="color:var(--muted);font-size:0.8rem">${v.joined || "—"}</td>
       <td>${v.total_judgements}</td>
       <td>${v.total_points}</td>
@@ -1997,6 +2003,19 @@ function renderAdminStats(validators) {
         btn.classList.toggle("trusted", data.trusted);
         btn.textContent = data.trusted ? "⭐ Trusted" : "—";
         btn.title = data.trusted ? "Trusted — click to revoke" : "Click to mark as trusted";
+      } catch (e) { await showAlert(e.message); }
+      btn.disabled = false;
+    };
+  });
+
+  body.querySelectorAll(".senior-toggle-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        const data = await adminApi(`/validators/${btn.dataset.id}/toggle-senior`, "POST");
+        btn.classList.toggle("senior", data.senior);
+        btn.textContent = data.senior ? "🏅 Senior" : "—";
+        btn.title = data.senior ? "Senior — click to revoke" : "Click to mark as senior";
       } catch (e) { await showAlert(e.message); }
       btn.disabled = false;
     };
