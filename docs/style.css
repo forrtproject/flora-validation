@@ -2231,24 +2231,22 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
 .trust-single { }
 .trust-alert  { }
 
-/* Trust toggle button in stats table */
-.trust-toggle-btn {
+/* Validator tier cycling button in stats table */
+.tier-cycle-btn {
   border: 1px solid var(--rule);
   border-radius: 999px;
   background: none;
   color: var(--muted);
   font-size: 0.75rem;
-  padding: 0.15rem 0.5rem;
+  padding: 0.15rem 0.6rem;
   cursor: pointer;
   transition: all 0.15s;
+  white-space: nowrap;
 }
-.trust-toggle-btn:hover { border-color: var(--accent-soft); color: var(--ink); }
-.trust-toggle-btn.trusted { border-color: var(--amber); background: #fdf3e0; color: var(--amber); font-weight: 600; }
-.trust-toggle-btn:disabled { opacity: 0.5; cursor: default; }
-.senior-toggle-btn { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--rule); border-radius: 999px; padding: 0.2rem 0.65rem; background: none; color: var(--muted); cursor: pointer; transition: all 0.15s; }
-.senior-toggle-btn:hover { border-color: var(--green); color: var(--ink); }
-.senior-toggle-btn.senior { border-color: var(--green); background: #eef4ec; color: var(--green); font-weight: 600; }
-.senior-toggle-btn:disabled { opacity: 0.5; cursor: default; }
+.tier-cycle-btn:hover { border-color: var(--accent-soft); color: var(--ink); }
+.tier-cycle-btn[data-tier="1"] { border-color: var(--amber); background: #fdf3e0; color: var(--amber); font-weight: 600; }
+.tier-cycle-btn[data-tier="2"] { border-color: var(--green);  background: #eef4ec;  color: var(--green);  font-weight: 600; }
+.tier-cycle-btn:disabled { opacity: 0.5; cursor: default; }
 
 .col-help {
   display: inline-flex;

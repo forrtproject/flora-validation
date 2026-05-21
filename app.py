@@ -766,8 +766,7 @@ def admin_stats(x_admin_token: str = Header(...)):
             SELECT
                 v.id,
                 v.handle,
-                v.trusted,
-                v.senior,
+                v.validator_tier,
                 v.total_judgements,
                 v.total_points,
                 v.created_at::date AS joined,
@@ -792,8 +791,8 @@ def admin_stats(x_admin_token: str = Header(...)):
                 AND vq.shown_at       IS NOT NULL
                 AND vq.validated_at   IS NOT NULL
                 AND EXTRACT(EPOCH FROM (vq.validated_at - vq.shown_at)) BETWEEN 10 AND 5400
-            GROUP BY v.id, v.handle, v.total_judgements, v.total_points, v.created_at
-            ORDER BY v.trusted DESC, v.total_judgements DESC
+            GROUP BY v.id, v.handle, v.validator_tier, v.total_judgements, v.total_points, v.created_at
+            ORDER BY v.validator_tier DESC, v.total_judgements DESC
             """
         )
         rows = [dict(r) for r in cur.fetchall()]
@@ -818,32 +817,24 @@ def admin_stats(x_admin_token: str = Header(...)):
     return {"validators": rows, "summary": summary}
 
 
-@app.post("/api/admin/validators/{validator_id}/toggle-trust")
-def admin_toggle_trust(validator_id: int, x_admin_token: str = Header(...)):
+class SetTierRequest(BaseModel):
+    tier: int
+
+
+@app.post("/api/admin/validators/{validator_id}/set-tier")
+def admin_set_tier(validator_id: int, req: SetTierRequest, x_admin_token: str = Header(...)):
     _require_admin(x_admin_token)
+    if req.tier not in (0, 1, 2):
+        raise HTTPException(400, "tier must be 0, 1, or 2")
     with db() as cur:
         cur.execute(
-            "UPDATE validators SET trusted = NOT trusted WHERE id = %s RETURNING handle, trusted",
-            (validator_id,),
+            "UPDATE validators SET validator_tier = %s WHERE id = %s RETURNING handle, validator_tier",
+            (req.tier, validator_id),
         )
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "Validator not found")
-    return {"handle": row["handle"], "trusted": row["trusted"]}
-
-
-@app.post("/api/admin/validators/{validator_id}/toggle-senior")
-def admin_toggle_senior(validator_id: int, x_admin_token: str = Header(...)):
-    _require_admin(x_admin_token)
-    with db() as cur:
-        cur.execute(
-            "UPDATE validators SET senior = NOT senior WHERE id = %s RETURNING handle, senior",
-            (validator_id,),
-        )
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(404, "Validator not found")
-    return {"handle": row["handle"], "senior": row["senior"]}
+    return {"handle": row["handle"], "validator_tier": row["validator_tier"]}
 
 
 @app.get("/api/admin/admins")
@@ -966,7 +957,7 @@ def admin_entries(
                 (SELECT COUNT(*) FROM validation_queue vq
                  WHERE vq.record_id = u.record_id AND vq.is_validated = TRUE) AS validator_count,
                 (SELECT COUNT(*) FROM validation_queue vq
-                 JOIN validators tv ON tv.id = vq.validator_id AND tv.trusted = TRUE
+                 JOIN validators tv ON tv.id = vq.validator_id AND tv.validator_tier >= 1
                  WHERE vq.record_id = u.record_id
                    AND vq.is_validated = TRUE
                    AND vq.validator_slot IN ('human_1', 'human_2')) AS trusted_validator_count

@@ -162,7 +162,7 @@ def evaluate_consensus(cur, record_id: str) -> None:
         WHERE vq.record_id = %s
           AND vq.is_validated = TRUE
           AND vq.validator_slot IN ('human_1', 'human_2')
-          AND v.senior = TRUE
+          AND v.validator_tier >= 2
         """,
         (record_id,),
     )

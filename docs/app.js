@@ -2002,15 +2002,9 @@ function renderAdminStats(validators) {
       <td class="admin-cell-num">${i + 1}</td>
       <td><strong>${v.handle}</strong></td>
       <td>
-        <button class="trust-toggle-btn ${v.trusted ? "trusted" : ""}"
-                data-id="${v.id}" title="${v.trusted ? "Trusted — click to revoke" : "Click to mark as trusted"}">
-          ${v.trusted ? "⭐ Trusted" : "—"}
-        </button>
-      </td>
-      <td>
-        <button class="senior-toggle-btn ${v.senior ? "senior" : ""}"
-                data-id="${v.id}" title="${v.senior ? "Senior — click to revoke" : "Click to mark as senior"}">
-          ${v.senior ? "🏅 Senior" : "—"}
+        <button class="tier-cycle-btn" data-id="${v.id}" data-tier="${v.validator_tier}"
+                title="${["Click to promote to Trusted","Click to promote to Senior","Click to reset to Regular"][v.validator_tier]}">
+          ${["—","⭐ Trusted","★★ Senior"][v.validator_tier]}
         </button>
       </td>
       <td style="color:var(--muted);font-size:0.8rem">${v.joined || "—"}</td>
@@ -2022,27 +2016,22 @@ function renderAdminStats(validators) {
     </tr>
   `).join("");
 
-  body.querySelectorAll(".trust-toggle-btn").forEach((btn) => {
-    btn.onclick = async () => {
-      btn.disabled = true;
-      try {
-        const data = await adminApi(`/validators/${btn.dataset.id}/toggle-trust`, "POST");
-        btn.classList.toggle("trusted", data.trusted);
-        btn.textContent = data.trusted ? "⭐ Trusted" : "—";
-        btn.title = data.trusted ? "Trusted — click to revoke" : "Click to mark as trusted";
-      } catch (e) { await showAlert(e.message); }
-      btn.disabled = false;
-    };
-  });
+  const TIER_LABELS = ["—", "⭐ Trusted", "★★ Senior"];
+  const TIER_TITLES = [
+    "Click to promote to Trusted",
+    "Click to promote to Senior",
+    "Click to reset to Regular",
+  ];
 
-  body.querySelectorAll(".senior-toggle-btn").forEach((btn) => {
+  body.querySelectorAll(".tier-cycle-btn").forEach((btn) => {
     btn.onclick = async () => {
       btn.disabled = true;
+      const next = (parseInt(btn.dataset.tier) + 1) % 3;
       try {
-        const data = await adminApi(`/validators/${btn.dataset.id}/toggle-senior`, "POST");
-        btn.classList.toggle("senior", data.senior);
-        btn.textContent = data.senior ? "🏅 Senior" : "—";
-        btn.title = data.senior ? "Senior — click to revoke" : "Click to mark as senior";
+        const data = await adminApi(`/validators/${btn.dataset.id}/set-tier`, "POST", { tier: next });
+        btn.dataset.tier = data.validator_tier;
+        btn.textContent  = TIER_LABELS[data.validator_tier];
+        btn.title        = TIER_TITLES[data.validator_tier];
       } catch (e) { await showAlert(e.message); }
       btn.disabled = false;
     };

@@ -194,11 +194,21 @@ ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS admin_checked BOOLEAN NOT NULL 
 ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS admin_name    TEXT;
 ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS admin_notes   TEXT;
 
--- Trusted validator flag
-ALTER TABLE validators ADD COLUMN IF NOT EXISTS trusted BOOLEAN NOT NULL DEFAULT FALSE;
+-- Validator tier: 0 = regular, 1 = trusted, 2 = senior (senior implies trusted)
+ALTER TABLE validators ADD COLUMN IF NOT EXISTS validator_tier INTEGER NOT NULL DEFAULT 0;
 
--- Senior validator flag (bypasses admin review when two seniors agree)
-ALTER TABLE validators ADD COLUMN IF NOT EXISTS senior BOOLEAN NOT NULL DEFAULT FALSE;
+-- Migrate existing trusted/senior booleans into validator_tier (safe on re-run — skipped if columns already dropped)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'validators' AND column_name = 'senior') THEN
+    UPDATE validators SET validator_tier = 2 WHERE senior = TRUE;
+    UPDATE validators SET validator_tier = 1 WHERE trusted = TRUE AND senior = FALSE;
+  END IF;
+END $$;
+
+ALTER TABLE validators DROP COLUMN IF EXISTS trusted;
+ALTER TABLE validators DROP COLUMN IF EXISTS senior;
 
 -- Named admin accounts (multiple admins with individual handles)
 CREATE TABLE IF NOT EXISTS admins (
