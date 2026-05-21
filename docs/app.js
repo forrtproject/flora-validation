@@ -1629,57 +1629,29 @@ async function adminLogin(handle, password) {
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    throw new Error(err.detail || resp.statusText);
+    let msg = resp.statusText;
+    if (err.detail) {
+      msg = Array.isArray(err.detail)
+        ? err.detail.map((e) => e.msg || JSON.stringify(e)).join("; ")
+        : String(err.detail);
+    }
+    throw new Error(msg);
   }
   const data = await resp.json();
   _adminToken  = data.token;
   _adminHandle = data.handle;
-  enterAdminGameMode();
+  enterAdminScreen();
   return true;
 }
 
-function enterAdminGameMode() {
+function enterAdminScreen() {
   $("#login-screen").classList.add("hidden");
   $("#onboarding-screen").classList.add("hidden");
-  $("#admin-screen").classList.add("hidden");
-  $("#game-screen").classList.remove("hidden");
-
-  // Stats bar: show admin name; hide player-only stats
-  $("#stat-name").textContent = _adminHandle;
-  const hideStats = ["stat-points", "stat-rank", "stat-progress"];
-  hideStats.forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) el.closest(".stat").style.display = "none";
-  });
-
-  // Show admin panel button in game header
-  $("#admin-panel-btn").classList.remove("hidden");
-
-  // Replace pair card with admin observer message
-  $("#pair-card").innerHTML = `
-    <div style="padding:2.5rem 2rem;text-align:center">
-      <p style="font-size:1rem;color:var(--muted);margin-bottom:1.5rem">
-        Signed in as admin <strong>${_adminHandle}</strong>.
-      </p>
-      <button class="btn-primary" onclick="enterAdminScreen()">Open Admin Panel →</button>
-    </div>
-  `;
-  $("#done-screen").classList.add("hidden");
-
-  refreshLeaderboard();
-}
-
-function enterAdminScreen() {
   $("#game-screen").classList.add("hidden");
   $("#admin-screen").classList.remove("hidden");
   const badge = $("#admin-handle-badge");
   if (badge) badge.textContent = _adminHandle ? `Signed in as ${_adminHandle}` : "";
   fetchAdminEntries();
-}
-
-function returnToPlayerView() {
-  $("#admin-screen").classList.add("hidden");
-  enterAdminGameMode();
 }
 
 function signOutAdmin() {
@@ -1690,7 +1662,7 @@ function signOutAdmin() {
 
 async function fetchAdminEntries() {
   const body = $("#admin-table-body");
-  body.innerHTML = '<tr><td colspan="7" class="admin-loading">Loading…</td></tr>';
+  body.innerHTML = '<tr><td colspan="8" class="admin-loading">Loading…</td></tr>';
   $("#admin-empty").classList.add("hidden");
 
   try {
@@ -1701,7 +1673,7 @@ async function fetchAdminEntries() {
     renderAdminTable(data.entries, data.total);
     renderAdminPagination(data.total, data.page);
   } catch (e) {
-    body.innerHTML = `<tr><td colspan="7" class="admin-loading">Error: ${e.message}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" class="admin-loading">Error: ${e.message}</td></tr>`;
   }
 }
 
@@ -1759,6 +1731,9 @@ function renderAdminTable(entries, total) {
       ? `<button class="admin-approve-btn" data-id="${e.record_id}">Approve ✓</button>
          <button class="admin-review-btn ghost-btn" data-id="${e.record_id}">Review</button>`
       : `<button class="admin-review-btn ghost-btn" data-id="${e.record_id}">Review →</button>`;
+    const approvedBy = e.admin_name
+      ? `<span style="font-size:0.8rem;color:var(--muted)">${e.admin_name}</span>`
+      : "—";
     return `<tr>
       <td class="admin-cell-num">${offset + i + 1}</td>
       <td class="admin-cell-study" title="${(e.study_r || "").replace(/"/g, "&quot;")}">${study}${flags}${trustBadge}${needsAttentionFlag}</td>
@@ -1766,6 +1741,7 @@ function renderAdminTable(entries, total) {
       <td>${e.outcome || "—"}</td>
       <td><span class="admin-status ${s.cls}">${s.text}</span></td>
       <td class="admin-cell-validators">${validators}</td>
+      <td>${approvedBy}</td>
       <td class="admin-cell-actions">${actions}</td>
     </tr>`;
   }).join("");
@@ -2145,8 +2121,6 @@ $("#admin-tabs").addEventListener("click", (e) => {
 
 // Wire up admin screen events
 $("#admin-logout-btn").onclick = signOutAdmin;
-$("#admin-player-view-btn").onclick = returnToPlayerView;
-$("#admin-panel-btn").onclick = enterAdminScreen;
 $("#admin-detail-close").onclick = closeAdminDetail;
 $("#admin-detail-modal").addEventListener("click", (e) => {
   if (e.target === e.currentTarget) closeAdminDetail();
