@@ -1503,6 +1503,21 @@ $("#login-faq-btn").onclick  = openFaq;
 $("#game-faq-btn").onclick   = openFaq;
 $("#onb-faq-btn").onclick    = openFaq;
 $("#faq-close-btn").onclick  = closeFaq;
+
+const HELP_EMAIL = "lukas.roeseler@uni-muenster.de";
+async function openHelp() {
+  const result = await showDialog({
+    title: "Contact support",
+    message: `For questions or issues, email us at:<br><br><strong style="color:var(--ink)">${HELP_EMAIL}</strong>`,
+    buttons: [
+      { label: "Send email →", value: "mail", primary: true },
+      { label: "OK", value: "ok" },
+    ],
+  });
+  if (result === "mail") window.location.href = `mailto:${HELP_EMAIL}`;
+}
+$("#game-help-btn").onclick = openHelp;
+$("#onb-help-btn").onclick  = openHelp;
 $("#faq-modal").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeFaq(); });
 
 /* ============================================================
