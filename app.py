@@ -37,13 +37,29 @@ HANDLE_RE = re.compile(r"^[A-Za-z0-9._\-]{2,32}$")
 VALID_CHECKS = {"correct", "incorrect"}
 
 
-def _admin_token() -> str:
-    return hashlib.sha256(f"{ADMIN_PASSWORD}:flora-admin-v1".encode()).hexdigest()
+def _make_token(password: str) -> str:
+    return hashlib.sha256(f"{password}:flora-admin-v1".encode()).hexdigest()
 
 
-def _require_admin(token: str):
-    if token != _admin_token():
-        raise HTTPException(401, "Unauthorized")
+def _require_admin(token: str) -> str:
+    """Validate admin token and return the matching admin handle."""
+    with db() as cur:
+        cur.execute("SELECT handle, password FROM admins")
+        for row in cur.fetchall():
+            if token == _make_token(row["password"]):
+                return row["handle"]
+    raise HTTPException(401, "Unauthorized")
+
+
+def _seed_admin_if_empty():
+    """On first run, create the default admin from ADMIN_PASSWORD env var."""
+    with db() as cur:
+        cur.execute("SELECT COUNT(*) AS n FROM admins")
+        if cur.fetchone()["n"] == 0:
+            cur.execute(
+                "INSERT INTO admins (handle, password) VALUES (%s, %s)",
+                ("admin", ADMIN_PASSWORD),
+            )
 
 app = FastAPI(title="Flora Validator")
 
@@ -85,6 +101,7 @@ def init_db():
 
 
 init_db()
+_seed_admin_if_empty()
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +174,7 @@ class ForgotHandleRequest(BaseModel):
 
 
 class AdminLoginRequest(BaseModel):
+    handle: str
     password: str
 
 
@@ -816,11 +834,61 @@ def admin_toggle_senior(validator_id: int, x_admin_token: str = Header(...)):
     return {"handle": row["handle"], "senior": row["senior"]}
 
 
+@app.get("/api/admin/admins")
+def list_admins(x_admin_token: str = Header(...)):
+    _require_admin(x_admin_token)
+    with db() as cur:
+        cur.execute("SELECT id, handle, created_at::date AS joined FROM admins ORDER BY id")
+        return {"admins": [dict(r) for r in cur.fetchall()]}
+
+
+class AdminCreateRequest(BaseModel):
+    handle: str
+    password: str
+
+
+@app.post("/api/admin/admins")
+def create_admin(req: AdminCreateRequest, x_admin_token: str = Header(...)):
+    _require_admin(x_admin_token)
+    if not req.handle or not req.password:
+        raise HTTPException(400, "Handle and password are required")
+    with db() as cur:
+        try:
+            cur.execute(
+                "INSERT INTO admins (handle, password) VALUES (%s, %s) RETURNING id, handle",
+                (req.handle, req.password),
+            )
+            row = cur.fetchone()
+        except Exception:
+            raise HTTPException(409, "Handle already exists")
+    return {"id": row["id"], "handle": row["handle"]}
+
+
+@app.delete("/api/admin/admins/{admin_id}")
+def delete_admin(admin_id: int, x_admin_token: str = Header(...)):
+    calling_handle = _require_admin(x_admin_token)
+    with db() as cur:
+        cur.execute("SELECT handle FROM admins WHERE id = %s", (admin_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Admin not found")
+        if row["handle"] == calling_handle:
+            raise HTTPException(400, "Cannot delete your own account")
+        cur.execute("SELECT COUNT(*) AS n FROM admins")
+        if cur.fetchone()["n"] <= 1:
+            raise HTTPException(400, "Cannot delete the last admin account")
+        cur.execute("DELETE FROM admins WHERE id = %s", (admin_id,))
+    return {"deleted": row["handle"]}
+
+
 @app.post("/api/admin/login")
 def admin_login(req: AdminLoginRequest):
-    if req.password != ADMIN_PASSWORD:
-        raise HTTPException(401, "Invalid admin password")
-    return {"token": _admin_token()}
+    with db() as cur:
+        cur.execute("SELECT handle, password FROM admins WHERE handle = %s", (req.handle,))
+        row = cur.fetchone()
+    if not row or row["password"] != req.password:
+        raise HTTPException(401, "Invalid handle or password")
+    return {"token": _make_token(row["password"]), "handle": row["handle"]}
 
 
 @app.get("/api/admin/entries")
@@ -973,7 +1041,7 @@ def admin_entry_detail(record_id: str, x_admin_token: str = Header(...)):
 
 @app.post("/api/admin/entries/{record_id}/approve")
 def admin_approve(record_id: str, x_admin_token: str = Header(...)):
-    _require_admin(x_admin_token)
+    admin_handle = _require_admin(x_admin_token)
 
     with db() as cur:
         cur.execute("SELECT * FROM unvalidated WHERE record_id = %s AND validation_status = 'consensus_reached'", (record_id,))
@@ -987,11 +1055,11 @@ def admin_approve(record_id: str, x_admin_token: str = Header(...)):
             UPDATE unvalidated SET
                 validation_status = 'validated',
                 admin_checked     = TRUE,
-                admin_name        = 'admin',
+                admin_name        = %s,
                 updated_at        = NOW()
             WHERE record_id = %s
             """,
-            (record_id,),
+            (admin_handle, record_id),
         )
 
         cur.execute(

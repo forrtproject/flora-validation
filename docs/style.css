@@ -2250,6 +2250,25 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
 .senior-toggle-btn.senior { border-color: var(--green); background: #eef4ec; color: var(--green); font-weight: 600; }
 .senior-toggle-btn:disabled { opacity: 0.5; cursor: default; }
 
+.col-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--rule);
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 700;
+  cursor: help;
+  vertical-align: middle;
+  margin-left: 3px;
+  font-style: normal;
+  position: relative;
+}
+.col-help:hover { background: var(--accent); color: white; }
+
 @media (max-width: 860px) {
   .admin-detail-cols { grid-template-columns: 1fr; }
   .admin-resolve-form { position: static; }

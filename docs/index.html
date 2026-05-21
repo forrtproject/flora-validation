@@ -169,9 +169,9 @@
       </div>
     </div>
     <div class="header-actions">
+      <button id="admin-panel-btn" class="ghost-btn hidden" title="Open admin panel">Admin Panel</button>
       <button id="mode-toggle" class="ghost-btn hidden" title="Switch between normal and hard mode">Normal mode</button>
       <button id="sidebar-toggle" class="ghost-btn" title="Show/hide leaderboard">Leaderboard ▸</button>
-
       <button id="logout-btn" class="ghost-btn" title="Switch coder">Sign out</button>
     </div>
   </header>
@@ -219,6 +219,8 @@
         <text x="56" y="42" font-family="Georgia,serif" font-size="13" font-style="italic" fill="#b54614">Validator</text>
       </svg>
     </div>
+    <span id="admin-handle-badge" style="font-size:0.85rem;color:var(--muted)"></span>
+    <button id="admin-player-view-btn" class="ghost-btn">Player View</button>
     <button id="admin-logout-btn" class="ghost-btn">Sign out</button>
   </header>
 
@@ -226,6 +228,7 @@
     <div class="admin-tabs" id="admin-tabs">
       <button class="admin-tab-btn active" data-tab="entries">Entries</button>
       <button class="admin-tab-btn" data-tab="stats">Validator Stats</button>
+      <button class="admin-tab-btn" data-tab="admins">Admins</button>
     </div>
 
     <div id="admin-tab-entries">
@@ -267,19 +270,40 @@
             <tr>
               <th>#</th>
               <th>Validator</th>
-              <th>Trusted</th>
-              <th>Joined</th>
-              <th>Judgements</th>
-              <th>Points</th>
-              <th>Avg time</th>
-              <th>Median</th>
-              <th>Min</th>
-              <th>Max</th>
+              <th>Trusted <span class="col-help" title="Trusted validators have been verified by an admin. Their agreements are weighted higher.">?</span></th>
+              <th>Senior <span class="col-help" title="Senior validators bypass admin review — when a senior agrees with any validator, the record auto-validates.">?</span></th>
+              <th>Joined <span class="col-help" title="Date the validator registered.">?</span></th>
+              <th>Records <span class="col-help" title="Total number of records this validator has judged.">?</span></th>
+              <th>Avg time <span class="col-help" title="Average time spent per record (minutes). Only counts sessions between 10 seconds and 90 minutes.">?</span></th>
+              <th>Median <span class="col-help" title="Median time per record (minutes). More robust to outliers than the average.">?</span></th>
+              <th>Min <span class="col-help" title="Fastest single record judgement (minutes).">?</span></th>
+              <th>Max <span class="col-help" title="Slowest single record judgement (minutes).">?</span></th>
             </tr>
           </thead>
           <tbody id="admin-stats-body"></tbody>
         </table>
         <p class="admin-empty hidden" id="admin-stats-empty">No data yet.</p>
+      </div>
+    </div>
+
+    <div id="admin-tab-admins" class="hidden">
+      <div class="admin-table-wrap" style="max-width:600px">
+        <h3 style="margin:0 0 1rem">Admin Accounts</h3>
+        <p style="color:var(--muted);font-size:0.88rem;margin-bottom:1.25rem">Each admin has their own handle and password. Approvals are stamped with the approving admin's handle so errors can be traced.</p>
+        <div id="admin-admins-list"></div>
+        <hr style="margin:1.5rem 0;border:none;border-top:1px solid var(--rule)">
+        <h4 style="margin:0 0 0.75rem">Add new admin</h4>
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:flex-end">
+          <div>
+            <label class="admin-form-label">Handle</label>
+            <input id="new-admin-handle" class="admin-input" placeholder="e.g. lukas" autocomplete="off" style="width:160px">
+          </div>
+          <div>
+            <label class="admin-form-label">Password</label>
+            <input id="new-admin-password" class="admin-input" type="password" placeholder="••••••••" autocomplete="new-password" style="width:180px">
+          </div>
+          <button id="add-admin-btn" class="btn-primary" onclick="addAdminAccount()">Add admin</button>
+        </div>
       </div>
     </div>
   </div>

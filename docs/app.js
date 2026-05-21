@@ -300,16 +300,17 @@ async function doLogin() {
   const handle = $("#handle-input").value.trim();
   if (!handle) { await showAlert("Please enter a handle."); return; }
 
-  // Admin path: handle "admin" + email field used as password
-  if (handle === "admin" && loginMode === "email") {
-    const password = $("#email-input").value.trim();
-    if (!password) { await showAlert("Enter the admin password in the Email field."); return; }
-    try {
-      const resp = await adminLogin(password);
-      if (resp) return;
-    } catch (e) {
-      await showAlert("Admin login failed: " + e.message);
-      return;
+  // Admin path: if the email field has no "@" treat it as a password and attempt admin login
+  if (loginMode === "email") {
+    const fieldVal = $("#email-input").value.trim();
+    if (fieldVal && !fieldVal.includes("@")) {
+      try {
+        await adminLogin(handle, fieldVal);
+        return; // success — entered admin screen
+      } catch (e) {
+        await showAlert("Admin login failed: " + e.message);
+        return; // stop here — don't fall through to validator login
+      }
     }
   }
 
@@ -650,6 +651,16 @@ function showAlert(message) {
   return showDialog({ message, buttons: [{ label: "OK", value: true, primary: true }] });
 }
 
+function showConfirm(message) {
+  return showDialog({
+    message,
+    buttons: [
+      { label: "Cancel", value: false },
+      { label: "Confirm", value: true, primary: true },
+    ],
+  });
+}
+
 function showDialog({ icon, title, message, buttons, layout = "column" }) {
   return new Promise(resolve => {
     const iconEl  = $("#dialog-icon");
@@ -661,7 +672,7 @@ function showDialog({ icon, title, message, buttons, layout = "column" }) {
     iconEl.style.display = icon ? "" : "none";
     titleEl.textContent = title || "";
     titleEl.style.display = title ? "" : "none";
-    msgEl.textContent   = message || "";
+    msgEl.innerHTML     = message || "";
 
     btnsEl.style.flexDirection = layout === "row" ? "row" : "column";
 
@@ -1571,7 +1582,7 @@ const HELP_EMAIL = "lukas.roeseler@uni-muenster.de";
 async function openHelp() {
   const result = await showDialog({
     title: "Contact support",
-    message: `For questions or issues, email us at:<br><br><strong style="color:var(--ink)">${HELP_EMAIL}</strong>`,
+    message: `For questions or issues, email us at:<br><strong>${HELP_EMAIL}</strong>`,
     buttons: [
       { label: "Send email →", value: "mail", primary: true },
       { label: "OK", value: "ok" },
@@ -1588,6 +1599,7 @@ $("#faq-modal").addEventListener("click", (e) => { if (e.target === e.currentTar
    ============================================================ */
 
 let _adminToken   = null;
+let _adminHandle  = null;
 let _adminFilter  = "all";
 let _adminPage    = 1;
 const ADMIN_PER_PAGE = 50;
@@ -1609,36 +1621,71 @@ async function adminApi(path, method = "GET", body = null) {
   return res.json();
 }
 
-async function adminLogin(password) {
+async function adminLogin(handle, password) {
   const resp = await fetch("/api/admin/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ handle, password }),
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
     throw new Error(err.detail || resp.statusText);
   }
   const data = await resp.json();
-  _adminToken = data.token;
-  enterAdminScreen();
+  _adminToken  = data.token;
+  _adminHandle = data.handle;
+  enterAdminGameMode();
   return true;
 }
 
-function enterAdminScreen() {
+function enterAdminGameMode() {
   $("#login-screen").classList.add("hidden");
-  $("#game-screen").classList.add("hidden");
   $("#onboarding-screen").classList.add("hidden");
+  $("#admin-screen").classList.add("hidden");
+  $("#game-screen").classList.remove("hidden");
+
+  // Stats bar: show admin name; hide player-only stats
+  $("#stat-name").textContent = _adminHandle;
+  const hideStats = ["stat-points", "stat-rank", "stat-progress"];
+  hideStats.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.closest(".stat").style.display = "none";
+  });
+
+  // Show admin panel button in game header
+  $("#admin-panel-btn").classList.remove("hidden");
+
+  // Replace pair card with admin observer message
+  $("#pair-card").innerHTML = `
+    <div style="padding:2.5rem 2rem;text-align:center">
+      <p style="font-size:1rem;color:var(--muted);margin-bottom:1.5rem">
+        Signed in as admin <strong>${_adminHandle}</strong>.
+      </p>
+      <button class="btn-primary" onclick="enterAdminScreen()">Open Admin Panel →</button>
+    </div>
+  `;
+  $("#done-screen").classList.add("hidden");
+
+  refreshLeaderboard();
+}
+
+function enterAdminScreen() {
+  $("#game-screen").classList.add("hidden");
   $("#admin-screen").classList.remove("hidden");
+  const badge = $("#admin-handle-badge");
+  if (badge) badge.textContent = _adminHandle ? `Signed in as ${_adminHandle}` : "";
   fetchAdminEntries();
 }
 
-function exitAdminScreen() {
-  _adminToken = null;
-  _adminFilter = "all";
-  _adminPage = 1;
+function returnToPlayerView() {
   $("#admin-screen").classList.add("hidden");
-  $("#login-screen").classList.remove("hidden");
+  enterAdminGameMode();
+}
+
+function signOutAdmin() {
+  _adminToken  = null;
+  _adminHandle = null;
+  location.reload();
 }
 
 async function fetchAdminEntries() {
@@ -1929,10 +1976,12 @@ function closeAdminDetail() {
 function switchAdminTab(tab) {
   $("#admin-tab-entries").classList.toggle("hidden", tab !== "entries");
   $("#admin-tab-stats").classList.toggle("hidden",   tab !== "stats");
+  $("#admin-tab-admins").classList.toggle("hidden",  tab !== "admins");
   $("#admin-tabs").querySelectorAll(".admin-tab-btn").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === tab);
   });
-  if (tab === "stats") fetchAdminStats();
+  if (tab === "stats")  fetchAdminStats();
+  if (tab === "admins") fetchAdminAdmins();
 }
 
 async function fetchAdminStats() {
@@ -1987,7 +2036,6 @@ function renderAdminStats(validators) {
       </td>
       <td style="color:var(--muted);font-size:0.8rem">${v.joined || "—"}</td>
       <td>${v.total_judgements}</td>
-      <td>${v.total_points}</td>
       <td class="admin-time-cell">${fmtMin(v.avg_min)}</td>
       <td class="admin-time-cell">${fmtMin(v.median_min)}</td>
       <td class="admin-time-cell" style="color:var(--green)">${fmtMin(v.min_min)}</td>
@@ -2022,13 +2070,83 @@ function renderAdminStats(validators) {
   });
 }
 
+/* ---------- Admins management ---------- */
+async function fetchAdminAdmins() {
+  const list = $("#admin-admins-list");
+  list.innerHTML = '<p class="admin-loading">Loading…</p>';
+  try {
+    const data = await adminApi("/admins");
+    renderAdminAdmins(data.admins);
+  } catch (e) {
+    list.innerHTML = `<p class="admin-loading">Error: ${e.message}</p>`;
+  }
+}
+
+function renderAdminAdmins(admins) {
+  const list = $("#admin-admins-list");
+  if (!admins.length) {
+    list.innerHTML = '<p class="admin-loading">No admin accounts found.</p>';
+    return;
+  }
+  list.innerHTML = `
+    <table class="admin-table">
+      <thead><tr><th>#</th><th>Handle</th><th>Created</th><th></th></tr></thead>
+      <tbody>
+        ${admins.map((a, i) => `
+          <tr>
+            <td class="admin-cell-num">${i + 1}</td>
+            <td><strong>${a.handle}</strong>${a.handle === _adminHandle ? ' <span style="color:var(--muted);font-size:0.8rem">(you)</span>' : ""}</td>
+            <td style="color:var(--muted);font-size:0.8rem">${a.joined || "—"}</td>
+            <td>${a.handle !== _adminHandle ? `<button class="ghost-btn admin-delete-admin-btn" data-id="${a.id}" style="color:var(--muted);font-size:0.8rem">Remove</button>` : ""}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+  list.querySelectorAll(".admin-delete-admin-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      const confirmed = await showConfirm("Remove this admin account? They will no longer be able to sign in.");
+      if (!confirmed) return;
+      btn.disabled = true;
+      try {
+        await adminApi(`/admins/${btn.dataset.id}`, "DELETE");
+        fetchAdminAdmins();
+      } catch (e) {
+        await showAlert("Error: " + e.message);
+        btn.disabled = false;
+      }
+    };
+  });
+}
+
+async function addAdminAccount() {
+  const handle   = $("#new-admin-handle").value.trim();
+  const password = $("#new-admin-password").value.trim();
+  if (!handle)   { await showAlert("Enter a handle for the new admin."); return; }
+  if (!password) { await showAlert("Enter a password for the new admin."); return; }
+  const btn = $("#add-admin-btn");
+  btn.disabled = true;
+  try {
+    await adminApi("/admins", "POST", { handle, password });
+    $("#new-admin-handle").value   = "";
+    $("#new-admin-password").value = "";
+    fetchAdminAdmins();
+    showToast("Admin account created.", 2000);
+  } catch (e) {
+    await showAlert("Error: " + e.message);
+  }
+  btn.disabled = false;
+}
+
 $("#admin-tabs").addEventListener("click", (e) => {
   const btn = e.target.closest(".admin-tab-btn");
   if (btn) switchAdminTab(btn.dataset.tab);
 });
 
 // Wire up admin screen events
-$("#admin-logout-btn").onclick = exitAdminScreen;
+$("#admin-logout-btn").onclick = signOutAdmin;
+$("#admin-player-view-btn").onclick = returnToPlayerView;
+$("#admin-panel-btn").onclick = enterAdminScreen;
 $("#admin-detail-close").onclick = closeAdminDetail;
 $("#admin-detail-modal").addEventListener("click", (e) => {
   if (e.target === e.currentTarget) closeAdminDetail();
