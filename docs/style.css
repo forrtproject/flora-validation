@@ -72,6 +72,7 @@ a:hover { text-decoration-thickness: 2px; }
 }
 
 /* ---- Left branding panel ---- */
+.login-left-body .brand-group { margin-bottom: 1.75rem; }
 .login-left {
   background: var(--bg-alt);
   padding: 3.5rem 3.5rem 3rem;
@@ -1632,6 +1633,23 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
   }
 }
 @media (max-width: 760px) {
+  /* Stack split layout vertically so gates panel is reachable */
+  .card.split-layout {
+    grid-template-columns: 1fr;
+  }
+  .card.split-layout .pair-header {
+    border-radius: 1.5rem 1.5rem 0 0;
+    border-right: 1px solid var(--rule);
+    border-bottom: none;
+    overflow-y: visible;
+  }
+  .card.split-layout .pair-body {
+    border-radius: 0 0 1.5rem 1.5rem;
+    border-top: 1px solid var(--rule);
+  }
+  #onb-card.split-layout .pair-header { border-radius: 1.5rem 1.5rem 0 0; }
+  #onb-card.split-layout .pair-body  { border-radius: 0 0 1.5rem 1.5rem; }
+
   .game-area, .onboarding-area { padding: 0.75rem 1rem 3rem; }
   /* Stack header into two rows on small screens */
   #game-screen header {
@@ -1699,6 +1717,7 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
   position: fixed;
   z-index: 17;
   width: 320px;
+  max-width: calc(100vw - 24px);
   background: var(--bg);
   border: 1px solid var(--rule);
   border-radius: 14px;

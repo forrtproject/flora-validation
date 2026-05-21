@@ -34,22 +34,24 @@ def _base_layout(body_content: str) -> str:
 
           <!-- Header -->
           <tr>
-            <td style="padding:28px 36px 24px;border-bottom:1px solid {RULE};">
+            <td style="padding:24px 36px 20px;border-bottom:1px solid {RULE};">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
-                  <td>
-                    <span style="font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;
-                                 color:{ACCENT};font-family:'Courier New',monospace;">FORRT</span>
-                    <br />
-                    <span style="font-size:20px;font-weight:700;color:{INK};letter-spacing:-0.3px;
-                                 font-family:Georgia,serif;font-style:italic;">FLoRA</span>
-                    <span style="font-size:14px;font-weight:500;color:{MUTED};margin-left:6px;">Validation</span>
+                  <!-- Left: wordmark -->
+                  <td style="vertical-align:middle;">
+                    <p style="margin:0 0 3px;font-family:'Segoe UI',Arial,sans-serif;font-size:10px;
+                               font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:{ACCENT};">
+                      FORRT
+                    </p>
+                    <p style="margin:0;font-family:Georgia,serif;font-size:20px;color:{INK};line-height:1;">
+                      <em style="font-style:italic;font-weight:700;">FLoRA</em>
+                      <span style="font-weight:400;color:{MUTED};font-size:16px;margin-left:6px;">Validation</span>
+                    </p>
                   </td>
-                  <td align="right" style="vertical-align:middle;">
-                    <span style="display:inline-block;background:{ACCENT};color:{BG};
-                                 font-size:10px;font-weight:700;letter-spacing:2px;
-                                 text-transform:uppercase;padding:4px 10px;border-radius:999px;
-                                 font-family:'Courier New',monospace;">validator</span>
+                  <!-- Right: castle logo -->
+                  <td style="vertical-align:middle;text-align:right;width:44px;">
+                    <img src="{APP_URL}/favicon.svg" width="37" height="44" alt="FORRT"
+                         style="display:block;margin-left:auto;" />
                   </td>
                 </tr>
               </table>

@@ -1372,20 +1372,21 @@ function showTourStep(idx) {
 
 function positionTourCallout(target) {
   const callout = $("#tour-callout");
-  const CW = 320;
-  const MARGIN = 16;
+  const MARGIN = 12;
+  const vh = window.innerHeight;
+  const vw = window.innerWidth;
+  const CW = Math.min(320, vw - MARGIN * 2);
+
+  callout.style.width = CW + "px";
 
   if (!target) {
-    callout.style.cssText = `top:50%;left:50%;transform:translate(-50%,-50%)`;
+    callout.style.cssText = `width:${CW}px;top:50%;left:50%;transform:translate(-50%,-50%)`;
     return;
   }
 
   callout.style.transform = "";
   const rect = target.getBoundingClientRect();
-  const vh = window.innerHeight;
-  const vw = window.innerWidth;
 
-  // Always place below the target; if no room, pin to bottom of viewport
   const calloutH = callout.offsetHeight || 220;
   let top;
   if (rect.bottom + calloutH + MARGIN < vh) {
@@ -1400,6 +1401,13 @@ function positionTourCallout(target) {
   callout.style.top  = top + "px";
   callout.style.left = left + "px";
 }
+
+window.addEventListener("resize", () => {
+  const callout = $("#tour-callout");
+  if (!callout || callout.classList.contains("hidden")) return;
+  const target = document.querySelector(".tour-highlight");
+  positionTourCallout(target || null);
+});
 
 function endTour() {
   document.querySelectorAll(".tour-highlight").forEach(el => el.classList.remove("tour-highlight"));
