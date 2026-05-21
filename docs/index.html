@@ -291,18 +291,21 @@
         <p style="color:var(--muted);font-size:0.88rem;margin-bottom:1.25rem">Each admin has their own handle and password. Approvals are stamped with the approving admin's handle so errors can be traced.</p>
         <div id="admin-admins-list"></div>
         <hr style="margin:1.5rem 0;border:none;border-top:1px solid var(--rule)">
-        <h4 style="margin:0 0 0.75rem">Add new admin</h4>
-        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:flex-end">
-          <div>
-            <label class="admin-form-label">Handle</label>
-            <input id="new-admin-handle" class="admin-input" placeholder="e.g. lukas" autocomplete="off" style="width:160px">
+        <div id="admin-add-form">
+          <h4 style="margin:0 0 0.75rem">Add new admin</h4>
+          <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:flex-end">
+            <div>
+              <label class="admin-form-label">Handle</label>
+              <input id="new-admin-handle" class="admin-input" placeholder="e.g. lukas" autocomplete="off" style="width:160px">
+            </div>
+            <div>
+              <label class="admin-form-label">Password</label>
+              <input id="new-admin-password" class="admin-input" type="password" placeholder="••••••••" autocomplete="new-password" style="width:180px">
+            </div>
+            <button id="add-admin-btn" class="btn-primary" onclick="addAdminAccount()">Add admin</button>
           </div>
-          <div>
-            <label class="admin-form-label">Password</label>
-            <input id="new-admin-password" class="admin-input" type="password" placeholder="••••••••" autocomplete="new-password" style="width:180px">
-          </div>
-          <button id="add-admin-btn" class="btn-primary" onclick="addAdminAccount()">Add admin</button>
         </div>
+        <p id="admin-no-trust-msg" style="display:none;color:var(--muted);font-size:0.88rem">Only trusted admins can add or remove admin accounts.</p>
       </div>
     </div>
   </div>

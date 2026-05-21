@@ -1600,6 +1600,7 @@ $("#faq-modal").addEventListener("click", (e) => { if (e.target === e.currentTar
 
 let _adminToken   = null;
 let _adminHandle  = null;
+let _adminTrusted = false;
 let _adminFilter  = "all";
 let _adminPage    = 1;
 const ADMIN_PER_PAGE = 50;
@@ -1638,8 +1639,9 @@ async function adminLogin(handle, password) {
     throw new Error(msg);
   }
   const data = await resp.json();
-  _adminToken  = data.token;
-  _adminHandle = data.handle;
+  _adminToken   = data.token;
+  _adminHandle  = data.handle;
+  _adminTrusted = !!data.trusted;
   enterAdminScreen();
   return true;
 }
@@ -1655,8 +1657,9 @@ function enterAdminScreen() {
 }
 
 function signOutAdmin() {
-  _adminToken  = null;
-  _adminHandle = null;
+  _adminToken   = null;
+  _adminHandle  = null;
+  _adminTrusted = false;
   location.reload();
 }
 
@@ -2066,19 +2069,45 @@ function renderAdminAdmins(admins) {
   }
   list.innerHTML = `
     <table class="admin-table">
-      <thead><tr><th>#</th><th>Handle</th><th>Created</th><th></th></tr></thead>
+      <thead><tr><th>#</th><th>Handle</th><th>Trusted <span class="col-help" title="Trusted admins can add and remove other admin accounts.">?</span></th><th>Created</th><th></th></tr></thead>
       <tbody>
-        ${admins.map((a, i) => `
-          <tr>
+        ${admins.map((a, i) => {
+          const isYou = a.handle === _adminHandle;
+          const trustedCell = _adminTrusted && !isYou
+            ? `<button class="trust-toggle-btn ${a.trusted ? "trusted" : ""} admin-toggle-trusted-btn"
+                       data-id="${a.id}"
+                       title="${a.trusted ? "Trusted — click to revoke" : "Click to mark as trusted"}">
+                 ${a.trusted ? "⭐ Trusted" : "—"}
+               </button>`
+            : a.trusted ? '<span style="color:var(--muted);font-size:0.85rem">⭐ Trusted</span>' : '<span style="color:var(--muted)">—</span>';
+          const actions = _adminTrusted && !isYou
+            ? `<button class="ghost-btn admin-delete-admin-btn" data-id="${a.id}" style="color:var(--muted);font-size:0.8rem">Remove</button>`
+            : "";
+          return `<tr>
             <td class="admin-cell-num">${i + 1}</td>
-            <td><strong>${a.handle}</strong>${a.handle === _adminHandle ? ' <span style="color:var(--muted);font-size:0.8rem">(you)</span>' : ""}</td>
+            <td><strong>${a.handle}</strong>${isYou ? ' <span style="color:var(--muted);font-size:0.8rem">(you)</span>' : ""}</td>
+            <td>${trustedCell}</td>
             <td style="color:var(--muted);font-size:0.8rem">${a.joined || "—"}</td>
-            <td>${a.handle !== _adminHandle ? `<button class="ghost-btn admin-delete-admin-btn" data-id="${a.id}" style="color:var(--muted);font-size:0.8rem">Remove</button>` : ""}</td>
-          </tr>
-        `).join("")}
+            <td>${actions}</td>
+          </tr>`;
+        }).join("")}
       </tbody>
     </table>
   `;
+
+  list.querySelectorAll(".admin-toggle-trusted-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        const data = await adminApi(`/admins/${btn.dataset.id}/toggle-trusted`, "POST");
+        btn.classList.toggle("trusted", data.trusted);
+        btn.textContent = data.trusted ? "⭐ Trusted" : "—";
+        btn.title = data.trusted ? "Trusted — click to revoke" : "Click to mark as trusted";
+      } catch (e) { await showAlert(e.message); }
+      btn.disabled = false;
+    };
+  });
+
   list.querySelectorAll(".admin-delete-admin-btn").forEach((btn) => {
     btn.onclick = async () => {
       const confirmed = await showConfirm("Remove this admin account? They will no longer be able to sign in.");
@@ -2093,6 +2122,12 @@ function renderAdminAdmins(admins) {
       }
     };
   });
+
+  // Show/hide add-admin form based on trusted status
+  const addForm = $("#admin-add-form");
+  if (addForm) addForm.style.display = _adminTrusted ? "" : "none";
+  const noTrustMsg = $("#admin-no-trust-msg");
+  if (noTrustMsg) noTrustMsg.style.display = _adminTrusted ? "none" : "";
 }
 
 async function addAdminAccount() {

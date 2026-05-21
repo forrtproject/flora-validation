@@ -51,13 +51,25 @@ def _require_admin(token: str) -> str:
     raise HTTPException(401, "Unauthorized")
 
 
+def _require_trusted_admin(token: str) -> str:
+    """Validate token and require the admin to be trusted. Returns handle."""
+    with db() as cur:
+        cur.execute("SELECT handle, password, trusted FROM admins")
+        for row in cur.fetchall():
+            if token == _make_token(row["password"]):
+                if not row["trusted"]:
+                    raise HTTPException(403, "Only trusted admins can manage admin accounts")
+                return row["handle"]
+    raise HTTPException(401, "Unauthorized")
+
+
 def _seed_admin_if_empty():
     """On first run, create the default admin from ADMIN_PASSWORD env var."""
     with db() as cur:
         cur.execute("SELECT COUNT(*) AS n FROM admins")
         if cur.fetchone()["n"] == 0:
             cur.execute(
-                "INSERT INTO admins (handle, password) VALUES (%s, %s)",
+                "INSERT INTO admins (handle, password, trusted) VALUES (%s, %s, TRUE)",
                 ("admin", ADMIN_PASSWORD),
             )
 
@@ -838,7 +850,7 @@ def admin_toggle_senior(validator_id: int, x_admin_token: str = Header(...)):
 def list_admins(x_admin_token: str = Header(...)):
     _require_admin(x_admin_token)
     with db() as cur:
-        cur.execute("SELECT id, handle, created_at::date AS joined FROM admins ORDER BY id")
+        cur.execute("SELECT id, handle, trusted, created_at::date AS joined FROM admins ORDER BY id")
         return {"admins": [dict(r) for r in cur.fetchall()]}
 
 
@@ -849,7 +861,7 @@ class AdminCreateRequest(BaseModel):
 
 @app.post("/api/admin/admins")
 def create_admin(req: AdminCreateRequest, x_admin_token: str = Header(...)):
-    _require_admin(x_admin_token)
+    _require_trusted_admin(x_admin_token)
     if not req.handle or not req.password:
         raise HTTPException(400, "Handle and password are required")
     with db() as cur:
@@ -866,7 +878,7 @@ def create_admin(req: AdminCreateRequest, x_admin_token: str = Header(...)):
 
 @app.delete("/api/admin/admins/{admin_id}")
 def delete_admin(admin_id: int, x_admin_token: str = Header(...)):
-    calling_handle = _require_admin(x_admin_token)
+    calling_handle = _require_trusted_admin(x_admin_token)
     with db() as cur:
         cur.execute("SELECT handle FROM admins WHERE id = %s", (admin_id,))
         row = cur.fetchone()
@@ -881,14 +893,32 @@ def delete_admin(admin_id: int, x_admin_token: str = Header(...)):
     return {"deleted": row["handle"]}
 
 
+@app.post("/api/admin/admins/{admin_id}/toggle-trusted")
+def toggle_admin_trusted(admin_id: int, x_admin_token: str = Header(...)):
+    calling_handle = _require_trusted_admin(x_admin_token)
+    with db() as cur:
+        cur.execute("SELECT handle FROM admins WHERE id = %s", (admin_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Admin not found")
+        if row["handle"] == calling_handle:
+            raise HTTPException(400, "Cannot change your own trusted status")
+        cur.execute(
+            "UPDATE admins SET trusted = NOT trusted WHERE id = %s RETURNING trusted",
+            (admin_id,),
+        )
+        updated = cur.fetchone()
+    return {"handle": row["handle"], "trusted": updated["trusted"]}
+
+
 @app.post("/api/admin/login")
 def admin_login(req: AdminLoginRequest):
     with db() as cur:
-        cur.execute("SELECT handle, password FROM admins WHERE handle = %s", (req.handle,))
+        cur.execute("SELECT handle, password, trusted FROM admins WHERE handle = %s", (req.handle,))
         row = cur.fetchone()
     if not row or row["password"] != req.password:
         raise HTTPException(401, "Invalid handle or password")
-    return {"token": _make_token(row["password"]), "handle": row["handle"]}
+    return {"token": _make_token(row["password"]), "handle": row["handle"], "trusted": row["trusted"]}
 
 
 @app.get("/api/admin/entries")
