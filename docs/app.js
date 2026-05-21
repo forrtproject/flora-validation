@@ -13,6 +13,7 @@ function blankJudgement() {
     type: null,
     original: null,
     outcome: null,
+    corrected_outcome: null,
     comment: "",
     edited_abstract: null,
     edited_outcome_quote: null,
@@ -862,6 +863,15 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
             <button class="choice danger" data-outcome="wrong">Mischaracterised</button>
             <button class="choice warn" data-outcome="unsure">Can't tell</button>
           </div>
+          <div class="outcome-correction hidden" id="outcome-correction">
+            <p id="outcome-correction-label" style="margin:12px 0 6px;font-size:13px;color:var(--muted);">What is the correct outcome?</p>
+            <div class="choices">
+              <button class="choice success" data-correct-outcome="success">Success</button>
+              <button class="choice danger" data-correct-outcome="failed">Failed</button>
+              <button class="choice warn" data-correct-outcome="mixed">Mixed</button>
+              <button class="choice" data-correct-outcome="uninformative">Uninformative</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -936,8 +946,11 @@ function wireEditButtons(container, p) {
 
   const editQuoteBtn = container.querySelector("#edit-quote-btn");
   if (editQuoteBtn) {
-    const quoteText = container.querySelector("#outcome-quote-text");
-    const quoteEdit = container.querySelector("#outcome-quote-edit");
+    const quoteText    = container.querySelector("#outcome-quote-text");
+    const quoteEdit    = container.querySelector("#outcome-quote-edit");
+    const outcomeChoices    = container.querySelector("#gate-3 .choices");
+    const correctionRow     = container.querySelector("#outcome-correction");
+
     editQuoteBtn.onclick = () => {
       if (quoteEdit.classList.contains("hidden")) {
         quoteEdit.value = p.outcome_phrase || "";
@@ -952,7 +965,30 @@ function wireEditButtons(container, p) {
           quoteText.classList.remove("hidden");
         }
         quoteEdit.classList.add("hidden");
-        editQuoteBtn.textContent = state.judgement.edited_outcome_quote ? "edit quote (✓ edited)" : "edit / extend quote";
+
+        if (state.judgement.edited_outcome_quote) {
+          // Quote was changed — auto-select "wrong" and skip the 3 buttons
+          state.judgement.outcome = "wrong";
+          state.judgement.corrected_outcome = null;
+          if (outcomeChoices) outcomeChoices.classList.add("hidden");
+          if (correctionRow) {
+            correctionRow.classList.remove("hidden");
+            const lbl = correctionRow.querySelector("#outcome-correction-label");
+            if (lbl) lbl.textContent = "You edited the quote — what is the correct outcome label?";
+          }
+          editQuoteBtn.textContent = "edit quote (✓ edited)";
+        } else {
+          // Reverted — restore the 3 choice buttons
+          state.judgement.outcome = null;
+          state.judgement.corrected_outcome = null;
+          if (outcomeChoices) outcomeChoices.classList.remove("hidden");
+          if (correctionRow) {
+            correctionRow.classList.add("hidden");
+            correctionRow.querySelectorAll(".choice").forEach(b => b.classList.remove("selected"));
+          }
+          editQuoteBtn.textContent = "edit / extend quote";
+        }
+        updateSubmitState(container.closest(".pair-body"));
       }
     };
   }
@@ -976,21 +1012,47 @@ function onChoice(btn) {
       unanswerGate(g3); g3.classList.add("hidden");
       state.judgement.original = null;
       state.judgement.outcome = null;
+      state.judgement.corrected_outcome = null;
     } else {
       if (wasAnswered) {
         unanswerGate(pairBody.querySelector("#gate-2"));
         unanswerGate(pairBody.querySelector("#gate-3"));
         pairBody.querySelector("#gate-3").classList.add("hidden");
+        const cr = pairBody.querySelector("#outcome-correction");
+        if (cr) cr.classList.add("hidden");
       }
       pairBody.querySelector("#gate-2").classList.remove("hidden");
     }
     pairBody.querySelector(".comment").classList.remove("hidden");
   } else if (btn.dataset.original) {
     state.judgement.original = btn.dataset.original;
-    if (wasAnswered) unanswerGate(pairBody.querySelector("#gate-3"));
+    if (wasAnswered) {
+      unanswerGate(pairBody.querySelector("#gate-3"));
+      state.judgement.outcome = null;
+      state.judgement.corrected_outcome = null;
+      const cr = pairBody.querySelector("#outcome-correction");
+      if (cr) cr.classList.add("hidden");
+    }
     pairBody.querySelector("#gate-3").classList.remove("hidden");
   } else if (btn.dataset.outcome) {
     state.judgement.outcome = btn.dataset.outcome;
+    state.judgement.corrected_outcome = null;
+    const correctionRow = pairBody.querySelector("#outcome-correction");
+    if (correctionRow) {
+      const show = btn.dataset.outcome === "wrong";
+      correctionRow.classList.toggle("hidden", !show);
+      correctionRow.querySelectorAll(".choice").forEach(b => b.classList.remove("selected"));
+      if (show) {
+        const lbl = correctionRow.querySelector("#outcome-correction-label");
+        if (lbl) lbl.textContent = "What is the correct outcome?";
+      }
+    }
+  } else if (btn.dataset.correctOutcome) {
+    state.judgement.corrected_outcome = btn.dataset.correctOutcome;
+    pairBody.querySelectorAll("[data-correct-outcome]").forEach(b => b.classList.remove("selected"));
+    btn.classList.add("selected");
+    updateSubmitState(pairBody);
+    return;
   }
 
   updateSubmitState(pairBody);
@@ -1045,7 +1107,8 @@ function getAnswerClass(btn) {
 
 function updateSubmitState(pairBody) {
   const j = state.judgement;
-  const ready = j.type === "not_validation" || (j.type && j.original && j.outcome);
+  const outcomeReady = j.outcome && (j.outcome !== "wrong" || j.corrected_outcome);
+  const ready = j.type === "not_validation" || (j.type && j.original && outcomeReady);
   const btn = (pairBody || document).querySelector("#submit-btn");
   if (btn) btn.disabled = !ready;
 }
@@ -1098,7 +1161,7 @@ async function submitJudgement() {
       corrected_type:          correctedType || null,
       corrected_doi_o:         null,
       corrected_study_o:       null,
-      corrected_outcome:       null,
+      corrected_outcome:       j.corrected_outcome || null,
       corrected_outcome_quote: j.edited_outcome_quote || null,
       corrected_abstract:      j.edited_abstract || null,
       validator_notes:         j.comment || null,
