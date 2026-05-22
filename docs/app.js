@@ -14,6 +14,8 @@ function blankJudgement() {
     original: null,
     outcome: null,
     corrected_outcome: null,
+    corrected_doi_o: null,
+    corrected_study_o: null,
     comment: "",
     edited_abstract: null,
     edited_outcome_quote: null,
@@ -848,6 +850,15 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
             <button class="choice danger" data-original="wrong">Wrong paper</button>
             <button class="choice warn" data-original="unsure">Can't tell</button>
           </div>
+          <div id="original-correction" class="hidden" style="margin-top:1rem;padding:0.85rem 1rem;background:var(--bg-alt);border-radius:8px;border:1px solid var(--rule)">
+            <p style="font-size:0.85rem;color:var(--muted);margin:0 0 0.65rem">Optional — paste the correct paper below to help with the fix:</p>
+            <label style="font-size:0.8rem;color:var(--muted);display:block;margin-bottom:0.2rem">DOI or URL</label>
+            <input id="corrected-doi-input" type="text" placeholder="e.g. https://doi.org/10.1000/xyz"
+              style="width:100%;box-sizing:border-box;padding:0.4rem 0.6rem;font-size:0.85rem;border:1px solid var(--rule);border-radius:6px;background:var(--bg);color:var(--ink);margin-bottom:0.55rem">
+            <label style="font-size:0.8rem;color:var(--muted);display:block;margin-bottom:0.2rem">Study title</label>
+            <input id="corrected-study-input" type="text" placeholder="e.g. Smith et al. (2018) — The effect of..."
+              style="width:100%;box-sizing:border-box;padding:0.4rem 0.6rem;font-size:0.85rem;border:1px solid var(--rule);border-radius:6px;background:var(--bg);color:var(--ink)">
+          </div>
         </div>
       </div>
 
@@ -919,6 +930,12 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
   }
 
   wireEditButtons(container, p);
+
+  // Wire original correction inputs
+  const doiInput   = container.querySelector("#corrected-doi-input");
+  const studyInput = container.querySelector("#corrected-study-input");
+  if (doiInput)   doiInput.oninput   = () => { state.judgement.corrected_doi_o   = doiInput.value.trim()   || null; };
+  if (studyInput) studyInput.oninput = () => { state.judgement.corrected_study_o = studyInput.value.trim() || null; };
 
   // Click answered gate header to toggle its body open/closed
   container.querySelectorAll(".gate-header-row").forEach((row) => {
@@ -1043,6 +1060,20 @@ function onChoice(btn) {
       state.judgement.corrected_outcome = null;
       const cr = pairBody.querySelector("#outcome-correction");
       if (cr) cr.classList.add("hidden");
+    }
+    // Show / hide original correction panel
+    const oc = pairBody.querySelector("#original-correction");
+    if (oc) {
+      const show = btn.dataset.original === "wrong";
+      oc.classList.toggle("hidden", !show);
+      if (!show) {
+        state.judgement.corrected_doi_o   = null;
+        state.judgement.corrected_study_o = null;
+        const doi = oc.querySelector("#corrected-doi-input");
+        const study = oc.querySelector("#corrected-study-input");
+        if (doi)   doi.value   = "";
+        if (study) study.value = "";
+      }
     }
     pairBody.querySelector("#gate-3").classList.remove("hidden");
   } else if (btn.dataset.outcome) {
@@ -1170,8 +1201,8 @@ async function submitJudgement() {
       original_check: isNotValidation ? "incorrect" : (j.original === "correct" ? "correct" : "incorrect"),
       outcome_check:  isNotValidation ? "incorrect" : (j.outcome  === "correct" ? "correct" : "incorrect"),
       corrected_type:          correctedType || null,
-      corrected_doi_o:         null,
-      corrected_study_o:       null,
+      corrected_doi_o:         j.corrected_doi_o   || null,
+      corrected_study_o:       j.corrected_study_o || null,
       corrected_outcome:       j.corrected_outcome || null,
       corrected_outcome_quote: j.edited_outcome_quote || null,
       corrected_abstract:      j.edited_abstract || null,
