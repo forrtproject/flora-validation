@@ -850,16 +850,28 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
             <button class="choice danger" data-original="wrong">Wrong paper</button>
             <button class="choice warn" data-original="unsure">Can't tell</button>
           </div>
-          <div id="original-correction" class="hidden" style="margin-top:1rem;padding:0.85rem 1rem;background:var(--bg-alt);border-radius:8px;border:1px solid var(--rule)">
-            <p style="font-size:0.85rem;color:var(--muted);margin:0 0 0.65rem">Optional — paste the correct paper below to help with the fix:</p>
-            <label style="font-size:0.8rem;color:var(--muted);display:block;margin-bottom:0.2rem">DOI or URL</label>
-            <input id="corrected-doi-input" type="text" placeholder="e.g. https://doi.org/10.1000/xyz"
-              style="width:100%;box-sizing:border-box;padding:0.4rem 0.6rem;font-size:0.85rem;border:1px solid var(--rule);border-radius:6px;background:var(--bg);color:var(--ink);margin-bottom:0.55rem">
-            <label style="font-size:0.8rem;color:var(--muted);display:block;margin-bottom:0.2rem">Study title</label>
-            <input id="corrected-study-input" type="text" placeholder="e.g. Smith et al. (2018) — The effect of..."
-              style="width:100%;box-sizing:border-box;padding:0.4rem 0.6rem;font-size:0.85rem;border:1px solid var(--rule);border-radius:6px;background:var(--bg);color:var(--ink)">
+        </div>
+      </div>
+
+      <!-- Original correction panel — lives BETWEEN gates, not inside Gate 2 body -->
+      <div id="original-correction" class="hidden" style="margin:0.5rem 0 0.75rem;padding:1rem 1.1rem;background:var(--bg-alt);border-radius:10px;border:1px solid var(--rule)">
+        <div style="display:flex;align-items:baseline;gap:0.5rem;margin-bottom:0.75rem">
+          <span style="font-size:0.9rem;font-weight:600;color:var(--ink)">Suggest the correct paper</span>
+          <span style="font-size:0.78rem;color:var(--muted)">(optional — you can skip this)</span>
+        </div>
+        <div id="oc-form">
+          <label style="font-size:0.8rem;color:var(--muted);display:block;margin-bottom:0.2rem">DOI or URL</label>
+          <input id="corrected-doi-input" type="text" placeholder="e.g. https://doi.org/10.1000/xyz"
+            style="width:100%;box-sizing:border-box;padding:0.4rem 0.65rem;font-size:0.85rem;border:1px solid var(--rule);border-radius:6px;background:var(--bg);color:var(--ink);margin-bottom:0.55rem;outline:none">
+          <label style="font-size:0.8rem;color:var(--muted);display:block;margin-bottom:0.2rem">Study title</label>
+          <input id="corrected-study-input" type="text" placeholder="e.g. Smith et al. (2018) — The effect of..."
+            style="width:100%;box-sizing:border-box;padding:0.4rem 0.65rem;font-size:0.85rem;border:1px solid var(--rule);border-radius:6px;background:var(--bg);color:var(--ink);margin-bottom:0.75rem;outline:none">
+          <div style="display:flex;gap:0.6rem;align-items:center">
+            <button id="oc-save-btn" class="btn-primary" style="font-size:0.82rem;padding:0.35rem 1rem">Save suggestion</button>
+            <button id="oc-skip-btn" class="ghost-btn" style="font-size:0.82rem;padding:0.35rem 0.85rem;color:var(--muted)">Skip</button>
           </div>
         </div>
+        <div id="oc-saved-confirm" class="hidden" style="font-size:0.85rem;color:var(--green)">✓ Suggestion saved — <button class="link-btn" id="oc-edit-btn" style="font-size:0.82rem">edit</button></div>
       </div>
 
       <div class="gate hidden" id="gate-3">
@@ -931,11 +943,45 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
 
   wireEditButtons(container, p);
 
-  // Wire original correction inputs
-  const doiInput   = container.querySelector("#corrected-doi-input");
-  const studyInput = container.querySelector("#corrected-study-input");
+  // Wire original correction panel
+  const doiInput      = container.querySelector("#corrected-doi-input");
+  const studyInput    = container.querySelector("#corrected-study-input");
+  const ocPanel       = container.querySelector("#original-correction");
+  const ocSaveBtn     = container.querySelector("#oc-save-btn");
+  const ocSkipBtn     = container.querySelector("#oc-skip-btn");
+  const ocConfirm     = container.querySelector("#oc-saved-confirm");
+  const ocEditBtn     = container.querySelector("#oc-edit-btn");
+
+  const ocForm = ocPanel?.querySelector("#oc-form");
+
+  function ocShowForm() {
+    if (ocForm)    ocForm.classList.remove("hidden");
+    if (ocConfirm) ocConfirm.classList.add("hidden");
+  }
+
   if (doiInput)   doiInput.oninput   = () => { state.judgement.corrected_doi_o   = doiInput.value.trim()   || null; };
   if (studyInput) studyInput.oninput = () => { state.judgement.corrected_study_o = studyInput.value.trim() || null; };
+
+  if (ocSaveBtn) {
+    ocSaveBtn.onclick = () => {
+      state.judgement.corrected_doi_o   = doiInput?.value.trim()   || null;
+      state.judgement.corrected_study_o = studyInput?.value.trim() || null;
+      if (ocForm)    ocForm.classList.add("hidden");
+      if (ocConfirm) ocConfirm.classList.remove("hidden");
+    };
+  }
+
+  if (ocSkipBtn) {
+    ocSkipBtn.onclick = () => {
+      state.judgement.corrected_doi_o   = null;
+      state.judgement.corrected_study_o = null;
+      if (doiInput)   doiInput.value   = "";
+      if (studyInput) studyInput.value = "";
+      if (ocPanel)    ocPanel.classList.add("hidden");
+    };
+  }
+
+  if (ocEditBtn) ocEditBtn.onclick = ocShowForm;
 
   // Click answered gate header to toggle its body open/closed
   container.querySelectorAll(".gate-header-row").forEach((row) => {
