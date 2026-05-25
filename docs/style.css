@@ -816,6 +816,18 @@ body.sidebar-collapsed .game-area { border-right: none; }
   width: 100%;
 }
 .abstract-block { display: flex; flex-direction: column; gap: 0.4rem; width: 100%; margin: 0.5rem 0; }
+.title-row { display: flex; align-items: baseline; gap: 0.75rem; }
+.title-row h2 { flex: 1; margin: 0; }
+.title-edit {
+  width: 100%;
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: clamp(1.05rem, 1.8vw, 1.35rem);
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--ink);
+  border-radius: 0.5rem;
+  background: var(--bg);
+  color: var(--ink);
+}
 .abstract {
   font-size: clamp(0.85rem, 1.4vw, 1.05rem);
   line-height: 1.55;

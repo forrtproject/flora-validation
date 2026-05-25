@@ -163,6 +163,7 @@ class JudgeRequest(BaseModel):
     type_check: str                     # "correct" | "incorrect"
     original_check: str                 # "correct" | "incorrect"
     outcome_check: str                  # "correct" | "incorrect"
+    corrected_study_r: str | None = None
     corrected_doi_o: str | None = None
     corrected_study_o: str | None = None
     corrected_outcome: str | None = None
@@ -218,20 +219,6 @@ def _points_for(req: JudgeRequest, vote_score: int) -> int:
         pts += 1
     return pts
 
-
-def _rank_for(cur, validator_id: int) -> int:
-    """Return 1-based rank among all validators by total_points."""
-    cur.execute(
-        "SELECT total_points FROM validators WHERE id = %s",
-        (validator_id,),
-    )
-    row = cur.fetchone()
-    my_points = row["total_points"] if row else 0
-    cur.execute(
-        "SELECT COUNT(*) + 1 AS rank FROM validators WHERE total_points > %s",
-        (my_points,),
-    )
-    return cur.fetchone()["rank"]
 
 
 # ---------------------------------------------------------------------------
@@ -527,6 +514,7 @@ def judge(req: JudgeRequest):
                     corrected_type = %s,
                     corrected_outcome_quote = %s,
                     corrected_abstract = %s,
+                    corrected_study_r = %s,
                     validator_notes = %s,
                     points = %s,
                     validated_at = NOW()
@@ -542,6 +530,7 @@ def judge(req: JudgeRequest):
                     req.corrected_type,
                     req.corrected_outcome_quote,
                     req.corrected_abstract,
+                    req.corrected_study_r,
                     req.validator_notes,
                     pts,
                     queue_id,
@@ -564,6 +553,7 @@ def judge(req: JudgeRequest):
             "corrected_type": req.corrected_type,
             "corrected_outcome_quote": req.corrected_outcome_quote,
             "corrected_abstract": req.corrected_abstract,
+            "corrected_study_r": req.corrected_study_r,
             "validator_notes": req.validator_notes or "",
             "points": pts,
             "validated_at": datetime.now(timezone.utc).isoformat(),
@@ -1096,7 +1086,7 @@ def admin_approve(record_id: str, x_admin_token: str = Header(...)):
             """,
             (
                 record_id,
-                rec["doi_r"], rec["study_r"], rec["year_r"], rec["url_r"], rec["ref_r"], rec["abstract_r"],
+                rec["doi_r"], rec.get("final_study_r") or rec["study_r"], rec["year_r"], rec["url_r"], rec["ref_r"], rec["abstract_r"],
                 rec.get("final_doi_o") or rec["doi_o"],
                 rec.get("final_study_o") or rec["study_o"],
                 rec["year_o"], rec["url_o"], rec["ref_o"],

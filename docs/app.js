@@ -16,6 +16,7 @@ function blankJudgement() {
     corrected_outcome: null,
     corrected_doi_o: null,
     corrected_study_o: null,
+    corrected_study_r: null,
     comment: "",
     edited_abstract: null,
     edited_outcome_quote: null,
@@ -244,9 +245,13 @@ function escapeHtml(s) {
   }[c]));
 }
 
-function showToast(num, label) {
+function showToast(numOrMsg, label) {
   const toast = $("#toast");
-  toast.innerHTML = `<span class="num">+${num}</span>${label}`;
+  if (label === undefined) {
+    toast.innerHTML = numOrMsg;
+  } else {
+    toast.innerHTML = `<span class="num">+${numOrMsg}</span> ${label}`;
+  }
   toast.classList.add("show");
   setTimeout(() => toast.classList.remove("show"), 1800);
 }
@@ -800,10 +805,13 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
         ${onboarding ? "" : `<button class="skip-btn" id="skip-btn">Skip — broken / unclear</button>`}
       </div>
 
-      <h2>${escapeHtml(p.title_r || "(untitled)")}</h2>
-      <div class="authors">${escapeHtml(p.authors_r || "?")} · ${fmtYear(p.year_r)}${p.journal_r ? " · " + escapeHtml(p.journal_r) : ""}</div>
-
       <div class="abstract-block">
+        <div class="title-row">
+          <h2 id="title-text">${escapeHtml(p.title_r || "(untitled)")}</h2>
+          <button class="link-btn" id="fix-title-btn" title="Fix a typographical error in this title">fix typo</button>
+        </div>
+        <input type="text" class="title-edit hidden" id="title-edit" placeholder="Corrected title…">
+        <div class="authors">${escapeHtml(p.authors_r || "?")} · ${fmtYear(p.year_r)}${p.journal_r ? " · " + escapeHtml(p.journal_r) : ""}</div>
         <div class="abstract expanded" id="abstract-text">${escapeHtml(p.abstract_r || "(no abstract available)")}</div>
         <textarea class="abstract-edit hidden" id="abstract-edit"></textarea>
         <div class="abstract-tools">
@@ -901,7 +909,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
             <p id="outcome-correction-label" style="margin:12px 0 6px;font-size:13px;color:var(--muted);">What is the correct outcome?</p>
             <div class="choices">
               <button class="choice success" data-correct-outcome="success">Success</button>
-              <button class="choice danger" data-correct-outcome="failed">Failed</button>
+              <button class="choice danger" data-correct-outcome="failure">Failed</button>
               <button class="choice warn" data-correct-outcome="mixed">Mixed</button>
               <button class="choice" data-correct-outcome="uninformative">Uninformative</button>
             </div>
@@ -998,6 +1006,27 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
 }
 
 function wireEditButtons(container, p) {
+  const fixTitleBtn = container.querySelector("#fix-title-btn");
+  if (fixTitleBtn) {
+    const titleText = container.querySelector("#title-text");
+    const titleEdit = container.querySelector("#title-edit");
+    fixTitleBtn.onclick = () => {
+      if (titleEdit.classList.contains("hidden")) {
+        titleEdit.value = state.judgement.corrected_study_r || p.title_r || "";
+        titleEdit.classList.remove("hidden");
+        fixTitleBtn.textContent = "save title";
+        titleEdit.focus();
+        titleEdit.select();
+      } else {
+        const v = titleEdit.value.trim();
+        state.judgement.corrected_study_r = v && v !== (p.title_r || "").trim() ? v : null;
+        if (titleText) titleText.textContent = state.judgement.corrected_study_r || p.title_r || "(untitled)";
+        titleEdit.classList.add("hidden");
+        fixTitleBtn.textContent = state.judgement.corrected_study_r ? "fix typo (✓ edited)" : "fix typo";
+      }
+    };
+  }
+
   const editAbstractBtn = container.querySelector("#edit-abstract-btn");
   const abstractEdit = container.querySelector("#abstract-edit");
   const abstractText = container.querySelector("#abstract-text");
@@ -1119,6 +1148,12 @@ function onChoice(btn) {
         const study = oc.querySelector("#corrected-study-input");
         if (doi)   doi.value   = "";
         if (study) study.value = "";
+      } else if (!state.judgement.corrected_doi_o && !state.judgement.corrected_study_o) {
+        // Correction was cleared (user changed away and came back) — reset to form state
+        const ocForm    = oc.querySelector("#oc-form");
+        const ocConfirm = oc.querySelector("#oc-saved-confirm");
+        if (ocForm)    ocForm.classList.remove("hidden");
+        if (ocConfirm) ocConfirm.classList.add("hidden");
       }
     }
     pairBody.querySelector("#gate-3").classList.remove("hidden");
@@ -1252,6 +1287,7 @@ async function submitJudgement() {
       corrected_outcome:       j.corrected_outcome || null,
       corrected_outcome_quote: j.edited_outcome_quote || null,
       corrected_abstract:      j.edited_abstract || null,
+      corrected_study_r:       j.corrected_study_r || null,
       validator_notes:         j.comment || null,
     });
     showToast(resp.points_earned, "points");
@@ -1852,7 +1888,7 @@ async function quickApprove(recordId, btn) {
   btn.textContent = "…";
   try {
     await adminApi(`/entries/${recordId}/approve`, "POST");
-    showToast("Entry approved.", 2000);
+    showToast("Entry approved.");
     fetchAdminEntries();
   } catch (e) {
     btn.disabled = false;
@@ -1895,6 +1931,7 @@ function renderAdminDetail(data) {
       `Outcome: <b>${v.outcome_check}</b>`,
     ].join(" · ");
     const corrections = [
+      v.corrected_study_r       ? `Title → ${v.corrected_study_r}` : "",
       v.corrected_type          ? `Type → ${v.corrected_type}` : "",
       v.corrected_study_o       ? `Original → ${v.corrected_study_o}` : "",
       v.corrected_outcome       ? `Outcome → ${v.corrected_outcome}` : "",
@@ -1955,7 +1992,6 @@ function renderAdminDetail(data) {
           <option value="correct">correct</option>
           <option value="incorrect">incorrect</option>
         </select>
-        <input id="ar-corrected-type" class="admin-input" placeholder="Corrected type (if incorrect)">
         <select id="ar-corrected-type-sel" class="admin-select" style="margin-top:0.25rem">
           ${typeOpts}
         </select>
@@ -1999,7 +2035,7 @@ async function submitAdminResolve(recordId) {
   btn.textContent = "Saving…";
 
   const body = {
-    admin_name:              "admin",
+    admin_name:              _adminHandle || "admin",
     type_check:              $("#ar-type-check").value,
     original_check:          $("#ar-original-check").value,
     outcome_check:           $("#ar-outcome-check").value,
@@ -2014,7 +2050,7 @@ async function submitAdminResolve(recordId) {
   try {
     await adminApi(`/entries/${recordId}/resolve`, "POST", body);
     closeAdminDetail();
-    showToast("Entry resolved.", 2500);
+    showToast("Entry resolved.");
     fetchAdminEntries();
   } catch (e) {
     btn.disabled = false;
@@ -2208,7 +2244,7 @@ async function addAdminAccount() {
     $("#new-admin-handle").value   = "";
     $("#new-admin-password").value = "";
     fetchAdminAdmins();
-    showToast("Admin account created.", 2000);
+    showToast("Admin account created.");
   } catch (e) {
     await showAlert("Error: " + e.message);
   }
