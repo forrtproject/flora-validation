@@ -182,6 +182,12 @@ class SkipRequest(BaseModel):
     pair_id: str
 
 
+class SeniorRejectRequest(BaseModel):
+    coder_id: int
+    pair_id: str
+    validator_notes: str | None = None
+
+
 class ForgotHandleRequest(BaseModel):
     email: str
 
@@ -248,12 +254,12 @@ def login(req: LoginRequest):
     with db() as cur:
         if use_email:
             cur.execute(
-                "SELECT id, code, email, handle, onboarded_at FROM validators WHERE email = %s",
+                "SELECT id, code, email, handle, onboarded_at, validator_tier FROM validators WHERE email = %s",
                 (email,),
             )
         else:
             cur.execute(
-                "SELECT id, code, email, handle, onboarded_at FROM validators WHERE code = %s",
+                "SELECT id, code, email, handle, onboarded_at, validator_tier FROM validators WHERE code = %s",
                 (code,),
             )
         existing = cur.fetchone()
@@ -271,6 +277,7 @@ def login(req: LoginRequest):
                 "email": existing["email"],
                 "handle": existing["handle"],
                 "onboarded": bool(existing["onboarded_at"]),
+                "validator_tier": existing["validator_tier"],
             }
 
         cur.execute("SELECT 1 FROM validators WHERE handle = %s", (handle,))
@@ -370,7 +377,7 @@ def next_pair(coder_id: int, mode: str = "normal"):
         done = cur.fetchone()["done"]
 
         cur.execute(
-            "SELECT COUNT(*) AS total FROM unvalidated WHERE validation_status != 'validated'"
+            "SELECT COUNT(*) AS total FROM unvalidated WHERE validation_status NOT IN ('validated', 'rejected')"
         )
         total = cur.fetchone()["total"]
 
@@ -543,6 +550,7 @@ def judge(req: JudgeRequest):
         summary = {
             "validator_id": req.coder_id,
             "validator_name": validator["handle"],
+            "validator_tier": validator["validator_tier"],
             "vote_score": validator["vote_score"],
             "type_check": req.type_check,
             "original_check": req.original_check,
@@ -631,6 +639,86 @@ def skip_pair(req: SkipRequest):
     return {"skipped": True}
 
 
+@app.post("/api/senior-reject")
+def senior_reject(req: SeniorRejectRequest):
+    """Senior validators (tier >= 2) can immediately reject a record as not a replication
+    without waiting for a second validator or LLM."""
+    with db() as cur:
+        cur.execute(
+            "SELECT id, handle, vote_score, total_points, total_judgements, validator_tier FROM validators WHERE id = %s",
+            (req.coder_id,),
+        )
+        validator = cur.fetchone()
+        if not validator:
+            raise HTTPException(404, "Validator not found")
+        if validator["validator_tier"] < 2:
+            raise HTTPException(403, "Only senior validators (tier 2) can use this feature")
+
+        cur.execute("SELECT record_id FROM unvalidated WHERE pair_id = %s", (req.pair_id,))
+        rec = cur.fetchone()
+        if not rec:
+            raise HTTPException(404, f"pair_id '{req.pair_id}' not found")
+        record_id = rec["record_id"]
+
+        cur.execute(
+            """
+            SELECT queue_id, validator_slot FROM validation_queue
+            WHERE record_id = %s AND validator_id = %s
+              AND validator_slot IN ('human_1', 'human_2')
+              AND is_validated = FALSE
+            LIMIT 1
+            """,
+            (record_id, req.coder_id),
+        )
+        slot_row = cur.fetchone()
+        if not slot_row:
+            raise HTTPException(400, "No open slot found for this validator on this record")
+
+        pts = validator["vote_score"]
+
+        cur.execute(
+            """
+            UPDATE validation_queue SET
+                is_validated   = TRUE,
+                type_check     = 'incorrect',
+                original_check = 'incorrect',
+                outcome_check  = 'incorrect',
+                corrected_type = 'not_validation',
+                validator_notes = %s,
+                points         = %s,
+                validated_at   = NOW()
+            WHERE queue_id = %s
+            """,
+            (req.validator_notes, pts, slot_row["queue_id"]),
+        )
+
+        summary = json.dumps({
+            "validator_id":   req.coder_id,
+            "validator_name": validator["handle"],
+            "vote_score":     validator["vote_score"],
+            "type_check":     "incorrect",
+            "original_check": "incorrect",
+            "outcome_check":  "incorrect",
+            "corrected_type": "not_validation",
+            "validator_notes": req.validator_notes or "",
+            "points":         pts,
+            "senior_reject":  True,
+            "validated_at":   datetime.now(timezone.utc).isoformat(),
+        })
+        jsonb_col = "validator_1" if slot_row["validator_slot"] == "human_1" else "validator_2"
+        cur.execute(
+            f"UPDATE unvalidated SET {jsonb_col} = %s, validation_status = 'rejected', updated_at = NOW() WHERE record_id = %s",
+            (summary, record_id),
+        )
+
+        cur.execute(
+            "UPDATE validators SET total_points = total_points + %s, total_judgements = total_judgements + 1 WHERE id = %s",
+            (pts, req.coder_id),
+        )
+
+    return {"rejected": True, "points_earned": pts}
+
+
 # ---------------------------------------------------------------------------
 # Stats and leaderboard
 # ---------------------------------------------------------------------------
@@ -652,7 +740,7 @@ def stats(coder_id: int):
             raise HTTPException(404, "Validator not found")
 
         cur.execute(
-            "SELECT COUNT(*) AS total FROM unvalidated WHERE validation_status != 'validated'"
+            "SELECT COUNT(*) AS total FROM unvalidated WHERE validation_status NOT IN ('validated', 'rejected')"
         )
         total = cur.fetchone()["total"]
 
@@ -917,6 +1005,7 @@ def admin_entries(
         "needs_review":     "WHERE u.validation_status = 'need_review'",
         "llm_errors":       "WHERE u.llm_validator IS NOT NULL AND (u.llm_validator)::jsonb ? 'error'",
         "validated":        "WHERE u.validation_status = 'validated'",
+        "rejected":         "WHERE u.validation_status = 'rejected'",
         "admin_checked":    "WHERE u.admin_checked = TRUE",
     }.get(filter, "")
 
@@ -955,10 +1044,13 @@ def admin_entries(
             {where}
             ORDER BY
                 CASE u.validation_status
-                    WHEN 'need_review'          THEN 0
-                    WHEN 'validation_inprogress' THEN 1
-                    WHEN 'unvalidated'           THEN 2
-                    WHEN 'validated'             THEN 3
+                    WHEN 'need_review'           THEN 0
+                    WHEN 'consensus_reached'     THEN 1
+                    WHEN 'validation_inprogress' THEN 2
+                    WHEN 'unvalidated'           THEN 3
+                    WHEN 'validated'             THEN 4
+                    WHEN 'rejected'              THEN 5
+                    ELSE                              6
                 END,
                 u.updated_at DESC
             LIMIT %s OFFSET %s
@@ -980,6 +1072,8 @@ def admin_entries(
         c_validated = cur.fetchone()["n"]
         cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE admin_checked = TRUE")
         c_admin = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE validation_status = 'rejected'")
+        c_rejected = cur.fetchone()["n"]
 
     return {
         "entries": entries,
@@ -992,6 +1086,7 @@ def admin_entries(
             "needs_review": c_review,
             "llm_errors": c_llm,
             "validated": c_validated,
+            "rejected": c_rejected,
             "admin_checked": c_admin,
         },
     }
@@ -1032,7 +1127,7 @@ def admin_entry_detail(record_id: str, x_admin_token: str = Header(...)):
     def _norm(t): return _re.sub(r'[^a-z0-9]', '', (t or "").lower())
 
     v1, v2 = record.get("validator_1") or {}, record.get("validator_2") or {}
-    correction_fields = ["corrected_doi_o", "corrected_study_o", "corrected_outcome", "corrected_type"]
+    correction_fields = ["corrected_doi_o", "corrected_study_o", "corrected_outcome", "corrected_type", "corrected_study_r"]
     check_fields      = ["type_check", "original_check", "outcome_check"]
 
     checks_agree      = all(v1.get(f) == v2.get(f) for f in check_fields)
@@ -1092,16 +1187,84 @@ def admin_approve(record_id: str, x_admin_token: str = Header(...)):
                 rec["year_o"], rec["url_o"], rec["ref_o"],
                 rec.get("final_type") or rec["type"],
                 rec.get("final_outcome") or rec["outcome"],
-                rec["outcome_quote"], rec.get("out_quote_source"),
+                rec.get("final_outcome_quote") or rec["outcome_quote"], rec.get("out_quote_source"),
             ),
         )
 
     return {"approved": True, "record_id": record_id}
 
 
+@app.post("/api/admin/entries/{record_id}/restore")
+def admin_restore(record_id: str, x_admin_token: str = Header(...)):
+    """Return a rejected record to the validation pool so two fresh validators can review it."""
+    _require_admin(x_admin_token)
+    with db() as cur:
+        cur.execute("SELECT validation_status FROM unvalidated WHERE record_id = %s", (record_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Record not found")
+        if row["validation_status"] != "rejected":
+            raise HTTPException(400, "Only rejected records can be restored to the pool")
+
+        # Release all queue slots so fresh validators can claim them
+        cur.execute(
+            """
+            UPDATE validation_queue
+            SET validator_id = NULL, validator_name = NULL,
+                is_shown = FALSE, shown_at = NULL,
+                is_validated = FALSE,
+                type_check = NULL, original_check = NULL, outcome_check = NULL,
+                corrected_type = NULL, corrected_doi_o = NULL, corrected_study_o = NULL,
+                corrected_outcome = NULL, corrected_study_r = NULL,
+                validator_notes = NULL, points = NULL, validated_at = NULL
+            WHERE record_id = %s AND validator_slot IN ('human_1', 'human_2')
+            """,
+            (record_id,),
+        )
+
+        cur.execute(
+            """
+            UPDATE unvalidated SET
+                validation_status = 'unvalidated',
+                validator_1 = NULL, validator_2 = NULL,
+                llm_validator = NULL,
+                updated_at = NOW()
+            WHERE record_id = %s
+            """,
+            (record_id,),
+        )
+
+    return {"restored": True, "record_id": record_id}
+
+
+class AdminNoteRequest(BaseModel):
+    note: str | None = None
+
+
+@app.post("/api/admin/entries/{record_id}/note")
+def admin_save_note(record_id: str, req: AdminNoteRequest, x_admin_token: str = Header(...)):
+    """Save or update a persistent admin note on an entry. Visible to all admins."""
+    admin_handle = _require_admin(x_admin_token)
+    with db() as cur:
+        cur.execute("SELECT record_id FROM unvalidated WHERE record_id = %s", (record_id,))
+        if not cur.fetchone():
+            raise HTTPException(404, "Record not found")
+        cur.execute(
+            """
+            UPDATE unvalidated
+            SET admin_notes   = %s,
+                note_saved_by = %s,
+                note_saved_at = NOW()
+            WHERE record_id = %s
+            """,
+            (req.note or None, admin_handle, record_id),
+        )
+    return {"saved": True}
+
+
 @app.post("/api/admin/entries/{record_id}/resolve")
 def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str = Header(...)):
-    _require_admin(x_admin_token)
+    admin_handle = _require_admin(x_admin_token)
 
     if req.type_check not in VALID_CHECKS:
         raise HTTPException(400, "type_check must be 'correct' or 'incorrect'")
@@ -1117,11 +1280,36 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
             raise HTTPException(404, "Record not found")
         rec = dict(row)
 
+        # Only enforce 2-validator requirement for records still in progress
+        if rec["validation_status"] not in ("need_review", "consensus_reached", "rejected"):
+            cur.execute(
+                "SELECT COUNT(*) AS n FROM validation_queue WHERE record_id = %s AND is_validated = TRUE",
+                (record_id,),
+            )
+            if cur.fetchone()["n"] < 2:
+                raise HTTPException(400, "Cannot resolve a record with fewer than 2 validator submissions")
+
         final_type      = req.corrected_type      if req.type_check     == "incorrect" and req.corrected_type      else rec["type"]
         final_doi_o     = req.corrected_doi_o     if req.original_check == "incorrect" and req.corrected_doi_o     else rec["doi_o"]
         final_study_o   = req.corrected_study_o   if req.original_check == "incorrect" and req.corrected_study_o   else rec["study_o"]
         final_outcome   = req.corrected_outcome   if req.outcome_check  == "incorrect" and req.corrected_outcome   else rec["outcome"]
         final_outcome_q = req.corrected_outcome_quote if req.corrected_outcome_quote else rec["outcome_quote"]
+
+        # Admin confirmed this is not a replication → reject it, never insert into FLoRA
+        if final_type == "not_validation":
+            cur.execute(
+                """
+                UPDATE unvalidated SET
+                    admin_checked     = TRUE,
+                    admin_name        = %s,
+                    admin_notes       = %s,
+                    validation_status = 'rejected',
+                    updated_at        = NOW()
+                WHERE record_id = %s
+                """,
+                (admin_handle, req.admin_notes, record_id),
+            )
+            return {"resolved": True, "rejected": True, "record_id": record_id}
 
         cur.execute(
             """
@@ -1137,7 +1325,7 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
                 updated_at          = NOW()
             WHERE record_id = %s
             """,
-            (req.admin_name, req.admin_notes, final_type, final_doi_o, final_study_o, final_outcome, record_id),
+            (admin_handle, req.admin_notes, final_type, final_doi_o, final_study_o, final_outcome, record_id),
         )
 
         cur.execute(
@@ -1156,13 +1344,13 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
             """,
             (
                 record_id,
-                rec["doi_r"], rec["study_r"], rec["year_r"], rec["url_r"], rec["ref_r"], rec["abstract_r"],
+                rec["doi_r"], rec.get("final_study_r") or rec["study_r"], rec["year_r"], rec["url_r"], rec["ref_r"], rec["abstract_r"],
                 final_doi_o, final_study_o, rec["year_o"], rec["url_o"], rec["ref_o"],
                 final_type, final_outcome, final_outcome_q, rec.get("out_quote_source"),
             ),
         )
 
-    return {"resolved": True, "record_id": record_id}
+    return {"resolved": True, "rejected": False, "record_id": record_id}
 
 
 # ---------------------------------------------------------------------------

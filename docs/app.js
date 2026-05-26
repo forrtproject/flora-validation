@@ -836,6 +836,18 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
         </div>
       </div>
 
+      <!-- Senior validator fast-reject panel -->
+      <div id="senior-reject-panel" class="senior-reject-panel${(state.coder && state.coder.validator_tier >= 2) ? '' : ' hidden'}">
+        <details>
+          <summary class="senior-reject-summary">Senior override: mark as not a replication</summary>
+          <div class="senior-reject-body">
+            <p class="senior-reject-hint">As a senior validator you can immediately reject this record. No second validator or LLM check will run.</p>
+            <textarea id="senior-reject-notes" class="senior-reject-notes" placeholder="Notes (optional)…"></textarea>
+            <button id="senior-reject-btn" class="btn-reject">✗ Mark as Not a Replication</button>
+          </div>
+        </details>
+      </div>
+
       <div class="gate hidden" id="gate-2">
         <div class="gate-header-row">
           <h3><span class="gate-num">ii.</span>Original check</h3>
@@ -1046,6 +1058,28 @@ function wireEditButtons(container, p) {
       editAbstractBtn.textContent = state.judgement.edited_abstract ? "edit abstract (✓ edited)" : "edit abstract";
     }
   };
+
+  const seniorRejectBtn = container.querySelector("#senior-reject-btn");
+  if (seniorRejectBtn) {
+    seniorRejectBtn.onclick = async () => {
+      const notes = container.querySelector("#senior-reject-notes")?.value.trim() || null;
+      seniorRejectBtn.disabled = true;
+      seniorRejectBtn.textContent = "Rejecting…";
+      try {
+        const resp = await api("/senior-reject", "POST", {
+          coder_id: state.coder.coder_id,
+          pair_id:  p.pair_id,
+          validator_notes: notes,
+        });
+        showToast(resp.points_earned, "pts — rejected");
+        await loadNextPair();
+      } catch (e) {
+        seniorRejectBtn.disabled = false;
+        seniorRejectBtn.textContent = "✗ Mark as Not a Replication";
+        alert("Error: " + e.message);
+      }
+    };
+  }
 
   const editQuoteBtn = container.querySelector("#edit-quote-btn");
   if (editQuoteBtn) {
@@ -1799,6 +1833,7 @@ function renderAdminCounts(counts) {
   $("#fc-needs-review").textContent     = counts.needs_review;
   $("#fc-llm-errors").textContent       = counts.llm_errors;
   $("#fc-validated").textContent        = counts.validated;
+  $("#fc-rejected").textContent         = counts.rejected ?? 0;
   $("#fc-admin-checked").textContent    = counts.admin_checked;
 }
 
@@ -1923,27 +1958,124 @@ function renderAdminDetail(data) {
   const v2  = rec.validator_2;
   const llm = rec.llm_validator;
 
-  const valCard = (label, v) => {
-    if (!v) return `<div class="admin-val-card admin-val-empty"><strong>${label}</strong><p>Not yet submitted.</p></div>`;
-    const checks = [
-      `Type: <b>${v.type_check}</b>`,
-      `Original: <b>${v.original_check}</b>`,
-      `Outcome: <b>${v.outcome_check}</b>`,
-    ].join(" · ");
-    const corrections = [
-      v.corrected_study_r       ? `Title → ${v.corrected_study_r}` : "",
-      v.corrected_type          ? `Type → ${v.corrected_type}` : "",
-      v.corrected_study_o       ? `Original → ${v.corrected_study_o}` : "",
-      v.corrected_outcome       ? `Outcome → ${v.corrected_outcome}` : "",
-      v.corrected_outcome_quote ? `Quote → ${v.corrected_outcome_quote}` : "",
-    ].filter(Boolean).join("; ");
-    const error = v.error ? `<p class="admin-val-error">LLM error: ${v.error}</p>` : "";
+  const chk = (val) => val === "correct"
+    ? `<span class="chk-ok">✓ correct</span>`
+    : val === "incorrect"
+    ? `<span class="chk-fail">✗ incorrect</span>`
+    : `<span class="chk-na">—</span>`;
+
+  const tierBadge = (tier) => {
+    if (tier >= 2) return `<span class="tier-badge tier-senior">Senior</span>`;
+    if (tier >= 1) return `<span class="tier-badge tier-trusted">Trusted</span>`;
+    return "";
+  };
+
+  const fmtDate = (iso) => {
+    if (!iso) return "";
+    return new Date(iso).toLocaleDateString("en-GB", {day:"numeric", month:"short", year:"numeric"});
+  };
+
+  const doiLink = (doi) => doi
+    ? `<a href="https://doi.org/${escapeHtml(doi)}" target="_blank" rel="noopener">${escapeHtml(doi)}</a>`
+    : "—";
+
+  const humanCard = (label, v) => {
+    if (!v) return `<div class="admin-val-card admin-val-empty"><div class="admin-val-label">${label}</div><p>Not yet submitted.</p></div>`;
+    const tier = v.validator_tier ?? 0;
+    const isSeniorReject = !!v.senior_reject;
+    return `<div class="admin-val-card${isSeniorReject ? " admin-val-senior-reject" : ""}">
+      <div class="admin-val-label">
+        ${label}${v.validator_name ? ` · <em>${escapeHtml(v.validator_name)}</em>` : ""}
+        ${tierBadge(tier)}
+        ${isSeniorReject ? `<span class="tier-badge tier-fast-reject">Fast Reject</span>` : ""}
+      </div>
+      <div class="admin-val-meta">${fmtDate(v.validated_at)}${v.points != null ? ` · +${v.points} pts` : ""}</div>
+      <div class="admin-val-checks">
+        <div class="chk-row"><span class="chk-label">Type</span>${chk(v.type_check)}${v.corrected_type ? `<span class="chk-correction">→ ${escapeHtml(v.corrected_type)}</span>` : ""}</div>
+        <div class="chk-row"><span class="chk-label">Original</span>${chk(v.original_check)}${v.corrected_study_o ? `<span class="chk-correction">→ ${escapeHtml(v.corrected_study_o)}</span>` : ""}${v.corrected_doi_o ? `<span class="chk-correction">→ ${doiLink(v.corrected_doi_o)}</span>` : ""}</div>
+        <div class="chk-row"><span class="chk-label">Outcome</span>${chk(v.outcome_check)}${v.corrected_outcome ? `<span class="chk-correction">→ ${escapeHtml(v.corrected_outcome)}</span>` : ""}</div>
+        ${v.corrected_study_r ? `<div class="chk-row"><span class="chk-label">Title fix</span><span class="chk-correction">→ ${escapeHtml(v.corrected_study_r)}</span></div>` : ""}
+      </div>
+      ${v.corrected_outcome_quote ? `<div class="admin-val-quote">"${escapeHtml(v.corrected_outcome_quote)}"</div>` : ""}
+      ${v.corrected_abstract ? `<div class="admin-val-note">Edited abstract</div>` : ""}
+      ${v.validator_notes ? `<div class="admin-val-note">Notes: ${escapeHtml(v.validator_notes)}</div>` : ""}
+    </div>`;
+  };
+
+  const llmCard = (v) => {
+    if (!v) return `<div class="admin-val-card admin-val-empty"><div class="admin-val-label">LLM</div><p>Not run.</p></div>`;
+    const ctxLabel = v.context === "tiebreaker"
+      ? `<span class="tier-badge tier-tiebreaker">Tiebreaker</span>`
+      : v.context === "sanity_check"
+      ? `<span class="tier-badge tier-sanity">Sanity Check</span>`
+      : "";
+    if (v.error) return `<div class="admin-val-card admin-val-error-card">
+      <div class="admin-val-label">LLM ${ctxLabel}</div>
+      <div class="admin-val-meta">${escapeHtml(v.model || "")} · ${fmtDate(v.validated_at)}</div>
+      <div class="admin-val-error">Error: ${escapeHtml(v.error)}</div>
+    </div>`;
     return `<div class="admin-val-card">
-      <div class="admin-val-label">${label}${v.validator_name ? ` · <em>${v.validator_name}</em>` : ""}</div>
-      <div class="admin-val-checks">${checks}</div>
-      ${corrections ? `<div class="admin-val-corrections">${corrections}</div>` : ""}
-      ${v.validator_notes ? `<div class="admin-val-note">Note: ${v.validator_notes}</div>` : ""}
-      ${error}
+      <div class="admin-val-label">LLM ${ctxLabel}</div>
+      <div class="admin-val-meta">${escapeHtml(v.model || "")} · ${fmtDate(v.validated_at)}${v.vote_score != null ? ` · score ${v.vote_score}` : ""}</div>
+      <div class="admin-val-checks">
+        <div class="chk-row"><span class="chk-label">Type</span>${chk(v.type_check)}${v.corrected_type ? `<span class="chk-correction">→ ${escapeHtml(v.corrected_type)}</span>` : ""}</div>
+        <div class="chk-row"><span class="chk-label">Original</span>${chk(v.original_check)}${v.corrected_doi_o ? `<span class="chk-correction">→ ${doiLink(v.corrected_doi_o)}</span>` : ""}</div>
+        <div class="chk-row"><span class="chk-label">Outcome</span>${chk(v.outcome_check)}${v.corrected_outcome ? `<span class="chk-correction">→ ${escapeHtml(v.corrected_outcome)}</span>` : ""}</div>
+      </div>
+      ${v.notes ? `<div class="admin-val-reasoning"><strong>Reasoning:</strong> ${escapeHtml(v.notes)}</div>` : ""}
+    </div>`;
+  };
+
+  const finalPreview = () => {
+    const finalStudyR  = rec.final_study_r       || rec.study_r;
+    const finalStudyO  = rec.final_study_o       || rec.study_o;
+    const finalDoiO    = rec.final_doi_o         || rec.doi_o;
+    const finalType    = rec.final_type          || rec.type;
+    const finalOutcome = rec.final_outcome       || rec.outcome;
+    const finalQuote   = rec.final_outcome_quote || rec.outcome_quote;
+
+    const changes = [
+      rec.final_study_r        && rec.final_study_r        !== rec.study_r        ? ["Replication title", rec.study_r,        rec.final_study_r]        : null,
+      rec.final_study_o        && rec.final_study_o        !== rec.study_o        ? ["Original title",    rec.study_o,        rec.final_study_o]        : null,
+      rec.final_doi_o          && rec.final_doi_o          !== rec.doi_o          ? ["Original DOI",      rec.doi_o,          rec.final_doi_o]          : null,
+      rec.final_type           && rec.final_type           !== rec.type           ? ["Type",              rec.type,           rec.final_type]           : null,
+      rec.final_outcome        && rec.final_outcome        !== rec.outcome        ? ["Outcome",           rec.outcome,        rec.final_outcome]        : null,
+      rec.final_outcome_quote  && rec.final_outcome_quote  !== rec.outcome_quote  ? ["Quote",             rec.outcome_quote,  rec.final_outcome_quote]  : null,
+    ].filter(Boolean);
+
+    const changesSection = changes.length > 0 ? `
+      <details class="fp-changes">
+        <summary class="fp-changes-summary">show changes (${changes.length} field${changes.length !== 1 ? "s" : ""} edited)</summary>
+        <table class="fp-changes-table">
+          <thead><tr><th>Field</th><th>Before</th><th>After</th></tr></thead>
+          <tbody>${changes.map(([field, before, after]) => `
+            <tr>
+              <td class="fp-ch-field">${field}</td>
+              <td class="fp-ch-before">${escapeHtml((before || "—").substring(0, 80))}</td>
+              <td class="fp-ch-after">${escapeHtml((after  || "—").substring(0, 80))}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </details>` : `<p class="fp-no-changes">No field corrections — raw values will be published as-is.</p>`;
+
+    return `<div class="final-preview-card">
+      <div class="final-preview-header">
+        <span class="fp-title">Final Preview</span>
+        <span class="fp-subtitle">what gets published to FLoRA if approved</span>
+      </div>
+      <div class="fp-fields">
+        <div class="fp-row"><span class="fp-label">Replication</span><span class="fp-value">${escapeHtml(finalStudyR || "—")}</span></div>
+        <div class="fp-row"><span class="fp-label">DOI</span><span class="fp-value">${doiLink(rec.doi_r)} · ${fmtYear(rec.year_r)}</span></div>
+        <div class="fp-row fp-divider"></div>
+        <div class="fp-row"><span class="fp-label">Original</span><span class="fp-value">${escapeHtml(finalStudyO || "—")}</span></div>
+        <div class="fp-row"><span class="fp-label">DOI</span><span class="fp-value">${doiLink(finalDoiO)}</span></div>
+        <div class="fp-row fp-divider"></div>
+        <div class="fp-row"><span class="fp-label">Type</span><span class="fp-value">${escapeHtml(finalType || "—")}</span></div>
+        <div class="fp-row"><span class="fp-label">Outcome</span><span class="fp-value">${escapeHtml(finalOutcome || "—")}</span></div>
+        ${finalQuote ? `<div class="fp-row fp-quote-row"><span class="fp-label">Quote</span><span class="fp-value fp-quote">"${escapeHtml(finalQuote)}"</span></div>` : ""}
+      </div>
+      ${rec.abstract_r ? `<details class="fp-abstract"><summary>Abstract</summary><p class="fp-abstract-text">${escapeHtml(rec.abstract_r)}</p></details>` : ""}
+      ${changesSection}
     </div>`;
   };
 
@@ -1952,81 +2084,195 @@ function renderAdminDetail(data) {
   const typeOpts = ["replication","reproduction"]
     .map((t) => `<option value="${t}" ${rec.type === t ? "selected" : ""}>${t}</option>`).join("");
 
+  const hasNotValidation =
+    (v1 && v1.corrected_type === "not_validation") ||
+    (v2 && v2.corrected_type === "not_validation");
+  const notValWho = [v1 && v1.corrected_type === "not_validation" ? v1.validator_name || "Validator 1" : "",
+                     v2 && v2.corrected_type === "not_validation" ? v2.validator_name || "Validator 2" : ""]
+    .filter(Boolean).join(" and ");
+
   $("#admin-detail-title").textContent = (rec.study_r || rec.doi_r || "Entry Review").substring(0, 80);
   $("#admin-detail-body").innerHTML = `
     ${abstractBanner}
     <div class="admin-detail-cols">
-      <!-- Left: pair info -->
+      <!-- Left: final preview + validator cards -->
       <div class="admin-detail-pair">
-        <div class="pair-header" style="border-radius:1rem;border:1px solid var(--rule);padding:1rem 1.25rem;margin-bottom:0.75rem">
-          <div class="pair-meta">
-            <span class="pair-type-badge">${rec.type || "?"}</span>
-            <span class="pair-outcome-badge">${rec.outcome || "?"}</span>
-            <span class="pair-status-badge">${rec.validation_status}</span>
-          </div>
-          <h2 class="pair-title">${rec.study_r || rec.doi_r || "—"}</h2>
-          <div class="pair-doi"><a href="https://doi.org/${rec.doi_r}" target="_blank" rel="noopener">${rec.doi_r}</a> · ${rec.year_r || "—"}</div>
-          ${rec.abstract_r ? `<details class="pair-abstract-details"><summary>Abstract</summary><p class="pair-abstract">${rec.abstract_r}</p></details>` : ""}
-          <hr class="pair-divider">
-          <div class="pair-original-label">Identified original study</div>
-          <div class="pair-original-title">${rec.study_o || rec.doi_o || "—"}</div>
-          ${rec.doi_o ? `<div class="pair-doi"><a href="https://doi.org/${rec.doi_o}" target="_blank" rel="noopener">${rec.doi_o}</a></div>` : ""}
-          ${rec.outcome_quote ? `<blockquote class="pair-quote">${rec.outcome_quote}</blockquote>` : ""}
-        </div>
+        ${finalPreview()}
 
-        <!-- Validator responses -->
         <div class="admin-val-cards">
-          ${valCard("Validator 1", v1)}
-          ${valCard("Validator 2", v2)}
-          ${valCard("LLM", llm)}
+          ${humanCard("Validator 1", v1)}
+          ${humanCard("Validator 2", v2)}
+          ${llmCard(llm)}
         </div>
       </div>
 
       <!-- Right: admin resolution form -->
       <div class="admin-resolve-form">
+        <div class="admin-notes-box">
+          <div class="admin-notes-header">
+            <span class="admin-notes-title">Admin Notes</span>
+            ${rec.note_saved_by ? `<span class="admin-notes-meta">Last saved by <strong>${escapeHtml(rec.note_saved_by)}</strong> · ${fmtDate(rec.note_saved_at)}</span>` : `<span class="admin-notes-meta">No notes yet</span>`}
+          </div>
+          <textarea id="admin-note-text" class="admin-textarea admin-notes-textarea" placeholder="Add a note for other admins — e.g. DOI doesn't resolve, waiting on a decision…">${escapeHtml(rec.admin_notes || "")}</textarea>
+          <button id="admin-save-note-btn" class="btn-save-note">Save Note</button>
+        </div>
+
         <h3>Admin Resolution</h3>
-        <p class="admin-resolve-hint">Override the final values for this entry and mark it as resolved.</p>
 
-        <label class="admin-form-label">Type check</label>
-        <select id="ar-type-check" class="admin-select">
-          <option value="correct">correct</option>
-          <option value="incorrect">incorrect</option>
-        </select>
-        <select id="ar-corrected-type-sel" class="admin-select" style="margin-top:0.25rem">
-          ${typeOpts}
-        </select>
+        ${rec.validation_status === "rejected" ? `
+        <div class="not-val-decision">
+          <p class="not-val-who">⚠ This record was <strong>rejected</strong> as not a replication${notValWho ? ` by <strong>${notValWho}</strong>` : ""}.</p>
+          <p class="not-val-question">What is your decision?</p>
+          <div class="not-val-buttons">
+            <button id="confirm-reject-btn" class="btn-reject">✗ Confirm Rejection</button>
+            <button id="restore-pool-btn" class="btn-outline">↩ Restore to Pool</button>
+            <button id="confirm-is-rep-btn" class="btn-outline">✓ Override — It IS a Replication</button>
+          </div>
+          <textarea id="ar-notes-quick" class="admin-textarea" placeholder="Notes (optional)" style="margin-top:0.75rem"></textarea>
+        </div>
+        ` : hasNotValidation ? `
+        <div class="not-val-decision">
+          <p class="not-val-who">⚠ <strong>${notValWho}</strong> marked this as <strong>not a replication</strong>.</p>
+          <p class="not-val-question">What is your decision?</p>
+          <div class="not-val-buttons">
+            <button id="confirm-reject-btn" class="btn-reject">✗ Confirm — Not a Replication</button>
+            <button id="confirm-is-rep-btn" class="btn-outline">✓ Override — It IS a Replication</button>
+          </div>
+          <textarea id="ar-notes-quick" class="admin-textarea" placeholder="Notes (optional)" style="margin-top:0.75rem"></textarea>
+        </div>
+        ` : ""}
 
-        <label class="admin-form-label" style="margin-top:1rem">Original study check</label>
-        <select id="ar-original-check" class="admin-select">
-          <option value="correct">correct</option>
-          <option value="incorrect">incorrect</option>
-        </select>
-        <input id="ar-corrected-study" class="admin-input" placeholder="Corrected original study title (if incorrect)">
-        <input id="ar-corrected-doi" class="admin-input" placeholder="Corrected DOI (if incorrect)" style="margin-top:0.25rem">
+        <div id="ar-normal-form" class="${hasNotValidation ? "hidden" : ""}">
+          ${hasNotValidation ? `<p class="admin-resolve-hint" style="margin-bottom:0.75rem">Fill in the correct values — this will override the "not a replication" call.</p>` : `<p class="admin-resolve-hint">Override the final values for this entry and mark it as resolved.</p>`}
 
-        <label class="admin-form-label" style="margin-top:1rem">Outcome check</label>
-        <select id="ar-outcome-check" class="admin-select">
-          <option value="correct">correct</option>
-          <option value="incorrect">incorrect</option>
-        </select>
-        <select id="ar-corrected-outcome" class="admin-select" style="margin-top:0.25rem">
-          ${outcomeOpts}
-        </select>
-        <input id="ar-corrected-quote" class="admin-input" placeholder="Corrected outcome quote (optional)" style="margin-top:0.25rem">
+          <label class="admin-form-label">Type check</label>
+          <select id="ar-type-check" class="admin-select">
+            <option value="correct">correct</option>
+            <option value="incorrect">incorrect</option>
+          </select>
+          <select id="ar-corrected-type-sel" class="admin-select" style="margin-top:0.25rem">
+            ${typeOpts}
+          </select>
 
-        <label class="admin-form-label" style="margin-top:1rem">Admin notes</label>
-        <textarea id="ar-notes" class="admin-textarea" placeholder="Notes for the record (optional)"></textarea>
+          <label class="admin-form-label" style="margin-top:1rem">Original study check</label>
+          <select id="ar-original-check" class="admin-select">
+            <option value="correct">correct</option>
+            <option value="incorrect">incorrect</option>
+          </select>
+          <input id="ar-corrected-study" class="admin-input" placeholder="Corrected original study title (if incorrect)">
+          <input id="ar-corrected-doi" class="admin-input" placeholder="Corrected DOI (if incorrect)" style="margin-top:0.25rem">
 
-        <div class="admin-resolve-actions">
-          <button id="admin-resolve-btn" class="btn-primary" data-id="${rec.record_id}">Mark as Resolved →</button>
-          <button id="admin-detail-cancel" class="ghost-btn">Cancel</button>
+          <label class="admin-form-label" style="margin-top:1rem">Outcome check</label>
+          <select id="ar-outcome-check" class="admin-select">
+            <option value="correct">correct</option>
+            <option value="incorrect">incorrect</option>
+          </select>
+          <select id="ar-corrected-outcome" class="admin-select" style="margin-top:0.25rem">
+            ${outcomeOpts}
+          </select>
+          <input id="ar-corrected-quote" class="admin-input" placeholder="Corrected outcome quote (optional)" style="margin-top:0.25rem">
+
+          <label class="admin-form-label" style="margin-top:1rem">Admin notes</label>
+          <textarea id="ar-notes" class="admin-textarea" placeholder="Notes for the record (optional)"></textarea>
+
+          <div class="admin-resolve-actions">
+            <button id="admin-resolve-btn" class="btn-primary" data-id="${rec.record_id}">Mark as Resolved →</button>
+            <button id="admin-detail-cancel" class="ghost-btn">Cancel</button>
+          </div>
+          <div class="admin-reject-action">
+            <button id="admin-reject-btn" class="btn-reject-outline">✗ Reject — Not a Replication</button>
+          </div>
         </div>
       </div>
     </div>
   `;
 
-  $("#admin-resolve-btn").onclick  = () => submitAdminResolve(rec.record_id);
+  if (rec.validation_status === "rejected" || hasNotValidation) {
+    $("#confirm-reject-btn")?.addEventListener("click", () => submitQuickReject(rec.record_id));
+    $("#confirm-is-rep-btn")?.addEventListener("click", () => {
+      $("#not-val-decision").classList.add("hidden");
+      $("#ar-normal-form").classList.remove("hidden");
+    });
+    $("#restore-pool-btn")?.addEventListener("click", async () => {
+      const btn = $("#restore-pool-btn");
+      btn.disabled = true;
+      btn.textContent = "Restoring…";
+      try {
+        await adminApi(`/entries/${rec.record_id}/restore`, "POST");
+        closeAdminDetail();
+        showToast("Record restored to validation pool.");
+        fetchAdminEntries();
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = "↩ Restore to Pool";
+        await showAlert("Error: " + e.message);
+      }
+    });
+  }
+  $("#admin-save-note-btn")?.addEventListener("click", async () => {
+    const btn = $("#admin-save-note-btn");
+    const note = $("#admin-note-text").value.trim();
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+    try {
+      await adminApi(`/entries/${rec.record_id}/note`, "POST", { note: note || null });
+      btn.textContent = "Saved ✓";
+      const meta = btn.closest(".admin-notes-box").querySelector(".admin-notes-meta");
+      if (meta) meta.innerHTML = `Last saved by <strong>${escapeHtml(_adminHandle || "admin")}</strong> · just now`;
+      setTimeout(() => { btn.textContent = "Save Note"; btn.disabled = false; }, 2500);
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = "Save Note";
+      await showAlert("Error: " + e.message);
+    }
+  });
+  $("#admin-resolve-btn")?.addEventListener("click", () => submitAdminResolve(rec.record_id));
+  $("#admin-reject-btn")?.addEventListener("click", async () => {
+    const btn = $("#admin-reject-btn");
+    btn.disabled = true;
+    btn.textContent = "Rejecting…";
+    try {
+      await adminApi(`/entries/${rec.record_id}/resolve`, "POST", {
+        admin_name:     _adminHandle || "admin",
+        type_check:     "incorrect",
+        original_check: "incorrect",
+        outcome_check:  "incorrect",
+        corrected_type: "not_validation",
+        admin_notes:    $("#ar-notes")?.value.trim() || null,
+      });
+      closeAdminDetail();
+      showToast("Record rejected — marked as not a replication.");
+      fetchAdminEntries();
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = "✗ Reject — Not a Replication";
+      await showAlert("Error: " + e.message);
+    }
+  });
   $("#admin-detail-cancel").onclick = closeAdminDetail;
+}
+
+async function submitQuickReject(recordId) {
+  const btn = $("#confirm-reject-btn");
+  btn.disabled = true;
+  btn.textContent = "Rejecting…";
+  try {
+    await adminApi(`/entries/${recordId}/resolve`, "POST", {
+      admin_name:     _adminHandle || "admin",
+      type_check:     "incorrect",
+      original_check: "incorrect",
+      outcome_check:  "incorrect",
+      corrected_type: "not_validation",
+      admin_notes:    $("#ar-notes-quick")?.value.trim() || null,
+    });
+    closeAdminDetail();
+    showToast("Marked as not a replication.");
+    fetchAdminEntries();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = "✗ Confirm — Not a Replication";
+    await showAlert("Error: " + e.message);
+  }
 }
 
 async function submitAdminResolve(recordId) {

@@ -179,12 +179,12 @@ CREATE TABLE IF NOT EXISTS record_metadata (
     created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Add consensus_reached to validation_status enum (drop + recreate constraint)
+-- Add consensus_reached + rejected to validation_status enum (drop + recreate constraint)
 ALTER TABLE unvalidated DROP CONSTRAINT IF EXISTS unvalidated_validation_status_check;
 ALTER TABLE unvalidated ADD CONSTRAINT unvalidated_validation_status_check
     CHECK (validation_status IN (
         'unvalidated', 'validation_inprogress',
-        'validated', 'need_review', 'consensus_reached'));
+        'validated', 'need_review', 'consensus_reached', 'rejected'));
 
 -- Admin approval column on validated table
 ALTER TABLE validated ADD COLUMN IF NOT EXISTS admin_approved BOOLEAN NOT NULL DEFAULT FALSE;
@@ -228,3 +228,17 @@ ALTER TABLE unvalidated      ADD COLUMN IF NOT EXISTS final_study_r     TEXT;
 -- Forgot-handle rate limiting
 ALTER TABLE validators ADD COLUMN IF NOT EXISTS forgot_requests_today INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE validators ADD COLUMN IF NOT EXISTS forgot_requests_date  DATE;
+
+-- Add 'rejected' status for records both validators agree are not replications
+ALTER TABLE unvalidated DROP CONSTRAINT IF EXISTS unvalidated_validation_status_check;
+ALTER TABLE unvalidated ADD CONSTRAINT unvalidated_validation_status_check
+    CHECK (validation_status IN (
+        'unvalidated', 'validation_inprogress',
+        'validated', 'need_review', 'consensus_reached', 'rejected'));
+
+-- Store agreed corrected outcome quote so admin_approve can use it
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS final_outcome_quote TEXT;
+
+-- Admin notes: track who saved the note and when
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS note_saved_by  TEXT;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS note_saved_at  TIMESTAMPTZ;

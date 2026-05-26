@@ -67,8 +67,10 @@ def _update_status(cur, record_id: str, status: str, is_tiebreaker: bool,
             "final_study_r = %s",
             "final_doi_o = %s", "final_study_o = %s",
             "final_outcome = %s", "final_type = %s",
+            "final_outcome_quote = %s",
         ]
-        params += [final.get("study_r"), final["doi_o"], final["study_o"], final["outcome"], final["type"]]
+        params += [final.get("study_r"), final["doi_o"], final["study_o"], final["outcome"], final["type"],
+                   final.get("outcome_quote")]
         if final.get("abstract_r"):
             set_clauses.append("abstract_r = %s")
             params.append(final["abstract_r"])
@@ -87,21 +89,26 @@ def _update_status(cur, record_id: str, status: str, is_tiebreaker: bool,
 def _insert_validated(cur, record: dict, final: dict) -> None:
     cur.execute(
         """
-        INSERT INTO validated (record_id, pair_id, doi_r, study_r, year_r,
-            doi_o, study_o, year_o, type, outcome, outcome_quote,
-            out_quote_source, validated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (record_id) DO NOTHING
+        INSERT INTO validated (
+            record_id, doi_r, study_r, year_r, url_r, ref_r, abstract_r,
+            doi_o, study_o, year_o, url_o, ref_o,
+            type, outcome, outcome_quote, out_quote_source, validated_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (doi_r, study_r, doi_o, study_o) DO NOTHING
         """,
         (
             record.get("record_id"),
-            record.get("pair_id"),
             record.get("doi_r"),
             final.get("study_r") or record.get("study_r"),
             record.get("year_r"),
+            record.get("url_r"),
+            record.get("ref_r"),
+            final.get("abstract_r") or record.get("abstract_r"),
             final["doi_o"],
             final["study_o"],
             record.get("year_o"),
+            record.get("url_o"),
+            record.get("ref_o"),
             final["type"],
             final["outcome"],
             final.get("outcome_quote") or record.get("outcome_quote"),
@@ -177,6 +184,17 @@ def evaluate_consensus(cur, record_id: str) -> None:
     corrections_ok = _corrections_agree(h1, h2)
 
     if checks_ok and corrections_ok:
+        # Both validators agree this is not a replication → LLM confirms or sends to admin
+        if (h1.get("corrected_type") == "not_validation" and
+                h2.get("corrected_type") == "not_validation"):
+            llm = run_llm_validation(record, context="sanity_check")
+            if not llm.get("error") and _llm_matches(llm, h1):
+                _update_status(cur, record_id, "rejected", False, None, llm)
+            else:
+                # LLM thinks it IS a replication — admin should review
+                _update_status(cur, record_id, "need_review", False, None, llm)
+            return
+
         llm = run_llm_validation(record, context="sanity_check")
         final = _resolve_final(record, h1, h2)
         if has_senior:
@@ -203,11 +221,19 @@ def evaluate_consensus(cur, record_id: str) -> None:
         matches_h2 = _llm_matches(llm, h2)
 
         if matches_h1 and not matches_h2:
-            final = _resolve_final(record, h1, h2)
-            _update_status(cur, record_id, "consensus_reached", True, final, llm)
+            if h1.get("corrected_type") == "not_validation":
+                # LLM + h1 agree it's not a replication, but h2 disagrees → admin decides
+                _update_status(cur, record_id, "need_review", True, None, llm)
+            else:
+                final = _resolve_final(record, h1, h2)
+                _update_status(cur, record_id, "consensus_reached", True, final, llm)
         elif matches_h2 and not matches_h1:
-            final = _resolve_final(record, h2, h1)
-            _update_status(cur, record_id, "consensus_reached", True, final, llm)
+            if h2.get("corrected_type") == "not_validation":
+                # LLM + h2 agree it's not a replication, but h1 disagrees → admin decides
+                _update_status(cur, record_id, "need_review", True, None, llm)
+            else:
+                final = _resolve_final(record, h2, h1)
+                _update_status(cur, record_id, "consensus_reached", True, final, llm)
         else:
             # 3-way split or LLM matches neither/both
             _update_status(cur, record_id, "need_review", True, None, llm)
