@@ -478,7 +478,7 @@ def judge(req: JudgeRequest):
         record_id = rec["record_id"]
 
         cur.execute(
-            "SELECT id, handle, vote_score, total_points, total_judgements FROM validators WHERE id = %s",
+            "SELECT id, handle, vote_score, total_points, total_judgements, validator_tier FROM validators WHERE id = %s",
             (req.coder_id,),
         )
         validator = cur.fetchone()

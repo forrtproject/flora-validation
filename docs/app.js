@@ -1336,8 +1336,13 @@ async function submitJudgement() {
     }
     await refreshAll();
   } catch (e) {
-    await showAlert(e.message);
-    btn.disabled = false;
+    if (e.message && e.message.includes("No open slot")) {
+      await showAlert("Your session for this pair expired — it was open too long and was released back to the pool. You'll be moved to a new pair.");
+      await refreshAll();
+    } else {
+      await showAlert(e.message);
+      btn.disabled = false;
+    }
   }
 }
 
@@ -2190,7 +2195,7 @@ function renderAdminDetail(data) {
   if (rec.validation_status === "rejected" || hasNotValidation) {
     $("#confirm-reject-btn")?.addEventListener("click", () => submitQuickReject(rec.record_id));
     $("#confirm-is-rep-btn")?.addEventListener("click", () => {
-      $("#not-val-decision").classList.add("hidden");
+      $(".not-val-decision")?.classList.add("hidden");
       $("#ar-normal-form").classList.remove("hidden");
     });
     $("#restore-pool-btn")?.addEventListener("click", async () => {
