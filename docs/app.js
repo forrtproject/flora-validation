@@ -64,7 +64,7 @@ async function api(path, method = "GET", body = null) {
     hideToast();
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      let msg = res.statusText;
+      let msg = res.statusText || `Server error (HTTP ${res.status})`;
       if (err.detail) {
         if (Array.isArray(err.detail)) {
           msg = err.detail.map((e) => e.msg || JSON.stringify(e)).join("; ");
@@ -655,7 +655,7 @@ function clearPairTimer() {
 
 /* ---------- Generic styled dialog (promise-based) ---------- */
 function showAlert(message) {
-  return showDialog({ message, buttons: [{ label: "OK", value: true, primary: true }] });
+  return showDialog({ message: message || "An unexpected error occurred.", buttons: [{ label: "OK", value: true, primary: true }] });
 }
 
 function showConfirm(message) {
@@ -783,13 +783,13 @@ function renderPairInto(container, p, { onboarding, judgeCount }) {
        <div class="choices">
          <button class="choice success" data-type="replication">Replication<small>different data</small></button>
          <button class="choice success" data-type="reproduction">Reproduction<small>same data</small></button>
-         <button class="choice danger" data-type="not_validation">Neither<small>not a validation</small></button>
+         <button class="choice danger" data-type="not_validation">✗ Not either type<small>not a replication</small></button>
        </div>`
     : `<p class="question">The system classified this as&ensp;<span class="outcome-label ${pType}">${pType}</span>&ensp;— is that correct?</p>
        <div class="choices">
          <button class="choice success" data-type="${pType}">✓ Correct</button>
          <button class="choice warn" data-type="${oppositeType}">Actually ${oppositeType}<small>${oppositeLabel}</small></button>
-         <button class="choice danger" data-type="not_validation">✗ Not a validation<small>not studying replication</small></button>
+         <button class="choice danger" data-type="not_validation">✗ Not either type<small>not studying replication</small></button>
        </div>`;
   const gate2Question = onboarding
     ? "Does this match the paper actually being validated?"
@@ -1067,8 +1067,8 @@ function wireEditButtons(container, p) {
       seniorRejectBtn.textContent = "Rejecting…";
       try {
         const resp = await api("/senior-reject", "POST", {
-          coder_id: state.coder.coder_id,
-          pair_id:  p.pair_id,
+          coder_id:        state.coder.coder_id,
+          record_id:       String(p.record_id),
           validator_notes: notes,
         });
         showToast(resp.points_earned, "pts — rejected");
@@ -1283,8 +1283,8 @@ async function onSkip() {
   clearPairTimer();
   try {
     await api("/skip", "POST", {
-      coder_id: state.coder.coder_id,
-      pair_id: state.currentPair.pair_id,
+      coder_id:  state.coder.coder_id,
+      record_id: String(state.currentPair.record_id),
     });
     showToast(0, "skipped");
     await refreshAll();
@@ -1310,8 +1310,8 @@ async function submitJudgement() {
                         : (typeCheck === "incorrect" ? j.type : null);
 
     const resp = await api("/judge", "POST", {
-      coder_id: state.coder.coder_id,
-      pair_id: p.pair_id,
+      coder_id:  state.coder.coder_id,
+      record_id: String(p.record_id),
       type_check:     isNotValidation ? "incorrect" : typeCheck,
       original_check: isNotValidation ? "incorrect" : (j.original === "correct" ? "correct" : "incorrect"),
       outcome_check:  isNotValidation ? "incorrect" : (j.outcome  === "correct" ? "correct" : "incorrect"),
@@ -1472,8 +1472,8 @@ async function submitHard(container) {
   submitBtn.disabled = true;
   try {
     const resp = await api("/judge", "POST", {
-      coder_id: state.coder.coder_id,
-      pair_id: state.currentPair.pair_id,
+      coder_id:  state.coder.coder_id,
+      record_id: String(state.currentPair.record_id),
       type_judgement: "replication",
       comment: state.judgement.comment,
       hard_mode: true,
@@ -1753,8 +1753,11 @@ $("#faq-modal").addEventListener("click", (e) => { if (e.target === e.currentTar
 let _adminToken   = null;
 let _adminHandle  = null;
 let _adminTrusted = false;
-let _adminFilter  = "all";
-let _adminPage    = 1;
+let _adminFilter    = "all";
+let _adminPage      = 1;
+let _adminEntryIds   = [];   // ordered record_ids on current page
+let _adminCurrentIdx = -1;  // index of currently open record
+let _adminDetailCache = {};  // record_id → preloaded detail data
 const ADMIN_PER_PAGE = 50;
 
 async function adminApi(path, method = "GET", body = null) {
@@ -1815,10 +1818,12 @@ function signOutAdmin() {
   location.reload();
 }
 
-async function fetchAdminEntries() {
+async function fetchAdminEntries(resetState = true) {
   const body = $("#admin-table-body");
-  body.innerHTML = '<tr><td colspan="8" class="admin-loading">Loading…</td></tr>';
-  $("#admin-empty").classList.add("hidden");
+  if (resetState) {
+    body.innerHTML = '<tr><td colspan="8" class="admin-loading">Loading…</td></tr>';
+    $("#admin-empty").classList.add("hidden");
+  }
 
   try {
     const data = await adminApi(
@@ -1827,8 +1832,15 @@ async function fetchAdminEntries() {
     renderAdminCounts(data.counts);
     renderAdminTable(data.entries, data.total);
     renderAdminPagination(data.total, data.page);
+    if (resetState) {
+      _adminEntryIds = data.entries.map(e => e.record_id);
+      _adminDetailCache = {};
+      preloadAdminDetails();
+    }
   } catch (e) {
-    body.innerHTML = `<tr><td colspan="8" class="admin-loading">Error: ${e.message}</td></tr>`;
+    if (resetState) {
+      body.innerHTML = `<tr><td colspan="8" class="admin-loading">Error: ${e.message}</td></tr>`;
+    }
   }
 }
 
@@ -1937,15 +1949,39 @@ async function quickApprove(recordId, btn) {
   }
 }
 
+const PRELOAD_WINDOW = 15;
+
+function preloadAdminDetails() {
+  const start = Math.max(0, _adminCurrentIdx);
+  const end   = Math.min(start + PRELOAD_WINDOW, _adminEntryIds.length);
+  for (let i = start; i < end; i++) {
+    const id = _adminEntryIds[i];
+    if (id && !_adminDetailCache[id]) {
+      (async () => {
+        try { _adminDetailCache[id] = await adminApi(`/entries/${id}`); }
+        catch (e) { /* ignore preload failures */ }
+      })();
+    }
+  }
+}
+
 async function openAdminDetail(recordId) {
   const modal = $("#admin-detail-modal");
   const body  = $("#admin-detail-body");
   modal.classList.remove("hidden");
   document.body.style.overflow = "hidden";
-  body.innerHTML = '<p class="faq-loading">Loading…</p>';
+  _adminCurrentIdx = _adminEntryIds.indexOf(recordId);
+  $("#admin-detail-title").textContent = "";
 
+  if (_adminDetailCache[recordId]) {
+    renderAdminDetail(_adminDetailCache[recordId]);
+    return;
+  }
+
+  body.innerHTML = '<p class="faq-loading">Loading…</p>';
   try {
     const data = await adminApi(`/entries/${recordId}`);
+    _adminDetailCache[recordId] = data;
     renderAdminDetail(data);
   } catch (e) {
     body.innerHTML = `<p class="faq-error">Error: ${e.message}</p>`;
@@ -2032,20 +2068,17 @@ function renderAdminDetail(data) {
   };
 
   const finalPreview = () => {
-    const finalStudyR  = rec.final_study_r       || rec.study_r;
-    const finalStudyO  = rec.final_study_o       || rec.study_o;
-    const finalDoiO    = rec.final_doi_o         || rec.doi_o;
-    const finalType    = rec.final_type          || rec.type;
-    const finalOutcome = rec.final_outcome       || rec.outcome;
-    const finalQuote   = rec.final_outcome_quote || rec.outcome_quote;
+    // Uses outer final* variables computed above
 
     const changes = [
       rec.final_study_r        && rec.final_study_r        !== rec.study_r        ? ["Replication title", rec.study_r,        rec.final_study_r]        : null,
+      rec.final_doi_r          && rec.final_doi_r          !== rec.doi_r          ? ["Replication DOI",   rec.doi_r,          rec.final_doi_r]          : null,
       rec.final_study_o        && rec.final_study_o        !== rec.study_o        ? ["Original title",    rec.study_o,        rec.final_study_o]        : null,
       rec.final_doi_o          && rec.final_doi_o          !== rec.doi_o          ? ["Original DOI",      rec.doi_o,          rec.final_doi_o]          : null,
       rec.final_type           && rec.final_type           !== rec.type           ? ["Type",              rec.type,           rec.final_type]           : null,
       rec.final_outcome        && rec.final_outcome        !== rec.outcome        ? ["Outcome",           rec.outcome,        rec.final_outcome]        : null,
       rec.final_outcome_quote  && rec.final_outcome_quote  !== rec.outcome_quote  ? ["Quote",             rec.outcome_quote,  rec.final_outcome_quote]  : null,
+      rec.final_abstract_r     && rec.final_abstract_r     !== rec.abstract_r     ? ["Abstract",          rec.abstract_r,     rec.final_abstract_r]     : null,
     ].filter(Boolean);
 
     const changesSection = changes.length > 0 ? `
@@ -2070,7 +2103,7 @@ function renderAdminDetail(data) {
       </div>
       <div class="fp-fields">
         <div class="fp-row"><span class="fp-label">Replication</span><span class="fp-value">${escapeHtml(finalStudyR || "—")}</span></div>
-        <div class="fp-row"><span class="fp-label">DOI</span><span class="fp-value">${doiLink(rec.doi_r)} · ${fmtYear(rec.year_r)}</span></div>
+        <div class="fp-row"><span class="fp-label">DOI</span><span class="fp-value">${doiLink(finalDoiR)} · ${fmtYear(rec.year_r)}</span></div>
         <div class="fp-row fp-divider"></div>
         <div class="fp-row"><span class="fp-label">Original</span><span class="fp-value">${escapeHtml(finalStudyO || "—")}</span></div>
         <div class="fp-row"><span class="fp-label">DOI</span><span class="fp-value">${doiLink(finalDoiO)}</span></div>
@@ -2079,15 +2112,96 @@ function renderAdminDetail(data) {
         <div class="fp-row"><span class="fp-label">Outcome</span><span class="fp-value">${escapeHtml(finalOutcome || "—")}</span></div>
         ${finalQuote ? `<div class="fp-row fp-quote-row"><span class="fp-label">Quote</span><span class="fp-value fp-quote">"${escapeHtml(finalQuote)}"</span></div>` : ""}
       </div>
-      ${rec.abstract_r ? `<details class="fp-abstract"><summary>Abstract</summary><p class="fp-abstract-text">${escapeHtml(rec.abstract_r)}</p></details>` : ""}
+      ${finalAbstractR ? `<details class="fp-abstract"><summary>Abstract${rec.final_abstract_r && rec.final_abstract_r !== rec.abstract_r ? " (edited)" : ""}</summary><p class="fp-abstract-text">${escapeHtml(finalAbstractR)}</p></details>` : ""}
       ${changesSection}
     </div>`;
   };
 
+  // Final values for the unified edit form (pre-filled from consensus / admin corrections)
+  const finalStudyR    = rec.final_study_r       || rec.study_r;
+  const finalDoiR      = rec.final_doi_r         || rec.doi_r;
+  const finalStudyO    = rec.final_study_o       || rec.study_o;
+  const finalDoiO      = rec.final_doi_o         || rec.doi_o;
+  const finalType      = rec.final_type          || rec.type;
+  const finalOutcome   = rec.final_outcome       || rec.outcome;
+  const finalQuote     = rec.final_outcome_quote || rec.outcome_quote;
+  const finalAbstractR = rec.final_abstract_r    || rec.abstract_r;
+  const finalUrlR      = rec.final_url_r         || rec.url_r;
+
+  // Validator comparison table shown above the edit form
+  const _labelMap = { not_validation: "not a replication" };
+  const _clip = (s, n = 40) => { if (!s) return '<span class="fh-empty">(empty)</span>'; s = _labelMap[String(s)] || String(s); return escapeHtml(s.length > n ? s.substring(0, n) + "…" : s); };
+  const _vCell = (agreed, correction) =>
+    agreed ? `<span class="fh-agree">✓ agreed</span>`
+           : `<span class="fh-diff">✗ → ${_clip(correction)}</span>`;
+  const _vPlain = (val) => val != null && val !== "" ? `<span class="vct-plain">${_clip(String(val), 60)}</span>` : `<span class="fh-empty">—</span>`;
+  const v1Name = v1?.validator_name || "V1";
+  const v2Name = v2?.validator_name || "V2";
+  const coreRows = [
+    { label: "Rep. Title", extracted: rec.study_r,  v1Agreed: !v1?.corrected_study_r,          v1Cor: v1?.corrected_study_r,  v2Agreed: !v2?.corrected_study_r,          v2Cor: v2?.corrected_study_r  },
+    { label: "Type",       extracted: rec.type,     v1Agreed: v1?.type_check === "correct",     v1Cor: v1?.corrected_type,     v2Agreed: v2?.type_check === "correct",     v2Cor: v2?.corrected_type     },
+    { label: "Orig. Title",extracted: rec.study_o,  v1Agreed: v1?.original_check === "correct", v1Cor: v1?.corrected_study_o,  v2Agreed: v2?.original_check === "correct", v2Cor: v2?.corrected_study_o  },
+    { label: "Orig. DOI",  extracted: rec.doi_o,    v1Agreed: v1?.original_check === "correct", v1Cor: v1?.corrected_doi_o,    v2Agreed: v2?.original_check === "correct", v2Cor: v2?.corrected_doi_o    },
+    { label: "Outcome",    extracted: rec.outcome,  v1Agreed: v1?.outcome_check === "correct",  v1Cor: v1?.corrected_outcome,  v2Agreed: v2?.outcome_check === "correct",  v2Cor: v2?.corrected_outcome  },
+  ];
+  const nCorrected = coreRows.filter(r =>
+    (v1 && !r.v1Agreed) || (v2 && !r.v2Agreed)
+  ).length;
+  const nValidators = (v1 ? 1 : 0) + (v2 ? 1 : 0);
+  const _tableHead = `<thead><tr>
+    <th>Field</th><th>Extracted</th>
+    ${v1 ? `<th>${escapeHtml(v1Name)}</th>` : ""}
+    ${v2 ? `<th>${escapeHtml(v2Name)}</th>` : ""}
+  </tr></thead>`;
+  const _coreBody = coreRows.map(r => `<tr>
+    <td class="vct-label">${r.label}</td>
+    <td class="vct-extracted">${_clip(r.extracted)}</td>
+    ${v1 ? `<td>${_vCell(r.v1Agreed, r.v1Cor)}</td>` : ""}
+    ${v2 ? `<td>${_vCell(r.v2Agreed, r.v2Cor)}</td>` : ""}
+  </tr>`).join("");
+  const _extraBody = `
+    <tr>
+      <td class="vct-label">Quote</td>
+      <td class="vct-extracted">${_clip(rec.outcome_quote, 60)}</td>
+      ${v1 ? `<td>${_vCell(v1?.outcome_check === "correct" || !v1?.corrected_outcome_quote, v1?.corrected_outcome_quote)}</td>` : ""}
+      ${v2 ? `<td>${_vCell(v2?.outcome_check === "correct" || !v2?.corrected_outcome_quote, v2?.corrected_outcome_quote)}</td>` : ""}
+    </tr>
+    <tr>
+      <td class="vct-label">Notes</td>
+      <td class="vct-extracted"><span class="fh-empty">—</span></td>
+      ${v1 ? `<td>${_vPlain(v1?.validator_notes)}</td>` : ""}
+      ${v2 ? `<td>${_vPlain(v2?.validator_notes)}</td>` : ""}
+    </tr>
+    <tr>
+      <td class="vct-label">Points</td>
+      <td class="vct-extracted"><span class="fh-empty">—</span></td>
+      ${v1 ? `<td>${_vPlain(v1?.points != null ? v1.points : null)}</td>` : ""}
+      ${v2 ? `<td>${_vPlain(v2?.points != null ? v2.points : null)}</td>` : ""}
+    </tr>`;
+  const validatorTable = (v1 || v2) ? `
+    <div class="vct-section">
+      <div class="vct-header">
+        <span class="vct-title">Validator comparison</span>
+        <span class="vct-badge">${nValidators} validator${nValidators !== 1 ? "s" : ""}</span>
+        <span class="vct-badge ${nCorrected > 0 ? "vct-badge-warn" : "vct-badge-ok"}">${nCorrected} correction${nCorrected !== 1 ? "s" : ""}</span>
+      </div>
+      <table class="validator-cmp-table">
+        ${_tableHead}
+        <tbody>${_coreBody}</tbody>
+      </table>
+      <details class="vct-extra">
+        <summary class="vct-extra-summary">Show more (quote · notes · points)</summary>
+        <table class="validator-cmp-table vct-extra-table">
+          ${_tableHead}
+          <tbody>${_extraBody}</tbody>
+        </table>
+      </details>
+    </div>` : "";
+
   const outcomeOpts = ["success","failure","mixed","uninformative","descriptive"]
-    .map((o) => `<option value="${o}" ${rec.outcome === o ? "selected" : ""}>${o}</option>`).join("");
+    .map((o) => `<option value="${o}" ${finalOutcome === o ? "selected" : ""}>${o}</option>`).join("");
   const typeOpts = ["replication","reproduction"]
-    .map((t) => `<option value="${t}" ${rec.type === t ? "selected" : ""}>${t}</option>`).join("");
+    .map((t) => `<option value="${t}" ${finalType === t ? "selected" : ""}>${t}</option>`).join("");
 
   const hasNotValidation =
     (v1 && v1.corrected_type === "not_validation") ||
@@ -2103,6 +2217,8 @@ function renderAdminDetail(data) {
       <!-- Left: final preview + validator cards -->
       <div class="admin-detail-pair">
         ${finalPreview()}
+
+        ${validatorTable}
 
         <div class="admin-val-cards">
           ${humanCard("Validator 1", v1)}
@@ -2132,7 +2248,9 @@ function renderAdminDetail(data) {
             <button id="confirm-reject-btn" class="btn-reject">✗ Confirm Rejection</button>
             <button id="restore-pool-btn" class="btn-outline">↩ Restore to Pool</button>
             <button id="confirm-is-rep-btn" class="btn-outline">✓ Override — It IS a Replication</button>
+            <button id="admin-skip-notval-btn" class="ghost-btn">Skip →</button>
           </div>
+          <p class="not-val-hint">↑ Clicking Override will open the edit form so you can review and correct all fields before resolving.</p>
           <textarea id="ar-notes-quick" class="admin-textarea" placeholder="Notes (optional)" style="margin-top:0.75rem"></textarea>
         </div>
         ` : hasNotValidation ? `
@@ -2142,46 +2260,59 @@ function renderAdminDetail(data) {
           <div class="not-val-buttons">
             <button id="confirm-reject-btn" class="btn-reject">✗ Confirm — Not a Replication</button>
             <button id="confirm-is-rep-btn" class="btn-outline">✓ Override — It IS a Replication</button>
+            <button id="admin-skip-notval-btn" class="ghost-btn">Skip →</button>
           </div>
+          <p class="not-val-hint">↑ Clicking Override will open the edit form so you can review and correct all fields before resolving.</p>
           <textarea id="ar-notes-quick" class="admin-textarea" placeholder="Notes (optional)" style="margin-top:0.75rem"></textarea>
         </div>
         ` : ""}
 
-        <div id="ar-normal-form" class="${hasNotValidation ? "hidden" : ""}">
-          ${hasNotValidation ? `<p class="admin-resolve-hint" style="margin-bottom:0.75rem">Fill in the correct values — this will override the "not a replication" call.</p>` : `<p class="admin-resolve-hint">Override the final values for this entry and mark it as resolved.</p>`}
+        <div id="ar-normal-form" class="${hasNotValidation ? "hidden" : ""}"
+             data-orig-study-r="${escapeHtml(rec.study_r || "")}"
+             data-orig-doi-r="${escapeHtml(rec.doi_r || "")}"
+             data-orig-study-o="${escapeHtml(rec.study_o || "")}"
+             data-orig-doi-o="${escapeHtml(rec.doi_o || "")}"
+             data-orig-type="${escapeHtml(rec.type || "")}"
+             data-orig-outcome="${escapeHtml(rec.outcome || "")}"
+             data-orig-abstract-r="${escapeHtml(rec.abstract_r || "")}"
+             data-orig-url-r="${escapeHtml(rec.url_r || "")}">
+          ${hasNotValidation
+            ? `<p class="admin-resolve-hint">Fill in the correct values — this will override the "not a replication" call.</p>`
+            : `<p class="admin-resolve-hint">Edit the final values directly and mark as resolved. Changes are auto-detected.</p>`}
 
-          <label class="admin-form-label">Type check</label>
-          <select id="ar-type-check" class="admin-select">
-            <option value="correct">correct</option>
-            <option value="incorrect">incorrect</option>
-          </select>
-          <select id="ar-corrected-type-sel" class="admin-select" style="margin-top:0.25rem">
-            ${typeOpts}
-          </select>
+          <label class="admin-form-label">Replication Title</label>
+          <input id="ar-study-r" class="admin-input" value="${escapeHtml(finalStudyR || "")}">
 
-          <label class="admin-form-label" style="margin-top:1rem">Original study check</label>
-          <select id="ar-original-check" class="admin-select">
-            <option value="correct">correct</option>
-            <option value="incorrect">incorrect</option>
-          </select>
-          <input id="ar-corrected-study" class="admin-input" placeholder="Corrected original study title (if incorrect)">
-          <input id="ar-corrected-doi" class="admin-input" placeholder="Corrected DOI (if incorrect)" style="margin-top:0.25rem">
+          <label class="admin-form-label">Replication DOI</label>
+          <input id="ar-doi-r" class="admin-input" value="${escapeHtml(finalDoiR || "")}">
 
-          <label class="admin-form-label" style="margin-top:1rem">Outcome check</label>
-          <select id="ar-outcome-check" class="admin-select">
-            <option value="correct">correct</option>
-            <option value="incorrect">incorrect</option>
-          </select>
-          <select id="ar-corrected-outcome" class="admin-select" style="margin-top:0.25rem">
-            ${outcomeOpts}
-          </select>
-          <input id="ar-corrected-quote" class="admin-input" placeholder="Corrected outcome quote (optional)" style="margin-top:0.25rem">
+          <label class="admin-form-label">Replication URL</label>
+          <input id="ar-url-r" class="admin-input" value="${escapeHtml(finalUrlR || "")}" placeholder="https://…">
 
-          <label class="admin-form-label" style="margin-top:1rem">Admin notes</label>
+          <label class="admin-form-label">Original Title</label>
+          <input id="ar-study-o" class="admin-input" value="${escapeHtml(finalStudyO || "")}">
+
+          <label class="admin-form-label">Original DOI</label>
+          <input id="ar-doi-o" class="admin-input" value="${escapeHtml(finalDoiO || "")}">
+
+          <label class="admin-form-label">Type</label>
+          <select id="ar-type-sel" class="admin-select">${typeOpts}</select>
+
+          <label class="admin-form-label">Outcome</label>
+          <select id="ar-outcome-sel" class="admin-select">${outcomeOpts}</select>
+
+          <label class="admin-form-label">Outcome Quote</label>
+          <textarea id="ar-quote" class="admin-textarea" placeholder="Outcome quote…">${escapeHtml(finalQuote || "")}</textarea>
+
+          <label class="admin-form-label">Abstract</label>
+          <textarea id="ar-abstract-r" class="admin-textarea" style="min-height:120px" placeholder="Abstract…">${escapeHtml(finalAbstractR || "")}</textarea>
+
+          <label class="admin-form-label">Admin notes</label>
           <textarea id="ar-notes" class="admin-textarea" placeholder="Notes for the record (optional)"></textarea>
 
           <div class="admin-resolve-actions">
             <button id="admin-resolve-btn" class="btn-primary" data-id="${rec.record_id}">Mark as Resolved →</button>
+            <button id="admin-skip-btn" class="ghost-btn">Skip →</button>
             <button id="admin-detail-cancel" class="ghost-btn">Cancel</button>
           </div>
           <div class="admin-reject-action">
@@ -2198,6 +2329,7 @@ function renderAdminDetail(data) {
       $(".not-val-decision")?.classList.add("hidden");
       $("#ar-normal-form").classList.remove("hidden");
     });
+    $("#admin-skip-notval-btn")?.addEventListener("click", () => advanceToNextAdminEntry());
     $("#restore-pool-btn")?.addEventListener("click", async () => {
       const btn = $("#restore-pool-btn");
       btn.disabled = true;
@@ -2245,9 +2377,8 @@ function renderAdminDetail(data) {
         corrected_type: "not_validation",
         admin_notes:    $("#ar-notes")?.value.trim() || null,
       });
-      closeAdminDetail();
       showToast("Record rejected — marked as not a replication.");
-      fetchAdminEntries();
+      await advanceToNextAdminEntry();
     } catch (e) {
       btn.disabled = false;
       btn.textContent = "✗ Reject — Not a Replication";
@@ -2255,6 +2386,7 @@ function renderAdminDetail(data) {
     }
   });
   $("#admin-detail-cancel").onclick = closeAdminDetail;
+  $("#admin-skip-btn").onclick = () => advanceToNextAdminEntry();
 }
 
 async function submitQuickReject(recordId) {
@@ -2270,9 +2402,8 @@ async function submitQuickReject(recordId) {
       corrected_type: "not_validation",
       admin_notes:    $("#ar-notes-quick")?.value.trim() || null,
     });
-    closeAdminDetail();
     showToast("Marked as not a replication.");
-    fetchAdminEntries();
+    await advanceToNextAdminEntry();
   } catch (e) {
     btn.disabled = false;
     btn.textContent = "✗ Confirm — Not a Replication";
@@ -2285,24 +2416,55 @@ async function submitAdminResolve(recordId) {
   btn.disabled = true;
   btn.textContent = "Saving…";
 
+  const form = $("#ar-normal-form");
+  const newStudyR    = $("#ar-study-r").value.trim();
+  const newDoiR      = $("#ar-doi-r").value.trim();
+  const newUrlR      = $("#ar-url-r").value.trim();
+  const newStudyO    = $("#ar-study-o").value.trim();
+  const newDoiO      = $("#ar-doi-o").value.trim();
+  const newType      = $("#ar-type-sel").value;
+  const newOutcome   = $("#ar-outcome-sel").value;
+  const newQuote     = $("#ar-quote").value.trim();
+  const newAbstractR = $("#ar-abstract-r").value.trim();
+
+  const origStudyR    = form.dataset.origStudyR;
+  const origDoiR      = form.dataset.origDoiR;
+  const origUrlR      = form.dataset.origUrlR;
+  const origStudyO    = form.dataset.origStudyO;
+  const origDoiO      = form.dataset.origDoiO;
+  const origType      = form.dataset.origType;
+  const origOutcome   = form.dataset.origOutcome;
+  const origAbstractR = form.dataset.origAbstractR;
+
+  const typeChanged     = newType      !== origType;
+  const origChanged     = newStudyO    !== origStudyO || newDoiO !== origDoiO;
+  const outcomeChanged  = newOutcome   !== origOutcome;
+  const studyRChanged   = newStudyR    !== origStudyR;
+  const doiRChanged     = newDoiR      !== origDoiR;
+  const urlRChanged     = newUrlR      !== origUrlR;
+  const abstractChanged = newAbstractR !== origAbstractR;
+
   const body = {
     admin_name:              _adminHandle || "admin",
-    type_check:              $("#ar-type-check").value,
-    original_check:          $("#ar-original-check").value,
-    outcome_check:           $("#ar-outcome-check").value,
-    corrected_type:          $("#ar-type-check").value === "incorrect" ? $("#ar-corrected-type-sel").value : null,
-    corrected_doi_o:         $("#ar-original-check").value === "incorrect" ? ($("#ar-corrected-doi").value.trim() || null) : null,
-    corrected_study_o:       $("#ar-original-check").value === "incorrect" ? ($("#ar-corrected-study").value.trim() || null) : null,
-    corrected_outcome:       $("#ar-outcome-check").value === "incorrect" ? $("#ar-corrected-outcome").value : null,
-    corrected_outcome_quote: $("#ar-corrected-quote").value.trim() || null,
+    type_check:              typeChanged    ? "incorrect" : "correct",
+    original_check:          origChanged    ? "incorrect" : "correct",
+    outcome_check:           outcomeChanged ? "incorrect" : "correct",
+    corrected_type:          typeChanged     ? newType                  : null,
+    corrected_doi_o:         origChanged     ? (newDoiO      || null)   : null,
+    corrected_study_o:       origChanged     ? (newStudyO    || null)   : null,
+    corrected_outcome:       outcomeChanged  ? newOutcome               : null,
+    corrected_outcome_quote: newQuote        || null,
+    corrected_study_r:       studyRChanged   ? (newStudyR    || null)   : null,
+    corrected_doi_r:         doiRChanged     ? (newDoiR      || null)   : null,
+    corrected_url_r:         urlRChanged     ? (newUrlR      || null)   : null,
+    corrected_abstract_r:    abstractChanged ? (newAbstractR || null)   : null,
     admin_notes:             $("#ar-notes").value.trim() || null,
   };
 
   try {
     await adminApi(`/entries/${recordId}/resolve`, "POST", body);
-    closeAdminDetail();
     showToast("Entry resolved.");
-    fetchAdminEntries();
+    await advanceToNextAdminEntry();
   } catch (e) {
     btn.disabled = false;
     btn.textContent = "Mark as Resolved →";
@@ -2310,9 +2472,28 @@ async function submitAdminResolve(recordId) {
   }
 }
 
+async function advanceToNextAdminEntry() {
+  const currentId = _adminEntryIds[_adminCurrentIdx];
+  _adminEntryIds.splice(_adminCurrentIdx, 1);
+  delete _adminDetailCache[currentId];
+
+  if (_adminEntryIds.length === 0) {
+    closeAdminDetail();
+    return;
+  }
+  const nextIdx = Math.min(_adminCurrentIdx, _adminEntryIds.length - 1);
+  _adminCurrentIdx = nextIdx;
+  await openAdminDetail(_adminEntryIds[nextIdx]);
+
+  // Background: extend preload window + sync table without resetting review state
+  preloadAdminDetails();
+  fetchAdminEntries(false);
+}
+
 function closeAdminDetail() {
   $("#admin-detail-modal").classList.add("hidden");
   document.body.style.overflow = "";
+  fetchAdminEntries();
 }
 
 /* ---------- Admin tabs ---------- */

@@ -159,7 +159,7 @@ class LoginRequest(BaseModel):
 
 class JudgeRequest(BaseModel):
     coder_id: int                       # maps to validators.id
-    pair_id: str                        # looks up unvalidated.pair_id
+    record_id: str                      # unvalidated.record_id (UUID)
     type_check: str                     # "correct" | "incorrect"
     original_check: str                 # "correct" | "incorrect"
     outcome_check: str                  # "correct" | "incorrect"
@@ -179,12 +179,12 @@ class OnboardingComplete(BaseModel):
 
 class SkipRequest(BaseModel):
     coder_id: int
-    pair_id: str
+    record_id: str
 
 
 class SeniorRejectRequest(BaseModel):
     coder_id: int
-    pair_id: str
+    record_id: str
     validator_notes: str | None = None
 
 
@@ -207,6 +207,10 @@ class AdminResolveRequest(BaseModel):
     corrected_outcome: str | None = None
     corrected_type: str | None = None
     corrected_outcome_quote: str | None = None
+    corrected_study_r: str | None = None
+    corrected_doi_r: str | None = None
+    corrected_url_r: str | None = None
+    corrected_abstract_r: str | None = None
     admin_notes: str | None = None
 
 
@@ -469,12 +473,12 @@ def judge(req: JudgeRequest):
     with db() as cur:
         # Look up the record and the validator
         cur.execute(
-            "SELECT record_id FROM unvalidated WHERE pair_id = %s",
-            (req.pair_id,),
+            "SELECT record_id FROM unvalidated WHERE record_id = %s",
+            (req.record_id,),
         )
         rec = cur.fetchone()
         if not rec:
-            raise HTTPException(404, f"pair_id '{req.pair_id}' not found")
+            raise HTTPException(404, f"record_id '{req.record_id}' not found")
         record_id = rec["record_id"]
 
         cur.execute(
@@ -594,10 +598,10 @@ def judge(req: JudgeRequest):
 @app.post("/api/skip")
 def skip_pair(req: SkipRequest):
     with db() as cur:
-        cur.execute("SELECT record_id FROM unvalidated WHERE pair_id = %s", (req.pair_id,))
+        cur.execute("SELECT record_id FROM unvalidated WHERE record_id = %s", (req.record_id,))
         rec = cur.fetchone()
         if not rec:
-            raise HTTPException(404, f"pair_id '{req.pair_id}' not found")
+            raise HTTPException(404, f"record_id '{req.record_id}' not found")
         record_id = rec["record_id"]
 
         # Release the queue slot so another validator can claim this pair
@@ -654,10 +658,10 @@ def senior_reject(req: SeniorRejectRequest):
         if validator["validator_tier"] < 2:
             raise HTTPException(403, "Only senior validators (tier 2) can use this feature")
 
-        cur.execute("SELECT record_id FROM unvalidated WHERE pair_id = %s", (req.pair_id,))
+        cur.execute("SELECT record_id FROM unvalidated WHERE record_id = %s", (req.record_id,))
         rec = cur.fetchone()
         if not rec:
-            raise HTTPException(404, f"pair_id '{req.pair_id}' not found")
+            raise HTTPException(404, f"record_id '{req.record_id}' not found")
         record_id = rec["record_id"]
 
         cur.execute(
@@ -1294,17 +1298,21 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
         final_study_o   = req.corrected_study_o   if req.original_check == "incorrect" and req.corrected_study_o   else rec["study_o"]
         final_outcome   = req.corrected_outcome   if req.outcome_check  == "incorrect" and req.corrected_outcome   else rec["outcome"]
         final_outcome_q = req.corrected_outcome_quote if req.corrected_outcome_quote else rec["outcome_quote"]
+        final_study_r    = req.corrected_study_r    if req.corrected_study_r    else rec.get("final_study_r")    or rec["study_r"]
+        final_doi_r      = req.corrected_doi_r      if req.corrected_doi_r      else rec.get("final_doi_r")      or rec["doi_r"]
+        final_url_r      = req.corrected_url_r      if req.corrected_url_r      else rec.get("final_url_r")      or rec["url_r"]
+        final_abstract_r = req.corrected_abstract_r if req.corrected_abstract_r else rec.get("final_abstract_r") or rec["abstract_r"]
 
         # Admin confirmed this is not a replication → reject it, never insert into FLoRA
         if final_type == "not_validation":
             cur.execute(
                 """
                 UPDATE unvalidated SET
-                    admin_checked     = TRUE,
-                    admin_name        = %s,
-                    admin_notes       = %s,
-                    validation_status = 'rejected',
-                    updated_at        = NOW()
+                    admin_checked       = TRUE,
+                    admin_name          = %s,
+                    admin_notes         = %s,
+                    validation_status   = 'rejected',
+                    updated_at          = NOW()
                 WHERE record_id = %s
                 """,
                 (admin_handle, req.admin_notes, record_id),
@@ -1322,10 +1330,14 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
                 final_doi_o         = %s,
                 final_study_o       = %s,
                 final_outcome       = %s,
+                final_study_r       = %s,
+                final_doi_r         = %s,
+                final_url_r         = %s,
+                final_abstract_r    = %s,
                 updated_at          = NOW()
             WHERE record_id = %s
             """,
-            (admin_handle, req.admin_notes, final_type, final_doi_o, final_study_o, final_outcome, record_id),
+            (admin_handle, req.admin_notes, final_type, final_doi_o, final_study_o, final_outcome, final_study_r, final_doi_r, final_url_r, final_abstract_r, record_id),
         )
 
         cur.execute(
@@ -1336,6 +1348,11 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
                 type, outcome, outcome_quote, out_quote_source, admin_approved
             ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, TRUE)
             ON CONFLICT (doi_r, study_r, doi_o, study_o) DO UPDATE SET
+                doi_r         = EXCLUDED.doi_r,
+                study_r       = EXCLUDED.study_r,
+                abstract_r    = EXCLUDED.abstract_r,
+                doi_o         = EXCLUDED.doi_o,
+                study_o       = EXCLUDED.study_o,
                 type          = EXCLUDED.type,
                 outcome       = EXCLUDED.outcome,
                 outcome_quote = EXCLUDED.outcome_quote,
@@ -1344,7 +1361,7 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
             """,
             (
                 record_id,
-                rec["doi_r"], rec.get("final_study_r") or rec["study_r"], rec["year_r"], rec["url_r"], rec["ref_r"], rec["abstract_r"],
+                final_doi_r, final_study_r, rec["year_r"], final_url_r, rec["ref_r"], final_abstract_r,
                 final_doi_o, final_study_o, rec["year_o"], rec["url_o"], rec["ref_o"],
                 final_type, final_outcome, final_outcome_q, rec.get("out_quote_source"),
             ),
@@ -1382,7 +1399,7 @@ def _start_scheduler() -> None:
     from sync_csv import sync_once
     scheduler = BackgroundScheduler(timezone="UTC")
     scheduler.add_job(sync_once, CronTrigger(hour=2, minute=0))
-    scheduler.add_job(_retry_tiebreakers, CronTrigger(hour=12, minute=22))
+    scheduler.add_job(_retry_tiebreakers, CronTrigger(hour=00, minute=22))
     scheduler.start()
 
 

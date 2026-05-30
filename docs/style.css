@@ -2283,6 +2283,61 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
 }
 .not-val-who  { font-size: 0.88rem; margin-bottom: 0.3rem; }
 .not-val-question { font-size: 0.82rem; color: var(--muted); margin-bottom: 0.75rem; }
+.not-val-hint { font-size: 0.78rem; color: var(--muted); margin-top: 0.5rem; font-style: italic; }
+.fh-agree     { color: var(--green); font-weight: 500; }
+.fh-diff      { color: var(--amber); font-weight: 500; }
+.fh-empty     { color: var(--muted); font-style: italic; }
+
+.validator-cmp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  margin-bottom: 0.5rem;
+  background: var(--bg-card, #faf9f7);
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+}
+.validator-cmp-table thead th {
+  background: var(--bg-rule, #f0ede8);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--ink);
+  border-bottom: 1px solid var(--rule);
+}
+.validator-cmp-table tbody tr:not(:last-child) td {
+  border-bottom: 1px solid var(--rule);
+}
+.validator-cmp-table td {
+  padding: 0.35rem 0.6rem;
+  vertical-align: middle;
+}
+.vct-label     { font-weight: 600; white-space: nowrap; color: var(--muted); width: 6rem; }
+.vct-extracted { color: var(--ink); max-width: 14rem; word-break: break-word; }
+.vct-plain     { color: var(--ink); }
+.vct-section   { margin-bottom: 1.2rem; }
+.vct-header    { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem; }
+.vct-title     { font-size: 0.78rem; font-weight: 600; color: var(--muted); }
+.vct-badge     { font-size: 0.72rem; font-weight: 600; padding: 0.1rem 0.45rem; border-radius: 10px; background: var(--bg-rule, #f0ede8); color: var(--muted); }
+.vct-badge-warn { background: #fef3c7; color: #92400e; }
+.vct-badge-ok   { background: #d1fae5; color: #065f46; }
+.vct-extra     { margin-top: 0; }
+.vct-extra-summary {
+  font-size: 0.75rem;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0.25rem 0;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+  user-select: none;
+}
+.vct-extra-summary::before { content: "▶"; font-size: 0.6rem; transition: transform 0.15s; }
+details[open] > .vct-extra-summary::before { transform: rotate(90deg); }
+.vct-extra-table { margin-top: 0; margin-bottom: 0; }
 .not-val-buttons {
   display: flex;
   gap: 0.6rem;

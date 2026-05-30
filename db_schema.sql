@@ -221,9 +221,11 @@ CREATE TABLE IF NOT EXISTS admins (
 -- Trusted admin flag (only trusted admins can add/remove admin accounts)
 ALTER TABLE admins ADD COLUMN IF NOT EXISTS trusted BOOLEAN NOT NULL DEFAULT FALSE;
 
--- Replication title correction (typographical errors)
+-- Replication title/DOI correction (typographical errors)
 ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS corrected_study_r TEXT;
 ALTER TABLE unvalidated      ADD COLUMN IF NOT EXISTS final_study_r     TEXT;
+ALTER TABLE unvalidated      ADD COLUMN IF NOT EXISTS final_doi_r       TEXT;
+ALTER TABLE unvalidated      ADD COLUMN IF NOT EXISTS final_abstract_r  TEXT;
 
 -- Forgot-handle rate limiting
 ALTER TABLE validators ADD COLUMN IF NOT EXISTS forgot_requests_today INTEGER NOT NULL DEFAULT 0;
