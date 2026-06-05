@@ -132,7 +132,7 @@ def evaluate_consensus(cur, record_id: str) -> None:
         """
         SELECT validator_slot, type_check, original_check, outcome_check,
                corrected_doi_o, corrected_study_o, corrected_outcome, corrected_type,
-               corrected_study_r
+               corrected_study_r, corrected_abstract
         FROM validation_queue
         WHERE record_id = %s AND is_validated = TRUE
         ORDER BY validator_slot
@@ -146,7 +146,7 @@ def evaluate_consensus(cur, record_id: str) -> None:
     # Support dict rows (DictCursor / tests) and tuple rows (default cursor)
     _human_cols = ["validator_slot", "type_check", "original_check", "outcome_check",
                    "corrected_doi_o", "corrected_study_o", "corrected_outcome", "corrected_type",
-                   "corrected_study_r"]
+                   "corrected_study_r", "corrected_abstract"]
     if rows and isinstance(rows[0], dict):
         humans = [dict(row) for row in rows]
     else:

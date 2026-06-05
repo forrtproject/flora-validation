@@ -33,6 +33,7 @@ const STORAGE = {
 
 let API_MODE = "online"; // "online" | "static"
 let STATIC_DATA = null;  // {normal: [...], hard: [...], onboarding: [...]}
+let _chipTimer = null;
 
 async function detectMode() {
   try {
@@ -57,7 +58,7 @@ async function api(path, method = "GET", body = null) {
   if (body) opts.body = JSON.stringify(body);
 
   // Show "server waking up" toast if response takes more than 3 seconds
-  let slowTimer = setTimeout(() => showToast("Server waking up… hang tight.", 15000), 3000);
+  let slowTimer = setTimeout(() => showToast("Server waking up… hang tight."), 3000);
   try {
     const res = await fetch("/api" + path, opts);
     clearTimeout(slowTimer);
@@ -138,10 +139,10 @@ async function staticApi(path, method, body) {
     }
     if (!coders[key]) {
       const id = Date.now() + Math.floor(Math.random() * 1000);
-      coders[key] = { coder_id: id, code: code || null, email: email || null, handle, onboarded: false };
+      coders[key] = { coder_id: id, code: code || null, email: email || null, handle, onboarded: false, last_seen_update: 0 };
       writeJSON(STORAGE.CODERS, coders);
     }
-    return coders[key];
+    return { ...coders[key], update_version: 1, last_seen_update: coders[key].last_seen_update ?? 0 };
   }
 
   if (route === "/onboarding") {
@@ -151,10 +152,22 @@ async function staticApi(path, method, body) {
   if (route === "/onboarding/complete") {
     const cid = body.coder_id;
     for (const k of Object.keys(coders)) {
-      if (coders[k].coder_id === cid) coders[k].onboarded = true;
+      if (coders[k].coder_id === cid) {
+        coders[k].onboarded = true;
+        coders[k].last_seen_update = 1; // treated as up-to-date after onboarding
+      }
     }
     writeJSON(STORAGE.CODERS, coders);
     return { onboarded: true };
+  }
+
+  if (route === "/update-seen") {
+    const cid = body.coder_id;
+    for (const k of Object.keys(coders)) {
+      if (coders[k].coder_id === cid) coders[k].last_seen_update = 1;
+    }
+    writeJSON(STORAGE.CODERS, coders);
+    return { ok: true };
   }
 
   if (route === "/next-pair") {
@@ -213,6 +226,39 @@ async function staticApi(path, method, body) {
       .sort((a, b) => b.points - a.points || b.pairs - a.pairs);
   }
 
+  if (route === "/my-judgements") {
+    const cid = +params.get("coder_id");
+    const judgements = readJSON(STORAGE.JUDGEMENTS, [])
+      .filter(j => j.coder_id === cid && j.type_judgement !== "skip")
+      .reverse()
+      .slice(0, 100)
+      .map(j => ({
+        queue_id: j.pair_id,
+        record_id: j.pair_id,
+        type_check: j.type_check || null,
+        original_check: j.original_check || null,
+        outcome_check: j.outcome_check || null,
+        corrected_doi_o: j.corrected_doi_o || null,
+        corrected_study_o: j.corrected_study_o || null,
+        corrected_outcome: j.corrected_outcome || null,
+        corrected_type: j.corrected_type || null,
+        corrected_study_r: j.corrected_study_r || null,
+        points: j.points || 0,
+        validated_at: j.created_at || null,
+        flagged: false,
+        flag_reason: null,
+        title_r: j.study_r || j.pair_id,
+        doi_r: j.doi_r || null,
+        year_r: j.year_r || null,
+        extracted_outcome: j.outcome || null,
+        msg_id: null,
+        msg_body: null,
+        msg_sent_at: null,
+        msg_is_read: null,
+      }));
+    return { judgements };
+  }
+
   if (route === "/stats") {
     const cid = +params.get("coder_id");
     const judgements = readJSON(STORAGE.JUDGEMENTS, []).filter((j) => j.coder_id === cid);
@@ -248,9 +294,9 @@ function escapeHtml(s) {
 function showToast(numOrMsg, label) {
   const toast = $("#toast");
   if (label === undefined) {
-    toast.innerHTML = numOrMsg;
+    toast.textContent = numOrMsg;
   } else {
-    toast.innerHTML = `<span class="num">+${numOrMsg}</span> ${label}`;
+    toast.innerHTML = `<span class="num">+${escapeHtml(String(numOrMsg))}</span> ${escapeHtml(String(label))}`;
   }
   toast.classList.add("show");
   setTimeout(() => toast.classList.remove("show"), 1800);
@@ -331,7 +377,7 @@ async function doLogin() {
     body = { handle, email };
   } else {
     const code = getCode();
-    if (code.length < 6) {
+    if (code.length < 8) {
       await showAlert("Please fill in all four parts of your code.");
       return;
     }
@@ -376,6 +422,8 @@ function routeAfterLogin() {
   $("#login-screen").classList.add("hidden");
   if (!state.coder.onboarded) {
     enterOnboarding();
+  } else if ((state.coder.last_seen_update ?? 0) < (state.coder.update_version ?? 0)) {
+    enterUpdateScreen();
   } else {
     enterGame();
   }
@@ -395,6 +443,7 @@ const logout = () => {
 };
 $("#logout-btn").onclick = logout;
 $("#onb-logout-btn").onclick = logout;
+$("#update-logout-btn").onclick = logout;
 
 /* ---------- Onboarding ---------- */
 async function enterOnboarding() {
@@ -415,6 +464,37 @@ async function enterOnboarding() {
 $("#onb-start-btn").onclick = () => {
   $("#onb-intro").classList.add("hidden");
   showOnboardingPair();
+};
+
+/* ---------- Update screen ---------- */
+function enterUpdateScreen() {
+  $("#update-screen").classList.remove("hidden");
+  resetInactivityTimer();
+  fetch("./updates.json")
+    .then(r => r.json())
+    .then(data => {
+      const cards = data.cards || [];
+      $("#update-cards").innerHTML = cards.map(c => `
+        <div class="update-card">
+          <div class="update-card-icon-wrap">${c.icon}</div>
+          <div class="update-card-content">
+            <div class="update-card-title">${c.title}</div>
+            <div class="update-card-body">${c.body}</div>
+          </div>
+        </div>
+      `).join("");
+    })
+    .catch(() => {});
+}
+
+$("#update-continue-btn").onclick = async () => {
+  try {
+    await api("/update-seen", "POST", { coder_id: state.coder.coder_id });
+  } catch {}
+  state.coder.last_seen_update = state.coder.update_version ?? 0;
+  localStorage.setItem(STORAGE.CODER, JSON.stringify(state.coder));
+  $("#update-screen").classList.add("hidden");
+  enterGame();
 };
 
 
@@ -453,6 +533,10 @@ function evaluateOnboarding(pair, j) {
     if (j.type !== "replication" && j.type !== "reproduction") {
       errors.push({ key: "type_wrong", text: pair.feedback.type_wrong });
     }
+  } else if (exp.type === "reproduction") {
+    if (j.type !== "reproduction") {
+      errors.push({ key: "type_wrong", text: pair.feedback.type_wrong });
+    }
   } else if (exp.type === "not_validation") {
     if (j.type !== "not_validation") {
       errors.push({ key: "type_wrong", text: pair.feedback.type_wrong });
@@ -469,6 +553,11 @@ function evaluateOnboarding(pair, j) {
     if (j.outcome !== exp.outcome) {
       errors.push({ key: "outcome_wrong", text: pair.feedback.outcome_wrong });
     }
+  }
+
+  // Title typo check — validator must use the fix-typo button when the title has a known error
+  if (exp.study_r_typo && j.type !== "not_validation" && !j.corrected_study_r) {
+    errors.push({ key: "study_r_typo_missed", text: pair.feedback.study_r_typo_missed });
   }
 
   return errors;
@@ -538,8 +627,389 @@ async function enterGame() {
   $("#game-screen").classList.remove("hidden");
   $("#stat-name").textContent = state.coder.handle;
   resetInactivityTimer();
+  startMaintenanceSystem();
+  initInbox();
+  initHistory();
   await refreshAll();
+  fetchMessages(); // after refreshAll so resume dialog (if any) fires first
 }
+
+/* ============================================================
+   Validator Inbox
+   ============================================================ */
+
+let _inboxMessages = [];
+
+function initInbox() {
+  $("#inbox-btn")?.addEventListener("click", openInbox);
+  $("#inbox-close-btn")?.addEventListener("click", closeInbox);
+  $("#inbox-modal")?.addEventListener("click", e => {
+    if (e.target === $("#inbox-modal")) closeInbox();
+  });
+}
+
+async function fetchMessages() {
+  if (!state.coder) return;
+  try {
+    const resp = await api(`/messages?coder_id=${state.coder.coder_id}`);
+    _inboxMessages = resp.messages || [];
+    _updateInboxBadge();
+    const unread = _inboxMessages.filter(m => m.direction !== "inbound" && !m.is_read).length;
+    if (unread > 0) {
+      const v = await showDialog({
+        icon: "✉",
+        title: "You have new messages",
+        message: `You have ${unread} unread message${unread > 1 ? "s" : ""} in your inbox.`,
+        buttons: [
+          { label: "Open Inbox", value: "open", primary: true },
+          { label: "Later", value: "later" },
+        ],
+      });
+      if (v === "open") openInbox();
+    }
+  } catch {}
+}
+
+function _updateInboxBadge() {
+  const badge = $("#inbox-badge");
+  if (!badge) return;
+  const unread = _inboxMessages.filter(m => m.direction !== "inbound" && !m.is_read).length;
+  if (unread > 0) {
+    badge.textContent = unread > 99 ? "99+" : String(unread);
+    badge.classList.remove("hidden");
+  } else {
+    badge.classList.add("hidden");
+  }
+}
+
+function openInbox() {
+  const modal = $("#inbox-modal");
+  if (!modal) return;
+  renderInbox();
+  modal.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+}
+
+function closeInbox() {
+  $("#inbox-modal")?.classList.add("hidden");
+  document.body.style.overflow = "";
+}
+
+function renderInbox() {
+  const body = $("#inbox-body");
+  if (!body) return;
+  if (_inboxMessages.length === 0) {
+    body.innerHTML = `<p class="inbox-empty">No messages yet.</p>`;
+    return;
+  }
+
+  body.innerHTML = _inboxMessages.map(msg => {
+    const isInbound = msg.direction === "inbound";
+    const isUnread  = !isInbound && !msg.is_read;
+    const date = new Date(msg.sent_at).toLocaleString("en-GB", {
+      day: "numeric", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    });
+    if (isInbound) {
+      return `<div class="inbox-msg inbox-msg-reply" data-id="${msg.id}">
+        <div class="inbox-msg-header">
+          <span class="inbox-msg-subject inbox-reply-label">↩ Your reply</span>
+          <span class="inbox-msg-date">${date}</span>
+        </div>
+        <p class="inbox-msg-body">${escapeHtml(msg.body).replace(/\n/g, "<br>")}</p>
+      </div>`;
+    }
+    return `<div class="inbox-msg${isUnread ? " inbox-msg-unread" : ""}" data-id="${msg.id}">
+      <div class="inbox-msg-header">
+        <span class="inbox-msg-subject">${escapeHtml(msg.subject)}</span>
+        <span class="inbox-msg-date">${date}</span>
+      </div>
+      <p class="inbox-msg-body">${escapeHtml(msg.body).replace(/\n/g, "<br>")}</p>
+      <div class="inbox-msg-footer">
+        <button class="reply-btn" data-msg-id="${msg.id}" data-subject="${escapeHtml(msg.subject)}">↩ Reply</button>
+      </div>
+    </div>`;
+  }).join("");
+
+  // Wire reply buttons
+  body.querySelectorAll(".reply-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const msgId  = parseInt(btn.dataset.msgId);
+      const origSubject = btn.dataset.subject || "";
+      const rawHtml = `<p style="text-align:left;margin-bottom:0.5rem;font-size:0.85rem;color:var(--muted)">Replying to: <strong>${escapeHtml(origSubject)}</strong></p><textarea id="reply-body-input" rows="4" style="width:100%;box-sizing:border-box;padding:0.5rem;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:0.9rem;resize:vertical" placeholder="Write your reply…"></textarea>`;
+      const confirmed = await showDialog({
+        icon: "↩",
+        title: "Reply",
+        message: rawHtml,
+        rawHtml: true,
+        buttons: [
+          { label: "Cancel", value: false },
+          { label: "Send Reply →", value: true, primary: true },
+        ],
+        layout: "row",
+      });
+      if (!confirmed) return;
+      const replyBody = ($("#reply-body-input")?.value || "").trim();
+      if (!replyBody) { await showAlert("Reply cannot be empty."); return; }
+      btn.disabled = true;
+      try {
+        await api(`/messages/${msgId}/reply`, "POST", { coder_id: state.coder.coder_id, body: replyBody });
+        showToast("Reply sent.");
+        const resp = await api(`/messages?coder_id=${state.coder.coder_id}`);
+        _inboxMessages = resp.messages || [];
+        _updateInboxBadge();
+        renderInbox();
+      } catch (e) {
+        await showAlert("Failed to send: " + e.message);
+        btn.disabled = false;
+      }
+    });
+  });
+
+  // Mark unread outbound messages as read
+  const unreadIds = _inboxMessages.filter(m => m.direction !== "inbound" && !m.is_read).map(m => m.id);
+  unreadIds.forEach(id => {
+    api(`/messages/${id}/read?coder_id=${state.coder.coder_id}`, "POST").catch(() => {});
+    const msg = _inboxMessages.find(m => m.id === id);
+    if (msg) msg.is_read = true;
+  });
+  if (unreadIds.length > 0) _updateInboxBadge();
+}
+
+/* ============================================================
+   My Judgements History
+   ============================================================ */
+
+let _histJudgements = [];
+
+function initHistory() {
+  $("#history-btn")?.addEventListener("click", openHistory);
+  $("#history-close-btn")?.addEventListener("click", closeHistory);
+  $("#history-modal")?.addEventListener("click", e => {
+    if (e.target === $("#history-modal")) closeHistory();
+  });
+}
+
+async function openHistory() {
+  const modal = $("#history-modal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+  const body = $("#history-body");
+  body.innerHTML = `<p class="faq-loading">Loading…</p>`;
+  try {
+    const resp = await api(`/my-judgements?coder_id=${state.coder.coder_id}`);
+    _histJudgements = resp.judgements || [];
+    renderHistory();
+  } catch (e) {
+    body.innerHTML = `<p class="faq-error">Could not load history (${escapeHtml(e.message)}).</p>`;
+  }
+}
+
+function closeHistory() {
+  $("#history-modal")?.classList.add("hidden");
+  document.body.style.overflow = "";
+}
+
+function _histCheckChip(value, label) {
+  if (!value) return `<span class="hist-check unsure" title="${label}">?</span>`;
+  return value === "correct"
+    ? `<span class="hist-check correct" title="${label}">✓</span>`
+    : `<span class="hist-check incorrect" title="${label}">✗</span>`;
+}
+
+function renderHistory() {
+  const body = $("#history-body");
+  if (!body) return;
+  if (_histJudgements.length === 0) {
+    body.innerHTML = `<p class="hist-empty">No completed judgements yet.</p>`;
+    return;
+  }
+  body.innerHTML = _histJudgements.map(j => {
+    const title = escapeHtml(j.title_r || j.doi_r || "Unknown record");
+    const year  = j.year_r ? ` (${escapeHtml(j.year_r)})` : "";
+    const date  = j.validated_at ? _fmtRelTime(new Date(j.validated_at)) : "";
+    const pts   = j.points != null ? `+${j.points} pts` : "";
+
+    const chips = [
+      _histCheckChip(j.type_check, "Study type"),
+      _histCheckChip(j.original_check, "Original study"),
+      _histCheckChip(j.outcome_check, "Outcome"),
+    ].join("");
+
+    const corrections = [];
+    if (j.corrected_study_r) corrections.push(`Title correction: <em>${escapeHtml(j.corrected_study_r)}</em>`);
+    if (j.corrected_type)    corrections.push(`Type → <em>${escapeHtml(j.corrected_type)}</em>`);
+    if (j.corrected_outcome) corrections.push(`Outcome → <em>${escapeHtml(j.corrected_outcome)}</em>`);
+    if (j.corrected_study_o) corrections.push(`Original title → <em>${escapeHtml(j.corrected_study_o)}</em>`);
+    if (j.corrected_doi_o)   corrections.push(`Original DOI → <em>${escapeHtml(j.corrected_doi_o)}</em>`);
+    const corrHtml = corrections.length
+      ? `<div class="hist-corrections">${corrections.join(" · ")}</div>`
+      : "";
+
+    const flagHtml = j.flagged
+      ? `<div class="hist-flag-bar">
+           <span class="hist-flag-label">⚑ Flagged for review</span>
+           ${j.flag_reason ? `<span class="hist-flag-reason">${escapeHtml(j.flag_reason)}</span>` : ""}
+         </div>`
+      : "";
+
+    const msgHtml = j.msg_body
+      ? `<div class="hist-msg ${j.msg_is_read === false ? "hist-msg-unread" : ""}">
+           <span class="hist-msg-label">Message from team</span>
+           <span class="hist-msg-body">${escapeHtml(j.msg_body)}</span>
+         </div>`
+      : "";
+
+    return `
+      <div class="hist-item ${j.flagged ? "hist-item-flagged" : ""}">
+        <div class="hist-item-top">
+          <div class="hist-item-title">${title}${year}</div>
+          <div class="hist-item-meta">
+            ${pts ? `<span class="hist-item-pts">${pts}</span>` : ""}
+            ${date ? `<span class="hist-item-date">${date}</span>` : ""}
+          </div>
+        </div>
+        <div class="hist-chips">${chips}</div>
+        ${corrHtml}
+        ${flagHtml}
+        ${msgHtml}
+      </div>
+    `;
+  }).join("");
+}
+
+/* ============================================================
+   Maintenance banner system
+   - Handles three layers of messages (priority high→low):
+       1. Admin broadcast  – set from admin panel, polled every 60s
+       2. Time-based active  – 00:00–01:00 CET, non-dismissible
+       3. Time-based warning – 23:40–23:59 CET, dismissible
+       4. Login reminder – shown for 30s after login, dismissible
+   ============================================================ */
+
+const _MAINT_WARN_MSG   = "Scheduled maintenance starts in less than 20 minutes (at 00:00 CET). Please save your work and plan to return after 01:00 CET.";
+const _MAINT_ACTIVE_MSG = "Nightly maintenance is now underway. Please save your work and return after 01:00 CET.";
+const _MAINT_LOGIN_MSG  = "A reminder: nightly maintenance runs 00:00–01:00 CET. The app will be briefly unavailable during this window.";
+
+const _bann = {
+  phase:          "normal",   // "normal" | "warning" | "active"
+  adminMsg:       null,       // string from /api/banner poll, or null
+  _loginNotif:    false,      // true for 30s after enterGame
+  _dismissed:     new Set(),  // "warning" | "loginNotif" | "admin"
+  _loginTimer:    null,
+  _watchInterval: null,
+  _pollInterval:  null,
+};
+
+function _getCETHourMin() {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Berlin",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(new Date());
+  return {
+    h: parseInt(parts.find(p => p.type === "hour").value,   10) % 24,  // guard against "24" at midnight
+    m: parseInt(parts.find(p => p.type === "minute").value, 10),
+  };
+}
+
+function _getTimePhase() {
+  const {h, m} = _getCETHourMin();
+  if (h === 0)               return "active";   // 00:00–00:59 CET
+  if (h === 23 && m >= 40)   return "warning";  // 23:40–23:59 CET
+  return "normal";
+}
+
+function _showMaintBanner(text, type, dismissible) {
+  const el      = $("#maint-banner");
+  const icons   = { info: "🔔", warning: "⚠️", active: "🛠️", admin: "⚠️" };
+  $("#maint-banner-icon").textContent   = icons[type] || "⚠️";
+  $("#maint-banner-text").textContent   = text;
+  $("#maint-banner-close").style.display = dismissible ? "" : "none";
+  el.className = `maint-banner maint-banner-${type}`;
+  document.body.classList.add("has-maint-banner");
+}
+
+function _hideMaintBanner() {
+  $("#maint-banner").className = "maint-banner hidden";
+  document.body.classList.remove("has-maint-banner");
+}
+
+function _updateMaintBanner() {
+  const {phase, adminMsg, _loginNotif, _dismissed} = _bann;
+
+  if (adminMsg && !_dismissed.has("admin")) {
+    _showMaintBanner(adminMsg, "admin", true);
+    return;
+  }
+  if (phase === "active") {
+    _showMaintBanner(_MAINT_ACTIVE_MSG, "active", false);
+    return;
+  }
+  if (phase === "warning" && !_dismissed.has("warning")) {
+    _showMaintBanner(_MAINT_WARN_MSG, "warning", true);
+    return;
+  }
+  if (_loginNotif && !_dismissed.has("loginNotif")) {
+    _showMaintBanner(_MAINT_LOGIN_MSG, "info", true);
+    return;
+  }
+  _hideMaintBanner();
+}
+
+async function _pollAdminBanner() {
+  try {
+    const data = await (await fetch("/api/banner")).json();
+    const prev = _bann.adminMsg;
+    _bann.adminMsg = (data.active && data.message) ? data.message : null;
+    if (_bann.adminMsg !== prev) _bann._dismissed.delete("admin");
+    _updateMaintBanner();
+  } catch (_) {}  // silent — network may be down during maintenance
+}
+
+function startMaintenanceSystem() {
+  // 30-second login reminder
+  _bann._loginNotif = true;
+  _bann._loginTimer = setTimeout(() => {
+    _bann._loginNotif = false;
+    _updateMaintBanner();
+  }, 30_000);
+
+  // Initial state
+  _bann.phase = _getTimePhase();
+  _updateMaintBanner();
+
+  // Check time every 30 seconds
+  _bann._watchInterval = setInterval(() => {
+    const newPhase = _getTimePhase();
+    if (newPhase !== _bann.phase) {
+      if (newPhase === "active") _bann._dismissed.delete("warning");
+      if (newPhase === "normal") {
+        _bann._dismissed.delete("warning");
+        _bann._dismissed.delete("loginNotif");
+      }
+      _bann.phase = newPhase;
+    }
+    _updateMaintBanner();
+  }, 30_000);
+
+  // Poll admin banner every 60 seconds
+  _pollAdminBanner();
+  _bann._pollInterval = setInterval(_pollAdminBanner, 60_000);
+}
+
+$("#maint-banner-close").onclick = () => {
+  const {phase, adminMsg, _dismissed, _loginNotif} = _bann;
+  if (adminMsg && !_dismissed.has("admin")) {
+    _dismissed.add("admin");
+  } else if (phase === "warning" && !_dismissed.has("warning")) {
+    _dismissed.add("warning");
+  } else if (_loginNotif) {
+    _bann._loginNotif = false;
+    clearTimeout(_bann._loginTimer);
+  }
+  _updateMaintBanner();
+};
 
 
 $("#mode-toggle").onclick = async () => {
@@ -615,6 +1085,37 @@ async function refreshLeaderboard() {
   });
 }
 
+/* ---------- Draft save/restore (Option B — persists text fields across reloads) ---------- */
+const _DRAFT_KEY = (pair_id) => `flora.draft.${pair_id}`;
+let _draftInterval = null;
+
+function _startDraftSave(pair_id) {
+  clearInterval(_draftInterval);
+  _draftInterval = setInterval(() => {
+    if (state.currentPair?.pair_id === pair_id) {
+      localStorage.setItem(_DRAFT_KEY(pair_id), JSON.stringify(state.judgement));
+    }
+  }, 10_000);
+}
+
+function _clearDraft(pair_id) {
+  clearInterval(_draftInterval);
+  _draftInterval = null;
+  if (pair_id) localStorage.removeItem(_DRAFT_KEY(pair_id));
+}
+
+function _restoreDraftInputs(card, draft) {
+  if (!draft) return;
+  // Pre-fill text corrections — user still needs to re-click gate buttons
+  const comment = card.querySelector(".comment");
+  if (comment && draft.comment) comment.value = draft.comment;
+
+  const doiInput   = card.querySelector("#corrected-doi-input");
+  const studyInput = card.querySelector("#corrected-study-input");
+  if (doiInput   && draft.corrected_doi_o)   doiInput.value   = draft.corrected_doi_o;
+  if (studyInput && draft.corrected_study_o) studyInput.value = draft.corrected_study_o;
+}
+
 async function loadNextPair() {
   const resp = await api(`/next-pair?coder_id=${state.coder.coder_id}&mode=${state.mode}`);
   if (!resp.pair) {
@@ -625,12 +1126,30 @@ async function loadNextPair() {
   $("#done-screen").classList.add("hidden");
   $("#pair-card").classList.remove("hidden");
   state.currentPair = resp.pair;
-  state.judgement = blankJudgement();
+
+  const pair_id  = resp.pair.pair_id;
+  const draftRaw = resp.resumed ? localStorage.getItem(_DRAFT_KEY(pair_id)) : null;
+  const draft    = draftRaw ? (() => { try { return JSON.parse(draftRaw); } catch { return null; } })() : null;
+  state.judgement = draft || blankJudgement();
+
+  const card = $("#pair-card");
   if (state.mode === "hard") {
-    renderHardPair($("#pair-card"), resp.pair);
+    renderHardPair(card, resp.pair);
   } else {
-    renderPairInto($("#pair-card"), resp.pair, { onboarding: false, judgeCount: resp.judge_count });
+    renderPairInto(card, resp.pair, { onboarding: false, judgeCount: resp.judge_count });
   }
+
+  if (resp.resumed) {
+    _restoreDraftInputs(card, draft);
+    showDialog({
+      icon: "📖",
+      title: "Resuming your previous study",
+      message: "You left this one mid-way. Re-select your answers above — any text you had entered has been restored. Hit Skip if you'd prefer a fresh study instead.",
+      buttons: [{ label: "Continue →", value: true, primary: true }],
+    });
+  }
+
+  _startDraftSave(pair_id);
   applySplitLayout();
   startPairTimer();
 }
@@ -668,7 +1187,7 @@ function showConfirm(message) {
   });
 }
 
-function showDialog({ icon, title, message, buttons, layout = "column" }) {
+function showDialog({ icon, title, message, buttons, layout = "column", rawHtml = false }) {
   return new Promise(resolve => {
     const iconEl  = $("#dialog-icon");
     const titleEl = $("#dialog-title");
@@ -679,7 +1198,8 @@ function showDialog({ icon, title, message, buttons, layout = "column" }) {
     iconEl.style.display = icon ? "" : "none";
     titleEl.textContent = title || "";
     titleEl.style.display = title ? "" : "none";
-    msgEl.innerHTML     = message || "";
+    if (rawHtml) { msgEl.innerHTML = message || ""; }
+    else         { msgEl.textContent = message || ""; }
 
     btnsEl.style.flexDirection = layout === "row" ? "row" : "column";
 
@@ -905,9 +1425,8 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
           <div class="outcome-info">
             <span class="outcome-label ${escapeHtml(outcomeLabel)}">${escapeHtml(outcomeLabel)}</span>
             <div class="outcome-quote-wrap">
-              ${hasQuote
-                ? `<div class="outcome-quote" id="outcome-quote-text">"${escapeHtml(p.outcome_phrase)}"</div>`
-                : '<p style="margin:0.4rem 0"><em>No outcome quote was extracted.</em></p>'}
+              <div class="outcome-quote${hasQuote ? "" : " hidden"}" id="outcome-quote-text">${hasQuote ? `"${escapeHtml(p.outcome_phrase)}"` : ""}</div>
+              ${hasQuote ? "" : '<p id="outcome-quote-empty" style="margin:0.4rem 0"><em>No outcome quote was extracted.</em></p>'}
               <textarea class="outcome-quote-edit hidden" id="outcome-quote-edit" rows="3"></textarea>
               <button class="link-btn small" id="edit-quote-btn">edit / extend quote</button>
             </div>
@@ -1097,9 +1616,16 @@ function wireEditButtons(container, p) {
       } else {
         const v = quoteEdit.value.trim();
         state.judgement.edited_outcome_quote = v && v !== (p.outcome_phrase || "").trim() ? v : null;
+        const emptyMsg = container.querySelector("#outcome-quote-empty");
         if (quoteText) {
           quoteText.textContent = v ? `"${v}"` : "";
-          quoteText.classList.remove("hidden");
+          if (v) {
+            quoteText.classList.remove("hidden");
+            if (emptyMsg) emptyMsg.classList.add("hidden");
+          } else {
+            quoteText.classList.add("hidden");
+            if (emptyMsg) emptyMsg.classList.remove("hidden");
+          }
         }
         quoteEdit.classList.add("hidden");
 
@@ -1125,7 +1651,7 @@ function wireEditButtons(container, p) {
           }
           editQuoteBtn.textContent = "edit / extend quote";
         }
-        updateSubmitState(container.closest(".pair-body"));
+        updateSubmitState(container.querySelector(".pair-body"));
       }
     };
   }
@@ -1213,7 +1739,8 @@ function onChoice(btn) {
   }
 
   updateSubmitState(pairBody);
-  setTimeout(() => answerGate(gate, getAnswerLabel(btn), getAnswerClass(btn)), 300);
+  clearTimeout(_chipTimer);
+  _chipTimer = setTimeout(() => answerGate(gate, getAnswerLabel(btn), getAnswerClass(btn)), 300);
 }
 
 function answerGate(gate, label, cls) {
@@ -1273,7 +1800,7 @@ function updateSubmitState(pairBody) {
 async function onSkip() {
   const ok = await showDialog({
     title: "Skip this pair?",
-    message: "You won't get points and it'll be re-served to others.",
+    message: "You won't get points and it'll be re-served to others. If you resumed this study and would prefer a fresh one, skipping is the right choice.",
     buttons: [
       { label: "Skip →", value: true, primary: true },
       { label: "Cancel", value: false },
@@ -1281,10 +1808,12 @@ async function onSkip() {
   });
   if (!ok) return;
   clearPairTimer();
+  _clearDraft(state.currentPair?.pair_id);
   try {
     await api("/skip", "POST", {
       coder_id:  state.coder.coder_id,
       record_id: String(state.currentPair.record_id),
+      pair_id:   state.currentPair.pair_id || null,
     });
     showToast(0, "skipped");
     await refreshAll();
@@ -1312,6 +1841,7 @@ async function submitJudgement() {
     const resp = await api("/judge", "POST", {
       coder_id:  state.coder.coder_id,
       record_id: String(p.record_id),
+      pair_id:   p.pair_id || null,
       type_check:     isNotValidation ? "incorrect" : typeCheck,
       original_check: isNotValidation ? "incorrect" : (j.original === "correct" ? "correct" : "incorrect"),
       outcome_check:  isNotValidation ? "incorrect" : (j.outcome  === "correct" ? "correct" : "incorrect"),
@@ -1324,6 +1854,7 @@ async function submitJudgement() {
       corrected_study_r:       j.corrected_study_r || null,
       validator_notes:         j.comment || null,
     });
+    _clearDraft(p.pair_id);  // only clear after confirmed success
     showToast(resp.points_earned, "points");
     if (typeof confetti !== "undefined") {
       confetti({
@@ -1688,7 +2219,7 @@ async function guardedSubmit() {
     if (result === "reread")  return;
     if (result === "logout") { logout(); return; }
   }
-  submitJudgement();
+  await submitJudgement();
 }
 
 /* ---------- FAQ Modal ---------- */
@@ -1735,6 +2266,7 @@ async function openHelp() {
   const result = await showDialog({
     title: "Contact support",
     message: `For questions or issues, email us at:<br><strong>${HELP_EMAIL}</strong>`,
+    rawHtml: true,
     buttons: [
       { label: "Send email →", value: "mail", primary: true },
       { label: "OK", value: "ok" },
@@ -1754,6 +2286,7 @@ let _adminToken   = null;
 let _adminHandle  = null;
 let _adminTrusted = false;
 let _adminFilter    = "all";
+let _adminSearch    = "";
 let _adminPage      = 1;
 let _adminEntryIds   = [];   // ordered record_ids on current page
 let _adminCurrentIdx = -1;  // index of currently open record
@@ -1772,7 +2305,7 @@ async function adminApi(path, method = "GET", body = null) {
   const res = await fetch("/api/admin" + path, opts);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || res.statusText);
+    throw new Error(err.detail || res.statusText || `Server error (HTTP ${res.status})`);
   }
   return res.json();
 }
@@ -1808,6 +2341,7 @@ function enterAdminScreen() {
   $("#admin-screen").classList.remove("hidden");
   const badge = $("#admin-handle-badge");
   if (badge) badge.textContent = _adminHandle ? `Signed in as ${_adminHandle}` : "";
+  startMaintenanceSystem();
   fetchAdminEntries();
 }
 
@@ -1826,8 +2360,9 @@ async function fetchAdminEntries(resetState = true) {
   }
 
   try {
+    const searchParam = _adminSearch ? `&search=${encodeURIComponent(_adminSearch)}` : "";
     const data = await adminApi(
-      `/entries?filter=${_adminFilter}&page=${_adminPage}&per_page=${ADMIN_PER_PAGE}`
+      `/entries?filter=${_adminFilter}&page=${_adminPage}&per_page=${ADMIN_PER_PAGE}${searchParam}`
     );
     renderAdminCounts(data.counts);
     renderAdminTable(data.entries, data.total);
@@ -1839,7 +2374,11 @@ async function fetchAdminEntries(resetState = true) {
     }
   } catch (e) {
     if (resetState) {
-      body.innerHTML = `<tr><td colspan="8" class="admin-loading">Error: ${e.message}</td></tr>`;
+      body.innerHTML = `<tr><td colspan="8" class="admin-loading">
+        Error: ${escapeHtml(e.message)}
+        <button id="admin-retry-btn" style="margin-left:0.75rem;font-size:0.78rem;padding:0.3rem 0.8rem;border-radius:999px;border:1px solid var(--ink);background:transparent;cursor:pointer;">↺ Retry</button>
+      </td></tr>`;
+      document.getElementById("admin-retry-btn")?.addEventListener("click", () => fetchAdminEntries());
     }
   }
 }
@@ -1851,7 +2390,8 @@ function renderAdminCounts(counts) {
   $("#fc-llm-errors").textContent       = counts.llm_errors;
   $("#fc-validated").textContent        = counts.validated;
   $("#fc-rejected").textContent         = counts.rejected ?? 0;
-  $("#fc-admin-checked").textContent    = counts.admin_checked;
+  const _fcAdminChecked = $("#fc-admin-checked");
+  if (_fcAdminChecked) _fcAdminChecked.textContent = counts.admin_checked;
 }
 
 const STATUS_LABELS = {
@@ -1860,6 +2400,7 @@ const STATUS_LABELS = {
   consensus_reached:    { text: "Pending approval", cls: "status-consensus"   },
   validated:            { text: "Validated",         cls: "status-validated"   },
   need_review:          { text: "Needs review",      cls: "status-review"      },
+  rejected:             { text: "Rejected",          cls: "status-rejected"    },
 };
 
 function renderAdminTable(entries, total) {
@@ -1995,9 +2536,17 @@ function renderAdminDetail(data) {
          <strong>Abstract conflict only</strong> — all checks and corrections agree. Only the edited abstract differs between the two validators.
        </div>`
     : "";
+  const overrideBanner = rec.admin_override
+    ? `<div class="admin-override-banner">
+         <strong>Admin override</strong> — this record was previously rejected by validators but was validated by ${escapeHtml(rec.admin_name || "an admin")}. Validator cards below reflect the original (rejected) submissions.
+       </div>`
+    : "";
   const v1  = rec.validator_1;
   const v2  = rec.validator_2;
   const llm = rec.llm_validator;
+  const slots = data.queue_slots || [];
+  const q1 = slots.find(s => s.validator_slot === "human_1") || {};
+  const q2 = slots.find(s => s.validator_slot === "human_2") || {};
 
   const chk = (val) => val === "correct"
     ? `<span class="chk-ok">✓ correct</span>`
@@ -2020,26 +2569,103 @@ function renderAdminDetail(data) {
     ? `<a href="https://doi.org/${escapeHtml(doi)}" target="_blank" rel="noopener">${escapeHtml(doi)}</a>`
     : "—";
 
-  const humanCard = (label, v) => {
+  const humanCard = (label, v, qs = {}) => {
     if (!v) return `<div class="admin-val-card admin-val-empty"><div class="admin-val-label">${label}</div><p>Not yet submitted.</p></div>`;
     const tier = v.validator_tier ?? 0;
     const isSeniorReject = !!v.senior_reject;
+    const queueId  = qs.queue_id  || null;
+    const isFlagged  = !!qs.flagged;
+    const flagReason = qs.flag_reason || null;
+    const isNotVal = v.corrected_type === "not_validation";
+    const who = v.validator_name ? escapeHtml(v.validator_name) : "validator";
+
+    // Short inline row for enum-like fields (Type, Outcome)
+    const shortRow = (fieldLabel, extracted, checkVal, corrDisplay) => {
+      const agreed = checkVal === "correct";
+      const extr = `<span class="chk-extr-val">${escapeHtml(String(extracted || "—"))}</span>`;
+      if (agreed) return `<div class="chk-row"><span class="chk-label">${fieldLabel}</span>${extr}<span class="chk-ok">✓ ${who} agreed</span></div>`;
+      const corrPart = corrDisplay
+        ? `<span class="chk-correction">${corrDisplay}</span>`
+        : (isNotVal ? `<span class="chk-na-note">n/a</span>` : "");
+      const failLabel = corrDisplay ? `<span class="chk-fail">✗ ${who} suggests:</span>` : `<span class="chk-fail">✗</span>`;
+      return `<div class="chk-row"><span class="chk-label">${fieldLabel}</span>${extr}${failLabel}${corrPart}</div>`;
+    };
+
+    // Long expandable block row for free-text fields (Original, etc.)
+    const longRow = (fieldLabel, extracted, checkVal, corrVal) => {
+      const agreed = checkVal === "correct";
+      const verdict = agreed
+        ? `<span class="chk-ok">✓ ${who} agreed</span>`
+        : corrVal
+          ? `<span class="chk-fail">✗ ${who} corrected:</span>`
+          : `<span class="chk-fail">✗ ${who} flagged</span>`;
+      const origBlock = extracted
+        ? `<div class="chk-long-group"><span class="chk-long-tag">Extracted</span><span class="chk-long-val">${escapeHtml(extracted)}</span></div>` : "";
+      const corrBlock = !agreed && corrVal
+        ? `<div class="chk-long-group chk-long-group-diff"><span class="chk-long-tag">→ Suggests</span><span class="chk-long-val">${escapeHtml(corrVal)}</span></div>`
+        : (!agreed && isNotVal ? `<span class="chk-na-note" style="margin-left:0.5rem">n/a (not a replication)</span>` : "");
+      return `<div class="chk-row-long"><div class="chk-row-long-head"><span class="chk-label">${fieldLabel}</span>${verdict}</div>${origBlock}${corrBlock}</div>`;
+    };
+
+    // Edit-only block row for freeform corrections (Title fix, Quote, Abstract)
+    const editRow = (fieldLabel, origVal, corrVal, collapsible = false) => {
+      if (!corrVal) return "";
+      const origBlock = origVal
+        ? `<div class="chk-long-group"><span class="chk-long-tag">Extracted</span><span class="chk-long-val">${escapeHtml(origVal)}</span></div>` : "";
+      const corrBlock = `<div class="chk-long-group chk-long-group-diff"><span class="chk-long-tag">→ Suggests</span><span class="chk-long-val">${escapeHtml(corrVal)}</span></div>`;
+      if (collapsible) {
+        const preview = escapeHtml(String(corrVal).length > 55 ? String(corrVal).substring(0, 55) + "…" : String(corrVal));
+        return `<div class="chk-row-long">
+          <details class="chk-collapsible">
+            <summary class="chk-collapsible-summary">
+              <span class="chk-label">${fieldLabel}</span>
+              <span class="chk-edit-badge">✎ ${who} edited</span>
+              <span class="chk-collapse-preview">${preview}</span>
+            </summary>
+            ${origBlock}${corrBlock}
+          </details>
+        </div>`;
+      }
+      return `<div class="chk-row-long">
+        <div class="chk-row-long-head"><span class="chk-label">${fieldLabel}</span><span class="chk-edit-badge">✎ ${who} edited</span></div>
+        ${origBlock}${corrBlock}
+      </div>`;
+    };
+
+    const typeCorr = v.corrected_type ? escapeHtml(v.corrected_type === "not_validation" ? "not a replication" : v.corrected_type) : null;
+    const doiCorrRow = v.corrected_doi_o ? `<div class="chk-row-long">
+        <div class="chk-row-long-head"><span class="chk-label">Orig. DOI</span><span class="chk-fail">✗ ${who} corrected:</span></div>
+        <div class="chk-long-group"><span class="chk-long-tag">Extracted</span><span class="chk-long-val">${escapeHtml(rec.doi_o || "—")}</span></div>
+        <div class="chk-long-group chk-long-group-diff"><span class="chk-long-tag">→ Suggests</span><span class="chk-long-val">${doiLink(v.corrected_doi_o)}</span></div>
+      </div>` : "";
+    const repDoiCorrRow = v.corrected_doi_r ? `<div class="chk-row-long">
+        <div class="chk-row-long-head"><span class="chk-label">Rep. DOI fix</span><span class="chk-edit-badge">✎ ${who} edited</span></div>
+        <div class="chk-long-group"><span class="chk-long-tag">Extracted</span><span class="chk-long-val">${escapeHtml(rec.doi_r || "—")}</span></div>
+        <div class="chk-long-group chk-long-group-diff"><span class="chk-long-tag">→ Suggests</span><span class="chk-long-val">${doiLink(v.corrected_doi_r)}</span></div>
+      </div>` : "";
+
     return `<div class="admin-val-card${isSeniorReject ? " admin-val-senior-reject" : ""}">
       <div class="admin-val-label">
-        ${label}${v.validator_name ? ` · <em>${escapeHtml(v.validator_name)}</em>` : ""}
-        ${tierBadge(tier)}
-        ${isSeniorReject ? `<span class="tier-badge tier-fast-reject">Fast Reject</span>` : ""}
+        <span class="admin-val-label-text">
+          ${label}${v.validator_name ? ` · <em>${escapeHtml(v.validator_name)}</em>` : ""}
+          ${tierBadge(tier)}
+          ${isSeniorReject ? `<span class="tier-badge tier-fast-reject">Fast Reject</span>` : ""}
+        </span>
+        ${queueId ? `<button class="val-flag-btn${isFlagged ? " flagged" : ""}" data-queue-id="${queueId}" title="${isFlagged ? "Unflag judgement" : "Flag judgement as problematic"}">🚩</button>` : ""}
       </div>
+      ${isFlagged && flagReason ? `<div class="flag-reason-bar">🚩 Flagged: ${escapeHtml(flagReason)}</div>` : ""}
       <div class="admin-val-meta">${fmtDate(v.validated_at)}${v.points != null ? ` · +${v.points} pts` : ""}</div>
       <div class="admin-val-checks">
-        <div class="chk-row"><span class="chk-label">Type</span>${chk(v.type_check)}${v.corrected_type ? `<span class="chk-correction">→ ${escapeHtml(v.corrected_type)}</span>` : ""}</div>
-        <div class="chk-row"><span class="chk-label">Original</span>${chk(v.original_check)}${v.corrected_study_o ? `<span class="chk-correction">→ ${escapeHtml(v.corrected_study_o)}</span>` : ""}${v.corrected_doi_o ? `<span class="chk-correction">→ ${doiLink(v.corrected_doi_o)}</span>` : ""}</div>
-        <div class="chk-row"><span class="chk-label">Outcome</span>${chk(v.outcome_check)}${v.corrected_outcome ? `<span class="chk-correction">→ ${escapeHtml(v.corrected_outcome)}</span>` : ""}</div>
-        ${v.corrected_study_r ? `<div class="chk-row"><span class="chk-label">Title fix</span><span class="chk-correction">→ ${escapeHtml(v.corrected_study_r)}</span></div>` : ""}
+        ${shortRow("Type",    rec.type,    v.type_check,    typeCorr)}
+        ${longRow("Orig. Title", rec.study_o, v.original_check, v.corrected_study_o || null)}
+        ${doiCorrRow}
+        ${shortRow("Outcome", rec.outcome, v.outcome_check, v.corrected_outcome ? escapeHtml(v.corrected_outcome) : null)}
+        ${editRow("Title fix",  rec.study_r,      v.corrected_study_r)}
+        ${repDoiCorrRow}
+        ${editRow("Quote",      rec.outcome_quote, v.corrected_outcome_quote, true)}
+        ${editRow("Abstract",   rec.abstract_r,    v.corrected_abstract,      true)}
+        ${v.validator_notes ? `<div class="chk-row-long"><div class="chk-row-long-head"><span class="chk-label">Notes</span></div><p class="chk-notes-text">${escapeHtml(v.validator_notes)}</p></div>` : ""}
       </div>
-      ${v.corrected_outcome_quote ? `<div class="admin-val-quote">"${escapeHtml(v.corrected_outcome_quote)}"</div>` : ""}
-      ${v.corrected_abstract ? `<div class="admin-val-note">Edited abstract</div>` : ""}
-      ${v.validator_notes ? `<div class="admin-val-note">Notes: ${escapeHtml(v.validator_notes)}</div>` : ""}
     </div>`;
   };
 
@@ -2059,7 +2685,7 @@ function renderAdminDetail(data) {
       <div class="admin-val-label">LLM ${ctxLabel}</div>
       <div class="admin-val-meta">${escapeHtml(v.model || "")} · ${fmtDate(v.validated_at)}${v.vote_score != null ? ` · score ${v.vote_score}` : ""}</div>
       <div class="admin-val-checks">
-        <div class="chk-row"><span class="chk-label">Type</span>${chk(v.type_check)}${v.corrected_type ? `<span class="chk-correction">→ ${escapeHtml(v.corrected_type)}</span>` : ""}</div>
+        <div class="chk-row"><span class="chk-label">Type</span>${chk(v.type_check)}${v.corrected_type ? `<span class="chk-correction">→ ${escapeHtml(v.corrected_type === "not_validation" ? "not a replication" : v.corrected_type)}</span>` : ""}</div>
         <div class="chk-row"><span class="chk-label">Original</span>${chk(v.original_check)}${v.corrected_doi_o ? `<span class="chk-correction">→ ${doiLink(v.corrected_doi_o)}</span>` : ""}</div>
         <div class="chk-row"><span class="chk-label">Outcome</span>${chk(v.outcome_check)}${v.corrected_outcome ? `<span class="chk-correction">→ ${escapeHtml(v.corrected_outcome)}</span>` : ""}</div>
       </div>
@@ -2104,6 +2730,7 @@ function renderAdminDetail(data) {
       <div class="fp-fields">
         <div class="fp-row"><span class="fp-label">Replication</span><span class="fp-value">${escapeHtml(finalStudyR || "—")}</span></div>
         <div class="fp-row"><span class="fp-label">DOI</span><span class="fp-value">${doiLink(finalDoiR)} · ${fmtYear(rec.year_r)}</span></div>
+        ${finalUrlR ? `<div class="fp-row"><span class="fp-label">URL</span><span class="fp-value"><a href="${escapeHtml(finalUrlR)}" target="_blank" rel="noopener" class="doi-link">${escapeHtml(finalUrlR.length > 50 ? finalUrlR.substring(0, 50) + "…" : finalUrlR)}</a></span></div>` : ""}
         <div class="fp-row fp-divider"></div>
         <div class="fp-row"><span class="fp-label">Original</span><span class="fp-value">${escapeHtml(finalStudyO || "—")}</span></div>
         <div class="fp-row"><span class="fp-label">DOI</span><span class="fp-value">${doiLink(finalDoiO)}</span></div>
@@ -2128,75 +2755,6 @@ function renderAdminDetail(data) {
   const finalAbstractR = rec.final_abstract_r    || rec.abstract_r;
   const finalUrlR      = rec.final_url_r         || rec.url_r;
 
-  // Validator comparison table shown above the edit form
-  const _labelMap = { not_validation: "not a replication" };
-  const _clip = (s, n = 40) => { if (!s) return '<span class="fh-empty">(empty)</span>'; s = _labelMap[String(s)] || String(s); return escapeHtml(s.length > n ? s.substring(0, n) + "…" : s); };
-  const _vCell = (agreed, correction) =>
-    agreed ? `<span class="fh-agree">✓ agreed</span>`
-           : `<span class="fh-diff">✗ → ${_clip(correction)}</span>`;
-  const _vPlain = (val) => val != null && val !== "" ? `<span class="vct-plain">${_clip(String(val), 60)}</span>` : `<span class="fh-empty">—</span>`;
-  const v1Name = v1?.validator_name || "V1";
-  const v2Name = v2?.validator_name || "V2";
-  const coreRows = [
-    { label: "Rep. Title", extracted: rec.study_r,  v1Agreed: !v1?.corrected_study_r,          v1Cor: v1?.corrected_study_r,  v2Agreed: !v2?.corrected_study_r,          v2Cor: v2?.corrected_study_r  },
-    { label: "Type",       extracted: rec.type,     v1Agreed: v1?.type_check === "correct",     v1Cor: v1?.corrected_type,     v2Agreed: v2?.type_check === "correct",     v2Cor: v2?.corrected_type     },
-    { label: "Orig. Title",extracted: rec.study_o,  v1Agreed: v1?.original_check === "correct", v1Cor: v1?.corrected_study_o,  v2Agreed: v2?.original_check === "correct", v2Cor: v2?.corrected_study_o  },
-    { label: "Orig. DOI",  extracted: rec.doi_o,    v1Agreed: v1?.original_check === "correct", v1Cor: v1?.corrected_doi_o,    v2Agreed: v2?.original_check === "correct", v2Cor: v2?.corrected_doi_o    },
-    { label: "Outcome",    extracted: rec.outcome,  v1Agreed: v1?.outcome_check === "correct",  v1Cor: v1?.corrected_outcome,  v2Agreed: v2?.outcome_check === "correct",  v2Cor: v2?.corrected_outcome  },
-  ];
-  const nCorrected = coreRows.filter(r =>
-    (v1 && !r.v1Agreed) || (v2 && !r.v2Agreed)
-  ).length;
-  const nValidators = (v1 ? 1 : 0) + (v2 ? 1 : 0);
-  const _tableHead = `<thead><tr>
-    <th>Field</th><th>Extracted</th>
-    ${v1 ? `<th>${escapeHtml(v1Name)}</th>` : ""}
-    ${v2 ? `<th>${escapeHtml(v2Name)}</th>` : ""}
-  </tr></thead>`;
-  const _coreBody = coreRows.map(r => `<tr>
-    <td class="vct-label">${r.label}</td>
-    <td class="vct-extracted">${_clip(r.extracted)}</td>
-    ${v1 ? `<td>${_vCell(r.v1Agreed, r.v1Cor)}</td>` : ""}
-    ${v2 ? `<td>${_vCell(r.v2Agreed, r.v2Cor)}</td>` : ""}
-  </tr>`).join("");
-  const _extraBody = `
-    <tr>
-      <td class="vct-label">Quote</td>
-      <td class="vct-extracted">${_clip(rec.outcome_quote, 60)}</td>
-      ${v1 ? `<td>${_vCell(v1?.outcome_check === "correct" || !v1?.corrected_outcome_quote, v1?.corrected_outcome_quote)}</td>` : ""}
-      ${v2 ? `<td>${_vCell(v2?.outcome_check === "correct" || !v2?.corrected_outcome_quote, v2?.corrected_outcome_quote)}</td>` : ""}
-    </tr>
-    <tr>
-      <td class="vct-label">Notes</td>
-      <td class="vct-extracted"><span class="fh-empty">—</span></td>
-      ${v1 ? `<td>${_vPlain(v1?.validator_notes)}</td>` : ""}
-      ${v2 ? `<td>${_vPlain(v2?.validator_notes)}</td>` : ""}
-    </tr>
-    <tr>
-      <td class="vct-label">Points</td>
-      <td class="vct-extracted"><span class="fh-empty">—</span></td>
-      ${v1 ? `<td>${_vPlain(v1?.points != null ? v1.points : null)}</td>` : ""}
-      ${v2 ? `<td>${_vPlain(v2?.points != null ? v2.points : null)}</td>` : ""}
-    </tr>`;
-  const validatorTable = (v1 || v2) ? `
-    <div class="vct-section">
-      <div class="vct-header">
-        <span class="vct-title">Validator comparison</span>
-        <span class="vct-badge">${nValidators} validator${nValidators !== 1 ? "s" : ""}</span>
-        <span class="vct-badge ${nCorrected > 0 ? "vct-badge-warn" : "vct-badge-ok"}">${nCorrected} correction${nCorrected !== 1 ? "s" : ""}</span>
-      </div>
-      <table class="validator-cmp-table">
-        ${_tableHead}
-        <tbody>${_coreBody}</tbody>
-      </table>
-      <details class="vct-extra">
-        <summary class="vct-extra-summary">Show more (quote · notes · points)</summary>
-        <table class="validator-cmp-table vct-extra-table">
-          ${_tableHead}
-          <tbody>${_extraBody}</tbody>
-        </table>
-      </details>
-    </div>` : "";
 
   const outcomeOpts = ["success","failure","mixed","uninformative","descriptive"]
     .map((o) => `<option value="${o}" ${finalOutcome === o ? "selected" : ""}>${o}</option>`).join("");
@@ -2213,16 +2771,15 @@ function renderAdminDetail(data) {
   $("#admin-detail-title").textContent = (rec.study_r || rec.doi_r || "Entry Review").substring(0, 80);
   $("#admin-detail-body").innerHTML = `
     ${abstractBanner}
+    ${overrideBanner}
     <div class="admin-detail-cols">
       <!-- Left: final preview + validator cards -->
       <div class="admin-detail-pair">
         ${finalPreview()}
 
-        ${validatorTable}
-
         <div class="admin-val-cards">
-          ${humanCard("Validator 1", v1)}
-          ${humanCard("Validator 2", v2)}
+          ${humanCard("Validator 1", v1, q1)}
+          ${humanCard("Validator 2", v2, q2)}
           ${llmCard(llm)}
         </div>
       </div>
@@ -2268,14 +2825,14 @@ function renderAdminDetail(data) {
         ` : ""}
 
         <div id="ar-normal-form" class="${hasNotValidation ? "hidden" : ""}"
-             data-orig-study-r="${escapeHtml(rec.study_r || "")}"
-             data-orig-doi-r="${escapeHtml(rec.doi_r || "")}"
-             data-orig-study-o="${escapeHtml(rec.study_o || "")}"
-             data-orig-doi-o="${escapeHtml(rec.doi_o || "")}"
-             data-orig-type="${escapeHtml(rec.type || "")}"
-             data-orig-outcome="${escapeHtml(rec.outcome || "")}"
-             data-orig-abstract-r="${escapeHtml(rec.abstract_r || "")}"
-             data-orig-url-r="${escapeHtml(rec.url_r || "")}">
+             data-orig-study-r="${escapeHtml(finalStudyR || "")}"
+             data-orig-doi-r="${escapeHtml(finalDoiR || "")}"
+             data-orig-study-o="${escapeHtml(finalStudyO || "")}"
+             data-orig-doi-o="${escapeHtml(finalDoiO || "")}"
+             data-orig-type="${escapeHtml(finalType || "")}"
+             data-orig-outcome="${escapeHtml(finalOutcome || "")}"
+             data-orig-abstract-r="${escapeHtml(finalAbstractR || "")}"
+             data-orig-url-r="${escapeHtml(finalUrlR || "")}">
           ${hasNotValidation
             ? `<p class="admin-resolve-hint">Fill in the correct values — this will override the "not a replication" call.</p>`
             : `<p class="admin-resolve-hint">Edit the final values directly and mark as resolved. Changes are auto-detected.</p>`}
@@ -2312,6 +2869,7 @@ function renderAdminDetail(data) {
 
           <div class="admin-resolve-actions">
             <button id="admin-resolve-btn" class="btn-primary" data-id="${rec.record_id}">Mark as Resolved →</button>
+            ${["consensus_reached","need_review"].includes(rec.validation_status) ? `<button id="admin-flag-review-btn" class="btn-outline" data-id="${rec.record_id}">⚑ Flag for Review</button>` : ""}
             <button id="admin-skip-btn" class="ghost-btn">Skip →</button>
             <button id="admin-detail-cancel" class="ghost-btn">Cancel</button>
           </div>
@@ -2385,8 +2943,76 @@ function renderAdminDetail(data) {
       await showAlert("Error: " + e.message);
     }
   });
-  $("#admin-detail-cancel").onclick = closeAdminDetail;
-  $("#admin-skip-btn").onclick = () => advanceToNextAdminEntry();
+  $("#admin-detail-cancel")?.addEventListener("click", closeAdminDetail);
+  $("#admin-skip-btn")?.addEventListener("click", () => advanceToNextAdminEntry());
+
+  document.querySelectorAll(".val-flag-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const qId = btn.dataset.queueId;
+      const isCurrentlyFlagged = btn.classList.contains("flagged");
+
+      // When unflagging, skip the reason dialog
+      let reason = "";
+      if (!isCurrentlyFlagged) {
+        const rawHtml = `<label style="display:block;text-align:left;margin-bottom:0.5rem;font-size:0.9rem;color:var(--ink-soft)">Reason <span style="color:var(--muted)">(optional — sent to validator)</span></label><textarea id="flag-reason-input" rows="3" style="width:100%;box-sizing:border-box;padding:0.5rem;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:0.9rem;resize:vertical" placeholder="e.g. Outcome check seems incorrect — please review the abstract again."></textarea>`;
+        const confirmed = await showDialog({
+          icon: "🚩",
+          title: "Flag this judgement",
+          message: rawHtml,
+          rawHtml: true,
+          buttons: [
+            { label: "Cancel", value: false },
+            { label: "Flag", value: true, primary: true },
+          ],
+          layout: "row",
+        });
+        if (!confirmed) return;
+        reason = ($("#flag-reason-input")?.value || "").trim();
+      }
+
+      btn.disabled = true;
+      try {
+        const resp = await adminApi(`/queue/${qId}/flag`, "POST", { reason });
+        btn.classList.toggle("flagged", resp.flagged);
+        btn.title = resp.flagged ? "Unflag judgement" : "Flag judgement as problematic";
+        // Bust cache so re-opening reflects new state
+        const cachedRecord = Object.values(_adminDetailCache).find(d =>
+          (d.queue_slots || []).some(s => s.queue_id === qId)
+        );
+        if (cachedRecord) {
+          const slot = cachedRecord.queue_slots.find(s => s.queue_id === qId);
+          if (slot) {
+            slot.flagged = resp.flagged;
+            slot.flag_reason = resp.flagged ? (reason || null) : null;
+          }
+        }
+      } catch (e) {
+        await showAlert("Error: " + e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  const _flagReviewBtn = $("#admin-flag-review-btn");
+  if (_flagReviewBtn) {
+    _flagReviewBtn.onclick = async () => {
+      const btn = $("#admin-flag-review-btn");
+      const recordId = btn.dataset.id;
+      const notes = $("#ar-notes")?.value.trim() || null;
+      btn.disabled = true;
+      btn.textContent = "Flagging…";
+      try {
+        await adminApi(`/entries/${recordId}/flag-review`, "POST", notes ? { admin_notes: notes } : {});
+        showToast("Record flagged for review.");
+        await advanceToNextAdminEntry();
+      } catch (e) {
+        showAlert(e.message || "Failed to flag record.");
+        btn.disabled = false;
+        btn.textContent = "⚑ Flag for Review";
+      }
+    };
+  }
 }
 
 async function submitQuickReject(recordId) {
@@ -2473,6 +3099,7 @@ async function submitAdminResolve(recordId) {
 }
 
 async function advanceToNextAdminEntry() {
+  if (_adminCurrentIdx < 0) { closeAdminDetail(); return; }
   const currentId = _adminEntryIds[_adminCurrentIdx];
   _adminEntryIds.splice(_adminCurrentIdx, 1);
   delete _adminDetailCache[currentId];
@@ -2498,25 +3125,29 @@ function closeAdminDetail() {
 
 /* ---------- Admin tabs ---------- */
 function switchAdminTab(tab) {
-  $("#admin-tab-entries").classList.toggle("hidden", tab !== "entries");
-  $("#admin-tab-stats").classList.toggle("hidden",   tab !== "stats");
-  $("#admin-tab-admins").classList.toggle("hidden",  tab !== "admins");
+  $("#admin-tab-entries").classList.toggle("hidden",    tab !== "entries");
+  $("#admin-tab-stats").classList.toggle("hidden",      tab !== "stats");
+  $("#admin-tab-admins").classList.toggle("hidden",     tab !== "admins");
+  $("#admin-tab-dashboard").classList.toggle("hidden",  tab !== "dashboard");
+  $("#admin-tab-messages").classList.toggle("hidden",   tab !== "messages");
   $("#admin-tabs").querySelectorAll(".admin-tab-btn").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === tab);
   });
-  if (tab === "stats")  fetchAdminStats();
-  if (tab === "admins") fetchAdminAdmins();
+  if (tab === "stats")     fetchAdminStats();
+  if (tab === "admins")    { fetchAdminAdmins(); fetchAdminBannerStatus(); }
+  if (tab === "dashboard") fetchAdminDashboard();
+  if (tab === "messages")  fetchAdminMessages();
 }
 
 async function fetchAdminStats() {
   const body = $("#admin-stats-body");
-  body.innerHTML = '<tr><td colspan="9" class="admin-loading">Loading…</td></tr>';
+  body.innerHTML = '<tr><td colspan="11" class="admin-loading">Loading…</td></tr>';
   try {
     const data = await adminApi("/stats");
     renderAdminSummary(data.summary);
     renderAdminStats(data.validators);
   } catch (e) {
-    body.innerHTML = `<tr><td colspan="9" class="admin-loading">Error: ${e.message}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="11" class="admin-loading">Error: ${e.message}</td></tr>`;
   }
 }
 
@@ -2527,6 +3158,183 @@ function renderAdminSummary(s) {
     <div class="admin-summary-card"><span class="admin-summary-val">${s.total_validated}</span><span class="admin-summary-label">Validated entries</span></div>
     <div class="admin-summary-card"><span class="admin-summary-val">${s.total_review}</span><span class="admin-summary-label">Needs review</span></div>
   `;
+}
+
+/* ---------- Admin Dashboard ---------- */
+
+let _dashCharts = {};
+
+async function fetchAdminDashboard() {
+  const body = $("#admin-dashboard-body");
+  body.innerHTML = '<p class="admin-loading">Loading…</p>';
+  try {
+    const data = await adminApi("/dashboard");
+    renderAdminDashboard(data);
+  } catch (e) {
+    body.innerHTML = `<p class="admin-loading">Error: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+function _destroyDashCharts() {
+  Object.values(_dashCharts).forEach((c) => { try { c.destroy(); } catch (_) {} });
+  _dashCharts = {};
+}
+
+function renderAdminDashboard(d) {
+  _destroyDashCharts();
+  const p = d.pipeline;
+  const q = d.quality;
+  const o = d.outcomes;
+  const c = d.corrections;
+
+  const pct = (n, total) => total > 0 ? Math.round((n / total) * 100) + "%" : "—";
+  const agreeRate = q.agreement_rate !== null && q.agreement_rate !== undefined
+    ? Math.round(q.agreement_rate * 100) + "%"
+    : "—";
+
+  $("#admin-dashboard-body").innerHTML = `
+    <div class="dash-section">
+      <div class="dash-section-label">Pipeline Progress</div>
+      <div class="dash-cards">
+        <div class="dash-card dash-card-neutral">
+          <span class="dash-card-val">${p.total}</span>
+          <span class="dash-card-label">Total Records</span>
+        </div>
+        <div class="dash-card dash-card-muted">
+          <span class="dash-card-val">${p.unvalidated}</span>
+          <span class="dash-card-label">Unvalidated</span>
+          <span class="dash-card-sub">${pct(p.unvalidated, p.total)}</span>
+        </div>
+        <div class="dash-card dash-card-amber">
+          <span class="dash-card-val">${p.in_progress}</span>
+          <span class="dash-card-label">In Progress</span>
+          <span class="dash-card-sub">${pct(p.in_progress, p.total)}</span>
+        </div>
+        <div class="dash-card dash-card-amber">
+          <span class="dash-card-val">${p.consensus_reached}</span>
+          <span class="dash-card-label">Consensus Reached</span>
+          <span class="dash-card-sub">${pct(p.consensus_reached, p.total)}</span>
+        </div>
+        <div class="dash-card dash-card-red">
+          <span class="dash-card-val">${p.need_review}</span>
+          <span class="dash-card-label">Needs Review</span>
+          <span class="dash-card-sub">${pct(p.need_review, p.total)}</span>
+        </div>
+        <div class="dash-card dash-card-green">
+          <span class="dash-card-val">${p.validated}</span>
+          <span class="dash-card-label">Validated</span>
+          <span class="dash-card-sub">${pct(p.validated, p.total)}</span>
+        </div>
+        <div class="dash-card dash-card-muted">
+          <span class="dash-card-val">${p.rejected}</span>
+          <span class="dash-card-label">Rejected</span>
+          <span class="dash-card-sub">${pct(p.rejected, p.total)}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="dash-section">
+      <div class="dash-section-label">Validation Quality</div>
+      <div class="dash-cards">
+        <div class="dash-card dash-card-neutral">
+          <span class="dash-card-val">${q.total_judgements}</span>
+          <span class="dash-card-label">Total Judgements</span>
+        </div>
+        <div class="dash-card dash-card-neutral">
+          <span class="dash-card-val">${q.active_validators}</span>
+          <span class="dash-card-label">Active Validators</span>
+        </div>
+        <div class="dash-card dash-card-neutral">
+          <span class="dash-card-val">${q.records_with_2_validators}</span>
+          <span class="dash-card-label">Both Slots Filled</span>
+        </div>
+        <div class="dash-card ${q.agreement_rate !== null && q.agreement_rate >= 0.75 ? "dash-card-green" : "dash-card-amber"}">
+          <span class="dash-card-val">${agreeRate}</span>
+          <span class="dash-card-label">Full Agreement Rate</span>
+          <span class="dash-card-sub">${q.full_agreements} of ${q.records_with_2_validators} records</span>
+        </div>
+        <div class="dash-card dash-card-muted">
+          <span class="dash-card-val">${p.tiebreakers}</span>
+          <span class="dash-card-label">Tiebreakers</span>
+        </div>
+        <div class="dash-card dash-card-muted">
+          <span class="dash-card-val">${p.admin_overrides}</span>
+          <span class="dash-card-label">Admin Overrides</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="dash-charts">
+      <div class="dash-chart-box">
+        <div class="dash-chart-title">Outcome Distribution <span class="dash-chart-sub">(validated records)</span></div>
+        <div class="dash-chart-canvas-wrap">
+          <canvas id="dash-outcome-chart"></canvas>
+        </div>
+      </div>
+      <div class="dash-chart-box">
+        <div class="dash-chart-title">Correction Frequency <span class="dash-chart-sub">(validator disagreements)</span></div>
+        <div class="dash-chart-canvas-wrap">
+          <canvas id="dash-correction-chart"></canvas>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const OUTCOME_COLORS = {
+    success:       "#4a6b3e",
+    failure:       "#a83232",
+    mixed:         "#b88019",
+    uninformative: "#7a6e5f",
+    descriptive:   "#4a6a8a",
+  };
+  const outcomeLabels = Object.keys(o).map((k) => k.charAt(0).toUpperCase() + k.slice(1));
+  const outcomeData   = Object.values(o);
+  const outcomeColors = Object.keys(o).map((k) => OUTCOME_COLORS[k] || "#999");
+
+  _dashCharts.outcome = new Chart($("#dash-outcome-chart"), {
+    type: "doughnut",
+    data: {
+      labels:   outcomeLabels,
+      datasets: [{ data: outcomeData, backgroundColor: outcomeColors, borderWidth: 2, borderColor: "#f4efe6" }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "bottom", labels: { font: { family: "'Inter Tight', sans-serif", size: 12 }, padding: 14, color: "#36361a" } },
+      },
+      cutout: "58%",
+    },
+  });
+
+  const corrLabels = ["Type", "Original / DOI", "Outcome", "Replication Title"];
+  const corrData   = [c.type_corrections, c.original_corrections, c.outcome_corrections, c.title_corrections];
+  const corrColors = ["#4a6a8a", "#4a6b3e", "#b54614", "#b88019"];
+
+  _dashCharts.corrections = new Chart($("#dash-correction-chart"), {
+    type: "bar",
+    data: {
+      labels:   corrLabels,
+      datasets: [{ label: "Corrections", data: corrData, backgroundColor: corrColors, borderRadius: 5, borderSkipped: false }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      indexAxis: "y",
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          beginAtZero: true,
+          ticks: { precision: 0, font: { family: "'JetBrains Mono', monospace", size: 11 }, color: "#6b6157" },
+          grid:  { color: "#e8e0cf" },
+        },
+        y: {
+          ticks: { font: { family: "'Inter Tight', sans-serif", size: 12 }, color: "#36361a" },
+          grid:  { display: false },
+        },
+      },
+    },
+  });
 }
 
 function fmtMin(val) {
@@ -2545,7 +3353,7 @@ function renderAdminStats(validators) {
   body.innerHTML = validators.map((v, i) => `
     <tr>
       <td class="admin-cell-num">${i + 1}</td>
-      <td><strong>${v.handle}</strong></td>
+      <td><strong>${escapeHtml(v.handle)}</strong></td>
       <td>
         <button class="tier-cycle-btn" data-id="${v.id}" data-tier="${v.validator_tier}"
                 title="${["Click to promote to Trusted","Click to promote to Senior","Click to reset to Regular"][v.validator_tier]}">
@@ -2558,6 +3366,9 @@ function renderAdminStats(validators) {
       <td class="admin-time-cell">${fmtMin(v.median_min)}</td>
       <td class="admin-time-cell" style="color:var(--green)">${fmtMin(v.min_min)}</td>
       <td class="admin-time-cell" style="color:var(--muted)">${fmtMin(v.max_min)}</td>
+      <td class="admin-flag-cell">${v.flagged_count > 0 ? `<span class="flag-count-badge">🚩 ${v.flagged_count}</span>` : "—"}</td>
+      <td style="font-size:0.78rem;color:var(--muted)">${v.last_login_at ? new Date(v.last_login_at).toLocaleString("en-GB", {day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—"}</td>
+      <td><button class="compose-msg-btn ghost-btn" data-id="${v.id}" data-handle="${escapeHtml(v.handle)}" title="Send message to ${escapeHtml(v.handle)}">✉</button></td>
     </tr>
   `).join("");
 
@@ -2581,6 +3392,162 @@ function renderAdminStats(validators) {
       btn.disabled = false;
     };
   });
+
+  body.querySelectorAll(".compose-msg-btn").forEach((btn) => {
+    btn.onclick = () => openComposeDialog(parseInt(btn.dataset.id), btn.dataset.handle);
+  });
+}
+
+async function openComposeDialog(validatorId, handle) {
+  const rawHtml = `
+    <p style="text-align:left;margin-bottom:0.75rem;font-size:0.88rem;color:var(--muted)">To: <strong>${escapeHtml(handle)}</strong></p>
+    <label style="display:block;text-align:left;margin-bottom:0.25rem;font-size:0.85rem;color:var(--ink-soft)">Subject</label>
+    <input id="compose-subject" type="text" style="width:100%;box-sizing:border-box;padding:0.45rem 0.6rem;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:0.9rem;margin-bottom:0.75rem" placeholder="e.g. Feedback on your recent judgement">
+    <label style="display:block;text-align:left;margin-bottom:0.25rem;font-size:0.85rem;color:var(--ink-soft)">Message</label>
+    <textarea id="compose-body" rows="4" style="width:100%;box-sizing:border-box;padding:0.5rem;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:0.9rem;resize:vertical" placeholder="Write your message here…"></textarea>`;
+  const confirmed = await showDialog({
+    icon: "✉",
+    title: "Send message",
+    message: rawHtml,
+    rawHtml: true,
+    buttons: [
+      { label: "Cancel", value: false },
+      { label: "Send →", value: true, primary: true },
+    ],
+    layout: "row",
+  });
+  if (!confirmed) return;
+  const subject = ($("#compose-subject")?.value || "").trim();
+  const body = ($("#compose-body")?.value || "").trim();
+  if (!subject || !body) { await showAlert("Subject and message are both required."); return; }
+  try {
+    await adminApi("/message", "POST", { validator_id: validatorId, subject, body });
+    showToast("Message sent.");
+  } catch (e) {
+    await showAlert("Failed to send: " + e.message);
+  }
+}
+
+/* ---------- Admin messages tab ---------- */
+
+let _adminMsgSelectedId = null;
+
+function _fmtRelTime(date) {
+  const diff = Date.now() - date.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 2)   return "just now";
+  if (mins < 60)  return `${mins}m ago`;
+  const hrs = Math.floor(diff / 3600000);
+  if (hrs < 24)   return `${hrs}h ago`;
+  const days = Math.floor(diff / 86400000);
+  if (days < 7)   return `${days}d ago`;
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+async function fetchAdminMessages() {
+  const list = $("#msg-convo-list");
+  if (!list) return;
+  list.innerHTML = '<p class="admin-loading">Loading…</p>';
+  try {
+    const data = await adminApi("/messages");
+    renderAdminConversations(data.conversations);
+    _updateAdminMsgBadge(data.conversations);
+  } catch (e) {
+    list.innerHTML = `<p class="admin-loading">Error: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+function _updateAdminMsgBadge(conversations) {
+  const badge = $("#admin-msg-badge");
+  if (!badge) return;
+  const total = (conversations || []).reduce((s, c) => s + (c.unread_count || 0), 0);
+  if (total > 0) {
+    badge.textContent = total > 99 ? "99+" : String(total);
+    badge.classList.remove("hidden");
+  } else {
+    badge.classList.add("hidden");
+  }
+}
+
+function renderAdminConversations(conversations) {
+  const list = $("#msg-convo-list");
+  if (!list) return;
+  if (!conversations.length) {
+    list.innerHTML = '<p class="inbox-empty">No messages yet.</p>';
+    return;
+  }
+  list.innerHTML = conversations.map(c => {
+    const hasUnread  = c.unread_count > 0;
+    const isSelected = c.validator_id === _adminMsgSelectedId;
+    const time = c.last_activity ? _fmtRelTime(new Date(c.last_activity)) : "";
+    const preview = (c.last_direction === "inbound" ? "↩ " : "") + escapeHtml(c.preview || "");
+    return `<div class="msg-convo-row${isSelected ? " msg-convo-active" : ""}${hasUnread ? " msg-convo-unread" : ""}"
+              data-id="${c.validator_id}" data-handle="${escapeHtml(c.handle)}">
+      ${hasUnread ? `<span class="msg-convo-dot" title="${c.unread_count} unread reply${c.unread_count > 1 ? "s" : ""}">●</span>` : ""}
+      <div class="msg-convo-row-top">
+        <span class="msg-convo-handle">${escapeHtml(c.handle)}</span>
+        <span class="msg-convo-time">${time}</span>
+      </div>
+      <div class="msg-convo-preview">${preview}</div>
+    </div>`;
+  }).join("");
+
+  list.querySelectorAll(".msg-convo-row").forEach(row => {
+    row.addEventListener("click", () => {
+      _adminMsgSelectedId = parseInt(row.dataset.id);
+      list.querySelectorAll(".msg-convo-row").forEach(r => r.classList.toggle("msg-convo-active", r === row));
+      openConversation(parseInt(row.dataset.id), row.dataset.handle);
+    });
+  });
+
+  // Re-open previously selected conversation if still present
+  if (_adminMsgSelectedId) {
+    const selected = list.querySelector(`.msg-convo-row[data-id="${_adminMsgSelectedId}"]`);
+    if (selected) selected.classList.add("msg-convo-active");
+  }
+}
+
+async function openConversation(validatorId, handle) {
+  const panel = $("#msg-thread-panel");
+  if (!panel) return;
+  panel.innerHTML = '<p class="admin-loading">Loading…</p>';
+  try {
+    const data = await adminApi(`/messages/${validatorId}?mark_read=1`);
+    renderConversationThread(data.messages, handle);
+    // Refresh list to clear unread dots
+    const listData = await adminApi("/messages");
+    renderAdminConversations(listData.conversations);
+    _updateAdminMsgBadge(listData.conversations);
+  } catch (e) {
+    panel.innerHTML = `<p class="admin-loading">Error: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+function renderConversationThread(messages, handle) {
+  const panel = $("#msg-thread-panel");
+  if (!panel) return;
+  const fmtFull = (iso) => new Date(iso).toLocaleString("en-GB", {
+    day: "numeric", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+  panel.innerHTML = `
+    <div class="msg-thread-header">Conversation with <strong>${escapeHtml(handle)}</strong></div>
+    <div class="msg-bubbles-wrap" id="msg-bubbles-wrap">
+      ${messages.length === 0
+        ? `<p style="color:var(--muted);text-align:center;margin:auto">No messages.</p>`
+        : messages.map(msg => {
+          const isOut  = msg.direction === "outbound";
+          const sender = isOut ? (msg.sent_by || "Admin") : escapeHtml(handle);
+          return `<div class="msg-bubble ${isOut ? "msg-bubble-out" : "msg-bubble-in"}">
+            ${msg.subject ? `<div class="msg-bubble-subject">${escapeHtml(msg.subject)}</div>` : ""}
+            <div class="msg-bubble-body">${escapeHtml(msg.body).replace(/\n/g, "<br>")}</div>
+            <div class="msg-bubble-meta">${isOut ? escapeHtml(sender) : sender} · ${fmtFull(msg.sent_at)}</div>
+          </div>`;
+        }).join("")}
+    </div>`;
+  // Scroll to latest message
+  const wrap = $("#msg-bubbles-wrap");
+  if (wrap) wrap.scrollTop = wrap.scrollHeight;
 }
 
 /* ---------- Admins management ---------- */
@@ -2664,6 +3631,41 @@ function renderAdminAdmins(admins) {
   if (noTrustMsg) noTrustMsg.style.display = _adminTrusted ? "none" : "";
 }
 
+/* ---------- Admin broadcast banner ---------- */
+async function fetchAdminBannerStatus() {
+  const statusEl = $("#admin-banner-status");
+  const msgEl    = $("#admin-banner-msg");
+  if (!statusEl) return;
+  try {
+    const data = await (await fetch("/api/banner")).json();
+    if (data.active && data.message) {
+      statusEl.innerHTML = `<span style="color:var(--red)">● Live</span> — banner is currently shown to all users`;
+      if (msgEl) msgEl.value = data.message;
+    } else {
+      statusEl.innerHTML = `<span style="color:var(--muted)">○ Inactive</span> — no banner currently active`;
+      if (msgEl) msgEl.value = "";
+    }
+  } catch (_) {
+    if (statusEl) statusEl.textContent = "Could not load banner status.";
+  }
+}
+
+async function saveAdminBanner(active) {
+  const msgEl = $("#admin-banner-msg");
+  const msg   = msgEl ? msgEl.value.trim() : "";
+  if (active && !msg) {
+    await showAlert("Please enter a message before sending.");
+    return;
+  }
+  try {
+    await adminApi("/banner", "POST", { message: msg, active });
+    await fetchAdminBannerStatus();
+    showToast(active ? "Banner sent to all users." : "Banner cleared.");
+  } catch (e) {
+    await showAlert(e.message);
+  }
+}
+
 async function addAdminAccount() {
   const handle   = $("#new-admin-handle").value.trim();
   const password = $("#new-admin-password").value.trim();
@@ -2701,7 +3703,22 @@ $("#admin-filters").addEventListener("click", (e) => {
   btn.classList.add("active");
   _adminFilter = btn.dataset.filter;
   _adminPage = 1;
+  _adminSearch = "";
+  const searchInput = $("#admin-search-input");
+  if (searchInput) searchInput.value = "";
   fetchAdminEntries();
+});
+
+/* ---------- Admin search ---------- */
+let _adminSearchTimer = null;
+document.addEventListener("input", (e) => {
+  if (e.target.id !== "admin-search-input") return;
+  clearTimeout(_adminSearchTimer);
+  _adminSearchTimer = setTimeout(() => {
+    _adminSearch = e.target.value.trim();
+    _adminPage = 1;
+    fetchAdminEntries();
+  }, 350);
 });
 
 /* ---------- Forgot handle ---------- */

@@ -112,8 +112,8 @@
       "authors_o": "Brady, T. F.; Konkle, T.; Alvarez, G. A.; Oliva, A.",
       "year_o": "2013",
       "link_evidence": "Same first-author cluster (Brady, Konkle, Alvarez, Oliva) on visual long-term memory; linked by author and topic match.",
-      "outcome": "success",
-      "outcome_phrase": "We replicated the exceptional memory results at a short delay.",
+      "outcome": "mixed",
+      "outcome_phrase": "We replicated the exceptional memory results at a short delay. However, following a week delay, recognition accuracy was greatly reduced in both tasks, with comparable reductions in performance when the foils were both similar and dissimilar.",
       "out_quote_source": "abstract",
       "expected": {
         "type": "validation",
@@ -121,13 +121,79 @@
         "outcome": "wrong"
       },
       "feedback": {
-        "intro": "Two errors are baked into this entry: the linked original is the wrong Brady paper, and the outcome is mischaracterised by truncating the quote. Both are common failure modes of automated linkage.",
+        "intro": "Two errors are baked into this entry: the linked original is the wrong Brady paper, and the outcome is mischaracterised. While the outcome of the overall study is mixed, the replication part was successful. This is a common error, as studies may include additional outcomes, not just the replication.",
         "type_wrong": "The abstract literally says 'we replicated the exceptional memory results' \u2014 this is a replication, not a false positive.",
         "original_wrong": "The abstract cites Brady, Konkle, Alvarez, and Oliva (2008, PNAS) \u2014 a different paper from the same authors. The Brady et al. (2013) paper on object detail binding linked here is not the actual target study. Mark the original as 'Wrong paper'.",
-        "outcome_wrong": "Read past the first sentence of the quote. The abstract continues: 'However, following a week delay, recognition accuracy was greatly reduced in both tasks, with comparable reductions in performance when the foils were both similar and dissimilar.' That's a mixed outcome \u2014 short-delay success, week-delay failure \u2014 not a clean 'success'. Mark the outcome as 'mischaracterised', and ideally extend the quote to include the second sentence."
+        "outcome_wrong": "If you read the full abstract, it is clear that the outcome at short delay is the replication, the outcome after a week delay is in fact an extension and not an outcome included in the original. 'In the present investigation, we extended these findings by including a one-week delay condition...' Only the first sentence of the outcome is then relevant for the replication: 'We replicated the exceptional memory results at a short delay.'"
       },
       "oa_url_r": "https://link.springer.com/content/pdf/10.3758%2Fs13423-015-0800-0.pdf",
       "oa_url_o": "http://nrs.harvard.edu/urn-3:HUL.InstRepos:10646389"
+    },
+    {
+      "pair_id": "onboarding-6-galak-bem",
+      "type": "reproduction",
+      "doi_r": "10.1037/a0026699",
+      "title_r": "Correcting the past: Failures to replicate psi",
+      "authors_r": "Galak, J.; LeBoeuf, R. A.; Nelson, L. D.; Simmons, J. P.",
+      "year_r": "2012",
+      "journal_r": "Journal of Personality and Social Psychology",
+      "url_r": "https://doi.org/10.1037/a0026699",
+      "abstract_r": "We conducted six pre-registered studies and two meta-analyses seeking evidence for extrasensory perception (psi). We also directly reproduced one of Bem's (2011) nine experiments by re-running his statistical analysis on his original participant data, with no modifications to procedure or analysis. We were unable to reproduce Bem's effect using his own data. The six new experiments likewise showed no evidence for psi. We conclude that the original positive findings do not hold and are likely the product of statistical artefacts.",
+      "doi_o": "10.1037/a0021524",
+      "title_o": "Feeling the Future: Experimental Evidence for Anomalous Retroactive Influences on Cognition and Affect",
+      "authors_o": "Bem, D. J.",
+      "year_o": "2011",
+      "link_evidence": "Authors explicitly re-run Bem's statistical analysis on his original participant data — a direct reproduction of his findings.",
+      "outcome": "failure",
+      "outcome_phrase": "We were unable to reproduce Bem's effect using his own data.",
+      "out_quote_source": "abstract",
+      "expected": {
+        "type": "reproduction",
+        "original": "correct",
+        "outcome": "correct"
+      },
+      "feedback": {
+        "intro": "This is a reproduction — the authors re-ran Bem's analysis on his original participant data rather than collecting new participants. That distinction matters: 'same data, re-analysed' is always a reproduction, not a replication.",
+        "type_wrong": "The abstract states the authors re-ran Bem's analysis on 'his original participant data, with no modifications'. Using an existing raw dataset is the defining feature of a reproduction. Select Reproduction (same data), not Replication.",
+        "original_wrong": "The study explicitly reproduces one of Bem's (2011) nine experiments using his own data. The linked original is correct.",
+        "outcome_wrong": "The authors say they 'were unable to reproduce Bem's effect' — that is an unambiguous failure outcome. The system's call is correct."
+      },
+      "oa_url_r": null,
+      "oa_url_o": null
+    },
+    {
+      "pair_id": "onboarding-7-dunning-kruger-typo",
+      "type": "replication",
+      "doi_r": "10.0000/scratch-onboarding-typo",
+      "title_r": "The Dunning-Krueger effect across skill domains: A pre-registered direct replication",
+      "authors_r": "Ehrlinger, J.; Mitchum, A. L.; Dweck, C. S.",
+      "year_r": "2016",
+      "journal_r": "Journal of Experimental Social Psychology",
+      "url_r": null,
+      "abstract_r": "The Dunning-Kruger effect — the finding that people with limited competence in a domain tend to overestimate their own performance — has been replicated widely but rarely with pre-registration. We conducted a pre-registered direct replication of the core paradigm from Kruger and Dunning (1999) using an independent online sample of 412 adults. Participants completed a general-knowledge quiz and then estimated their percentile rank relative to others. Consistent with the original, participants in the bottom quartile of actual performance overestimated their rank by an average of 28 percentile points. The effect was robust across demographic subgroups.",
+      "doi_o": "10.1037/0022-3514.77.6.1121",
+      "title_o": "Unskilled and Unaware of It: How Difficulties in Recognizing One's Own Incompetence Lead to Inflated Self-Assessments",
+      "authors_o": "Kruger, J.; Dunning, D.",
+      "year_o": "1999",
+      "link_evidence": "Paper pre-registers a direct replication of Kruger and Dunning (1999) using the same general-knowledge paradigm.",
+      "outcome": "success",
+      "outcome_phrase": "Consistent with the original, participants in the bottom quartile of actual performance overestimated their rank by an average of 28 percentile points.",
+      "out_quote_source": "abstract",
+      "expected": {
+        "type": "validation",
+        "original": "correct",
+        "outcome": "correct",
+        "study_r_typo": true
+      },
+      "feedback": {
+        "intro": "The type, original, and outcome are all correct — good calls. But the title contains a typo: the effect is 'Dunning-Kruger' not 'Dunning-Krueger'. The 'fix typo' link next to the title is there for exactly this. Small typographical errors in titles propagate into the final dataset if left uncorrected.",
+        "type_wrong": "The paper explicitly pre-registers a direct replication of Kruger and Dunning (1999). This is a replication.",
+        "original_wrong": "The linked original is Kruger and Dunning (1999) — the paper whose paradigm is being directly replicated. The link is correct.",
+        "outcome_wrong": "The abstract confirms the original finding with specific numbers. That is a success outcome. The system's call is correct.",
+        "study_r_typo_missed": "The title spells the effect as 'Dunning-Krueger' — one 'e' too many. The correct spelling is 'Dunning-Kruger'. Use the 'fix typo' link next to the paper title to correct typographical errors before submitting. Fixing them here prevents the error from reaching the final validated dataset."
+      },
+      "oa_url_r": null,
+      "oa_url_o": null
     },
     {
       "pair_id": "onboarding-5-fp-practice",

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "cards": [
+    {
+      "icon": "✉",
+      "title": "Validator Inbox",
+      "body": "The review team can now send you messages directly in the app. Look for the envelope icon in the top bar. You can open any message and reply back — a red dot means something is waiting."
+    },
+    {
+      "icon": "🏷",
+      "title": "Flag reasons",
+      "body": "When one of your judgements is flagged for review, you will now see the reason why alongside the flag. This helps you understand what to look out for in future entries."
+    },
+    {
+      "icon": "✏",
+      "title": "Title corrections",
+      "body": "Spotted a typo in the replication paper title or DOI? There is now a dedicated field to flag and correct it alongside the other correction inputs."
+    },
+    {
+      "icon": "⭐",
+      "title": "Validator tiers",
+      "body": "The platform now tracks three tiers — Regular, Trusted, and Senior — reflecting your track record and unlocking additional responsibilities over time."
+    }
+  ]
+}

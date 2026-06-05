@@ -226,6 +226,7 @@ ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS corrected_study_r TEXT;
 ALTER TABLE unvalidated      ADD COLUMN IF NOT EXISTS final_study_r     TEXT;
 ALTER TABLE unvalidated      ADD COLUMN IF NOT EXISTS final_doi_r       TEXT;
 ALTER TABLE unvalidated      ADD COLUMN IF NOT EXISTS final_abstract_r  TEXT;
+ALTER TABLE unvalidated      ADD COLUMN IF NOT EXISTS final_url_r       TEXT;
 
 -- Forgot-handle rate limiting
 ALTER TABLE validators ADD COLUMN IF NOT EXISTS forgot_requests_today INTEGER NOT NULL DEFAULT 0;
@@ -244,3 +245,54 @@ ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS final_outcome_quote TEXT;
 -- Admin notes: track who saved the note and when
 ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS note_saved_by  TEXT;
 ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS note_saved_at  TIMESTAMPTZ;
+
+-- Admin override flag: set when admin validates a previously-rejected record
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS admin_override BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Drop obsolete level column superseded by validator_tier
+ALTER TABLE validators DROP COLUMN IF EXISTS level;
+
+-- Admin flag on individual validator judgements
+ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS flagged BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Last login timestamp for validators
+ALTER TABLE validators ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+
+-- Site-wide admin broadcast banner (single row, id = 1)
+CREATE TABLE IF NOT EXISTS site_banner (
+    id          INTEGER     PRIMARY KEY DEFAULT 1,
+    message     TEXT,
+    active      BOOLEAN     NOT NULL DEFAULT FALSE,
+    updated_by  TEXT,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO site_banner (id, message, active)
+VALUES (1, NULL, FALSE) ON CONFLICT (id) DO NOTHING;
+
+-- Flag reason stored alongside the flag (set when admin flags, cleared on unflag)
+ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS flag_reason TEXT;
+
+-- Validator inbox: system messages created when an admin flags a judgement with a reason
+CREATE TABLE IF NOT EXISTS validator_messages (
+    id           SERIAL      PRIMARY KEY,
+    validator_id INTEGER     NOT NULL REFERENCES validators(id),
+    subject      TEXT        NOT NULL,
+    body         TEXT        NOT NULL,
+    is_read      BOOLEAN     NOT NULL DEFAULT FALSE,
+    sent_by      TEXT,
+    sent_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Phase 3: two-way messaging
+-- 'outbound' = admin → validator  |  'inbound' = validator → admin (reply)
+ALTER TABLE validator_messages ADD COLUMN IF NOT EXISTS direction TEXT NOT NULL DEFAULT 'outbound';
+-- links a reply to the message it responds to
+ALTER TABLE validator_messages ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES validator_messages(id);
+-- for inbound messages: has an admin read this reply yet?
+ALTER TABLE validator_messages ADD COLUMN IF NOT EXISTS is_read_by_admin BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Update screen: shown once per version to returning (onboarded) validators
+ALTER TABLE validators ADD COLUMN IF NOT EXISTS last_seen_update INTEGER NOT NULL DEFAULT 0;
+
+-- My Judgements: link flag messages back to the specific judgement that triggered them
+ALTER TABLE validator_messages ADD COLUMN IF NOT EXISTS queue_id UUID REFERENCES validation_queue(queue_id);

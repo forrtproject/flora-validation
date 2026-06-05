@@ -11,7 +11,7 @@ import psycopg2.errors
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import Body, FastAPI, Header, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -35,6 +35,8 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 HANDLE_RE = re.compile(r"^[A-Za-z0-9._\-]{2,32}$")
 
 VALID_CHECKS = {"correct", "incorrect"}
+
+CURRENT_UPDATE_VERSION = 1  # bump when docs/updates.json content changes
 
 
 def _make_token(password: str) -> str:
@@ -197,6 +199,25 @@ class AdminLoginRequest(BaseModel):
     password: str
 
 
+class FlagQueueRequest(BaseModel):
+    reason: str = ""
+
+
+class AdminMessageRequest(BaseModel):
+    validator_id: int
+    subject: str
+    body: str
+
+
+class ReplyRequest(BaseModel):
+    coder_id: int
+    body: str
+
+
+class UpdateSeenRequest(BaseModel):
+    coder_id: int
+
+
 class AdminResolveRequest(BaseModel):
     admin_name: str
     type_check: str
@@ -258,12 +279,12 @@ def login(req: LoginRequest):
     with db() as cur:
         if use_email:
             cur.execute(
-                "SELECT id, code, email, handle, onboarded_at, validator_tier FROM validators WHERE email = %s",
+                "SELECT id, code, email, handle, onboarded_at, validator_tier, last_seen_update FROM validators WHERE email = %s",
                 (email,),
             )
         else:
             cur.execute(
-                "SELECT id, code, email, handle, onboarded_at, validator_tier FROM validators WHERE code = %s",
+                "SELECT id, code, email, handle, onboarded_at, validator_tier, last_seen_update FROM validators WHERE code = %s",
                 (code,),
             )
         existing = cur.fetchone()
@@ -275,6 +296,10 @@ def login(req: LoginRequest):
                     400,
                     f"This {method} is already registered. Please use the correct username.",
                 )
+            cur.execute(
+                "UPDATE validators SET last_login_at = NOW() WHERE id = %s",
+                (existing["id"],),
+            )
             return {
                 "coder_id": existing["id"],
                 "code": existing["code"],
@@ -282,6 +307,8 @@ def login(req: LoginRequest):
                 "handle": existing["handle"],
                 "onboarded": bool(existing["onboarded_at"]),
                 "validator_tier": existing["validator_tier"],
+                "last_seen_update": existing["last_seen_update"],
+                "update_version": CURRENT_UPDATE_VERSION,
             }
 
         cur.execute("SELECT 1 FROM validators WHERE handle = %s", (handle,))
@@ -305,6 +332,9 @@ def login(req: LoginRequest):
             "email": email if use_email else None,
             "handle": handle,
             "onboarded": False,
+            "validator_tier": 0,
+            "last_seen_update": 0,
+            "update_version": CURRENT_UPDATE_VERSION,
         }
 
 
@@ -319,14 +349,102 @@ def onboarding_pairs():
 def onboarding_complete(req: OnboardingComplete):
     with db() as cur:
         cur.execute(
-            "UPDATE validators SET onboarded_at = NOW() WHERE id = %s AND onboarded_at IS NULL",
-            (req.coder_id,),
+            "UPDATE validators SET onboarded_at = NOW(), last_seen_update = %s WHERE id = %s AND onboarded_at IS NULL",
+            (CURRENT_UPDATE_VERSION, req.coder_id),
         )
         if cur.rowcount == 0:
             cur.execute("SELECT onboarded_at FROM validators WHERE id = %s", (req.coder_id,))
             if not cur.fetchone():
                 raise HTTPException(404, "Validator not found")
     return {"onboarded": True}
+
+
+@app.post("/api/update-seen")
+def mark_update_seen(req: UpdateSeenRequest):
+    with db() as cur:
+        cur.execute(
+            "UPDATE validators SET last_seen_update = %s WHERE id = %s",
+            (CURRENT_UPDATE_VERSION, req.coder_id),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(404, "Validator not found")
+    return {"ok": True}
+
+
+@app.get("/api/my-judgements")
+def get_my_judgements(coder_id: int):
+    with db() as cur:
+        cur.execute("SELECT id FROM validators WHERE id = %s", (coder_id,))
+        if not cur.fetchone():
+            raise HTTPException(404, "Validator not found")
+        cur.execute(
+            """
+            SELECT
+                vq.queue_id,
+                vq.record_id,
+                vq.type_check,
+                vq.original_check,
+                vq.outcome_check,
+                vq.corrected_doi_o,
+                vq.corrected_study_o,
+                vq.corrected_outcome,
+                vq.corrected_type,
+                vq.corrected_study_r,
+                vq.points,
+                vq.validated_at,
+                vq.flagged,
+                vq.flag_reason,
+                u.study_r         AS title_r,
+                u.doi_r,
+                u.year_r,
+                u.outcome         AS extracted_outcome,
+                vm.id             AS msg_id,
+                vm.body           AS msg_body,
+                vm.sent_at        AS msg_sent_at,
+                vm.is_read        AS msg_is_read
+            FROM validation_queue vq
+            JOIN unvalidated u ON u.record_id = vq.record_id
+            LEFT JOIN LATERAL (
+                SELECT id, body, sent_at, is_read
+                FROM validator_messages
+                WHERE queue_id = vq.queue_id AND direction = 'outbound'
+                ORDER BY sent_at DESC
+                LIMIT 1
+            ) vm ON true
+            WHERE vq.validator_id = %s AND vq.is_validated = TRUE
+            ORDER BY vq.validated_at DESC NULLS LAST
+            LIMIT 100
+            """,
+            (coder_id,),
+        )
+        rows = cur.fetchall()
+    judgements = []
+    for r in rows:
+        judgements.append({
+            "queue_id":          str(r["queue_id"]),
+            "record_id":         str(r["record_id"]),
+            "type_check":        r["type_check"],
+            "original_check":    r["original_check"],
+            "outcome_check":     r["outcome_check"],
+            "corrected_doi_o":   r["corrected_doi_o"],
+            "corrected_study_o": r["corrected_study_o"],
+            "corrected_outcome": r["corrected_outcome"],
+            "corrected_type":    r["corrected_type"],
+            "corrected_study_r": r["corrected_study_r"],
+            "points":            r["points"],
+            "validated_at":      r["validated_at"].isoformat() if r["validated_at"] else None,
+            "flagged":           bool(r["flagged"]),
+            "flag_reason":       r["flag_reason"],
+            "title_r":           r["title_r"],
+            "doi_r":             r["doi_r"],
+            "year_r":            r["year_r"],
+            "extracted_outcome": r["extracted_outcome"],
+            "msg_id":            r["msg_id"],
+            "msg_body":          r["msg_body"],
+            "msg_sent_at":       r["msg_sent_at"].isoformat() if r["msg_sent_at"] else None,
+            "msg_is_read":       bool(r["msg_is_read"]) if r["msg_is_read"] is not None else None,
+        })
+    return {"judgements": judgements}
 
 
 # ---------------------------------------------------------------------------
@@ -339,6 +457,67 @@ def next_pair(coder_id: int, mode: str = "normal"):
         raise HTTPException(400, "mode must be normal or hard")
 
     with db() as cur:
+        # Resume check: if this validator is already mid-pair, return it immediately
+        # (must run before the 30-min cleanup so we don't accidentally release their slot)
+        cur.execute(
+            """
+            SELECT vq.queue_id, vq.record_id
+            FROM validation_queue vq
+            WHERE vq.validator_id = %s
+              AND vq.is_shown     = TRUE
+              AND vq.is_validated = FALSE
+              AND vq.validator_slot IN ('human_1', 'human_2')
+            LIMIT 1
+            """,
+            (coder_id,),
+        )
+        resume_slot = cur.fetchone()
+
+        if resume_slot:
+            # Reset the timer so they get a fresh 30-minute window
+            cur.execute(
+                "UPDATE validation_queue SET shown_at = NOW() WHERE queue_id = %s",
+                (resume_slot["queue_id"],),
+            )
+            cur.execute(
+                """
+                SELECT u.record_id, u.pair_id,
+                       u.doi_r, u.study_r, u.year_r, u.url_r, u.ref_r, u.abstract_r,
+                       u.doi_o, u.study_o, u.year_o, u.url_o, u.ref_o,
+                       u.type, u.outcome, u.outcome_quote, u.out_quote_source,
+                       rm.authors_r, rm.authors_o, rm.journal_r, rm.openalex_id_r,
+                       (SELECT COUNT(*) FROM validation_queue vq2
+                        WHERE vq2.record_id = u.record_id AND vq2.is_validated = TRUE
+                       ) AS judge_count
+                FROM unvalidated u
+                LEFT JOIN record_metadata rm ON rm.record_id = u.record_id
+                WHERE u.record_id = %s
+                """,
+                (resume_slot["record_id"],),
+            )
+            row = cur.fetchone()
+            if row:
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS done FROM validation_queue
+                    WHERE validator_id = %s AND is_validated = TRUE
+                      AND validator_slot IN ('human_1', 'human_2')
+                    """,
+                    (coder_id,),
+                )
+                done = cur.fetchone()["done"]
+                cur.execute(
+                    "SELECT COUNT(*) AS total FROM unvalidated WHERE validation_status NOT IN ('validated', 'rejected')"
+                )
+                total = cur.fetchone()["total"]
+                return {
+                    "pair":        _enrich_pair(dict(row)),
+                    "judge_count": row["judge_count"],
+                    "done":        done,
+                    "total":       total,
+                    "resumed":     True,
+                }
+
         # Release any slots shown more than 30 minutes ago without a submission
         cur.execute(
             """
@@ -423,7 +602,8 @@ def next_pair(coder_id: int, mode: str = "normal"):
 
         record_id = row["record_id"]
 
-        # Assign this validator to the first free human slot
+        # Claim the first free slot atomically — FOR UPDATE SKIP LOCKED prevents
+        # two concurrent requests from grabbing the same slot simultaneously.
         cur.execute(
             """
             UPDATE validation_queue
@@ -437,10 +617,16 @@ def next_pair(coder_id: int, mode: str = "normal"):
                   AND validator_id IS NULL
                 ORDER BY validator_slot
                 LIMIT 1
+                FOR UPDATE SKIP LOCKED
             )
+            RETURNING queue_id
             """,
             (coder_id, coder_id, record_id),
         )
+        if not cur.fetchone():
+            # Slot was claimed by a concurrent request — return nothing so
+            # the client retries and gets the next available pair.
+            return {"pair": None, "done": done, "total": total}
 
         # Update unvalidated status to inprogress
         cur.execute(
@@ -577,13 +763,17 @@ def judge(req: JudgeRequest):
             (json.dumps(summary), record_id),
         )
 
-        # Update validator totals
-        new_total = validator["total_points"] + pts
-        new_judgements = validator["total_judgements"] + 1
+        # Update validator totals atomically
         cur.execute(
-            "UPDATE validators SET total_points = %s, total_judgements = %s WHERE id = %s",
-            (new_total, new_judgements, req.coder_id),
+            """
+            UPDATE validators
+            SET total_points = total_points + %s, total_judgements = total_judgements + 1
+            WHERE id = %s
+            RETURNING total_points
+            """,
+            (pts, req.coder_id),
         )
+        new_total = cur.fetchone()["total_points"]
 
         # Trigger consensus engine now that a slot is complete
         from consensus_engine import evaluate_consensus
@@ -618,7 +808,7 @@ def skip_pair(req: SkipRequest):
             (record_id, req.coder_id),
         )
 
-        # If no validated slots remain, revert status to unvalidated
+        # Revert status only if no slot is active (being worked on) and none is already done
         cur.execute(
             """
             UPDATE unvalidated
@@ -628,8 +818,10 @@ def skip_pair(req: SkipRequest):
               AND NOT EXISTS (
                   SELECT 1 FROM validation_queue
                   WHERE record_id = %s
-                    AND validator_id IS NOT NULL
-                    AND is_validated = FALSE
+                    AND (
+                      (validator_id IS NOT NULL AND is_validated = FALSE)
+                      OR is_validated = TRUE
+                    )
               )
             """,
             (record_id, record_id),
@@ -808,7 +1000,7 @@ def forgot_handle(req: ForgotHandleRequest):
         count = validator["forgot_requests_today"] if last_date == today else 0
 
         if count >= 2:
-            raise HTTPException(429, "Maximum 2 reminder emails per day. Please try again tomorrow.")
+            return {"sent": True}  # silently drop — don't reveal email exists
 
         # Send email via Resend
         resend.api_key = RESEND_API_KEY
@@ -852,6 +1044,7 @@ def admin_stats(x_admin_token: str = Header(...)):
                 v.total_judgements,
                 v.total_points,
                 v.created_at::date AS joined,
+                v.last_login_at,
                 COUNT(vq.queue_id)  AS timed_count,
                 ROUND(AVG(
                     EXTRACT(EPOCH FROM (vq.validated_at - vq.shown_at)) / 60
@@ -864,7 +1057,9 @@ def admin_stats(x_admin_token: str = Header(...)):
                 )::numeric, 1)     AS min_min,
                 ROUND(MAX(
                     EXTRACT(EPOCH FROM (vq.validated_at - vq.shown_at)) / 60
-                )::numeric, 1)     AS max_min
+                )::numeric, 1)     AS max_min,
+                (SELECT COUNT(*) FROM validation_queue fq
+                 WHERE fq.validator_id = v.id AND fq.flagged = TRUE) AS flagged_count
             FROM validators v
             LEFT JOIN validation_queue vq
                 ON  vq.validator_id   = v.id
@@ -873,7 +1068,7 @@ def admin_stats(x_admin_token: str = Header(...)):
                 AND vq.shown_at       IS NOT NULL
                 AND vq.validated_at   IS NOT NULL
                 AND EXTRACT(EPOCH FROM (vq.validated_at - vq.shown_at)) BETWEEN 10 AND 5400
-            GROUP BY v.id, v.handle, v.validator_tier, v.total_judgements, v.total_points, v.created_at
+            GROUP BY v.id, v.handle, v.validator_tier, v.total_judgements, v.total_points, v.created_at, v.last_login_at
             ORDER BY v.validator_tier DESC, v.total_judgements DESC
             """
         )
@@ -881,6 +1076,8 @@ def admin_stats(x_admin_token: str = Header(...)):
         for r in rows:
             if r["joined"]:
                 r["joined"] = str(r["joined"])
+            if r["last_login_at"]:
+                r["last_login_at"] = r["last_login_at"].isoformat()
 
         # Overall summary
         cur.execute(
@@ -897,6 +1094,146 @@ def admin_stats(x_admin_token: str = Header(...)):
         summary = dict(cur.fetchone())
 
     return {"validators": rows, "summary": summary}
+
+
+@app.get("/api/admin/dashboard")
+def admin_dashboard(x_admin_token: str = Header(...)):
+    _require_admin(x_admin_token)
+
+    with db() as cur:
+        # Pipeline: status distribution + misc flags
+        cur.execute("""
+            SELECT
+                COUNT(*)                                                              AS total,
+                COUNT(*) FILTER (WHERE validation_status = 'unvalidated')            AS unvalidated,
+                COUNT(*) FILTER (WHERE validation_status = 'validation_inprogress')  AS in_progress,
+                COUNT(*) FILTER (WHERE validation_status = 'consensus_reached')      AS consensus_reached,
+                COUNT(*) FILTER (WHERE validation_status = 'need_review')            AS need_review,
+                COUNT(*) FILTER (WHERE validation_status = 'validated')              AS validated,
+                COUNT(*) FILTER (WHERE validation_status = 'rejected')               AS rejected,
+                COUNT(*) FILTER (WHERE is_tiebreaker = TRUE)                         AS tiebreakers,
+                COUNT(*) FILTER (WHERE admin_override = TRUE)                        AS admin_overrides
+            FROM unvalidated
+        """)
+        pipeline = dict(cur.fetchone())
+
+        # Outcome distribution from validated table
+        cur.execute("""
+            SELECT outcome, COUNT(*) AS n
+            FROM validated
+            WHERE outcome IS NOT NULL
+            GROUP BY outcome
+        """)
+        outcomes_raw = {r["outcome"]: int(r["n"]) for r in cur.fetchall()}
+        outcomes = {
+            "success":       outcomes_raw.get("success", 0),
+            "failure":       outcomes_raw.get("failure", 0),
+            "mixed":         outcomes_raw.get("mixed", 0),
+            "uninformative": outcomes_raw.get("uninformative", 0),
+            "descriptive":   outcomes_raw.get("descriptive", 0),
+        }
+
+        # Correction counts per field across all human-validated queue entries
+        cur.execute("""
+            SELECT
+                COUNT(*) FILTER (WHERE type_check     = 'incorrect')                AS type_corrections,
+                COUNT(*) FILTER (WHERE original_check = 'incorrect')                AS original_corrections,
+                COUNT(*) FILTER (WHERE outcome_check  = 'incorrect')                AS outcome_corrections,
+                COUNT(*) FILTER (WHERE corrected_study_r IS NOT NULL
+                                   AND corrected_study_r <> '')                     AS title_corrections
+            FROM validation_queue
+            WHERE is_validated = TRUE
+              AND validator_slot IN ('human_1', 'human_2')
+        """)
+        corrections = dict(cur.fetchone())
+
+        # Inter-validator agreement rate
+        cur.execute("""
+            SELECT
+                COUNT(*) AS records_with_2,
+                COUNT(*) FILTER (WHERE
+                    q1.type_check     = q2.type_check     AND
+                    q1.original_check = q2.original_check AND
+                    q1.outcome_check  = q2.outcome_check
+                ) AS full_agreements
+            FROM (
+                SELECT record_id, type_check, original_check, outcome_check
+                FROM validation_queue
+                WHERE validator_slot = 'human_1' AND is_validated = TRUE
+            ) q1
+            JOIN (
+                SELECT record_id, type_check, original_check, outcome_check
+                FROM validation_queue
+                WHERE validator_slot = 'human_2' AND is_validated = TRUE
+            ) q2 USING (record_id)
+        """)
+        agree_row = dict(cur.fetchone())
+
+        # Active validators + total judgements
+        cur.execute("""
+            SELECT
+                COUNT(*) FILTER (WHERE total_judgements > 0) AS active_validators,
+                COALESCE(SUM(total_judgements), 0)           AS total_judgements
+            FROM validators
+        """)
+        vrow = dict(cur.fetchone())
+
+    records_with_2  = int(agree_row["records_with_2"]  or 0)
+    full_agreements = int(agree_row["full_agreements"] or 0)
+    agreement_rate  = round(full_agreements / records_with_2, 3) if records_with_2 > 0 else None
+
+    return {
+        "pipeline": {k: int(v) for k, v in pipeline.items()},
+        "outcomes":    outcomes,
+        "corrections": {k: int(v or 0) for k, v in corrections.items()},
+        "quality": {
+            "total_judgements":        int(vrow["total_judgements"]),
+            "active_validators":       int(vrow["active_validators"]),
+            "records_with_2_validators": records_with_2,
+            "full_agreements":         full_agreements,
+            "agreement_rate":          agreement_rate,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Site banner (public read, admin write)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/banner")
+def get_site_banner():
+    """Public — returns the active admin broadcast banner, if any."""
+    with db() as cur:
+        cur.execute("SELECT message, active FROM site_banner WHERE id = 1")
+        row = cur.fetchone()
+    if row and row["active"] and row["message"]:
+        return {"active": True, "message": str(row["message"])}
+    return {"active": False, "message": None}
+
+
+class BannerRequest(BaseModel):
+    message: str
+    active: bool = True
+
+
+@app.post("/api/admin/banner")
+def set_site_banner(req: BannerRequest, x_admin_token: str = Header(...)):
+    handle = _require_admin(x_admin_token)
+    msg = req.message.strip() if req.message else None
+    with db() as cur:
+        cur.execute(
+            """
+            INSERT INTO site_banner (id, message, active, updated_by, updated_at)
+            VALUES (1, %s, %s, %s, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+                message    = EXCLUDED.message,
+                active     = EXCLUDED.active,
+                updated_by = EXCLUDED.updated_by,
+                updated_at = NOW()
+            """,
+            (msg, req.active, handle),
+        )
+    return {"ok": True}
 
 
 class SetTierRequest(BaseModel):
@@ -959,10 +1296,12 @@ def delete_admin(admin_id: int, x_admin_token: str = Header(...)):
             raise HTTPException(404, "Admin not found")
         if row["handle"] == calling_handle:
             raise HTTPException(400, "Cannot delete your own account")
-        cur.execute("SELECT COUNT(*) AS n FROM admins")
-        if cur.fetchone()["n"] <= 1:
+        cur.execute(
+            "DELETE FROM admins WHERE id = %s AND (SELECT COUNT(*) FROM admins) > 1",
+            (admin_id,),
+        )
+        if cur.rowcount == 0:
             raise HTTPException(400, "Cannot delete the last admin account")
-        cur.execute("DELETE FROM admins WHERE id = %s", (admin_id,))
     return {"deleted": row["handle"]}
 
 
@@ -999,11 +1338,12 @@ def admin_entries(
     filter: str = "all",
     page: int = 1,
     per_page: int = 50,
+    search: str = "",
     x_admin_token: str = Header(...),
 ):
     _require_admin(x_admin_token)
 
-    where = {
+    base_where = {
         "all":              "",
         "pending_approval": "WHERE u.validation_status = 'consensus_reached'",
         "needs_review":     "WHERE u.validation_status = 'need_review'",
@@ -1013,10 +1353,20 @@ def admin_entries(
         "admin_checked":    "WHERE u.admin_checked = TRUE",
     }.get(filter, "")
 
+    search = search.strip()
+    if search:
+        connector = "AND" if base_where else "WHERE"
+        where = f"{base_where} {connector} (u.study_r ILIKE %s OR u.doi_r ILIKE %s)"
+        search_param = f"%{search}%"
+        search_args = (search_param, search_param)
+    else:
+        where = base_where
+        search_args = ()
+
     offset = (page - 1) * per_page
 
     with db() as cur:
-        cur.execute(f"SELECT COUNT(*) AS n FROM unvalidated u {where}")
+        cur.execute(f"SELECT COUNT(*) AS n FROM unvalidated u {where}", search_args)
         total = cur.fetchone()["n"]
 
         cur.execute(
@@ -1059,7 +1409,7 @@ def admin_entries(
                 u.updated_at DESC
             LIMIT %s OFFSET %s
             """,
-            (per_page, offset),
+            search_args + (per_page, offset),
         )
         entries = [dict(r) for r in cur.fetchall()]
 
@@ -1149,6 +1499,192 @@ def admin_entry_detail(record_id: str, x_admin_token: str = Header(...)):
     return {"record": record, "queue_slots": queue_slots, "abstract_only_conflict": abstract_only_conflict}
 
 
+@app.post("/api/admin/queue/{queue_id}/flag")
+def admin_flag_queue(queue_id: str, req: FlagQueueRequest | None = None, x_admin_token: str = Header(...)):
+    admin_handle = _require_admin(x_admin_token)
+    reason = req.reason.strip() if req and req.reason else ""
+    with db() as cur:
+        cur.execute(
+            "UPDATE validation_queue SET flagged = NOT flagged WHERE queue_id = %s RETURNING flagged, validator_id, record_id",
+            (queue_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Queue entry not found")
+        now_flagged = bool(row["flagged"])
+        if now_flagged:
+            cur.execute(
+                "UPDATE validation_queue SET flag_reason = %s WHERE queue_id = %s",
+                (reason or None, queue_id),
+            )
+            if row["validator_id"] and reason:
+                paper_lines = ""
+                cur.execute("SELECT study_r, doi_r FROM unvalidated WHERE record_id = %s", (row["record_id"],))
+                paper = cur.fetchone()
+                if paper:
+                    if paper["study_r"]:
+                        paper_lines += f"\nStudy: {paper['study_r']}"
+                    if paper["doi_r"]:
+                        paper_lines += f"\nDOI: {paper['doi_r']}"
+                body_text = f"One of your judgements was flagged by the review team.{paper_lines}\n\nReason: {reason}"
+                cur.execute(
+                    """
+                    INSERT INTO validator_messages (validator_id, subject, body, sent_by, queue_id)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (row["validator_id"], "Your judgement was flagged", body_text, admin_handle, queue_id),
+                )
+        else:
+            cur.execute("UPDATE validation_queue SET flag_reason = NULL WHERE queue_id = %s", (queue_id,))
+    return {"flagged": now_flagged}
+
+
+@app.get("/api/messages")
+def get_validator_messages(coder_id: int):
+    with db() as cur:
+        cur.execute("SELECT id FROM validators WHERE id = %s", (coder_id,))
+        if not cur.fetchone():
+            raise HTTPException(404, "Validator not found")
+        cur.execute(
+            """
+            SELECT id, subject, body, is_read, sent_by, sent_at, direction, parent_id
+            FROM validator_messages
+            WHERE validator_id = %s
+            ORDER BY sent_at ASC
+            LIMIT 100
+            """,
+            (coder_id,),
+        )
+        msgs = [dict(r) for r in cur.fetchall()]
+    return {"messages": msgs}
+
+
+@app.post("/api/messages/{msg_id}/read")
+def mark_message_read(msg_id: int, coder_id: int):
+    with db() as cur:
+        cur.execute(
+            "UPDATE validator_messages SET is_read = TRUE WHERE id = %s AND validator_id = %s",
+            (msg_id, coder_id),
+        )
+    return {"ok": True}
+
+
+@app.post("/api/messages/{parent_id}/reply")
+def reply_to_message(parent_id: int, req: ReplyRequest):
+    body_text = req.body.strip()
+    if not body_text:
+        raise HTTPException(400, "Reply cannot be empty")
+    with db() as cur:
+        cur.execute(
+            "SELECT validator_id, subject, direction FROM validator_messages WHERE id = %s",
+            (parent_id,),
+        )
+        parent = cur.fetchone()
+        if not parent:
+            raise HTTPException(404, "Message not found")
+        if parent["validator_id"] != req.coder_id:
+            raise HTTPException(403, "Not your message")
+        if parent["direction"] == "inbound":
+            raise HTTPException(400, "Cannot reply to a reply")
+        subject = parent["subject"]
+        if not subject.startswith("Re: "):
+            subject = f"Re: {subject}"
+        cur.execute(
+            """
+            INSERT INTO validator_messages
+                (validator_id, subject, body, direction, parent_id, is_read, is_read_by_admin)
+            VALUES (%s, %s, %s, 'inbound', %s, TRUE, FALSE)
+            RETURNING id
+            """,
+            (req.coder_id, subject, body_text, parent_id),
+        )
+        new_id = cur.fetchone()["id"]
+    return {"ok": True, "id": new_id}
+
+
+@app.get("/api/admin/messages")
+def list_admin_conversations(x_admin_token: str = Header(...)):
+    _require_admin(x_admin_token)
+    with db() as cur:
+        cur.execute(
+            """
+            SELECT
+                v.id   AS validator_id,
+                v.handle,
+                COUNT(vm.id) FILTER (WHERE vm.direction = 'inbound' AND vm.is_read_by_admin = FALSE)
+                    AS unread_count,
+                MAX(vm.sent_at) AS last_activity,
+                (SELECT body FROM validator_messages vm2
+                 WHERE vm2.validator_id = v.id ORDER BY vm2.sent_at DESC LIMIT 1) AS last_body,
+                (SELECT direction FROM validator_messages vm2
+                 WHERE vm2.validator_id = v.id ORDER BY vm2.sent_at DESC LIMIT 1) AS last_direction
+            FROM validators v
+            JOIN validator_messages vm ON vm.validator_id = v.id
+            GROUP BY v.id, v.handle
+            ORDER BY last_activity DESC
+            """
+        )
+        rows = cur.fetchall()
+    conversations = []
+    for r in rows:
+        d = dict(r)
+        preview = (d["last_body"] or "")[:80]
+        if len(d["last_body"] or "") > 80:
+            preview += "…"
+        d["preview"] = preview
+        del d["last_body"]
+        conversations.append(d)
+    return {"conversations": conversations}
+
+
+@app.get("/api/admin/messages/{validator_id}")
+def get_admin_conversation(validator_id: int, mark_read: bool = False, x_admin_token: str = Header(...)):
+    _require_admin(x_admin_token)
+    with db() as cur:
+        if mark_read:
+            cur.execute(
+                """
+                UPDATE validator_messages
+                SET is_read_by_admin = TRUE
+                WHERE validator_id = %s AND direction = 'inbound' AND is_read_by_admin = FALSE
+                """,
+                (validator_id,),
+            )
+        cur.execute(
+            """
+            SELECT id, subject, body, is_read, sent_by, sent_at,
+                   direction, parent_id, is_read_by_admin
+            FROM validator_messages
+            WHERE validator_id = %s
+            ORDER BY sent_at ASC
+            """,
+            (validator_id,),
+        )
+        msgs = [dict(r) for r in cur.fetchall()]
+    return {"messages": msgs}
+
+
+@app.post("/api/admin/message")
+def admin_send_message(req: AdminMessageRequest, x_admin_token: str = Header(...)):
+    admin_handle = _require_admin(x_admin_token)
+    subject = req.subject.strip()
+    body_text = req.body.strip()
+    if not subject or not body_text:
+        raise HTTPException(400, "Subject and body are required")
+    with db() as cur:
+        cur.execute("SELECT id FROM validators WHERE id = %s", (req.validator_id,))
+        if not cur.fetchone():
+            raise HTTPException(404, "Validator not found")
+        cur.execute(
+            """
+            INSERT INTO validator_messages (validator_id, subject, body, sent_by)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (req.validator_id, subject, body_text, admin_handle),
+        )
+    return {"ok": True}
+
+
 @app.post("/api/admin/entries/{record_id}/approve")
 def admin_approve(record_id: str, x_admin_token: str = Header(...)):
     admin_handle = _require_admin(x_admin_token)
@@ -1185,7 +1721,7 @@ def admin_approve(record_id: str, x_admin_token: str = Header(...)):
             """,
             (
                 record_id,
-                rec["doi_r"], rec.get("final_study_r") or rec["study_r"], rec["year_r"], rec["url_r"], rec["ref_r"], rec["abstract_r"],
+                rec["doi_r"], rec.get("final_study_r") or rec["study_r"], rec["year_r"], rec.get("final_url_r") or rec["url_r"], rec["ref_r"], rec.get("final_abstract_r") or rec["abstract_r"],
                 rec.get("final_doi_o") or rec["doi_o"],
                 rec.get("final_study_o") or rec["study_o"],
                 rec["year_o"], rec["url_o"], rec["ref_o"],
@@ -1239,6 +1775,34 @@ def admin_restore(record_id: str, x_admin_token: str = Header(...)):
         )
 
     return {"restored": True, "record_id": record_id}
+
+
+@app.post("/api/admin/entries/{record_id}/flag-review")
+def admin_flag_review(record_id: str, req: dict = Body(default={}), x_admin_token: str = Header(...)):
+    """Move a consensus_reached record back to need_review for further scrutiny."""
+    admin_handle = _require_admin(x_admin_token)
+    with db() as cur:
+        cur.execute("SELECT validation_status FROM unvalidated WHERE record_id = %s", (record_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Record not found")
+        if row["validation_status"] not in ("consensus_reached", "need_review"):
+            raise HTTPException(400, "Only pending-approval records can be flagged for review")
+
+        notes = (req.get("admin_notes") or "").strip() or None
+        cur.execute(
+            """
+            UPDATE unvalidated SET
+                validation_status = 'need_review',
+                admin_name        = %s,
+                admin_notes       = COALESCE(%s, admin_notes),
+                updated_at        = NOW()
+            WHERE record_id = %s
+            """,
+            (admin_handle, notes, record_id),
+        )
+
+    return {"flagged": True, "record_id": record_id}
 
 
 class AdminNoteRequest(BaseModel):
@@ -1319,6 +1883,7 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
             )
             return {"resolved": True, "rejected": True, "record_id": record_id}
 
+        was_rejected = rec["validation_status"] == "rejected"
         cur.execute(
             """
             UPDATE unvalidated SET
@@ -1330,14 +1895,16 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
                 final_doi_o         = %s,
                 final_study_o       = %s,
                 final_outcome       = %s,
+                final_outcome_quote = %s,
                 final_study_r       = %s,
                 final_doi_r         = %s,
                 final_url_r         = %s,
                 final_abstract_r    = %s,
+                admin_override      = %s,
                 updated_at          = NOW()
             WHERE record_id = %s
             """,
-            (admin_handle, req.admin_notes, final_type, final_doi_o, final_study_o, final_outcome, final_study_r, final_doi_r, final_url_r, final_abstract_r, record_id),
+            (admin_handle, req.admin_notes, final_type, final_doi_o, final_study_o, final_outcome, final_outcome_q, final_study_r, final_doi_r, final_url_r, final_abstract_r, was_rejected, record_id),
         )
 
         cur.execute(
