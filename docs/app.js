@@ -259,6 +259,51 @@ async function staticApi(path, method, body) {
     return { judgements };
   }
 
+  // Detail: /my-judgements/<queue_id>
+  if (route.startsWith("/my-judgements/")) {
+    const queueId = route.split("/my-judgements/")[1];
+    const cid = +params.get("coder_id");
+    const j = readJSON(STORAGE.JUDGEMENTS, []).find(x => x.pair_id === queueId && x.coder_id === cid);
+    if (!j) throw new Error("Judgement not found");
+    return {
+      queue_id: j.pair_id,
+      record_id: j.pair_id,
+      validator_slot: "human_1",
+      type_check: j.type_check || null,
+      original_check: j.original_check || null,
+      outcome_check: j.outcome_check || null,
+      corrected_doi_o: j.corrected_doi_o || null,
+      corrected_study_o: j.corrected_study_o || null,
+      corrected_outcome: j.corrected_outcome || null,
+      corrected_outcome_quote: j.corrected_outcome_quote || null,
+      corrected_abstract: j.corrected_abstract || null,
+      corrected_type: j.corrected_type || null,
+      corrected_study_r: j.corrected_study_r || null,
+      additional_checks: j.additional_checks || null,
+      validator_notes: j.validator_notes || null,
+      points: j.points || 0,
+      validated_at: j.created_at || null,
+      flagged: false,
+      flag_reason: null,
+      study_r: j.study_r || j.pair_id,
+      doi_r: j.doi_r || null,
+      year_r: j.year_r || null,
+      abstract_r: j.abstract_r || null,
+      doi_o: j.doi_o || null,
+      study_o: j.study_o || null,
+      year_o: j.year_o || null,
+      extracted_type: j.type || null,
+      extracted_outcome: j.outcome || null,
+      outcome_quote: j.outcome_quote || null,
+      has_validated: false,
+      val_study_r: null, val_doi_r: null, val_year_r: null, val_abstract_r: null,
+      val_doi_o: null, val_study_o: null, val_year_o: null,
+      val_type: null, val_outcome: null, val_outcome_quote: null,
+      val_admin_approved: false, val_validated_at: null,
+      messages: [],
+    };
+  }
+
   if (route === "/stats") {
     const cid = +params.get("coder_id");
     const judgements = readJSON(STORAGE.JUDGEMENTS, []).filter((j) => j.coder_id === cid);
@@ -788,6 +833,11 @@ function initHistory() {
   $("#history-modal")?.addEventListener("click", e => {
     if (e.target === $("#history-modal")) closeHistory();
   });
+  $("#hist-detail-close-btn")?.addEventListener("click", closeHistDetail);
+  $("#hist-detail-back-btn")?.addEventListener("click", closeHistDetail);
+  $("#hist-detail-modal")?.addEventListener("click", e => {
+    if (e.target === $("#hist-detail-modal")) closeHistDetail();
+  });
 }
 
 async function openHistory() {
@@ -825,9 +875,18 @@ function renderHistory() {
     body.innerHTML = `<p class="hist-empty">No completed judgements yet.</p>`;
     return;
   }
-  body.innerHTML = _histJudgements.map(j => {
+  // Sort newest first
+  const sorted = [..._histJudgements].sort((a, b) => {
+    if (!a.validated_at && !b.validated_at) return 0;
+    if (!a.validated_at) return 1;
+    if (!b.validated_at) return -1;
+    return new Date(b.validated_at) - new Date(a.validated_at);
+  });
+
+  body.innerHTML = sorted.map((j, idx) => {
+    const num   = sorted.length - idx;  // newest = highest number
     const title = escapeHtml(j.title_r || j.doi_r || "Unknown record");
-    const year  = j.year_r ? ` (${escapeHtml(j.year_r)})` : "";
+    const year  = j.year_r ? ` (${fmtYear(j.year_r)})` : "";
     const date  = j.validated_at ? _fmtRelTime(new Date(j.validated_at)) : "";
     const pts   = j.points != null ? `+${j.points} pts` : "";
 
@@ -862,12 +921,16 @@ function renderHistory() {
       : "";
 
     return `
-      <div class="hist-item ${j.flagged ? "hist-item-flagged" : ""}">
+      <div class="hist-item ${j.flagged ? "hist-item-flagged" : ""}" role="button" tabindex="0"
+           data-queue-id="${escapeHtml(j.queue_id)}" style="cursor:pointer">
         <div class="hist-item-top">
-          <div class="hist-item-title">${title}${year}</div>
+          <div class="hist-item-title">
+            <span class="hist-item-num">#${num}</span>${title}${year}
+          </div>
           <div class="hist-item-meta">
             ${pts ? `<span class="hist-item-pts">${pts}</span>` : ""}
             ${date ? `<span class="hist-item-date">${date}</span>` : ""}
+            <span class="hist-item-arrow">›</span>
           </div>
         </div>
         <div class="hist-chips">${chips}</div>
@@ -877,6 +940,276 @@ function renderHistory() {
       </div>
     `;
   }).join("");
+
+  body.querySelectorAll(".hist-item[data-queue-id]").forEach(el => {
+    const open = () => openHistDetail(el.dataset.queueId);
+    el.addEventListener("click", open);
+    el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") open(); });
+  });
+}
+
+/* ============================================================
+   My Judgements Detail
+   ============================================================ */
+
+const _histDetailCache = {};
+
+async function openHistDetail(queueId) {
+  const modal = $("#hist-detail-modal");
+  if (!modal) return;
+  const body = $("#hist-detail-body");
+  body.innerHTML = `<p class="faq-loading">Loading…</p>`;
+  modal.classList.remove("hidden");
+
+  if (_histDetailCache[queueId]) {
+    renderHistDetail(_histDetailCache[queueId]);
+    return;
+  }
+  try {
+    const data = await api(`/my-judgements/${queueId}?coder_id=${state.coder.coder_id}`);
+    _histDetailCache[queueId] = data;
+    renderHistDetail(data);
+  } catch (e) {
+    body.innerHTML = `<p class="faq-error">Could not load record (${escapeHtml(e.message)}).</p>`;
+  }
+}
+
+function closeHistDetail() {
+  $("#hist-detail-modal")?.classList.add("hidden");
+}
+
+function _detailCheckRow(label, extracted, checkVal, corrected) {
+  const statusIcon = checkVal === "correct"
+    ? `<span class="hd-chk hd-chk-ok">✓ Confirmed</span>`
+    : checkVal === "incorrect"
+    ? `<span class="hd-chk hd-chk-fail">✗ Corrected</span>`
+    : `<span class="hd-chk hd-chk-na">— Not checked</span>`;
+  const extrHtml = extracted
+    ? `<div class="hd-row-val"><span class="hd-row-tag">Extracted</span><span>${escapeHtml(String(extracted))}</span></div>`
+    : "";
+  const corrHtml = corrected && checkVal === "incorrect"
+    ? `<div class="hd-row-val hd-row-val-corr"><span class="hd-row-tag">Your correction</span><span>${escapeHtml(corrected)}</span></div>`
+    : "";
+  return `
+    <div class="hd-check-row">
+      <div class="hd-check-head">
+        <span class="hd-check-label">${label}</span>${statusIcon}
+      </div>
+      ${extrHtml}${corrHtml}
+    </div>`;
+}
+
+function renderHistDetail(d) {
+  const body = $("#hist-detail-body");
+  if (!body) return;
+
+  const doiLink = doi => doi
+    ? `<a class="hd-doi-link" href="https://doi.org/${escapeHtml(doi)}" target="_blank" rel="noopener">${escapeHtml(doi)} ↗</a>`
+    : `<span class="hd-na">—</span>`;
+
+  const fmtDate = iso => iso
+    ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+    : "";
+
+  const notVal = d.corrected_type === "not_validation";
+  const typeCorrDisplay = d.corrected_type
+    ? (notVal ? "Not a replication/reproduction" : d.corrected_type)
+    : null;
+
+  const dateStr = d.validated_at ? fmtDate(d.validated_at) : "";
+
+  // Use validated consensus values if available, else fall back to extracted
+  const rec = {
+    study_r:  d.val_study_r  || d.study_r,
+    doi_r:    d.val_doi_r    || d.doi_r,
+    year_r:   d.val_year_r   || d.year_r,
+    abstract_r: d.val_abstract_r || d.abstract_r,
+    doi_o:    d.val_doi_o    || d.doi_o,
+    study_o:  d.val_study_o  || d.study_o,
+    year_o:   d.val_year_o   || d.year_o,
+    type:     d.val_type     || d.extracted_type,
+    outcome:  d.val_outcome  || d.extracted_outcome,
+    outcome_quote: d.val_outcome_quote || d.outcome_quote,
+  };
+
+  // ---- LEFT COLUMN: saved record ----
+  const statusBadge = d.has_validated
+    ? (d.val_admin_approved
+        ? `<span class="hd-status-badge hd-status-approved">Approved</span>`
+        : `<span class="hd-status-badge hd-status-validated">Consensus reached</span>`)
+    : `<span class="hd-status-badge hd-status-pending">Awaiting second validator</span>`;
+
+  const abstractHtml = rec.abstract_r
+    ? `<div class="hd-lsection">
+         <div class="hd-section-label">Abstract</div>
+         <p class="hd-abstract-text">${escapeHtml(rec.abstract_r)}</p>
+       </div>`
+    : "";
+
+  const classificationHtml = (rec.type || rec.outcome)
+    ? `<div class="hd-lsection">
+         <div class="hd-section-label">Classification</div>
+         ${rec.type    ? `<div class="hd-field"><span class="hd-field-label">Type</span><span class="hd-val-pill">${escapeHtml(rec.type)}</span></div>` : ""}
+         ${rec.outcome ? `<div class="hd-field"><span class="hd-field-label">Outcome</span><span class="hd-val-pill hd-val-pill-${escapeHtml(rec.outcome)}">${escapeHtml(rec.outcome)}</span></div>` : ""}
+         ${rec.outcome_quote ? `<div class="hd-field hd-field-block"><span class="hd-field-label">Quote</span><span class="hd-field-quote">${escapeHtml(rec.outcome_quote)}</span></div>` : ""}
+       </div>`
+    : "";
+
+  const origHtml = (rec.study_o || rec.doi_o)
+    ? `<div class="hd-lsection">
+         <div class="hd-section-label">Original study</div>
+         ${rec.study_o ? `<div class="hd-field"><span class="hd-field-label">Title</span><span>${escapeHtml(rec.study_o)}</span></div>` : ""}
+         <div class="hd-field"><span class="hd-field-label">DOI</span>${doiLink(rec.doi_o)}</div>
+         ${rec.year_o  ? `<div class="hd-field"><span class="hd-field-label">Year</span><span>${fmtYear(rec.year_o)}</span></div>` : ""}
+       </div>`
+    : "";
+
+  // ---- RIGHT COLUMN: this validator's judgement ----
+  const titleCorrHtml = d.corrected_study_r
+    ? `<div class="hd-check-row">
+         <div class="hd-check-head"><span class="hd-check-label">Title fix</span><span class="hd-chk hd-chk-edit">✎ Corrected</span></div>
+         <div class="hd-row-val"><span class="hd-row-tag">Was</span><span>${escapeHtml(d.study_r || "—")}</span></div>
+         <div class="hd-row-val hd-row-val-corr"><span class="hd-row-tag">Corrected to</span><span>${escapeHtml(d.corrected_study_r)}</span></div>
+       </div>`
+    : "";
+
+  const quoteHtml = (d.outcome_quote || d.corrected_outcome_quote)
+    ? `<div class="hd-check-row">
+         <div class="hd-check-head">
+           <span class="hd-check-label">Outcome quote</span>
+           ${d.corrected_outcome_quote ? `<span class="hd-chk hd-chk-edit">✎ Edited</span>` : ""}
+         </div>
+         ${d.outcome_quote ? `<div class="hd-row-val"><span class="hd-row-tag">Extracted</span><span>${escapeHtml(d.outcome_quote)}</span></div>` : ""}
+         ${d.corrected_outcome_quote ? `<div class="hd-row-val hd-row-val-corr"><span class="hd-row-tag">Your edit</span><span>${escapeHtml(d.corrected_outcome_quote)}</span></div>` : ""}
+       </div>`
+    : "";
+
+  const notesHtml = d.validator_notes
+    ? `<div class="hd-notes-block">
+         <div class="hd-section-label">Your notes</div>
+         <p class="hd-notes-text">${escapeHtml(d.validator_notes)}</p>
+       </div>`
+    : "";
+
+  // Combined flag + thread section
+  const thread = d.messages || [];
+  const rootMsg = thread.find(m => m.direction === "outbound");
+  const rootMsgId = rootMsg ? rootMsg.id : null;
+
+  const flagHtml = d.flagged
+    ? `<div class="hd-flag-inline">
+         <span class="hd-flag-icon">⚑</span>
+         <span class="hd-flag-title">Flagged for review</span>
+         ${d.flag_reason ? `<span class="hd-flag-sep">·</span><span class="hd-flag-reason-inline">${escapeHtml(d.flag_reason)}</span>` : ""}
+       </div>`
+    : "";
+
+  const threadHtml = thread.length
+    ? `<div class="hd-thread">
+         <div class="hd-section-label">Messages</div>
+         ${thread.map(m => {
+           const isTeam = m.direction === "outbound";
+           const time = _fmtRelTime(new Date(m.sent_at));
+           return `<div class="hd-bubble ${isTeam ? "hd-bubble-team" : "hd-bubble-you"}">
+             <div class="hd-bubble-meta">
+               <span class="hd-bubble-who">${isTeam ? "Review team" : "You"}</span>
+               <span class="hd-bubble-time">${time}</span>
+             </div>
+             <p class="hd-bubble-body">${escapeHtml(m.body)}</p>
+           </div>`;
+         }).join("")}
+       </div>`
+    : "";
+
+  const replyHtml = rootMsgId
+    ? `<div class="hd-reply-wrap" data-parent-id="${rootMsgId}">
+         <textarea class="hd-reply-input" placeholder="Write a reply…" rows="2"></textarea>
+         <button class="hd-reply-btn btn-primary">Send</button>
+       </div>`
+    : "";
+
+  const msgHtml = (flagHtml || threadHtml || replyHtml)
+    ? `<div class="hd-review-section">
+         ${flagHtml}
+         ${threadHtml}
+         ${replyHtml}
+       </div>`
+    : "";
+
+  body.innerHTML = `
+    <div class="hd-top-bar">
+      <div class="hd-top-meta">
+        ${rec.doi_r ? `<span>${doiLink(rec.doi_r)}</span>` : ""}
+        ${rec.year_r ? `<span class="hd-record-year">${fmtYear(rec.year_r)}</span>` : ""}
+        ${dateStr ? `<span class="hd-record-date">Judged ${dateStr}</span>` : ""}
+        ${statusBadge}
+      </div>
+      <span class="hd-pts-badge">+${d.points ?? 0} pts</span>
+    </div>
+
+    <div class="hd-cols">
+      <div class="hd-col-left">
+        <div class="hd-col-label">${d.has_validated ? "Saved record" : "Record"}</div>
+        <h3 class="hd-record-title">${escapeHtml(rec.study_r || rec.doi_r || "Unknown record")}</h3>
+        ${classificationHtml}
+        ${abstractHtml}
+        ${origHtml}
+      </div>
+
+      <div class="hd-col-right">
+        <div class="hd-col-label">Your judgement</div>
+        ${titleCorrHtml}
+        ${_detailCheckRow("Study type", d.extracted_type, d.type_check, typeCorrDisplay)}
+        ${_detailCheckRow("Original study", d.study_o || d.doi_o || null, d.original_check, d.corrected_study_o || d.corrected_doi_o)}
+        ${_detailCheckRow("Outcome", d.extracted_outcome, d.outcome_check, d.corrected_outcome)}
+        ${quoteHtml}
+        ${notesHtml}
+        ${flagHtml}
+        ${msgHtml}
+      </div>
+    </div>
+  `;
+
+  $("#hist-detail-title").textContent = (rec.study_r || rec.doi_r || "Judgement Detail").substring(0, 70);
+
+  // Wire reply button
+  const replyWrap = body.querySelector(".hd-reply-wrap");
+  if (replyWrap) {
+    const parentId = +replyWrap.dataset.parentId;
+    const textarea = replyWrap.querySelector(".hd-reply-input");
+    const btn      = replyWrap.querySelector(".hd-reply-btn");
+    btn.addEventListener("click", async () => {
+      const text = textarea.value.trim();
+      if (!text) return;
+      btn.disabled = true;
+      try {
+        await api(`/messages/${parentId}/reply`, "POST", { coder_id: state.coder.coder_id, body: text });
+        textarea.value = "";
+        // Append the new reply bubble immediately, then re-fetch for accuracy
+        const now = new Date().toISOString();
+        const thread = replyWrap.closest(".hd-review-section").querySelector(".hd-thread");
+        if (thread) {
+          const bubble = document.createElement("div");
+          bubble.className = "hd-bubble hd-bubble-you";
+          bubble.innerHTML = `
+            <div class="hd-bubble-meta">
+              <span class="hd-bubble-who">You</span>
+              <span class="hd-bubble-time">just now</span>
+            </div>
+            <p class="hd-bubble-body">${escapeHtml(text)}</p>
+          `;
+          thread.appendChild(bubble);
+        }
+        delete _histDetailCache[d.queue_id];
+      } catch (e) {
+        await showAlert("Could not send: " + e.message);
+      }
+      btn.disabled = false;
+    });
+    textarea.addEventListener("keydown", e => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) btn.click();
+    });
+  }
 }
 
 /* ============================================================
@@ -922,7 +1255,7 @@ function _getTimePhase() {
 
 function _showMaintBanner(text, type, dismissible) {
   const el      = $("#maint-banner");
-  const icons   = { info: "🔔", warning: "⚠️", active: "🛠️", admin: "⚠️" };
+  const icons   = { info: "◆", warning: "▲", active: "▲", admin: "▲" };
   $("#maint-banner-icon").textContent   = icons[type] || "⚠️";
   $("#maint-banner-text").textContent   = text;
   $("#maint-banner-close").style.display = dismissible ? "" : "none";
@@ -1141,12 +1474,6 @@ async function loadNextPair() {
 
   if (resp.resumed) {
     _restoreDraftInputs(card, draft);
-    showDialog({
-      icon: "📖",
-      title: "Resuming your previous study",
-      message: "You left this one mid-way. Re-select your answers above — any text you had entered has been restored. Hit Skip if you'd prefer a fresh study instead.",
-      buttons: [{ label: "Continue →", value: true, primary: true }],
-    });
   }
 
   _startDraftSave(pair_id);
@@ -1490,12 +1817,17 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
   const ocSkipBtn     = container.querySelector("#oc-skip-btn");
   const ocConfirm     = container.querySelector("#oc-saved-confirm");
   const ocEditBtn     = container.querySelector("#oc-edit-btn");
+  const gate3         = container.querySelector("#gate-3");
 
   const ocForm = ocPanel?.querySelector("#oc-form");
 
   function ocShowForm() {
     if (ocForm)    ocForm.classList.remove("hidden");
     if (ocConfirm) ocConfirm.classList.add("hidden");
+  }
+
+  function _revealGate3() {
+    if (gate3) gate3.classList.remove("hidden");
   }
 
   if (doiInput)   doiInput.oninput   = () => { state.judgement.corrected_doi_o   = doiInput.value.trim()   || null; };
@@ -1507,6 +1839,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
       state.judgement.corrected_study_o = studyInput?.value.trim() || null;
       if (ocForm)    ocForm.classList.add("hidden");
       if (ocConfirm) ocConfirm.classList.remove("hidden");
+      _revealGate3();
     };
   }
 
@@ -1517,10 +1850,26 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
       if (doiInput)   doiInput.value   = "";
       if (studyInput) studyInput.value = "";
       if (ocPanel)    ocPanel.classList.add("hidden");
+      _revealGate3();
     };
   }
 
-  if (ocEditBtn) ocEditBtn.onclick = ocShowForm;
+  if (ocEditBtn) {
+    ocEditBtn.onclick = () => {
+      ocShowForm();
+      // Hide gate 3 again and reset its answer so the validator
+      // reconsiders the outcome with the updated paper in mind.
+      if (gate3) {
+        gate3.classList.add("hidden");
+        unanswerGate(gate3);
+      }
+      state.judgement.outcome = null;
+      state.judgement.corrected_outcome = null;
+      const cr = container.querySelector("#outcome-correction");
+      if (cr) cr.classList.add("hidden");
+      updateSubmitState(container.querySelector(".pair-body"));
+    };
+  }
 
   // Click answered gate header to toggle its body open/closed
   container.querySelectorAll(".gate-header-row").forEach((row) => {
@@ -1570,8 +1919,22 @@ function wireEditButtons(container, p) {
       editAbstractBtn.textContent = "save edited abstract";
     } else {
       const v = abstractEdit.value.trim();
+      if (!v) {
+        // Block saving an empty abstract — shake the button and hint
+        editAbstractBtn.classList.add("unsaved-shake");
+        editAbstractBtn.addEventListener("animationend", () => editAbstractBtn.classList.remove("unsaved-shake"), { once: true });
+        const existing = container.querySelector(".abstract-empty-hint");
+        if (!existing) {
+          const hint = document.createElement("div");
+          hint.className = "abstract-empty-hint unsaved-hint";
+          hint.textContent = "Abstract cannot be empty — please add the text before saving.";
+          abstractEdit.insertAdjacentElement("afterend", hint);
+          setTimeout(() => hint.remove(), 5000);
+        }
+        return;
+      }
       state.judgement.edited_abstract = v && v !== (p.abstract_r || "").trim() ? v : null;
-      abstractText.textContent = v || "(no abstract available)";
+      abstractText.textContent = v;
       abstractText.classList.remove("hidden");
       abstractEdit.classList.add("hidden");
       editAbstractBtn.textContent = state.judgement.edited_abstract ? "edit abstract (✓ edited)" : "edit abstract";
@@ -1607,12 +1970,30 @@ function wireEditButtons(container, p) {
     const outcomeChoices    = container.querySelector("#gate-3 .choices");
     const correctionRow     = container.querySelector("#outcome-correction");
 
+    const _lockChoices = () => {
+      if (!outcomeChoices) return;
+      outcomeChoices.classList.add("quote-edit-open");
+      outcomeChoices.querySelectorAll(".choice").forEach(b => {
+        b.setAttribute("data-pre-lock-title", b.title || "");
+        b.title = "Save your edited quote first";
+      });
+    };
+    const _unlockChoices = () => {
+      if (!outcomeChoices) return;
+      outcomeChoices.classList.remove("quote-edit-open");
+      outcomeChoices.querySelectorAll(".choice").forEach(b => {
+        b.title = b.getAttribute("data-pre-lock-title") || "";
+        b.removeAttribute("data-pre-lock-title");
+      });
+    };
+
     editQuoteBtn.onclick = () => {
       if (quoteEdit.classList.contains("hidden")) {
         quoteEdit.value = p.outcome_phrase || "";
         if (quoteText) quoteText.classList.add("hidden");
         quoteEdit.classList.remove("hidden");
         editQuoteBtn.textContent = "save edited quote";
+        _lockChoices();
       } else {
         const v = quoteEdit.value.trim();
         state.judgement.edited_outcome_quote = v && v !== (p.outcome_phrase || "").trim() ? v : null;
@@ -1628,6 +2009,7 @@ function wireEditButtons(container, p) {
           }
         }
         quoteEdit.classList.add("hidden");
+        _unlockChoices();
 
         if (state.judgement.edited_outcome_quote) {
           // Quote was changed — auto-select "wrong" and skip the 3 buttons
@@ -1658,6 +2040,9 @@ function wireEditButtons(container, p) {
 }
 
 function onChoice(btn) {
+  // Block clicks while the quote edit textarea is open
+  if (btn.closest(".choices")?.classList.contains("quote-edit-open")) return;
+
   const pairBody = btn.closest(".pair-body");
   const parent = btn.parentElement;
   const gate = btn.closest(".gate");
@@ -1716,7 +2101,19 @@ function onChoice(btn) {
         if (ocConfirm) ocConfirm.classList.add("hidden");
       }
     }
-    pairBody.querySelector("#gate-3").classList.remove("hidden");
+    // Show gate-3 immediately unless "wrong paper" is selected and the
+    // suggestion panel is still open (not yet saved or skipped).
+    const gate3 = pairBody.querySelector("#gate-3");
+    if (btn.dataset.original === "wrong") {
+      const ocPanel   = pairBody.querySelector("#original-correction");
+      const ocConfirm = pairBody.querySelector("#oc-saved-confirm");
+      const resolved  = (ocConfirm && !ocConfirm.classList.contains("hidden")) ||
+                        (!ocPanel  || ocPanel.classList.contains("hidden"));
+      if (resolved) gate3.classList.remove("hidden");
+      // else leave gate-3 hidden — save/skip handlers will reveal it
+    } else {
+      gate3.classList.remove("hidden");
+    }
   } else if (btn.dataset.outcome) {
     state.judgement.outcome = btn.dataset.outcome;
     state.judgement.corrected_outcome = null;
@@ -2203,7 +2600,96 @@ document.addEventListener("keydown", (e) => {
 /* ---------- Too-fast guard ---------- */
 const TOO_FAST_THRESHOLD_MS = 17000;
 
+function _shakeAndHint(anchorEl, message) {
+  const card = $("#pair-card");
+  const existing = card?.querySelector(".unsaved-hint");
+  if (existing) existing.remove();
+
+  const hint = document.createElement("div");
+  hint.className = "unsaved-hint";
+  hint.textContent = message;
+
+  // Shake the anchor button
+  if (anchorEl) {
+    anchorEl.classList.add("unsaved-shake");
+    anchorEl.addEventListener("animationend", () => anchorEl.classList.remove("unsaved-shake"), { once: true });
+  }
+
+  // Insert the hint above the first gate (consistent position for all three warning types)
+  const firstGate = card?.querySelector(".gate");
+  if (firstGate) {
+    firstGate.insertAdjacentElement("beforebegin", hint);
+    hint.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } else if (card) {
+    card.prepend(hint);
+  }
+
+  // Auto-remove after 6 seconds
+  setTimeout(() => hint.remove(), 6000);
+}
+
 async function guardedSubmit() {
+  // Check for unsaved edits in the three interactive sections
+  const card = $("#pair-card");
+
+  // 1. Title correction panel open but not saved — block regardless of content
+  const titleEdit = card?.querySelector("#title-edit");
+  if (titleEdit && !titleEdit.classList.contains("hidden")) {
+    _shakeAndHint(
+      card.querySelector("#fix-title-btn"),
+      'Title correction is not saved — please save it to proceed.'
+    );
+    return;
+  }
+
+  // 2. Paper suggestion open but not saved (oc-saved-confirm not visible AND inputs have content)
+  const ocConfirm = card?.querySelector("#oc-saved-confirm");
+  const ocDoi     = card?.querySelector("#corrected-doi-input");
+  const ocStudy   = card?.querySelector("#corrected-study-input");
+  const ocVisible = card?.querySelector("#original-correction");
+  if (
+    ocVisible && !ocVisible.classList.contains("hidden") &&
+    ocConfirm && ocConfirm.classList.contains("hidden") &&
+    ((ocDoi?.value.trim()) || (ocStudy?.value.trim()))
+  ) {
+    _shakeAndHint(
+      card.querySelector("#oc-save-btn"),
+      'You have unsaved content — click "Save suggestion" to keep it, or "Skip" to continue without saving.'
+    );
+    return;
+  }
+
+  // 3. Quote edit open but not saved
+  const quoteEdit = card?.querySelector("#outcome-quote-edit");
+  if (quoteEdit && !quoteEdit.classList.contains("hidden") && quoteEdit.value.trim()) {
+    _shakeAndHint(
+      card.querySelector("#edit-quote-btn"),
+      'You have an unsaved quote edit — click "save edited quote" first.'
+    );
+    return;
+  }
+
+  // 4. Abstract edit open but not saved
+  const abstractEdit = card?.querySelector("#abstract-edit");
+  if (abstractEdit && !abstractEdit.classList.contains("hidden")) {
+    _shakeAndHint(
+      card.querySelector("#edit-abstract-btn"),
+      'You have an unsaved abstract edit — click "save edited abstract" first.'
+    );
+    return;
+  }
+
+  // 5. Abstract must not be empty — required for all submission types
+  const hasAbstract = (state.currentPair?.abstract_r || "").trim() ||
+                      (state.judgement.edited_abstract || "").trim();
+  if (!hasAbstract) {
+    _shakeAndHint(
+      card?.querySelector("#edit-abstract-btn"),
+      'This record has no abstract — please find and paste it in using "edit abstract" before submitting.'
+    );
+    return;
+  }
+
   const elapsed = _pairShownAt ? Date.now() - _pairShownAt : Infinity;
   if (elapsed < TOO_FAST_THRESHOLD_MS) {
     const result = await showDialog({

@@ -447,6 +447,136 @@ def get_my_judgements(coder_id: int):
     return {"judgements": judgements}
 
 
+@app.get("/api/my-judgements/{queue_id}")
+def get_my_judgement_detail(queue_id: str, coder_id: int):
+    with db() as cur:
+        cur.execute(
+            """
+            SELECT
+                vq.queue_id,
+                vq.record_id,
+                vq.validator_slot,
+                vq.type_check,
+                vq.original_check,
+                vq.outcome_check,
+                vq.corrected_doi_o,
+                vq.corrected_study_o,
+                vq.corrected_outcome,
+                vq.corrected_outcome_quote,
+                vq.corrected_abstract,
+                vq.corrected_type,
+                vq.corrected_study_r,
+                vq.additional_checks,
+                vq.validator_notes,
+                vq.points,
+                vq.validated_at,
+                vq.flagged,
+                vq.flag_reason,
+                u.study_r        AS raw_study_r,
+                u.doi_r          AS raw_doi_r,
+                u.year_r         AS raw_year_r,
+                u.abstract_r     AS raw_abstract_r,
+                u.doi_o          AS raw_doi_o,
+                u.study_o        AS raw_study_o,
+                u.year_o         AS raw_year_o,
+                u.type           AS extracted_type,
+                u.outcome        AS extracted_outcome,
+                u.outcome_quote  AS extracted_outcome_quote,
+                v.validated_record_id,
+                v.study_r        AS val_study_r,
+                v.doi_r          AS val_doi_r,
+                v.year_r         AS val_year_r,
+                v.abstract_r     AS val_abstract_r,
+                v.doi_o          AS val_doi_o,
+                v.study_o        AS val_study_o,
+                v.year_o         AS val_year_o,
+                v.type           AS val_type,
+                v.outcome        AS val_outcome,
+                v.outcome_quote  AS val_outcome_quote,
+                v.admin_approved AS val_admin_approved,
+                v.validated_at   AS val_validated_at
+            FROM validation_queue vq
+            JOIN unvalidated u ON u.record_id = vq.record_id
+            LEFT JOIN validated v ON v.record_id = vq.record_id
+            WHERE vq.queue_id = %s AND vq.validator_id = %s
+            """,
+            (queue_id, coder_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Judgement not found")
+        # Fetch full message thread for this queue_id (outbound + replies), oldest first
+        cur.execute(
+            """
+            SELECT id, body, sent_at, direction, is_read, parent_id
+            FROM validator_messages
+            WHERE queue_id = %s
+            ORDER BY sent_at ASC
+            """,
+            (queue_id,),
+        )
+        thread = [
+            {
+                "id":        m["id"],
+                "body":      m["body"],
+                "sent_at":   m["sent_at"].isoformat() if m["sent_at"] else None,
+                "direction": m["direction"],
+                "is_read":   bool(m["is_read"]),
+                "parent_id": m["parent_id"],
+            }
+            for m in cur.fetchall()
+        ]
+    has_validated = row["validated_record_id"] is not None
+    return {
+        "queue_id":               str(row["queue_id"]),
+        "record_id":              str(row["record_id"]),
+        "validator_slot":         row["validator_slot"],
+        "type_check":             row["type_check"],
+        "original_check":         row["original_check"],
+        "outcome_check":          row["outcome_check"],
+        "corrected_doi_o":        row["corrected_doi_o"],
+        "corrected_study_o":      row["corrected_study_o"],
+        "corrected_outcome":      row["corrected_outcome"],
+        "corrected_outcome_quote":row["corrected_outcome_quote"],
+        "corrected_abstract":     row["corrected_abstract"],
+        "corrected_type":         row["corrected_type"],
+        "corrected_study_r":      row["corrected_study_r"],
+        "additional_checks":      row["additional_checks"],
+        "validator_notes":        row["validator_notes"],
+        "points":                 row["points"],
+        "validated_at":           row["validated_at"].isoformat() if row["validated_at"] else None,
+        "flagged":                bool(row["flagged"]),
+        "flag_reason":            row["flag_reason"],
+        # Raw extracted values (always present)
+        "study_r":                row["raw_study_r"],
+        "doi_r":                  row["raw_doi_r"],
+        "year_r":                 row["raw_year_r"],
+        "abstract_r":             row["raw_abstract_r"],
+        "doi_o":                  row["raw_doi_o"],
+        "study_o":                row["raw_study_o"],
+        "year_o":                 row["raw_year_o"],
+        "extracted_type":         row["extracted_type"],
+        "extracted_outcome":      row["extracted_outcome"],
+        "outcome_quote":          row["extracted_outcome_quote"],
+        # Final validated consensus (null if record not yet fully validated)
+        "has_validated":          has_validated,
+        "val_study_r":            row["val_study_r"],
+        "val_doi_r":              row["val_doi_r"],
+        "val_year_r":             row["val_year_r"],
+        "val_abstract_r":         row["val_abstract_r"],
+        "val_doi_o":              row["val_doi_o"],
+        "val_study_o":            row["val_study_o"],
+        "val_year_o":             row["val_year_o"],
+        "val_type":               row["val_type"],
+        "val_outcome":            row["val_outcome"],
+        "val_outcome_quote":      row["val_outcome_quote"],
+        "val_admin_approved":     bool(row["val_admin_approved"]) if row["val_admin_approved"] is not None else False,
+        "val_validated_at":       row["val_validated_at"].isoformat() if row["val_validated_at"] else None,
+        # Full message thread (outbound from team + validator replies)
+        "messages":               thread,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Validation workflow endpoints
 # ---------------------------------------------------------------------------
