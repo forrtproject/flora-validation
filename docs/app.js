@@ -727,17 +727,62 @@ function _updateInboxBadge() {
   }
 }
 
+let _inboxPollTimer = null;
+
 function openInbox() {
   const modal = $("#inbox-modal");
   if (!modal) return;
+  clearInterval(_inboxPollTimer);
   renderInbox();
   modal.classList.remove("hidden");
   document.body.style.overflow = "hidden";
+  // Poll for new messages every 30s while inbox is open
+  _inboxPollTimer = setInterval(async () => {
+    if ($("#inbox-modal")?.classList.contains("hidden")) return;
+    try {
+      const r = await api(`/messages?coder_id=${state.coder.coder_id}`);
+      const prev = _inboxMessages.length;
+      _inboxMessages = r.messages || [];
+      _updateInboxBadge();
+      // Only re-render list if we're on the list view (not inside a thread)
+      const body = $("#inbox-body");
+      if (body && !body.querySelector(".inbox-thread-view")) {
+        const hadMore = _inboxMessages.length > prev;
+        if (hadMore) renderInbox();
+      }
+    } catch (_) {}
+  }, 30000);
 }
 
 function closeInbox() {
   $("#inbox-modal")?.classList.add("hidden");
   document.body.style.overflow = "";
+  clearInterval(_inboxPollTimer);
+  _inboxPollTimer = null;
+}
+
+function _buildConvMap() {
+  const convMap = new Map();
+  _inboxMessages.forEach(m => {
+    const key = m.queue_id || `msg-${m.parent_id || m.id}`;
+    if (!convMap.has(key)) {
+      const root = m.direction === "outbound" ? m : _inboxMessages.find(x => x.id === m.parent_id) || m;
+      convMap.set(key, {
+        queueId:   m.queue_id || null,
+        rootMsgId: root.id,
+        subject:   root.subject,
+        messages:  [],
+        hasUnread: false,
+        latestDate: null,
+      });
+    }
+    const conv = convMap.get(key);
+    conv.messages.push(m);
+    if (!m.is_read && m.direction !== "inbound") conv.hasUnread = true;
+    const d = new Date(m.sent_at);
+    if (!conv.latestDate || d > conv.latestDate) conv.latestDate = d;
+  });
+  return convMap;
 }
 
 function renderInbox() {
@@ -748,77 +793,146 @@ function renderInbox() {
     return;
   }
 
-  body.innerHTML = _inboxMessages.map(msg => {
-    const isInbound = msg.direction === "inbound";
-    const isUnread  = !isInbound && !msg.is_read;
-    const date = new Date(msg.sent_at).toLocaleString("en-GB", {
-      day: "numeric", month: "short", year: "numeric",
-      hour: "2-digit", minute: "2-digit",
-    });
-    if (isInbound) {
-      return `<div class="inbox-msg inbox-msg-reply" data-id="${msg.id}">
-        <div class="inbox-msg-header">
-          <span class="inbox-msg-subject inbox-reply-label">↩ Your reply</span>
-          <span class="inbox-msg-date">${date}</span>
-        </div>
-        <p class="inbox-msg-body">${escapeHtml(msg.body).replace(/\n/g, "<br>")}</p>
-      </div>`;
-    }
-    return `<div class="inbox-msg${isUnread ? " inbox-msg-unread" : ""}" data-id="${msg.id}">
-      <div class="inbox-msg-header">
-        <span class="inbox-msg-subject">${escapeHtml(msg.subject)}</span>
-        <span class="inbox-msg-date">${date}</span>
-      </div>
-      <p class="inbox-msg-body">${escapeHtml(msg.body).replace(/\n/g, "<br>")}</p>
-      <div class="inbox-msg-footer">
-        <button class="reply-btn" data-msg-id="${msg.id}" data-subject="${escapeHtml(msg.subject)}">↩ Reply</button>
+  const convMap = _buildConvMap();
+  const convs   = [...convMap.values()];
+
+  const fmtDate = d => d ? d.toLocaleString("en-GB", {
+    day: "numeric", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  }) : "";
+
+  body.innerHTML = convs.map((conv, idx) => {
+    const num        = idx + 1;
+    const unreadBadge = conv.hasUnread ? `<span class="inbox-unread-badge">UNREAD</span>` : "";
+    return `<div class="inbox-conv${conv.hasUnread ? " inbox-conv-unread" : ""}" data-idx="${idx}">
+      <div class="inbox-conv-row">
+        <span class="inbox-conv-num">#${num}</span>
+        <span class="inbox-conv-subject">${escapeHtml(conv.subject)}</span>
+        ${unreadBadge}
+        <span class="inbox-conv-date">${fmtDate(conv.latestDate)}</span>
       </div>
     </div>`;
   }).join("");
 
-  // Wire reply buttons
-  body.querySelectorAll(".reply-btn").forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const msgId  = parseInt(btn.dataset.msgId);
-      const origSubject = btn.dataset.subject || "";
-      const rawHtml = `<p style="text-align:left;margin-bottom:0.5rem;font-size:0.85rem;color:var(--muted)">Replying to: <strong>${escapeHtml(origSubject)}</strong></p><textarea id="reply-body-input" rows="4" style="width:100%;box-sizing:border-box;padding:0.5rem;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:0.9rem;resize:vertical" placeholder="Write your reply…"></textarea>`;
-      const confirmed = await showDialog({
-        icon: "↩",
-        title: "Reply",
-        message: rawHtml,
-        rawHtml: true,
-        buttons: [
-          { label: "Cancel", value: false },
-          { label: "Send Reply →", value: true, primary: true },
-        ],
-        layout: "row",
+  // Wire conversation click → mark read + show thread
+  body.querySelectorAll(".inbox-conv").forEach(el => {
+    el.addEventListener("click", () => {
+      const idx  = +el.dataset.idx;
+      const conv = convs[idx];
+      // Mark this conversation's unread messages as read
+      conv.messages.forEach(m => {
+        if (!m.is_read && m.direction !== "inbound") {
+          api(`/messages/${m.id}/read?coder_id=${state.coder.coder_id}`, "POST").catch(() => {});
+          m.is_read = true;
+        }
       });
-      if (!confirmed) return;
-      const replyBody = ($("#reply-body-input")?.value || "").trim();
-      if (!replyBody) { await showAlert("Reply cannot be empty."); return; }
-      btn.disabled = true;
-      try {
-        await api(`/messages/${msgId}/reply`, "POST", { coder_id: state.coder.coder_id, body: replyBody });
-        showToast("Reply sent.");
-        const resp = await api(`/messages?coder_id=${state.coder.coder_id}`);
-        _inboxMessages = resp.messages || [];
-        _updateInboxBadge();
-        renderInbox();
-      } catch (e) {
-        await showAlert("Failed to send: " + e.message);
-        btn.disabled = false;
-      }
+      conv.hasUnread = false;
+      _updateInboxBadge();
+      _renderInboxThread(body, conv, idx + 1);
     });
   });
+}
 
-  // Mark unread outbound messages as read
-  const unreadIds = _inboxMessages.filter(m => m.direction !== "inbound" && !m.is_read).map(m => m.id);
-  unreadIds.forEach(id => {
-    api(`/messages/${id}/read?coder_id=${state.coder.coder_id}`, "POST").catch(() => {});
-    const msg = _inboxMessages.find(m => m.id === id);
-    if (msg) msg.is_read = true;
+function _renderInboxThread(body, conv, num) {
+  const fmtDate = d => new Date(d).toLocaleString("en-GB", {
+    day: "numeric", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
   });
-  if (unreadIds.length > 0) _updateInboxBadge();
+
+  const bubbles = conv.messages.map(m => {
+    const isTeam = m.direction === "outbound";
+    let msgBody = m.body;
+    if (isTeam) {
+      const idx = msgBody.indexOf("Reason:");
+      if (idx !== -1) msgBody = msgBody.slice(idx + "Reason:".length).trim();
+    }
+    return `<div class="inbox-bubble ${isTeam ? "inbox-bubble-team" : "inbox-bubble-you"}">
+      <p class="inbox-bubble-body">${escapeHtml(msgBody).replace(/\n/g, "<br>")}</p>
+      <div class="inbox-bubble-meta">
+        <span class="inbox-bubble-who">${isTeam ? "Review team" : "You"}</span>
+        <span class="inbox-bubble-time">${fmtDate(m.sent_at)}</span>
+      </div>
+    </div>`;
+  }).join("");
+
+  const viewBtn = conv.queueId
+    ? `<button class="inbox-view-judgement-btn ghost-btn" data-queue-id="${conv.queueId}">View judgement →</button>`
+    : "";
+
+  body.innerHTML = `
+    <div class="inbox-thread-view">
+      <div class="inbox-thread-topbar">
+        <button class="inbox-back-btn ghost-btn">← Back</button>
+        <span class="inbox-thread-title">Conversation #${num}</span>
+        ${viewBtn}
+      </div>
+      <div class="inbox-thread-bubbles" id="inbox-thread-bubbles">
+        ${bubbles}
+      </div>
+      <div class="inbox-thread-input-row" data-root-msg-id="${conv.rootMsgId}">
+        <textarea class="inbox-thread-textarea" placeholder="Write a reply…" rows="1"></textarea>
+        <button class="inbox-thread-send btn-primary">Send</button>
+      </div>
+    </div>
+  `;
+
+  // Back button — refresh messages then re-render list
+  body.querySelector(".inbox-back-btn").addEventListener("click", async () => {
+    try {
+      const r = await api(`/messages?coder_id=${state.coder.coder_id}`);
+      _inboxMessages = r.messages || [];
+      _updateInboxBadge();
+    } catch (_) {}
+    renderInbox();
+  });
+
+  // View judgement button — opens detail on top without closing inbox
+  body.querySelector(".inbox-view-judgement-btn")?.addEventListener("click", () => {
+    openHistDetail(conv.queueId);
+  });
+
+  // Auto-grow textarea
+  const textarea = body.querySelector(".inbox-thread-textarea");
+  textarea.addEventListener("input", () => {
+    textarea.style.height = "auto";
+    textarea.style.height = textarea.scrollHeight + "px";
+  });
+
+  // Send reply
+  const sendBtn = body.querySelector(".inbox-thread-send");
+  const inputRow = body.querySelector(".inbox-thread-input-row");
+  const threadBubbles = body.querySelector("#inbox-thread-bubbles");
+  const rootMsgId = +inputRow.dataset.rootMsgId;
+
+  const doSend = async () => {
+    const text = textarea.value.trim();
+    if (!text) return;
+    sendBtn.disabled = true;
+    try {
+      await api(`/messages/${rootMsgId}/reply`, "POST", { coder_id: state.coder.coder_id, body: text });
+      textarea.value = "";
+      textarea.style.height = "auto";
+      const bubble = document.createElement("div");
+      bubble.className = "inbox-bubble inbox-bubble-you";
+      bubble.innerHTML = `
+        <p class="inbox-bubble-body">${escapeHtml(text).replace(/\n/g, "<br>")}</p>
+        <div class="inbox-bubble-meta">
+          <span class="inbox-bubble-who">You</span>
+          <span class="inbox-bubble-time">just now</span>
+        </div>`;
+      threadBubbles.appendChild(bubble);
+      threadBubbles.scrollTop = threadBubbles.scrollHeight;
+    } catch (e) {
+      await showAlert("Failed to send: " + e.message);
+    }
+    sendBtn.disabled = false;
+  };
+
+  sendBtn.addEventListener("click", doSend);
+  textarea.addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) doSend(); });
+
+  // Scroll to bottom
+  threadBubbles.scrollTop = threadBubbles.scrollHeight;
 }
 
 /* ============================================================
@@ -1096,43 +1210,37 @@ function renderHistDetail(d) {
   const rootMsg = thread.find(m => m.direction === "outbound");
   const rootMsgId = rootMsg ? rootMsg.id : null;
 
-  const flagHtml = d.flagged
-    ? `<div class="hd-flag-inline">
-         <span class="hd-flag-icon">⚑</span>
-         <span class="hd-flag-title">Flagged for review</span>
-         ${d.flag_reason ? `<span class="hd-flag-sep">·</span><span class="hd-flag-reason-inline">${escapeHtml(d.flag_reason)}</span>` : ""}
-       </div>`
-    : "";
+  const bubbles = thread.map(m => {
+    const isTeam = m.direction === "outbound";
+    const time = _fmtRelTime(new Date(m.sent_at));
+    // Strip boilerplate preamble from admin messages — only show the reason text
+    let body = m.body;
+    if (isTeam) {
+      const reasonIdx = body.indexOf("Reason:");
+      if (reasonIdx !== -1) body = body.slice(reasonIdx + "Reason:".length).trim();
+    }
+    return `<div class="hd-bubble ${isTeam ? "hd-bubble-team" : "hd-bubble-you"}">
+      <p class="hd-bubble-body">${escapeHtml(body)}</p>
+      <div class="hd-bubble-meta">
+        <span class="hd-bubble-who">${isTeam ? "Review team" : "You"}</span>
+        <span class="hd-bubble-time">${time}</span>
+      </div>
+    </div>`;
+  }).join("");
 
-  const threadHtml = thread.length
-    ? `<div class="hd-thread">
-         <div class="hd-section-label">Messages</div>
-         ${thread.map(m => {
-           const isTeam = m.direction === "outbound";
-           const time = _fmtRelTime(new Date(m.sent_at));
-           return `<div class="hd-bubble ${isTeam ? "hd-bubble-team" : "hd-bubble-you"}">
-             <div class="hd-bubble-meta">
-               <span class="hd-bubble-who">${isTeam ? "Review team" : "You"}</span>
-               <span class="hd-bubble-time">${time}</span>
-             </div>
-             <p class="hd-bubble-body">${escapeHtml(m.body)}</p>
-           </div>`;
-         }).join("")}
-       </div>`
-    : "";
-
-  const replyHtml = rootMsgId
-    ? `<div class="hd-reply-wrap" data-parent-id="${rootMsgId}">
-         <textarea class="hd-reply-input" placeholder="Write a reply…" rows="2"></textarea>
-         <button class="hd-reply-btn btn-primary">Send</button>
-       </div>`
-    : "";
-
-  const msgHtml = (flagHtml || threadHtml || replyHtml)
-    ? `<div class="hd-review-section">
-         ${flagHtml}
-         ${threadHtml}
-         ${replyHtml}
+  const msgHtml = (d.flagged || thread.length || rootMsgId)
+    ? `<div class="hd-chat-section">
+         <div class="hd-chat-header">
+           <span class="hd-flag-icon">⚑</span>
+           <span class="hd-flag-title">Flagged for review</span>
+         </div>
+         <div class="hd-chat-thread" id="hd-chat-thread">
+           ${thread.length ? bubbles : '<p class="hd-chat-empty">No messages yet.</p>'}
+         </div>
+         ${rootMsgId ? `<div class="hd-chat-input-row" data-parent-id="${rootMsgId}">
+           <textarea class="hd-reply-input" placeholder="Write a reply…" rows="1"></textarea>
+           <button class="hd-reply-btn btn-primary">Send</button>
+         </div>` : ""}
        </div>`
     : "";
 
@@ -1164,7 +1272,6 @@ function renderHistDetail(d) {
         ${_detailCheckRow("Outcome", d.extracted_outcome, d.outcome_check, d.corrected_outcome)}
         ${quoteHtml}
         ${notesHtml}
-        ${flagHtml}
         ${msgHtml}
       </div>
     </div>
@@ -1173,11 +1280,19 @@ function renderHistDetail(d) {
   $("#hist-detail-title").textContent = (rec.study_r || rec.doi_r || "Judgement Detail").substring(0, 70);
 
   // Wire reply button
-  const replyWrap = body.querySelector(".hd-reply-wrap");
+  const replyWrap = body.querySelector(".hd-chat-input-row");
   if (replyWrap) {
     const parentId = +replyWrap.dataset.parentId;
     const textarea = replyWrap.querySelector(".hd-reply-input");
     const btn      = replyWrap.querySelector(".hd-reply-btn");
+    const chatThread = body.querySelector("#hd-chat-thread");
+
+    // Auto-grow textarea
+    textarea.addEventListener("input", () => {
+      textarea.style.height = "auto";
+      textarea.style.height = textarea.scrollHeight + "px";
+    });
+
     btn.addEventListener("click", async () => {
       const text = textarea.value.trim();
       if (!text) return;
@@ -1185,20 +1300,22 @@ function renderHistDetail(d) {
       try {
         await api(`/messages/${parentId}/reply`, "POST", { coder_id: state.coder.coder_id, body: text });
         textarea.value = "";
-        // Append the new reply bubble immediately, then re-fetch for accuracy
-        const now = new Date().toISOString();
-        const thread = replyWrap.closest(".hd-review-section").querySelector(".hd-thread");
-        if (thread) {
+        textarea.style.height = "auto";
+        // Remove "no messages yet" placeholder if present
+        const empty = chatThread?.querySelector(".hd-chat-empty");
+        if (empty) empty.remove();
+        // Append bubble immediately
+        if (chatThread) {
           const bubble = document.createElement("div");
           bubble.className = "hd-bubble hd-bubble-you";
           bubble.innerHTML = `
+            <p class="hd-bubble-body">${escapeHtml(text)}</p>
             <div class="hd-bubble-meta">
               <span class="hd-bubble-who">You</span>
               <span class="hd-bubble-time">just now</span>
-            </div>
-            <p class="hd-bubble-body">${escapeHtml(text)}</p>
-          `;
-          thread.appendChild(bubble);
+            </div>`;
+          chatThread.appendChild(bubble);
+          chatThread.scrollTop = chatThread.scrollHeight;
         }
         delete _histDetailCache[d.queue_id];
       } catch (e) {
@@ -1209,6 +1326,8 @@ function renderHistDetail(d) {
     textarea.addEventListener("keydown", e => {
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) btn.click();
     });
+    // Scroll thread to bottom on load
+    if (chatThread) chatThread.scrollTop = chatThread.scrollHeight;
   }
 }
 
@@ -1275,8 +1394,8 @@ function _updateMaintBanner() {
     _showMaintBanner(adminMsg, "admin", true);
     return;
   }
-  if (phase === "active") {
-    _showMaintBanner(_MAINT_ACTIVE_MSG, "active", false);
+  if (phase === "active" && !_dismissed.has("active")) {
+    _showMaintBanner(_MAINT_ACTIVE_MSG, "active", true);
     return;
   }
   if (phase === "warning" && !_dismissed.has("warning")) {
@@ -1296,6 +1415,12 @@ async function _pollAdminBanner() {
     const prev = _bann.adminMsg;
     _bann.adminMsg = (data.active && data.message) ? data.message : null;
     if (_bann.adminMsg !== prev) _bann._dismissed.delete("admin");
+    // If an admin banner is active, suppress the login notif so the
+    // validator only ever sees one banner.
+    if (_bann.adminMsg) {
+      _bann._loginNotif = false;
+      clearTimeout(_bann._loginTimer);
+    }
     _updateMaintBanner();
   } catch (_) {}  // silent — network may be down during maintenance
 }
@@ -1332,15 +1457,16 @@ function startMaintenanceSystem() {
 }
 
 $("#maint-banner-close").onclick = () => {
-  const {phase, adminMsg, _dismissed, _loginNotif} = _bann;
+  const {phase, adminMsg, _dismissed} = _bann;
   if (adminMsg && !_dismissed.has("admin")) {
     _dismissed.add("admin");
   } else if (phase === "warning" && !_dismissed.has("warning")) {
     _dismissed.add("warning");
-  } else if (_loginNotif) {
-    _bann._loginNotif = false;
-    clearTimeout(_bann._loginTimer);
+  } else if (phase === "active" && !_dismissed.has("active")) {
+    _dismissed.add("active");
   }
+  _bann._loginNotif = false;
+  clearTimeout(_bann._loginTimer);
   _updateMaintBanner();
 };
 
@@ -2428,7 +2554,7 @@ const TOUR_STEPS = [
   {
     sel: ".pair-header",
     title: "The paper",
-    body: "Read the title, authors, and abstract. Use <em>OA full text</em>, <em>DOI</em>, or <em>Scholar</em> to open the full paper when you need more context.",
+    body: "Read the title, authors, and abstract. Use <em>OA full text</em>, <em>DOI</em>, or <em>Scholar</em> to open the full paper when you need more context. If the title has a typo, use <em>fix typo</em> to correct it. If the abstract is missing or wrong, use <em>edit abstract</em> to update it.",
   },
   {
     sel: "#gate-1",
@@ -2440,7 +2566,7 @@ const TOUR_STEPS = [
     sel: "#gate-2",
     also: [".pair-header"],
     title: "ii. Original check",
-    body: "The system found the original study being replicated. Confirm it's the right paper — most are correct, but flag it if something looks off.",
+    body: "The system found the original study being replicated. Confirm it's the right paper — most are correct. If it looks wrong, choose <em>Wrong paper</em> and a form will appear so you can suggest the correct DOI or title. You can also skip the suggestion if you're unsure.",
   },
   {
     sel: "#gate-3",
@@ -2450,6 +2576,7 @@ const TOUR_STEPS = [
   },
   {
     sel: ".note-section",
+    side: "left",
     title: "Notes · +3 pts",
     body: "Add an optional note to flag anything unusual — a correction, an ambiguity, or useful context. Notes earn bonus points.",
   },
@@ -2521,10 +2648,10 @@ function showTourStep(idx) {
   // Show & position callout
   const callout = $("#tour-callout");
   callout.classList.remove("hidden");
-  positionTourCallout(target);
+  positionTourCallout(target, step.side);
 }
 
-function positionTourCallout(target) {
+function positionTourCallout(target, side) {
   const callout = $("#tour-callout");
   const MARGIN = 12;
   const vh = window.innerHeight;
@@ -2540,17 +2667,23 @@ function positionTourCallout(target) {
 
   callout.style.transform = "";
   const rect = target.getBoundingClientRect();
-
   const calloutH = callout.offsetHeight || 220;
-  let top;
-  if (rect.bottom + calloutH + MARGIN < vh) {
-    top = rect.bottom + MARGIN;
-  } else {
-    top = vh - calloutH - MARGIN;
-  }
-  top = Math.max(MARGIN, top);
 
-  const left = Math.max(MARGIN, Math.min(rect.left, vw - CW - MARGIN));
+  let top, left;
+
+  if (side === "left") {
+    left = rect.left - CW - MARGIN;
+    if (left < MARGIN) left = MARGIN;
+    top = Math.max(MARGIN, Math.min(rect.top, vh - calloutH - MARGIN));
+  } else {
+    if (rect.bottom + calloutH + MARGIN < vh) {
+      top = rect.bottom + MARGIN;
+    } else {
+      top = vh - calloutH - MARGIN;
+    }
+    top = Math.max(MARGIN, top);
+    left = Math.max(MARGIN, Math.min(rect.left, vw - CW - MARGIN));
+  }
 
   callout.style.top  = top + "px";
   callout.style.left = left + "px";
@@ -2560,7 +2693,8 @@ window.addEventListener("resize", () => {
   const callout = $("#tour-callout");
   if (!callout || callout.classList.contains("hidden")) return;
   const target = document.querySelector(".tour-highlight");
-  positionTourCallout(target || null);
+  const step = TOUR_STEPS[_tourStep];
+  positionTourCallout(target || null, step?.side);
 });
 
 function endTour() {
@@ -2908,10 +3042,10 @@ function renderAdminTable(entries, total) {
       e.admin_checked  ? '<span class="admin-flag flag-admin" title="Admin checked">✓</span>' : "",
     ].join("");
     const validators = [
-      e.has_v1  ? "V1" : "—",
-      e.has_v2  ? "V2" : "—",
-      e.has_llm ? "LLM" : "—",
-    ].join(" ");
+      e.has_v1  ? `<span class="val-badge" title="${escapeHtml(e.v1_handle || "Validator 1")}">V1</span>` : `<span class="val-badge val-badge-empty">—</span>`,
+      e.has_v2  ? `<span class="val-badge" title="${escapeHtml(e.v2_handle || "Validator 2")}">V2</span>` : `<span class="val-badge val-badge-empty">—</span>`,
+      e.has_llm ? `<span class="val-badge val-badge-llm" title="LLM validator">LLM</span>` : `<span class="val-badge val-badge-empty">—</span>`,
+    ].join("");
     const study = (e.study_r || e.doi_r || "—").substring(0, 60);
     const tc = e.trusted_validator_count || 0;
     const trustBadge = tc === 2
@@ -3605,8 +3739,11 @@ async function advanceToNextAdminEntry() {
 
 function closeAdminDetail() {
   $("#admin-detail-modal").classList.add("hidden");
-  document.body.style.overflow = "";
-  fetchAdminEntries();
+  const flagsOpen = !$("#validator-flags-modal").classList.contains("hidden");
+  if (!flagsOpen) {
+    document.body.style.overflow = "";
+    fetchAdminEntries();
+  }
 }
 
 /* ---------- Admin tabs ---------- */
@@ -3758,7 +3895,7 @@ function renderAdminDashboard(d) {
         </div>
       </div>
       <div class="dash-chart-box">
-        <div class="dash-chart-title">Correction Frequency <span class="dash-chart-sub">(validator disagreements)</span></div>
+        <div class="dash-chart-title">Correction Frequency <span class="dash-chart-sub">(pipeline extraction errors flagged by validators)</span></div>
         <div class="dash-chart-canvas-wrap">
           <canvas id="dash-correction-chart"></canvas>
         </div>
@@ -3839,21 +3976,21 @@ function renderAdminStats(validators) {
   body.innerHTML = validators.map((v, i) => `
     <tr>
       <td class="admin-cell-num">${i + 1}</td>
-      <td><strong>${escapeHtml(v.handle)}</strong></td>
+      <td><strong class="validator-name-cell" title="${v.email ? escapeHtml(v.email) : ""}" style="${v.email ? "cursor:help" : ""}">${escapeHtml(v.handle)}</strong></td>
       <td>
         <button class="tier-cycle-btn" data-id="${v.id}" data-tier="${v.validator_tier}"
                 title="${["Click to promote to Trusted","Click to promote to Senior","Click to reset to Regular"][v.validator_tier]}">
           ${["—","⭐ Trusted","★★ Senior"][v.validator_tier]}
         </button>
       </td>
-      <td style="color:var(--muted);font-size:0.8rem">${v.joined || "—"}</td>
+      <td style="color:var(--muted);font-size:0.8rem">${v.joined ? new Date(v.joined).toLocaleDateString("en-GB", {day:"numeric",month:"short",year:"numeric"}) : "—"}</td>
       <td>${v.total_judgements}</td>
       <td class="admin-time-cell">${fmtMin(v.avg_min)}</td>
       <td class="admin-time-cell">${fmtMin(v.median_min)}</td>
       <td class="admin-time-cell" style="color:var(--green)">${fmtMin(v.min_min)}</td>
       <td class="admin-time-cell" style="color:var(--muted)">${fmtMin(v.max_min)}</td>
-      <td class="admin-flag-cell">${v.flagged_count > 0 ? `<span class="flag-count-badge">🚩 ${v.flagged_count}</span>` : "—"}</td>
-      <td style="font-size:0.78rem;color:var(--muted)">${v.last_login_at ? new Date(v.last_login_at).toLocaleString("en-GB", {day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—"}</td>
+      <td class="admin-flag-cell">${v.flagged_count > 0 ? `<span class="flag-count-badge" data-validator-id="${v.id}" data-handle="${escapeHtml(v.handle)}">🚩 ${v.flagged_count}</span>` : "—"}</td>
+      <td style="font-size:0.78rem;color:var(--muted)">${v.last_login_at ? new Date(v.last_login_at).toLocaleString("en-GB", {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "—"}</td>
       <td><button class="compose-msg-btn ghost-btn" data-id="${v.id}" data-handle="${escapeHtml(v.handle)}" title="Send message to ${escapeHtml(v.handle)}">✉</button></td>
     </tr>
   `).join("");
@@ -3882,7 +4019,86 @@ function renderAdminStats(validators) {
   body.querySelectorAll(".compose-msg-btn").forEach((btn) => {
     btn.onclick = () => openComposeDialog(parseInt(btn.dataset.id), btn.dataset.handle);
   });
+
+  body.querySelectorAll(".flag-count-badge[data-validator-id]").forEach((badge) => {
+    badge.style.cursor = "pointer";
+    badge.onclick = () => openValidatorFlagsModal(parseInt(badge.dataset.validatorId), badge.dataset.handle);
+  });
 }
+
+async function openValidatorFlagsModal(validatorId, handle) {
+  const modal = $("#validator-flags-modal");
+  const body  = $("#vflags-body");
+  const title = $("#vflags-title");
+  if (!modal) return;
+
+  title.textContent = `Flagged items — ${handle}`;
+  body.innerHTML = '<p class="admin-loading">Loading…</p>';
+  modal.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+
+  try {
+    const data = await adminApi(`/validators/${validatorId}/flagged`);
+    const items = data.items;
+    if (!items.length) {
+      body.innerHTML = '<p class="admin-loading">No flagged items.</p>';
+      return;
+    }
+    const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
+    body.innerHTML = `
+      <table class="admin-table vflags-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Record</th>
+            <th>Year</th>
+            <th>Outcome</th>
+            <th>Status</th>
+            <th>Flag reason</th>
+            <th>Judged</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((item, i) => `
+            <tr class="vflags-row" data-record-id="${escapeHtml(item.record_id)}">
+              <td class="admin-cell-num">${i + 1}</td>
+              <td class="vflags-title" title="${escapeHtml(item.study_r || "")}">
+                ${escapeHtml((item.study_r || item.record_id).slice(0, 60))}${(item.study_r || "").length > 60 ? "…" : ""}
+              </td>
+              <td style="font-size:0.8rem;color:var(--muted)">${item.year_r || "—"}</td>
+              <td style="font-size:0.8rem">${escapeHtml(item.outcome || "—")}</td>
+              <td>${(() => { const s = STATUS_LABELS[item.validation_status] || { text: item.validation_status || "—", cls: "" }; return `<span class="admin-status ${s.cls}">${escapeHtml(s.text)}</span>`; })()}</td>
+              <td class="vflags-reason">${item.flag_reason ? escapeHtml(item.flag_reason) : '<span style="color:var(--muted)">—</span>'}</td>
+              <td style="font-size:0.78rem;color:var(--muted);white-space:nowrap">${fmtDate(item.validated_at)}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>`;
+
+    body.querySelectorAll(".vflags-row").forEach(row => {
+      row.style.cursor = "pointer";
+      row.title = "Open record detail";
+      row.addEventListener("click", () => {
+        body.querySelectorAll(".vflags-row").forEach(r => r.classList.remove("vflags-row-active"));
+        row.classList.add("vflags-row-active");
+        openAdminDetail(row.dataset.recordId);
+      });
+    });
+  } catch (e) {
+    body.innerHTML = `<p class="admin-loading">Error: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+$("#vflags-close")?.addEventListener("click", () => {
+  $("#validator-flags-modal").classList.add("hidden");
+  document.body.style.overflow = "";
+});
+
+$("#validator-flags-modal")?.addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) {
+    e.currentTarget.classList.add("hidden");
+    document.body.style.overflow = "";
+  }
+});
 
 async function openComposeDialog(validatorId, handle) {
   const rawHtml = `
@@ -3934,6 +4150,7 @@ async function fetchAdminMessages() {
   const list = $("#msg-convo-list");
   if (!list) return;
   list.innerHTML = '<p class="admin-loading">Loading…</p>';
+  _ensureValidatorList(); // prefetch for compose
   try {
     const data = await adminApi("/messages");
     renderAdminConversations(data.conversations);
@@ -3964,15 +4181,20 @@ function renderAdminConversations(conversations) {
   }
   list.innerHTML = conversations.map(c => {
     const hasUnread  = c.unread_count > 0;
-    const isSelected = c.validator_id === _adminMsgSelectedId;
+    const isSelected = c.thread_id === _adminMsgSelectedId;
     const time = c.last_activity ? _fmtRelTime(new Date(c.last_activity)) : "";
-    const preview = (c.last_direction === "inbound" ? "↩ " : "") + escapeHtml(c.preview || "");
+    const arrow = c.last_direction === "inbound" ? "↩ " : "";
+    const preview = arrow + escapeHtml(c.preview || "");
     return `<div class="msg-convo-row${isSelected ? " msg-convo-active" : ""}${hasUnread ? " msg-convo-unread" : ""}"
-              data-id="${c.validator_id}" data-handle="${escapeHtml(c.handle)}">
-      ${hasUnread ? `<span class="msg-convo-dot" title="${c.unread_count} unread reply${c.unread_count > 1 ? "s" : ""}">●</span>` : ""}
+              data-id="${c.thread_id}">
+      ${hasUnread ? `<span class="msg-convo-dot" title="${c.unread_count} unread">●</span>` : ""}
       <div class="msg-convo-row-top">
-        <span class="msg-convo-handle">${escapeHtml(c.handle)}</span>
+        <span class="msg-convo-subject">${escapeHtml(c.subject || "(no subject)")}</span>
         <span class="msg-convo-time">${time}</span>
+      </div>
+      <div class="msg-convo-row-meta">
+        <span class="msg-convo-validator">${escapeHtml(c.validator_handle)}</span>
+        ${c.admin_name ? `<span class="msg-convo-admin-tag">via ${escapeHtml(c.admin_name)}</span>` : ""}
       </div>
       <div class="msg-convo-preview">${preview}</div>
     </div>`;
@@ -3982,25 +4204,23 @@ function renderAdminConversations(conversations) {
     row.addEventListener("click", () => {
       _adminMsgSelectedId = parseInt(row.dataset.id);
       list.querySelectorAll(".msg-convo-row").forEach(r => r.classList.toggle("msg-convo-active", r === row));
-      openConversation(parseInt(row.dataset.id), row.dataset.handle);
+      openThread(parseInt(row.dataset.id));
     });
   });
 
-  // Re-open previously selected conversation if still present
   if (_adminMsgSelectedId) {
     const selected = list.querySelector(`.msg-convo-row[data-id="${_adminMsgSelectedId}"]`);
     if (selected) selected.classList.add("msg-convo-active");
   }
 }
 
-async function openConversation(validatorId, handle) {
+async function openThread(threadId) {
   const panel = $("#msg-thread-panel");
   if (!panel) return;
   panel.innerHTML = '<p class="admin-loading">Loading…</p>';
   try {
-    const data = await adminApi(`/messages/${validatorId}?mark_read=1`);
-    renderConversationThread(data.messages, handle);
-    // Refresh list to clear unread dots
+    const data = await adminApi(`/thread/${threadId}?mark_read=1`);
+    renderConversationThread(data.messages, data.handle, data.subject, data.admin_name, threadId);
     const listData = await adminApi("/messages");
     renderAdminConversations(listData.conversations);
     _updateAdminMsgBadge(listData.conversations);
@@ -4009,7 +4229,7 @@ async function openConversation(validatorId, handle) {
   }
 }
 
-function renderConversationThread(messages, handle) {
+function renderConversationThread(messages, handle, subject, adminName, threadId) {
   const panel = $("#msg-thread-panel");
   if (!panel) return;
   const fmtFull = (iso) => new Date(iso).toLocaleString("en-GB", {
@@ -4017,23 +4237,79 @@ function renderConversationThread(messages, handle) {
     hour: "2-digit", minute: "2-digit",
   });
   panel.innerHTML = `
-    <div class="msg-thread-header">Conversation with <strong>${escapeHtml(handle)}</strong></div>
+    <div class="msg-thread-header">
+      <div class="msg-thread-subject">${escapeHtml(subject || "(no subject)")}</div>
+      <div class="msg-thread-meta">
+        <span class="msg-thread-validator">${escapeHtml(handle)}</span>
+        ${adminName ? `<span class="msg-thread-admin">· via ${escapeHtml(adminName)}</span>` : ""}
+      </div>
+    </div>
     <div class="msg-bubbles-wrap" id="msg-bubbles-wrap">
       ${messages.length === 0
-        ? `<p style="color:var(--muted);text-align:center;margin:auto">No messages.</p>`
+        ? `<p class="msg-bubbles-empty">No messages yet.</p>`
         : messages.map(msg => {
           const isOut  = msg.direction === "outbound";
-          const sender = isOut ? (msg.sent_by || "Admin") : escapeHtml(handle);
+          const sender = isOut ? (msg.sent_by || adminName || "Admin") : escapeHtml(handle);
           return `<div class="msg-bubble ${isOut ? "msg-bubble-out" : "msg-bubble-in"}">
-            ${msg.subject ? `<div class="msg-bubble-subject">${escapeHtml(msg.subject)}</div>` : ""}
             <div class="msg-bubble-body">${escapeHtml(msg.body).replace(/\n/g, "<br>")}</div>
-            <div class="msg-bubble-meta">${isOut ? escapeHtml(sender) : sender} · ${fmtFull(msg.sent_at)}</div>
+            <div class="msg-bubble-meta">${escapeHtml(sender)} · ${fmtFull(msg.sent_at)}</div>
           </div>`;
         }).join("")}
+    </div>
+    <div class="msg-reply-bar">
+      <textarea class="msg-reply-input" placeholder="Write a reply to ${escapeHtml(handle)}…" rows="1"></textarea>
+      <button class="msg-reply-send btn-primary">Send</button>
     </div>`;
-  // Scroll to latest message
-  const wrap = $("#msg-bubbles-wrap");
+
+  const wrap     = panel.querySelector("#msg-bubbles-wrap");
+  const textarea = panel.querySelector(".msg-reply-input");
+  const sendBtn  = panel.querySelector(".msg-reply-send");
+
   if (wrap) wrap.scrollTop = wrap.scrollHeight;
+
+  // Auto-grow textarea
+  textarea.addEventListener("input", () => {
+    textarea.style.height = "auto";
+    textarea.style.height = Math.min(textarea.scrollHeight, 120) + "px";
+  });
+
+  const doSend = async () => {
+    const text = textarea.value.trim();
+    if (!text) return;
+    sendBtn.disabled = true;
+    textarea.disabled = true;
+    try {
+      const res = await adminApi(`/thread/${threadId}/reply`, "POST", { body: text });
+      textarea.value = "";
+      textarea.style.height = "auto";
+      textarea.disabled = false;
+      // Remove empty-state placeholder if present
+      wrap.querySelector(".msg-bubbles-empty")?.remove();
+      // Append bubble immediately
+      const bubble = document.createElement("div");
+      bubble.className = "msg-bubble msg-bubble-out";
+      bubble.innerHTML = `
+        <div class="msg-bubble-body">${escapeHtml(text).replace(/\n/g, "<br>")}</div>
+        <div class="msg-bubble-meta">${escapeHtml(_adminHandle || "Admin")} · ${fmtFull(res.sent_at)}</div>`;
+      wrap.appendChild(bubble);
+      wrap.scrollTop = wrap.scrollHeight;
+      // Refresh conversation list so preview updates
+      adminApi("/messages").then(d => {
+        renderAdminConversations(d.conversations);
+        _updateAdminMsgBadge(d.conversations);
+      }).catch(() => {});
+    } catch (e) {
+      await showAlert("Failed to send: " + e.message);
+      textarea.disabled = false;
+    }
+    sendBtn.disabled = false;
+    textarea.focus();
+  };
+
+  sendBtn.addEventListener("click", doSend);
+  textarea.addEventListener("keydown", e => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) doSend();
+  });
 }
 
 /* ---------- Admins management ---------- */
@@ -4170,6 +4446,128 @@ async function addAdminAccount() {
   }
   btn.disabled = false;
 }
+
+// ── Compose new admin message ────────────────────────────────────────────────
+
+let _allValidators = [];
+
+async function _ensureValidatorList() {
+  if (_allValidators.length) return;
+  try {
+    const data = await adminApi("/validators");
+    _allValidators = data.validators || [];
+  } catch (_) {}
+}
+
+function openComposePanel() {
+  const panel = $("#msg-thread-panel");
+  if (!panel) return;
+  _ensureValidatorList().then(() => {
+    panel.innerHTML = `
+      <div class="msg-compose-panel">
+        <div class="msg-compose-header">
+          <span class="msg-compose-title">New Message</span>
+          <button class="msg-compose-cancel ghost-btn" id="msg-compose-cancel">Cancel</button>
+        </div>
+        <div class="msg-compose-field">
+          <label class="msg-compose-label">To</label>
+          <div class="msg-validator-picker" id="msg-validator-picker">
+            <input type="text" class="msg-validator-search" id="msg-validator-search"
+                   placeholder="Search validators…" autocomplete="off" />
+            <div class="msg-validator-dropdown hidden" id="msg-validator-dropdown"></div>
+          </div>
+        </div>
+        <div class="msg-compose-field">
+          <label class="msg-compose-label">Subject</label>
+          <input type="text" class="msg-compose-input" id="msg-compose-subject" placeholder="Subject…" maxlength="200" />
+        </div>
+        <div class="msg-compose-field msg-compose-field-grow">
+          <label class="msg-compose-label">Message</label>
+          <textarea class="msg-compose-textarea" id="msg-compose-body" placeholder="Write your message…" rows="6"></textarea>
+        </div>
+        <div class="msg-compose-actions">
+          <button class="msg-compose-send" id="msg-compose-send">Send</button>
+        </div>
+      </div>`;
+
+    let _selectedValidator = null;
+
+    const searchEl  = $("#msg-validator-search");
+    const dropdown  = $("#msg-validator-dropdown");
+
+    function renderDropdown(query) {
+      const q = query.trim().toLowerCase();
+      const matches = q
+        ? _allValidators.filter(v => v.handle.toLowerCase().includes(q) || (v.email || "").toLowerCase().includes(q))
+        : _allValidators.slice(0, 50);
+      if (!matches.length) {
+        dropdown.innerHTML = `<div class="msg-vdrop-empty">No validators found</div>`;
+      } else {
+        dropdown.innerHTML = matches.map(v =>
+          `<div class="msg-vdrop-item" data-id="${v.id}" data-handle="${escapeHtml(v.handle)}">
+             <span class="msg-vdrop-handle">${escapeHtml(v.handle)}</span>
+             ${v.email ? `<span class="msg-vdrop-email">${escapeHtml(v.email)}</span>` : ""}
+           </div>`
+        ).join("");
+        dropdown.querySelectorAll(".msg-vdrop-item").forEach(item => {
+          item.addEventListener("click", () => {
+            _selectedValidator = { id: parseInt(item.dataset.id), handle: item.dataset.handle };
+            searchEl.value = item.dataset.handle;
+            dropdown.classList.add("hidden");
+          });
+        });
+      }
+      dropdown.classList.remove("hidden");
+    }
+
+    searchEl.addEventListener("input", () => renderDropdown(searchEl.value));
+    searchEl.addEventListener("focus", () => renderDropdown(searchEl.value));
+    document.addEventListener("click", function hideDropdown(e) {
+      if (!$("#msg-validator-picker")?.contains(e.target)) {
+        dropdown.classList.add("hidden");
+        document.removeEventListener("click", hideDropdown);
+      }
+    });
+
+    $("#msg-compose-cancel").addEventListener("click", () => {
+      panel.innerHTML = `<p class="msg-thread-empty">Select a conversation to view messages.</p>`;
+    });
+
+    $("#msg-compose-send").addEventListener("click", async () => {
+      const subject = ($("#msg-compose-subject")?.value || "").trim();
+      const body    = ($("#msg-compose-body")?.value || "").trim();
+      if (!_selectedValidator) return showToast("Please select a validator.");
+      if (!subject)            return showToast("Please enter a subject.");
+      if (!body)               return showToast("Please enter a message.");
+      const btn = $("#msg-compose-send");
+      btn.disabled = true;
+      btn.textContent = "Sending…";
+      try {
+        await adminApi("/message", "POST", { validator_id: _selectedValidator.id, subject, body });
+        showToast("Message sent.");
+        const listData = await adminApi("/messages");
+        renderAdminConversations(listData.conversations);
+        _updateAdminMsgBadge(listData.conversations);
+        // Open the newly created thread (last one for this validator)
+        const newThread = (listData.conversations || []).find(c => c.validator_handle === _selectedValidator.handle);
+        if (newThread) {
+          _adminMsgSelectedId = newThread.thread_id;
+          openThread(newThread.thread_id);
+        } else {
+          panel.innerHTML = `<p class="msg-thread-empty">Select a conversation to view messages.</p>`;
+        }
+      } catch (e) {
+        showToast("Error: " + e.message);
+        btn.disabled = false;
+        btn.textContent = "Send";
+      }
+    });
+  });
+}
+
+document.addEventListener("click", (e) => {
+  if (e.target.id === "msg-compose-btn") openComposePanel();
+});
 
 $("#admin-tabs").addEventListener("click", (e) => {
   const btn = e.target.closest(".admin-tab-btn");

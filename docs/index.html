@@ -17,16 +17,20 @@
 
 <!-- ------------ MAINTENANCE BANNER (global, in-app) ------------ -->
 <div id="maint-banner" class="maint-banner hidden" role="alert" aria-live="assertive">
-  <span id="maint-banner-icon" class="maint-banner-icon"></span>
-  <span id="maint-banner-text" class="maint-banner-text"></span>
-  <button id="maint-banner-close" class="maint-banner-close" title="Dismiss">×</button>
+  <div class="maint-banner-pill">
+    <span id="maint-banner-icon" class="maint-banner-icon"></span>
+    <span id="maint-banner-text" class="maint-banner-text"></span>
+    <button id="maint-banner-close" class="maint-banner-close" title="Dismiss">×</button>
+  </div>
 </div>
 
 <!-- ------------ LOGIN ------------ -->
 <div id="login-screen" class="screen">
 
   <div class="login-maint-bar">
-    🔧 Nightly maintenance 00:00–01:00 CET — the app may be briefly unavailable during this window.
+    <div class="login-maint-bar-inner">
+      🔧 Nightly maintenance 00:00–01:00 CET — the app may be briefly unavailable during this window.
+    </div>
   </div>
 
   <div class="login-left">
@@ -351,8 +355,14 @@
 
     <div id="admin-tab-messages" class="hidden">
       <div class="msg-thread-layout">
-        <div class="msg-convo-list" id="msg-convo-list">
-          <p class="admin-loading">Loading…</p>
+        <div class="msg-convo-sidebar" id="msg-convo-sidebar">
+          <div class="msg-sidebar-header">
+            <span class="msg-sidebar-title">Conversations</span>
+            <button class="msg-compose-btn" id="msg-compose-btn" title="New message">&#43; New</button>
+          </div>
+          <div class="msg-convo-list" id="msg-convo-list">
+            <p class="admin-loading">Loading…</p>
+          </div>
         </div>
         <div class="msg-thread-panel" id="msg-thread-panel">
           <p class="msg-thread-empty">Select a conversation to view messages.</p>
@@ -399,6 +409,16 @@
 </div>
 
 <!-- ------------ ADMIN DETAIL MODAL ------------ -->
+<div id="validator-flags-modal" class="faq-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="vflags-title">
+  <div class="vflags-panel">
+    <div class="faq-panel-header">
+      <span class="faq-panel-title" id="vflags-title">Flagged items</span>
+      <button id="vflags-close" class="faq-close" title="Close">×</button>
+    </div>
+    <div class="vflags-body" id="vflags-body"></div>
+  </div>
+</div>
+
 <div id="admin-detail-modal" class="faq-overlay hidden" role="dialog" aria-modal="true">
   <div class="admin-detail-panel">
     <div class="faq-panel-header">

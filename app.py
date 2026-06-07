@@ -209,6 +209,10 @@ class AdminMessageRequest(BaseModel):
     body: str
 
 
+class AdminReplyRequest(BaseModel):
+    body: str
+
+
 class ReplyRequest(BaseModel):
     coder_id: int
     body: str
@@ -1170,6 +1174,7 @@ def admin_stats(x_admin_token: str = Header(...)):
             SELECT
                 v.id,
                 v.handle,
+                v.email,
                 v.validator_tier,
                 v.total_judgements,
                 v.total_points,
@@ -1198,7 +1203,7 @@ def admin_stats(x_admin_token: str = Header(...)):
                 AND vq.shown_at       IS NOT NULL
                 AND vq.validated_at   IS NOT NULL
                 AND EXTRACT(EPOCH FROM (vq.validated_at - vq.shown_at)) BETWEEN 10 AND 5400
-            GROUP BY v.id, v.handle, v.validator_tier, v.total_judgements, v.total_points, v.created_at, v.last_login_at
+            GROUP BY v.id, v.handle, v.email, v.validator_tier, v.total_judgements, v.total_points, v.created_at, v.last_login_at
             ORDER BY v.validator_tier DESC, v.total_judgements DESC
             """
         )
@@ -1370,6 +1375,52 @@ class SetTierRequest(BaseModel):
     tier: int
 
 
+@app.get("/api/admin/validators")
+def admin_list_validators(x_admin_token: str = Header(...)):
+    _require_admin(x_admin_token)
+    with db() as cur:
+        cur.execute("SELECT id, handle, email FROM validators ORDER BY handle")
+        rows = [dict(r) for r in cur.fetchall()]
+    return {"validators": rows}
+
+
+@app.get("/api/admin/validators/{validator_id}/flagged")
+def admin_validator_flagged(validator_id: int, x_admin_token: str = Header(...)):
+    _require_admin(x_admin_token)
+    with db() as cur:
+        cur.execute("SELECT id, handle FROM validators WHERE id = %s", (validator_id,))
+        v = cur.fetchone()
+        if not v:
+            raise HTTPException(404, "Validator not found")
+        cur.execute(
+            """
+            SELECT
+                vq.queue_id,
+                vq.record_id::text,
+                vq.flag_reason,
+                vq.validated_at,
+                u.study_r,
+                u.doi_r,
+                u.year_r,
+                u.outcome,
+                u.validation_status
+            FROM validation_queue vq
+            JOIN unvalidated u ON u.record_id = vq.record_id
+            WHERE vq.validator_id = %s AND vq.flagged = TRUE
+            ORDER BY vq.validated_at DESC NULLS LAST
+            """,
+            (validator_id,),
+        )
+        rows = cur.fetchall()
+    items = []
+    for r in rows:
+        d = dict(r)
+        if d["validated_at"]:
+            d["validated_at"] = d["validated_at"].isoformat()
+        items.append(d)
+    return {"handle": v["handle"], "items": items}
+
+
 @app.post("/api/admin/validators/{validator_id}/set-tier")
 def admin_set_tier(validator_id: int, req: SetTierRequest, x_admin_token: str = Header(...)):
     _require_admin(x_admin_token)
@@ -1516,6 +1567,8 @@ def admin_entries(
                 (u.validator_1 IS NOT NULL)::boolean AS has_v1,
                 (u.validator_2 IS NOT NULL)::boolean AS has_v2,
                 (u.llm_validator IS NOT NULL)::boolean AS has_llm,
+                u.validator_1->>'validator_name' AS v1_handle,
+                u.validator_2->>'validator_name' AS v2_handle,
                 (u.llm_validator IS NOT NULL AND (u.llm_validator)::jsonb ? 'error')::boolean AS has_llm_error,
                 (SELECT COUNT(*) FROM validation_queue vq
                  WHERE vq.record_id = u.record_id AND vq.is_validated = TRUE) AS validator_count,
@@ -1677,11 +1730,11 @@ def get_validator_messages(coder_id: int):
             raise HTTPException(404, "Validator not found")
         cur.execute(
             """
-            SELECT id, subject, body, is_read, sent_by, sent_at, direction, parent_id
+            SELECT id, subject, body, is_read, sent_by, sent_at, direction, parent_id, queue_id
             FROM validator_messages
             WHERE validator_id = %s
             ORDER BY sent_at ASC
-            LIMIT 100
+            LIMIT 200
             """,
             (coder_id,),
         )
@@ -1706,7 +1759,7 @@ def reply_to_message(parent_id: int, req: ReplyRequest):
         raise HTTPException(400, "Reply cannot be empty")
     with db() as cur:
         cur.execute(
-            "SELECT validator_id, subject, direction FROM validator_messages WHERE id = %s",
+            "SELECT validator_id, subject, direction, queue_id FROM validator_messages WHERE id = %s",
             (parent_id,),
         )
         parent = cur.fetchone()
@@ -1722,11 +1775,11 @@ def reply_to_message(parent_id: int, req: ReplyRequest):
         cur.execute(
             """
             INSERT INTO validator_messages
-                (validator_id, subject, body, direction, parent_id, is_read, is_read_by_admin)
-            VALUES (%s, %s, %s, 'inbound', %s, TRUE, FALSE)
+                (validator_id, subject, body, direction, parent_id, queue_id, is_read, is_read_by_admin)
+            VALUES (%s, %s, %s, 'inbound', %s, %s, TRUE, FALSE)
             RETURNING id
             """,
-            (req.coder_id, subject, body_text, parent_id),
+            (req.coder_id, subject, body_text, parent_id, parent["queue_id"]),
         )
         new_id = cur.fetchone()["id"]
     return {"ok": True, "id": new_id}
@@ -1738,20 +1791,42 @@ def list_admin_conversations(x_admin_token: str = Header(...)):
     with db() as cur:
         cur.execute(
             """
+            WITH thread_stats AS (
+                SELECT
+                    COALESCE(parent_id, id) AS root_id,
+                    MAX(sent_at) AS last_activity,
+                    SUM(CASE WHEN direction = 'inbound' AND is_read_by_admin = FALSE
+                             THEN 1 ELSE 0 END)::int AS unread_count
+                FROM validator_messages
+                GROUP BY root_id
+            ),
+            thread_last AS (
+                SELECT DISTINCT ON (COALESCE(parent_id, id))
+                    COALESCE(parent_id, id) AS root_id,
+                    body                    AS last_body,
+                    direction               AS last_direction
+                FROM validator_messages
+                ORDER BY COALESCE(parent_id, id), sent_at DESC
+            )
             SELECT
-                v.id   AS validator_id,
-                v.handle,
-                COUNT(vm.id) FILTER (WHERE vm.direction = 'inbound' AND vm.is_read_by_admin = FALSE)
-                    AS unread_count,
-                MAX(vm.sent_at) AS last_activity,
-                (SELECT body FROM validator_messages vm2
-                 WHERE vm2.validator_id = v.id ORDER BY vm2.sent_at DESC LIMIT 1) AS last_body,
-                (SELECT direction FROM validator_messages vm2
-                 WHERE vm2.validator_id = v.id ORDER BY vm2.sent_at DESC LIMIT 1) AS last_direction
-            FROM validators v
-            JOIN validator_messages vm ON vm.validator_id = v.id
-            GROUP BY v.id, v.handle
-            ORDER BY last_activity DESC
+                r.id                               AS thread_id,
+                r.validator_id,
+                v.handle                           AS validator_handle,
+                COALESCE(u.study_r, r.subject)     AS subject,
+                r.sent_by                          AS admin_name,
+                r.queue_id,
+                ts.last_activity,
+                ts.unread_count,
+                tl.last_body,
+                tl.last_direction
+            FROM validator_messages r
+            JOIN validators v ON v.id = r.validator_id
+            LEFT JOIN validation_queue vq ON vq.queue_id = r.queue_id
+            LEFT JOIN unvalidated u ON u.record_id = vq.record_id
+            JOIN thread_stats ts ON ts.root_id = r.id
+            JOIN thread_last tl ON tl.root_id = r.id
+            WHERE r.parent_id IS NULL
+            ORDER BY ts.last_activity DESC
             """
         )
         rows = cur.fetchall()
@@ -1765,6 +1840,82 @@ def list_admin_conversations(x_admin_token: str = Header(...)):
         del d["last_body"]
         conversations.append(d)
     return {"conversations": conversations}
+
+
+@app.get("/api/admin/thread/{thread_id}")
+def get_admin_thread(thread_id: int, mark_read: bool = False, x_admin_token: str = Header(...)):
+    _require_admin(x_admin_token)
+    with db() as cur:
+        if mark_read:
+            cur.execute(
+                """
+                UPDATE validator_messages
+                SET is_read_by_admin = TRUE
+                WHERE (id = %s OR parent_id = %s)
+                  AND direction = 'inbound' AND is_read_by_admin = FALSE
+                """,
+                (thread_id, thread_id),
+            )
+        cur.execute(
+            """
+            SELECT id, subject, body, is_read, sent_by, sent_at,
+                   direction, parent_id, queue_id
+            FROM validator_messages
+            WHERE id = %s OR parent_id = %s
+            ORDER BY sent_at ASC
+            """,
+            (thread_id, thread_id),
+        )
+        msgs = [dict(r) for r in cur.fetchall()]
+        cur.execute(
+            """
+            SELECT v.handle,
+                   COALESCE(u.study_r, vm.subject) AS subject,
+                   vm.sent_by AS admin_name
+            FROM validator_messages vm
+            JOIN validators v ON v.id = vm.validator_id
+            LEFT JOIN validation_queue vq ON vq.queue_id = vm.queue_id
+            LEFT JOIN unvalidated u ON u.record_id = vq.record_id
+            WHERE vm.id = %s
+            """,
+            (thread_id,),
+        )
+        meta = cur.fetchone()
+    return {
+        "messages": msgs,
+        "handle":     meta["handle"]     if meta else "",
+        "subject":    meta["subject"]    if meta else "",
+        "admin_name": meta["admin_name"] if meta else "",
+    }
+
+
+@app.post("/api/admin/thread/{thread_id}/reply")
+def admin_reply_to_thread(thread_id: int, req: AdminReplyRequest, x_admin_token: str = Header(...)):
+    admin_handle = _require_admin(x_admin_token)
+    body_text = req.body.strip()
+    if not body_text:
+        raise HTTPException(400, "Reply cannot be empty")
+    with db() as cur:
+        cur.execute(
+            "SELECT validator_id, subject, queue_id FROM validator_messages WHERE id = %s AND parent_id IS NULL",
+            (thread_id,),
+        )
+        root = cur.fetchone()
+        if not root:
+            raise HTTPException(404, "Thread not found")
+        cur.execute(
+            """
+            INSERT INTO validator_messages
+                (validator_id, subject, body, direction, parent_id, queue_id,
+                 sent_by, is_read, is_read_by_admin)
+            VALUES (%s, %s, %s, 'outbound', %s, %s, %s, FALSE, TRUE)
+            RETURNING id, sent_at
+            """,
+            (root["validator_id"], root["subject"], body_text,
+             thread_id, root["queue_id"], admin_handle),
+        )
+        row = cur.fetchone()
+    return {"ok": True, "id": row["id"], "sent_at": row["sent_at"].isoformat()}
 
 
 @app.get("/api/admin/messages/{validator_id}")
