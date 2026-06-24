@@ -3,6 +3,7 @@ const state = {
   currentPair: null,
   judgement: blankJudgement(),
   mode: "normal",          // "normal" | "hard"
+  assignment: null,        // record_id when validating an assignment, else null
   onboardingPairs: [],
   onboardingIdx: 0,
   onboardingResults: [],
@@ -14,13 +15,16 @@ function blankJudgement() {
     original: null,
     outcome: null,
     corrected_outcome: null,
+    repro_computation: null,   // reproduction outcome axis 1
+    repro_robustness: null,    // reproduction outcome axis 2
     corrected_doi_o: null,
     corrected_study_o: null,
     corrected_study_r: null,
+    corrected_url_r: null,
     comment: "",
     edited_abstract: null,
     edited_outcome_quote: null,
-    hard_entry: null,
+    no_access: false,          // hard mode: "I cannot access this article"
   };
 }
 
@@ -73,7 +77,9 @@ async function api(path, method = "GET", body = null) {
           msg = String(err.detail);
         }
       }
-      throw new Error(msg);
+      const httpErr = new Error(msg);
+      httpErr.status = res.status;
+      throw httpErr;
     }
     return res.json();
   } catch (e) {
@@ -329,6 +335,87 @@ function fmtYear(y) {
   return isNaN(n) ? String(y) : String(Math.round(n));
 }
 
+// Pretty display label for an outcome value. Keeps CSS class names raw (use the
+// original value for those); this is for the visible text only. Unknown values
+// (e.g. reproduction combined labels) pass through unchanged.
+function fmtOutcome(v) {
+  if (!v) return v;
+  return { cannot_be_determined: "Cannot be determined" }[String(v).toLowerCase()] || v;
+}
+
+// "Hamid", "Hamid and Luke", "Hamid, Luke, and the LLM"
+function _nameList(names) {
+  if (!names.length) return "";
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+}
+
+// Plain-language summary of where the validators (+ LLM) agreed / disagreed.
+// Returns an array of sentences for the admin detail view.
+function buildConsensusSummary(v1, v2, llm) {
+  const voters = [];
+  if (v1) voters.push({ name: v1.validator_name || "Validator 1", j: v1 });
+  if (v2) voters.push({ name: v2.validator_name || "Validator 2", j: v2 });
+  if (llm && !llm.error) voters.push({ name: "the LLM", j: llm });
+  if (!voters.length) return [];
+
+  const groupBy = (fn) => {
+    const m = new Map();
+    for (const vt of voters) {
+      const s = fn(vt.j);
+      if (s == null) continue;
+      if (!m.has(s)) m.set(s, []);
+      m.get(s).push(vt.name);
+    }
+    return m;
+  };
+  const summarize = (m, phrase) => {
+    const e = [...m.entries()];
+    if (!e.length) return null;
+    if (e.length === 1) {
+      const [s, ns] = e[0];
+      return `${_nameList(ns)} ${ns.length > 1 ? "agree" : "says"} ${phrase(s)}.`;
+    }
+    return e.map(([s, ns]) => `${_nameList(ns)} ${ns.length > 1 ? "say" : "says"} ${phrase(s)}`).join("; ") + ".";
+  };
+
+  const lines = [];
+
+  const typeS = summarize(
+    groupBy(j => j.type_check === "correct" ? "ok" : (j.corrected_type || "incorrect")),
+    s => s === "ok" ? "the type is correct"
+       : s === "incorrect" ? "the type is wrong"
+       : s === "not_validation" ? "it's not a validation"
+       : `the type should be ${s}`
+  );
+  if (typeS) lines.push(typeS);
+
+  const origS = summarize(
+    groupBy(j => j.original_check === "correct" ? "right" : j.original_check === "incorrect" ? "wrong" : null),
+    s => `the original is the ${s} paper`
+  );
+  if (origS) lines.push(origS);
+
+  const outS = summarize(
+    groupBy(j => j.outcome_check === "correct" ? "ok" : (j.corrected_outcome || "incorrect")),
+    s => s === "ok" ? "the outcome is correct"
+       : s === "incorrect" ? "the outcome is wrong"
+       : `the outcome should be ${fmtOutcome(s)}`
+  );
+  if (outS) lines.push(outS);
+
+  // Who edited free-text fields.
+  const editors = (key) => voters.filter(vt => vt.j[key]).map(vt => vt.name);
+  let e;
+  if ((e = editors("corrected_outcome_quote")).length) lines.push(`${_nameList(e)} changed the outcome quote.`);
+  if ((e = editors("corrected_abstract")).length)      lines.push(`${_nameList(e)} edited the abstract.`);
+  if ((e = editors("corrected_study_r")).length)        lines.push(`${_nameList(e)} fixed the replication title.`);
+  if ((e = editors("corrected_url_r")).length)          lines.push(`${_nameList(e)} suggested a replication link.`);
+
+  return lines;
+}
+
 function escapeHtml(s) {
   if (s === null || s === undefined) return "";
   return String(s).replace(/[&<>"']/g, (c) => ({
@@ -351,6 +438,10 @@ function showToast(numOrMsg, label) {
 let loginMode = "email";
 document.addEventListener("DOMContentLoaded", () => {
   $("#toggle-label-email").classList.add("toggle-active");
+  if (sessionStorage.getItem("flora.idleNotice")) {
+    sessionStorage.removeItem("flora.idleNotice");
+    setTimeout(() => showToast("Signed out after 30 minutes of inactivity."), 400);
+  }
 });
 
 function getCode() {
@@ -475,8 +566,6 @@ function routeAfterLogin() {
 }
 
 function clearSession() {
-  clearTimeout(_inactivityTimer);
-  _clearInactivityCountdown();
   clearPairTimer();
   localStorage.removeItem(STORAGE.CODER);
   state.coder = null;
@@ -490,10 +579,102 @@ $("#logout-btn").onclick = logout;
 $("#onb-logout-btn").onclick = logout;
 $("#update-logout-btn").onclick = logout;
 
+/* ---------- Inactivity auto-logout (30 min, warn at 25, wall-clock, cross-tab) ----------
+   "Last activity" is a localStorage timestamp updated (throttled) by user input,
+   shared across tabs. We compare elapsed real time — robust to background-tab
+   timer throttling and laptop sleep. On expiry: clear session → redirect to login. */
+const _IDLE_LIMIT_MS  = 30 * 60 * 1000;
+const _IDLE_WARN_MS   = 25 * 60 * 1000;
+const _IDLE_ACT_KEY   = "flora.lastActivity";
+const _IDLE_OUT_KEY   = "flora.idleLogout";
+const _IDLE_EVENTS    = ["mousemove", "mousedown", "keydown", "scroll", "touchstart"];
+let _idleActive = false;
+let _idleCheckTimer = null;
+let _idleCountdownTimer = null;
+let _idleLastWrite = 0;
+
+function _idleGetLast() {
+  return parseInt(localStorage.getItem(_IDLE_ACT_KEY) || "0", 10) || Date.now();
+}
+function _idleTouch() {                    // record activity (throttled)
+  const now = Date.now();
+  if (now - _idleLastWrite < 3000) return;
+  _idleLastWrite = now;
+  localStorage.setItem(_IDLE_ACT_KEY, String(now));
+  _idleHideWarning();
+}
+function _idleOnStorage(e) {
+  if (e.key === _IDLE_ACT_KEY) _idleCheck();          // another tab active → sync
+  else if (e.key === _IDLE_OUT_KEY) _idleRedirect();  // another tab logged out → follow
+}
+function startIdleLogout() {
+  if (_idleActive) return;
+  _idleActive = true;
+  localStorage.setItem(_IDLE_ACT_KEY, String(Date.now()));   // reset on entry
+  _idleEvents("add");
+  document.addEventListener("visibilitychange", _idleCheck);
+  window.addEventListener("storage", _idleOnStorage);
+  clearInterval(_idleCheckTimer);
+  _idleCheckTimer = setInterval(_idleCheck, 20_000);
+}
+function _idleEvents(mode) {
+  const fn = mode === "add" ? "addEventListener" : "removeEventListener";
+  _IDLE_EVENTS.forEach(ev => document[fn](ev, _idleTouch, { passive: true, capture: true }));
+}
+function _idleCheck() {
+  if (!_idleActive) return;
+  const elapsed = Date.now() - _idleGetLast();
+  if (elapsed >= _IDLE_LIMIT_MS) _idleLogout();
+  else if (elapsed >= _IDLE_WARN_MS) _idleShowWarning();
+  else _idleHideWarning();
+}
+function _idleShowWarning() {
+  const modal = $("#idle-warn-modal");
+  if (!modal || !modal.classList.contains("hidden")) return;   // already shown
+  modal.classList.remove("hidden");
+  clearInterval(_idleCountdownTimer);
+  const tick = () => {
+    const remaining = _IDLE_LIMIT_MS - (Date.now() - _idleGetLast());
+    if (remaining <= 0) return _idleLogout();
+    if (remaining > _IDLE_LIMIT_MS - _IDLE_WARN_MS) return _idleHideWarning(); // became active elsewhere
+    const s = Math.ceil(remaining / 1000);
+    const el = $("#idle-countdown");
+    if (el) el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+  tick();
+  _idleCountdownTimer = setInterval(tick, 1000);
+}
+function _idleHideWarning() {
+  $("#idle-warn-modal")?.classList.add("hidden");
+  clearInterval(_idleCountdownTimer);
+  _idleCountdownTimer = null;
+}
+function _idleStay() {
+  _idleLastWrite = Date.now();
+  localStorage.setItem(_IDLE_ACT_KEY, String(Date.now()));
+  _idleHideWarning();
+}
+function _idleLogout() {
+  if (!_idleActive) return;
+  _idleActive = false;
+  clearInterval(_idleCheckTimer);
+  _idleEvents("remove");
+  try {
+    sessionStorage.setItem("flora.idleNotice", "1");
+    localStorage.setItem(_IDLE_OUT_KEY, String(Date.now()));   // signal other tabs
+  } catch (_) {}
+  _idleRedirect();
+}
+function _idleRedirect() {
+  clearSession();      // validator session; admin token is in-memory and dies on reload
+  location.reload();   // → login / home
+}
+$("#idle-stay-btn")?.addEventListener("click", _idleStay);
+
 /* ---------- Onboarding ---------- */
 async function enterOnboarding() {
   $("#onboarding-screen").classList.remove("hidden");
-  resetInactivityTimer();
+  startIdleLogout();
   const resp = await api("/onboarding");
   state.onboardingPairs = resp.pairs;
   state.onboardingIdx = 0;
@@ -514,7 +695,7 @@ $("#onb-start-btn").onclick = () => {
 /* ---------- Update screen ---------- */
 function enterUpdateScreen() {
   $("#update-screen").classList.remove("hidden");
-  resetInactivityTimer();
+  startIdleLogout();
   fetch("./updates.json")
     .then(r => r.json())
     .then(data => {
@@ -671,12 +852,132 @@ function showOnboardingFeedback(pair, errors) {
 async function enterGame() {
   $("#game-screen").classList.remove("hidden");
   $("#stat-name").textContent = state.coder.handle;
-  resetInactivityTimer();
+  $("#mode-toggle").classList.remove("hidden");   // normal / hard mode switch
+  startIdleLogout();
   startMaintenanceSystem();
+  startKeepWarm();             // ping /api/health so the instance doesn't sleep mid-session
   initInbox();
   initHistory();
+  _updatePendingIndicator();   // reflect any submits left over from a prior session
+  _processSubmitQueue();       // resume sending them
+  refreshAssignments();        // show the Assignments button if any are open
+  startAssignmentsPoll();      // near-real-time updates while the app is open
   await refreshAll();
   fetchMessages(); // after refreshAll so resume dialog (if any) fires first
+}
+
+/* ---------- Assignments (restricted records handed to this validator) ---------- */
+let _assignments = [];
+let _assignmentsPollTimer = null;
+let _assignmentsLoaded = false;
+let _lastAssignmentCount = 0;
+
+async function refreshAssignments() {
+  if (API_MODE === "static" || !state.coder) return;
+  try {
+    const data = await api(`/my-assignments?coder_id=${state.coder.coder_id}`);
+    _assignments = data.assignments || [];
+  } catch (_) { return; }   // keep prior state on a transient failure
+  const btn = $("#assignments-btn");
+  const cnt = $("#assignments-count");
+  if (cnt) cnt.textContent = _assignments.length;
+  if (btn) btn.classList.toggle("hidden", _assignments.length === 0);
+
+  // Toast when a new assignment arrives (skip the first load of the session).
+  const grew = _assignmentsLoaded && _assignments.length > _lastAssignmentCount;
+  _lastAssignmentCount = _assignments.length;
+  _assignmentsLoaded = true;
+  if (grew) showToast("📋 New assignment from the review team.");
+
+  // If the panel is open, keep its list in sync.
+  if (!$("#assignments-modal")?.classList.contains("hidden")) _renderAssignmentsList();
+}
+
+// Near-real-time: poll every 30s while the app is open (matches the inbox poll),
+// so an admin's assignment surfaces without a page reload.
+function startAssignmentsPoll() {
+  if (API_MODE === "static") return;
+  clearInterval(_assignmentsPollTimer);
+  _assignmentsPollTimer = setInterval(() => { if (state.coder) refreshAssignments(); }, 30_000);
+}
+
+function _renderAssignmentsList() {
+  const body = $("#assignments-body");
+  if (!body) return;
+  if (!_assignments.length) {
+    body.innerHTML = `<p class="hist-empty">No open assignments.</p>`;
+    return;
+  }
+  body.innerHTML = _assignments.map(a => `
+    <div class="assign-item" data-record="${escapeHtml(a.record_id)}" role="button" tabindex="0">
+      <div class="assign-item-main">
+        <div class="assign-item-title">${escapeHtml((a.study_r || a.doi_r || a.record_id).slice(0, 80))}</div>
+        <div class="assign-item-sub">${a.doi_r ? escapeHtml(a.doi_r) : "—"}${a.year_r ? " · " + fmtYear(a.year_r) : ""} · ${escapeHtml(fmtOutcome(a.outcome) || "—")}</div>
+      </div>
+      <span class="assign-item-open">Open →</span>
+    </div>`).join("");
+  body.querySelectorAll(".assign-item").forEach(el => {
+    const open = () => openAssignment(el.dataset.record);
+    el.addEventListener("click", open);
+    el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") open(); });
+  });
+}
+
+function openAssignmentsPanel() {
+  const modal = $("#assignments-modal");
+  if (!modal) return;
+  _renderAssignmentsList();
+  modal.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+}
+
+function closeAssignmentsPanel() {
+  $("#assignments-modal")?.classList.add("hidden");
+  document.body.style.overflow = "";
+}
+
+async function openAssignment(recordId) {
+  try {
+    const resp = await api(`/assignment/${recordId}?coder_id=${state.coder.coder_id}`);
+    if (!resp.pair) throw new Error("Could not load assignment.");
+    closeAssignmentsPanel();
+    state.assignment = recordId;
+    state.currentPair = resp.pair;
+    state.judgement = blankJudgement();
+    clearPairTimer();
+    $("#done-screen").classList.add("hidden");
+    $("#assignment-banner").classList.remove("hidden");
+    $("#pair-card").classList.remove("hidden");
+    renderPairInto($("#pair-card"), resp.pair, { onboarding: false, judgeCount: resp.pair.judge_count });
+    applySplitLayout();
+  } catch (e) {
+    await showAlert(e.message);
+  }
+}
+
+function exitAssignment() {
+  state.assignment = null;
+  $("#assignment-banner").classList.add("hidden");
+  loadNextPair();   // back to the normal/hard queue
+}
+
+$("#assignments-btn")?.addEventListener("click", openAssignmentsPanel);
+$("#assignments-close-btn")?.addEventListener("click", closeAssignmentsPanel);
+$("#assignments-modal")?.addEventListener("click", (e) => {
+  if (e.target === $("#assignments-modal")) closeAssignmentsPanel();
+});
+$("#assignment-exit-btn")?.addEventListener("click", exitAssignment);
+
+/* Keep-warm: ping the lightweight /api/health every 10 min while the app is open
+   so a free-tier host doesn't sleep mid-session (under the typical ~15-min idle
+   threshold). Raw fetch — bypasses api() so it never shows the "waking up" toast. */
+let _keepWarmTimer = null;
+function startKeepWarm() {
+  if (API_MODE === "static") return;   // no backend in the static demo
+  clearInterval(_keepWarmTimer);
+  _keepWarmTimer = setInterval(() => {
+    fetch("/api/health", { method: "GET", cache: "no-store" }).catch(() => {});
+  }, 10 * 60 * 1000);
 }
 
 /* ============================================================
@@ -982,6 +1283,22 @@ function _histCheckChip(value, label) {
     : `<span class="hist-check incorrect" title="${label}">✗</span>`;
 }
 
+// Maps a record's validation_status → label + colour class for the validator's
+// own "My Judgements" view. Covers every lifecycle stage the validator can land in.
+const _HIST_STATUS = {
+  unvalidated:           { text: "Awaiting second validator", short: "Pending 2nd",      cls: "hd-status-pending"   },
+  validation_inprogress: { text: "Awaiting second validator", short: "Pending 2nd",      cls: "hd-status-pending"   },
+  consensus_reached:     { text: "Pending approval",          short: "Pending approval", cls: "hd-status-validated" },
+  need_review:           { text: "Under review",              short: "In review",        cls: "hd-status-review"    },
+  validated:             { text: "Approved",                  short: "Approved",         cls: "hd-status-approved"  },
+  rejected:              { text: "Excluded",                  short: "Excluded",         cls: "hd-status-rejected"  },
+};
+function _histStatusBadge(status, { compact = false } = {}) {
+  const s = _HIST_STATUS[status] || _HIST_STATUS.validation_inprogress;
+  const label = compact ? s.short : s.text;
+  return `<span class="hd-status-badge${compact ? " hist-status-compact" : ""} ${s.cls}">${label}</span>`;
+}
+
 function renderHistory() {
   const body = $("#history-body");
   if (!body) return;
@@ -1013,7 +1330,7 @@ function renderHistory() {
     const corrections = [];
     if (j.corrected_study_r) corrections.push(`Title correction: <em>${escapeHtml(j.corrected_study_r)}</em>`);
     if (j.corrected_type)    corrections.push(`Type → <em>${escapeHtml(j.corrected_type)}</em>`);
-    if (j.corrected_outcome) corrections.push(`Outcome → <em>${escapeHtml(j.corrected_outcome)}</em>`);
+    if (j.corrected_outcome) corrections.push(`Outcome → <em>${escapeHtml(fmtOutcome(j.corrected_outcome))}</em>`);
     if (j.corrected_study_o) corrections.push(`Original title → <em>${escapeHtml(j.corrected_study_o)}</em>`);
     if (j.corrected_doi_o)   corrections.push(`Original DOI → <em>${escapeHtml(j.corrected_doi_o)}</em>`);
     const corrHtml = corrections.length
@@ -1042,6 +1359,7 @@ function renderHistory() {
             <span class="hist-item-num">#${num}</span>${title}${year}
           </div>
           <div class="hist-item-meta">
+            ${j.validation_status ? _histStatusBadge(j.validation_status, { compact: true }) : ""}
             ${pts ? `<span class="hist-item-pts">${pts}</span>` : ""}
             ${date ? `<span class="hist-item-date">${date}</span>` : ""}
             <span class="hist-item-arrow">›</span>
@@ -1147,11 +1465,15 @@ function renderHistDetail(d) {
   };
 
   // ---- LEFT COLUMN: saved record ----
-  const statusBadge = d.has_validated
-    ? (d.val_admin_approved
-        ? `<span class="hd-status-badge hd-status-approved">Approved</span>`
-        : `<span class="hd-status-badge hd-status-validated">Consensus reached</span>`)
-    : `<span class="hd-status-badge hd-status-pending">Awaiting second validator</span>`;
+  // Prefer the record's real lifecycle status (covers under-review / rejected);
+  // fall back to the validated-table flags only if status is missing.
+  const statusBadge = d.validation_status
+    ? _histStatusBadge(d.validation_status)
+    : (d.has_validated
+        ? (d.val_admin_approved
+            ? `<span class="hd-status-badge hd-status-approved">Approved</span>`
+            : `<span class="hd-status-badge hd-status-validated">Consensus reached</span>`)
+        : `<span class="hd-status-badge hd-status-pending">Awaiting second validator</span>`);
 
   const abstractHtml = rec.abstract_r
     ? `<div class="hd-lsection">
@@ -1164,7 +1486,7 @@ function renderHistDetail(d) {
     ? `<div class="hd-lsection">
          <div class="hd-section-label">Classification</div>
          ${rec.type    ? `<div class="hd-field"><span class="hd-field-label">Type</span><span class="hd-val-pill">${escapeHtml(rec.type)}</span></div>` : ""}
-         ${rec.outcome ? `<div class="hd-field"><span class="hd-field-label">Outcome</span><span class="hd-val-pill hd-val-pill-${escapeHtml(rec.outcome)}">${escapeHtml(rec.outcome)}</span></div>` : ""}
+         ${rec.outcome ? `<div class="hd-field"><span class="hd-field-label">Outcome</span><span class="hd-val-pill hd-val-pill-${escapeHtml(rec.outcome)}">${escapeHtml(fmtOutcome(rec.outcome))}</span></div>` : ""}
          ${rec.outcome_quote ? `<div class="hd-field hd-field-block"><span class="hd-field-label">Quote</span><span class="hd-field-quote">${escapeHtml(rec.outcome_quote)}</span></div>` : ""}
        </div>`
     : "";
@@ -1475,9 +1797,20 @@ $("#mode-toggle").onclick = async () => {
   state.mode = state.mode === "normal" ? "hard" : "normal";
   $("#mode-toggle").textContent = state.mode === "hard" ? "Hard mode" : "Normal mode";
   $("#mode-toggle").classList.toggle("active", state.mode === "hard");
+  _pairBuffer = [];   // buffered (normal-mode) pairs are short-locked; let them lapse
   await loadNextPair();
   await refreshStats();
 };
+
+$("#pending-saves-btn")?.addEventListener("click", () => {
+  const lines = _submitQueue.map(it =>
+    `• ${(it.paper || "a pair").slice(0, 50)} — ${it.attempts > 0 ? `retrying (try ${it.attempts})` : "saving…"}`);
+  showDialog({
+    title: "Background saves",
+    message: lines.length ? lines.join("\n") : "All judgements saved.",
+    buttons: [{ label: "OK", value: true, primary: true }],
+  });
+});
 
 /* ---------- Split-layout toggle ---------- */
 let splitLayout = localStorage.getItem("flora.splitLayout") !== "0"; // default on
@@ -1573,9 +1906,157 @@ function _restoreDraftInputs(card, draft) {
   const studyInput = card.querySelector("#corrected-study-input");
   if (doiInput   && draft.corrected_doi_o)   doiInput.value   = draft.corrected_doi_o;
   if (studyInput && draft.corrected_study_o) studyInput.value = draft.corrected_study_o;
+
+  const urlBtn = card.querySelector("#suggest-url-r-btn");
+  if (urlBtn && draft.corrected_url_r) urlBtn.textContent = "suggest link (✓ edited)";
+
+  // Restore the hard-mode "can't access" checkbox so state and UI stay in sync.
+  const noAccessCb = card.querySelector("#no-access-cb");
+  if (noAccessCb && draft.no_access) {
+    noAccessCb.checked = true;
+    card.querySelector("#gate-3")?.classList.add("no-access-on");
+    const sb = card.querySelector("#submit-btn");
+    if (sb) sb.textContent = "Report — can't access";
+    updateSubmitState(card.querySelector(".pair-body"));
+  }
 }
 
-async function loadNextPair() {
+/* ===================================================================
+   Prefetch buffer + optimistic background submission (normal mode)
+   - Buffer up to BUFFER_TARGET pairs so the next pair shows instantly.
+   - Only the active pair is "started" (5-day lock); buffered pairs hold a
+     short lock so they don't starve the pool.
+   - Submits go to a persistent queue, sent in the background with retry.
+     Points are shown deferred-but-accurate (when the server confirms).
+   =================================================================== */
+const BUFFER_TARGET = 3;
+const SUBMIT_MAX_ATTEMPTS = 8;
+let _pairBuffer = [];
+let _bufferFilling = false;
+
+// Buffering + optimistic submit for the live backend (normal AND hard mode —
+// both use the same gate layout, just different record pools).
+const _bufferEligible = () => API_MODE !== "static";
+const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+async function _fillBuffer() {
+  if (!_bufferEligible() || _bufferFilling || _pairBuffer.length >= BUFFER_TARGET) return;
+  _bufferFilling = true;
+  try {
+    const need = BUFFER_TARGET - _pairBuffer.length;
+    const resp = await api(`/next-pairs?coder_id=${state.coder.coder_id}&count=${need}&buffered_only=true&mode=${state.mode}`);
+    for (const p of (resp.pairs || [])) {
+      if (!_pairBuffer.some(b => b.queue_id === p.queue_id)) _pairBuffer.push(p);
+    }
+  } catch (_) { /* best-effort prefetch */ }
+  finally { _bufferFilling = false; }
+}
+
+// record_ids whose judgement is still in flight (optimistically submitted) —
+// must never be re-served, even if the server resume would return them.
+const _pendingRecordIds = () => new Set(_submitQueue.map(it => String(it.record_id)));
+
+// Returns the next active (started) pair, or null when the pool is empty.
+// allowResume=true lets the first fetch return a previous-session started pair;
+// post-submit advances pass false so the just-submitted pair can't come back.
+async function _takeActivePair(allowResume = true) {
+  const pending = _pendingRecordIds();
+  // Bound the attempts so a persistently-failing /start (e.g. server 500) can't
+  // spin forever; give up → caller shows the done/empty state.
+  let tries = 0;
+  const MAX_TRIES = BUFFER_TARGET * 4;
+  while (tries++ < MAX_TRIES) {
+    let cand;
+    if (_pairBuffer.length) {
+      cand = _pairBuffer.shift();
+    } else {
+      const resp = await api(`/next-pairs?coder_id=${state.coder.coder_id}&count=${BUFFER_TARGET}&buffered_only=${!allowResume}&mode=${state.mode}`);
+      const pairs = resp.pairs || [];
+      if (!pairs.length) return null;
+      _pairBuffer.push(...pairs);
+      allowResume = false;             // only the first fetch may resume — avoids a refetch loop
+      cand = _pairBuffer.shift();
+    }
+    if (pending.has(String(cand.record_id))) continue;   // already submitted optimistically
+    try {
+      // Promote to the active 5-day lock. Harmless on an already-started resume.
+      await api(`/pairs/${cand.queue_id}/start`, "POST", { coder_id: state.coder.coder_id });
+      return cand;
+    } catch (_) {
+      // Slot reaped/reassigned (or transient) — discard and try the next.
+    }
+  }
+  return null;
+}
+
+async function loadNextPair(allowResume = true) {
+  if (!_bufferEligible()) return _loadSinglePair();   // hard mode: single fetch
+
+  // (B) If the buffer is empty we may need a network fetch — show a loading
+  // placeholder so we never strand the user on the just-submitted card.
+  if (!_pairBuffer.length) _showLoadingCard();
+
+  // (A) Retry transient failures (cold start / network) with backoff before
+  // surfacing an inline retry. ~17s of cover, which a waking server beats.
+  const RETRY_DELAYS = [0, 2000, 5000, 10000];
+  for (let i = 0; i < RETRY_DELAYS.length; i++) {
+    if (RETRY_DELAYS[i]) await _sleep(RETRY_DELAYS[i]);
+    try {
+      const active = await _takeActivePair(allowResume);
+      if (!active) {
+        $("#pair-card").classList.add("hidden");
+        $("#done-screen").classList.remove("hidden");
+        _renderPendingPanel();
+        return;
+      }
+      _showActivePair(active);
+      _fillBuffer();   // background top-up; don't await
+      return;
+    } catch (_) {
+      // transient — fall through to the next retry
+    }
+  }
+  _showRetryCard(allowResume);   // (B) recoverable state instead of a dead card
+}
+
+function _showLoadingCard() {
+  $("#done-screen").classList.add("hidden");
+  const card = $("#pair-card");
+  card.classList.remove("hidden");
+  card.innerHTML = `<div class="pair-status"><div class="pair-spinner"></div><p>Loading next pair…</p></div>`;
+}
+
+function _showRetryCard(allowResume) {
+  $("#done-screen").classList.add("hidden");
+  const card = $("#pair-card");
+  card.classList.remove("hidden");
+  card.innerHTML = `<div class="pair-status">
+    <p>Couldn't load the next pair — the server may be waking up.</p>
+    <button id="pair-retry-btn" class="btn-primary">Retry</button>
+  </div>`;
+  card.querySelector("#pair-retry-btn").onclick = () => loadNextPair(allowResume);
+}
+
+function _showActivePair(pair) {
+  clearPairTimer();   // cancel any leftover hard-mode auto-skip timer
+  $("#done-screen").classList.add("hidden");
+  $("#pair-card").classList.remove("hidden");
+  state.currentPair = pair;
+  const pair_id  = pair.pair_id;
+  const draftRaw = pair.resumed ? localStorage.getItem(_DRAFT_KEY(pair_id)) : null;
+  const draft    = draftRaw ? (() => { try { return JSON.parse(draftRaw); } catch { return null; } })() : null;
+  state.judgement = draft || blankJudgement();
+  const card = $("#pair-card");
+  renderPairInto(card, pair, { onboarding: false, judgeCount: pair.judge_count });
+  if (pair.resumed) _restoreDraftInputs(card, draft);
+  _startDraftSave(pair_id);
+  applySplitLayout();
+  // No 30-min client auto-skip in normal mode: the server holds a 5-day lock so
+  // the validator can leave and resume. (Hard mode keeps its timer.)
+}
+
+// Single-fetch path for hard mode (no buffering / no optimistic submit).
+async function _loadSinglePair() {
   const resp = await api(`/next-pair?coder_id=${state.coder.coder_id}&mode=${state.mode}`);
   if (!resp.pair) {
     $("#pair-card").classList.add("hidden");
@@ -1592,19 +2073,105 @@ async function loadNextPair() {
   state.judgement = draft || blankJudgement();
 
   const card = $("#pair-card");
-  if (state.mode === "hard") {
-    renderHardPair(card, resp.pair);
-  } else {
-    renderPairInto(card, resp.pair, { onboarding: false, judgeCount: resp.judge_count });
-  }
-
-  if (resp.resumed) {
-    _restoreDraftInputs(card, draft);
-  }
+  renderPairInto(card, resp.pair, { onboarding: false, judgeCount: resp.judge_count });
+  if (resp.resumed) _restoreDraftInputs(card, draft);
 
   _startDraftSave(pair_id);
   applySplitLayout();
   startPairTimer();
+}
+
+/* ---------- Submission queue (persistent, retry-then-reassign) ---------- */
+const _SUBMIT_KEY = "flora.pendingSubmits";
+const _FAILED_KEY = "flora.failedSubmits";
+let _submitQueue  = (() => { try { return JSON.parse(localStorage.getItem(_SUBMIT_KEY)) || []; } catch { return []; } })();
+let _failedSubmits = (() => { try { return JSON.parse(localStorage.getItem(_FAILED_KEY)) || []; } catch { return []; } })();
+let _submitProcessing = false;
+
+const _persistSubmits = () => localStorage.setItem(_SUBMIT_KEY, JSON.stringify(_submitQueue));
+const _persistFailed  = () => localStorage.setItem(_FAILED_KEY, JSON.stringify(_failedSubmits));
+
+// Terminal = won't succeed on retry (slot gone / validation error). Network
+// errors and 5xx (server waking) are retryable.
+function _isTerminalErr(e) {
+  if (e && typeof e.status === "number") return e.status >= 400 && e.status < 500;
+  const m = (e && e.message) || "";
+  return /No open slot|Already judged|no longer assigned/i.test(m);
+}
+
+function _enqueueSubmit(payload, paper) {
+  _submitQueue.push({ key: `${payload.record_id}:${Date.now()}`, payload, record_id: payload.record_id, paper, attempts: 0 });
+  _persistSubmits();
+  _updatePendingIndicator();
+  _processSubmitQueue();
+}
+
+async function _processSubmitQueue() {
+  if (_submitProcessing) return;
+  _submitProcessing = true;
+  while (_submitQueue.length) {
+    const item = _submitQueue[0];
+    try {
+      const resp = await api("/judge", "POST", item.payload);
+      _submitQueue.shift(); _persistSubmits();
+      _celebratePoints(resp.points_earned);
+      refreshStats().catch(() => {});
+      refreshLeaderboard().catch(() => {});
+    } catch (e) {
+      item.attempts++;
+      const giveUp = _isTerminalErr(e) || item.attempts >= SUBMIT_MAX_ATTEMPTS;
+      if (giveUp) {
+        // Release the slot so another validator can pick this record up.
+        await api("/skip", "POST", { coder_id: state.coder.coder_id, record_id: String(item.record_id) }).catch(() => {});
+        _submitQueue.shift(); _persistSubmits();
+        _failedSubmits.push({ paper: item.paper, at: Date.now() });
+        if (_failedSubmits.length > 10) _failedSubmits = _failedSubmits.slice(-10);
+        _persistFailed();
+        showToast(`Couldn't save "${(item.paper || "a pair").slice(0, 40)}" — released to another validator.`);
+      } else {
+        _persistSubmits();
+        await _sleep(Math.min(30000, 1000 * 2 ** item.attempts));  // backoff; slot is locked 5d so it's safe to wait
+        continue;  // retry the same item
+      }
+    }
+    _updatePendingIndicator();
+  }
+  _submitProcessing = false;
+  _updatePendingIndicator();
+}
+
+function _celebratePoints(points) {
+  if (points == null) return;
+  showToast(points, "points");
+  if (typeof confetti !== "undefined") {
+    confetti({ particleCount: 60, spread: 60, origin: { y: 0.5 },
+               colors: ["#b54614", "#1a1612", "#d6a87e", "#4a6b3e"], scalar: 0.9 });
+  }
+}
+
+function _updatePendingIndicator() {
+  const n = _submitQueue.length;
+  const btn = $("#pending-saves-btn");
+  const cnt = $("#pending-saves-count");
+  if (cnt) cnt.textContent = n;
+  if (btn) btn.classList.toggle("hidden", n === 0);
+  if (!$("#done-screen")?.classList.contains("hidden")) _renderPendingPanel();
+}
+
+function _renderPendingPanel() {
+  const panel = $("#pending-panel");
+  if (!panel) return;
+  const rows = [];
+  for (const it of _submitQueue) {
+    const label = it.attempts > 0 ? `retrying (try ${it.attempts})` : "saving…";
+    rows.push(`<li class="pending-row pending-row-active"><span>${escapeHtml((it.paper || "a pair").slice(0, 60))}</span><span class="pending-tag">${label}</span></li>`);
+  }
+  for (const it of _failedSubmits) {
+    rows.push(`<li class="pending-row pending-row-failed"><span>${escapeHtml((it.paper || "a pair").slice(0, 60))}</span><span class="pending-tag">reassigned</span></li>`);
+  }
+  if (!rows.length) { panel.classList.add("hidden"); panel.innerHTML = ""; return; }
+  panel.classList.remove("hidden");
+  panel.innerHTML = `<h3 class="pending-title">Background saves</h3><ul class="pending-list">${rows.join("")}</ul>`;
 }
 
 /* ---------- Pair timer (30-min auto-skip) ---------- */
@@ -1676,68 +2243,12 @@ function showDialog({ icon, title, message, buttons, layout = "column", rawHtml 
   });
 }
 
-/* ---------- Inactivity auto-logout (25 min warn + 5 min countdown) ---------- */
-const INACTIVITY_WARN_MS    = 25 * 60 * 1000;
-const INACTIVITY_COUNTDOWN_S = 5 * 60;
-let _inactivityTimer = null;
-let _inactivityCountdownInterval = null;
-let _inactivityWarningActive = false;
-
-function _clearInactivityCountdown() {
-  clearInterval(_inactivityCountdownInterval);
-  _inactivityCountdownInterval = null;
-  _inactivityWarningActive = false;
-  $("#inactivity-warn-modal").classList.add("hidden");
-  document.body.style.overflow = "";
-}
-
-function _startInactivityCountdown() {
-  _inactivityWarningActive = true;
-  let remaining = INACTIVITY_COUNTDOWN_S;
-  const countdownEl = $("#inactivity-countdown");
-  const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-  countdownEl.textContent = fmt(remaining);
-  $("#inactivity-warn-modal").classList.remove("hidden");
-  document.body.style.overflow = "hidden";
-
-  _inactivityCountdownInterval = setInterval(() => {
-    remaining -= 1;
-    countdownEl.textContent = fmt(remaining);
-    if (remaining <= 0) {
-      _clearInactivityCountdown();
-      clearSession();
-      $("#inactivity-modal").classList.remove("hidden");
-      document.body.style.overflow = "hidden";
-    }
-  }, 1000);
-}
-
-function resetInactivityTimer() {
-  if (_inactivityWarningActive) return;
-  clearTimeout(_inactivityTimer);
-  _inactivityTimer = setTimeout(_startInactivityCountdown, INACTIVITY_WARN_MS);
-}
-
-$("#inactivity-continue-btn").onclick = () => {
-  _clearInactivityCountdown();
-  clearTimeout(_inactivityTimer);
-  _inactivityTimer = setTimeout(_startInactivityCountdown, INACTIVITY_WARN_MS);
-};
-
-$("#inactivity-ok-btn").onclick = () => {
-  document.body.style.overflow = "";
-  location.reload();
-};
-
-["mousemove", "mousedown", "keydown", "touchstart", "scroll"].forEach(evt =>
-  document.addEventListener(evt, resetInactivityTimer, { passive: true })
-);
-
 /* ---------- Pair rendering (normal + onboarding) ---------- */
 let _pairShownAt = null;
 
 function renderPairInto(container, p, { onboarding, judgeCount }) {
   if (!onboarding) _pairShownAt = Date.now();
+  const isHard = !onboarding && state.mode === "hard" && !state.assignment;
   const outcomeLabel = (p.outcome || "uninformative").toLowerCase();
   const doiUrl = p.doi_r ? `https://doi.org/${p.doi_r}` : null;
   const oaUrl = p.oa_url_r || (p.url_r && p.url_r !== doiUrl ? p.url_r : null);
@@ -1745,6 +2256,11 @@ function renderPairInto(container, p, { onboarding, judgeCount }) {
   const scholarUrl = `https://scholar.google.com/scholar?q=${scholarQuery}`;
   const oUrl = p.doi_o ? `https://doi.org/${p.doi_o}` : null;
   const oOaUrl = p.oa_url_o || null;
+  // Journal of the original study, pulled from ref_o ("Surname · Year · Journal").
+  const oJournal = (() => {
+    const parts = (p.ref_o || "").split("·").map(s => s.trim()).filter(Boolean);
+    return parts.length >= 3 ? parts.slice(2).join(" · ") : "";
+  })();
   const hasQuote = p.outcome_phrase && p.outcome_phrase.trim();
   const lockIcon = (open) => `<span class="oa-lock ${open ? "open" : "gated"}" aria-label="${open ? "open access" : "gated"}">${open ? "🔓" : "🔒"}</span>`;
 
@@ -1784,16 +2300,16 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
           <button class="link-btn" id="fix-title-btn" title="Fix a typographical error in this title">fix typo</button>
         </div>
         <input type="text" class="title-edit hidden" id="title-edit" placeholder="Corrected title…">
-        <div class="authors">${escapeHtml(p.authors_r || "?")} · ${fmtYear(p.year_r)}${p.journal_r ? " · " + escapeHtml(p.journal_r) : ""}</div>
+        <div class="authors">${escapeHtml(p.authors_r || "?")} · ${fmtYear(p.year_r)}${p.journal_r ? " · " + escapeHtml(p.journal_r) : ""}${doiUrl ? ` · <a href="${escapeHtml(oaUrl || doiUrl)}" target="_blank" rel="noopener" title="${oaUrl ? "Open access PDF" : "Publisher page (likely paywalled)"}">${lockIcon(!!oaUrl)} ${escapeHtml(p.doi_r)}</a>` : ""}</div>
         <div class="abstract expanded" id="abstract-text">${escapeHtml(p.abstract_r || "(no abstract available)")}</div>
         <textarea class="abstract-edit hidden" id="abstract-edit"></textarea>
         <div class="abstract-tools">
           <button class="link-btn" id="edit-abstract-btn">edit abstract</button>
           <span class="abstract-tools-spacer"></span>
-          ${oaUrl ? `<a href="${escapeHtml(oaUrl)}" target="_blank" rel="noopener" title="Open access PDF">${lockIcon(true)} OA full text</a>` : ""}
-          ${doiUrl ? `<a href="${escapeHtml(doiUrl)}" target="_blank" rel="noopener" title="${oaUrl ? "DOI page" : "Publisher page (likely paywalled)"}">${oaUrl ? "" : lockIcon(false) + " "}DOI</a>` : ""}
           <a href="${escapeHtml(scholarUrl)}" target="_blank" rel="noopener" title="Search for an alternate copy">Scholar</a>
+          <button class="link-btn" id="suggest-url-r-btn" title="Suggest the correct link for this paper">suggest link</button>
         </div>
+        <input type="text" class="title-edit hidden" id="url-r-edit" placeholder="https://… correct link for this paper">
       </div>
     </div>
 
@@ -1832,7 +2348,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
           <div class="original-info">
             <div class="title">${escapeHtml(p.title_o || "(no title)")}</div>
             <div class="meta">
-              ${escapeHtml(p.authors_o || "?")} · ${fmtYear(p.year_o)}
+              ${escapeHtml(p.authors_o || "?")} · ${fmtYear(p.year_o)}${oJournal ? " · " + escapeHtml(oJournal) : ""}
               ${oOaUrl ? ` · <a href="${escapeHtml(oOaUrl)}" target="_blank" rel="noopener" title="Open access PDF">${lockIcon(true)} OA</a>` : ""}
               ${oUrl ? ` · <a href="${escapeHtml(oUrl)}" target="_blank" rel="noopener" title="${oOaUrl ? "DOI page" : "Publisher page (likely paywalled)"}">${oOaUrl ? "" : lockIcon(false) + " "}${escapeHtml(p.doi_o)}</a>` : ""}
             </div>
@@ -1876,7 +2392,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
         <div class="gate-body">
           <p class="question">${gate3Question}</p>
           <div class="outcome-info">
-            <span class="outcome-label ${escapeHtml(outcomeLabel)}">${escapeHtml(outcomeLabel)}</span>
+            <span class="outcome-label ${escapeHtml(outcomeLabel)}">${escapeHtml(fmtOutcome(outcomeLabel))}</span>
             <div class="outcome-quote-wrap">
               <div class="outcome-quote${hasQuote ? "" : " hidden"}" id="outcome-quote-text">${hasQuote ? `"${escapeHtml(p.outcome_phrase)}"` : ""}</div>
               ${hasQuote ? "" : '<p id="outcome-quote-empty" style="margin:0.4rem 0"><em>No outcome quote was extracted.</em></p>'}
@@ -1884,20 +2400,45 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
               <button class="link-btn small" id="edit-quote-btn">edit / extend quote</button>
             </div>
           </div>
-          <div class="choices">
-            <button class="choice success" data-outcome="correct">Looks right</button>
-            <button class="choice danger" data-outcome="wrong">Mischaracterised</button>
-            <button class="choice warn" data-outcome="unsure">Can't tell</button>
-          </div>
-          <div class="outcome-correction hidden" id="outcome-correction">
-            <p id="outcome-correction-label" style="margin:12px 0 6px;font-size:13px;color:var(--muted);">What is the correct outcome?</p>
+          <div id="replication-outcome">
             <div class="choices">
-              <button class="choice success" data-correct-outcome="success">Success</button>
-              <button class="choice danger" data-correct-outcome="failure">Failed</button>
-              <button class="choice warn" data-correct-outcome="mixed">Mixed</button>
-              <button class="choice" data-correct-outcome="uninformative">Uninformative</button>
+              <button class="choice success" data-outcome="correct">Looks right</button>
+              <button class="choice danger" data-outcome="wrong">Mischaracterised</button>
+              <button class="choice warn" data-outcome="unsure">Can't tell</button>
+            </div>
+            <div class="outcome-correction hidden" id="outcome-correction">
+              <p id="outcome-correction-label" style="margin:12px 0 6px;font-size:13px;color:var(--muted);">What is the correct outcome?</p>
+              <div class="choices">
+                <button class="choice success" data-correct-outcome="success">Success</button>
+                <button class="choice danger" data-correct-outcome="failure">Failed</button>
+                <button class="choice warn" data-correct-outcome="mixed">Mixed</button>
+                <button class="choice" data-correct-outcome="uninformative">Uninformative</button>
+              </div>
             </div>
           </div>
+          <div class="repro-outcome hidden" id="repro-outcome">
+            <div class="repro-axis">
+              <span class="repro-axis-label">Computational reproduction</span>
+              <div class="choices">
+                <button class="choice success" data-repro-comp="successful">Successful</button>
+                <button class="choice danger" data-repro-comp="issues">Issues</button>
+                <button class="choice warn" data-repro-comp="not_checked">Not checked</button>
+              </div>
+            </div>
+            <div class="repro-axis">
+              <span class="repro-axis-label">Robustness</span>
+              <div class="choices">
+                <button class="choice success" data-repro-robust="robust">Robust</button>
+                <button class="choice danger" data-repro-robust="challenges">Challenges</button>
+                <button class="choice warn" data-repro-robust="not_checked">Not checked</button>
+              </div>
+            </div>
+          </div>
+          ${isHard ? `
+          <label class="no-access-row">
+            <input type="checkbox" id="no-access-cb">
+            <span>I cannot access this article — send it to the review team</span>
+          </label>` : ""}
         </div>
       </div>
 
@@ -1920,6 +2461,20 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
   container.querySelectorAll(".choice").forEach((b) => (b.onclick = () => onChoice(b)));
   container.querySelector(".comment").oninput = (e) => (state.judgement.comment = e.target.value);
   container.querySelector("#submit-btn").onclick = onboarding ? submitOnboarding : guardedSubmit;
+
+  // Hard-mode "I cannot access this article" — checking it lets the validator
+  // report the record (no judgement / no points) instead of judging it.
+  const noAccessCb = container.querySelector("#no-access-cb");
+  if (noAccessCb) {
+    noAccessCb.onchange = () => {
+      state.judgement.no_access = noAccessCb.checked;
+      const gate3 = container.querySelector("#gate-3");
+      if (gate3) gate3.classList.toggle("no-access-on", noAccessCb.checked);
+      const btn = container.querySelector("#submit-btn");
+      if (btn) btn.textContent = noAccessCb.checked ? "Report — can't access" : "Submit";
+      updateSubmitState(container.querySelector(".pair-body"));
+    };
+  }
 
   const noteToggleBtn = container.querySelector("#note-toggle-btn");
   const noteBody = container.querySelector(".note-body");
@@ -2016,6 +2571,14 @@ function wireEditButtons(container, p) {
   if (fixTitleBtn) {
     const titleText = container.querySelector("#title-text");
     const titleEdit = container.querySelector("#title-edit");
+    const _saveTitle = () => {
+      if (titleEdit.classList.contains("hidden")) return;
+      const v = titleEdit.value.trim();
+      state.judgement.corrected_study_r = v && v !== (p.title_r || "").trim() ? v : null;
+      if (titleText) titleText.textContent = state.judgement.corrected_study_r || p.title_r || "(untitled)";
+      titleEdit.classList.add("hidden");
+      fixTitleBtn.textContent = state.judgement.corrected_study_r ? "fix typo (✓ edited)" : "fix typo";
+    };
     fixTitleBtn.onclick = () => {
       if (titleEdit.classList.contains("hidden")) {
         titleEdit.value = state.judgement.corrected_study_r || p.title_r || "";
@@ -2024,18 +2587,73 @@ function wireEditButtons(container, p) {
         titleEdit.focus();
         titleEdit.select();
       } else {
-        const v = titleEdit.value.trim();
-        state.judgement.corrected_study_r = v && v !== (p.title_r || "").trim() ? v : null;
-        if (titleText) titleText.textContent = state.judgement.corrected_study_r || p.title_r || "(untitled)";
-        titleEdit.classList.add("hidden");
-        fixTitleBtn.textContent = state.judgement.corrected_study_r ? "fix typo (✓ edited)" : "fix typo";
+        _saveTitle();
       }
     };
+    // Auto-save when the user clicks/tabs away from the field.
+    titleEdit.addEventListener("blur", (e) => {
+      if (e.relatedTarget === fixTitleBtn) return;
+      _saveTitle();
+    });
+  }
+
+  const suggestUrlBtn = container.querySelector("#suggest-url-r-btn");
+  if (suggestUrlBtn) {
+    const urlEdit = container.querySelector("#url-r-edit");
+    const _origUrl = (p.url_r || "").trim();
+    const _saveUrl = () => {
+      if (urlEdit.classList.contains("hidden")) return;
+      const v = urlEdit.value.trim();
+      // Keep any non-empty value that differs from the current link; the admin
+      // reviews and sanitises suggestions, so don't silently drop edge cases.
+      state.judgement.corrected_url_r = v && v !== _origUrl ? v : null;
+      urlEdit.classList.add("hidden");
+      suggestUrlBtn.textContent = state.judgement.corrected_url_r ? "suggest link (✓ edited)" : "suggest link";
+    };
+    suggestUrlBtn.onclick = () => {
+      if (urlEdit.classList.contains("hidden")) {
+        urlEdit.value = state.judgement.corrected_url_r || _origUrl || "";
+        urlEdit.classList.remove("hidden");
+        suggestUrlBtn.textContent = "save link";
+        urlEdit.focus();
+        urlEdit.select();
+      } else {
+        _saveUrl();
+      }
+    };
+    // Auto-save when the user clicks/tabs away from the field.
+    urlEdit.addEventListener("blur", (e) => {
+      if (e.relatedTarget === suggestUrlBtn) return;
+      _saveUrl();
+    });
   }
 
   const editAbstractBtn = container.querySelector("#edit-abstract-btn");
   const abstractEdit = container.querySelector("#abstract-edit");
   const abstractText = container.querySelector("#abstract-text");
+  const _saveAbstract = () => {
+    if (abstractEdit.classList.contains("hidden")) return;
+    const v = abstractEdit.value.trim();
+    if (!v) {
+      // Block saving an empty abstract — shake the button and hint
+      editAbstractBtn.classList.add("unsaved-shake");
+      editAbstractBtn.addEventListener("animationend", () => editAbstractBtn.classList.remove("unsaved-shake"), { once: true });
+      const existing = container.querySelector(".abstract-empty-hint");
+      if (!existing) {
+        const hint = document.createElement("div");
+        hint.className = "abstract-empty-hint unsaved-hint";
+        hint.textContent = "Abstract cannot be empty — please add the text before saving.";
+        abstractEdit.insertAdjacentElement("afterend", hint);
+        setTimeout(() => hint.remove(), 5000);
+      }
+      return;
+    }
+    state.judgement.edited_abstract = v && v !== (p.abstract_r || "").trim() ? v : null;
+    abstractText.textContent = v;
+    abstractText.classList.remove("hidden");
+    abstractEdit.classList.add("hidden");
+    editAbstractBtn.textContent = state.judgement.edited_abstract ? "edit abstract (✓ edited)" : "edit abstract";
+  };
   editAbstractBtn.onclick = () => {
     if (abstractEdit.classList.contains("hidden")) {
       abstractEdit.value = p.abstract_r || "";
@@ -2043,29 +2661,17 @@ function wireEditButtons(container, p) {
       abstractText.classList.add("hidden");
       abstractEdit.classList.remove("hidden");
       editAbstractBtn.textContent = "save edited abstract";
+      abstractEdit.focus();
     } else {
-      const v = abstractEdit.value.trim();
-      if (!v) {
-        // Block saving an empty abstract — shake the button and hint
-        editAbstractBtn.classList.add("unsaved-shake");
-        editAbstractBtn.addEventListener("animationend", () => editAbstractBtn.classList.remove("unsaved-shake"), { once: true });
-        const existing = container.querySelector(".abstract-empty-hint");
-        if (!existing) {
-          const hint = document.createElement("div");
-          hint.className = "abstract-empty-hint unsaved-hint";
-          hint.textContent = "Abstract cannot be empty — please add the text before saving.";
-          abstractEdit.insertAdjacentElement("afterend", hint);
-          setTimeout(() => hint.remove(), 5000);
-        }
-        return;
-      }
-      state.judgement.edited_abstract = v && v !== (p.abstract_r || "").trim() ? v : null;
-      abstractText.textContent = v;
-      abstractText.classList.remove("hidden");
-      abstractEdit.classList.add("hidden");
-      editAbstractBtn.textContent = state.judgement.edited_abstract ? "edit abstract (✓ edited)" : "edit abstract";
+      _saveAbstract();
     }
   };
+  // Auto-save when the user clicks/tabs away from the field. If it's empty the
+  // save is blocked (the field stays open with the hint), same as the button.
+  abstractEdit.addEventListener("blur", (e) => {
+    if (e.relatedTarget === editAbstractBtn) return;
+    _saveAbstract();
+  });
 
   const seniorRejectBtn = container.querySelector("#senior-reject-btn");
   if (seniorRejectBtn) {
@@ -2113,6 +2719,58 @@ function wireEditButtons(container, p) {
       });
     };
 
+    const _saveQuote = () => {
+      if (quoteEdit.classList.contains("hidden")) return;
+      const v = quoteEdit.value.trim();
+      state.judgement.edited_outcome_quote = v && v !== (p.outcome_phrase || "").trim() ? v : null;
+      const emptyMsg = container.querySelector("#outcome-quote-empty");
+      if (quoteText) {
+        quoteText.textContent = v ? `"${v}"` : "";
+        if (v) {
+          quoteText.classList.remove("hidden");
+          if (emptyMsg) emptyMsg.classList.add("hidden");
+        } else {
+          quoteText.classList.add("hidden");
+          if (emptyMsg) emptyMsg.classList.remove("hidden");
+        }
+      }
+      quoteEdit.classList.add("hidden");
+      _unlockChoices();
+
+      if (state.judgement.type === "reproduction") {
+        // Reproduction: the quote is context only — just save the edit; don't
+        // run the replication "auto-select wrong" flow (it would wipe the
+        // reproduction outcome).
+        editQuoteBtn.textContent = state.judgement.edited_outcome_quote ? "edit quote (✓ edited)" : "edit / extend quote";
+        updateSubmitState(container.querySelector(".pair-body"));
+        return;
+      }
+
+      if (state.judgement.edited_outcome_quote) {
+        // Quote was changed — auto-select "wrong" and skip the 3 buttons
+        state.judgement.outcome = "wrong";
+        state.judgement.corrected_outcome = null;
+        if (outcomeChoices) outcomeChoices.classList.add("hidden");
+        if (correctionRow) {
+          correctionRow.classList.remove("hidden");
+          const lbl = correctionRow.querySelector("#outcome-correction-label");
+          if (lbl) lbl.textContent = "You edited the quote — what is the correct outcome label?";
+        }
+        editQuoteBtn.textContent = "edit quote (✓ edited)";
+      } else {
+        // Reverted — restore the 3 choice buttons
+        state.judgement.outcome = null;
+        state.judgement.corrected_outcome = null;
+        if (outcomeChoices) outcomeChoices.classList.remove("hidden");
+        if (correctionRow) {
+          correctionRow.classList.add("hidden");
+          correctionRow.querySelectorAll(".choice").forEach(b => b.classList.remove("selected"));
+        }
+        editQuoteBtn.textContent = "edit / extend quote";
+      }
+      updateSubmitState(container.querySelector(".pair-body"));
+    };
+
     editQuoteBtn.onclick = () => {
       if (quoteEdit.classList.contains("hidden")) {
         quoteEdit.value = p.outcome_phrase || "";
@@ -2120,48 +2778,19 @@ function wireEditButtons(container, p) {
         quoteEdit.classList.remove("hidden");
         editQuoteBtn.textContent = "save edited quote";
         _lockChoices();
+        quoteEdit.focus();
       } else {
-        const v = quoteEdit.value.trim();
-        state.judgement.edited_outcome_quote = v && v !== (p.outcome_phrase || "").trim() ? v : null;
-        const emptyMsg = container.querySelector("#outcome-quote-empty");
-        if (quoteText) {
-          quoteText.textContent = v ? `"${v}"` : "";
-          if (v) {
-            quoteText.classList.remove("hidden");
-            if (emptyMsg) emptyMsg.classList.add("hidden");
-          } else {
-            quoteText.classList.add("hidden");
-            if (emptyMsg) emptyMsg.classList.remove("hidden");
-          }
-        }
-        quoteEdit.classList.add("hidden");
-        _unlockChoices();
-
-        if (state.judgement.edited_outcome_quote) {
-          // Quote was changed — auto-select "wrong" and skip the 3 buttons
-          state.judgement.outcome = "wrong";
-          state.judgement.corrected_outcome = null;
-          if (outcomeChoices) outcomeChoices.classList.add("hidden");
-          if (correctionRow) {
-            correctionRow.classList.remove("hidden");
-            const lbl = correctionRow.querySelector("#outcome-correction-label");
-            if (lbl) lbl.textContent = "You edited the quote — what is the correct outcome label?";
-          }
-          editQuoteBtn.textContent = "edit quote (✓ edited)";
-        } else {
-          // Reverted — restore the 3 choice buttons
-          state.judgement.outcome = null;
-          state.judgement.corrected_outcome = null;
-          if (outcomeChoices) outcomeChoices.classList.remove("hidden");
-          if (correctionRow) {
-            correctionRow.classList.add("hidden");
-            correctionRow.querySelectorAll(".choice").forEach(b => b.classList.remove("selected"));
-          }
-          editQuoteBtn.textContent = "edit / extend quote";
-        }
-        updateSubmitState(container.querySelector(".pair-body"));
+        _saveQuote();
       }
     };
+
+    // Auto-save when the user clicks/tabs away from the textarea. If focus is
+    // moving to the edit/save button, let its own click toggle handle the save
+    // so we don't run it twice.
+    quoteEdit.addEventListener("blur", (e) => {
+      if (e.relatedTarget === editQuoteBtn) return;
+      _saveQuote();
+    });
   }
 }
 
@@ -2187,6 +2816,8 @@ function onChoice(btn) {
       state.judgement.original = null;
       state.judgement.outcome = null;
       state.judgement.corrected_outcome = null;
+      state.judgement.repro_computation = null;
+      state.judgement.repro_robustness = null;
     } else {
       if (wasAnswered) {
         unanswerGate(pairBody.querySelector("#gate-2"));
@@ -2195,6 +2826,14 @@ function onChoice(btn) {
         const cr = pairBody.querySelector("#outcome-correction");
         if (cr) cr.classList.add("hidden");
       }
+      // Outcome taxonomy differs by type — clear any prior outcome picks and
+      // switch gate-3 between the replication and reproduction selectors.
+      state.judgement.outcome = null;
+      state.judgement.corrected_outcome = null;
+      state.judgement.repro_computation = null;
+      state.judgement.repro_robustness = null;
+      pairBody.querySelectorAll("#gate-3 .choice.selected").forEach(b => b.classList.remove("selected"));
+      _applyOutcomeMode(pairBody);
       pairBody.querySelector("#gate-2").classList.remove("hidden");
     }
     pairBody.querySelector(".comment").classList.remove("hidden");
@@ -2204,6 +2843,8 @@ function onChoice(btn) {
       unanswerGate(pairBody.querySelector("#gate-3"));
       state.judgement.outcome = null;
       state.judgement.corrected_outcome = null;
+      state.judgement.repro_computation = null;
+      state.judgement.repro_robustness = null;
       const cr = pairBody.querySelector("#outcome-correction");
       if (cr) cr.classList.add("hidden");
     }
@@ -2258,11 +2899,35 @@ function onChoice(btn) {
     pairBody.querySelectorAll("[data-correct-outcome]").forEach(b => b.classList.remove("selected"));
     btn.classList.add("selected");
     updateSubmitState(pairBody);
+    // Now that the correct outcome is chosen, collapse gate-3.
+    const correctMap = { success: "Success", failure: "Failed", mixed: "Mixed", uninformative: "Uninformative" };
+    const label = `Mischaracterised → ${correctMap[btn.dataset.correctOutcome] || btn.dataset.correctOutcome}`;
+    clearTimeout(_chipTimer);
+    _chipTimer = setTimeout(() => answerGate(gate, label, "danger"), 300);
+    return;
+  } else if (btn.dataset.reproComp || btn.dataset.reproRobust) {
+    // Reproduction outcome: two axes → combined string in corrected_outcome.
+    // (Sibling de-select within each axis is handled at the top of onChoice.)
+    if (btn.dataset.reproComp)   state.judgement.repro_computation = btn.dataset.reproComp;
+    if (btn.dataset.reproRobust) state.judgement.repro_robustness  = btn.dataset.reproRobust;
+    const comp = state.judgement.repro_computation, rob = state.judgement.repro_robustness;
+    if (comp && rob) {
+      state.judgement.corrected_outcome = _reproLabel(comp, rob);
+      updateSubmitState(pairBody);
+      clearTimeout(_chipTimer);
+      _chipTimer = setTimeout(() => answerGate(gate, state.judgement.corrected_outcome, "success"), 300);
+    } else {
+      state.judgement.corrected_outcome = null;   // need both axes before it counts
+      updateSubmitState(pairBody);
+    }
     return;
   }
 
   updateSubmitState(pairBody);
   clearTimeout(_chipTimer);
+  // Keep gate-3 open after "Mischaracterised" so the user can pick the correct
+  // outcome inline; it collapses once they do (handled in the branch above).
+  if (btn.dataset.outcome === "wrong") return;
   _chipTimer = setTimeout(() => answerGate(gate, getAnswerLabel(btn), getAnswerClass(btn)), 300);
 }
 
@@ -2312,9 +2977,40 @@ function getAnswerClass(btn) {
   return "";
 }
 
+// Reproduction outcome taxonomy (combined-string labels match the extractor).
+const _REPRO_COMP   = { successful: "computationally successful", issues: "computational issues", not_checked: "computation not checked" };
+const _REPRO_ROBUST = { robust: "robust", challenges: "robustness challenges", not_checked: "robustness not checked" };
+const _reproLabel = (comp, rob) => `${_REPRO_COMP[comp]}, ${_REPRO_ROBUST[rob]}`;
+
+// Switch gate-3 between the replication outcome check and the reproduction
+// 2-axis selector based on the chosen type.
+function _applyOutcomeMode(pairBody) {
+  const isRepro = state.judgement.type === "reproduction";
+  const repl  = pairBody.querySelector("#replication-outcome");
+  const repro = pairBody.querySelector("#repro-outcome");
+  const label = pairBody.querySelector("#gate-3 .outcome-label");
+  const q     = pairBody.querySelector("#gate-3 .question");
+  if (repl)  repl.classList.toggle("hidden", isRepro);
+  if (repro) repro.classList.toggle("hidden", !isRepro);
+  if (label) label.classList.toggle("hidden", isRepro);   // extracted (replication) outcome label is N/A for reproductions
+  if (q) {
+    if (!q.dataset.replQuestion) q.dataset.replQuestion = q.textContent;
+    q.textContent = isRepro
+      ? "How did the reproduction turn out? Use the quote below for context."
+      : q.dataset.replQuestion;
+  }
+}
+
 function updateSubmitState(pairBody) {
   const j = state.judgement;
-  const outcomeReady = j.outcome && (j.outcome !== "wrong" || j.corrected_outcome);
+  const btnEl = (pairBody || document).querySelector("#submit-btn");
+  if (j.no_access) {   // hard-mode report — submittable without judging
+    if (btnEl) btnEl.disabled = false;
+    return;
+  }
+  const outcomeReady = j.type === "reproduction"
+    ? !!j.corrected_outcome                                          // both axes chosen
+    : (j.outcome && (j.outcome !== "wrong" || j.corrected_outcome)); // replication flow
   const ready = j.type === "not_validation" || (j.type && j.original && outcomeReady);
   const btn = (pairBody || document).querySelector("#submit-btn");
   if (btn) btn.disabled = !ready;
@@ -2350,198 +3046,101 @@ async function submitJudgement() {
   if (!btn || btn.disabled) return;
   btn.disabled = true;
   clearPairTimer();
-  try {
-    const j = state.judgement;
-    const p = state.currentPair;
-    const isNotValidation = j.type === "not_validation";
-    const pType = (p.type || "").toLowerCase();
 
-    // Map gate answers → new API fields
-    const typeCheck = (!isNotValidation && j.type === pType) ? "correct" : "incorrect";
-    const correctedType = isNotValidation ? "not_validation"
-                        : (typeCheck === "incorrect" ? j.type : null);
+  const j = state.judgement;
+  const p = state.currentPair;
 
-    const resp = await api("/judge", "POST", {
-      coder_id:  state.coder.coder_id,
-      record_id: String(p.record_id),
-      pair_id:   p.pair_id || null,
-      type_check:     isNotValidation ? "incorrect" : typeCheck,
-      original_check: isNotValidation ? "incorrect" : (j.original === "correct" ? "correct" : "incorrect"),
-      outcome_check:  isNotValidation ? "incorrect" : (j.outcome  === "correct" ? "correct" : "incorrect"),
-      corrected_type:          correctedType || null,
-      corrected_doi_o:         j.corrected_doi_o   || null,
-      corrected_study_o:       j.corrected_study_o || null,
-      corrected_outcome:       j.corrected_outcome || null,
-      corrected_outcome_quote: j.edited_outcome_quote || null,
-      corrected_abstract:      j.edited_abstract || null,
-      corrected_study_r:       j.corrected_study_r || null,
-      validator_notes:         j.comment || null,
-    });
-    _clearDraft(p.pair_id);  // only clear after confirmed success
-    showToast(resp.points_earned, "points");
-    if (typeof confetti !== "undefined") {
-      confetti({
-        particleCount: 60,
-        spread: 60,
-        origin: { y: 0.5 },
-        colors: ["#b54614", "#1a1612", "#d6a87e", "#4a6b3e"],
-        scalar: 0.9,
-      });
+  // Hard-mode "I cannot access this article" — report it (no judgement, no
+  // points) and move on. The record leaves circulation for the admin queue.
+  if (j.no_access) {
+    _clearDraft(p.pair_id);
+    try {
+      await api("/restricted", "POST", { coder_id: state.coder.coder_id, record_id: String(p.record_id) });
+      showToast("Sent to the review team.");
+    } catch (e) {
+      await showAlert(e.message);
+      btn.disabled = false;
+      return;
     }
-    await refreshAll();
-  } catch (e) {
-    if (e.message && e.message.includes("No open slot")) {
-      await showAlert("Your session for this pair expired — it was open too long and was released back to the pool. You'll be moved to a new pair.");
-      await refreshAll();
-    } else {
+    await loadNextPair(false);
+    return;
+  }
+
+  const isNotValidation = j.type === "not_validation";
+  const pType = (p.type || "").toLowerCase();
+  const typeCheck = (!isNotValidation && j.type === pType) ? "correct" : "incorrect";
+  const correctedType = isNotValidation ? "not_validation"
+                      : (typeCheck === "incorrect" ? j.type : null);
+
+  const payload = {
+    coder_id:  state.coder.coder_id,
+    record_id: String(p.record_id),
+    pair_id:   p.pair_id || null,
+    type_check:     isNotValidation ? "incorrect" : typeCheck,
+    original_check: isNotValidation ? "incorrect" : (j.original === "correct" ? "correct" : "incorrect"),
+    outcome_check:  isNotValidation ? "incorrect" : (j.outcome  === "correct" ? "correct" : "incorrect"),
+    corrected_type:          correctedType || null,
+    corrected_doi_o:         j.corrected_doi_o   || null,
+    corrected_study_o:       j.corrected_study_o || null,
+    corrected_outcome:       j.corrected_outcome || null,
+    corrected_outcome_quote: j.edited_outcome_quote || null,
+    corrected_abstract:      j.edited_abstract || null,
+    corrected_study_r:       j.corrected_study_r || null,
+    corrected_url_r:         j.corrected_url_r || null,
+    validator_notes:         j.comment || null,
+  };
+
+  // Assignment validation — resolves the record directly (double points),
+  // submitted synchronously (not via the optimistic queue) and one-off.
+  if (state.assignment) {
+    try {
+      const resp = await api("/assignment-judge", "POST", payload);
+      _clearDraft(p.pair_id);
+      _celebratePoints(resp.points_earned);
+      state.assignment = null;
+      $("#assignment-banner").classList.add("hidden");
+      await refreshAssignments();
+      await refreshStats();
+      await loadNextPair();   // back to the normal/hard queue
+    } catch (e) {
       await showAlert(e.message);
       btn.disabled = false;
     }
+    return;
   }
+
+  // Static (demo) mode: keep the simple synchronous submit.
+  if (!_bufferEligible()) {
+    try {
+      const resp = await api("/judge", "POST", payload);
+      _clearDraft(p.pair_id);
+      _celebratePoints(resp.points_earned);
+      await refreshAll();
+    } catch (e) {
+      await showAlert(e.message);
+      btn.disabled = false;
+    }
+    return;
+  }
+
+  // Optimistic: queue the submit (sent + retried in the background), clear the
+  // draft, and jump straight to the next buffered pair. Points land deferred-
+  // but-accurate when the server confirms (see _processSubmitQueue).
+  _clearDraft(p.pair_id);
+  _enqueueSubmit(payload, p.study_r || p.title_r || p.doi_r || "this pair");
+  await loadNextPair(false);   // don't resume the pair we just submitted
 }
 
 function submitOnboarding() {
   const j = state.judgement;
   const pair = state.currentPair;
-  const ready = j.type === "not_validation" || (j.type && j.original && j.outcome);
+  // Reproductions provide the outcome via the 2-axis selector (corrected_outcome),
+  // not j.outcome — mirror updateSubmitState so they can submit.
+  const outcomeReady = j.type === "reproduction" ? !!j.corrected_outcome : j.outcome;
+  const ready = j.type === "not_validation" || (j.type && j.original && outcomeReady);
   if (!ready) return;
   const errors = evaluateOnboarding(pair, j);
   showOnboardingFeedback(pair, errors);
-}
-
-/* ---------- Hard-mode entry ---------- */
-function renderHardPair(container, p) {
-  const doiUrl = p.doi_r ? `https://doi.org/${p.doi_r}` : null;
-  const oaUrl = p.oa_url_r || (p.url_r && p.url_r !== doiUrl ? p.url_r : null);
-  const scholarQuery = encodeURIComponent(`${p.title_r || ""} ${p.authors_r || ""}`);
-  const scholarUrl = `https://scholar.google.com/scholar?q=${scholarQuery}`;
-  const lockIcon = (open) => `<span class="oa-lock ${open ? "open" : "gated"}" aria-label="${open ? "open access" : "gated"}">${open ? "🔓" : "🔒"}</span>`;
-
-  container.innerHTML = `
-    <div class="pair-header">
-      <div class="pair-meta">
-<span class="meta-item hard-tag">hard mode · 25 pts</span>
-        <button class="skip-btn" id="skip-btn">Skip</button>
-      </div>
-      <h2>${escapeHtml(p.title_r || "(untitled)")}</h2>
-      <div class="authors">${escapeHtml(p.authors_r || "?")} · ${fmtYear(p.year_r)}${p.journal_r ? " · " + escapeHtml(p.journal_r) : ""}</div>
-      <div class="abstract-block">
-        <div class="abstract muted-empty">No abstract available — fetch it from the source.</div>
-        <div class="abstract-tools">
-          ${oaUrl ? `<a href="${escapeHtml(oaUrl)}" target="_blank" rel="noopener" title="Open access PDF">${lockIcon(true)} OA full text</a>` : ""}
-          ${doiUrl ? `<a href="${escapeHtml(doiUrl)}" target="_blank" rel="noopener" title="${oaUrl ? "DOI page" : "Publisher page (likely paywalled)"}">${oaUrl ? "" : lockIcon(false) + " "}DOI</a>` : ""}
-          <a href="${escapeHtml(scholarUrl)}" target="_blank" rel="noopener" title="Search for an alternate copy">Scholar</a>
-        </div>
-      </div>
-    </div>
-
-    <div class="pair-body">
-      <div class="gate">
-        <h3><span class="gate-num">★</span>Hard-mode entry</h3>
-        <p class="question">Find the linked original and the outcome ourselves. If you've gotten this far, it's a real validation by definition.</p>
-
-        <div class="hard-form">
-          <div class="hard-row">
-            <label>Original DOI <small>(strongly recommended)</small></label>
-            <input type="text" id="hard-doi-o" placeholder="10.xxxx/xxxxx">
-          </div>
-          <div class="hard-row">
-            <label>Original title</label>
-            <input type="text" id="hard-title-o" placeholder="Full title of the original study">
-          </div>
-          <div class="hard-row two-col">
-            <div>
-              <label>Original authors</label>
-              <input type="text" id="hard-authors-o" placeholder="Last, F.; Last, F.">
-            </div>
-            <div>
-              <label>Year</label>
-              <input type="text" id="hard-year-o" placeholder="2018">
-            </div>
-          </div>
-
-          <div class="hard-row">
-            <label>Outcome category</label>
-            <div class="choices small-choices">
-              <button class="choice success" data-hard-outcome="success">Success</button>
-              <button class="choice warn" data-hard-outcome="mixed">Mixed</button>
-              <button class="choice danger" data-hard-outcome="failure">Failure</button>
-              <button class="choice" data-hard-outcome="uninformative">Uninformative</button>
-            </div>
-          </div>
-
-          <div class="hard-row">
-            <label>Outcome quote <small>(verbatim sentence(s) supporting your category)</small></label>
-            <textarea id="hard-outcome-quote" rows="3" placeholder="Paste the sentence(s) from the paper..."></textarea>
-          </div>
-
-          <textarea class="comment" placeholder="Optional notes / source you used (+3 pts)"></textarea>
-        </div>
-      </div>
-
-      <div class="actions">
-        <span class="shortcut-hint">⌘↵ submit</span>
-        <button class="btn-primary" id="submit-btn" disabled>Submit (+25)</button>
-      </div>
-    </div>
-  `;
-
-  const submitBtn = container.querySelector("#submit-btn");
-  const updateHardSubmit = () => {
-    const e = collectHardEntry(container);
-    submitBtn.disabled = !(e && e.outcome && e.outcome_phrase && e.outcome_phrase.length > 5);
-  };
-
-  container.querySelectorAll(".choice").forEach((b) => {
-    b.onclick = () => {
-      container.querySelectorAll(`.choice[data-hard-outcome]`).forEach((x) => x.classList.remove("selected"));
-      b.classList.add("selected");
-      updateHardSubmit();
-    };
-  });
-  container.querySelector(".comment").oninput = (e) => (state.judgement.comment = e.target.value);
-  ["hard-doi-o", "hard-title-o", "hard-authors-o", "hard-year-o", "hard-outcome-quote"].forEach((id) => {
-    container.querySelector("#" + id).oninput = updateHardSubmit;
-  });
-  container.querySelector("#skip-btn").onclick = onSkip;
-  submitBtn.onclick = () => submitHard(container);
-}
-
-function collectHardEntry(container) {
-  const selectedOutcome = container.querySelector(".choice[data-hard-outcome].selected");
-  return {
-    doi_o: container.querySelector("#hard-doi-o").value.trim() || null,
-    title_o: container.querySelector("#hard-title-o").value.trim() || null,
-    authors_o: container.querySelector("#hard-authors-o").value.trim() || null,
-    year_o: container.querySelector("#hard-year-o").value.trim() || null,
-    outcome: selectedOutcome ? selectedOutcome.dataset.hardOutcome : null,
-    outcome_phrase: container.querySelector("#hard-outcome-quote").value.trim(),
-  };
-}
-
-async function submitHard(container) {
-  const entry = collectHardEntry(container);
-  if (!entry.outcome || !entry.outcome_phrase) return;
-  const submitBtn = container.querySelector("#submit-btn");
-  submitBtn.disabled = true;
-  try {
-    const resp = await api("/judge", "POST", {
-      coder_id:  state.coder.coder_id,
-      record_id: String(state.currentPair.record_id),
-      type_judgement: "replication",
-      comment: state.judgement.comment,
-      hard_mode: true,
-      hard_mode_entry: entry,
-    });
-    showToast(resp.points_earned, "points");
-    if (typeof confetti !== "undefined") {
-      confetti({ particleCount: 90, spread: 75, origin: { y: 0.5 }, scalar: 1.0 });
-    }
-    await refreshAll();
-  } catch (e) {
-    await showAlert(e.message);
-    submitBtn.disabled = false;
-  }
 }
 
 /* ---------- Guided Tour ---------- */
@@ -2766,6 +3365,10 @@ async function guardedSubmit() {
   // Check for unsaved edits in the three interactive sections
   const card = $("#pair-card");
 
+  // "I cannot access this article" — this is a report, not a judgement, so skip
+  // all the judgement guards (unsaved edits, abstract, too-fast).
+  if (state.judgement.no_access) { await submitJudgement(); return; }
+
   // 1. Title correction panel open but not saved — block regardless of content
   const titleEdit = card?.querySelector("#title-edit");
   if (titleEdit && !titleEdit.classList.contains("hidden")) {
@@ -2813,10 +3416,11 @@ async function guardedSubmit() {
     return;
   }
 
-  // 5. Abstract must not be empty — required for all submission types
+  // 5. Abstract must not be empty — required in normal mode. Hard-mode records
+  // are expected to lack an abstract (the validator opens the full article).
   const hasAbstract = (state.currentPair?.abstract_r || "").trim() ||
                       (state.judgement.edited_abstract || "").trim();
-  if (!hasAbstract) {
+  if (state.mode !== "hard" && !state.assignment && !hasAbstract) {
     _shakeAndHint(
       card?.querySelector("#edit-abstract-btn"),
       'This record has no abstract — please find and paste it in using "edit abstract" before submitting.'
@@ -2908,6 +3512,8 @@ let _adminTrusted = false;
 let _adminFilter    = "all";
 let _adminSearch    = "";
 let _adminPage      = 1;
+let _adminSort      = "";        // column key, "" = default ordering
+let _adminSortDir   = "desc";    // "asc" | "desc"
 let _adminEntryIds   = [];   // ordered record_ids on current page
 let _adminCurrentIdx = -1;  // index of currently open record
 let _adminDetailCache = {};  // record_id → preloaded detail data
@@ -2959,10 +3565,13 @@ function enterAdminScreen() {
   $("#onboarding-screen").classList.add("hidden");
   $("#game-screen").classList.add("hidden");
   $("#admin-screen").classList.remove("hidden");
+  startIdleLogout();   // admins included
   const badge = $("#admin-handle-badge");
   if (badge) badge.textContent = _adminHandle ? `Signed in as ${_adminHandle}` : "";
   startMaintenanceSystem();
   fetchAdminEntries();
+  // Populate the Restricted-access badge proactively so admins see the count.
+  adminApi("/restricted").then(d => _updateRestrictedBadge(d.records || [])).catch(() => {});
 }
 
 function signOutAdmin() {
@@ -2975,17 +3584,19 @@ function signOutAdmin() {
 async function fetchAdminEntries(resetState = true) {
   const body = $("#admin-table-body");
   if (resetState) {
-    body.innerHTML = '<tr><td colspan="8" class="admin-loading">Loading…</td></tr>';
+    body.innerHTML = '<tr><td colspan="9" class="admin-loading">Loading…</td></tr>';
     $("#admin-empty").classList.add("hidden");
   }
 
   try {
     const searchParam = _adminSearch ? `&search=${encodeURIComponent(_adminSearch)}` : "";
+    const sortParam   = _adminSort ? `&sort=${_adminSort}&dir=${_adminSortDir}` : "";
     const data = await adminApi(
-      `/entries?filter=${_adminFilter}&page=${_adminPage}&per_page=${ADMIN_PER_PAGE}${searchParam}`
+      `/entries?filter=${_adminFilter}&page=${_adminPage}&per_page=${ADMIN_PER_PAGE}${searchParam}${sortParam}`
     );
     renderAdminCounts(data.counts);
     renderAdminTable(data.entries, data.total);
+    _updateSortIndicators();
     renderAdminPagination(data.total, data.page);
     if (resetState) {
       _adminEntryIds = data.entries.map(e => e.record_id);
@@ -2994,7 +3605,7 @@ async function fetchAdminEntries(resetState = true) {
     }
   } catch (e) {
     if (resetState) {
-      body.innerHTML = `<tr><td colspan="8" class="admin-loading">
+      body.innerHTML = `<tr><td colspan="9" class="admin-loading">
         Error: ${escapeHtml(e.message)}
         <button id="admin-retry-btn" style="margin-left:0.75rem;font-size:0.78rem;padding:0.3rem 0.8rem;border-radius:999px;border:1px solid var(--ink);background:transparent;cursor:pointer;">↺ Retry</button>
       </td></tr>`;
@@ -3007,7 +3618,6 @@ function renderAdminCounts(counts) {
   $("#fc-all").textContent              = counts.all;
   $("#fc-pending-approval").textContent = counts.pending_approval;
   $("#fc-needs-review").textContent     = counts.needs_review;
-  $("#fc-llm-errors").textContent       = counts.llm_errors;
   $("#fc-validated").textContent        = counts.validated;
   $("#fc-rejected").textContent         = counts.rejected ?? 0;
   const _fcAdminChecked = $("#fc-admin-checked");
@@ -3020,7 +3630,7 @@ const STATUS_LABELS = {
   consensus_reached:    { text: "Pending approval", cls: "status-consensus"   },
   validated:            { text: "Validated",         cls: "status-validated"   },
   need_review:          { text: "Needs review",      cls: "status-review"      },
-  rejected:             { text: "Rejected",          cls: "status-rejected"    },
+  rejected:             { text: "Excluded",          cls: "status-rejected"    },
 };
 
 function renderAdminTable(entries, total) {
@@ -3056,6 +3666,13 @@ function renderAdminTable(entries, total) {
     const needsAttentionFlag = e.validation_status === "need_review" && tc === 0
       ? '<span class="admin-trust-badge trust-alert" title="No trusted validator involved — needs careful review">🔴</span>'
       : "";
+    const noteFlag = e.admin_notes
+      ? `<span class="admin-note-flag" title="${escapeHtml((e.note_saved_by ? e.note_saved_by + ": " : "") + e.admin_notes)}">📝</span>`
+      : "";
+    const ap = e.agreement_pct;
+    const agreeCell = (ap == null)
+      ? '<span class="agree-na">—</span>'
+      : `<span class="agree-pct ${ap >= 100 ? "agree-full" : ap >= 67 ? "agree-mid" : "agree-low"}">${ap}%</span>`;
     const actions = e.validation_status === "consensus_reached"
       ? `<button class="admin-approve-btn" data-id="${e.record_id}">Approve ✓</button>
          <button class="admin-review-btn ghost-btn" data-id="${e.record_id}">Review</button>`
@@ -3065,11 +3682,12 @@ function renderAdminTable(entries, total) {
       : "—";
     return `<tr>
       <td class="admin-cell-num">${offset + i + 1}</td>
-      <td class="admin-cell-study" title="${(e.study_r || "").replace(/"/g, "&quot;")}">${study}${flags}${trustBadge}${needsAttentionFlag}</td>
-      <td>${e.type || "—"}</td>
-      <td>${e.outcome || "—"}</td>
+      <td class="admin-cell-study" title="${(e.study_r || "").replace(/"/g, "&quot;")}">${study}${flags}${trustBadge}${needsAttentionFlag}${noteFlag}</td>
+      <td>${escapeHtml(e.final_type || e.type || "—")}</td>
+      <td>${escapeHtml(fmtOutcome(e.final_outcome || e.outcome) || "—")}</td>
       <td><span class="admin-status ${s.cls}">${s.text}</span></td>
       <td class="admin-cell-validators">${validators}</td>
+      <td class="admin-cell-agree">${agreeCell}</td>
       <td>${approvedBy}</td>
       <td class="admin-cell-actions">${actions}</td>
     </tr>`;
@@ -3263,6 +3881,12 @@ function renderAdminDetail(data) {
         <div class="chk-long-group"><span class="chk-long-tag">Extracted</span><span class="chk-long-val">${escapeHtml(rec.doi_r || "—")}</span></div>
         <div class="chk-long-group chk-long-group-diff"><span class="chk-long-tag">→ Suggests</span><span class="chk-long-val">${doiLink(v.corrected_doi_r)}</span></div>
       </div>` : "";
+    const urlLink = (u) => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener" class="doi-link">${escapeHtml(u.length > 50 ? u.substring(0, 50) + "…" : u)}</a>`;
+    const repUrlCorrRow = v.corrected_url_r ? `<div class="chk-row-long">
+        <div class="chk-row-long-head"><span class="chk-label">Link fix</span><span class="chk-edit-badge">✎ ${who} edited</span></div>
+        <div class="chk-long-group"><span class="chk-long-tag">Extracted</span><span class="chk-long-val">${rec.url_r ? urlLink(rec.url_r) : "—"}</span></div>
+        <div class="chk-long-group chk-long-group-diff"><span class="chk-long-tag">→ Suggests</span><span class="chk-long-val">${urlLink(v.corrected_url_r)}</span></div>
+      </div>` : "";
 
     return `<div class="admin-val-card${isSeniorReject ? " admin-val-senior-reject" : ""}">
       <div class="admin-val-label">
@@ -3279,9 +3903,10 @@ function renderAdminDetail(data) {
         ${shortRow("Type",    rec.type,    v.type_check,    typeCorr)}
         ${longRow("Orig. Title", rec.study_o, v.original_check, v.corrected_study_o || null)}
         ${doiCorrRow}
-        ${shortRow("Outcome", rec.outcome, v.outcome_check, v.corrected_outcome ? escapeHtml(v.corrected_outcome) : null)}
+        ${shortRow("Outcome", fmtOutcome(rec.outcome), v.outcome_check, v.corrected_outcome ? escapeHtml(fmtOutcome(v.corrected_outcome)) : null)}
         ${editRow("Title fix",  rec.study_r,      v.corrected_study_r)}
         ${repDoiCorrRow}
+        ${repUrlCorrRow}
         ${editRow("Quote",      rec.outcome_quote, v.corrected_outcome_quote, true)}
         ${editRow("Abstract",   rec.abstract_r,    v.corrected_abstract,      true)}
         ${v.validator_notes ? `<div class="chk-row-long"><div class="chk-row-long-head"><span class="chk-label">Notes</span></div><p class="chk-notes-text">${escapeHtml(v.validator_notes)}</p></div>` : ""}
@@ -3319,10 +3944,11 @@ function renderAdminDetail(data) {
     const changes = [
       rec.final_study_r        && rec.final_study_r        !== rec.study_r        ? ["Replication title", rec.study_r,        rec.final_study_r]        : null,
       rec.final_doi_r          && rec.final_doi_r          !== rec.doi_r          ? ["Replication DOI",   rec.doi_r,          rec.final_doi_r]          : null,
+      rec.final_url_r          && rec.final_url_r          !== rec.url_r          ? ["Replication URL",   rec.url_r,          rec.final_url_r]          : null,
       rec.final_study_o        && rec.final_study_o        !== rec.study_o        ? ["Original title",    rec.study_o,        rec.final_study_o]        : null,
       rec.final_doi_o          && rec.final_doi_o          !== rec.doi_o          ? ["Original DOI",      rec.doi_o,          rec.final_doi_o]          : null,
       rec.final_type           && rec.final_type           !== rec.type           ? ["Type",              rec.type,           rec.final_type]           : null,
-      rec.final_outcome        && rec.final_outcome        !== rec.outcome        ? ["Outcome",           rec.outcome,        rec.final_outcome]        : null,
+      rec.final_outcome        && rec.final_outcome        !== rec.outcome        ? ["Outcome",           fmtOutcome(rec.outcome),        fmtOutcome(rec.final_outcome)]        : null,
       rec.final_outcome_quote  && rec.final_outcome_quote  !== rec.outcome_quote  ? ["Quote",             rec.outcome_quote,  rec.final_outcome_quote]  : null,
       rec.final_abstract_r     && rec.final_abstract_r     !== rec.abstract_r     ? ["Abstract",          rec.abstract_r,     rec.final_abstract_r]     : null,
     ].filter(Boolean);
@@ -3356,7 +3982,7 @@ function renderAdminDetail(data) {
         <div class="fp-row"><span class="fp-label">DOI</span><span class="fp-value">${doiLink(finalDoiO)}</span></div>
         <div class="fp-row fp-divider"></div>
         <div class="fp-row"><span class="fp-label">Type</span><span class="fp-value">${escapeHtml(finalType || "—")}</span></div>
-        <div class="fp-row"><span class="fp-label">Outcome</span><span class="fp-value">${escapeHtml(finalOutcome || "—")}</span></div>
+        <div class="fp-row"><span class="fp-label">Outcome</span><span class="fp-value">${escapeHtml(fmtOutcome(finalOutcome) || "—")}</span></div>
         ${finalQuote ? `<div class="fp-row fp-quote-row"><span class="fp-label">Quote</span><span class="fp-value fp-quote">"${escapeHtml(finalQuote)}"</span></div>` : ""}
       </div>
       ${finalAbstractR ? `<details class="fp-abstract"><summary>Abstract${rec.final_abstract_r && rec.final_abstract_r !== rec.abstract_r ? " (edited)" : ""}</summary><p class="fp-abstract-text">${escapeHtml(finalAbstractR)}</p></details>` : ""}
@@ -3396,6 +4022,14 @@ function renderAdminDetail(data) {
       <!-- Left: final preview + validator cards -->
       <div class="admin-detail-pair">
         ${finalPreview()}
+
+        ${(() => {
+          const lines = buildConsensusSummary(v1, v2, llm);
+          return lines.length ? `<div class="consensus-summary">
+            <div class="cs-title">Where validators landed</div>
+            <ul class="cs-list">${lines.map(l => `<li>${escapeHtml(l)}</li>`).join("")}</ul>
+          </div>` : "";
+        })()}
 
         <div class="admin-val-cards">
           ${humanCard("Validator 1", v1, q1)}
@@ -3752,14 +4386,90 @@ function switchAdminTab(tab) {
   $("#admin-tab-stats").classList.toggle("hidden",      tab !== "stats");
   $("#admin-tab-admins").classList.toggle("hidden",     tab !== "admins");
   $("#admin-tab-dashboard").classList.toggle("hidden",  tab !== "dashboard");
+  $("#admin-tab-restricted").classList.toggle("hidden", tab !== "restricted");
   $("#admin-tab-messages").classList.toggle("hidden",   tab !== "messages");
   $("#admin-tabs").querySelectorAll(".admin-tab-btn").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === tab);
   });
-  if (tab === "stats")     fetchAdminStats();
-  if (tab === "admins")    { fetchAdminAdmins(); fetchAdminBannerStatus(); }
-  if (tab === "dashboard") fetchAdminDashboard();
-  if (tab === "messages")  fetchAdminMessages();
+  if (tab === "stats")      fetchAdminStats();
+  if (tab === "admins")     { fetchAdminAdmins(); fetchAdminBannerStatus(); }
+  if (tab === "dashboard")  fetchAdminDashboard();
+  if (tab === "restricted") fetchAdminRestricted();
+  if (tab === "messages")   fetchAdminMessages();
+}
+
+/* ---------- Admin: Restricted-access queue ---------- */
+async function fetchAdminRestricted() {
+  const body = $("#admin-restricted-body");
+  if (!body) return;
+  body.innerHTML = `<p class="admin-loading">Loading…</p>`;
+  try {
+    await _ensureValidatorList();
+    const data = await adminApi("/restricted");
+    renderRestricted(data.records || []);
+    _updateRestrictedBadge(data.records || []);
+  } catch (e) {
+    body.innerHTML = `<p class="faq-error">Could not load restricted records (${escapeHtml(e.message)}).</p>`;
+  }
+}
+
+function _updateRestrictedBadge(records) {
+  const badge = $("#admin-restricted-badge");
+  if (!badge) return;
+  const unassigned = records.filter(r => !r.assignee_id).length;
+  badge.textContent = unassigned;
+  badge.classList.toggle("hidden", unassigned === 0);
+}
+
+function renderRestricted(records) {
+  const body = $("#admin-restricted-body");
+  if (!records.length) {
+    body.innerHTML = `<p class="admin-empty">No restricted-access records.</p>`;
+    return;
+  }
+  const fmtD = (iso) => iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
+  const opts = _allValidators.map(v => `<option value="${v.id}">${escapeHtml(v.handle)}</option>`).join("");
+  body.innerHTML = `
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead><tr><th>Study</th><th>Reported by</th><th>When</th><th>Assignment</th></tr></thead>
+        <tbody>
+          ${records.map(r => `
+            <tr>
+              <td>
+                <div class="restr-title" title="${escapeHtml(r.study_r || "")}">${escapeHtml((r.study_r || r.record_id).slice(0, 70))}</div>
+                <div class="restr-sub">${r.doi_r ? escapeHtml(r.doi_r) : "—"}${r.year_r ? " · " + fmtYear(r.year_r) : ""} · ${escapeHtml(fmtOutcome(r.outcome) || "—")}</div>
+              </td>
+              <td>${escapeHtml(r.reporter_handle || "—")}</td>
+              <td style="white-space:nowrap">${fmtD(r.restricted_reported_at)}</td>
+              <td>
+                ${r.assignee_handle ? `<div class="restr-assigned">→ <strong>${escapeHtml(r.assignee_handle)}</strong>${r.assignment_status === "done" ? " · ✓ done" : ""}</div>` : ""}
+                <div class="restr-assign-row">
+                  <select class="admin-select restr-assign-select">${opts}</select>
+                  <button class="btn-primary restr-assign-btn" data-record="${escapeHtml(r.record_id)}">${r.assignee_handle ? "Reassign" : "Assign"}</button>
+                </div>
+              </td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`;
+
+  body.querySelectorAll(".restr-assign-btn").forEach(btn => {
+    btn.onclick = async () => {
+      const sel = btn.closest("tr").querySelector(".restr-assign-select");
+      const validatorId = parseInt(sel.value);
+      if (!validatorId) return;
+      btn.disabled = true; btn.textContent = "Assigning…";
+      try {
+        await adminApi("/assign", "POST", { record_id: btn.dataset.record, validator_id: validatorId });
+        showToast("Assigned.");
+        fetchAdminRestricted();
+      } catch (e) {
+        showToast("Error: " + e.message);
+        btn.disabled = false; btn.textContent = "Assign";
+      }
+    };
+  });
 }
 
 async function fetchAdminStats() {
@@ -3850,7 +4560,7 @@ function renderAdminDashboard(d) {
         </div>
         <div class="dash-card dash-card-muted">
           <span class="dash-card-val">${p.rejected}</span>
-          <span class="dash-card-label">Rejected</span>
+          <span class="dash-card-label">Excluded</span>
           <span class="dash-card-sub">${pct(p.rejected, p.total)}</span>
         </div>
       </div>
@@ -3887,6 +4597,15 @@ function renderAdminDashboard(d) {
       </div>
     </div>
 
+    <div class="dash-section">
+      <div class="dash-section-label">Disagreements <span class="dash-chart-sub">(articles — hover a row for the confusion matrix)</span></div>
+      <div class="disagree-toggle">
+        <button class="disagree-tab active" data-view="validator">Validator vs Validator</button>
+        <button class="disagree-tab" data-view="pipeline">Pipeline vs Final</button>
+      </div>
+      <div id="disagree-body"></div>
+    </div>
+
     <div class="dash-charts">
       <div class="dash-chart-box">
         <div class="dash-chart-title">Outcome Distribution <span class="dash-chart-sub">(validated records)</span></div>
@@ -3894,14 +4613,18 @@ function renderAdminDashboard(d) {
           <canvas id="dash-outcome-chart"></canvas>
         </div>
       </div>
-      <div class="dash-chart-box">
-        <div class="dash-chart-title">Correction Frequency <span class="dash-chart-sub">(pipeline extraction errors flagged by validators)</span></div>
-        <div class="dash-chart-canvas-wrap">
-          <canvas id="dash-correction-chart"></canvas>
-        </div>
-      </div>
     </div>
   `;
+
+  _dashData = d;
+  _renderDisagree("validator");
+  $("#admin-dashboard-body").querySelectorAll(".disagree-tab").forEach((t) => {
+    t.onclick = () => {
+      $("#admin-dashboard-body").querySelectorAll(".disagree-tab").forEach((x) => x.classList.remove("active"));
+      t.classList.add("active");
+      _renderDisagree(t.dataset.view);
+    };
+  });
 
   const OUTCOME_COLORS = {
     success:       "#4a6b3e",
@@ -3930,34 +4653,63 @@ function renderAdminDashboard(d) {
     },
   });
 
-  const corrLabels = ["Type", "Original / DOI", "Outcome", "Replication Title"];
-  const corrData   = [c.type_corrections, c.original_corrections, c.outcome_corrections, c.title_corrections];
-  const corrColors = ["#4a6a8a", "#4a6b3e", "#b54614", "#b88019"];
+}
 
-  _dashCharts.corrections = new Chart($("#dash-correction-chart"), {
-    type: "bar",
-    data: {
-      labels:   corrLabels,
-      datasets: [{ label: "Corrections", data: corrData, backgroundColor: corrColors, borderRadius: 5, borderSkipped: false }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      indexAxis: "y",
-      plugins: { legend: { display: false } },
-      scales: {
-        x: {
-          beginAtZero: true,
-          ticks: { precision: 0, font: { family: "'JetBrains Mono', monospace", size: 11 }, color: "#6b6157" },
-          grid:  { color: "#e8e0cf" },
-        },
-        y: {
-          ticks: { font: { family: "'Inter Tight', sans-serif", size: 12 }, color: "#36361a" },
-          grid:  { display: false },
-        },
-      },
-    },
-  });
+let _dashData = null;
+
+function _renderMatrix(m, rowLabel, colLabel) {
+  if (!m || !m.labels || !m.labels.length) return '<p class="mx-empty">No data.</p>';
+  const lab = (s) => escapeHtml(fmtOutcome(s) || s);
+  const head = m.labels.map((l) => `<th>${lab(l)}</th>`).join("");
+  const rows = m.labels.map((rl, i) =>
+    `<tr><th class="mx-rowlab">${lab(rl)}</th>` +
+    m.labels.map((cl, j) => {
+      const n = m.grid[i][j];
+      return `<td class="${i === j ? "mx-diag" : (n > 0 ? "mx-off" : "")}">${n || ""}</td>`;
+    }).join("") + `</tr>`
+  ).join("");
+  return `<div class="mx-axes">${escapeHtml(rowLabel)} / ${escapeHtml(colLabel)}</div>
+    <table class="mx-table"><tr><th></th>${head}</tr>${rows}</table>`;
+}
+
+function _renderDisagree(view) {
+  const dd = _dashData && _dashData.disagreements;
+  const body = $("#disagree-body");
+  if (!dd || !body) return;
+  const plural = (n) => (n !== 1 ? "s" : "");
+
+  if (view === "validator") {
+    const dims = [["type", "Type"], ["original", "Original"], ["outcome", "Outcome"]];
+    body.innerHTML =
+      `<p class="disagree-caption">${dd.validator.total_records} articles with both validators · counts = records where V1 and V2 differ</p>` +
+      dims.map(([k, label]) => {
+        const x = dd.validator[k];
+        const n = (x.validated || 0) + (x.unvalidated || 0);
+        return `<div class="disagree-row">
+          <span class="disagree-dim">${label}</span>
+          <span class="disagree-count">${n} <span class="disagree-unit">article${plural(n)}</span>
+            <span class="disagree-split">${x.validated} validated · ${x.unvalidated} open</span></span>
+          <div class="matrix-popover">${_renderMatrix(x.matrix, "V1 ↓", "V2 →")}</div>
+        </div>`;
+      }).join("");
+  } else {
+    const dims = [["type", "Type"], ["outcome", "Outcome"]];
+    body.innerHTML =
+      `<p class="disagree-caption">${dd.pipeline.total_validated} validated articles · counts = where the final value differs from the pipeline's extracted value</p>` +
+      dims.map(([k, label]) => {
+        const x = dd.pipeline[k];
+        return `<div class="disagree-row">
+          <span class="disagree-dim">${label}</span>
+          <span class="disagree-count">${x.count} <span class="disagree-unit">article${plural(x.count)}</span></span>
+          <div class="matrix-popover">${_renderMatrix(x.matrix, "Extracted ↓", "Final →")}</div>
+        </div>`;
+      }).join("") +
+      `<div class="disagree-row disagree-row-nomatrix">
+        <span class="disagree-dim">Original</span>
+        <span class="disagree-count">${dd.pipeline.original.count} <span class="disagree-unit">article${plural(dd.pipeline.original.count)}</span>
+          <span class="disagree-split">original DOI corrected</span></span>
+      </div>`;
+  }
 }
 
 function fmtMin(val) {
@@ -4066,7 +4818,7 @@ async function openValidatorFlagsModal(validatorId, handle) {
                 ${escapeHtml((item.study_r || item.record_id).slice(0, 60))}${(item.study_r || "").length > 60 ? "…" : ""}
               </td>
               <td style="font-size:0.8rem;color:var(--muted)">${item.year_r || "—"}</td>
-              <td style="font-size:0.8rem">${escapeHtml(item.outcome || "—")}</td>
+              <td style="font-size:0.8rem">${escapeHtml(fmtOutcome(item.outcome) || "—")}</td>
               <td>${(() => { const s = STATUS_LABELS[item.validation_status] || { text: item.validation_status || "—", cls: "" }; return `<span class="admin-status ${s.cls}">${escapeHtml(s.text)}</span>`; })()}</td>
               <td class="vflags-reason">${item.flag_reason ? escapeHtml(item.flag_reason) : '<span style="color:var(--muted)">—</span>'}</td>
               <td style="font-size:0.78rem;color:var(--muted);white-space:nowrap">${fmtDate(item.validated_at)}</td>
@@ -4500,10 +5252,19 @@ function openComposePanel() {
       const matches = q
         ? _allValidators.filter(v => v.handle.toLowerCase().includes(q) || (v.email || "").toLowerCase().includes(q))
         : _allValidators.slice(0, 50);
-      if (!matches.length) {
+      // Pinned "All validators" broadcast option — shown when not searching or
+      // when the query matches "all".
+      const showAll = !q || "all validators".includes(q);
+      const allItem = showAll
+        ? `<div class="msg-vdrop-item msg-vdrop-all" data-id="all" data-handle="All validators">
+             <span class="msg-vdrop-handle">📢 All validators</span>
+             <span class="msg-vdrop-email">Send to every validator at once</span>
+           </div>`
+        : "";
+      if (!matches.length && !allItem) {
         dropdown.innerHTML = `<div class="msg-vdrop-empty">No validators found</div>`;
       } else {
-        dropdown.innerHTML = matches.map(v =>
+        dropdown.innerHTML = allItem + matches.map(v =>
           `<div class="msg-vdrop-item" data-id="${v.id}" data-handle="${escapeHtml(v.handle)}">
              <span class="msg-vdrop-handle">${escapeHtml(v.handle)}</span>
              ${v.email ? `<span class="msg-vdrop-email">${escapeHtml(v.email)}</span>` : ""}
@@ -4511,7 +5272,8 @@ function openComposePanel() {
         ).join("");
         dropdown.querySelectorAll(".msg-vdrop-item").forEach(item => {
           item.addEventListener("click", () => {
-            _selectedValidator = { id: parseInt(item.dataset.id), handle: item.dataset.handle };
+            const isAll = item.dataset.id === "all";
+            _selectedValidator = { id: isAll ? "all" : parseInt(item.dataset.id), handle: item.dataset.handle };
             searchEl.value = item.dataset.handle;
             dropdown.classList.add("hidden");
           });
@@ -4539,17 +5301,23 @@ function openComposePanel() {
       if (!_selectedValidator) return showToast("Please select a validator.");
       if (!subject)            return showToast("Please enter a subject.");
       if (!body)               return showToast("Please enter a message.");
+      const isBroadcast = _selectedValidator.id === "all";
       const btn = $("#msg-compose-send");
       btn.disabled = true;
       btn.textContent = "Sending…";
       try {
-        await adminApi("/message", "POST", { validator_id: _selectedValidator.id, subject, body });
-        showToast("Message sent.");
+        const payload = isBroadcast
+          ? { broadcast: true, subject, body }
+          : { validator_id: _selectedValidator.id, subject, body };
+        const resp = await adminApi("/message", "POST", payload);
+        showToast(isBroadcast ? `Message sent to ${resp.sent} validators.` : "Message sent.");
         const listData = await adminApi("/messages");
         renderAdminConversations(listData.conversations);
         _updateAdminMsgBadge(listData.conversations);
-        // Open the newly created thread (last one for this validator)
-        const newThread = (listData.conversations || []).find(c => c.validator_handle === _selectedValidator.handle);
+        // Open the newly created thread (last one for this validator). Broadcast
+        // has no single thread, so just reset the panel.
+        const newThread = isBroadcast ? null
+          : (listData.conversations || []).find(c => c.validator_handle === _selectedValidator.handle);
         if (newThread) {
           _adminMsgSelectedId = newThread.thread_id;
           openThread(newThread.thread_id);
@@ -4592,6 +5360,29 @@ $("#admin-filters").addEventListener("click", (e) => {
   if (searchInput) searchInput.value = "";
   fetchAdminEntries();
 });
+
+// Sortable Entries column headers.
+$("#admin-entries-head")?.addEventListener("click", (e) => {
+  const th = e.target.closest(".th-sort");
+  if (!th) return;
+  const col = th.dataset.sort;
+  if (_adminSort === col) {
+    _adminSortDir = _adminSortDir === "asc" ? "desc" : "asc";
+  } else {
+    _adminSort = col;
+    _adminSortDir = "asc";
+  }
+  _adminPage = 1;
+  fetchAdminEntries();
+});
+
+function _updateSortIndicators() {
+  document.querySelectorAll("#admin-entries-head .th-sort").forEach((th) => {
+    const active = th.dataset.sort === _adminSort;
+    th.classList.toggle("th-sort-active", active);
+    th.setAttribute("data-arrow", active ? (_adminSortDir === "asc" ? " ▲" : " ▼") : "");
+  });
+}
 
 /* ---------- Admin search ---------- */
 let _adminSearchTimer = null;

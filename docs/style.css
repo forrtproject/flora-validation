@@ -1075,6 +1075,132 @@ details[open] .senior-reject-summary::before { content: "▾ "; }
 .gate-chip.warn { background: var(--amber); }
 .gate-change-btn { margin-left: auto; font-size: 0.65rem; letter-spacing: 0.06em; }
 
+/* Admin dashboard: Disagreements section + confusion-matrix popover */
+.disagree-toggle { display: flex; gap: 0.4rem; margin: 0.5rem 0 0.85rem; }
+.disagree-tab { padding: 0.35rem 0.85rem; border: 1px solid var(--rule); background: var(--bg); border-radius: 8px; cursor: pointer; font-size: 0.85rem; color: var(--ink); }
+.disagree-tab.active { background: var(--accent, #b54614); color: #fff; border-color: var(--accent, #b54614); }
+.disagree-caption { font-size: 0.8rem; color: var(--muted); margin: 0 0 0.55rem; }
+.disagree-row { position: relative; display: flex; align-items: center; gap: 1rem; padding: 0.6rem 0.85rem; border: 1px solid var(--rule); border-radius: 8px; margin-bottom: 0.4rem; }
+.disagree-row:not(.disagree-row-nomatrix) { cursor: help; }
+.disagree-row:not(.disagree-row-nomatrix):hover { border-color: var(--accent, #b54614); }
+.disagree-dim { font-weight: 600; min-width: 90px; }
+.disagree-count { font-size: 0.95rem; font-weight: 600; }
+.disagree-unit { color: var(--muted); font-size: 0.78rem; font-weight: 400; }
+.disagree-split { margin-left: 0.6rem; font-size: 0.78rem; color: var(--muted); font-weight: 400; }
+.matrix-popover { display: none; position: absolute; left: 0; top: 100%; z-index: 50; margin-top: 4px; background: #fff; border: 1px solid var(--rule); border-radius: 8px; padding: 0.6rem; box-shadow: 0 6px 24px rgba(38,38,16,0.16); max-width: 90vw; overflow: auto; }
+.disagree-row:not(.disagree-row-nomatrix):hover .matrix-popover { display: block; }
+.mx-axes { font-size: 0.72rem; color: var(--muted); margin-bottom: 0.35rem; }
+.mx-table { border-collapse: collapse; font-size: 0.78rem; }
+.mx-table th, .mx-table td { border: 1px solid var(--rule); padding: 0.25rem 0.5rem; text-align: center; min-width: 30px; }
+.mx-table th { background: var(--bg-alt, #faf7f1); font-weight: 600; white-space: nowrap; }
+.mx-rowlab { text-align: right; }
+.mx-diag { background: #dcfce7; color: #15803d; font-weight: 700; }
+.mx-off { background: #fee2e2; color: #b91c1c; font-weight: 700; }
+.mx-empty { font-size: 0.8rem; color: var(--muted); }
+
+/* Admin: agreement % column */
+.agree-pct { font-weight: 700; font-size: 0.85rem; padding: 0.1rem 0.45rem; border-radius: 10px; white-space: nowrap; }
+.agree-full { background: #dcfce7; color: #15803d; }
+.agree-mid  { background: #fef9c3; color: #854d0e; }
+.agree-low  { background: #fee2e2; color: #b91c1c; }
+.agree-na   { color: var(--muted); }
+
+/* Admin: note indicator on entry rows */
+.admin-note-flag { margin-left: 5px; cursor: help; font-size: 0.85em; }
+
+/* Admin: sortable Entries column headers */
+.admin-table th.th-sort { cursor: pointer; user-select: none; white-space: nowrap; }
+.admin-table th.th-sort:hover { color: var(--accent, #b54614); }
+.admin-table th.th-sort::after { content: attr(data-arrow); font-size: 0.85em; }
+.admin-table th.th-sort-active { color: var(--accent, #b54614); }
+
+/* Admin: plain-language consensus summary (after Final Preview) */
+.consensus-summary {
+  margin: 0.85rem 0;
+  padding: 0.85rem 1rem;
+  background: var(--bg-alt, #faf7f1);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+}
+.cs-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+.cs-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.cs-list li { font-size: 0.9rem; line-height: 1.45; color: var(--ink); padding-left: 1rem; position: relative; }
+.cs-list li::before { content: "•"; position: absolute; left: 0; color: var(--accent, #b54614); }
+
+/* Assignment mode banner + list */
+.assignment-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+  margin-bottom: 0.85rem;
+  background: #ede9fe;
+  border: 1px solid #c4b5fd;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  color: #5b21b6;
+}
+.assign-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+}
+.assign-item:hover { background: #faf7f1; }
+.assign-item-title { font-size: 0.9rem; font-weight: 600; color: var(--ink); }
+.assign-item-sub { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+.assign-item-open { font-size: 0.82rem; color: var(--accent, #b54614); white-space: nowrap; }
+
+/* Admin: restricted-access queue rows */
+.restr-title { font-size: 0.88rem; font-weight: 600; color: var(--ink); }
+.restr-sub { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+.restr-assigned { font-size: 0.8rem; color: var(--green); margin-bottom: 4px; }
+.restr-assign-row { display: flex; gap: 0.4rem; align-items: center; }
+.restr-assign-select { min-width: 130px; }
+.restr-assign-btn { font-size: 0.8rem; padding: 0.3rem 0.8rem; white-space: nowrap; }
+
+/* Hard-mode "I cannot access this article" */
+.no-access-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px dashed var(--rule);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+.no-access-row input { cursor: pointer; }
+/* When checked, dim the outcome selectors — they no longer apply */
+.no-access-on .outcome-info,
+.no-access-on #replication-outcome,
+.no-access-on #repro-outcome { opacity: 0.4; pointer-events: none; }
+
+/* Reproduction outcome: two stacked axes */
+.repro-axis { margin-top: 0.85rem; }
+.repro-axis:first-child { margin-top: 0.25rem; }
+.repro-axis-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+
 .choices {
   display: flex;
   gap: 0;
@@ -1180,6 +1306,7 @@ details[open] .senior-reject-summary::before { content: "▾ "; }
 .question .outcome-label { margin-bottom: 0; vertical-align: middle; }
 .outcome-label.failed, .outcome-label.failure { color: var(--red); }
 .outcome-label.mixed { color: var(--amber); }
+.outcome-label.cannot_be_determined { color: var(--muted); border-style: dashed; }
 .outcome-label.uninformative {
   color: var(--accent);
   border-style: dashed;
@@ -3209,14 +3336,22 @@ body.has-maint-banner #admin-screen {
 }
 
 /* ── Inbox modal ────────────────────────────────────────── */
+/* Center the inbox vertically, and keep it height-safe so long threads
+   scroll inside the panel instead of clipping off the top of the viewport. */
+#inbox-modal.faq-overlay { align-items: center; }
+
 .inbox-panel {
   max-width: 520px;
   width: 100%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .inbox-body {
   padding: 0;
-  max-height: 70vh;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -3716,6 +3851,49 @@ body.has-maint-banner #admin-screen {
 .msg-vdrop-handle { font-size: 0.86rem; font-weight: 600; color: var(--ink); }
 .msg-vdrop-email { font-size: 0.75rem; color: var(--muted); }
 .msg-vdrop-empty { padding: 0.6rem 0.85rem; font-size: 0.82rem; color: var(--muted); }
+/* Next-pair loading / retry placeholder */
+.pair-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--muted);
+  min-height: 180px;
+}
+.pair-status .btn-primary { min-width: 120px; }
+.pair-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--rule);
+  border-top-color: var(--accent, #b54614);
+  border-radius: 50%;
+  animation: pair-spin 0.8s linear infinite;
+}
+@keyframes pair-spin { to { transform: rotate(360deg); } }
+
+/* Background-save pending indicator + done-screen panel */
+.pending-saves { color: var(--accent, #b54614); font-weight: 600; }
+.pending-panel { margin-top: 1.25rem; border-top: 1px solid var(--rule); padding-top: 0.85rem; }
+.pending-title { font-size: 0.85rem; margin: 0 0 0.5rem; color: var(--muted); }
+.pending-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.pending-row { display: flex; justify-content: space-between; gap: 0.75rem; font-size: 0.85rem; align-items: center; }
+.pending-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pending-tag { font-size: 0.7rem; font-weight: 700; padding: 0.1rem 0.5rem; border-radius: 10px; white-space: nowrap; }
+.pending-row-active .pending-tag { background: #fef3c7; color: #b45309; }
+.pending-row-failed .pending-tag { background: #fee2e2; color: #b91c1c; }
+
+/* Pinned "All validators" broadcast option */
+.msg-vdrop-all {
+  position: sticky;
+  top: 0;
+  background: #faf7f1;
+  border-bottom: 2px solid var(--border);
+}
+.msg-vdrop-all:hover { background: #f0ece3; }
+.msg-vdrop-all .msg-vdrop-handle { color: var(--accent, #b54614); }
 
 .inbox-msg-unread {
   background: #fffbf0;
@@ -4032,6 +4210,10 @@ body.has-maint-banner #admin-screen {
 .hd-status-approved  { background: #dcfce7; color: #15803d; }
 .hd-status-validated { background: #dbeafe; color: #1d4ed8; }
 .hd-status-pending   { background: #f3f4f6; color: #6b7280; }
+.hd-status-review    { background: #fef3c7; color: #b45309; }
+.hd-status-rejected  { background: #fee2e2; color: #b91c1c; }
+/* Compact variant used in the My Judgements list rows */
+.hist-status-compact { font-size: 0.66rem; padding: 0.1rem 0.45rem; }
 
 /* Classification pills */
 .hd-val-pill {
@@ -4047,6 +4229,7 @@ body.has-maint-banner #admin-screen {
 .hd-val-pill-failure     { background: #fee2e2; color: #dc2626; }
 .hd-val-pill-mixed       { background: #fef9c3; color: #854d0e; }
 .hd-val-pill-uninformative { background: #f3f4f6; color: #6b7280; }
+.hd-val-pill-cannot_be_determined { background: #f3f4f6; color: #6b7280; }
 .hd-val-pill-replication { background: #dbeafe; color: #1e40af; }
 .hd-val-pill-reproduction { background: #ede9fe; color: #5b21b6; }
 
@@ -4397,14 +4580,13 @@ body.has-maint-banner #admin-screen {
 
 /* Sit above inbox modal when opened from inbox */
 /* Modal z-index stack (low → high):
-   flags list → record detail → hist/inbox detail → confirmation dialogs → inactivity */
+   flags list → record detail → hist/inbox detail → confirmation dialogs */
 #validator-flags-modal  { z-index: 9100; }
 #admin-detail-modal     { z-index: 9200; }
 #hist-detail-modal      { z-index: 9350; }
 #inbox-modal            { z-index: 9300; }
 #dialog-modal           { z-index: 9500; }
-#inactivity-warn-modal  { z-index: 9600; }
-#inactivity-modal       { z-index: 9600; }
+#idle-warn-modal        { z-index: 9700; }
 
 .hist-detail-body {
   padding: 0;

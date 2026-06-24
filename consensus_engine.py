@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from llm_validator import run_llm_validation
 
 _CHECK_FIELDS = ["type_check", "original_check", "outcome_check"]
-_CORRECTION_FIELDS = ["corrected_doi_o", "corrected_study_o", "corrected_outcome", "corrected_type", "corrected_study_r"]
+_CORRECTION_FIELDS = ["corrected_doi_o", "corrected_study_o", "corrected_outcome", "corrected_type", "corrected_study_r", "corrected_url_r"]
 
 
 def _normalize(text: str | None) -> str:
@@ -43,11 +43,12 @@ def _llm_matches(llm: dict, human: dict) -> bool:
 
 def _resolve_final(record: dict, winner: dict, other: dict | None = None) -> dict:
     """Build final consensus values using winner's corrections, falling back to original record.
-    outcome_quote is picked randomly from whichever validators provided a correction."""
+    outcome_quote: when validators edited it, the longest edit wins (most context)."""
     quotes = [h.get("corrected_outcome_quote") for h in [winner, other] if h and h.get("corrected_outcome_quote")]
     abstracts = [h.get("corrected_abstract") for h in [winner, other] if h and h.get("corrected_abstract")]
     return {
         "study_r": winner.get("corrected_study_r") or record.get("study_r"),
+        "url_r":   winner.get("corrected_url_r")    or record.get("url_r"),
         "doi_o":   winner.get("corrected_doi_o")   or record.get("doi_o"),
         "study_o": winner.get("corrected_study_o") or record.get("study_o"),
         "outcome": winner.get("corrected_outcome") or record.get("outcome"),
@@ -64,13 +65,13 @@ def _update_status(cur, record_id: str, status: str, is_tiebreaker: bool,
 
     if final:
         set_clauses += [
-            "final_study_r = %s",
+            "final_study_r = %s", "final_url_r = %s",
             "final_doi_o = %s", "final_study_o = %s",
             "final_outcome = %s", "final_type = %s",
             "final_outcome_quote = %s",
         ]
-        params += [final.get("study_r"), final["doi_o"], final["study_o"], final["outcome"], final["type"],
-                   final.get("outcome_quote")]
+        params += [final.get("study_r"), final.get("url_r"), final["doi_o"], final["study_o"],
+                   final["outcome"], final["type"], final.get("outcome_quote")]
         if final.get("abstract_r"):
             set_clauses.append("abstract_r = %s")
             params.append(final["abstract_r"])
@@ -101,7 +102,7 @@ def _insert_validated(cur, record: dict, final: dict) -> None:
             record.get("doi_r"),
             final.get("study_r") or record.get("study_r"),
             record.get("year_r"),
-            record.get("url_r"),
+            final.get("url_r") or record.get("url_r"),
             record.get("ref_r"),
             final.get("abstract_r") or record.get("abstract_r"),
             final["doi_o"],
@@ -132,7 +133,7 @@ def evaluate_consensus(cur, record_id: str) -> None:
         """
         SELECT validator_slot, type_check, original_check, outcome_check,
                corrected_doi_o, corrected_study_o, corrected_outcome, corrected_type,
-               corrected_study_r, corrected_abstract
+               corrected_study_r, corrected_url_r, corrected_abstract, corrected_outcome_quote
         FROM validation_queue
         WHERE record_id = %s AND is_validated = TRUE
         ORDER BY validator_slot
@@ -146,7 +147,7 @@ def evaluate_consensus(cur, record_id: str) -> None:
     # Support dict rows (DictCursor / tests) and tuple rows (default cursor)
     _human_cols = ["validator_slot", "type_check", "original_check", "outcome_check",
                    "corrected_doi_o", "corrected_study_o", "corrected_outcome", "corrected_type",
-                   "corrected_study_r", "corrected_abstract"]
+                   "corrected_study_r", "corrected_url_r", "corrected_abstract", "corrected_outcome_quote"]
     if rows and isinstance(rows[0], dict):
         humans = [dict(row) for row in rows]
     else:

@@ -10,6 +10,7 @@ import psycopg2.extras
 import psycopg2.errors
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
 from fastapi import Body, FastAPI, Header, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -166,6 +167,7 @@ class JudgeRequest(BaseModel):
     original_check: str                 # "correct" | "incorrect"
     outcome_check: str                  # "correct" | "incorrect"
     corrected_study_r: str | None = None
+    corrected_url_r: str | None = None
     corrected_doi_o: str | None = None
     corrected_study_o: str | None = None
     corrected_outcome: str | None = None
@@ -204,9 +206,10 @@ class FlagQueueRequest(BaseModel):
 
 
 class AdminMessageRequest(BaseModel):
-    validator_id: int
+    validator_id: int | None = None   # required unless broadcast=True
     subject: str
     body: str
+    broadcast: bool = False           # send to every validator
 
 
 class AdminReplyRequest(BaseModel):
@@ -394,6 +397,7 @@ def get_my_judgements(coder_id: int):
                 vq.corrected_outcome,
                 vq.corrected_type,
                 vq.corrected_study_r,
+                vq.corrected_url_r,
                 vq.points,
                 vq.validated_at,
                 vq.flagged,
@@ -402,6 +406,7 @@ def get_my_judgements(coder_id: int):
                 u.doi_r,
                 u.year_r,
                 u.outcome         AS extracted_outcome,
+                u.validation_status,
                 vm.id             AS msg_id,
                 vm.body           AS msg_body,
                 vm.sent_at        AS msg_sent_at,
@@ -435,6 +440,7 @@ def get_my_judgements(coder_id: int):
             "corrected_outcome": r["corrected_outcome"],
             "corrected_type":    r["corrected_type"],
             "corrected_study_r": r["corrected_study_r"],
+            "corrected_url_r":   r["corrected_url_r"],
             "points":            r["points"],
             "validated_at":      r["validated_at"].isoformat() if r["validated_at"] else None,
             "flagged":           bool(r["flagged"]),
@@ -443,6 +449,7 @@ def get_my_judgements(coder_id: int):
             "doi_r":             r["doi_r"],
             "year_r":            r["year_r"],
             "extracted_outcome": r["extracted_outcome"],
+            "validation_status": r["validation_status"],
             "msg_id":            r["msg_id"],
             "msg_body":          r["msg_body"],
             "msg_sent_at":       r["msg_sent_at"].isoformat() if r["msg_sent_at"] else None,
@@ -470,6 +477,7 @@ def get_my_judgement_detail(queue_id: str, coder_id: int):
                 vq.corrected_abstract,
                 vq.corrected_type,
                 vq.corrected_study_r,
+                vq.corrected_url_r,
                 vq.additional_checks,
                 vq.validator_notes,
                 vq.points,
@@ -486,6 +494,7 @@ def get_my_judgement_detail(queue_id: str, coder_id: int):
                 u.type           AS extracted_type,
                 u.outcome        AS extracted_outcome,
                 u.outcome_quote  AS extracted_outcome_quote,
+                u.validation_status,
                 v.validated_record_id,
                 v.study_r        AS val_study_r,
                 v.doi_r          AS val_doi_r,
@@ -545,12 +554,14 @@ def get_my_judgement_detail(queue_id: str, coder_id: int):
         "corrected_abstract":     row["corrected_abstract"],
         "corrected_type":         row["corrected_type"],
         "corrected_study_r":      row["corrected_study_r"],
+        "corrected_url_r":        row["corrected_url_r"],
         "additional_checks":      row["additional_checks"],
         "validator_notes":        row["validator_notes"],
         "points":                 row["points"],
         "validated_at":           row["validated_at"].isoformat() if row["validated_at"] else None,
         "flagged":                bool(row["flagged"]),
         "flag_reason":            row["flag_reason"],
+        "validation_status":      row["validation_status"],
         # Raw extracted values (always present)
         "study_r":                row["raw_study_r"],
         "doi_r":                  row["raw_doi_r"],
@@ -652,33 +663,9 @@ def next_pair(coder_id: int, mode: str = "normal"):
                     "resumed":     True,
                 }
 
-        # Release any slots shown more than 30 minutes ago without a submission
-        cur.execute(
-            """
-            UPDATE validation_queue
-            SET validator_id = NULL, validator_name = NULL,
-                is_shown = FALSE, shown_at = NULL
-            WHERE is_validated = FALSE
-              AND is_shown = TRUE
-              AND shown_at < NOW() - INTERVAL '30 minutes'
-              AND validator_slot IN ('human_1', 'human_2')
-            """
-        )
-        if cur.rowcount:
-            # Reset unvalidated status for any records that now have no active slots
-            cur.execute(
-                """
-                UPDATE unvalidated u
-                SET validation_status = 'unvalidated'
-                WHERE validation_status = 'validation_inprogress'
-                  AND NOT EXISTS (
-                      SELECT 1 FROM validation_queue vq
-                      WHERE vq.record_id = u.record_id
-                        AND vq.validator_id IS NOT NULL
-                        AND vq.is_validated = FALSE
-                  )
-                """
-            )
+        # NOTE: stale-slot release is handled by the background reaper
+        # (_reap_stale_slots), not inline here. Tiered locks: buffered slots
+        # (started_at IS NULL) expire in 45 min, started slots in 5 days.
 
         # Count how many the validator has already completed
         cur.execute(
@@ -743,7 +730,7 @@ def next_pair(coder_id: int, mode: str = "normal"):
             UPDATE validation_queue
             SET is_shown = TRUE, validator_id = %s, validator_name = (
                 SELECT handle FROM validators WHERE id = %s
-            ), shown_at = NOW()
+            ), shown_at = NOW(), started_at = NOW()
             WHERE queue_id = (
                 SELECT queue_id FROM validation_queue
                 WHERE record_id = %s
@@ -779,6 +766,403 @@ def next_pair(coder_id: int, mode: str = "normal"):
             "done": done,
             "total": total,
         }
+
+
+# Columns selected for a servable pair (kept in one place for reuse).
+_PAIR_SELECT = """
+    u.record_id, u.pair_id,
+    u.doi_r, u.study_r, u.year_r, u.url_r, u.ref_r, u.abstract_r,
+    u.doi_o, u.study_o, u.year_o, u.url_o, u.ref_o,
+    u.type, u.outcome, u.outcome_quote, u.out_quote_source,
+    rm.authors_r, rm.authors_o, rm.journal_r, rm.openalex_id_r,
+    (SELECT COUNT(*) FROM validation_queue vq2
+     WHERE vq2.record_id = u.record_id AND vq2.is_validated = TRUE) AS judge_count
+"""
+
+
+# A record is "hard" when its outcome is undeterminable or it has no abstract.
+# These earn double points and are served only in hard mode.
+_HARD_COND = "(u.outcome = 'cannot_be_determined' OR u.abstract_r IS NULL OR u.abstract_r = '')"
+
+
+def _mode_sql(mode: str) -> str:
+    """SQL predicate (over alias u) selecting the pool for a serving mode."""
+    return _HARD_COND if mode == "hard" else f"NOT {_HARD_COND}"
+
+
+def _record_is_hard(cur, record_id) -> bool:
+    """Whether a record falls in the hard pool (for double-points scoring)."""
+    cur.execute(
+        f"SELECT {_HARD_COND} AS is_hard FROM unvalidated u WHERE u.record_id = %s",
+        (record_id,),
+    )
+    row = cur.fetchone()
+    return bool(row and row["is_hard"])
+
+
+def _fetch_pair_row(cur, record_id):
+    """Load a single record's servable fields by record_id."""
+    cur.execute(
+        f"SELECT {_PAIR_SELECT} FROM unvalidated u "
+        f"LEFT JOIN record_metadata rm ON rm.record_id = u.record_id "
+        f"WHERE u.record_id = %s",
+        (record_id,),
+    )
+    return cur.fetchone()
+
+
+def _claim_one_pair(cur, coder_id: int, started: bool, mode: str = "normal"):
+    """Claim one free human slot for this validator, within the given mode's pool.
+       started=True  → active pair (5-day lock, started_at set)
+       started=False → buffered prefetch (short lock, started_at NULL)
+    Returns an enriched pair dict (with queue_id + judge_count) or None."""
+    cur.execute(
+        f"""
+        SELECT {_PAIR_SELECT}
+        FROM unvalidated u
+        LEFT JOIN record_metadata rm ON rm.record_id = u.record_id
+        WHERE u.validation_status IN ('unvalidated', 'validation_inprogress')
+          AND u.restricted_access IS NOT TRUE
+          AND {_mode_sql(mode)}
+          AND u.record_id NOT IN (
+              SELECT record_id FROM validation_queue WHERE validator_id = %s
+          )
+          AND EXISTS (
+              SELECT 1 FROM validation_queue vq
+              WHERE vq.record_id = u.record_id
+                AND vq.validator_slot IN ('human_1', 'human_2')
+                AND vq.validator_id IS NULL
+          )
+        ORDER BY judge_count DESC, RANDOM()
+        LIMIT 1
+        """,
+        (coder_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    record_id = row["record_id"]
+    started_sql = "NOW()" if started else "NULL"
+    cur.execute(
+        f"""
+        UPDATE validation_queue
+        SET is_shown = TRUE, validator_id = %s, validator_name = (
+            SELECT handle FROM validators WHERE id = %s
+        ), shown_at = NOW(), started_at = {started_sql}
+        WHERE queue_id = (
+            SELECT queue_id FROM validation_queue
+            WHERE record_id = %s
+              AND validator_slot IN ('human_1', 'human_2')
+              AND validator_id IS NULL
+            ORDER BY validator_slot
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+        )
+        RETURNING queue_id
+        """,
+        (coder_id, coder_id, record_id),
+    )
+    claimed = cur.fetchone()
+    if not claimed:
+        return None  # lost a race — caller can try again
+    cur.execute(
+        "UPDATE unvalidated SET validation_status = 'validation_inprogress' "
+        "WHERE record_id = %s AND validation_status = 'unvalidated'",
+        (record_id,),
+    )
+    pair = _enrich_pair(dict(row))
+    pair["queue_id"]    = str(claimed["queue_id"])
+    pair["judge_count"] = row["judge_count"]
+    return pair
+
+
+@app.get("/api/next-pairs")
+def next_pairs(coder_id: int, count: int = 3, buffered_only: bool = False, mode: str = "normal"):
+    """Batch-claim pairs for the client prefetch buffer, within a serving mode.
+       Default: first pair is the active (started) one — a resumed pair if the
+       validator already has one *in this mode*, else a freshly started claim —
+       and the rest are buffered. buffered_only=True returns only buffered top-ups."""
+    if mode not in {"normal", "hard"}:
+        raise HTTPException(400, "mode must be normal or hard")
+    count = max(1, min(count, 5))
+    out = []
+    with db() as cur:
+        if not buffered_only:
+            # Resume an already-active pair, but only if it belongs to the
+            # requested mode's pool (so switching modes doesn't drag the parked
+            # pair from the other mode back in — it stays locked & resumable).
+            cur.execute(
+                f"""
+                SELECT vq.queue_id, vq.record_id
+                FROM validation_queue vq
+                JOIN unvalidated u ON u.record_id = vq.record_id
+                WHERE vq.validator_id = %s AND vq.is_shown = TRUE AND vq.is_validated = FALSE
+                  AND vq.started_at IS NOT NULL
+                  AND vq.validator_slot IN ('human_1', 'human_2')
+                  AND {_mode_sql(mode)}
+                LIMIT 1
+                """,
+                (coder_id,),
+            )
+            resume = cur.fetchone()
+            if resume:
+                cur.execute(
+                    "UPDATE validation_queue SET shown_at = NOW() WHERE queue_id = %s",
+                    (resume["queue_id"],),
+                )
+                row = _fetch_pair_row(cur, resume["record_id"])
+                if row:
+                    pair = _enrich_pair(dict(row))
+                    pair["queue_id"]    = str(resume["queue_id"])
+                    pair["judge_count"] = row["judge_count"]
+                    pair["started"]     = True
+                    pair["resumed"]     = True
+                    out.append(pair)
+            if not out:
+                active = _claim_one_pair(cur, coder_id, started=True, mode=mode)
+                if active:
+                    active["started"] = True
+                    active["resumed"] = False
+                    out.append(active)
+
+        # Top up the rest as buffered prefetch.
+        while len(out) < count:
+            buf = _claim_one_pair(cur, coder_id, started=False, mode=mode)
+            if not buf:
+                break
+            buf["started"] = False
+            buf["resumed"] = False
+            out.append(buf)
+
+        cur.execute(
+            """
+            SELECT COUNT(*) AS done FROM validation_queue
+            WHERE validator_id = %s AND is_validated = TRUE
+              AND validator_slot IN ('human_1', 'human_2')
+            """,
+            (coder_id,),
+        )
+        done = cur.fetchone()["done"]
+        cur.execute(
+            "SELECT COUNT(*) AS total FROM unvalidated WHERE validation_status NOT IN ('validated', 'rejected')"
+        )
+        total = cur.fetchone()["total"]
+
+    return {"pairs": out, "done": done, "total": total}
+
+
+class StartPairRequest(BaseModel):
+    coder_id: int
+
+
+@app.post("/api/pairs/{queue_id}/start")
+def start_pair(queue_id: str, req: StartPairRequest):
+    """Promote a buffered slot to the active 'started' pair (5-day lock)."""
+    with db() as cur:
+        cur.execute(
+            """
+            UPDATE validation_queue
+            SET started_at = NOW(), shown_at = NOW()
+            WHERE queue_id = %s AND validator_id = %s AND is_validated = FALSE
+            RETURNING queue_id
+            """,
+            (queue_id, req.coder_id),
+        )
+        if not cur.fetchone():
+            raise HTTPException(404, "This pair is no longer assigned to you")
+    return {"ok": True}
+
+
+@app.get("/api/health")
+def health():
+    """Lightweight liveness check (no DB) used by the client keep-warm ping and
+    any external uptime pinger to keep the instance from cold-starting."""
+    return {"status": "ok"}
+
+
+class RestrictedRequest(BaseModel):
+    coder_id: int
+    record_id: str
+
+
+@app.post("/api/restricted")
+def report_restricted(req: RestrictedRequest):
+    """Hard-mode validator can't access the article → flag the record for the
+    admin restricted-access queue and release their slot. No points awarded."""
+    with db() as cur:
+        cur.execute("SELECT record_id FROM unvalidated WHERE record_id = %s", (req.record_id,))
+        if not cur.fetchone():
+            raise HTTPException(404, f"record_id '{req.record_id}' not found")
+        cur.execute(
+            """
+            UPDATE unvalidated
+            SET restricted_access      = TRUE,
+                restricted_reported_by = %s,
+                restricted_reported_at = NOW()
+            WHERE record_id = %s
+            """,
+            (req.coder_id, req.record_id),
+        )
+        # Release the reporter's slot so the record isn't stuck mid-progress.
+        cur.execute(
+            """
+            UPDATE validation_queue
+            SET validator_id = NULL, validator_name = NULL,
+                is_shown = FALSE, shown_at = NULL, started_at = NULL
+            WHERE record_id = %s AND validator_id = %s
+              AND validator_slot IN ('human_1', 'human_2') AND is_validated = FALSE
+            """,
+            (req.record_id, req.coder_id),
+        )
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Assignments (restricted records handed to a validator with access)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/my-assignments")
+def my_assignments(coder_id: int):
+    """Open assignments for a validator (for the in-game Assignments panel)."""
+    with db() as cur:
+        cur.execute(
+            """
+            SELECT a.record_id, a.assigned_at, a.assigned_by,
+                   u.study_r, u.doi_r, u.year_r, u.outcome
+            FROM assignments a
+            JOIN unvalidated u ON u.record_id = a.record_id
+            WHERE a.validator_id = %s AND a.status = 'open'
+              AND u.validation_status NOT IN ('validated', 'rejected')
+            ORDER BY a.assigned_at DESC
+            """,
+            (coder_id,),
+        )
+        rows = []
+        for r in cur.fetchall():
+            d = dict(r)
+            d["record_id"] = str(d["record_id"])
+            d["assigned_at"] = d["assigned_at"].isoformat() if d["assigned_at"] else None
+            rows.append(d)
+    return {"assignments": rows}
+
+
+@app.get("/api/assignment/{record_id}")
+def get_assignment(record_id: str, coder_id: int):
+    """Fetch the full pair for an assignment (must be assigned to this validator)."""
+    with db() as cur:
+        cur.execute(
+            "SELECT 1 FROM assignments WHERE record_id = %s AND validator_id = %s AND status = 'open'",
+            (record_id, coder_id),
+        )
+        if not cur.fetchone():
+            raise HTTPException(404, "This record is not assigned to you")
+        row = _fetch_pair_row(cur, record_id)
+        if not row:
+            raise HTTPException(404, "Record not found")
+        pair = _enrich_pair(dict(row))
+        pair["judge_count"] = row["judge_count"]
+    return {"pair": pair}
+
+
+@app.post("/api/assignment-judge")
+def assignment_judge(req: JudgeRequest):
+    """Submit an assignment validation. A single trusted validator with access
+    resolves the record directly to consensus_reached (awaiting admin approval),
+    earning double points. Clears the restricted flag and closes the assignment."""
+    for chk in (req.type_check, req.original_check, req.outcome_check):
+        if chk not in VALID_CHECKS:
+            raise HTTPException(400, "checks must be 'correct' or 'incorrect'")
+
+    with db() as cur:
+        cur.execute("SELECT * FROM unvalidated WHERE record_id = %s", (req.record_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, f"record_id '{req.record_id}' not found")
+        rec = dict(row)
+
+        cur.execute(
+            "SELECT id FROM assignments WHERE record_id = %s AND validator_id = %s AND status = 'open'",
+            (req.record_id, req.coder_id),
+        )
+        if not cur.fetchone():
+            raise HTTPException(404, "No open assignment for you on this record")
+
+        cur.execute(
+            "SELECT id, handle, vote_score, total_points FROM validators WHERE id = %s",
+            (req.coder_id,),
+        )
+        validator = cur.fetchone()
+        if not validator:
+            raise HTTPException(404, "Validator not found")
+
+        pts = _points_for(req, validator["vote_score"]) * 2   # assignments are double
+
+        is_not_val = req.corrected_type == "not_validation"
+        new_status = "rejected" if is_not_val else "consensus_reached"
+
+        # Final values: validator's corrections, falling back to extracted.
+        final_type     = req.corrected_type          or rec["type"]
+        final_outcome  = req.corrected_outcome        or rec["outcome"]
+        final_study_r  = req.corrected_study_r        or rec["study_r"]
+        final_url_r    = req.corrected_url_r          or rec["url_r"]
+        final_abstract = req.corrected_abstract       or rec["abstract_r"]
+        final_doi_o    = req.corrected_doi_o          or rec["doi_o"]
+        final_study_o  = req.corrected_study_o        or rec["study_o"]
+        final_quote    = req.corrected_outcome_quote  or rec["outcome_quote"]
+
+        summary = {
+            "validator_id":   req.coder_id,
+            "validator_name": validator["handle"],
+            "is_assignment":  True,
+            "type_check":     req.type_check,
+            "original_check": req.original_check,
+            "outcome_check":  req.outcome_check,
+            "corrected_doi_o": req.corrected_doi_o,
+            "corrected_study_o": req.corrected_study_o,
+            "corrected_outcome": req.corrected_outcome,
+            "corrected_type": req.corrected_type,
+            "corrected_outcome_quote": req.corrected_outcome_quote,
+            "corrected_abstract": req.corrected_abstract,
+            "corrected_study_r": req.corrected_study_r,
+            "corrected_url_r": req.corrected_url_r,
+            "validator_notes": req.validator_notes or "",
+            "points": pts,
+            "validated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        cur.execute(
+            """
+            UPDATE unvalidated SET
+                validation_status   = %s,
+                final_type          = %s,
+                final_outcome       = %s,
+                final_study_r       = %s,
+                final_url_r         = %s,
+                final_abstract_r    = %s,
+                final_doi_o         = %s,
+                final_study_o       = %s,
+                final_outcome_quote = %s,
+                validator_1         = %s,
+                restricted_access   = FALSE,
+                updated_at          = NOW()
+            WHERE record_id = %s
+            """,
+            (new_status, final_type, final_outcome, final_study_r, final_url_r,
+             final_abstract, final_doi_o, final_study_o, final_quote,
+             json.dumps(summary), req.record_id),
+        )
+        cur.execute(
+            "UPDATE assignments SET status = 'done', completed_at = NOW() "
+            "WHERE record_id = %s AND validator_id = %s",
+            (req.record_id, req.coder_id),
+        )
+        cur.execute(
+            "UPDATE validators SET total_points = total_points + %s, "
+            "total_judgements = total_judgements + 1 WHERE id = %s RETURNING total_points",
+            (pts, req.coder_id),
+        )
+        new_total = cur.fetchone()["total_points"]
+    return {"points_earned": pts, "total_points": new_total}
 
 
 @app.post("/api/judge")
@@ -829,6 +1213,9 @@ def judge(req: JudgeRequest):
         queue_id = slot_row["queue_id"]
         validator_slot = slot_row["validator_slot"]
         pts = _points_for(req, validator["vote_score"])
+        # Hard-pool records (undeterminable outcome / no abstract) earn double.
+        if _record_is_hard(cur, record_id):
+            pts *= 2
 
         # Record the judgment in validation_queue
         try:
@@ -846,6 +1233,7 @@ def judge(req: JudgeRequest):
                     corrected_outcome_quote = %s,
                     corrected_abstract = %s,
                     corrected_study_r = %s,
+                    corrected_url_r = %s,
                     validator_notes = %s,
                     points = %s,
                     validated_at = NOW()
@@ -862,6 +1250,7 @@ def judge(req: JudgeRequest):
                     req.corrected_outcome_quote,
                     req.corrected_abstract,
                     req.corrected_study_r,
+                    req.corrected_url_r,
                     req.validator_notes,
                     pts,
                     queue_id,
@@ -886,6 +1275,7 @@ def judge(req: JudgeRequest):
             "corrected_outcome_quote": req.corrected_outcome_quote,
             "corrected_abstract": req.corrected_abstract,
             "corrected_study_r": req.corrected_study_r,
+            "corrected_url_r": req.corrected_url_r,
             "validator_notes": req.validator_notes or "",
             "points": pts,
             "validated_at": datetime.now(timezone.utc).isoformat(),
@@ -933,7 +1323,7 @@ def skip_pair(req: SkipRequest):
             """
             UPDATE validation_queue
             SET validator_id = NULL, validator_name = NULL,
-                is_shown = FALSE, shown_at = NULL
+                is_shown = FALSE, shown_at = NULL, started_at = NULL
             WHERE record_id = %s
               AND validator_id = %s
               AND validator_slot IN ('human_1', 'human_2')
@@ -1231,6 +1621,28 @@ def admin_stats(x_admin_token: str = Header(...)):
     return {"validators": rows, "summary": summary}
 
 
+def _confusion(pairs):
+    """Build a confusion matrix {labels, grid} from (row_value, col_value) pairs.
+    Rows and cols share the same label space (a square matrix)."""
+    labels = sorted({str(x) for p in pairs for x in p if x not in (None, "")})
+    idx = {l: i for i, l in enumerate(labels)}
+    grid = [[0] * len(labels) for _ in labels]
+    for a, b in pairs:
+        a, b = (str(a) if a not in (None, "") else None), (str(b) if b not in (None, "") else None)
+        if a in idx and b in idx:
+            grid[idx[a]][idx[b]] += 1
+    return {"labels": labels, "grid": grid}
+
+
+def _as_dict(v):
+    if isinstance(v, str):
+        try:
+            return json.loads(v)
+        except Exception:
+            return {}
+    return v or {}
+
+
 @app.get("/api/admin/dashboard")
 def admin_dashboard(x_admin_token: str = Header(...)):
     _require_admin(x_admin_token)
@@ -1313,6 +1725,65 @@ def admin_dashboard(x_admin_token: str = Header(...)):
         """)
         vrow = dict(cur.fetchone())
 
+        # View A — Validator vs Validator (records with both human slots filled).
+        cur.execute("""
+            SELECT validation_status, type, outcome, validator_1, validator_2
+            FROM unvalidated
+            WHERE validator_1 IS NOT NULL AND validator_2 IS NOT NULL
+        """)
+        a_rows = cur.fetchall()
+
+        # View B — Pipeline (extracted) vs Final, over validated records.
+        cur.execute("""
+            SELECT type, outcome, final_type, final_outcome, doi_o, final_doi_o
+            FROM unvalidated
+            WHERE validation_status = 'validated'
+        """)
+        b_rows = cur.fetchall()
+
+    # ----- View A: each validator's effective decision, then disagreements -----
+    def _choice(v, check_key, corrected_key, extracted):
+        return v[corrected_key] if v.get(check_key) == "incorrect" and v.get(corrected_key) else extracted
+
+    a_type, a_orig, a_out = [], [], []
+    a_counts = {d: {"validated": 0, "unvalidated": 0} for d in ("type", "original", "outcome")}
+    for r in a_rows:
+        v1, v2 = _as_dict(r["validator_1"]), _as_dict(r["validator_2"])
+        grp = "validated" if r["validation_status"] == "validated" else "unvalidated"
+        t1, t2 = _choice(v1, "type_check", "corrected_type", r["type"]),    _choice(v2, "type_check", "corrected_type", r["type"])
+        o1, o2 = _choice(v1, "outcome_check", "corrected_outcome", r["outcome"]), _choice(v2, "outcome_check", "corrected_outcome", r["outcome"])
+        g1, g2 = v1.get("original_check"), v2.get("original_check")
+        a_type.append((t1, t2)); a_orig.append((g1, g2)); a_out.append((o1, o2))
+        if t1 != t2: a_counts["type"]["validated" if grp == "validated" else "unvalidated"] += 1
+        if g1 != g2: a_counts["original"]["validated" if grp == "validated" else "unvalidated"] += 1
+        if o1 != o2: a_counts["outcome"]["validated" if grp == "validated" else "unvalidated"] += 1
+
+    # ----- View B: extracted vs final -----
+    b_type, b_out = [], []
+    b_counts = {"type": 0, "outcome": 0, "original": 0}
+    for r in b_rows:
+        et, ft = r["type"],    (r["final_type"]    or r["type"])
+        eo, fo = r["outcome"], (r["final_outcome"] or r["outcome"])
+        b_type.append((et, ft)); b_out.append((eo, fo))
+        if et != ft: b_counts["type"] += 1
+        if eo != fo: b_counts["outcome"] += 1
+        if r["final_doi_o"] and r["final_doi_o"] != r["doi_o"]: b_counts["original"] += 1
+
+    disagreements = {
+        "validator": {
+            "total_records": len(a_rows),
+            "type":     {**a_counts["type"],     "matrix": _confusion(a_type)},
+            "original": {**a_counts["original"], "matrix": _confusion(a_orig)},
+            "outcome":  {**a_counts["outcome"],  "matrix": _confusion(a_out)},
+        },
+        "pipeline": {
+            "total_validated": len(b_rows),
+            "type":     {"count": b_counts["type"],     "matrix": _confusion(b_type)},
+            "outcome":  {"count": b_counts["outcome"],  "matrix": _confusion(b_out)},
+            "original": {"count": b_counts["original"]},
+        },
+    }
+
     records_with_2  = int(agree_row["records_with_2"]  or 0)
     full_agreements = int(agree_row["full_agreements"] or 0)
     agreement_rate  = round(full_agreements / records_with_2, 3) if records_with_2 > 0 else None
@@ -1328,6 +1799,7 @@ def admin_dashboard(x_admin_token: str = Header(...)):
             "full_agreements":         full_agreements,
             "agreement_rate":          agreement_rate,
         },
+        "disagreements": disagreements,
     }
 
 
@@ -1382,6 +1854,70 @@ def admin_list_validators(x_admin_token: str = Header(...)):
         cur.execute("SELECT id, handle, email FROM validators ORDER BY handle")
         rows = [dict(r) for r in cur.fetchall()]
     return {"validators": rows}
+
+
+@app.get("/api/admin/restricted")
+def admin_restricted(x_admin_token: str = Header(...)):
+    """Records flagged 'I cannot access this article', with reporter + current
+    assignment (if any), for the admin Restricted-access queue."""
+    _require_admin(x_admin_token)
+    with db() as cur:
+        cur.execute(
+            """
+            SELECT u.record_id, u.study_r, u.doi_r, u.year_r, u.outcome,
+                   u.restricted_reported_at,
+                   rv.handle AS reporter_handle,
+                   a.validator_id AS assignee_id,
+                   av.handle      AS assignee_handle,
+                   a.status       AS assignment_status
+            FROM unvalidated u
+            LEFT JOIN validators  rv ON rv.id = u.restricted_reported_by
+            LEFT JOIN assignments a  ON a.record_id = u.record_id
+            LEFT JOIN validators  av ON av.id = a.validator_id
+            WHERE u.restricted_access = TRUE
+              AND u.validation_status NOT IN ('validated', 'rejected')
+            ORDER BY u.restricted_reported_at DESC NULLS LAST
+            """
+        )
+        rows = []
+        for r in cur.fetchall():
+            d = dict(r)
+            d["record_id"] = str(d["record_id"])
+            d["restricted_reported_at"] = d["restricted_reported_at"].isoformat() if d["restricted_reported_at"] else None
+            rows.append(d)
+    return {"records": rows}
+
+
+class AssignRequest(BaseModel):
+    record_id: str
+    validator_id: int
+
+
+@app.post("/api/admin/assign")
+def admin_assign(req: AssignRequest, x_admin_token: str = Header(...)):
+    """Assign a restricted record to a validator (reassign replaces)."""
+    admin_handle = _require_admin(x_admin_token)
+    with db() as cur:
+        cur.execute("SELECT 1 FROM unvalidated WHERE record_id = %s", (req.record_id,))
+        if not cur.fetchone():
+            raise HTTPException(404, "Record not found")
+        cur.execute("SELECT 1 FROM validators WHERE id = %s", (req.validator_id,))
+        if not cur.fetchone():
+            raise HTTPException(404, "Validator not found")
+        cur.execute(
+            """
+            INSERT INTO assignments (record_id, validator_id, assigned_by, status, assigned_at, completed_at)
+            VALUES (%s, %s, %s, 'open', NOW(), NULL)
+            ON CONFLICT (record_id) DO UPDATE
+              SET validator_id = EXCLUDED.validator_id,
+                  assigned_by  = EXCLUDED.assigned_by,
+                  status       = 'open',
+                  assigned_at  = NOW(),
+                  completed_at = NULL
+            """,
+            (req.record_id, req.validator_id, admin_handle),
+        )
+    return {"ok": True}
 
 
 @app.get("/api/admin/validators/{validator_id}/flagged")
@@ -1514,15 +2050,65 @@ def admin_login(req: AdminLoginRequest):
     return {"token": _make_token(row["password"]), "handle": row["handle"], "trusted": row["trusted"]}
 
 
+# Agreement %: across V1, V2, and the LLM (when it ran without error), the share
+# of the 3 checks (type/original/outcome) on which everyone gave the same answer.
+# NULL when fewer than 2 validators exist. Computed in SQL so it's sortable.
+def _agree_field(f):
+    return (
+        "(SELECT COUNT(DISTINCT v) FROM (VALUES "
+        f"(u.validator_1->>'{f}'), (u.validator_2->>'{f}'), "
+        f"(CASE WHEN jsonb_exists(u.llm_validator, 'error') THEN NULL ELSE u.llm_validator->>'{f}' END)"
+        ") AS t(v) WHERE v IS NOT NULL) <= 1"
+    )
+
+_AGREEMENT_VOTERS = (
+    "((u.validator_1 IS NOT NULL)::int + (u.validator_2 IS NOT NULL)::int "
+    "+ (u.llm_validator IS NOT NULL AND NOT jsonb_exists(u.llm_validator, 'error'))::int)"
+)
+_AGREEMENT_SQL = (
+    f"(CASE WHEN {_AGREEMENT_VOTERS} >= 2 THEN round(100.0 * ("
+    f"(CASE WHEN {_agree_field('type_check')} THEN 1 ELSE 0 END) + "
+    f"(CASE WHEN {_agree_field('original_check')} THEN 1 ELSE 0 END) + "
+    f"(CASE WHEN {_agree_field('outcome_check')} THEN 1 ELSE 0 END)"
+    ") / 3.0)::int ELSE NULL END)"
+)
+
+# Whitelist of sortable columns → safe SQL expression (never interpolate raw input).
+_ENTRIES_SORT = {
+    "study":       "u.study_r",
+    "type":        "COALESCE(u.final_type, u.type)",
+    "outcome":     "COALESCE(u.final_outcome, u.outcome)",
+    "status":      "u.validation_status",
+    "validators":  "(SELECT COUNT(*) FROM validation_queue vq WHERE vq.record_id = u.record_id AND vq.is_validated = TRUE)",
+    "agreement":   _AGREEMENT_SQL,
+    "approved_by": "u.admin_name",
+}
+
+
 @app.get("/api/admin/entries")
 def admin_entries(
     filter: str = "all",
     page: int = 1,
     per_page: int = 50,
     search: str = "",
+    sort: str = "",
+    dir: str = "desc",
     x_admin_token: str = Header(...),
 ):
     _require_admin(x_admin_token)
+
+    sort_col = _ENTRIES_SORT.get(sort)
+    direction = "ASC" if str(dir).lower() == "asc" else "DESC"
+    if sort_col:
+        order_by = f"ORDER BY {sort_col} {direction} NULLS LAST, u.updated_at DESC"
+    else:
+        order_by = (
+            "ORDER BY CASE u.validation_status "
+            "WHEN 'need_review' THEN 0 WHEN 'consensus_reached' THEN 1 "
+            "WHEN 'validation_inprogress' THEN 2 WHEN 'unvalidated' THEN 3 "
+            "WHEN 'validated' THEN 4 WHEN 'rejected' THEN 5 ELSE 6 END, "
+            "u.updated_at DESC"
+        )
 
     base_where = {
         "all":              "",
@@ -1560,16 +2146,21 @@ def admin_entries(
                 u.doi_r,
                 u.type,
                 u.outcome,
+                u.final_type,
+                u.final_outcome,
                 u.validation_status,
                 u.is_tiebreaker,
                 u.admin_checked,
                 u.admin_name,
+                u.admin_notes,
+                u.note_saved_by,
                 (u.validator_1 IS NOT NULL)::boolean AS has_v1,
                 (u.validator_2 IS NOT NULL)::boolean AS has_v2,
                 (u.llm_validator IS NOT NULL)::boolean AS has_llm,
                 u.validator_1->>'validator_name' AS v1_handle,
                 u.validator_2->>'validator_name' AS v2_handle,
                 (u.llm_validator IS NOT NULL AND (u.llm_validator)::jsonb ? 'error')::boolean AS has_llm_error,
+                {_AGREEMENT_SQL} AS agreement_pct,
                 (SELECT COUNT(*) FROM validation_queue vq
                  WHERE vq.record_id = u.record_id AND vq.is_validated = TRUE) AS validator_count,
                 (SELECT COUNT(*) FROM validation_queue vq
@@ -1579,17 +2170,7 @@ def admin_entries(
                    AND vq.validator_slot IN ('human_1', 'human_2')) AS trusted_validator_count
             FROM unvalidated u
             {where}
-            ORDER BY
-                CASE u.validation_status
-                    WHEN 'need_review'           THEN 0
-                    WHEN 'consensus_reached'     THEN 1
-                    WHEN 'validation_inprogress' THEN 2
-                    WHEN 'unvalidated'           THEN 3
-                    WHEN 'validated'             THEN 4
-                    WHEN 'rejected'              THEN 5
-                    ELSE                              6
-                END,
-                u.updated_at DESC
+            {order_by}
             LIMIT %s OFFSET %s
             """,
             search_args + (per_page, offset),
@@ -1664,7 +2245,7 @@ def admin_entry_detail(record_id: str, x_admin_token: str = Header(...)):
     def _norm(t): return _re.sub(r'[^a-z0-9]', '', (t or "").lower())
 
     v1, v2 = record.get("validator_1") or {}, record.get("validator_2") or {}
-    correction_fields = ["corrected_doi_o", "corrected_study_o", "corrected_outcome", "corrected_type", "corrected_study_r"]
+    correction_fields = ["corrected_doi_o", "corrected_study_o", "corrected_outcome", "corrected_type", "corrected_study_r", "corrected_url_r"]
     check_fields      = ["type_check", "original_check", "outcome_check"]
 
     checks_agree      = all(v1.get(f) == v2.get(f) for f in check_fields)
@@ -1953,6 +2534,22 @@ def admin_send_message(req: AdminMessageRequest, x_admin_token: str = Header(...
     if not subject or not body_text:
         raise HTTPException(400, "Subject and body are required")
     with db() as cur:
+        if req.broadcast:
+            cur.execute("SELECT id FROM validators")
+            ids = [r["id"] for r in cur.fetchall()]
+            if not ids:
+                raise HTTPException(404, "No validators to message")
+            cur.executemany(
+                """
+                INSERT INTO validator_messages (validator_id, subject, body, sent_by)
+                VALUES (%s, %s, %s, %s)
+                """,
+                [(vid, subject, body_text, admin_handle) for vid in ids],
+            )
+            return {"ok": True, "broadcast": True, "sent": len(ids)}
+
+        if req.validator_id is None:
+            raise HTTPException(400, "validator_id is required")
         cur.execute("SELECT id FROM validators WHERE id = %s", (req.validator_id,))
         if not cur.fetchone():
             raise HTTPException(404, "Validator not found")
@@ -2243,11 +2840,52 @@ def _retry_tiebreakers() -> None:
         traceback.print_exc()
 
 
+def _reap_stale_slots() -> None:
+    """Release abandoned slots and return their records to the pool.
+       Tiered: buffered (started_at IS NULL) after 45 min, started after 5 days.
+       Replaces the old inline cleanup so locks free up regardless of traffic."""
+    try:
+        with db() as cur:
+            cur.execute(
+                """
+                UPDATE validation_queue
+                SET validator_id = NULL, validator_name = NULL,
+                    is_shown = FALSE, shown_at = NULL, started_at = NULL
+                WHERE is_validated = FALSE AND is_shown = TRUE
+                  AND validator_slot IN ('human_1', 'human_2')
+                  AND (
+                        (started_at IS NULL     AND shown_at   < NOW() - INTERVAL '45 minutes')
+                     OR (started_at IS NOT NULL AND started_at < NOW() - INTERVAL '5 days')
+                  )
+                """
+            )
+            if cur.rowcount:
+                cur.execute(
+                    """
+                    UPDATE unvalidated u
+                    SET validation_status = 'unvalidated'
+                    WHERE validation_status = 'validation_inprogress'
+                      AND NOT EXISTS (
+                          SELECT 1 FROM validation_queue vq
+                          WHERE vq.record_id = u.record_id
+                            AND vq.validator_id IS NOT NULL
+                            AND vq.is_validated = FALSE
+                      )
+                    """
+                )
+                print(f"[reaper] released {cur.rowcount} stale slot(s)")
+    except Exception:
+        import traceback
+        print("[reaper] ERROR:")
+        traceback.print_exc()
+
+
 def _start_scheduler() -> None:
     from sync_csv import sync_once
     scheduler = BackgroundScheduler(timezone="UTC")
     scheduler.add_job(sync_once, CronTrigger(hour=2, minute=0))
     scheduler.add_job(_retry_tiebreakers, CronTrigger(hour=00, minute=22))
+    scheduler.add_job(_reap_stale_slots, IntervalTrigger(minutes=2))
     scheduler.start()
 
 

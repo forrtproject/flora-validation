@@ -56,6 +56,12 @@ CREATE TABLE IF NOT EXISTS unvalidated (
                                         'validated', 'need_review')),
     is_tiebreaker       BOOLEAN     NOT NULL DEFAULT FALSE,
 
+    -- Restricted-access workflow: set when a hard-mode validator can't open the
+    -- article. Pulls the record out of circulation until an admin assigns it.
+    restricted_access       BOOLEAN     NOT NULL DEFAULT FALSE,
+    restricted_reported_by  INTEGER     REFERENCES validators(id),
+    restricted_reported_at  TIMESTAMPTZ,
+
     -- Validator summaries (JSONB — see docs/VALIDATION_DB_SCHEMA.md for shape)
     validator_1         JSONB,      -- null until human_1 slot is completed
     validator_2         JSONB,      -- null until human_2 slot is completed
@@ -95,6 +101,7 @@ CREATE TABLE IF NOT EXISTS validation_queue (
     corrected_type          TEXT,
     corrected_outcome_quote TEXT,
     corrected_abstract      TEXT,
+    corrected_url_r         TEXT,
 
     -- Extensible: {"was_unsure_original": true, "not_validation": true, …}
     additional_checks   JSONB,
@@ -223,10 +230,41 @@ ALTER TABLE admins ADD COLUMN IF NOT EXISTS trusted BOOLEAN NOT NULL DEFAULT FAL
 
 -- Replication title/DOI correction (typographical errors)
 ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS corrected_study_r TEXT;
+-- Validator-suggested replication URL (advisory; admin promotes to final_url_r)
+ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS corrected_url_r   TEXT;
 ALTER TABLE unvalidated      ADD COLUMN IF NOT EXISTS final_study_r     TEXT;
 ALTER TABLE unvalidated      ADD COLUMN IF NOT EXISTS final_doi_r       TEXT;
 ALTER TABLE unvalidated      ADD COLUMN IF NOT EXISTS final_abstract_r  TEXT;
 ALTER TABLE unvalidated      ADD COLUMN IF NOT EXISTS final_url_r       TEXT;
+
+-- Restricted-access workflow (hard-mode "I cannot access this article")
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS restricted_access      BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS restricted_reported_by INTEGER REFERENCES validators(id);
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS restricted_reported_at TIMESTAMPTZ;
+
+-- Admin → validator assignments (restricted-access records handed to someone
+-- who can open the article). One open assignment per record.
+CREATE TABLE IF NOT EXISTS assignments (
+    id           SERIAL      PRIMARY KEY,
+    record_id    UUID        NOT NULL UNIQUE REFERENCES unvalidated(record_id),
+    validator_id INTEGER     NOT NULL REFERENCES validators(id),
+    assigned_by  TEXT,
+    status       TEXT        NOT NULL DEFAULT 'open',   -- 'open' | 'done'
+    assigned_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_assignments_validator ON assignments (validator_id, status);
+
+-- Prefetch buffer + tiered locking.
+--   started_at IS NULL  → buffered (prefetched, not opened): short lock
+--   started_at IS NOT NULL → started (active pair): 5-day lock
+ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
+-- Treat any slot currently held (pre-migration) as started so the reaper
+-- doesn't immediately drop it as a stale buffered claim.
+UPDATE validation_queue SET started_at = COALESCE(shown_at, NOW())
+ WHERE is_shown = TRUE AND is_validated = FALSE AND started_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_vq_reaper
+    ON validation_queue (is_shown, is_validated, started_at, shown_at);
 
 -- Forgot-handle rate limiting
 ALTER TABLE validators ADD COLUMN IF NOT EXISTS forgot_requests_today INTEGER NOT NULL DEFAULT 0;

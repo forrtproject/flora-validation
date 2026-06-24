@@ -69,10 +69,12 @@ LLM_ERROR = {
 }
 
 
-def _make_cur(human_rows, record):
+def _make_cur(human_rows, record, senior_count=0):
     cur = MagicMock()
     cur.fetchall.return_value = human_rows
-    cur.fetchone.return_value = record
+    # evaluate_consensus calls fetchone twice: first the unvalidated record,
+    # then the senior-validator COUNT(*) row. Return each in turn.
+    cur.fetchone.side_effect = [record, {"senior_count": senior_count}]
     return cur
 
 
@@ -157,3 +159,42 @@ def test_humans_disagree_llm_error_sets_need_review():
         evaluate_consensus(cur, "rec-001")
     calls_str = str(cur.execute.call_args_list)
     assert "need_review" in calls_str
+
+
+def test_both_agree_same_url_suggestion_flows_to_final():
+    """Both humans agree and suggest the same replication URL → final_url_r is written."""
+    from consensus_engine import evaluate_consensus
+    url = "https://new.example/paper"
+    h1 = {**H1_AGREE, "corrected_url_r": url}
+    h2 = {**H2_AGREE, "corrected_url_r": url}
+    cur = _make_cur([h1, h2], BASE_RECORD)
+    with patch("consensus_engine.run_llm_validation", return_value=LLM_AGREE_ALL):
+        evaluate_consensus(cur, "rec-001")
+    calls_str = str(cur.execute.call_args_list)
+    assert "final_url_r" in calls_str   # column written
+    assert url in calls_str             # with the suggested value
+    assert "need_review" not in calls_str
+
+
+def test_diverging_url_suggestions_set_need_review():
+    """Checks agree but humans suggest different URLs → need_review, no LLM call."""
+    from consensus_engine import evaluate_consensus
+    h1 = {**H1_AGREE, "corrected_url_r": "https://a.example"}
+    h2 = {**H2_AGREE, "corrected_url_r": "https://b.example"}
+    cur = _make_cur([h1, h2], BASE_RECORD)
+    with patch("consensus_engine.run_llm_validation") as mock_llm:
+        evaluate_consensus(cur, "rec-001")
+    mock_llm.assert_not_called()
+    calls_str = str(cur.execute.call_args_list)
+    assert "need_review" in calls_str
+
+
+def test_senior_agreement_auto_validates():
+    """When a senior validator is involved, agreement auto-validates (no admin step)."""
+    from consensus_engine import evaluate_consensus
+    cur = _make_cur([H1_AGREE, H2_AGREE], BASE_RECORD, senior_count=2)
+    with patch("consensus_engine.run_llm_validation", return_value=LLM_AGREE_ALL):
+        evaluate_consensus(cur, "rec-001")
+    calls_str = str(cur.execute.call_args_list)
+    assert "INSERT INTO validated" in calls_str   # success path inserts the validated row
+    assert "need_review" not in calls_str

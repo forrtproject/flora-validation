@@ -173,7 +173,7 @@
     </div>
     <div class="onboarding-progress">
       <span class="label">Onboarding</span>
-      <span id="onb-counter">1 / 7</span>
+      <span id="onb-counter">1 / 5</span>
       <div class="progress-bar"><div class="progress-fill" id="onb-progress-fill"></div></div>
     </div>
     <button id="onb-logout-btn" class="ghost-btn" title="Switch coder">Sign out</button>
@@ -182,7 +182,7 @@
     <div class="onb-intro" id="onb-intro">
       <div class="login-circle">
         <h2>First, a quick calibration.</h2>
-        <p>Seven worked examples to get your eye in. Four introduce the full range of entry types and quality-control tools; three have errors of the kind FLoRA's automated pipeline tends to make. After each, you'll see whether your call was right and why.</p>
+        <p>Five worked examples to get your eye in. Two are clean; three have errors of the kind FLoRA's automated pipeline tends to make. After each, you'll see whether your call was right and why.</p>
         <p>This doesn't count toward the leaderboard. You can't proceed without finishing.</p>
         <button class="btn-primary" id="onb-start-btn">Begin →</button>
       </div>
@@ -218,6 +218,8 @@
       </div>
     </div>
     <div class="header-actions">
+      <button id="pending-saves-btn" class="ghost-btn pending-saves hidden" title="Judgements still saving in the background">⏳ <span id="pending-saves-count">0</span> saving</button>
+      <button id="assignments-btn" class="ghost-btn hidden" title="Records assigned to you">📋 Assignments <span id="assignments-count" class="inbox-badge">0</span></button>
       <button id="history-btn" class="ghost-btn" title="My Judgements">My Judgements</button>
       <button id="inbox-btn" class="ghost-btn inbox-btn-wrap" title="Messages">
         <span id="inbox-badge" class="inbox-badge hidden">0</span>✉
@@ -230,10 +232,15 @@
 
   <div class="layout">
     <main class="game-area">
+      <div id="assignment-banner" class="assignment-banner hidden">
+        <span>📋 <strong>Assignment</strong> — validate this restricted record (double points)</span>
+        <button id="assignment-exit-btn" class="ghost-btn">Exit</button>
+      </div>
       <div id="pair-card" class="card"></div>
       <div id="done-screen" class="card hidden">
         <h2>All caught up.</h2>
         <p>You've judged every available pair in this mode. Try the other mode, or sign out and let someone else have a turn.</p>
+        <div id="pending-panel" class="pending-panel hidden"></div>
       </div>
     </main>
 
@@ -281,6 +288,7 @@
       <button class="admin-tab-btn" data-tab="stats">Validator Stats</button>
       <button class="admin-tab-btn" data-tab="admins">Admins</button>
       <button class="admin-tab-btn" data-tab="dashboard">Dashboard</button>
+      <button class="admin-tab-btn" data-tab="restricted">Restricted access <span id="admin-restricted-badge" class="inbox-badge hidden" style="position:relative;top:-1px;right:auto;margin-left:4px">0</span></button>
       <button class="admin-tab-btn" data-tab="messages">Messages <span id="admin-msg-badge" class="inbox-badge hidden" style="position:relative;top:-1px;right:auto;margin-left:4px">0</span></button>
     </div>
 
@@ -289,9 +297,8 @@
       <button class="admin-filter-btn active" data-filter="all">All <span class="filter-count" id="fc-all">—</span></button>
       <button class="admin-filter-btn" data-filter="pending_approval">Pending Approval <span class="filter-count" id="fc-pending-approval">—</span></button>
       <button class="admin-filter-btn" data-filter="needs_review">Needs Review <span class="filter-count" id="fc-needs-review">—</span></button>
-      <button class="admin-filter-btn" data-filter="llm_errors">LLM Errors <span class="filter-count" id="fc-llm-errors">—</span></button>
       <button class="admin-filter-btn" data-filter="validated">Validated <span class="filter-count" id="fc-validated">—</span></button>
-      <button class="admin-filter-btn" data-filter="rejected">Rejected <span class="filter-count" id="fc-rejected">—</span></button>
+      <button class="admin-filter-btn" data-filter="rejected">Excluded <span class="filter-count" id="fc-rejected">—</span></button>
       <button class="admin-filter-btn" data-filter="admin_checked" style="display:none">Admin Checked <span class="filter-count" id="fc-admin-checked">—</span></button>
     </div>
 
@@ -302,14 +309,15 @@
     <div class="admin-table-wrap">
       <table class="admin-table">
         <thead>
-          <tr>
+          <tr id="admin-entries-head">
             <th>#</th>
-            <th>Study</th>
-            <th>Type</th>
-            <th>Outcome</th>
-            <th>Status</th>
-            <th>Validators</th>
-            <th>Approved by</th>
+            <th class="th-sort" data-sort="study">Study</th>
+            <th class="th-sort" data-sort="type">Type</th>
+            <th class="th-sort" data-sort="outcome">Outcome</th>
+            <th class="th-sort" data-sort="status">Status</th>
+            <th class="th-sort" data-sort="validators">Validators</th>
+            <th class="th-sort" data-sort="agreement" title="Share of the 3 checks where V1, V2 and the LLM all agree">Agreement</th>
+            <th class="th-sort" data-sort="approved_by">Approved by</th>
             <th></th>
           </tr>
         </thead>
@@ -349,6 +357,12 @@
 
     <div id="admin-tab-dashboard" class="hidden">
       <div id="admin-dashboard-body">
+        <p class="admin-loading">Loading…</p>
+      </div>
+    </div>
+
+    <div id="admin-tab-restricted" class="hidden">
+      <div id="admin-restricted-body">
         <p class="admin-loading">Loading…</p>
       </div>
     </div>
@@ -521,6 +535,18 @@
   </div>
 </div>
 
+<div id="assignments-modal" class="faq-overlay hidden" role="dialog" aria-modal="true">
+  <div class="faq-panel" style="max-width:560px">
+    <div class="faq-panel-header">
+      <span class="faq-panel-title">Your assignments</span>
+      <button id="assignments-close-btn" class="faq-close" title="Close">×</button>
+    </div>
+    <div id="assignments-body" class="faq-body" style="max-height:70vh;overflow-y:auto;padding:1rem">
+      <p class="faq-loading">Loading…</p>
+    </div>
+  </div>
+</div>
+
 <div id="inbox-modal" class="faq-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="inbox-modal-title">
   <div class="faq-panel inbox-panel">
     <div class="faq-panel-header">
@@ -546,29 +572,15 @@
 </div>
 
 <!-- ------------ INACTIVITY WARNING MODAL ------------ -->
-<div id="inactivity-warn-modal" class="faq-overlay hidden" role="dialog" aria-modal="true">
+<div id="idle-warn-modal" class="faq-overlay hidden" role="dialog" aria-modal="true">
   <div class="faq-panel" style="max-width:420px;text-align:center">
     <div class="faq-panel-header" style="justify-content:center">
       <span class="faq-panel-title">Still there?</span>
     </div>
     <div class="faq-body" style="padding:1.75rem 2rem 2rem">
-      <p style="font-size:1.05rem;margin-bottom:1rem">You've been inactive for <strong>25 minutes</strong>.</p>
-      <p style="color:var(--muted);margin-bottom:1.5rem">You'll be signed out in <strong id="inactivity-countdown">5:00</strong> — your current study will be saved and resumed when you return.</p>
-      <div style="display:flex;gap:0.75rem;justify-content:center">
-        <button id="inactivity-continue-btn" class="btn-primary">I'm still here →</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ------------ INACTIVITY LOGOUT MODAL ------------ -->
-<div id="inactivity-modal" class="faq-overlay hidden" role="dialog" aria-modal="true">
-  <div class="faq-panel" style="max-width:400px;text-align:center">
-    <div class="faq-body" style="padding:2rem 2rem 1.75rem">
-      <div style="font-size:2rem;margin-bottom:0.75rem">💤</div>
-      <h2 style="font-family:'Fraunces',Georgia,serif;font-weight:400;font-size:1.4rem;margin-bottom:0.6rem">You've been away for a while.</h2>
-      <p style="color:var(--ink-soft);font-size:1rem;line-height:1.6;margin-bottom:1.5rem">Your session has expired. Your current study has been saved — sign in again to resume where you left off.</p>
-      <button id="inactivity-ok-btn" class="btn-primary" style="width:100%">Back to login →</button>
+      <p style="font-size:1.05rem;margin-bottom:0.75rem">You've been inactive for a while.</p>
+      <p style="color:var(--muted);margin-bottom:1.5rem">You'll be signed out in <strong id="idle-countdown">5:00</strong>. Your work is saved and resumes when you sign back in.</p>
+      <button class="btn-primary" id="idle-stay-btn">I'm still here</button>
     </div>
   </div>
 </div>
