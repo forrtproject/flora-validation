@@ -59,7 +59,11 @@ QUERY = """
         v.out_quote_source   AS outcome_quote_source,
         COALESCE(m.source, 'validated_db') AS source
     FROM  validated v
-    LEFT JOIN record_metadata m ON m.record_id = v.record_id
+    LEFT JOIN LATERAL (
+        SELECT source FROM record_metadata
+        WHERE record_id = v.record_id
+        LIMIT 1
+    ) m ON true
     ORDER BY v.validated_at;
 """
 
@@ -72,6 +76,10 @@ except Exception as e:
     sys.exit(f"ERROR: Could not connect or query: {e}")
 
 print(f"  Rows fetched : {len(df)}")
+print(f"  Unique doi_r : {df['doi_r'].nunique()}")
+dup_doi_r = df[df.duplicated('doi_r', keep=False)].groupby('doi_r').size()
+if len(dup_doi_r):
+    print(f"  doi_r with multiple doi_o (legitimate multi-original replications): {len(dup_doi_r)}")
 
 # ── 1. Write main export ──────────────────────────────────────────────────────
 df.to_csv(EXPORT_PATH, index=False)
