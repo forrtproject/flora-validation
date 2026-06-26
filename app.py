@@ -1585,7 +1585,14 @@ def admin_stats(x_admin_token: str = Header(...)):
                     EXTRACT(EPOCH FROM (vq.validated_at - vq.shown_at)) / 60
                 )::numeric, 1)     AS max_min,
                 (SELECT COUNT(*) FROM validation_queue fq
-                 WHERE fq.validator_id = v.id AND fq.flagged = TRUE) AS flagged_count
+                 WHERE fq.validator_id = v.id AND fq.flagged = TRUE) AS flagged_count,
+                (SELECT COUNT(DISTINCT aq.record_id)
+                 FROM validation_queue aq
+                 JOIN unvalidated au ON au.record_id = aq.record_id
+                 WHERE aq.validator_id   = v.id
+                   AND aq.is_validated   = TRUE
+                   AND aq.validator_slot IN ('human_1', 'human_2')
+                   AND au.validation_status = 'validated') AS approved_count
             FROM validators v
             LEFT JOIN validation_queue vq
                 ON  vq.validator_id   = v.id
