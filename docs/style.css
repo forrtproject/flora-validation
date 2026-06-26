@@ -715,7 +715,7 @@ body.sidebar-collapsed .layout { grid-template-columns: minmax(0, 1fr) 0; }
 body.sidebar-collapsed #sidebar { display: none; }
 
 .game-area {
-  padding: 2rem 5rem 4rem 3rem;
+  padding: 1.5rem 5rem 1.5rem 3rem;
   border-right: 1px solid var(--rule);
   overflow-y: auto;
   height: 100%;
@@ -1518,14 +1518,12 @@ textarea.comment:focus { background: var(--bg-alt); }
   padding: 0.75rem 1.5rem 0.75rem 2rem;
   border-bottom: 1px solid var(--rule);
   background: var(--bg);
-  position: sticky;
-  top: 1.25rem;
+  position: relative;   /* scrolls away with the content — not pinned */
   z-index: 10;
   border-radius: 1.5rem 1.5rem 0 0;
   border-top: 3px solid var(--accent);
   box-shadow: 0 2px 16px rgba(38,38,16,0.07);
 }
-body:has(.banner:not(.hidden)) .onboarding-header { top: 2.6rem; }
 .onboarding-progress {
   display: flex;
   align-items: center;
@@ -2140,6 +2138,18 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
   padding: 1.25rem 1.5rem 1.25rem;
   box-shadow: 0 8px 32px rgba(38,38,16,0.22);
   pointer-events: auto;
+  cursor: move;
+}
+.tour-callout.tour-dragging { user-select: none; box-shadow: 0 12px 40px rgba(38,38,16,0.3); }
+/* interactive bits keep their own cursor */
+.tour-callout button, .tour-callout a, .tour-callout input, .tour-callout textarea { cursor: pointer; }
+.tour-drag-hint {
+  font-size: 0.72rem;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  cursor: move;
+  user-select: none;
+  opacity: 0.75;
 }
 
 .tour-step-bar {
@@ -2411,13 +2421,14 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
 .admin-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.88rem;
+  /* shrink slightly + scale down on narrower viewports so the table fits without horizontal scroll */
+  font-size: clamp(0.72rem, 0.5rem + 0.55vw, 0.84rem);
 }
 
 .admin-table thead th {
   text-align: left;
-  padding: 0.6rem 0.85rem;
-  font-size: 0.75rem;
+  padding: 0.55rem clamp(0.35rem, 0.55vw, 0.6rem);
+  font-size: clamp(0.66rem, 0.5rem + 0.4vw, 0.75rem);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -2434,7 +2445,7 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
 .admin-table tbody tr:hover { background: var(--bg-alt); }
 
 .admin-table td {
-  padding: 0.55rem 0.85rem;
+  padding: 0.5rem clamp(0.35rem, 0.55vw, 0.6rem);
   vertical-align: middle;
   color: var(--ink);
   white-space: nowrap;
@@ -2445,7 +2456,7 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
 }
 
 .admin-cell-num  { color: var(--muted); font-size: 0.78rem; width: 2.5rem; }
-.admin-cell-study { max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.admin-cell-study { max-width: clamp(150px, 15vw, 230px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .admin-cell-validators { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
 .val-badge { display: inline-block; padding: 0.1rem 0.35rem; border-radius: 3px; background: var(--border); color: var(--fg); font-size: 0.7rem; font-weight: 600; margin-right: 2px; cursor: default; }
 .val-badge:hover { background: var(--accent); color: #fff; }
@@ -2495,11 +2506,12 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
 }
 .admin-page-info { font-size: 0.82rem; color: var(--muted); }
 
-.admin-cell-actions { white-space: nowrap; display: flex; gap: 0.4rem; align-items: center; }
-.admin-review-btn  { padding: 0.25rem 0.65rem; font-size: 0.78rem; }
+.admin-cell-actions { white-space: nowrap; display: flex; gap: 0.3rem; align-items: center; }
+.admin-review-btn  { padding: 0.22rem 0.5rem; font-size: 0.74rem; white-space: nowrap; }
 .admin-approve-btn {
-  padding: 0.25rem 0.65rem;
-  font-size: 0.78rem;
+  padding: 0.22rem 0.5rem;
+  font-size: 0.74rem;
+  white-space: nowrap;
   border: 1px solid var(--green);
   border-radius: 999px;
   background: #eaf2e8;
@@ -4586,7 +4598,11 @@ body.has-maint-banner #admin-screen {
 #hist-detail-modal      { z-index: 9350; }
 #inbox-modal            { z-index: 9300; }
 #dialog-modal           { z-index: 9500; }
-#idle-warn-modal        { z-index: 9700; }
+/* Soft warning: let clicks pass through the backdrop to the page (so Submit etc.
+   still work — any activity also dismisses the warning), but keep the panel itself
+   interactive so "I'm still here" is clickable. */
+#idle-warn-modal        { z-index: 9700; pointer-events: none; }
+#idle-warn-modal .faq-panel { pointer-events: auto; }
 
 .hist-detail-body {
   padding: 0;

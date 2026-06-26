@@ -41,11 +41,41 @@ def _llm_matches(llm: dict, human: dict) -> bool:
     return all(llm.get(f) == human.get(f) for f in _CHECK_FIELDS)
 
 
+def quote_source_for(quote: str | None, abstract: str | None) -> str | None:
+    """Where does this outcome quote come from?
+      'abstract'  — the (normalised) quote is contained in the (normalised) abstract
+      'full_text' — it isn't (so it must have come from the paper body)
+      None        — there is no quote to place.
+    Normalising (lowercase, drop punctuation/whitespace) makes the match robust to
+    the light edits validators make to quotes."""
+    nq = _normalize(quote)
+    if not nq:
+        return None
+    return "abstract" if nq in _normalize(abstract) else "full_text"
+
+
+def _resolve_quote_source(record: dict, suggested_quotes: list, abstract: str | None = None) -> str | None:
+    """Pick the outcome_quote source per the agreed rule:
+      - validators suggested a new quote → check the longest against the abstract;
+      - they agreed with the extracted quote → keep the existing source, no re-check;
+      - no quote at all → leave it unset.
+    `abstract` defaults to the record's extracted abstract; callers pass the FINAL
+    (possibly validator-corrected) abstract so the check matches what gets published."""
+    if abstract is None:
+        abstract = record.get("abstract_r")
+    if suggested_quotes:
+        return quote_source_for(max(suggested_quotes, key=len), abstract)
+    if not _normalize(record.get("outcome_quote")):
+        return None
+    return record.get("out_quote_source")
+
+
 def _resolve_final(record: dict, winner: dict, other: dict | None = None) -> dict:
     """Build final consensus values using winner's corrections, falling back to original record.
     outcome_quote: when validators edited it, the longest edit wins (most context)."""
     quotes = [h.get("corrected_outcome_quote") for h in [winner, other] if h and h.get("corrected_outcome_quote")]
     abstracts = [h.get("corrected_abstract") for h in [winner, other] if h and h.get("corrected_abstract")]
+    final_abstract = random.choice(abstracts) if abstracts else None
     return {
         "study_r": winner.get("corrected_study_r") or record.get("study_r"),
         "url_r":   winner.get("corrected_url_r")    or record.get("url_r"),
@@ -54,7 +84,9 @@ def _resolve_final(record: dict, winner: dict, other: dict | None = None) -> dic
         "outcome": winner.get("corrected_outcome") or record.get("outcome"),
         "type":    winner.get("corrected_type")    or record.get("type"),
         "outcome_quote": max(quotes, key=len) if quotes else record.get("outcome_quote"),
-        "abstract_r": random.choice(abstracts) if abstracts else None,
+        # check the source against the same abstract we publish (corrected if present)
+        "out_quote_source": _resolve_quote_source(record, quotes, final_abstract or record.get("abstract_r")),
+        "abstract_r": final_abstract,
     }
 
 
@@ -72,6 +104,8 @@ def _update_status(cur, record_id: str, status: str, is_tiebreaker: bool,
         ]
         params += [final.get("study_r"), final.get("url_r"), final["doi_o"], final["study_o"],
                    final["outcome"], final["type"], final.get("outcome_quote")]
+        set_clauses.append("final_out_quote_source = %s")
+        params.append(final.get("out_quote_source"))
         if final.get("abstract_r"):
             set_clauses.append("abstract_r = %s")
             params.append(final["abstract_r"])
@@ -113,7 +147,7 @@ def _insert_validated(cur, record: dict, final: dict) -> None:
             final["type"],
             final["outcome"],
             final.get("outcome_quote") or record.get("outcome_quote"),
-            record.get("out_quote_source"),
+            final.get("out_quote_source") or record.get("out_quote_source"),
             datetime.now(timezone.utc).isoformat(),
         ),
     )

@@ -239,6 +239,7 @@ class AdminResolveRequest(BaseModel):
     corrected_doi_r: str | None = None
     corrected_url_r: str | None = None
     corrected_abstract_r: str | None = None
+    out_quote_source: str | None = None   # 'abstract' | 'full_text' | None (auto-detect)
     admin_notes: str | None = None
 
 
@@ -2605,7 +2606,8 @@ def admin_approve(record_id: str, x_admin_token: str = Header(...)):
                 rec["year_o"], rec["url_o"], rec["ref_o"],
                 rec.get("final_type") or rec["type"],
                 rec.get("final_outcome") or rec["outcome"],
-                rec.get("final_outcome_quote") or rec["outcome_quote"], rec.get("out_quote_source"),
+                rec.get("final_outcome_quote") or rec["outcome_quote"],
+                rec.get("final_out_quote_source") or rec.get("out_quote_source"),
             ),
         )
 
@@ -2745,6 +2747,16 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
         final_url_r      = req.corrected_url_r      if req.corrected_url_r      else rec.get("final_url_r")      or rec["url_r"]
         final_abstract_r = req.corrected_abstract_r if req.corrected_abstract_r else rec.get("final_abstract_r") or rec["abstract_r"]
 
+        # Outcome-quote source: honour an explicit admin choice, otherwise (re)detect
+        # from the final quote against the final abstract, falling back to any stored value.
+        from consensus_engine import quote_source_for
+        if req.out_quote_source in ("abstract", "full_text"):
+            final_src, final_src_by = req.out_quote_source, admin_handle
+        else:
+            final_src = (quote_source_for(final_outcome_q, final_abstract_r)
+                         or rec.get("final_out_quote_source") or rec.get("out_quote_source"))
+            final_src_by = None
+
         # Admin confirmed this is not a replication → reject it, never insert into FLoRA
         if final_type == "not_validation":
             cur.execute(
@@ -2778,11 +2790,13 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
                 final_doi_r         = %s,
                 final_url_r         = %s,
                 final_abstract_r    = %s,
+                final_out_quote_source = %s,
+                out_quote_source_by = %s,
                 admin_override      = %s,
                 updated_at          = NOW()
             WHERE record_id = %s
             """,
-            (admin_handle, req.admin_notes, final_type, final_doi_o, final_study_o, final_outcome, final_outcome_q, final_study_r, final_doi_r, final_url_r, final_abstract_r, was_rejected, record_id),
+            (admin_handle, req.admin_notes, final_type, final_doi_o, final_study_o, final_outcome, final_outcome_q, final_study_r, final_doi_r, final_url_r, final_abstract_r, final_src, final_src_by, was_rejected, record_id),
         )
 
         cur.execute(
@@ -2790,8 +2804,8 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
             INSERT INTO validated (
                 record_id, doi_r, study_r, year_r, url_r, ref_r, abstract_r,
                 doi_o, study_o, year_o, url_o, ref_o,
-                type, outcome, outcome_quote, out_quote_source, admin_approved
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, TRUE)
+                type, outcome, outcome_quote, out_quote_source, out_quote_source_by, admin_approved
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, TRUE)
             ON CONFLICT (doi_r, study_r, doi_o, study_o) DO UPDATE SET
                 doi_r         = EXCLUDED.doi_r,
                 study_r       = EXCLUDED.study_r,
@@ -2801,6 +2815,8 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
                 type          = EXCLUDED.type,
                 outcome       = EXCLUDED.outcome,
                 outcome_quote = EXCLUDED.outcome_quote,
+                out_quote_source = EXCLUDED.out_quote_source,
+                out_quote_source_by = EXCLUDED.out_quote_source_by,
                 admin_approved = TRUE,
                 validated_at  = NOW()
             """,
@@ -2808,7 +2824,7 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
                 record_id,
                 final_doi_r, final_study_r, rec["year_r"], final_url_r, rec["ref_r"], final_abstract_r,
                 final_doi_o, final_study_o, rec["year_o"], rec["url_o"], rec["ref_o"],
-                final_type, final_outcome, final_outcome_q, rec.get("out_quote_source"),
+                final_type, final_outcome, final_outcome_q, final_src, final_src_by,
             ),
         )
 

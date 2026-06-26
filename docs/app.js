@@ -61,32 +61,22 @@ async function api(path, method = "GET", body = null) {
   const opts = { method, headers: { "Content-Type": "application/json" } };
   if (body) opts.body = JSON.stringify(body);
 
-  // Show "server waking up" toast if response takes more than 3 seconds
-  let slowTimer = setTimeout(() => showToast("Server waking up… hang tight."), 3000);
-  try {
-    const res = await fetch("/api" + path, opts);
-    clearTimeout(slowTimer);
-    hideToast();
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      let msg = res.statusText || `Server error (HTTP ${res.status})`;
-      if (err.detail) {
-        if (Array.isArray(err.detail)) {
-          msg = err.detail.map((e) => e.msg || JSON.stringify(e)).join("; ");
-        } else {
-          msg = String(err.detail);
-        }
+  const res = await fetch("/api" + path, opts);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    let msg = res.statusText || `Server error (HTTP ${res.status})`;
+    if (err.detail) {
+      if (Array.isArray(err.detail)) {
+        msg = err.detail.map((e) => e.msg || JSON.stringify(e)).join("; ");
+      } else {
+        msg = String(err.detail);
       }
-      const httpErr = new Error(msg);
-      httpErr.status = res.status;
-      throw httpErr;
     }
-    return res.json();
-  } catch (e) {
-    clearTimeout(slowTimer);
-    hideToast();
-    throw e;
+    const httpErr = new Error(msg);
+    httpErr.status = res.status;
+    throw httpErr;
   }
+  return res.json();
 }
 
 function hideToast() {
@@ -495,6 +485,7 @@ async function doLogin() {
     if (fieldVal && !fieldVal.includes("@")) {
       try {
         await adminLogin(handle, fieldVal);
+        rememberLogin(handle, fieldVal);   // remember username + password (stored in plaintext)
         return; // success — entered admin screen
       } catch (e) {
         await showAlert("Admin login failed: " + e.message);
@@ -521,6 +512,7 @@ async function doLogin() {
   }
   try {
     const resp = await api("/login", "POST", body);
+    rememberLogin(handle, body.email || "");   // pre-fill next time (never the code)
     state.coder = resp;
     localStorage.setItem(STORAGE.CODER, JSON.stringify(resp));
     routeAfterLogin();
@@ -542,8 +534,27 @@ async function doLogin() {
   }
 }
 
+// Remember the last username/email on this device so the login fields can be
+// pre-filled next time (Option B). The secret code and admin password are never stored.
+const LAST_LOGIN_KEY = "flora.lastLogin";
+function rememberLogin(handle, email) {
+  try {
+    localStorage.setItem(LAST_LOGIN_KEY, JSON.stringify({ handle: handle || "", email: email || "" }));
+  } catch {}
+}
+function prefillLogin() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAST_LOGIN_KEY) || "null");
+    if (!saved) return;
+    const h = $("#handle-input"), e = $("#email-input");
+    if (h && saved.handle) h.value = saved.handle;
+    if (e && saved.email)  e.value = saved.email;
+  } catch {}
+}
+
 async function startup() {
   await detectMode();
+  prefillLogin();
   const stored = localStorage.getItem(STORAGE.CODER);
   if (stored) {
     try {
@@ -2982,6 +2993,22 @@ const _REPRO_COMP   = { successful: "computationally successful", issues: "compu
 const _REPRO_ROBUST = { robust: "robust", challenges: "robustness challenges", not_checked: "robustness not checked" };
 const _reproLabel = (comp, rob) => `${_REPRO_COMP[comp]}, ${_REPRO_ROBUST[rob]}`;
 
+// All 9 reproduction outcome combinations — must match the validator selector's strings.
+const _REPRO_OUTCOMES = Object.keys(_REPRO_COMP)
+  .flatMap(c => Object.keys(_REPRO_ROBUST).map(r => _reproLabel(c, r)));
+
+// Build <option>s for the admin outcome <select> by type. Keeps the current value even
+// if it isn't in the canonical list (e.g. legacy / cannot_be_determined) so nothing is lost.
+function _outcomeOptionsFor(type, selected) {
+  const base = type === "reproduction"
+    ? _REPRO_OUTCOMES.slice()
+    : ["success", "failure", "mixed", "uninformative", "descriptive"];
+  if (selected && !base.includes(selected)) base.unshift(selected);
+  return base.map(o =>
+    `<option value="${escapeHtml(o)}" ${selected === o ? "selected" : ""}>${escapeHtml(fmtOutcome(o))}</option>`
+  ).join("");
+}
+
 // Switch gate-3 between the replication outcome check and the reproduction
 // 2-axis selector based on the chosen type.
 function _applyOutcomeMode(pairBody) {
@@ -3153,7 +3180,7 @@ const TOUR_STEPS = [
   {
     sel: ".pair-header",
     title: "The paper",
-    body: "Read the title, authors, and abstract. Use <em>OA full text</em>, <em>DOI</em>, or <em>Scholar</em> to open the full paper when you need more context. If the title has a typo, use <em>fix typo</em> to correct it. If the abstract is missing or wrong, use <em>edit abstract</em> to update it.",
+    body: "Read the title, authors, and abstract. Click the <em>DOI</em> link (next to the authors) or <em>Scholar</em> to open the full paper. If the title has a typo, use <em>fix typo</em>; if the abstract is missing or wrong, use <em>edit abstract</em>; and if the link is wrong or paywalled, use <em>suggest link</em> to propose a better one.",
   },
   {
     sel: "#gate-1",
@@ -3187,6 +3214,36 @@ const TOUR_STEPS = [
 ];
 
 let _tourStep = 0;
+let _tourDragged = false;   // true once the user drags the callout (until next step)
+
+function _makeTourDraggable() {
+  const callout = $("#tour-callout");
+  if (!callout || callout._dragWired) return;
+  callout._dragWired = true;
+  let sx, sy, sl, st, dragging = false;
+  callout.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button, a, input, textarea")) return;   // not from controls
+    const rect = callout.getBoundingClientRect();
+    callout.style.transform = "";
+    callout.style.left = rect.left + "px";
+    callout.style.top  = rect.top + "px";
+    sx = e.clientX; sy = e.clientY; sl = rect.left; st = rect.top;
+    dragging = true; _tourDragged = true;
+    callout.classList.add("tour-dragging");
+    try { callout.setPointerCapture(e.pointerId); } catch (_) {}
+    e.preventDefault();
+  });
+  callout.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const nl = Math.max(0, Math.min(sl + (e.clientX - sx), window.innerWidth  - callout.offsetWidth));
+    const nt = Math.max(0, Math.min(st + (e.clientY - sy), window.innerHeight - callout.offsetHeight));
+    callout.style.left = nl + "px";
+    callout.style.top  = nt + "px";
+  });
+  const end = (e) => { dragging = false; callout.classList.remove("tour-dragging"); try { callout.releasePointerCapture(e.pointerId); } catch (_) {} };
+  callout.addEventListener("pointerup", end);
+  callout.addEventListener("pointercancel", end);
+}
 
 function startTour(pair) {
   const card = $("#onb-card");
@@ -3205,11 +3262,13 @@ function startTour(pair) {
 
   applySplitLayout();
   $("#tour-overlay").classList.remove("hidden");
+  _makeTourDraggable();
   showTourStep(0);
 }
 
 function showTourStep(idx) {
   _tourStep = idx;
+  _tourDragged = false;   // each step re-positions; user can drag within a step
   const step = TOUR_STEPS[idx];
   const total = TOUR_STEPS.length;
 
@@ -3252,6 +3311,7 @@ function showTourStep(idx) {
 
 function positionTourCallout(target, side) {
   const callout = $("#tour-callout");
+  if (_tourDragged) return;   // keep the user's dragged position
   const MARGIN = 12;
   const vh = window.innerHeight;
   const vw = window.innerWidth;
@@ -3584,7 +3644,7 @@ function signOutAdmin() {
 async function fetchAdminEntries(resetState = true) {
   const body = $("#admin-table-body");
   if (resetState) {
-    body.innerHTML = '<tr><td colspan="9" class="admin-loading">Loading…</td></tr>';
+    body.innerHTML = '<tr><td colspan="10" class="admin-loading">Loading…</td></tr>';
     $("#admin-empty").classList.add("hidden");
   }
 
@@ -3605,7 +3665,7 @@ async function fetchAdminEntries(resetState = true) {
     }
   } catch (e) {
     if (resetState) {
-      body.innerHTML = `<tr><td colspan="9" class="admin-loading">
+      body.innerHTML = `<tr><td colspan="10" class="admin-loading">
         Error: ${escapeHtml(e.message)}
         <button id="admin-retry-btn" style="margin-left:0.75rem;font-size:0.78rem;padding:0.3rem 0.8rem;border-radius:999px;border:1px solid var(--ink);background:transparent;cursor:pointer;">↺ Retry</button>
       </td></tr>`;
@@ -3673,10 +3733,10 @@ function renderAdminTable(entries, total) {
     const agreeCell = (ap == null)
       ? '<span class="agree-na">—</span>'
       : `<span class="agree-pct ${ap >= 100 ? "agree-full" : ap >= 67 ? "agree-mid" : "agree-low"}">${ap}%</span>`;
-    const actions = e.validation_status === "consensus_reached"
-      ? `<button class="admin-approve-btn" data-id="${e.record_id}">Approve ✓</button>
-         <button class="admin-review-btn ghost-btn" data-id="${e.record_id}">Review</button>`
-      : `<button class="admin-review-btn ghost-btn" data-id="${e.record_id}">Review →</button>`;
+    const approveCell = e.validation_status === "consensus_reached"
+      ? `<button class="admin-approve-btn" data-id="${e.record_id}">Approve ✓</button>`
+      : `<span class="agree-na">—</span>`;
+    const reviewCell = `<button class="admin-review-btn ghost-btn" data-id="${e.record_id}">Review →</button>`;
     const approvedBy = e.admin_name
       ? `<span style="font-size:0.8rem;color:var(--muted)">${e.admin_name}</span>`
       : "—";
@@ -3689,7 +3749,8 @@ function renderAdminTable(entries, total) {
       <td class="admin-cell-validators">${validators}</td>
       <td class="admin-cell-agree">${agreeCell}</td>
       <td>${approvedBy}</td>
-      <td class="admin-cell-actions">${actions}</td>
+      <td class="admin-cell-approve">${approveCell}</td>
+      <td class="admin-cell-review">${reviewCell}</td>
     </tr>`;
   }).join("");
 
@@ -3984,6 +4045,7 @@ function renderAdminDetail(data) {
         <div class="fp-row"><span class="fp-label">Type</span><span class="fp-value">${escapeHtml(finalType || "—")}</span></div>
         <div class="fp-row"><span class="fp-label">Outcome</span><span class="fp-value">${escapeHtml(fmtOutcome(finalOutcome) || "—")}</span></div>
         ${finalQuote ? `<div class="fp-row fp-quote-row"><span class="fp-label">Quote</span><span class="fp-value fp-quote">"${escapeHtml(finalQuote)}"</span></div>` : ""}
+        ${finalQuote ? `<div class="fp-row"><span class="fp-label">Quote source</span><span class="fp-value">${finalSource === "abstract" ? "Abstract" : finalSource === "full_text" ? "Full text" : "<em>auto-detect on save</em>"}${rec.out_quote_source_by ? ` <span class="fp-src-by">· set by ${escapeHtml(rec.out_quote_source_by)}</span>` : ""}</span></div>` : ""}
       </div>
       ${finalAbstractR ? `<details class="fp-abstract"><summary>Abstract${rec.final_abstract_r && rec.final_abstract_r !== rec.abstract_r ? " (edited)" : ""}</summary><p class="fp-abstract-text">${escapeHtml(finalAbstractR)}</p></details>` : ""}
       ${changesSection}
@@ -4000,10 +4062,10 @@ function renderAdminDetail(data) {
   const finalQuote     = rec.final_outcome_quote || rec.outcome_quote;
   const finalAbstractR = rec.final_abstract_r    || rec.abstract_r;
   const finalUrlR      = rec.final_url_r         || rec.url_r;
+  const finalSource    = rec.final_out_quote_source || rec.out_quote_source || "";
 
 
-  const outcomeOpts = ["success","failure","mixed","uninformative","descriptive"]
-    .map((o) => `<option value="${o}" ${finalOutcome === o ? "selected" : ""}>${o}</option>`).join("");
+  const outcomeOpts = _outcomeOptionsFor(finalType, finalOutcome);
   const typeOpts = ["replication","reproduction"]
     .map((t) => `<option value="${t}" ${finalType === t ? "selected" : ""}>${t}</option>`).join("");
 
@@ -4115,6 +4177,13 @@ function renderAdminDetail(data) {
           <label class="admin-form-label">Outcome Quote</label>
           <textarea id="ar-quote" class="admin-textarea" placeholder="Outcome quote…">${escapeHtml(finalQuote || "")}</textarea>
 
+          <label class="admin-form-label">Outcome Quote Source</label>
+          <select id="ar-quote-source" class="admin-select">
+            <option value="" ${!finalSource ? "selected" : ""}>Auto-detect (is the quote in the abstract?)</option>
+            <option value="abstract" ${finalSource === "abstract" ? "selected" : ""}>Abstract — quote appears in the abstract</option>
+            <option value="full_text" ${finalSource === "full_text" ? "selected" : ""}>Full text — quote is from the paper body</option>
+          </select>
+
           <label class="admin-form-label">Abstract</label>
           <textarea id="ar-abstract-r" class="admin-textarea" style="min-height:120px" placeholder="Abstract…">${escapeHtml(finalAbstractR || "")}</textarea>
 
@@ -4174,6 +4243,11 @@ function renderAdminDetail(data) {
       btn.textContent = "Save Note";
       await showAlert("Error: " + e.message);
     }
+  });
+  // Switch the outcome options to match the chosen type (reproduction has its own scheme)
+  $("#ar-type-sel")?.addEventListener("change", (ev) => {
+    const sel = $("#ar-outcome-sel");
+    if (sel) sel.innerHTML = _outcomeOptionsFor(ev.target.value, "");
   });
   $("#admin-resolve-btn")?.addEventListener("click", () => submitAdminResolve(rec.record_id));
   $("#admin-reject-btn")?.addEventListener("click", async () => {
@@ -4338,6 +4412,7 @@ async function submitAdminResolve(recordId) {
     corrected_doi_r:         doiRChanged     ? (newDoiR      || null)   : null,
     corrected_url_r:         urlRChanged     ? (newUrlR      || null)   : null,
     corrected_abstract_r:    abstractChanged ? (newAbstractR || null)   : null,
+    out_quote_source:        $("#ar-quote-source")?.value || null,
     admin_notes:             $("#ar-notes").value.trim() || null,
   };
 
@@ -4474,13 +4549,13 @@ function renderRestricted(records) {
 
 async function fetchAdminStats() {
   const body = $("#admin-stats-body");
-  body.innerHTML = '<tr><td colspan="11" class="admin-loading">Loading…</td></tr>';
+  body.innerHTML = '<tr><td colspan="12" class="admin-loading">Loading…</td></tr>';
   try {
     const data = await adminApi("/stats");
     renderAdminSummary(data.summary);
     renderAdminStats(data.validators);
   } catch (e) {
-    body.innerHTML = `<tr><td colspan="11" class="admin-loading">Error: ${e.message}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="12" class="admin-loading">Error: ${e.message}</td></tr>`;
   }
 }
 

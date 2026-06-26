@@ -198,3 +198,43 @@ def test_senior_agreement_auto_validates():
     calls_str = str(cur.execute.call_args_list)
     assert "INSERT INTO validated" in calls_str   # success path inserts the validated row
     assert "need_review" not in calls_str
+
+
+# ---------------------------------------------------------------------------
+# Outcome-quote source detection
+# ---------------------------------------------------------------------------
+
+def test_quote_source_for_found_in_abstract():
+    from consensus_engine import quote_source_for
+    assert quote_source_for("we replicated", "We Replicated X, fully.") == "abstract"
+
+
+def test_quote_source_for_not_in_abstract():
+    from consensus_engine import quote_source_for
+    assert quote_source_for("a sentence from the body", "Unrelated abstract.") == "full_text"
+
+
+def test_quote_source_for_empty_quote_is_none():
+    from consensus_engine import quote_source_for
+    assert quote_source_for("", "Some abstract.") is None
+    assert quote_source_for(None, "Some abstract.") is None
+
+
+def test_resolve_quote_source_keeps_existing_when_agreed():
+    """No validator suggestion → trust the extracted source, don't re-check."""
+    from consensus_engine import _resolve_quote_source
+    rec = {"abstract_r": "Totally unrelated.", "outcome_quote": "We replicated.",
+           "out_quote_source": "full_text"}
+    assert _resolve_quote_source(rec, []) == "full_text"
+
+
+def test_resolve_quote_source_checks_longest_suggestion():
+    """Validators suggested new quotes → longest is checked against the abstract."""
+    from consensus_engine import _resolve_quote_source
+    rec = {"abstract_r": "We found a strong and lasting effect across samples.",
+           "outcome_quote": "old", "out_quote_source": "abstract"}
+    suggested = ["a strong effect", "we found a strong and lasting effect"]
+    assert _resolve_quote_source(rec, suggested) == "abstract"
+    # longest suggestion not in abstract → full_text
+    suggested2 = ["x", "a paraphrase that is nowhere in the abstract text"]
+    assert _resolve_quote_source(rec, suggested2) == "full_text"

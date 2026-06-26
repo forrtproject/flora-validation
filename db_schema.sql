@@ -280,6 +280,13 @@ ALTER TABLE unvalidated ADD CONSTRAINT unvalidated_validation_status_check
 -- Store agreed corrected outcome quote so admin_approve can use it
 ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS final_outcome_quote TEXT;
 
+-- Outcome-quote source: 'abstract' when the final quote is found in the abstract,
+-- else 'full_text'. Computed at consensus; the admin can override in the review
+-- panel (out_quote_source_by records the admin handle when manually set).
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS final_out_quote_source TEXT;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS out_quote_source_by    TEXT;
+ALTER TABLE validated   ADD COLUMN IF NOT EXISTS out_quote_source_by    TEXT;
+
 -- Admin notes: track who saved the note and when
 ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS note_saved_by  TEXT;
 ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS note_saved_at  TIMESTAMPTZ;

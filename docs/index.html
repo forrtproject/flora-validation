@@ -318,7 +318,8 @@
             <th class="th-sort" data-sort="validators">Validators</th>
             <th class="th-sort" data-sort="agreement" title="Share of the 3 checks where V1, V2 and the LLM all agree">Agreement</th>
             <th class="th-sort" data-sort="approved_by">Approved by</th>
-            <th></th>
+            <th>Approve</th>
+            <th>Review</th>
           </tr>
         </thead>
         <tbody id="admin-table-body"></tbody>
@@ -346,7 +347,7 @@
               <th>Max <span class="col-help" title="Slowest single record judgement (minutes).">?</span></th>
               <th>Flagged <span class="col-help" title="Number of this validator's judgements that an admin has flagged as problematic.">?</span></th>
               <th>Last Login <span class="col-help" title="Date and time the validator last signed in.">?</span></th>
-              <th></th>
+              <th>DM <span class="col-help" title="Send this validator a direct message.">?</span></th>
             </tr>
           </thead>
           <tbody id="admin-stats-body"></tbody>
@@ -460,6 +461,7 @@
 <div id="tour-callout" class="tour-callout hidden">
   <div class="tour-step-bar">
     <span id="tour-step-label" class="tour-step-label"></span>
+    <span class="tour-drag-hint" title="Click and drag to move this window">⠿ drag to move</span>
     <button id="tour-skip-btn" class="link-btn" style="font-size:0.8rem;color:var(--muted)">Skip tour</button>
   </div>
   <h3 id="tour-title" class="tour-title"></h3>
