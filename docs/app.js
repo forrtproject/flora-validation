@@ -4549,13 +4549,13 @@ function renderRestricted(records) {
 
 async function fetchAdminStats() {
   const body = $("#admin-stats-body");
-  body.innerHTML = '<tr><td colspan="12" class="admin-loading">Loading…</td></tr>';
+  body.innerHTML = '<tr><td colspan="13" class="admin-loading">Loading…</td></tr>';
   try {
     const data = await adminApi("/stats");
     renderAdminSummary(data.summary);
     renderAdminStats(data.validators);
   } catch (e) {
-    body.innerHTML = `<tr><td colspan="12" class="admin-loading">Error: ${e.message}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="13" class="admin-loading">Error: ${e.message}</td></tr>`;
   }
 }
 
@@ -4817,6 +4817,7 @@ function renderAdminStats(validators) {
       <td class="admin-time-cell" style="color:var(--green)">${fmtMin(v.min_min)}</td>
       <td class="admin-time-cell" style="color:var(--muted)">${fmtMin(v.max_min)}</td>
       <td class="admin-flag-cell">${v.flagged_count > 0 ? `<span class="flag-count-badge" data-validator-id="${v.id}" data-handle="${escapeHtml(v.handle)}">🚩 ${v.flagged_count}</span>` : "—"}</td>
+      <td class="admin-approved-cell" style="color:var(--green);font-weight:600">${v.approved_count > 0 ? v.approved_count : "—"}</td>
       <td style="font-size:0.78rem;color:var(--muted)">${v.last_login_at ? new Date(v.last_login_at).toLocaleString("en-GB", {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : "—"}</td>
       <td><button class="compose-msg-btn ghost-btn" data-id="${v.id}" data-handle="${escapeHtml(v.handle)}" title="Send message to ${escapeHtml(v.handle)}">✉</button></td>
     </tr>
