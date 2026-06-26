@@ -142,10 +142,11 @@ dup_doi_r = df[df.duplicated('doi_r', keep=False)].groupby('doi_r').size()
 if len(dup_doi_r):
     print(f"  doi_r with multiple doi_o (legitimate multi-original replications): {len(dup_doi_r)}")
 
-# ── Fill missing references from OpenAlex (both sides) ────────────────────────
-# Only rows whose ref_r / ref_o is blank are looked up, so existing references are
-# never overwritten and the API is only hit for genuine gaps. Cached in oa_ref_cache.json.
-print("Filling missing references from OpenAlex...")
+# ── Replace references with OpenAlex data (both sides) ────────────────────────
+# Every row is looked up on OpenAlex; when OpenAlex has a reference it REPLACES the
+# DB ref_r / ref_o. If OpenAlex has nothing for that DOI, the original DB reference is
+# kept as a fallback so a row is never blanked out. Cached in oa_ref_cache.json.
+print("Replacing references with OpenAlex data...")
 ref_cache = {}
 if OA_REF_CACHE_PATH.exists():
     try:
@@ -158,18 +159,17 @@ def _is_blank(v) -> bool:
     return v is None or (isinstance(v, float) and pd.isna(v)) or str(v).strip() == ""
 
 
-r_blank = df["ref_r"].apply(_is_blank)
-o_blank = df["ref_o"].apply(_is_blank)
-if r_blank.any():
-    df.loc[r_blank, "ref_r"] = df.loc[r_blank, "doi_r"].apply(lambda d: openalex_reference(d, ref_cache))
-if o_blank.any():
-    df.loc[o_blank, "ref_o"] = df.loc[o_blank, "doi_o"].apply(lambda d: openalex_reference(d, ref_cache))
+oa_r = df["doi_r"].apply(lambda d: openalex_reference(d, ref_cache))
+oa_o = df["doi_o"].apply(lambda d: openalex_reference(d, ref_cache))
 OA_REF_CACHE_PATH.write_text(json.dumps(ref_cache, indent=2, sort_keys=True))
 
-r_filled = int((r_blank & ~df["ref_r"].apply(_is_blank)).sum())
-o_filled = int((o_blank & ~df["ref_o"].apply(_is_blank)).sum())
-print(f"  Gaps filled from OpenAlex: {r_filled}/{int(r_blank.sum())} replication, "
-      f"{o_filled}/{int(o_blank.sum())} original (cache: {len(ref_cache)} DOIs)")
+# OpenAlex wins when present; otherwise keep the existing DB reference.
+df["ref_r"] = [oa if str(oa).strip() else ("" if _is_blank(old) else old) for oa, old in zip(oa_r, df["ref_r"])]
+df["ref_o"] = [oa if str(oa).strip() else ("" if _is_blank(old) else old) for oa, old in zip(oa_o, df["ref_o"])]
+
+print(f"  Replaced with OpenAlex: {int((oa_r.str.strip() != '').sum())}/{len(df)} replication, "
+      f"{int((oa_o.str.strip() != '').sum())}/{len(df)} original "
+      f"(rest kept original; cache: {len(ref_cache)} DOIs)")
 
 # ── 1. Write main export ──────────────────────────────────────────────────────
 df.to_csv(EXPORT_PATH, index=False)
