@@ -1,0 +1,45 @@
+name: Daily validated export
+
+on:
+  schedule:
+    # 04:00 UTC every day. NOTE: GitHub cron is always UTC (no DST).
+    # For 04:00 CET use "0 3 * * *" (winter) / CEST is 02:00 UTC.
+    - cron: "0 4 * * *"
+  workflow_dispatch: {}   # also allow manual runs from the Actions tab
+
+# Needed so the job can push the refreshed CSVs back to the repo.
+permissions:
+  contents: write
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run export
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python export_validated.py
+
+      - name: Commit updated exports (if changed)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/validated_export.csv data/needs_manual_refs.csv
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore: daily validated export ($(date -u +%Y-%m-%d))"
+            git push
+          fi
