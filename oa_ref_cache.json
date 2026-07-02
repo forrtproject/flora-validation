@@ -1,7 +1,19 @@
 {
+  "10.1002/1097-4679(197110)27:4<514::aid-jclp2270270435>3.0.co;2-k": {
+    "ref": "Floyd S. Irvin, Kenneth Vander Woude (1971) Empirical support for a basic TAT set. Journal of Clinical Psychology."
+  },
+  "10.1002/1520-6807(198607)23:3<271::aid-pits2310230308>3.0.co;2-y": {
+    "ref": "Gary L. Fisher, Stephen J. Jenkins, John D. Crumbley (1986) A replication of a survey of school psychologists: Congruence between training, practice, preferred role, and competence. Psychology in the Schools."
+  },
   "10.1002/clc.22410Digital": {
     "error": "http 404",
     "ref": ""
+  },
+  "10.1002/jaba.672": {
+    "ref": "Colin Muething, Nathan A. Call, Alexis Pavlov, Joel E. Ringdahl, Scott Gillespie, Seth B. Clark, Joanna Lomas Mevers (2020) Prevalence of renewal of problem behavior during context changes. Journal of Applied Behavior Analysis."
+  },
+  "10.1002/jaba.740": {
+    "ref": "John Michael Falligant, Michael P. Kranak, Molly K. McNulty, Jonathan D. Schmidt, Nicole L. Hausman, Griffin W. Rooker (2020) Prevalence of renewal of problem behavior: Replication and extension to an inpatient setting. Journal of Applied Behavior Analysis."
   },
   "10.1007/bf01371820": {
     "ref": "Thomas H. Stoffer (1991) Attentional focussing and spatial stimulus-response compatibility. Psychological Research."
@@ -36,6 +48,9 @@
   "10.1016/0013-4694(96)95711-9": {
     "ref": "Martin Eimer (1996) The N2pc component as an indicator of attentional selectivity. Electroencephalography and Clinical Neurophysiology."
   },
+  "10.1016/0022-4405(78)90001-8": {
+    "ref": "Merle L. Meacham, Percy D. Peckham (1978) School psychologists at three-quarters century: Congruence between training, practice, preferred role and competence. Journal of School Psychology."
+  },
   "10.1016/0885-2014(95)90011-x": {
     "ref": "Tony J. Simon, Susan J. Hespos, Philippe Rochat (1995) Do infants understand simple arithmetic? A replication of Wynn (1992). Cognitive Development."
   },
@@ -56,6 +71,9 @@
   },
   "10.1016/j.econlet.2020.109646": {
     "ref": "Philipp Boeing, Paul H\u00fcnermund (2020) A global decline in research productivity? Evidence from China and Germany. Economics Letters."
+  },
+  "10.1016/j.evolhumbehav.2010.04.004": {
+    "ref": "Sebastian Kirschner, Michael Tomasello (2010) Joint music making promotes prosocial behavior in 4-year-old children\u2606\u2606\u2606. Evolution and Human Behavior."
   },
   "10.1016/j.gloenvcha.2011.01.002": {
     "ref": "Christopher Aitken, Ralph Chapman, John McClure (2011) Climate change, powerlessness and the commons dilemma: Assessing New Zealanders\u2019 preparedness to act. Global Environmental Change."
@@ -93,6 +111,9 @@
   "10.1016/j.paid.2023.112102": {
     "ref": "Christian Bl\u00f6tner, Andreas Mokros (2023) The next distinction without a difference: Do psychopathy and sadism scales assess the same construct?. Personality and Individual Differences."
   },
+  "10.1016/s0010-0285(03)00128-2": {
+    "ref": "Elissa L. Newport, Richard \u039d. Aslin (2003) Learning at a distance I. Statistical learning of non-adjacent dependencies. Cognitive Psychology."
+  },
   "10.1016/s0022-5371(74)80011-3": {
     "ref": "Elizabeth F. Loftus, John Palmer (1974) Reconstruction of automobile destruction: An example of the interaction between language and memory. Journal of Verbal Learning and Verbal Behavior."
   },
@@ -120,6 +141,9 @@
   },
   "10.1027/1614-0001/a000311": {
     "ref": "Marc-Andr\u00e9 B\u00e9dard, Yann Le Corff (2019) Intelligence and Personality. Journal of Individual Differences."
+  },
+  "10.1027/1864-9335/a000187": {
+    "ref": "Dermot Lynott, Katherine S. Corker, Jessica Wortman, Louise Connell, M. Brent Donnellan, Richard E. Lucas, Kerry O\u2019Brien (2014) Replication of \u201cExperiencing Physical Warmth Promotes Interpersonal Warmth\u201d by. Social Psychology."
   },
   "10.1037//0096-1523.18.3.849": {
     "ref": "Jane E. Raymond, Kimron L. Shapiro, Karen M. Arnell (1992) Temporary suppression of visual processing in an RSVP task: An attentional blink?. Journal of Experimental Psychology Human Perception & Performance."
@@ -181,6 +205,9 @@
   "10.1075/bpa.3.13goo": {
     "ref": "Jaemyung Goo (2016) Corrective feedback and working memory capacity. Bilingual processing and acquisition."
   },
+  "10.1080/00223891.1973.10119882": {
+    "ref": "Charles S. Newmark, Ramon Flouranzano (1973) Replication of an Empirically Derived TAT Set with Hospitalized Psychiatric Patients. Journal of Personality Assessment."
+  },
   "10.1080/00224545.2017.1331991": {
     "ref": "Regan A. R. Gurung, Elizabeth Punke, Michaella Brickner, Vincenzio Badalamenti (2017) Power and provocativeness: The effects of subtle changes in clothing on perceptions of working women. The Journal of Social Psychology."
   },
@@ -192,6 +219,9 @@
   },
   "10.1080/09720510.2020.1848040": {
     "ref": "Sean Pradhan, Ravi Chachad (2021) Re-ranking regular seasons in the National Basketball Association\u2019s modern era : A replication and extension of Pradhan (2018). Journal of Statistics and Management Systems."
+  },
+  "10.1080/10508619.2013.735493": {
+    "ref": "Junwei Huang, Lehua Cheng, Jing Zhu (2012) Intuitive Conceptions of Dead Persons' Mentality: A Cross-Cultural Replication and More. International Journal for the Psychology of Religion."
   },
   "10.1080/10668926.2016.1179606": {
     "ref": "Nancy Allen, Kimberly A DeLauro, Julia Karel Perry, Carol A. Carman (2016) Does Literacy Skill Level Predict Performance in Community College Courses: A Replication and Extension. Community College Journal of Research and Practice."
@@ -210,6 +240,12 @@
   },
   "10.1080/14616696.2017.1290265": {
     "ref": "Carlo Barone, Lucia Ruggera (2017) Educational equalization stalled? Trends in inequality of educational opportunity between 1930 and 1980 across 26 European nations. European Societies."
+  },
+  "10.1080/16506073.2018.1475505": {
+    "ref": "Philip Hyland, Gr\u00e1inne McGinty, Thanos Karatzias, Jamie Murphy, Fr\u00e9d\u00e9rique Valli\u00e8res, Joanna McHugh Power (2018) Can the REBT theory explain loneliness? Theoretical and clinical applications. Cognitive Behaviour Therapy."
+  },
+  "10.1080/16506073.2025.2465760": {
+    "ref": "Kory Floyd, Colter D. Ray, Colin Hesse (2025) Theoretic principles of rational emotive behavior therapy (REBT) and loneliness: a multinational replication of Hyland et al. (2019). Cognitive Behaviour Therapy."
   },
   "10.1080/17461391.2018.1431311": {
     "ref": "Matthew J. Slater, S. Alexander Haslam, Niklas K. Steffens (2018) Singing it for \u201cus\u201d: Team passion displayed during national anthems is associated with subsequent success. European Journal of Sport Science."
@@ -311,12 +347,24 @@
   "10.1111/psyp.13419": {
     "ref": "Tabitha A. Iseger, Madelon A. Vollebregt, Noralie Krepel, Martijn Arns (2019) Heart rate variability related to season of birth: A replication study. Psychophysiology."
   },
+  "10.1126/science.1162548": {
+    "ref": "Lawrence E. Williams, John A. Bargh (2008) Experiencing Physical Warmth Promotes Interpersonal Warmth. Science."
+  },
   "10.1152/jn.00286.2019": {
     "ref": "Kathryn E. Unruh, Laura E. Martin, Grant Magnon, David E. Vaillancourt, John A. Sweeney, Matthew W. Mosconi (2019) Cortical and subcortical alterations associated with precision visuomotor behavior in individuals with autism spectrum disorder. Journal of Neurophysiology."
+  },
+  "10.1163/15685370260441008": {
+    "ref": "Jesse M. Bering (2002) Intuitive Conceptions of Dead Agents' Minds: The Natural Foundations of Afterlife Beliefs as Phenomenological Boundary. Journal of Cognition and Culture."
   },
   "10.1176/appi.ajp.2009.0903034": {
     "error": "http 404",
     "ref": ""
+  },
+  "10.1177/0022219421997103": {
+    "ref": "Christine A. Espin, Roxette M. van den Bosch, Marijke van der Liende, Ralph C. A. Rippe, Melissa Beutick, Athanasia Langa, Suzanne E. Mol (2021) A Systematic Review of CBM Professional Development Materials: Are Teachers Receiving Sufficient Instruction in Data-Based Decision-Making?. Journal of Learning Disabilities."
+  },
+  "10.1177/00222194231215031": {
+    "ref": "Erica C. Fry, Jessica R. Toste, Beth R. Feuer, Christine A. Espin (2023) A Systematic Review of CBM Content in Practitioner-Focused Journals: Do We Talk About Instructional Decision-Making?. Journal of Learning Disabilities."
   },
   "10.1177/00332941211012621": {
     "ref": "Eric D. Wesselmann, Shane W. Boyd, Jordan A. Arellanes, Alexander Driskell, Matthew Hesson-McInnis (2021) Manipulating Environmental Commitment: A Replication and Extension. Psychological Reports."
@@ -337,6 +385,12 @@
   "10.1177/01461672241238420": {
     "ref": "Jareef Martuza, Olivia Kim (2024) Does Conceptual Abstraction Moderate Whether Past Moral Deeds Motivate Consistency or Compensatory Behavior? A Registered Replication and Extension of Conway and Peetz (2012). Personality and Social Psychology Bulletin."
   },
+  "10.1177/02654075030205001": {
+    "ref": "Eriko Maeda, L. David Ritchie (2003) The Concept of Shinyuu in Japan: A Replication of and Comparison to Cole and Bradac\u2019s Study on U.S. Friendship. Journal of Social and Personal Relationships."
+  },
+  "10.1177/0265407596131004": {
+    "ref": "Tim Cole, James J. Bradac (1996) A Lay Theory of Relational Satisfaction with Best Friends. Journal of Social and Personal Relationships."
+  },
   "10.1177/08902070221099688": {
     "ref": "Hasagani Tissera, John E. Lydon, Lauren J. Human (2022) Is what is beautiful good and still more accurately understood? A replication and extension of Lorenzo et al. (2010). European Journal of Personality."
   },
@@ -349,6 +403,9 @@
   "10.1177/0956797613482943": {
     "ref": "Adam D. Galinsky, Cynthia S. Wang, Jennifer Whitson, Eric M. Anicich, Kurt Hugenberg, Galen V. Bodenhausen (2013) The Reappropriation of Stigmatizing Labels. Psychological Science."
   },
+  "10.1177/0956797616667459": {
+    "ref": "Margaret R. Tarampi, Nahal Heydari, Mary Hegarty (2016) A Tale of Two Types of Perspective Taking. Psychological Science."
+  },
   "10.1177/0956797616677313": {
     "ref": "Shao\u2010Min Hung, Suzy J Styles, Po\u2010Jang Hsieh (2017) Can a Word Sound Like a Shape Before You Have Seen It? Sound-Shape Mapping Prior to Conscious Awareness. Psychological Science."
   },
@@ -357,6 +414,9 @@
   },
   "10.1177/1745691617697077": {
     "ref": "Ed Diener, Martin E. P. Seligman, Hyewon Choi, Shigehiro Oishi (2018) Happiest People Revisited. Perspectives on Psychological Science."
+  },
+  "10.1177/17470218221085117": {
+    "ref": "Elyssa A. Geer, Colleen M. Ganley (2022) Sex differences in social and spatial perspective taking: A replication and extension of Tarampi et al. (2016). Quarterly Journal of Experimental Psychology."
   },
   "10.1177/1948550609360261": {
     "ref": "Nancy L. Carter, J. Mark Weber (2010) Not Pollyannas. Social Psychological and Personality Science."
@@ -495,6 +555,9 @@
   "10.31234/osf.io/m6ghr": {
     "ref": "Joshua M. Tybur, Benedict C. Jones, Lisa M. DeBruine, Joshua T. Ackerman, Vanessa Fasolt (2020) Preregistered replication of \u201cSick body, vigilant mind: The biological immune system activates the behavioral immune system\u201d."
   },
+  "10.31234/osf.io/nm8p5": {
+    "ref": "Lauren Skorb, Joshua K. Hartshorne (2022) Replication of Newport and Aslin (2004) \u2018Learning at a distance I. Statistical learning of non-adjacent dependencies.\u2019 Experiment 3."
+  },
   "10.31234/osf.io/prfm3": {
     "ref": "Hannah Pearson, Benjamin Balas (2020) Can naive observers detect suicidality in face images? A replication and extension of Kleiman and Rule (2013)."
   },
@@ -515,6 +578,9 @@
   },
   "10.31235/osf.io/zugae": {
     "ref": "Tyler Lane (2021) Associations between firearm and suicide rates: a replication of Kleck (2021)."
+  },
+  "10.31542/r.gm:2129": {
+    "ref": "Mykaela Holt (2020) The influence of interpersonal synchrony on helping behavior, social bonding, and empathy in children."
   },
   "10.31979/mrj.2020.1607": {
     "ref": "Hifsa Khan (2020) Behavioral Economic Analysis of Demand for Hypothetical Work Performance: A Partial Replication."
