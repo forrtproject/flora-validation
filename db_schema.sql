@@ -193,6 +193,14 @@ ALTER TABLE unvalidated ADD CONSTRAINT unvalidated_validation_status_check
         'unvalidated', 'validation_inprogress',
         'validated', 'need_review', 'consensus_reached', 'rejected'));
 
+-- Add cannot_be_determined to the outcome enum (drop + recreate constraint).
+-- Used for hard-mode records whose outcome can't be determined from the abstract.
+ALTER TABLE unvalidated DROP CONSTRAINT IF EXISTS unvalidated_outcome_check;
+ALTER TABLE unvalidated ADD CONSTRAINT unvalidated_outcome_check
+    CHECK (outcome IN (
+        'success', 'failure', 'mixed',
+        'uninformative', 'descriptive', 'cannot_be_determined'));
+
 -- Admin approval column on validated table
 ALTER TABLE validated ADD COLUMN IF NOT EXISTS admin_approved BOOLEAN NOT NULL DEFAULT FALSE;
 

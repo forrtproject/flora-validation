@@ -211,11 +211,6 @@
       <div class="stat"><span class="label">Coder</span><span id="stat-name" class="value"></span></div>
       <div class="stat"><span class="label">Points</span><span id="stat-points" class="value">0</span></div>
       <div class="stat"><span class="label">Rank</span><span id="stat-rank" class="value">—</span></div>
-      <div class="stat progress">
-        <span class="label">Progress</span>
-        <span id="stat-progress" class="value">0 / 0</span>
-        <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
-      </div>
     </div>
     <div class="header-actions">
       <button id="pending-saves-btn" class="ghost-btn pending-saves hidden" title="Judgements still saving in the background">⏳ <span id="pending-saves-count">0</span> saving</button>
@@ -299,6 +294,7 @@
       <button class="admin-filter-btn" data-filter="needs_review">Needs Review <span class="filter-count" id="fc-needs-review">—</span></button>
       <button class="admin-filter-btn" data-filter="validated">Validated <span class="filter-count" id="fc-validated">—</span></button>
       <button class="admin-filter-btn" data-filter="rejected">Excluded <span class="filter-count" id="fc-rejected">—</span></button>
+      <button class="admin-filter-btn" data-filter="reverted" title="Records whose stored value was reset to the extracted value even though the validators' consensus (agreement or tiebreaker winner) wanted a change. Click REVIEW to re-apply.">⚠ Reverted <span class="filter-count" id="fc-reverted">—</span></button>
       <button class="admin-filter-btn" data-filter="admin_checked" style="display:none">Admin Checked <span class="filter-count" id="fc-admin-checked">—</span></button>
     </div>
 

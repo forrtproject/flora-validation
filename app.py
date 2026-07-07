@@ -175,6 +175,7 @@ class JudgeRequest(BaseModel):
     corrected_outcome_quote: str | None = None
     corrected_abstract: str | None = None
     validator_notes: str | None = None
+    additional_checks: dict | None = None   # e.g. {"was_unsure_original": true}
 
 
 class OnboardingComplete(BaseModel):
@@ -597,178 +598,6 @@ def get_my_judgement_detail(queue_id: str, coder_id: int):
 # Validation workflow endpoints
 # ---------------------------------------------------------------------------
 
-@app.get("/api/next-pair")
-def next_pair(coder_id: int, mode: str = "normal"):
-    if mode not in {"normal", "hard"}:
-        raise HTTPException(400, "mode must be normal or hard")
-
-    with db() as cur:
-        # Resume check: if this validator is already mid-pair, return it immediately
-        # (must run before the 30-min cleanup so we don't accidentally release their slot)
-        cur.execute(
-            """
-            SELECT vq.queue_id, vq.record_id
-            FROM validation_queue vq
-            WHERE vq.validator_id = %s
-              AND vq.is_shown     = TRUE
-              AND vq.is_validated = FALSE
-              AND vq.validator_slot IN ('human_1', 'human_2')
-            LIMIT 1
-            """,
-            (coder_id,),
-        )
-        resume_slot = cur.fetchone()
-
-        if resume_slot:
-            # Reset the timer so they get a fresh 30-minute window
-            cur.execute(
-                "UPDATE validation_queue SET shown_at = NOW() WHERE queue_id = %s",
-                (resume_slot["queue_id"],),
-            )
-            cur.execute(
-                """
-                SELECT u.record_id, u.pair_id,
-                       u.doi_r, u.study_r, u.year_r, u.url_r, u.ref_r, u.abstract_r,
-                       u.doi_o, u.study_o, u.year_o, u.url_o, u.ref_o,
-                       u.type, u.outcome, u.outcome_quote, u.out_quote_source,
-                       rm.authors_r, rm.authors_o, rm.journal_r, rm.openalex_id_r,
-                       (SELECT COUNT(*) FROM validation_queue vq2
-                        WHERE vq2.record_id = u.record_id AND vq2.is_validated = TRUE
-                       ) AS judge_count
-                FROM unvalidated u
-                LEFT JOIN record_metadata rm ON rm.record_id = u.record_id
-                WHERE u.record_id = %s
-                """,
-                (resume_slot["record_id"],),
-            )
-            row = cur.fetchone()
-            if row:
-                cur.execute(
-                    """
-                    SELECT COUNT(*) AS done FROM validation_queue
-                    WHERE validator_id = %s AND is_validated = TRUE
-                      AND validator_slot IN ('human_1', 'human_2')
-                    """,
-                    (coder_id,),
-                )
-                done = cur.fetchone()["done"]
-                cur.execute(
-                    "SELECT COUNT(*) AS total FROM unvalidated WHERE validation_status NOT IN ('validated', 'rejected')"
-                )
-                total = cur.fetchone()["total"]
-                return {
-                    "pair":        _enrich_pair(dict(row)),
-                    "judge_count": row["judge_count"],
-                    "done":        done,
-                    "total":       total,
-                    "resumed":     True,
-                }
-
-        # NOTE: stale-slot release is handled by the background reaper
-        # (_reap_stale_slots), not inline here. Tiered locks: buffered slots
-        # (started_at IS NULL) expire in 45 min, started slots in 5 days.
-
-        # Count how many the validator has already completed
-        cur.execute(
-            """
-            SELECT COUNT(*) AS done
-            FROM validation_queue
-            WHERE validator_id = %s
-              AND is_validated = TRUE
-              AND validator_slot IN ('human_1', 'human_2')
-            """,
-            (coder_id,),
-        )
-        done = cur.fetchone()["done"]
-
-        cur.execute(
-            "SELECT COUNT(*) AS total FROM unvalidated WHERE validation_status NOT IN ('validated', 'rejected')"
-        )
-        total = cur.fetchone()["total"]
-
-        # Find a record that:
-        # 1. Is not yet fully validated
-        # 2. This validator has not already been assigned to
-        # 3. Has a free human slot
-        cur.execute(
-            """
-            SELECT u.record_id, u.pair_id,
-                   u.doi_r, u.study_r, u.year_r, u.url_r, u.ref_r, u.abstract_r,
-                   u.doi_o, u.study_o, u.year_o, u.url_o, u.ref_o,
-                   u.type, u.outcome, u.outcome_quote, u.out_quote_source,
-                   rm.authors_r, rm.authors_o, rm.journal_r, rm.openalex_id_r,
-                   (SELECT COUNT(*) FROM validation_queue vq2
-                    WHERE vq2.record_id = u.record_id AND vq2.is_validated = TRUE
-                   ) AS judge_count
-            FROM unvalidated u
-            LEFT JOIN record_metadata rm ON rm.record_id = u.record_id
-            WHERE u.validation_status IN ('unvalidated', 'validation_inprogress')
-              AND u.record_id NOT IN (
-                  SELECT record_id FROM validation_queue WHERE validator_id = %s
-              )
-              AND EXISTS (
-                  SELECT 1 FROM validation_queue vq
-                  WHERE vq.record_id = u.record_id
-                    AND vq.validator_slot IN ('human_1', 'human_2')
-                    AND vq.validator_id IS NULL
-              )
-            ORDER BY judge_count DESC, RANDOM()
-            LIMIT 1
-            """,
-            (coder_id,),
-        )
-        row = cur.fetchone()
-
-        if not row:
-            return {"pair": None, "done": done, "total": total}
-
-        record_id = row["record_id"]
-
-        # Claim the first free slot atomically — FOR UPDATE SKIP LOCKED prevents
-        # two concurrent requests from grabbing the same slot simultaneously.
-        cur.execute(
-            """
-            UPDATE validation_queue
-            SET is_shown = TRUE, validator_id = %s, validator_name = (
-                SELECT handle FROM validators WHERE id = %s
-            ), shown_at = NOW(), started_at = NOW()
-            WHERE queue_id = (
-                SELECT queue_id FROM validation_queue
-                WHERE record_id = %s
-                  AND validator_slot IN ('human_1', 'human_2')
-                  AND validator_id IS NULL
-                ORDER BY validator_slot
-                LIMIT 1
-                FOR UPDATE SKIP LOCKED
-            )
-            RETURNING queue_id
-            """,
-            (coder_id, coder_id, record_id),
-        )
-        if not cur.fetchone():
-            # Slot was claimed by a concurrent request — return nothing so
-            # the client retries and gets the next available pair.
-            return {"pair": None, "done": done, "total": total}
-
-        # Update unvalidated status to inprogress
-        cur.execute(
-            """
-            UPDATE unvalidated
-            SET validation_status = 'validation_inprogress'
-            WHERE record_id = %s AND validation_status = 'unvalidated'
-            """,
-            (record_id,),
-        )
-
-        pair = _enrich_pair(dict(row))
-        return {
-            "pair": pair,
-            "judge_count": row["judge_count"],
-            "done": done,
-            "total": total,
-        }
-
-
 # Columns selected for a servable pair (kept in one place for reuse).
 _PAIR_SELECT = """
     u.record_id, u.pair_id,
@@ -1101,15 +930,16 @@ def assignment_judge(req: JudgeRequest):
         is_not_val = req.corrected_type == "not_validation"
         new_status = "rejected" if is_not_val else "consensus_reached"
 
-        # Final values: validator's corrections, falling back to extracted.
-        final_type     = req.corrected_type          or rec["type"]
-        final_outcome  = req.corrected_outcome        or rec["outcome"]
-        final_study_r  = req.corrected_study_r        or rec["study_r"]
-        final_url_r    = req.corrected_url_r          or rec["url_r"]
-        final_abstract = req.corrected_abstract       or rec["abstract_r"]
-        final_doi_o    = req.corrected_doi_o          or rec["doi_o"]
-        final_study_o  = req.corrected_study_o        or rec["study_o"]
-        final_quote    = req.corrected_outcome_quote  or rec["outcome_quote"]
+        # Final values: validator's corrections, then any prior correction (final_*),
+        # then the raw extracted value — never revert past an existing correction.
+        final_type     = req.corrected_type          or rec.get("final_type")          or rec["type"]
+        final_outcome  = req.corrected_outcome        or rec.get("final_outcome")        or rec["outcome"]
+        final_study_r  = req.corrected_study_r        or rec.get("final_study_r")        or rec["study_r"]
+        final_url_r    = req.corrected_url_r          or rec.get("final_url_r")          or rec["url_r"]
+        final_abstract = req.corrected_abstract       or rec.get("final_abstract_r")     or rec["abstract_r"]
+        final_doi_o    = req.corrected_doi_o          or rec.get("final_doi_o")          or rec["doi_o"]
+        final_study_o  = req.corrected_study_o        or rec.get("final_study_o")        or rec["study_o"]
+        final_quote    = req.corrected_outcome_quote  or rec.get("final_outcome_quote")  or rec["outcome_quote"]
 
         summary = {
             "validator_id":   req.coder_id,
@@ -1236,6 +1066,7 @@ def judge(req: JudgeRequest):
                     corrected_study_r = %s,
                     corrected_url_r = %s,
                     validator_notes = %s,
+                    additional_checks = %s,
                     points = %s,
                     validated_at = NOW()
                 WHERE queue_id = %s
@@ -1253,6 +1084,7 @@ def judge(req: JudgeRequest):
                     req.corrected_study_r,
                     req.corrected_url_r,
                     req.validator_notes,
+                    json.dumps(req.additional_checks) if req.additional_checks else None,
                     pts,
                     queue_id,
                 ),
@@ -1277,6 +1109,7 @@ def judge(req: JudgeRequest):
             "corrected_abstract": req.corrected_abstract,
             "corrected_study_r": req.corrected_study_r,
             "corrected_url_r": req.corrected_url_r,
+            "additional_checks": req.additional_checks,
             "validator_notes": req.validator_notes or "",
             "points": pts,
             "validated_at": datetime.now(timezone.utc).isoformat(),
@@ -1400,14 +1233,15 @@ def senior_reject(req: SeniorRejectRequest):
         cur.execute(
             """
             UPDATE validation_queue SET
-                is_validated   = TRUE,
-                type_check     = 'incorrect',
-                original_check = 'incorrect',
-                outcome_check  = 'incorrect',
-                corrected_type = 'not_validation',
-                validator_notes = %s,
-                points         = %s,
-                validated_at   = NOW()
+                is_validated      = TRUE,
+                type_check        = 'incorrect',
+                original_check    = 'incorrect',
+                outcome_check     = 'incorrect',
+                corrected_type    = 'not_validation',
+                validator_notes   = %s,
+                additional_checks = '{"senior_reject": true}'::jsonb,
+                points            = %s,
+                validated_at      = NOW()
             WHERE queue_id = %s
             """,
             (req.validator_notes, pts, slot_row["queue_id"]),
@@ -1431,6 +1265,43 @@ def senior_reject(req: SeniorRejectRequest):
             f"UPDATE unvalidated SET {jsonb_col} = %s, validation_status = 'rejected', updated_at = NOW() WHERE record_id = %s",
             (summary, record_id),
         )
+        # Rejected → must not remain in the authoritative export table.
+        cur.execute("DELETE FROM validated WHERE record_id = %s", (record_id,))
+
+        # Fill the partner's still-open human slot with the senior's own reject so
+        # both rows carry the senior's credentials — the record shows two matching
+        # judgements and no late submission can reopen it. An already-submitted
+        # partner slot is left intact (its real judgement is preserved; the
+        # consensus senior-reject guard keeps the record rejected either way).
+        partner_slot = "human_2" if slot_row["validator_slot"] == "human_1" else "human_1"
+        cur.execute(
+            """
+            UPDATE validation_queue SET
+                validator_id      = %s,
+                validator_name    = %s,
+                is_shown          = TRUE,
+                is_validated      = TRUE,
+                type_check        = 'incorrect',
+                original_check    = 'incorrect',
+                outcome_check     = 'incorrect',
+                corrected_type    = 'not_validation',
+                validator_notes   = %s,
+                additional_checks = '{"senior_reject": true}'::jsonb,
+                points            = 0,
+                validated_at      = NOW()
+            WHERE record_id = %s AND validator_slot = %s AND is_validated = FALSE
+            RETURNING queue_id
+            """,
+            (req.coder_id, validator["handle"], req.validator_notes, record_id, partner_slot),
+        )
+        if cur.fetchone():
+            # We filled the partner slot — mirror the senior's summary into its
+            # JSONB column too, so both validator_1/validator_2 are populated.
+            partner_col = "validator_2" if partner_slot == "human_2" else "validator_1"
+            cur.execute(
+                f"UPDATE unvalidated SET {partner_col} = %s WHERE record_id = %s",
+                (summary, record_id),
+            )
 
         cur.execute(
             "UPDATE validators SET total_points = total_points + %s, total_judgements = total_judgements + 1 WHERE id = %s",
@@ -2006,7 +1877,7 @@ def create_admin(req: AdminCreateRequest, x_admin_token: str = Header(...)):
                 (req.handle, req.password),
             )
             row = cur.fetchone()
-        except Exception:
+        except psycopg2.errors.UniqueViolation:
             raise HTTPException(409, "Handle already exists")
     return {"id": row["id"], "handle": row["handle"]}
 
@@ -2081,6 +1952,88 @@ _AGREEMENT_SQL = (
     ") / 3.0)::int ELSE NULL END)"
 )
 
+# "Reverted" detector — resolved records whose stored final value got reset to the
+# EXTRACTED value even though the validators' consensus wanted a change (e.g. the old
+# admin-resolve bug). Fields covered: outcome, type, original DOI, original title.
+#
+# The revert signature is always "current effective value == extracted value while
+# consensus wanted something different". Two branches produce that consensus:
+#   A) Agreement (is_tiebreaker = FALSE): both humans marked the field 'incorrect'
+#      with the SAME corrected value.
+#   B) Tiebreaker (is_tiebreaker = TRUE): the winning human is the one whose three
+#      checks all match the LLM's; their correction is what should have been stored.
+#
+# Scoped to validated/consensus_reached (a correction should be reflected there);
+# need_review/rejected are excluded. 'not_validation' is a reject signal, not a real
+# type value, so it never counts as a type revert.
+#
+# _MH1 / _MH2: does human_1 / human_2 match the LLM on all three checks (branch B)?
+_MH1 = ("h1.type_check = u.llm_validator->>'type_check' "
+        "AND h1.original_check = u.llm_validator->>'original_check' "
+        "AND h1.outcome_check = u.llm_validator->>'outcome_check'")
+_MH2 = ("h2.type_check = u.llm_validator->>'type_check' "
+        "AND h2.original_check = u.llm_validator->>'original_check' "
+        "AND h2.outcome_check = u.llm_validator->>'outcome_check'")
+
+_REVERTED_WHERE = f"""
+    u.validation_status IN ('validated', 'consensus_reached')
+    AND (
+      -- Branch A: both validators agreed on a correction; final reset to extracted.
+      (u.is_tiebreaker = FALSE AND EXISTS (
+        SELECT 1
+        FROM validation_queue h1
+        JOIN validation_queue h2
+          ON h2.record_id = h1.record_id AND h2.validator_slot = 'human_2' AND h2.is_validated = TRUE
+        WHERE h1.record_id = u.record_id AND h1.validator_slot = 'human_1' AND h1.is_validated = TRUE
+          AND (
+              (h1.outcome_check = 'incorrect' AND h2.outcome_check = 'incorrect'
+               AND h1.corrected_outcome IS NOT NULL AND h1.corrected_outcome = h2.corrected_outcome
+               AND h1.corrected_outcome IS DISTINCT FROM u.outcome
+               AND COALESCE(u.final_outcome, u.outcome) = u.outcome)
+           OR (h1.type_check = 'incorrect' AND h2.type_check = 'incorrect'
+               AND h1.corrected_type IS NOT NULL AND h1.corrected_type <> 'not_validation'
+               AND h1.corrected_type = h2.corrected_type
+               AND h1.corrected_type IS DISTINCT FROM u.type
+               AND COALESCE(u.final_type, u.type) = u.type)
+           OR (h1.original_check = 'incorrect' AND h2.original_check = 'incorrect'
+               AND h1.corrected_doi_o IS NOT NULL AND h1.corrected_doi_o = h2.corrected_doi_o
+               AND h1.corrected_doi_o IS DISTINCT FROM u.doi_o
+               AND COALESCE(u.final_doi_o, u.doi_o) = u.doi_o)
+           OR (h1.original_check = 'incorrect' AND h2.original_check = 'incorrect'
+               AND h1.corrected_study_o IS NOT NULL AND h1.corrected_study_o = h2.corrected_study_o
+               AND h1.corrected_study_o IS DISTINCT FROM u.study_o
+               AND COALESCE(u.final_study_o, u.study_o) = u.study_o)
+          )
+      ))
+      OR
+      -- Branch B: tiebreaker — the LLM-matched winner's correction was reset to extracted.
+      (u.is_tiebreaker = TRUE
+       AND u.llm_validator IS NOT NULL AND NOT jsonb_exists(u.llm_validator, 'error')
+       AND EXISTS (
+        SELECT 1
+        FROM validation_queue h1
+        JOIN validation_queue h2
+          ON h2.record_id = h1.record_id AND h2.validator_slot = 'human_2' AND h2.is_validated = TRUE
+        WHERE h1.record_id = u.record_id AND h1.validator_slot = 'human_1' AND h1.is_validated = TRUE
+          AND ({_MH1}) <> ({_MH2})   -- exactly one human matched the LLM
+          AND (
+              (COALESCE(u.final_outcome, u.outcome) = u.outcome AND CASE WHEN ({_MH1})
+                 THEN (h1.outcome_check = 'incorrect' AND h1.corrected_outcome IS NOT NULL AND h1.corrected_outcome IS DISTINCT FROM u.outcome)
+                 ELSE (h2.outcome_check = 'incorrect' AND h2.corrected_outcome IS NOT NULL AND h2.corrected_outcome IS DISTINCT FROM u.outcome) END)
+           OR (COALESCE(u.final_type, u.type) = u.type AND CASE WHEN ({_MH1})
+                 THEN (h1.type_check = 'incorrect' AND h1.corrected_type IS NOT NULL AND h1.corrected_type <> 'not_validation' AND h1.corrected_type IS DISTINCT FROM u.type)
+                 ELSE (h2.type_check = 'incorrect' AND h2.corrected_type IS NOT NULL AND h2.corrected_type <> 'not_validation' AND h2.corrected_type IS DISTINCT FROM u.type) END)
+           OR (COALESCE(u.final_doi_o, u.doi_o) = u.doi_o AND CASE WHEN ({_MH1})
+                 THEN (h1.original_check = 'incorrect' AND h1.corrected_doi_o IS NOT NULL AND h1.corrected_doi_o IS DISTINCT FROM u.doi_o)
+                 ELSE (h2.original_check = 'incorrect' AND h2.corrected_doi_o IS NOT NULL AND h2.corrected_doi_o IS DISTINCT FROM u.doi_o) END)
+           OR (COALESCE(u.final_study_o, u.study_o) = u.study_o AND CASE WHEN ({_MH1})
+                 THEN (h1.original_check = 'incorrect' AND h1.corrected_study_o IS NOT NULL AND h1.corrected_study_o IS DISTINCT FROM u.study_o)
+                 ELSE (h2.original_check = 'incorrect' AND h2.corrected_study_o IS NOT NULL AND h2.corrected_study_o IS DISTINCT FROM u.study_o) END)
+          )
+      ))
+    )
+"""
+
 # Whitelist of sortable columns → safe SQL expression (never interpolate raw input).
 _ENTRIES_SORT = {
     "study":       "u.study_r",
@@ -2126,6 +2079,7 @@ def admin_entries(
         "validated":        "WHERE u.validation_status = 'validated'",
         "rejected":         "WHERE u.validation_status = 'rejected'",
         "admin_checked":    "WHERE u.admin_checked = TRUE",
+        "reverted":         f"WHERE {_REVERTED_WHERE}",
     }.get(filter, "")
 
     search = search.strip()
@@ -2200,6 +2154,8 @@ def admin_entries(
         c_admin = cur.fetchone()["n"]
         cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE validation_status = 'rejected'")
         c_rejected = cur.fetchone()["n"]
+        cur.execute(f"SELECT COUNT(*) AS n FROM unvalidated u WHERE {_REVERTED_WHERE}")
+        c_reverted = cur.fetchone()["n"]
 
     return {
         "entries": entries,
@@ -2214,6 +2170,7 @@ def admin_entries(
             "validated": c_validated,
             "rejected": c_rejected,
             "admin_checked": c_admin,
+            "reverted": c_reverted,
         },
     }
 
@@ -2594,6 +2551,9 @@ def admin_approve(record_id: str, x_admin_token: str = Header(...)):
             (admin_handle, record_id),
         )
 
+        # Drop any prior row for this record (the natural key is mutable, so a
+        # correction could otherwise leave a stale duplicate under the old key).
+        cur.execute("DELETE FROM validated WHERE record_id = %s", (record_id,))
         cur.execute(
             """
             INSERT INTO validated (
@@ -2602,8 +2562,20 @@ def admin_approve(record_id: str, x_admin_token: str = Header(...)):
                 type, outcome, outcome_quote, out_quote_source, admin_approved
             ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, TRUE)
             ON CONFLICT (doi_r, study_r, doi_o, study_o) DO UPDATE SET
-                admin_approved = TRUE,
-                validated_at   = NOW()
+                record_id        = EXCLUDED.record_id,
+                year_r           = EXCLUDED.year_r,
+                url_r            = EXCLUDED.url_r,
+                ref_r            = EXCLUDED.ref_r,
+                abstract_r       = EXCLUDED.abstract_r,
+                year_o           = EXCLUDED.year_o,
+                url_o            = EXCLUDED.url_o,
+                ref_o            = EXCLUDED.ref_o,
+                type             = EXCLUDED.type,
+                outcome          = EXCLUDED.outcome,
+                outcome_quote    = EXCLUDED.outcome_quote,
+                out_quote_source = EXCLUDED.out_quote_source,
+                admin_approved   = TRUE,
+                validated_at     = NOW()
             """,
             (
                 record_id,
@@ -2619,49 +2591,6 @@ def admin_approve(record_id: str, x_admin_token: str = Header(...)):
         )
 
     return {"approved": True, "record_id": record_id}
-
-
-@app.post("/api/admin/entries/{record_id}/restore")
-def admin_restore(record_id: str, x_admin_token: str = Header(...)):
-    """Return a rejected record to the validation pool so two fresh validators can review it."""
-    _require_admin(x_admin_token)
-    with db() as cur:
-        cur.execute("SELECT validation_status FROM unvalidated WHERE record_id = %s", (record_id,))
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(404, "Record not found")
-        if row["validation_status"] != "rejected":
-            raise HTTPException(400, "Only rejected records can be restored to the pool")
-
-        # Release all queue slots so fresh validators can claim them
-        cur.execute(
-            """
-            UPDATE validation_queue
-            SET validator_id = NULL, validator_name = NULL,
-                is_shown = FALSE, shown_at = NULL,
-                is_validated = FALSE,
-                type_check = NULL, original_check = NULL, outcome_check = NULL,
-                corrected_type = NULL, corrected_doi_o = NULL, corrected_study_o = NULL,
-                corrected_outcome = NULL, corrected_study_r = NULL,
-                validator_notes = NULL, points = NULL, validated_at = NULL
-            WHERE record_id = %s AND validator_slot IN ('human_1', 'human_2')
-            """,
-            (record_id,),
-        )
-
-        cur.execute(
-            """
-            UPDATE unvalidated SET
-                validation_status = 'unvalidated',
-                validator_1 = NULL, validator_2 = NULL,
-                llm_validator = NULL,
-                updated_at = NOW()
-            WHERE record_id = %s
-            """,
-            (record_id,),
-        )
-
-    return {"restored": True, "record_id": record_id}
 
 
 @app.post("/api/admin/entries/{record_id}/flag-review")
@@ -2744,11 +2673,13 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
             if cur.fetchone()["n"] < 2:
                 raise HTTPException(400, "Cannot resolve a record with fewer than 2 validator submissions")
 
-        final_type      = req.corrected_type      if req.type_check     == "incorrect" and req.corrected_type      else rec["type"]
-        final_doi_o     = req.corrected_doi_o     if req.original_check == "incorrect" and req.corrected_doi_o     else rec["doi_o"]
-        final_study_o   = req.corrected_study_o   if req.original_check == "incorrect" and req.corrected_study_o   else rec["study_o"]
-        final_outcome   = req.corrected_outcome   if req.outcome_check  == "incorrect" and req.corrected_outcome   else rec["outcome"]
-        final_outcome_q = req.corrected_outcome_quote if req.corrected_outcome_quote else rec["outcome_quote"]
+        # When a field isn't re-corrected this pass, keep any prior admin/consensus
+        # correction (final_*) — never silently revert to the raw extracted value.
+        final_type      = req.corrected_type      if req.type_check     == "incorrect" and req.corrected_type      else (rec.get("final_type")    or rec["type"])
+        final_doi_o     = req.corrected_doi_o     if req.original_check == "incorrect" and req.corrected_doi_o     else (rec.get("final_doi_o")   or rec["doi_o"])
+        final_study_o   = req.corrected_study_o   if req.original_check == "incorrect" and req.corrected_study_o   else (rec.get("final_study_o") or rec["study_o"])
+        final_outcome   = req.corrected_outcome   if req.outcome_check  == "incorrect" and req.corrected_outcome   else (rec.get("final_outcome") or rec["outcome"])
+        final_outcome_q = req.corrected_outcome_quote if req.corrected_outcome_quote else (rec.get("final_outcome_quote") or rec["outcome_quote"])
         final_study_r    = req.corrected_study_r    if req.corrected_study_r    else rec.get("final_study_r")    or rec["study_r"]
         final_doi_r      = req.corrected_doi_r      if req.corrected_doi_r      else rec.get("final_doi_r")      or rec["doi_r"]
         final_url_r      = req.corrected_url_r      if req.corrected_url_r      else rec.get("final_url_r")      or rec["url_r"]
@@ -2778,6 +2709,8 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
                 """,
                 (admin_handle, req.admin_notes, record_id),
             )
+            # Rejected → must not remain in the authoritative export table.
+            cur.execute("DELETE FROM validated WHERE record_id = %s", (record_id,))
             return {"resolved": True, "rejected": True, "record_id": record_id}
 
         was_rejected = rec["validation_status"] == "rejected"
@@ -2806,6 +2739,9 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
             (admin_handle, req.admin_notes, final_type, final_doi_o, final_study_o, final_outcome, final_outcome_q, final_study_r, final_doi_r, final_url_r, final_abstract_r, final_src, final_src_by, was_rejected, record_id),
         )
 
+        # Drop any prior row for this record (the natural key is mutable, so a
+        # correction could otherwise leave a stale duplicate under the old key).
+        cur.execute("DELETE FROM validated WHERE record_id = %s", (record_id,))
         cur.execute(
             """
             INSERT INTO validated (
@@ -2843,13 +2779,20 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
 # ---------------------------------------------------------------------------
 
 def _retry_tiebreakers() -> None:
-    """Re-run consensus on need_review tiebreaker records (LLM may have failed earlier)."""
+    """Re-run consensus on tiebreaker records whose LLM call actually errored earlier.
+
+    Only records whose stored llm_validator carries an 'error' key are retried —
+    those are the ones stuck by a transient LLM failure. Records that reached
+    need_review with a *successful* LLM (genuine 3-way ambiguity) are left for a
+    human/admin: re-running them would waste paid LLM calls nightly and could flip
+    their status purely from LLM nondeterminism."""
     from consensus_engine import evaluate_consensus
     try:
         with db() as cur:
             cur.execute("""
                 SELECT record_id FROM unvalidated
                 WHERE validation_status = 'need_review' AND is_tiebreaker = TRUE
+                  AND llm_validator IS NOT NULL AND llm_validator ? 'error'
             """)
             ids = [str(r["record_id"]) for r in cur.fetchall()]
         print(f"[retry_tiebreakers] Found {len(ids)} stuck tiebreaker record(s)")
@@ -2891,8 +2834,10 @@ def _reap_stale_slots() -> None:
                       AND NOT EXISTS (
                           SELECT 1 FROM validation_queue vq
                           WHERE vq.record_id = u.record_id
-                            AND vq.validator_id IS NOT NULL
-                            AND vq.is_validated = FALSE
+                            AND (
+                                  (vq.validator_id IS NOT NULL AND vq.is_validated = FALSE)
+                               OR vq.is_validated = TRUE
+                            )
                       )
                     """
                 )
