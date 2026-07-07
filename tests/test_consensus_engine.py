@@ -69,12 +69,16 @@ LLM_ERROR = {
 }
 
 
-def _make_cur(human_rows, record, senior_count=0):
+def _make_cur(human_rows, record, senior_count=0, senior_reject=0):
     cur = MagicMock()
     cur.fetchall.return_value = human_rows
-    # evaluate_consensus calls fetchone twice: first the unvalidated record,
-    # then the senior-validator COUNT(*) row. Return each in turn.
-    cur.fetchone.side_effect = [record, {"senior_count": senior_count}]
+    # evaluate_consensus calls fetchone three times in order: the unvalidated
+    # record, the senior-reject-guard COUNT(*), then the senior-validator COUNT(*).
+    cur.fetchone.side_effect = [
+        record,
+        {"n": senior_reject},
+        {"senior_count": senior_count},
+    ]
     return cur
 
 
@@ -119,6 +123,21 @@ def test_both_agree_different_corrections_sets_need_review():
     mock_llm.assert_not_called()
     calls_str = str(cur.execute.call_args_list)
     assert "need_review" in calls_str
+
+
+def test_unsure_routes_to_need_review():
+    """A validator answering 'Can't tell' (unsure) sends the record to review, no LLM,
+    even when the raw checks otherwise agree."""
+    from consensus_engine import evaluate_consensus
+    h1 = {**H1_AGREE, "additional_checks": {"was_unsure_original": True}}
+    cur = _make_cur([h1, H2_AGREE], BASE_RECORD)
+    with patch("consensus_engine.run_llm_validation") as mock_llm:
+        evaluate_consensus(cur, "rec-001")
+    mock_llm.assert_not_called()
+    calls_str = str(cur.execute.call_args_list)
+    assert "need_review" in calls_str
+    assert "consensus_reached" not in calls_str      # not auto-resolved
+    assert "INSERT INTO validated" not in calls_str  # never written to the export table
 
 
 def test_humans_disagree_llm_agrees_h1_sets_validated():

@@ -8,7 +8,6 @@ Decision tree:
 """
 import json
 import re
-import random
 from datetime import datetime, timezone
 
 from llm_validator import run_llm_validation
@@ -22,6 +21,21 @@ def _normalize(text: str | None) -> str:
     if not text:
         return ""
     return re.sub(r'[^a-z0-9]', '', text.lower())
+
+
+def _is_unsure(h: dict) -> bool:
+    """Did this validator answer 'Can't tell' on the original or outcome? The check
+    columns store 'incorrect' for unsure, so the real signal lives in additional_checks.
+    Tolerates the column arriving as a dict (jsonb adapter) or a raw JSON string."""
+    ac = h.get("additional_checks")
+    if isinstance(ac, str):
+        try:
+            ac = json.loads(ac)
+        except (ValueError, TypeError):
+            return False
+    if not isinstance(ac, dict):
+        return False
+    return bool(ac.get("was_unsure_original") or ac.get("was_unsure_outcome"))
 
 
 def _checks_agree(h1: dict, h2: dict) -> bool:
@@ -75,7 +89,9 @@ def _resolve_final(record: dict, winner: dict, other: dict | None = None) -> dic
     outcome_quote: when validators edited it, the longest edit wins (most context)."""
     quotes = [h.get("corrected_outcome_quote") for h in [winner, other] if h and h.get("corrected_outcome_quote")]
     abstracts = [h.get("corrected_abstract") for h in [winner, other] if h and h.get("corrected_abstract")]
-    final_abstract = random.choice(abstracts) if abstracts else None
+    # Keep the longest edited abstract (most complete) — deterministic and
+    # reproducible, mirroring how the outcome quote is chosen below.
+    final_abstract = max(abstracts, key=len) if abstracts else None
     return {
         "study_r": winner.get("corrected_study_r") or record.get("study_r"),
         "url_r":   winner.get("corrected_url_r")    or record.get("url_r"),
@@ -120,8 +136,16 @@ def _update_status(cur, record_id: str, status: str, is_tiebreaker: bool,
         params,
     )
 
+    # A rejected record must never remain in the authoritative export table.
+    if status == "rejected":
+        cur.execute("DELETE FROM validated WHERE record_id = %s", (record_id,))
+
 
 def _insert_validated(cur, record: dict, final: dict) -> None:
+    # Remove any prior row for this record first: the natural key
+    # (doi_r, study_r, doi_o, study_o) is mutable, so a correction to those
+    # fields would otherwise leave a stale duplicate under the old key.
+    cur.execute("DELETE FROM validated WHERE record_id = %s", (record.get("record_id"),))
     cur.execute(
         """
         INSERT INTO validated (
@@ -129,7 +153,20 @@ def _insert_validated(cur, record: dict, final: dict) -> None:
             doi_o, study_o, year_o, url_o, ref_o,
             type, outcome, outcome_quote, out_quote_source, validated_at)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (doi_r, study_r, doi_o, study_o) DO NOTHING
+        ON CONFLICT (doi_r, study_r, doi_o, study_o) DO UPDATE SET
+            record_id        = EXCLUDED.record_id,
+            year_r           = EXCLUDED.year_r,
+            url_r            = EXCLUDED.url_r,
+            ref_r            = EXCLUDED.ref_r,
+            abstract_r       = EXCLUDED.abstract_r,
+            year_o           = EXCLUDED.year_o,
+            url_o            = EXCLUDED.url_o,
+            ref_o            = EXCLUDED.ref_o,
+            type             = EXCLUDED.type,
+            outcome          = EXCLUDED.outcome,
+            outcome_quote    = EXCLUDED.outcome_quote,
+            out_quote_source = EXCLUDED.out_quote_source,
+            validated_at     = NOW()
         """,
         (
             record.get("record_id"),
@@ -167,9 +204,11 @@ def evaluate_consensus(cur, record_id: str) -> None:
         """
         SELECT validator_slot, type_check, original_check, outcome_check,
                corrected_doi_o, corrected_study_o, corrected_outcome, corrected_type,
-               corrected_study_r, corrected_url_r, corrected_abstract, corrected_outcome_quote
+               corrected_study_r, corrected_url_r, corrected_abstract, corrected_outcome_quote,
+               additional_checks
         FROM validation_queue
         WHERE record_id = %s AND is_validated = TRUE
+          AND validator_slot IN ('human_1', 'human_2')
         ORDER BY validator_slot
         """,
         (record_id,),
@@ -181,7 +220,8 @@ def evaluate_consensus(cur, record_id: str) -> None:
     # Support dict rows (DictCursor / tests) and tuple rows (default cursor)
     _human_cols = ["validator_slot", "type_check", "original_check", "outcome_check",
                    "corrected_doi_o", "corrected_study_o", "corrected_outcome", "corrected_type",
-                   "corrected_study_r", "corrected_url_r", "corrected_abstract", "corrected_outcome_quote"]
+                   "corrected_study_r", "corrected_url_r", "corrected_abstract", "corrected_outcome_quote",
+                   "additional_checks"]
     if rows and isinstance(rows[0], dict):
         humans = [dict(row) for row in rows]
     else:
@@ -198,6 +238,34 @@ def evaluate_consensus(cur, record_id: str) -> None:
     else:
         record_cols = [d[0] for d in cur.description]
         record = dict(zip(record_cols, record_row))
+
+    # A reject made through the senior-reject path is authoritative: once a senior
+    # has used it, neither the second validator nor the LLM can overturn it. This
+    # makes the conclusion 'rejected' regardless of the order in which the two
+    # humans submitted. Detected via the 'senior_reject' marker the senior-reject
+    # endpoint stamps on the slot (NOT a plain not_validation in the normal flow).
+    cur.execute(
+        """
+        SELECT COUNT(*) AS n
+        FROM validation_queue vq
+        WHERE vq.record_id = %s
+          AND vq.is_validated = TRUE
+          AND vq.validator_slot IN ('human_1', 'human_2')
+          AND vq.additional_checks ? 'senior_reject'
+        """,
+        (record_id,),
+    )
+    sr_row = cur.fetchone()
+    if (sr_row["n"] if isinstance(sr_row, dict) else sr_row[0]) >= 1:
+        _update_status(cur, record_id, "rejected", False, None, None)
+        return
+
+    # If either validator answered "Can't tell" (unsure) on the original or outcome,
+    # the record can't be auto-resolved — a validator explicitly couldn't judge it.
+    # Route it to human review instead of treating unsure as a hard 'incorrect'.
+    if _is_unsure(h1) or _is_unsure(h2):
+        _update_status(cur, record_id, "need_review", False, None, None)
+        return
 
     # Check if both human validators are senior (bypasses admin review on agreement)
     cur.execute(

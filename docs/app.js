@@ -1829,19 +1829,7 @@ let splitLayout = localStorage.getItem("flora.splitLayout") !== "0"; // default 
 function applySplitLayout() {
   const cards = [$("#pair-card"), $("#onb-card")].filter(Boolean);
   cards.forEach(c => c.classList.toggle("split-layout", splitLayout));
-
-  const label = splitLayout ? "Column view" : "Split view";
-  [$("#layout-toggle"), $("#onb-layout-btn")].forEach(b => {
-    if (b) { b.textContent = label; b.classList.toggle("active", splitLayout); }
-  });
 }
-
-function toggleLayout() {
-  splitLayout = !splitLayout;
-  localStorage.setItem("flora.splitLayout", splitLayout ? "1" : "0");
-  applySplitLayout();
-}
-
 
 // Apply on startup
 applySplitLayout();
@@ -1867,8 +1855,6 @@ async function refreshStats() {
   const s = await api(`/stats?coder_id=${state.coder.coder_id}`);
   $("#stat-points").textContent = s.points;
   $("#stat-rank").textContent = "#" + s.rank;
-  $("#stat-progress").textContent = `${s.done} / ${s.total}`;
-  $("#progress-fill").style.width = (s.total ? (s.done / s.total) * 100 : 0) + "%";
 }
 
 async function refreshLeaderboard() {
@@ -1909,7 +1895,7 @@ function _clearDraft(pair_id) {
 
 function _restoreDraftInputs(card, draft) {
   if (!draft) return;
-  // Pre-fill text corrections — user still needs to re-click gate buttons
+  // Pre-fill text corrections (the gate selections are restored by _replayGates).
   const comment = card.querySelector(".comment");
   if (comment && draft.comment) comment.value = draft.comment;
 
@@ -1930,6 +1916,66 @@ function _restoreDraftInputs(card, draft) {
     if (sb) sb.textContent = "Report — can't access";
     updateSubmitState(card.querySelector(".pair-body"));
   }
+}
+
+// Replay the saved gate answers on resume so the form shows exactly where the
+// validator left off — gates revealed, choices highlighted, Submit reflecting
+// real readiness. Without this the card renders blank with Submit disabled even
+// though state.judgement is fully restored, and a partial re-click could submit
+// stale draft values. Answers are pushed back through onChoice so the reveal
+// logic isn't duplicated.
+function _replayGates(card, draft) {
+  if (!draft || draft.no_access) return;
+  // IMPORTANT: state.judgement IS this same draft object, and onChoice resets
+  // outcome/repro fields when the type is (re)clicked — which would erase the very
+  // answers we're about to replay. Snapshot them first, then drive from the copy.
+  const a = {
+    type: draft.type, original: draft.original, outcome: draft.outcome,
+    corrected_outcome: draft.corrected_outcome,
+    corrected_doi_o: draft.corrected_doi_o, corrected_study_o: draft.corrected_study_o,
+    repro_computation: draft.repro_computation, repro_robustness: draft.repro_robustness,
+  };
+  const body = card.querySelector(".pair-body");
+  const click = (sel) => { const b = card.querySelector(sel); if (b) onChoice(b); return b; };
+
+  // 1. Type
+  if (!a.type) return;
+  click(`[data-type="${a.type}"]`);
+  if (a.type === "not_validation") { updateSubmitState(body); return; }
+
+  // 2. Original
+  if (!a.original) { updateSubmitState(body); return; }
+  click(`[data-original="${a.original}"]`);
+
+  // "Wrong paper" keeps gate-3 hidden until the suggestion is saved/skipped. If
+  // the draft got past that (a suggestion was drafted, or any outcome was picked),
+  // reflect that resolved state and reveal gate-3.
+  if (a.original === "wrong") {
+    const hasSuggestion  = a.corrected_doi_o || a.corrected_study_o;
+    const reachedOutcome = a.outcome || a.corrected_outcome ||
+                           a.repro_computation || a.repro_robustness;
+    if (hasSuggestion || reachedOutcome) {
+      const oc = card.querySelector("#original-correction");
+      if (hasSuggestion) {
+        oc?.querySelector("#oc-form")?.classList.add("hidden");
+        oc?.querySelector("#oc-saved-confirm")?.classList.remove("hidden");
+      }
+      card.querySelector("#gate-3")?.classList.remove("hidden");
+    }
+  }
+
+  // 3. Outcome — reproduction has two axes; replication is one pick (+ correction
+  //    when "Mischaracterised").
+  if (a.type === "reproduction") {
+    if (a.repro_computation) click(`[data-repro-comp="${a.repro_computation}"]`);
+    if (a.repro_robustness)  click(`[data-repro-robust="${a.repro_robustness}"]`);
+  } else if (a.outcome) {
+    click(`[data-outcome="${a.outcome}"]`);
+    if (a.outcome === "wrong" && a.corrected_outcome) {
+      click(`[data-correct-outcome="${a.corrected_outcome}"]`);
+    }
+  }
+  updateSubmitState(body);
 }
 
 /* ===================================================================
@@ -2049,7 +2095,7 @@ function _showRetryCard(allowResume) {
 }
 
 function _showActivePair(pair) {
-  clearPairTimer();   // cancel any leftover hard-mode auto-skip timer
+  clearPairTimer();   // defensive: no timer is armed anymore, but stay safe
   $("#done-screen").classList.add("hidden");
   $("#pair-card").classList.remove("hidden");
   state.currentPair = pair;
@@ -2059,11 +2105,11 @@ function _showActivePair(pair) {
   state.judgement = draft || blankJudgement();
   const card = $("#pair-card");
   renderPairInto(card, pair, { onboarding: false, judgeCount: pair.judge_count });
-  if (pair.resumed) _restoreDraftInputs(card, draft);
+  if (pair.resumed) { _restoreDraftInputs(card, draft); _replayGates(card, draft); }
   _startDraftSave(pair_id);
   applySplitLayout();
-  // No 30-min client auto-skip in normal mode: the server holds a 5-day lock so
-  // the validator can leave and resume. (Hard mode keeps its timer.)
+  // No client auto-skip in either mode: the server holds a 5-day lock so the
+  // validator can leave and resume — hard mode behaves exactly like normal mode.
 }
 
 // Single-fetch path for hard mode (no buffering / no optimistic submit).
@@ -2085,11 +2131,10 @@ async function _loadSinglePair() {
 
   const card = $("#pair-card");
   renderPairInto(card, resp.pair, { onboarding: false, judgeCount: resp.judge_count });
-  if (resp.resumed) _restoreDraftInputs(card, draft);
+  if (resp.resumed) { _restoreDraftInputs(card, draft); _replayGates(card, draft); }
 
   _startDraftSave(pair_id);
   applySplitLayout();
-  startPairTimer();
 }
 
 /* ---------- Submission queue (persistent, retry-then-reassign) ---------- */
@@ -2185,18 +2230,11 @@ function _renderPendingPanel() {
   panel.innerHTML = `<h3 class="pending-title">Background saves</h3><ul class="pending-list">${rows.join("")}</ul>`;
 }
 
-/* ---------- Pair timer (30-min auto-skip) ---------- */
+/* ---------- Pair timer cleanup ----------
+   The 30-min hard-mode auto-skip was removed: hard mode now behaves exactly like
+   normal mode — the server holds a 5-day lock and releases abandoned records via
+   the reaper. clearPairTimer stays as a harmless no-op for the defensive calls. */
 let _pairExpireTimer = null;
-
-function startPairTimer() {
-  clearPairTimer();
-  _pairExpireTimer = setTimeout(async () => {
-    showToast("Time's up — entry released to another validator.");
-    const btn = $("#skip-btn");
-    if (btn) btn.click();
-    else await loadNextPair();
-  }, 30 * 60 * 1000);
-}
 
 function clearPairTimer() {
   clearTimeout(_pairExpireTimer);
@@ -2667,7 +2705,9 @@ function wireEditButtons(container, p) {
   };
   editAbstractBtn.onclick = () => {
     if (abstractEdit.classList.contains("hidden")) {
-      abstractEdit.value = p.abstract_r || "";
+      // Seed from the already-saved edit so reopening to fix more builds on it;
+      // fall back to the extracted abstract only before any edit exists.
+      abstractEdit.value = state.judgement.edited_abstract || p.abstract_r || "";
       abstractEdit.style.height = abstractText.offsetHeight + "px";
       abstractText.classList.add("hidden");
       abstractEdit.classList.remove("hidden");
@@ -2701,7 +2741,7 @@ function wireEditButtons(container, p) {
       } catch (e) {
         seniorRejectBtn.disabled = false;
         seniorRejectBtn.textContent = "✗ Mark as Not a Replication";
-        alert("Error: " + e.message);
+        await showAlert("Error: " + e.message);
       }
     };
   }
@@ -2784,7 +2824,9 @@ function wireEditButtons(container, p) {
 
     editQuoteBtn.onclick = () => {
       if (quoteEdit.classList.contains("hidden")) {
-        quoteEdit.value = p.outcome_phrase || "";
+        // Seed from the already-saved edit so repeated extensions build on each
+        // other; fall back to the extracted quote only before any edit exists.
+        quoteEdit.value = state.judgement.edited_outcome_quote || p.outcome_phrase || "";
         if (quoteText) quoteText.classList.add("hidden");
         quoteEdit.classList.remove("hidden");
         editQuoteBtn.textContent = "save edited quote";
@@ -3099,6 +3141,12 @@ async function submitJudgement() {
   const correctedType = isNotValidation ? "not_validation"
                       : (typeCheck === "incorrect" ? j.type : null);
 
+  // "Can't tell" collapses to "incorrect" in the check columns, so preserve the
+  // real intent in additional_checks — consensus uses it to route to review.
+  const addl = {};
+  if (!isNotValidation && j.original === "unsure") addl.was_unsure_original = true;
+  if (!isNotValidation && j.outcome  === "unsure") addl.was_unsure_outcome  = true;
+
   const payload = {
     coder_id:  state.coder.coder_id,
     record_id: String(p.record_id),
@@ -3106,6 +3154,7 @@ async function submitJudgement() {
     type_check:     isNotValidation ? "incorrect" : typeCheck,
     original_check: isNotValidation ? "incorrect" : (j.original === "correct" ? "correct" : "incorrect"),
     outcome_check:  isNotValidation ? "incorrect" : (j.outcome  === "correct" ? "correct" : "incorrect"),
+    additional_checks:       Object.keys(addl).length ? addl : null,
     corrected_type:          correctedType || null,
     corrected_doi_o:         j.corrected_doi_o   || null,
     corrected_study_o:       j.corrected_study_o || null,
@@ -3662,6 +3711,15 @@ async function fetchAdminEntries(resetState = true) {
       _adminEntryIds = data.entries.map(e => e.record_id);
       _adminDetailCache = {};
       preloadAdminDetails();
+    } else {
+      // Mid-review background refresh: rebuild the nav list from the fresh data so
+      // it can't drift from the re-rendered table, but keep the admin on the record
+      // they're currently viewing (re-find it by id). If it's no longer in the list
+      // (e.g. it moved filters), clamp the index into range.
+      const viewedId = _adminEntryIds[_adminCurrentIdx];
+      _adminEntryIds = data.entries.map(e => e.record_id);
+      const idx = _adminEntryIds.indexOf(viewedId);
+      _adminCurrentIdx = idx >= 0 ? idx : Math.min(_adminCurrentIdx, _adminEntryIds.length - 1);
     }
   } catch (e) {
     if (resetState) {
@@ -3680,6 +3738,8 @@ function renderAdminCounts(counts) {
   $("#fc-needs-review").textContent     = counts.needs_review;
   $("#fc-validated").textContent        = counts.validated;
   $("#fc-rejected").textContent         = counts.rejected ?? 0;
+  const _fcReverted = $("#fc-reverted");
+  if (_fcReverted) _fcReverted.textContent = counts.reverted ?? 0;
   const _fcAdminChecked = $("#fc-admin-checked");
   if (_fcAdminChecked) _fcAdminChecked.textContent = counts.admin_checked;
 }
@@ -3738,11 +3798,11 @@ function renderAdminTable(entries, total) {
       : `<span class="agree-na">—</span>`;
     const reviewCell = `<button class="admin-review-btn ghost-btn" data-id="${e.record_id}">Review →</button>`;
     const approvedBy = e.admin_name
-      ? `<span style="font-size:0.8rem;color:var(--muted)">${e.admin_name}</span>`
+      ? `<span style="font-size:0.8rem;color:var(--muted)">${escapeHtml(e.admin_name)}</span>`
       : "—";
     return `<tr>
       <td class="admin-cell-num">${offset + i + 1}</td>
-      <td class="admin-cell-study" title="${(e.study_r || "").replace(/"/g, "&quot;")}">${study}${flags}${trustBadge}${needsAttentionFlag}${noteFlag}</td>
+      <td class="admin-cell-study" title="${(e.study_r || "").replace(/"/g, "&quot;")}">${escapeHtml(study)}${flags}${trustBadge}${needsAttentionFlag}${noteFlag}</td>
       <td>${escapeHtml(e.final_type || e.type || "—")}</td>
       <td>${escapeHtml(fmtOutcome(e.final_outcome || e.outcome) || "—")}</td>
       <td><span class="admin-status ${s.cls}">${s.text}</span></td>
@@ -4115,16 +4175,12 @@ function renderAdminDetail(data) {
 
         ${rec.validation_status === "rejected" ? `
         <div class="not-val-decision">
-          <p class="not-val-who">⚠ This record was <strong>rejected</strong> as not a replication${notValWho ? ` by <strong>${notValWho}</strong>` : ""}.</p>
-          <p class="not-val-question">What is your decision?</p>
+          <p class="not-val-who">⚠ This record was <strong>rejected</strong> as not a replication${notValWho ? ` by <strong>${notValWho}</strong>` : ""}. Validation happens once — it won't be sent back for re-validation.</p>
+          <p class="not-val-hint">Need to change it? Review and edit the fields below.</p>
           <div class="not-val-buttons">
-            <button id="confirm-reject-btn" class="btn-reject">✗ Confirm Rejection</button>
-            <button id="restore-pool-btn" class="btn-outline">↩ Restore to Pool</button>
-            <button id="confirm-is-rep-btn" class="btn-outline">✓ Override — It IS a Replication</button>
+            <button id="confirm-is-rep-btn" class="btn-outline">Review / edit fields</button>
             <button id="admin-skip-notval-btn" class="ghost-btn">Skip →</button>
           </div>
-          <p class="not-val-hint">↑ Clicking Override will open the edit form so you can review and correct all fields before resolving.</p>
-          <textarea id="ar-notes-quick" class="admin-textarea" placeholder="Notes (optional)" style="margin-top:0.75rem"></textarea>
         </div>
         ` : hasNotValidation ? `
         <div class="not-val-decision">
@@ -4140,7 +4196,7 @@ function renderAdminDetail(data) {
         </div>
         ` : ""}
 
-        <div id="ar-normal-form" class="${hasNotValidation ? "hidden" : ""}"
+        <div id="ar-normal-form" class="${(hasNotValidation || rec.validation_status === "rejected") ? "hidden" : ""}"
              data-orig-study-r="${escapeHtml(finalStudyR || "")}"
              data-orig-doi-r="${escapeHtml(finalDoiR || "")}"
              data-orig-study-o="${escapeHtml(finalStudyO || "")}"
@@ -4211,21 +4267,6 @@ function renderAdminDetail(data) {
       $("#ar-normal-form").classList.remove("hidden");
     });
     $("#admin-skip-notval-btn")?.addEventListener("click", () => advanceToNextAdminEntry());
-    $("#restore-pool-btn")?.addEventListener("click", async () => {
-      const btn = $("#restore-pool-btn");
-      btn.disabled = true;
-      btn.textContent = "Restoring…";
-      try {
-        await adminApi(`/entries/${rec.record_id}/restore`, "POST");
-        closeAdminDetail();
-        showToast("Record restored to validation pool.");
-        fetchAdminEntries();
-      } catch (e) {
-        btn.disabled = false;
-        btn.textContent = "↩ Restore to Pool";
-        await showAlert("Error: " + e.message);
-      }
-    });
   }
   $("#admin-save-note-btn")?.addEventListener("click", async () => {
     const btn = $("#admin-save-note-btn");
@@ -5287,6 +5328,8 @@ async function _ensureValidatorList() {
   } catch (_) {}
 }
 
+let _composeOutsideClick = null;   // single document click-outside handler for the picker
+
 function openComposePanel() {
   const panel = $("#msg-thread-panel");
   if (!panel) return;
@@ -5360,12 +5403,17 @@ function openComposePanel() {
 
     searchEl.addEventListener("input", () => renderDropdown(searchEl.value));
     searchEl.addEventListener("focus", () => renderDropdown(searchEl.value));
-    document.addEventListener("click", function hideDropdown(e) {
+    // Only ever keep one document-level "click outside → close" handler, so
+    // reopening the compose panel doesn't stack duplicates.
+    if (_composeOutsideClick) document.removeEventListener("click", _composeOutsideClick);
+    _composeOutsideClick = function hideDropdown(e) {
       if (!$("#msg-validator-picker")?.contains(e.target)) {
         dropdown.classList.add("hidden");
         document.removeEventListener("click", hideDropdown);
+        _composeOutsideClick = null;
       }
-    });
+    };
+    document.addEventListener("click", _composeOutsideClick);
 
     $("#msg-compose-cancel").addEventListener("click", () => {
       panel.innerHTML = `<p class="msg-thread-empty">Select a conversation to view messages.</p>`;
