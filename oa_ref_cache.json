@@ -9,11 +9,26 @@
     "error": "http 404",
     "ref": ""
   },
+  "10.1002/jaba.1055": {
+    "ref": "John Michael Falligant, Michael P. Kranak, Drew E. Piersma, R. Scott Benson, Jonathan D. Schmidt, Michelle A. Frank\u2010Crawford (2024) Further evidence of renewal in automatically maintained behavior. Journal of Applied Behavior Analysis."
+  },
+  "10.1002/jaba.453": {
+    "ref": "Katie Wolfe, Michael A. Seaman, Erik Drasgow, Phillip Sherlock (2018) An evaluation of the agreement between the conservative dual\u2010criterion method and expert visual analysis. Journal of Applied Behavior Analysis."
+  },
   "10.1002/jaba.672": {
     "ref": "Colin Muething, Nathan A. Call, Alexis Pavlov, Joel E. Ringdahl, Scott Gillespie, Seth B. Clark, Joanna Lomas Mevers (2020) Prevalence of renewal of problem behavior during context changes. Journal of Applied Behavior Analysis."
   },
   "10.1002/jaba.740": {
     "ref": "John Michael Falligant, Michael P. Kranak, Molly K. McNulty, Jonathan D. Schmidt, Nicole L. Hausman, Griffin W. Rooker (2020) Prevalence of renewal of problem behavior: Replication and extension to an inpatient setting. Journal of Applied Behavior Analysis."
+  },
+  "10.1002/jaba.887": {
+    "ref": "Colin Muething, Nathan A. Call, Carolyn M. Ritchey, Alexis Pavlov, Alec M. Bernstein, Christopher A. Podlesnik (2021) Prevalence of relapse of automatically maintained behavior resulting from context changes. Journal of Applied Behavior Analysis."
+  },
+  "10.1002/jaba.921": {
+    "ref": "Tessa Taylor, Marc J. Lanovaz (2022) Agreement between visual inspection and objective analysis methods: A replication and extension. Journal of Applied Behavior Analysis."
+  },
+  "10.1002/jae.2922": {
+    "ref": "Nino Buliskeria, Jarom\u00edr Baxa (2022) Do rural banks matter that much? Burgess and Pande (2005) reconsidered. Journal of Applied Econometrics."
   },
   "10.1007/bf01371820": {
     "ref": "Thomas H. Stoffer (1991) Attentional focussing and spatial stimulus-response compatibility. Psychological Research."
@@ -38,6 +53,9 @@
   },
   "10.1007/s11002-023-09690-7": {
     "ref": "S\u00f6ren K\u00f6cher, Markus Husemann-Kopetzky, Marie Schirmbeck, Melina Hess, Fabian Gmeindl, Samuel Hess (2023) A Conceptual replication of the differential price framing effect in the field. Marketing Letters."
+  },
+  "10.1007/s11031-006-9031-z": {
+    "ref": "Jo\u2010Ann Tsang (2006) The Effects of Helper Intention on Gratitude and Indebtedness. Motivation and Emotion."
   },
   "10.1007/s11199-015-0450-8": {
     "ref": "Neil Howlett, Karen J. Pine, Natassia Cahill, \u0130smail Orak\u00e7\u0131o\u011flu, Ben Fletcher (2015) Unbuttoned: The Interaction Between Provocativeness of Female Work Attire and Occupational Status. Sex Roles."
@@ -74,6 +92,9 @@
   },
   "10.1016/j.concog.2012.01.016": {
     "ref": "H\u00e9l\u00e8ne L. Gauchou, Ronald A. Rensink, Sidney Fels (2012) Expression of nonconscious knowledge via ideomotor actions. Consciousness and Cognition."
+  },
+  "10.1016/j.cortex.2022.12.003": {
+    "ref": "Lina Skora, James J. A. Livermore, Zolt\u00e1n Dienes, Anil K. Seth, R. B. Y. Scott (2022) Feasibility of unconscious instrumental conditioning: A registered replication. Cortex."
   },
   "10.1016/j.econlet.2020.109646": {
     "ref": "Philipp Boeing, Paul H\u00fcnermund (2020) A global decline in research productivity? Evidence from China and Germany. Economics Letters."
@@ -134,6 +155,9 @@
   },
   "10.1016/j.neuron.2004.12.006": {
     "ref": "Amit Etkin, Kristen C. Klemenhagen, Joshua T. Dudman, M.T. Rogan, Ren\u00e9 Hen, Eric R. Kandel, Joy Hirsch (2004) Individual Differences in Trait Anxiety Predict the Response of the Basolateral Amygdala to Unconsciously Processed Fearful Faces. Neuron."
+  },
+  "10.1016/j.neuron.2008.07.005": {
+    "ref": "Mathias Pessiglione, Predrag Petrovi\u0107, Jean Daunizeau, Stefano Palminteri, Raymond J. Dolan, Chris Frith (2008) Subliminal Instrumental Conditioning Demonstrated in the Human Brain. Neuron."
   },
   "10.1016/j.neuron.2015.08.026": {
     "ref": "Theresa M. Desrochers, Christopher H. Chatham, David Badre (2015) The Necessity of Rostrolateral Prefrontal Cortex for Higher-Level Sequential Behavior. Neuron."
@@ -223,6 +247,9 @@
   "10.1037/a0034755": {
     "ref": "Carolyn MacCann, Dana L. Joseph, Daniel Aureliano Newman, Richard D. Roberts (2013) Emotional intelligence is a second-stratum factor of intelligence: Evidence from hierarchical and bifactor models. Emotion."
   },
+  "10.1037/h0021797": {
+    "ref": "Nancy C. Waugh, Donald A. Norman (1965) Primary memory. Psychological Review."
+  },
   "10.1037/h0076284": {
     "ref": "Robert B. Cialdini, Joyce E. Vincent, Stephen K. Lewis, Jos\u00e9 Catal\u00e1n, Diane Wheeler, Betty L. Darby (1975) Reciprocal concessions procedure for inducing compliance: The door-in-the-face technique. Journal of Personality and Social Psychology."
   },
@@ -246,6 +273,9 @@
   },
   "10.1038/ncomms1262": {
     "ref": "Vanessa Schmitt, Julia Fischer (2011) Representational format determines numerical competence in monkeys. Nature Communications."
+  },
+  "10.1038/s41598-022-18520-1": {
+    "ref": "Magdalena Sabat, Bartosz Ha\u0142adus, Micha\u0142 Klincewicz, Grzegorz J. Nalepa (2022) Cognitive load, fatigue and aversive simulator symptoms but not manipulated zeitgebers affect duration perception in virtual reality. Scientific Reports."
   },
   "10.1073/pnas.1421435112": {
     "ref": "Vadim Axelrod, Geraint Rees, Michal Lavidor, Moshe Bar (2015) Increasing propensity to mind-wander with transcranial direct current stimulation. Proceedings of the National Academy of Sciences."
@@ -316,6 +346,9 @@
   "10.1086/208911": {
     "ref": "William O. Bearden, Michael J. Etzel (1982) Reference Group Influence on Product and Brand Purchase Decisions. Journal of Consumer Research."
   },
+  "10.1086/209397": {
+    "ref": "J. Edward Russo, France Leclerc (1994) An Eye-Fixation Analysis of Choice Processes for Consumer Nondurables. Journal of Consumer Research."
+  },
   "10.1086/595951": {
     "ref": "Richard Breen, Ruud Luijkx, Walter M\u00fcller, Reinhard Pollak (2009) Nonpersistent Inequality in Educational Attainment: Evidence from Eight European Countries. American Journal of Sociology."
   },
@@ -377,8 +410,14 @@
   "10.1098/rsos.190699": {
     "ref": "Sarah A. H. Alharbi, Katherine S. Button, Lingshan Zhang, Kieran J. O\u2019Shea, Vanessa Fasolt, Anthony J. Lee, Lisa M. DeBruine, Benedict C. Jones (2020) Are affective factors related to individual differences in facial expression recognition?. Royal Society Open Science."
   },
+  "10.1098/rsos.250508": {
+    "ref": "Chi Wai Chan, Hiu Ching Lim, Fung Yee Lau, WY Ip, Chak Fong Shannon Lui, Katy Y. Y. Tam, Gilad Feldman (2025) Revisiting the effects of helper intentions on gratitude and indebtedness: Replication and extensions Registered Report of Tsang (2006). Royal Society Open Science."
+  },
   "10.1108/00438029710171980": {
     "ref": "Mary R. Lind (1997) A replication of the amount and equivocality of information processing in organizational work units. Work Study."
+  },
+  "10.1109/tvcg.2016.2518137": {
+    "ref": "Christian Schatzschneider, Gerd Bruder, Frank Steinicke (2016) Who turned the clock? Effects of Manipulated Zeitgebers, Cognitive Load and Immersion on Time Estimation. IEEE Transactions on Visualization and Computer Graphics."
   },
   "10.1111/1467-9280.00415": {
     "ref": "Ed Diener, Martin E. P. Seligman (2002) Very Happy People. Psychological Science."
@@ -457,6 +496,12 @@
   },
   "10.1126/science.283.5398.77": {
     "ref": "G. Marcus, Sujith Vijayan, Shoba Bandi Rao, Peter M. Vishton (1999) Rule Learning by Seven-Month-Old Infants. Science."
+  },
+  "10.1126/science.288.5467.850": {
+    "ref": "Claus Wedekind, Manfred Milinski (2000) Cooperation Through Image Scoring in Humans. Science."
+  },
+  "10.1145/2168556.2168644": {
+    "ref": "Poja Shams, Erik W\u00e4stlund, Lars Witell (2012) Revisiting Russo and Leclerc."
   },
   "10.1152/jn.00286.2019": {
     "ref": "Kathryn E. Unruh, Laura E. Martin, Grant Magnon, David E. Vaillancourt, John A. Sweeney, Matthew W. Mosconi (2019) Cortical and subcortical alterations associated with precision visuomotor behavior in individuals with autism spectrum disorder. Journal of Neurophysiology."
@@ -556,6 +601,9 @@
   "10.1192/bjp.142.5.471": {
     "ref": "Charles Shagass, Richard C. Josiassen, Richard A. Roemer, John J. Straumanis, Stephen Slepner (1983) Failure to Replicate Evoked Potential Observations Suggesting Corpus Callosum Dysfunction in Schizophrenia. The British Journal of Psychiatry."
   },
+  "10.1257/0002828054201242": {
+    "ref": "Robin Burgess, Rohini Pande (2005) Do Rural Banks Matter? Evidence from the Indian Social Banking Experiment. American Economic Review."
+  },
   "10.1257/aer.103.1.1": {
     "ref": "Quamrul H. Ashraf, Oded Galor (2013) The \u201cOut of Africa\u201d Hypothesis, Human Genetic Diversity, and Comparative Economic Development. American Economic Review."
   },
@@ -622,8 +670,14 @@
   "10.17705/1atrr.00046": {
     "ref": "Miaoyi Zeng, Shuai-fu Lin, Deborah J. Armstrong (2020) Are All Internet Users\u2019 Information Privacy Concerns (IUIPC) Created Equal?. Journal of the Association for Information Systems."
   },
+  "10.17705/1atrr.00066": {
+    "ref": "Traci Carte, Nan Wang, Emre Yetgin, Inchan Kim (2021) Conflict Asymmetry in Face-to-face and Computer Mediated Teams. Journal of the Association for Information Systems."
+  },
   "10.17705/1atrr.00067": {
     "ref": "Miranda Kajtazi, Nicklas Holmberg, Saonee Sarker, Christina Keller, Bj\u00f6rn Johansson, Olgerta Tona (2021) Toward a Unified Model of Information Security Policy Compliance: A Conceptual Replication Study. Journal of the Association for Information Systems."
+  },
+  "10.17705/1atrr.00076": {
+    "ref": "Carlos Alberto Torres, John Correia, Deborah Compeau, Michelle Carter (2022) Computer Self Efficacy: A Replication After Thirty Years. AIS Transactions on Replication Research."
   },
   "10.17705/1cais.02729": {
     "ref": "Shalini Chandra, Shirish C. Srivastava, Yin\u2010Leng Theng (2010) Evaluating the Role of Trust in Consumer Adoption of Mobile Payment Systems: An Empirical Analysis. Communications of the Association for Information Systems."
@@ -646,6 +700,12 @@
   "10.20982/tqmp.14.1.r008": {
     "ref": "Edith Scheifele, Verena Eikmeier, Simone Alex-Ruf, Claudia Maienborn, Rolf Ulrich (2018) A Replication of ``Processing time shifts affects the execution of motor responses (Sell &amp; Kaschak, 2011; Experiment 1)''. The Quantitative Methods for Psychology."
   },
+  "10.20982/tqmp.16.2.r001": {
+    "ref": "Marilou Poitras, Lucie P\u00e9l\u00e9ja, Gardy Lavertu, Anouck Langlois, Katia Boulerice, Pauline Berthelot, Philippe Vincent\u2010Lamarre (2020) A Replication of Waugh and Norman (1965) Primary Memory study. The Quantitative Methods for Psychology."
+  },
+  "10.20982/tqmp.21.3.p138": {
+    "ref": "Paola Michelle Garcia Mairena, C\u00e9dric Champagne, Vincent Poulin, Laurie Rochon, Gabrielle Tao, Janelle Allanach, Osvaldo Arenas, Beril Arpaci, Nada Attrassi, Z. Berrada, Camy B\u00e9rub\u00e9, Chlo\u00e9 Bilodeau, Eva Bouity, Audrey P\u00e9pin Boutin, Marika Castonguay et al. (2025) Exploring Memory Span and Capacity: A Replication of Martin (1978, Experiment 2). The Quantitative Methods for Psychology."
+  },
   "10.2132/personality.33.3.13": {
     "ref": "Takayuki Goto (2025) Temptation-Coping Self-Control Strategies are also Seen as Less Indicative of Self-Control than Just Willpower in Japan: Replication of Gennara et al. (2023) with Additional Investigation Focusing on Cultural Self-Construal. The Japanese Journal of Personality."
   },
@@ -654,6 +714,9 @@
   },
   "10.2307/2392469": {
     "ref": "Richard L. Daft, Norman B. Macintosh (1981) A Tentative Exploration into the Amount and Equivocality of Information Processing in Organizational Work Units. Administrative Science Quarterly."
+  },
+  "10.2307/249688": {
+    "ref": "Deborah Compeau, Christopher A. Higgins (1995) Computer Self-Efficacy: Development of a Measure and Initial Test. MIS Quarterly."
   },
   "10.2307/749455": {
     "ref": "Ray Hembree (1990) The Nature, Effects, and Relief of Mathematics Anxiety. Journal for Research in Mathematics Education."
@@ -765,6 +828,12 @@
   "10.3389/fvets.2018.00312": {
     "ref": "Zhaoxing Pan, Douglas A. Granger, No\u00e9mie A. Gu\u00e9rin, Amy Shoffner, Robin L. Gabriels (2019) Replication Pilot Trial of Therapeutic Horseback Riding and Cortisol Collection With Children on the Autism Spectrum. Frontiers in Veterinary Science."
   },
+  "10.3390/g11040058": {
+    "ref": "Yvan I. Russell, Yana Stoilova, Aura-Adriana Dosoftei (2020) Cooperation through Image Scoring: A Replication. Games."
+  },
+  "10.3758/bf03197446": {
+    "ref": "Maryanne Martin (1978) Memory span as a measure of individual differences in memory capacity. Memory & Cognition."
+  },
   "10.3758/mc.37.1.65": {
     "ref": "Jamie I. D. Campbell, Thomas L. Phenix (2008) Target strength and retrieval-induced forgetting in semantic recall. Memory & Cognition."
   },
@@ -788,6 +857,9 @@
   },
   "10.5281/zenodo.18538611": {
     "ref": "Manuel Soler Cruz, Jos\u00e9 Manuel Colmenero, Tom\u00e1s P\u00e9rez\u2010Contreras, Juan Manuel Peralta-S\u00e1nchez (2020) Replication of the Mirror Mark Test Experiment in the Magpie (Pica pica) Does Not Provide Evidence of Self-Recognition. Zenodo (CERN European Organization for Nuclear Research)."
+  },
+  "10.5465/amj.2010.51468978": {
+    "ref": "Karen A. Jehn, Sonja Rispens, Sherry M. B. Thatcher (2010) The Effects of Conflict Asymmetry on Work Group and Individual Outcomes. Academy of Management Journal."
   },
   "10.5964/jnc.6063": {
     "ref": "Christina Artemenko, Nicolas Masson, Carrie Georges, Hans\u2010Christoph Nuerk, Krzysztof Cipora (2021) Not all elementary school teachers are scared of math. Journal of Numerical Cognition."
