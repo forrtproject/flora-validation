@@ -9,6 +9,9 @@
     "error": "http 404",
     "ref": ""
   },
+  "10.1002/cpp.2677": {
+    "ref": "Brechje Dandachi\u2010FitzGerald, Laura Meijs, Isabelle M. A. J. Moonen, Harald Merckelbach (2021) No self\u2010serving bias in therapists' evaluations of clients' premature treatment termination: An approximate replication of Murdock et al. (2010). Clinical Psychology & Psychotherapy."
+  },
   "10.1002/jaba.1055": {
     "ref": "John Michael Falligant, Michael P. Kranak, Drew E. Piersma, R. Scott Benson, Jonathan D. Schmidt, Michelle A. Frank\u2010Crawford (2024) Further evidence of renewal in automatically maintained behavior. Journal of Applied Behavior Analysis."
   },
@@ -57,6 +60,9 @@
   "10.1007/s11031-006-9031-z": {
     "ref": "Jo\u2010Ann Tsang (2006) The Effects of Helper Intention on Gratitude and Indebtedness. Motivation and Emotion."
   },
+  "10.1007/s11050-010-9062-6": {
+    "ref": "Jeffrey Lidz, Paul M. Pietroski, Justin Halberda, Tim B. Hunter (2011) Interface transparency and the psychosemantics of most. Natural Language Semantics."
+  },
   "10.1007/s11199-015-0450-8": {
     "ref": "Neil Howlett, Karen J. Pine, Natassia Cahill, \u0130smail Orak\u00e7\u0131o\u011flu, Ben Fletcher (2015) Unbuttoned: The Interaction Between Provocativeness of Female Work Attire and Occupational Status. Sex Roles."
   },
@@ -71,6 +77,9 @@
   },
   "10.1016/0022-4405(78)90001-8": {
     "ref": "Merle L. Meacham, Percy D. Peckham (1978) School psychologists at three-quarters century: Congruence between training, practice, preferred role and competence. Journal of School Psychology."
+  },
+  "10.1016/0376-6357(94)90072-8": {
+    "ref": "Alliston K. Reid (1994) Learning new response sequences. Behavioural Processes."
   },
   "10.1016/0885-2014(95)90011-x": {
     "ref": "Tony J. Simon, Susan J. Hespos, Philippe Rochat (1995) Do infants understand simple arithmetic? A replication of Wynn (1992). Cognitive Development."
@@ -238,6 +247,9 @@
   "10.1037/a0014697": {
     "ref": "Adam R. Hafdahl, Michelle A. Williams (2009) Meta-analysis of correlations revisited: Attempted replication and extension of Field's (2001) simulation studies. Psychological Methods."
   },
+  "10.1037/a0019786": {
+    "ref": "Nancy L. Murdock, Carla Edwards, Tamera B. Murdock (2010) Therapists' attributions for client premature termination: Are they self-serving?. Psychotherapy."
+  },
   "10.1037/a0023597": {
     "ref": "John M. Horner, San K. Tung (2011) Playing Cards with Thomas Kuhn: A Critical Reexamination of the Bruner and Postman (1949) Experiment. Review of General Psychology."
   },
@@ -274,6 +286,9 @@
   "10.1038/ncomms1262": {
     "ref": "Vanessa Schmitt, Julia Fischer (2011) Representational format determines numerical competence in monkeys. Nature Communications."
   },
+  "10.1038/s41467-019-12048-1": {
+    "ref": "Sijia Zhao, Maria Chait, Frederic Dick, Peter Dayan, Shigeto Furukawa, Hsin\u2010I Liao (2019) Pupil-linked phasic arousal evoked by violation but not emergence of regularity within rapid sound sequences. Nature Communications."
+  },
   "10.1038/s41598-022-18520-1": {
     "ref": "Magdalena Sabat, Bartosz Ha\u0142adus, Micha\u0142 Klincewicz, Grzegorz J. Nalepa (2022) Cognitive load, fatigue and aversive simulator symptoms but not manipulated zeitgebers affect duration perception in virtual reality. Scientific Reports."
   },
@@ -291,6 +306,12 @@
   },
   "10.1080/00224545.2017.1331991": {
     "ref": "Regan A. R. Gurung, Elizabeth Punke, Michaella Brickner, Vincenzio Badalamenti (2017) Power and provocativeness: The effects of subtle changes in clothing on perceptions of working women. The Journal of Social Psychology."
+  },
+  "10.1080/0144341850050206": {
+    "ref": "Richard Riding, Stuart Powell (1985) The Facilitation of Thinking Skills in Preschool Children using Computer Presented Activities. Educational Psychology."
+  },
+  "10.1080/0144341860060206": {
+    "ref": "Richard Riding, Stuart Powell (1986) The Improvement of Thinking Skills in Young Children using Computer Activities: a replication and extension. Educational Psychology."
   },
   "10.1080/02699931.2017.1292217": {
     "ref": "Helen Tibboel (2017) Mood effects on attentional control: a preregistered replication study and critical analysis. Cognition & Emotion."
@@ -348,6 +369,12 @@
   },
   "10.1086/209397": {
     "ref": "J. Edward Russo, France Leclerc (1994) An Eye-Fixation Analysis of Choice Processes for Consumer Nondurables. Journal of Consumer Research."
+  },
+  "10.1086/260572": {
+    "ref": "Stephen H. Long, Russell F. Settle (1977) Household Allocation of Time and Church Attendance: Some Additional Evidence. Journal of Political Economy."
+  },
+  "10.1086/260573": {
+    "ref": "Ronald G. Ehrenberg (1977) Household Allocation of Time and Religiosity: Replication and Extension. Journal of Political Economy."
   },
   "10.1086/595951": {
     "ref": "Richard Breen, Ruud Luijkx, Walter M\u00fcller, Reinhard Pollak (2009) Nonpersistent Inequality in Educational Attainment: Evidence from Eight European Countries. American Journal of Sociology."
@@ -461,6 +488,9 @@
   "10.1111/j.1744-6570.1997.tb00707.x": {
     "ref": "Daniel P. Skarlicki, Gary P. Latham (1997) LEADERSHIP TRAINING IN ORGANIZATIONAL JUSTICE TO INCREASE CITIZENSHIP BEHAVIOR WITHIN A LABOR UNION: A REPLICATION. Personnel Psychology."
   },
+  "10.1111/j.1747-4469.2011.01256.x": {
+    "ref": "Marina Zaloznaya, Laura Beth Nielsen (2011) Mechanisms and Consequences of Professional Marginality: The Case of Poverty Lawyers Revisited. Law & Social Inquiry."
+  },
   "10.1111/jopy.12996": {
     "ref": "Christian Bl\u00f6tner, Sandy Sue Spormann, Miriam J. Hofmann, Andreas Mokros (2024) Measures of Subclinical Psychopathy and Everyday Sadism are Still Redundant: A Conceptual Replication and Extension of Bl\u00f6tner and Mokros (2023). Journal of Personality."
   },
@@ -544,6 +574,9 @@
   "10.1177/01461672241238420": {
     "ref": "Jareef Martuza, Olivia Kim (2024) Does Conceptual Abstraction Moderate Whether Past Moral Deeds Motivate Consistency or Compensatory Behavior? A Registered Replication and Extension of Conway and Peetz (2012). Personality and Social Psychology Bulletin."
   },
+  "10.1177/019874290503100104": {
+    "ref": "Stephanie Lien-Thorne, Debra Kamps (2005) Replication Study of the First Step to Success Early Intervention Program. Behavioral Disorders."
+  },
   "10.1177/02654075030205001": {
     "ref": "Eriko Maeda, L. David Ritchie (2003) The Concept of Shinyuu in Japan: A Replication of and Comparison to Cole and Bradac\u2019s Study on U.S. Friendship. Journal of Social and Personal Relationships."
   },
@@ -570,6 +603,9 @@
   },
   "10.1177/0956797619875482": {
     "ref": "Tom Heyman, Anne-Sofie Maerten, Hendrik Vankrunkelsven, Wouter Voorspoels, Pieter Moors (2019) Sound-Symbolism Effects in the Absence of Awareness: A Replication Study. Psychological Science."
+  },
+  "10.1177/106342669800600406": {
+    "ref": "Annemieke Golly, Bruce Stiller, Hill M. Walker (1998) First Step to Success. Journal of Emotional and Behavioral Disorders."
   },
   "10.1177/13621688211044240": {
     "ref": "Jody H. Cripps, Russell S. Rosen, Sheryl B. Cooper, Ronald Fenicle, Aimee M. Sever\u2010Hall (2021) Effects of inverted L2/Ln language pedagogy on student experiences and outcomes: The case of American Sign Language. Language Teaching Research."
@@ -601,6 +637,12 @@
   "10.1192/bjp.142.5.471": {
     "ref": "Charles Shagass, Richard C. Josiassen, Richard A. Roemer, John J. Straumanis, Stephen Slepner (1983) Failure to Replicate Evoked Potential Observations Suggesting Corpus Callosum Dysfunction in Schizophrenia. The British Journal of Psychiatry."
   },
+  "10.1207/s15327906mbr0502_2": {
+    "ref": "Allen L. Edwards, Alan J. Klockars, Robert D. Abbott (1970) SOCIAL DESIRABILITY AND THE TSC MMPI SCALES. Multivariate Behavioral Research."
+  },
+  "10.1207/s15327906mbr0503_5": {
+    "ref": "Allen L. Edwards, Robert D. Abbott, Alan J. Klockars (1970) SOCIAL DESIRABILITY AND THE TSC SCALES: A REPLICATION AND REPLY TO STEIN. Multivariate Behavioral Research."
+  },
   "10.1257/0002828054201242": {
     "ref": "Robin Burgess, Rohini Pande (2005) Do Rural Banks Matter? Evidence from the Indian Social Banking Experiment. American Economic Review."
   },
@@ -609,6 +651,9 @@
   },
   "10.1257/aer.20180338": {
     "ref": "Nicholas Bloom, Charles I. Jones, John Van Reenen, Michael A. Webb (2020) Are Ideas Getting Harder to Find?. American Economic Review."
+  },
+  "10.12794/metadc2415972": {
+    "ref": "Harris, Josef Martin (2024) Learning New Response Sequences: A PORTL Replication and Extension of Reid 1994."
   },
   "10.1287/isre.1040.0032": {
     "ref": "Naresh K. Malhotra, Sung S. Kim, James Agarwal (2004) Internet Users' Information Privacy Concerns (IUIPC): The Construct, the Scale, and a Causal Model. Information Systems Research."
@@ -712,6 +757,12 @@
   "10.2307/20466649": {
     "ref": "Marilyn Chapman, Margot Filipenko, Marianne McTavish, Jon Shapiro (2007) First Graders' Preferences for Narrative and/or Information Books and Perceptions of Other Boys' and Girls' Book Preferences. Canadian Journal of Education / Revue canadienne de l \u00e9ducation."
   },
+  "10.2307/2061038": {
+    "ref": "William D. Mosher, Gerry E. Hendershot (1984) Religion and fertility: A replication. Demography."
+  },
+  "10.2307/2061139": {
+    "ref": "Charles F. Westoff, Elise F. Jones (1979) The end of \u201cCatholic\u201d fertility. Demography."
+  },
   "10.2307/2392469": {
     "ref": "Richard L. Daft, Norman B. Macintosh (1981) A Tentative Exploration into the Amount and Equivocality of Information Processing in Organizational Work Units. Administrative Science Quarterly."
   },
@@ -789,6 +840,9 @@
   "10.31234/osf.io/qn7pt": {
     "ref": "Victor Kenji Medeiros Shiramizu, Lisa M. DeBruine, David R. Feinberg, Benedict C. Jones (2021) Sexual orientation predicts women\u2019s preferences for sexually dimorphic face-shape characteristics."
   },
+  "10.31234/osf.io/rvxw4": {
+    "ref": "Hamit Ba\u015fg\u00f6l, Peter Dayan, Volker H. Franz (2024) Violation of Auditory Regularities is Reflected in Pupil Dynamics."
+  },
   "10.31234/osf.io/vkarq": {
     "ref": "Harry Manley, Trin Savejnarong, Pattramon Pornsukjantra, Minnie Bundit, Naravut Sasipongsakorn (2021) Revisiting the Effect of Team Passion Displayed During National Anthems on Subsequent Success: A Replication and Extension."
   },
@@ -831,6 +885,9 @@
   "10.3390/g11040058": {
     "ref": "Yvan I. Russell, Yana Stoilova, Aura-Adriana Dosoftei (2020) Cooperation through Image Scoring: A Replication. Games."
   },
+  "10.36019/9781978817111": {
+    "ref": "Jack Katz (1982) Poor People\u2019s Lawyers in Transition. Rutgers University Press eBooks."
+  },
   "10.3758/bf03197446": {
     "ref": "Maryanne Martin (1978) Memory span as a measure of individual differences in memory capacity. Memory & Cognition."
   },
@@ -848,6 +905,9 @@
   },
   "10.3758/s13428-022-01989-z": {
     "ref": "Mieke Sarah Slim, Robert J. Hartsuiker (2022) Moving visual world experiments online? A web-based replication of Dijkgraaf, Hartsuiker, and Duyck (2017) using PCIbex and WebGazer.js. Behavior Research Methods."
+  },
+  "10.3765/exabs.v0i0.603": {
+    "ref": "Barbara Tomaszewicz (2012) Semantics and visual cognition: the processing of Bulgarian and Polish majority quantifiers. LSA Annual Meeting Extended Abstracts."
   },
   "10.4324/9781315864952-3": {
     "ref": "Subhash C. Mehta, Ashok K. Lalwani, Lisa Ping (2018) Reference Group Influence and Perceived Risk in Services Among Working Women in Singapore: A Replication and Extension."
