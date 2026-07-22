@@ -22,7 +22,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Same filter the importer uses to decide what counts as "resolved"
-_RESOLVED_METHODS = {"author_year_match", "llm_abstract", "llm_fulltext"}
+_RESOLVED_METHODS = {
+    "author_year_match", "llm_abstract", "llm_fulltext",
+    "single_candidate_after_requery", "title_pattern_match",
+    "citation_context_match", "same_author_year_title_overlap",
+}
 _RESOLVED_STATUSES = {"replication", "reproduction"}
 
 
