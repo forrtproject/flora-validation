@@ -45,7 +45,12 @@ CREATE TABLE IF NOT EXISTS unvalidated (
     type                TEXT        CHECK (type IN ('replication', 'reproduction')),
     outcome             TEXT        CHECK (outcome IN (
                                         'success', 'failure', 'mixed',
-                                        'uninformative', 'descriptive')),
+                                        'uninformative', 'descriptive', 'cannot_be_determined',
+                                        'computationally successful, robust',
+                                        'computationally successful, robustness challenges',
+                                        'computation not checked, robust',
+                                        'computation not checked, robustness challenges',
+                                        'computational issues, robustness challenges')),
     outcome_quote       TEXT,
     out_quote_source    TEXT,
 
@@ -199,7 +204,12 @@ ALTER TABLE unvalidated DROP CONSTRAINT IF EXISTS unvalidated_outcome_check;
 ALTER TABLE unvalidated ADD CONSTRAINT unvalidated_outcome_check
     CHECK (outcome IN (
         'success', 'failure', 'mixed',
-        'uninformative', 'descriptive', 'cannot_be_determined'));
+        'uninformative', 'descriptive', 'cannot_be_determined',
+        'computationally successful, robust',
+        'computationally successful, robustness challenges',
+        'computation not checked, robust',
+        'computation not checked, robustness challenges',
+        'computational issues, robustness challenges'));
 
 -- Admin approval column on validated table
 ALTER TABLE validated ADD COLUMN IF NOT EXISTS admin_approved BOOLEAN NOT NULL DEFAULT FALSE;
