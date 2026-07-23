@@ -1552,8 +1552,8 @@ def admin_dashboard(x_admin_token: str = Header(...)):
         """)
         outcomes_raw = {r["outcome"]: int(r["n"]) for r in cur.fetchall()}
         outcomes = {
-            "success":       outcomes_raw.get("success", 0),
-            "failure":       outcomes_raw.get("failure", 0),
+            "successful":    outcomes_raw.get("successful", 0),
+            "failed":        outcomes_raw.get("failed", 0),
             "mixed":         outcomes_raw.get("mixed", 0),
             "uninformative": outcomes_raw.get("uninformative", 0),
             "descriptive":   outcomes_raw.get("descriptive", 0),

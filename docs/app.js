@@ -2458,8 +2458,8 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
             <div class="outcome-correction hidden" id="outcome-correction">
               <p id="outcome-correction-label" style="margin:12px 0 6px;font-size:13px;color:var(--muted);">What is the correct outcome?</p>
               <div class="choices">
-                <button class="choice success" data-correct-outcome="success">Success</button>
-                <button class="choice danger" data-correct-outcome="failure">Failed</button>
+                <button class="choice success" data-correct-outcome="successful">Success</button>
+                <button class="choice danger" data-correct-outcome="failed">Failed</button>
                 <button class="choice warn" data-correct-outcome="mixed">Mixed</button>
                 <button class="choice" data-correct-outcome="uninformative">Uninformative</button>
               </div>
@@ -2953,7 +2953,7 @@ function onChoice(btn) {
     btn.classList.add("selected");
     updateSubmitState(pairBody);
     // Now that the correct outcome is chosen, collapse gate-3.
-    const correctMap = { success: "Success", failure: "Failed", mixed: "Mixed", uninformative: "Uninformative" };
+    const correctMap = { successful: "Success", failed: "Failed", mixed: "Mixed", uninformative: "Uninformative" };
     const label = `Mischaracterised → ${correctMap[btn.dataset.correctOutcome] || btn.dataset.correctOutcome}`;
     clearTimeout(_chipTimer);
     _chipTimer = setTimeout(() => answerGate(gate, label, "danger"), 300);
@@ -3044,7 +3044,7 @@ const _REPRO_OUTCOMES = Object.keys(_REPRO_COMP)
 function _outcomeOptionsFor(type, selected) {
   const base = type === "reproduction"
     ? _REPRO_OUTCOMES.slice()
-    : ["success", "failure", "mixed", "uninformative", "descriptive"];
+    : ["successful", "failed", "mixed", "uninformative", "descriptive"];
   if (selected && !base.includes(selected)) base.unshift(selected);
   return base.map(o =>
     `<option value="${escapeHtml(o)}" ${selected === o ? "selected" : ""}>${escapeHtml(fmtOutcome(o))}</option>`
@@ -4743,8 +4743,8 @@ function renderAdminDashboard(d) {
   });
 
   const OUTCOME_COLORS = {
-    success:       "#4a6b3e",
-    failure:       "#a83232",
+    successful:    "#4a6b3e",
+    failed:        "#a83232",
     mixed:         "#b88019",
     uninformative: "#7a6e5f",
     descriptive:   "#4a6a8a",

@@ -115,13 +115,9 @@ QUERY = """
         v.year_r,
         v.year_o,
         v.type,
-        -- Rename the replication outcome labels for the export (exact match only, so
-        -- reproduction labels like "computationally successful, robust" are untouched).
-        CASE v.outcome
-             WHEN 'success' THEN 'successful'
-             WHEN 'failure' THEN 'failed'
-             ELSE v.outcome
-        END AS outcome,
+        -- Stored as 'successful'/'failed' since the rename (see db_schema.sql); the
+        -- CASE that used to translate here is no longer needed.
+        v.outcome,
         v.outcome_quote,
         v.out_quote_source   AS outcome_quote_source,
         COALESCE(m.source, 'validated_db') AS source

@@ -1302,7 +1302,8 @@ details[open] .senior-reject-summary::before { content: "▾ "; }
   border: 1px solid currentColor;
   border-radius: 999px;
 }
-.outcome-label.replication, .outcome-label.reproduction, .outcome-label.success { color: var(--green); }
+.outcome-label.replication, .outcome-label.reproduction,
+.outcome-label.successful, .outcome-label.success { color: var(--green); }
 .question .outcome-label { margin-bottom: 0; vertical-align: middle; }
 .outcome-label.failed, .outcome-label.failure { color: var(--red); }
 .outcome-label.mixed { color: var(--amber); }
@@ -4237,6 +4238,8 @@ body.has-maint-banner #admin-screen {
   color: var(--ink);
   text-transform: capitalize;
 }
+.hd-val-pill-successful  { background: #dcfce7; color: #15803d; }
+.hd-val-pill-failed      { background: #fee2e2; color: #dc2626; }
 .hd-val-pill-success     { background: #dcfce7; color: #15803d; }
 .hd-val-pill-failure     { background: #fee2e2; color: #dc2626; }
 .hd-val-pill-mixed       { background: #fef9c3; color: #854d0e; }

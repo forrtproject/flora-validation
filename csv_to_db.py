@@ -39,6 +39,11 @@ _RESOLVED_STATUSES = {"replication", "reproduction"}
 # Validator slots created per record
 _VALIDATOR_SLOTS = ("human_1", "human_2", "llm")
 
+# The upstream extractor still emits 'success'/'failure'. This app (and the FLoRA
+# export) use 'successful'/'failed', so translate at the import boundary. Exact-match
+# only, so reproduction labels like "computationally successful, robust" pass through.
+_OUTCOME_RENAME = {"success": "successful", "failure": "failed"}
+
 
 def _derive_url_o(doi_o: str) -> str:
     doi_o = str(doi_o or "").strip()
@@ -75,7 +80,7 @@ def _build_unvalidated_row(record_id: str, pair_id: str, row: pd.Series) -> dict
         "url_o":             _derive_url_o(row.get("doi_o")),
         "ref_o":             _s(row.get("ref_o")),
         "type":              _s(row.get("type")),
-        "outcome":           _s(row.get("outcome")),
+        "outcome":           _OUTCOME_RENAME.get(_s(row.get("outcome")), _s(row.get("outcome"))),
         "outcome_quote":     _s(row.get("outcome_phrase")),
         "out_quote_source":  _s(row.get("out_quote_source")),
         "validation_status": "unvalidated",
