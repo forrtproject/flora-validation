@@ -30,9 +30,16 @@ def main():
             return None
         return (oa.get(doi.strip()) or {}).get("oa_url")
 
+    # The extractor still emits 'success'/'failure'; this app uses 'successful'/'failed'.
+    # Mirrors _OUTCOME_RENAME in csv_to_db.py so the static/demo pairs match the live app.
+    # Exact match only, so reproduction labels ("computationally successful, …") pass through.
+    outcome_rename = {"success": "successful", "failure": "failed"}
+
     def decorate(p: dict) -> dict:
         p["oa_url_r"] = oa_url(p.get("doi_r"))
         p["oa_url_o"] = oa_url(p.get("doi_o"))
+        if p.get("outcome") in outcome_rename:
+            p["outcome"] = outcome_rename[p["outcome"]]
         return p
 
     normal, hard, seen = [], [], set()

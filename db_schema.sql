@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS unvalidated (
     -- Classification
     type                TEXT        CHECK (type IN ('replication', 'reproduction')),
     outcome             TEXT        CHECK (outcome IN (
-                                        'success', 'failure', 'mixed',
+                                        'successful', 'failed', 'mixed',
                                         'uninformative', 'descriptive', 'cannot_be_determined',
                                         'computationally successful, robust',
                                         'computationally successful, robustness challenges',
@@ -198,12 +198,42 @@ ALTER TABLE unvalidated ADD CONSTRAINT unvalidated_validation_status_check
         'unvalidated', 'validation_inprogress',
         'validated', 'need_review', 'consensus_reached', 'rejected'));
 
--- Add cannot_be_determined to the outcome enum (drop + recreate constraint).
--- Used for hard-mode records whose outcome can't be determined from the abstract.
+-- Outcome enum: includes cannot_be_determined (hard-mode records whose outcome can't
+-- be determined from the abstract) and the reproduction labels.
+--
+-- The replication labels were renamed success -> successful and failure -> failed so the
+-- stored vocabulary matches what the FLoRA export publishes. The constraint is dropped
+-- first so the rename below can run, then re-added with the new vocabulary. All of this
+-- executes in one transaction (init_db runs the whole file), so it is atomic; the UPDATEs
+-- are idempotent and match zero rows once the rename has been applied.
 ALTER TABLE unvalidated DROP CONSTRAINT IF EXISTS unvalidated_outcome_check;
+
+UPDATE unvalidated      SET outcome          = 'successful' WHERE outcome          = 'success';
+UPDATE unvalidated      SET outcome          = 'failed'     WHERE outcome          = 'failure';
+UPDATE unvalidated      SET final_outcome    = 'successful' WHERE final_outcome    = 'success';
+UPDATE unvalidated      SET final_outcome    = 'failed'     WHERE final_outcome    = 'failure';
+UPDATE validated        SET outcome          = 'successful' WHERE outcome          = 'success';
+UPDATE validated        SET outcome          = 'failed'     WHERE outcome          = 'failure';
+UPDATE validation_queue SET corrected_outcome = 'successful' WHERE corrected_outcome = 'success';
+UPDATE validation_queue SET corrected_outcome = 'failed'     WHERE corrected_outcome = 'failure';
+
+-- The same label is mirrored inside the validator/LLM JSONB summaries.
+UPDATE unvalidated SET validator_1 = jsonb_set(validator_1, '{corrected_outcome}', '"successful"')
+    WHERE validator_1->>'corrected_outcome' = 'success';
+UPDATE unvalidated SET validator_1 = jsonb_set(validator_1, '{corrected_outcome}', '"failed"')
+    WHERE validator_1->>'corrected_outcome' = 'failure';
+UPDATE unvalidated SET validator_2 = jsonb_set(validator_2, '{corrected_outcome}', '"successful"')
+    WHERE validator_2->>'corrected_outcome' = 'success';
+UPDATE unvalidated SET validator_2 = jsonb_set(validator_2, '{corrected_outcome}', '"failed"')
+    WHERE validator_2->>'corrected_outcome' = 'failure';
+UPDATE unvalidated SET llm_validator = jsonb_set(llm_validator, '{corrected_outcome}', '"successful"')
+    WHERE llm_validator->>'corrected_outcome' = 'success';
+UPDATE unvalidated SET llm_validator = jsonb_set(llm_validator, '{corrected_outcome}', '"failed"')
+    WHERE llm_validator->>'corrected_outcome' = 'failure';
+
 ALTER TABLE unvalidated ADD CONSTRAINT unvalidated_outcome_check
     CHECK (outcome IN (
-        'success', 'failure', 'mixed',
+        'successful', 'failed', 'mixed',
         'uninformative', 'descriptive', 'cannot_be_determined',
         'computationally successful, robust',
         'computationally successful, robustness challenges',
