@@ -1,9 +1,15 @@
 {
+  "10.1002/(sici)1099-0836(199909/10)8:5<296::aid-bse212>3.0.co;2-n": {
+    "ref": "Sarah F. Clarke, Nigel Roome (1999) Sustainable business: learning - action networks as organizational assets. Business Strategy and the Environment."
+  },
   "10.1002/1097-4679(197110)27:4<514::aid-jclp2270270435>3.0.co;2-k": {
     "ref": "Floyd S. Irvin, Kenneth Vander Woude (1971) Empirical support for a basic TAT set. Journal of Clinical Psychology."
   },
   "10.1002/1520-6807(198607)23:3<271::aid-pits2310230308>3.0.co;2-y": {
     "ref": "Gary L. Fisher, Stephen J. Jenkins, John D. Crumbley (1986) A replication of a survey of school psychologists: Congruence between training, practice, preferred role, and competence. Psychology in the Schools."
+  },
+  "10.1002/bse.372": {
+    "ref": "Pursey Heugens (2003) Capability building through adversarial relationships: a replication and extension of Clarke and Roome (1999). Business Strategy and the Environment."
   },
   "10.1002/clc.22410": {
     "ref": "Wei\u2010Lieh Huang, Be\u2010Tau Hwang, Chun\u2010Ting Lai, Jiayi Li, Terry B.J. Kuo, Cheryl C.H. Yang (2015) Is Heart Rate Variability Related to Season of Birth?. Clinical Cardiology."
@@ -198,6 +204,9 @@
   "10.1017/S0272263119000093": {
     "ref": "YouJin Kim, YeonJoo Jung, Stephen Skalicky (2019) LINGUISTIC ALIGNMENT, LEARNER CHARACTERISTICS, AND THE PRODUCTION OF STRANDED PREPOSITIONS IN RELATIVE CLAUSES. Studies in Second Language Acquisition."
   },
+  "10.1017/s0007123420000046": {
+    "ref": "Gabriele Magni (2020) Economic Inequality, Immigrants and Selective Solidarity: From Perceived Lack of Opportunity to In-group Favoritism. British Journal of Political Science."
+  },
   "10.1017/s014271640808031x": {
     "error": "http 404",
     "ref": ""
@@ -223,11 +232,17 @@
   "10.1027/1864-9335/a000187": {
     "ref": "Dermot Lynott, Katherine S. Corker, Jessica Wortman, Louise Connell, M. Brent Donnellan, Richard E. Lucas, Kerry O\u2019Brien (2014) Replication of \u201cExperiencing Physical Warmth Promotes Interpersonal Warmth\u201d by. Social Psychology."
   },
+  "10.1037//0022-006x.55.1.115": {
+    "ref": "William Work, A. Dirk Hightower, John W. Fantuzzo, Cynthia A. Rohrbeck (1987) Replication and extension of the Teacher Self-Control Rating Scale. Journal of Consulting and Clinical Psychology."
+  },
   "10.1037//0096-1523.18.3.849": {
     "ref": "Jane E. Raymond, Kimron L. Shapiro, Karen M. Arnell (1992) Temporary suppression of visual processing in an RSVP task: An attentional blink?. Journal of Experimental Psychology Human Perception & Performance."
   },
   "10.1037/0021-9010.81.2.161": {
     "ref": "Daniel P. Skarlicki, Gary P. Latham (1996) Increasing citizenship behavior within a labor union: A test of organizational justice theory. Journal of Applied Psychology."
+  },
+  "10.1037/0022-006X.50.5.624": {
+    "ref": "Laura L. Humphrey (1982) Children's and teachers' perspectives on children's self-control: The development of two rating scales. Journal of Consulting and Clinical Psychology."
   },
   "10.1037/0022-0167.51.2.178": {
     "ref": "Tracy L. Tylka (2004) The Relation Between Body Dissatisfaction and Eating Disorder Symptomatology: An Analysis of Moderating Variables. Journal of Counseling Psychology."
@@ -237,6 +252,12 @@
   },
   "10.1037/0022-3514.32.6.951": {
     "ref": "Ellen J. Langer, Jane Roth (1975) Heads I win, tails it's chance: The illusion of control as a function of the sequence of outcomes in a purely chance task. Journal of Personality and Social Psychology."
+  },
+  "10.1037/0022-3514.72.5.1202": {
+    "ref": "Bill E. Peterson, Kimberly Ann Smirles, Phyllis A. Wentworth (1997) Generativity and authoritarianism: Implications for personality, political involvement, and parenting. Journal of Personality and Social Psychology."
+  },
+  "10.1037/0022-3514.73.2.321": {
+    "ref": "Michael E. McCullough, Everett L. Worthington, K. Chris Rachal (1997) Interpersonal forgiving in close relationships. Journal of Personality and Social Psychology."
   },
   "10.1037/0022-3514.86.1.57": {
     "ref": "Gerben A. van Kleef, Carsten K. W. De Dreu, Antony S. R. Manstead (2004) The Interpersonal Effects of Anger and Happiness in Negotiations. Journal of Personality and Social Psychology."
@@ -283,6 +304,9 @@
   "10.1037/xhp0000541": {
     "ref": "Nick Berggren, Martin Eimer (2018) Object-based target templates guide attention during visual search. Journal of Experimental Psychology Human Perception & Performance."
   },
+  "10.1037/xlm0000479": {
+    "ref": "Xue Jun Cheng, Callum J McCarthy, Tony S. L. Wang, Thomas J. Palmeri, Daniel R. Little (2018) Composite faces are not (necessarily) processed coactively: A test using systems factorial technology and logical-rule models. Journal of Experimental Psychology Learning Memory and Cognition."
+  },
   "10.1038/358749a0": {
     "ref": "Karen Wynn (1992) Addition and subtraction by human infants. Nature."
   },
@@ -301,6 +325,9 @@
   "10.1073/pnas.1520027113": {
     "ref": "Timothy F. Brady, Viola S. St\u00f6rmer, George A. Alvarez (2016) Working memory is not fixed-capacity: More active storage capacity for real-world objects than for simple stimuli. Proceedings of the National Academy of Sciences."
   },
+  "10.1073/pnas.192579399": {
+    "ref": "Scott O. Murray, Daniel Kersten, Bruno A. Olshausen, Paul Schrater, David L. Woods (2002) Shape perception reduces activity in human primary visual cortex. Proceedings of the National Academy of Sciences."
+  },
   "10.1075/bpa.3.13goo": {
     "ref": "Jaemyung Goo (2016) Corrective feedback and working memory capacity. Bilingual processing and acquisition."
   },
@@ -318,6 +345,9 @@
   },
   "10.1080/02699931.2017.1292217": {
     "ref": "Helen Tibboel (2017) Mood effects on attentional control: a preregistered replication study and critical analysis. Cognition & Emotion."
+  },
+  "10.1080/02699931.2024.2434156": {
+    "ref": "Chi Wai Chan, Gilad Feldman (2024) The link between Empathy and Forgiveness: Replication and extensions Registered Report of McCullough et al. (1997)'s Study 1. Cognition & Emotion."
   },
   "10.1080/02702711.2017.1344165": {
     "ref": "Lisa L. Repaskey, Jeanne Shay Schumm, Jacqueline Johnson (2017) First and Fourth Grade Boys' and Girls' Preferences For and Perceptions About Narrative and Expository Text. Reading Psychology."
@@ -455,6 +485,9 @@
   "10.1111/acfi.12631": {
     "ref": "Sorin Daniliuc, Lingwei Li, Marvin Wee (2020) Busy directors and firm performance: a replication and extension of Hauser (2018). Accounting and Finance."
   },
+  "10.1111/ajsp.12164": {
+    "ref": "sanae miyatake, Masataka Higuchi (2017) Does religious priming increase the prosocial behaviour of a Japanese sample in an anonymous economic game?. Asian Journal Of Social Psychology."
+  },
   "10.1111/cdev.13309": {
     "ref": "Brittany N. Thompson, Thalia R. Goldstein (2019) Children Learn From Both Embodied and Passive Pretense: A Replication and Extension. Child Development."
   },
@@ -478,6 +511,9 @@
   },
   "10.1111/j.1467-9221.2005.00416.x": {
     "ref": "Howard Lavine, Milton Lodge, Kate Freitas (2005) Threat, Authoritarianism, and Selective Exposure to Information. Political Psychology."
+  },
+  "10.1111/j.1467-9280.2007.01983.x": {
+    "ref": "Azim Shariff, Ara Norenzayan (2007) God Is Watching You. Psychological Science."
   },
   "10.1111/j.1467-9280.2008.02082.x": {
     "ref": "Lisa N. Jefferies, Daniel Smilek, Eric Eich, James T. Enns (2008) Emotional Valence and Arousal Interact in Attentional Control. Psychological Science."
@@ -539,8 +575,14 @@
   "10.1152/jn.00286.2019": {
     "ref": "Kathryn E. Unruh, Laura E. Martin, Grant Magnon, David E. Vaillancourt, John A. Sweeney, Matthew W. Mosconi (2019) Cortical and subcortical alterations associated with precision visuomotor behavior in individuals with autism spectrum disorder. Journal of Neurophysiology."
   },
+  "10.1159/000506138": {
+    "ref": "Arne Lohmann (2020) No Acoustic Correlates of Grammatical Class: A Critical Re-Examination of Sereno and Jongman (1995). Phonetica."
+  },
   "10.1163/15685370260441008": {
     "ref": "Jesse M. Bering (2002) Intuitive Conceptions of Dead Agents' Minds: The Natural Foundations of Afterlife Beliefs as Phenomenological Boundary. Journal of Cognition and Culture."
+  },
+  "10.1167/12.11.12": {
+    "ref": "Lee de\u2010Wit, Jonas Kubilius, Johan Wagemans, Hans Op de Beeck (2012) Bistable Gestalts reduce activity in the whole of V1, not just the retinotopically predicted parts. Journal of Vision."
   },
   "10.1167/16.13.4": {
     "ref": "Doris I. Braun, Karl R. Gegenfurtner (2016) Dynamics of oculomotor direction discrimination. Journal of Vision."
@@ -557,6 +599,9 @@
   },
   "10.1177/0022243719851490": {
     "ref": "Thomas Allard, David J. Hardisty, Dale W. Griffin (2019) When \u201cMore\u201d Seems Like Less: Differential Price Framing Increases the Choice Share of Higher-Priced Options. Journal of Marketing Research."
+  },
+  "10.1177/002383099503800103": {
+    "ref": "Joan A. Sereno, Allard Jongman (1995) Acoustic Correlates of Grammatical Class. Language and Speech."
   },
   "10.1177/00332941211012621": {
     "ref": "Eric D. Wesselmann, Shane W. Boyd, Jordan A. Arellanes, Alexander Driskell, Matthew Hesson-McInnis (2021) Manipulating Environmental Commitment: A Replication and Extension. Psychological Reports."
@@ -778,6 +823,9 @@
   "10.23668/psycharchives.4766": {
     "ref": "Christina Artemenko, Nicolas Masson, Carrie Georges, Hans\u2010Christoph Nuerk, Krzysztof Cipora (2021) Not all Elementary School Teachers are Scared of Math. Digital Access to Libraries (Universit\u00e9 catholique de Louvain (UCL), l'Universit\u00e9 de Namur (UNamur) and the Universit\u00e9 Saint-Louis (USL-B))."
   },
+  "10.24193/cbb.2022.26.09": {
+    "ref": "Samsad Afrin Himi, Farhana Ferdous (2022) Decay or interference accounts of forgetting: A replication of Waugh and Norman\u2019s (1965) study. Cognition Brain Behavior An Interdisciplinary Journal."
+  },
   "10.2466/04.03.pr0.112.2.533-544": {
     "ref": "Sean P. Carlin, Lionel Standing (2013) Is Intelligence Enhanced by Letter Priming? A Failure to Replicate the Results of Ciani and Sheldon (2010). Psychological Reports."
   },
@@ -855,8 +903,14 @@
   "10.31234/osf.io/yd4re": {
     "ref": "Christopher Harms, Hanna A. Genau, Carolin Meschede, Andr\u00e9 Beauducel (2017) Does it Actually Feel Right? A Replication Attempt of the Rounded Price Effect."
   },
+  "10.31234/osf.io/yha5e": {
+    "ref": "Xue Jun Cheng, Daniel R. Little (2023) Composite Schematic Faces are Processed Analytically."
+  },
   "10.31235/osf.io/a2d5p": {
     "ref": "C. Oswald, Julian Walterskirchen, Sonja H\u00e4ffner, Marco Nicola Binetti, Christoph Dworschak (2023) Replication of The Morning After: Report from the Nottingham Replication Games."
+  },
+  "10.31235/osf.io/nt8c4": {
+    "ref": "Johannes Geith, Alexander Passer-J\u00e4hnel, Stefanie Rue\u00df, Lukas Rudolph (2024) Inequality and Immigration Do Not Necessarily Increase Welfare Chauvinism -- A Replication of Two Influential Studies."
   },
   "10.31235/osf.io/zugae": {
     "ref": "Tyler Lane (2021) Associations between firearm and suicide rates: a replication of Kleck (2021)."
@@ -923,6 +977,9 @@
   },
   "10.5465/amj.2010.51468978": {
     "ref": "Karen A. Jehn, Sonja Rispens, Sherry M. B. Thatcher (2010) The Effects of Conflict Asymmetry on Work Group and Individual Outcomes. Academy of Management Journal."
+  },
+  "10.5964/ejop.8375": {
+    "ref": "Holger Busch (2023) The association between parental generativity and parent-child attitude-similarity through parent- and child-reported authoritative parenting: A replication. Europe\u2019s Journal of Psychology."
   },
   "10.5964/jnc.6063": {
     "ref": "Christina Artemenko, Nicolas Masson, Carrie Georges, Hans\u2010Christoph Nuerk, Krzysztof Cipora (2021) Not all elementary school teachers are scared of math. Journal of Numerical Cognition."
