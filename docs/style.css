@@ -4636,3 +4636,22 @@ body.has-maint-banner #admin-screen {
   .hist-detail-header-left { gap: 0.4rem; }
   .hd-top-bar { padding: 0.75rem 1rem; }
 }
+
+/* ---------- Pool Priority tab ---------- */
+.sp-panel { max-width: 560px; padding: 1.25rem 1.4rem; background: var(--bg-alt); border: 1px solid var(--rule); border-radius: 12px; }
+.sp-enable { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; font-size: 0.95rem; cursor: pointer; }
+.sp-enable input { width: 16px; height: 16px; }
+.sp-hint { font-size: 0.8rem; color: var(--muted); margin: 0.3rem 0 0; }
+.sp-field { margin-top: 1.3rem; }
+.sp-label { font-size: 0.85rem; font-weight: 600; color: var(--ink); margin-bottom: 0.5rem; }
+.sp-radios { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+.sp-radio { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.8rem; border: 1px solid var(--rule); border-radius: 999px; cursor: pointer; font-size: 0.85rem; }
+.sp-radio:has(input:checked) { border-color: var(--accent, #b54614); background: rgba(181,70,20,0.08); font-weight: 600; }
+.sp-years { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.sp-years .admin-input { width: 6rem; }
+#sp-share { width: 100%; margin-top: 0.2rem; }
+.sp-preview { margin-top: 1.3rem; padding: 0.85rem 1rem; background: var(--bg); border: 1px solid var(--rule); border-radius: 8px; }
+.sp-preview-list { margin: 0; padding-left: 1.1rem; font-size: 0.85rem; line-height: 1.7; }
+.sp-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 1.4rem; }
+.sp-saved { color: var(--green); font-size: 0.85rem; font-weight: 600; }
+.sp-meta { font-size: 0.78rem; color: var(--muted); margin-top: 0.9rem; }

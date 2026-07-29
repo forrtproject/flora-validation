@@ -2751,7 +2751,6 @@ function wireEditButtons(container, p) {
     const quoteText    = container.querySelector("#outcome-quote-text");
     const quoteEdit    = container.querySelector("#outcome-quote-edit");
     const outcomeChoices    = container.querySelector("#gate-3 .choices");
-    const correctionRow     = container.querySelector("#outcome-correction");
 
     const _lockChoices = () => {
       if (!outcomeChoices) return;
@@ -2788,37 +2787,29 @@ function wireEditButtons(container, p) {
       quoteEdit.classList.add("hidden");
       _unlockChoices();
 
-      if (state.judgement.type === "reproduction") {
-        // Reproduction: the quote is context only — just save the edit; don't
-        // run the replication "auto-select wrong" flow (it would wipe the
-        // reproduction outcome).
-        editQuoteBtn.textContent = state.judgement.edited_outcome_quote ? "edit quote (✓ edited)" : "edit / extend quote";
-        updateSubmitState(container.querySelector(".pair-body"));
-        return;
+      // Editing the quote is independent of the outcome judgement (for both
+      // replication and reproduction). Just record the edit and update the button —
+      // the validator still judges the outcome via the normal buttons. Confirming
+      // "Looks right" with an edited quote stays a CORRECT outcome, not a
+      // mischaracterisation (that only happens if they actually pick "Mischaracterised").
+      editQuoteBtn.textContent = state.judgement.edited_outcome_quote ? "edit quote (✓ edited)" : "edit / extend quote";
+
+      // If the outcome was already confirmed before this edit, refresh its chip so the
+      // "✎ quote edited" tag appears (or disappears on revert) in the reverse order too.
+      // Update the chip in place — don't call answerGate, which would collapse the gate
+      // body the validator has open for editing.
+      const gate3 = container.querySelector("#gate-3");
+      if (gate3 && gate3.classList.contains("gate-answered") &&
+          state.judgement.outcome && state.judgement.outcome !== "wrong") {
+        const sel  = gate3.querySelector(".choice.selected[data-outcome]");
+        const chip = gate3.querySelector(".gate-chip");
+        if (sel && chip) {
+          const cls = getAnswerClass(sel);
+          chip.textContent = getAnswerLabel(sel);
+          chip.className = `gate-chip${cls ? " " + cls : ""}`;
+        }
       }
 
-      if (state.judgement.edited_outcome_quote) {
-        // Quote was changed — auto-select "wrong" and skip the 3 buttons
-        state.judgement.outcome = "wrong";
-        state.judgement.corrected_outcome = null;
-        if (outcomeChoices) outcomeChoices.classList.add("hidden");
-        if (correctionRow) {
-          correctionRow.classList.remove("hidden");
-          const lbl = correctionRow.querySelector("#outcome-correction-label");
-          if (lbl) lbl.textContent = "You edited the quote — what is the correct outcome label?";
-        }
-        editQuoteBtn.textContent = "edit quote (✓ edited)";
-      } else {
-        // Reverted — restore the 3 choice buttons
-        state.judgement.outcome = null;
-        state.judgement.corrected_outcome = null;
-        if (outcomeChoices) outcomeChoices.classList.remove("hidden");
-        if (correctionRow) {
-          correctionRow.classList.add("hidden");
-          correctionRow.querySelectorAll(".choice").forEach(b => b.classList.remove("selected"));
-        }
-        editQuoteBtn.textContent = "edit / extend quote";
-      }
       updateSubmitState(container.querySelector(".pair-body"));
     };
 
@@ -3018,7 +3009,11 @@ function getAnswerLabel(btn) {
     return { correct: "Correct match", wrong: "Wrong paper", unsure: "Can't tell" }[btn.dataset.original] || btn.dataset.original;
   }
   if (btn.dataset.outcome) {
-    return { correct: "Looks right", wrong: "Mischaracterised", unsure: "Can't tell" }[btn.dataset.outcome] || btn.dataset.outcome;
+    const base = { correct: "Looks right", wrong: "Mischaracterised", unsure: "Can't tell" }[btn.dataset.outcome] || btn.dataset.outcome;
+    // Confirmed-correct outcome with an improved quote → make clear the quote was
+    // extended, without implying the outcome was mischaracterised.
+    return (btn.dataset.outcome !== "wrong" && state.judgement.edited_outcome_quote)
+      ? `${base} · ✎ quote edited` : base;
   }
   return "";
 }
@@ -3738,8 +3733,6 @@ function renderAdminCounts(counts) {
   $("#fc-needs-review").textContent     = counts.needs_review;
   $("#fc-validated").textContent        = counts.validated;
   $("#fc-rejected").textContent         = counts.rejected ?? 0;
-  const _fcReverted = $("#fc-reverted");
-  if (_fcReverted) _fcReverted.textContent = counts.reverted ?? 0;
   const _fcAdminChecked = $("#fc-admin-checked");
   if (_fcAdminChecked) _fcAdminChecked.textContent = counts.admin_checked;
 }
@@ -3776,7 +3769,7 @@ function renderAdminTable(entries, total) {
       e.has_v2  ? `<span class="val-badge" title="${escapeHtml(e.v2_handle || "Validator 2")}">V2</span>` : `<span class="val-badge val-badge-empty">—</span>`,
       e.has_llm ? `<span class="val-badge val-badge-llm" title="LLM validator">LLM</span>` : `<span class="val-badge val-badge-empty">—</span>`,
     ].join("");
-    const study = (e.study_r || e.doi_r || "—").substring(0, 60);
+    const study = (e.final_study_r || e.study_r || e.doi_r || "—").substring(0, 60);
     const tc = e.trusted_validator_count || 0;
     const trustBadge = tc === 2
       ? '<span class="admin-trust-badge trust-double" title="Both validators are trusted">⭐⭐</span>'
@@ -3802,7 +3795,7 @@ function renderAdminTable(entries, total) {
       : "—";
     return `<tr>
       <td class="admin-cell-num">${offset + i + 1}</td>
-      <td class="admin-cell-study" title="${(e.study_r || "").replace(/"/g, "&quot;")}">${escapeHtml(study)}${flags}${trustBadge}${needsAttentionFlag}${noteFlag}</td>
+      <td class="admin-cell-study" title="${(e.final_study_r || e.study_r || "").replace(/"/g, "&quot;")}">${escapeHtml(study)}${flags}${trustBadge}${needsAttentionFlag}${noteFlag}</td>
       <td>${escapeHtml(e.final_type || e.type || "—")}</td>
       <td>${escapeHtml(fmtOutcome(e.final_outcome || e.outcome) || "—")}</td>
       <td><span class="admin-status ${s.cls}">${s.text}</span></td>
@@ -4182,21 +4175,9 @@ function renderAdminDetail(data) {
             <button id="admin-skip-notval-btn" class="ghost-btn">Skip →</button>
           </div>
         </div>
-        ` : hasNotValidation ? `
-        <div class="not-val-decision">
-          <p class="not-val-who">⚠ <strong>${notValWho}</strong> marked this as <strong>not a replication</strong>.</p>
-          <p class="not-val-question">What is your decision?</p>
-          <div class="not-val-buttons">
-            <button id="confirm-reject-btn" class="btn-reject">✗ Confirm — Not a Replication</button>
-            <button id="confirm-is-rep-btn" class="btn-outline">✓ Override — It IS a Replication</button>
-            <button id="admin-skip-notval-btn" class="ghost-btn">Skip →</button>
-          </div>
-          <p class="not-val-hint">↑ Clicking Override will open the edit form so you can review and correct all fields before resolving.</p>
-          <textarea id="ar-notes-quick" class="admin-textarea" placeholder="Notes (optional)" style="margin-top:0.75rem"></textarea>
-        </div>
         ` : ""}
 
-        <div id="ar-normal-form" class="${(hasNotValidation || rec.validation_status === "rejected") ? "hidden" : ""}"
+        <div id="ar-normal-form" class="${rec.validation_status === "rejected" ? "hidden" : ""}"
              data-orig-study-r="${escapeHtml(finalStudyR || "")}"
              data-orig-doi-r="${escapeHtml(finalDoiR || "")}"
              data-orig-study-o="${escapeHtml(finalStudyO || "")}"
@@ -4243,9 +4224,6 @@ function renderAdminDetail(data) {
           <label class="admin-form-label">Abstract</label>
           <textarea id="ar-abstract-r" class="admin-textarea" style="min-height:120px" placeholder="Abstract…">${escapeHtml(finalAbstractR || "")}</textarea>
 
-          <label class="admin-form-label">Admin notes</label>
-          <textarea id="ar-notes" class="admin-textarea" placeholder="Notes for the record (optional)"></textarea>
-
           <div class="admin-resolve-actions">
             <button id="admin-resolve-btn" class="btn-primary" data-id="${rec.record_id}">Mark as Resolved →</button>
             ${["consensus_reached","need_review"].includes(rec.validation_status) ? `<button id="admin-flag-review-btn" class="btn-outline" data-id="${rec.record_id}">⚑ Flag for Review</button>` : ""}
@@ -4260,8 +4238,8 @@ function renderAdminDetail(data) {
     </div>
   `;
 
-  if (rec.validation_status === "rejected" || hasNotValidation) {
-    $("#confirm-reject-btn")?.addEventListener("click", () => submitQuickReject(rec.record_id));
+  if (rec.validation_status === "rejected") {
+    // Rejected records show a heads-up; "Review / edit fields" reveals the form.
     $("#confirm-is-rep-btn")?.addEventListener("click", () => {
       $(".not-val-decision")?.classList.add("hidden");
       $("#ar-normal-form").classList.remove("hidden");
@@ -4302,7 +4280,7 @@ function renderAdminDetail(data) {
         original_check: "incorrect",
         outcome_check:  "incorrect",
         corrected_type: "not_validation",
-        admin_notes:    $("#ar-notes")?.value.trim() || null,
+        admin_notes:    $("#admin-note-text")?.value.trim() || null,
       });
       showToast("Record rejected — marked as not a replication.");
       await advanceToNextAdminEntry();
@@ -4368,7 +4346,7 @@ function renderAdminDetail(data) {
     _flagReviewBtn.onclick = async () => {
       const btn = $("#admin-flag-review-btn");
       const recordId = btn.dataset.id;
-      const notes = $("#ar-notes")?.value.trim() || null;
+      const notes = $("#admin-note-text")?.value.trim() || null;
       btn.disabled = true;
       btn.textContent = "Flagging…";
       try {
@@ -4381,28 +4359,6 @@ function renderAdminDetail(data) {
         btn.textContent = "⚑ Flag for Review";
       }
     };
-  }
-}
-
-async function submitQuickReject(recordId) {
-  const btn = $("#confirm-reject-btn");
-  btn.disabled = true;
-  btn.textContent = "Rejecting…";
-  try {
-    await adminApi(`/entries/${recordId}/resolve`, "POST", {
-      admin_name:     _adminHandle || "admin",
-      type_check:     "incorrect",
-      original_check: "incorrect",
-      outcome_check:  "incorrect",
-      corrected_type: "not_validation",
-      admin_notes:    $("#ar-notes-quick")?.value.trim() || null,
-    });
-    showToast("Marked as not a replication.");
-    await advanceToNextAdminEntry();
-  } catch (e) {
-    btn.disabled = false;
-    btn.textContent = "✗ Confirm — Not a Replication";
-    await showAlert("Error: " + e.message);
   }
 }
 
@@ -4454,7 +4410,7 @@ async function submitAdminResolve(recordId) {
     corrected_url_r:         urlRChanged     ? (newUrlR      || null)   : null,
     corrected_abstract_r:    abstractChanged ? (newAbstractR || null)   : null,
     out_quote_source:        $("#ar-quote-source")?.value || null,
-    admin_notes:             $("#ar-notes").value.trim() || null,
+    admin_notes:             $("#admin-note-text")?.value.trim() || null,
   };
 
   try {
@@ -4502,6 +4458,7 @@ function switchAdminTab(tab) {
   $("#admin-tab-stats").classList.toggle("hidden",      tab !== "stats");
   $("#admin-tab-admins").classList.toggle("hidden",     tab !== "admins");
   $("#admin-tab-dashboard").classList.toggle("hidden",  tab !== "dashboard");
+  $("#admin-tab-priority").classList.toggle("hidden",   tab !== "priority");
   $("#admin-tab-restricted").classList.toggle("hidden", tab !== "restricted");
   $("#admin-tab-messages").classList.toggle("hidden",   tab !== "messages");
   $("#admin-tabs").querySelectorAll(".admin-tab-btn").forEach((b) => {
@@ -4510,6 +4467,7 @@ function switchAdminTab(tab) {
   if (tab === "stats")      fetchAdminStats();
   if (tab === "admins")     { fetchAdminAdmins(); fetchAdminBannerStatus(); }
   if (tab === "dashboard")  fetchAdminDashboard();
+  if (tab === "priority")   fetchServingConfig();
   if (tab === "restricted") fetchAdminRestricted();
   if (tab === "messages")   fetchAdminMessages();
 }
@@ -4621,6 +4579,132 @@ async function fetchAdminDashboard() {
     renderAdminDashboard(data);
   } catch (e) {
     body.innerHTML = `<p class="admin-loading">Error: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+/* ---------- Pool Priority tab ---------- */
+const PRIORITY_DEFAULTS = {
+  enabled: false, priority_outcome: "failed",
+  priority_year_min: 2011, priority_year_max: 2021, priority_share: 70,
+};
+let _priorityPreviewTimer = null;
+
+async function fetchServingConfig() {
+  const body = $("#admin-priority-body");
+  body.innerHTML = '<p class="admin-loading">Loading…</p>';
+  try {
+    renderServingConfig(await adminApi("/serving-config"));
+  } catch (e) {
+    body.innerHTML = `<p class="admin-loading">Error: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+function renderServingConfig(cfg) {
+  const outcome = cfg.priority_outcome || "";
+  const ymin = cfg.priority_year_min ?? "";
+  const ymax = cfg.priority_year_max ?? "";
+  const share = cfg.priority_share ?? 70;
+  const radio = (val, label) =>
+    `<label class="sp-radio"><input type="radio" name="sp-outcome" value="${val}" ${outcome === val ? "checked" : ""}><span>${label}</span></label>`;
+
+  $("#admin-priority-body").innerHTML = `
+    <div class="sp-panel">
+      <label class="sp-enable"><input type="checkbox" id="sp-enabled" ${cfg.enabled ? "checked" : ""}> <span>Enable priority serving</span></label>
+      <p class="sp-hint">When off, records are served randomly — exactly the current behaviour.</p>
+
+      <div class="sp-field">
+        <div class="sp-label">Prioritise outcome</div>
+        <div class="sp-radios">${radio("failed", "Failed")}${radio("successful", "Successful")}${radio("mixed", "Mixed")}</div>
+      </div>
+
+      <div class="sp-field">
+        <div class="sp-label">Years</div>
+        <div class="sp-years">
+          <input type="number" id="sp-ymin" class="admin-input" placeholder="2011" value="${ymin}">
+          <span>–</span>
+          <input type="number" id="sp-ymax" class="admin-input" placeholder="2021" value="${ymax}">
+          <span class="sp-hint">leave both blank to ignore year</span>
+        </div>
+      </div>
+
+      <div class="sp-field">
+        <div class="sp-label">Priority share: <strong id="sp-share-label">${share}%</strong> priority · <span id="sp-rest-label">${100 - share}%</span> other</div>
+        <input type="range" id="sp-share" min="0" max="100" step="5" value="${share}">
+      </div>
+
+      <div class="sp-preview" id="sp-preview"><p class="sp-hint">Loading preview…</p></div>
+
+      <div class="sp-actions">
+        <button id="sp-save" class="btn-primary">Save</button>
+        <button id="sp-reset" class="btn-outline">Reset to defaults</button>
+        <span id="sp-saved" class="sp-saved hidden">Saved ✓</span>
+      </div>
+      ${cfg.updated_by ? `<p class="sp-meta">Last changed by <strong>${escapeHtml(cfg.updated_by)}</strong>${cfg.updated_at ? ` · ${fmtDate(cfg.updated_at)}` : ""}</p>` : ""}
+    </div>`;
+
+  const shareEl = $("#sp-share");
+  shareEl.addEventListener("input", () => {
+    const v = +shareEl.value;
+    $("#sp-share-label").textContent = v + "%";
+    $("#sp-rest-label").textContent = (100 - v) + "%";
+    const ratio = $("#sp-ratio");
+    if (ratio) ratio.textContent = `At ${v}%, ≈ ${Math.round(v / 10)} of every 10 served will be priority`;
+  });
+  $("#admin-priority-body").querySelectorAll('input[name="sp-outcome"], #sp-ymin, #sp-ymax')
+    .forEach(el => el.addEventListener("input", _refreshPriorityPreview));
+  $("#sp-save").addEventListener("click", _saveServingConfig);
+  $("#sp-reset").addEventListener("click", () => renderServingConfig(PRIORITY_DEFAULTS));
+  _refreshPriorityPreview();
+}
+
+function _readPriorityForm() {
+  const ymin = $("#sp-ymin").value.trim();
+  const ymax = $("#sp-ymax").value.trim();
+  return {
+    enabled: $("#sp-enabled").checked,
+    priority_outcome: $('input[name="sp-outcome"]:checked')?.value || null,
+    priority_year_min: ymin ? +ymin : null,
+    priority_year_max: ymax ? +ymax : null,
+    priority_share: +$("#sp-share").value,
+  };
+}
+
+function _refreshPriorityPreview() {
+  clearTimeout(_priorityPreviewTimer);
+  _priorityPreviewTimer = setTimeout(async () => {
+    const box = $("#sp-preview");
+    if (!box) return;   // panel was replaced/navigated away before the debounce fired
+    const f = _readPriorityForm();
+    if (!f.priority_outcome) { box.innerHTML = `<p class="sp-hint">Pick an outcome to see how the pool would split.</p>`; return; }
+    try {
+      const qs = new URLSearchParams({ outcome: f.priority_outcome });
+      if (f.priority_year_min != null) qs.set("year_min", f.priority_year_min);
+      if (f.priority_year_max != null) qs.set("year_max", f.priority_year_max);
+      const p = await adminApi(`/serving-config/preview?${qs.toString()}`);
+      const yr = (f.priority_year_min != null && f.priority_year_max != null) ? ` · ${f.priority_year_min}–${f.priority_year_max}` : "";
+      box.innerHTML = `<ul class="sp-preview-list">
+        <li><strong>${p.priority_match}</strong> records match (${escapeHtml(f.priority_outcome)}${yr})</li>
+        <li><strong>${p.rest}</strong> in the rest of the servable pool</li>
+        <li id="sp-ratio">At ${f.priority_share}%, ≈ ${Math.round(f.priority_share / 10)} of every 10 served will be priority</li>
+      </ul>`;
+    } catch (e) {
+      box.innerHTML = `<p class="sp-hint">Preview unavailable: ${escapeHtml(e.message)}</p>`;
+    }
+  }, 250);
+}
+
+async function _saveServingConfig() {
+  const btn = $("#sp-save");
+  btn.disabled = true; btn.textContent = "Saving…";
+  try {
+    await adminApi("/serving-config", "PUT", _readPriorityForm());
+    const saved = $("#sp-saved");
+    saved.classList.remove("hidden");
+    setTimeout(() => saved.classList.add("hidden"), 2000);
+  } catch (e) {
+    await showAlert("Error: " + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = "Save";
   }
 }
 
