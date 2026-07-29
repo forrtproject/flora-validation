@@ -1,5 +1,6 @@
 import json
 import os
+import random
 import re
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -242,6 +243,14 @@ class AdminResolveRequest(BaseModel):
     corrected_abstract_r: str | None = None
     out_quote_source: str | None = None   # 'abstract' | 'full_text' | None (auto-detect)
     admin_notes: str | None = None
+
+
+class ServingConfigRequest(BaseModel):
+    enabled: bool = False
+    priority_outcome: str | None = None      # 'failed' | 'successful' | 'mixed' | None
+    priority_year_min: int | None = None
+    priority_year_max: int | None = None
+    priority_share: int = 70                  # 0–100
 
 
 # ---------------------------------------------------------------------------
@@ -641,11 +650,45 @@ def _fetch_pair_row(cur, record_id):
     return cur.fetchone()
 
 
-def _claim_one_pair(cur, coder_id: int, started: bool, mode: str = "normal"):
-    """Claim one free human slot for this validator, within the given mode's pool.
-       started=True  → active pair (5-day lock, started_at set)
-       started=False → buffered prefetch (short lock, started_at NULL)
-    Returns an enriched pair dict (with queue_id + judge_count) or None."""
+_PRIORITY_OUTCOMES = {"failed", "successful", "mixed"}
+
+
+def _serving_config(cur) -> dict:
+    """The single serving_config row (or safe defaults if the table is empty)."""
+    cur.execute(
+        "SELECT enabled, priority_outcome, priority_year_min, priority_year_max, priority_share "
+        "FROM serving_config WHERE id = 1"
+    )
+    row = cur.fetchone()
+    return dict(row) if row else {
+        "enabled": False, "priority_outcome": None,
+        "priority_year_min": None, "priority_year_max": None, "priority_share": 70,
+    }
+
+
+def _priority_predicate(cfg: dict):
+    """A SQL boolean over alias u (never NULL) that is TRUE for records matching the
+    priority rule, plus its params — or None when priority serving isn't active.
+    Year is parsed safely so non-numeric year_r values never raise a cast error."""
+    if not cfg.get("enabled") or cfg.get("priority_outcome") not in _PRIORITY_OUTCOMES:
+        return None
+    clauses = ["COALESCE(u.final_outcome, u.outcome) = %s"]
+    params: list = [cfg["priority_outcome"]]
+    ymin, ymax = cfg.get("priority_year_min"), cfg.get("priority_year_max")
+    if ymin is not None and ymax is not None:
+        # year_r is stored inconsistently (e.g. '2020', '2020.0', ' 2020'); trim, then
+        # take the leading 4 digits so every numeric format parses, and non-numeric
+        # years just fall out as NULL (no cast error).
+        clauses.append(
+            "(CASE WHEN btrim(u.year_r) ~ '^[0-9]{4}' "
+            "THEN substring(btrim(u.year_r) FROM '^[0-9]{4}')::int END) BETWEEN %s AND %s"
+        )
+        params += [ymin, ymax]
+    return f"(({' AND '.join(clauses)}) IS TRUE)", params
+
+
+def _select_pair_candidate(cur, coder_id: int, mode: str, extra_where: str = "", extra_params: tuple = ()):
+    """Pick one servable record for this validator, optionally narrowed by extra_where."""
     cur.execute(
         f"""
         SELECT {_PAIR_SELECT}
@@ -654,6 +697,7 @@ def _claim_one_pair(cur, coder_id: int, started: bool, mode: str = "normal"):
         WHERE u.validation_status IN ('unvalidated', 'validation_inprogress')
           AND u.restricted_access IS NOT TRUE
           AND {_mode_sql(mode)}
+          {extra_where}
           AND u.record_id NOT IN (
               SELECT record_id FROM validation_queue WHERE validator_id = %s
           )
@@ -666,9 +710,38 @@ def _claim_one_pair(cur, coder_id: int, started: bool, mode: str = "normal"):
         ORDER BY judge_count DESC, RANDOM()
         LIMIT 1
         """,
-        (coder_id,),
+        (*extra_params, coder_id),
     )
-    row = cur.fetchone()
+    return cur.fetchone()
+
+
+def _claim_one_pair(cur, coder_id: int, started: bool, mode: str = "normal"):
+    """Claim one free human slot for this validator, within the given mode's pool.
+       started=True  → active pair (5-day lock, started_at set)
+       started=False → buffered prefetch (short lock, started_at NULL)
+    Returns an enriched pair dict (with queue_id + judge_count) or None.
+
+    When priority serving is enabled, each claim draws from the priority pool with
+    probability = priority_share, else from the rest — falling back to the other
+    pool if the chosen one is empty, so a validator is never blocked."""
+    cfg = _serving_config(cur)
+    pred = _priority_predicate(cfg)
+    if pred:
+        sql, prm = pred
+        prm = tuple(prm)
+        if random.random() < (cfg["priority_share"] / 100.0):
+            attempts = [(f"AND {sql}", prm), (f"AND NOT {sql}", prm)]
+        else:
+            attempts = [(f"AND NOT {sql}", prm), (f"AND {sql}", prm)]
+    else:
+        attempts = []
+    attempts.append(("", ()))   # final fallback: the whole pool
+
+    row = None
+    for extra_where, extra_params in attempts:
+        row = _select_pair_candidate(cur, coder_id, mode, extra_where, extra_params)
+        if row:
+            break
     if not row:
         return None
     record_id = row["record_id"]
@@ -1522,6 +1595,72 @@ def _as_dict(v):
     return v or {}
 
 
+@app.get("/api/admin/serving-config")
+def get_serving_config(x_admin_token: str = Header(...)):
+    _require_admin(x_admin_token)
+    with db() as cur:
+        cur.execute(
+            "SELECT enabled, priority_outcome, priority_year_min, priority_year_max, "
+            "priority_share, updated_by, updated_at FROM serving_config WHERE id = 1"
+        )
+        row = cur.fetchone()
+    return dict(row) if row else {
+        "enabled": False, "priority_outcome": None,
+        "priority_year_min": None, "priority_year_max": None, "priority_share": 70,
+    }
+
+
+@app.put("/api/admin/serving-config")
+def put_serving_config(req: ServingConfigRequest, x_admin_token: str = Header(...)):
+    admin_handle = _require_admin(x_admin_token)
+    outcome = req.priority_outcome if req.priority_outcome in _PRIORITY_OUTCOMES else None
+    share = max(0, min(100, req.priority_share))
+    ymin, ymax = req.priority_year_min, req.priority_year_max
+    if ymin is not None and ymax is not None and ymin > ymax:
+        ymin, ymax = ymax, ymin
+    with db() as cur:
+        cur.execute(
+            """
+            INSERT INTO serving_config
+                (id, enabled, priority_outcome, priority_year_min, priority_year_max,
+                 priority_share, updated_by, updated_at)
+            VALUES (1, %s, %s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+                enabled           = EXCLUDED.enabled,
+                priority_outcome  = EXCLUDED.priority_outcome,
+                priority_year_min = EXCLUDED.priority_year_min,
+                priority_year_max = EXCLUDED.priority_year_max,
+                priority_share    = EXCLUDED.priority_share,
+                updated_by        = EXCLUDED.updated_by,
+                updated_at        = NOW()
+            """,
+            (req.enabled, outcome, ymin, ymax, share, admin_handle),
+        )
+    return {"saved": True}
+
+
+@app.get("/api/admin/serving-config/preview")
+def preview_serving_config(outcome: str = "", year_min: int | None = None,
+                           year_max: int | None = None, x_admin_token: str = Header(...)):
+    """Count how the proposed rule would split the currently-servable pool."""
+    _require_admin(x_admin_token)
+    base = ("FROM unvalidated u WHERE u.validation_status IN ('unvalidated', 'validation_inprogress') "
+            "AND u.restricted_access IS NOT TRUE")
+    pred = _priority_predicate({
+        "enabled": True, "priority_outcome": outcome or None,
+        "priority_year_min": year_min, "priority_year_max": year_max, "priority_share": 70,
+    })
+    with db() as cur:
+        cur.execute(f"SELECT COUNT(*) AS n {base}")
+        total = cur.fetchone()["n"]
+        match = 0
+        if pred:
+            sql, prm = pred
+            cur.execute(f"SELECT COUNT(*) AS n {base} AND {sql}", tuple(prm))
+            match = cur.fetchone()["n"]
+    return {"pool_total": total, "priority_match": match, "rest": total - match}
+
+
 @app.get("/api/admin/dashboard")
 def admin_dashboard(x_admin_token: str = Header(...)):
     _require_admin(x_admin_token)
@@ -1952,91 +2091,9 @@ _AGREEMENT_SQL = (
     ") / 3.0)::int ELSE NULL END)"
 )
 
-# "Reverted" detector — resolved records whose stored final value got reset to the
-# EXTRACTED value even though the validators' consensus wanted a change (e.g. the old
-# admin-resolve bug). Fields covered: outcome, type, original DOI, original title.
-#
-# The revert signature is always "current effective value == extracted value while
-# consensus wanted something different". Two branches produce that consensus:
-#   A) Agreement (is_tiebreaker = FALSE): both humans marked the field 'incorrect'
-#      with the SAME corrected value.
-#   B) Tiebreaker (is_tiebreaker = TRUE): the winning human is the one whose three
-#      checks all match the LLM's; their correction is what should have been stored.
-#
-# Scoped to validated/consensus_reached (a correction should be reflected there);
-# need_review/rejected are excluded. 'not_validation' is a reject signal, not a real
-# type value, so it never counts as a type revert.
-#
-# _MH1 / _MH2: does human_1 / human_2 match the LLM on all three checks (branch B)?
-_MH1 = ("h1.type_check = u.llm_validator->>'type_check' "
-        "AND h1.original_check = u.llm_validator->>'original_check' "
-        "AND h1.outcome_check = u.llm_validator->>'outcome_check'")
-_MH2 = ("h2.type_check = u.llm_validator->>'type_check' "
-        "AND h2.original_check = u.llm_validator->>'original_check' "
-        "AND h2.outcome_check = u.llm_validator->>'outcome_check'")
-
-_REVERTED_WHERE = f"""
-    u.validation_status IN ('validated', 'consensus_reached')
-    AND (
-      -- Branch A: both validators agreed on a correction; final reset to extracted.
-      (u.is_tiebreaker = FALSE AND EXISTS (
-        SELECT 1
-        FROM validation_queue h1
-        JOIN validation_queue h2
-          ON h2.record_id = h1.record_id AND h2.validator_slot = 'human_2' AND h2.is_validated = TRUE
-        WHERE h1.record_id = u.record_id AND h1.validator_slot = 'human_1' AND h1.is_validated = TRUE
-          AND (
-              (h1.outcome_check = 'incorrect' AND h2.outcome_check = 'incorrect'
-               AND h1.corrected_outcome IS NOT NULL AND h1.corrected_outcome = h2.corrected_outcome
-               AND h1.corrected_outcome IS DISTINCT FROM u.outcome
-               AND COALESCE(u.final_outcome, u.outcome) = u.outcome)
-           OR (h1.type_check = 'incorrect' AND h2.type_check = 'incorrect'
-               AND h1.corrected_type IS NOT NULL AND h1.corrected_type <> 'not_validation'
-               AND h1.corrected_type = h2.corrected_type
-               AND h1.corrected_type IS DISTINCT FROM u.type
-               AND COALESCE(u.final_type, u.type) = u.type)
-           OR (h1.original_check = 'incorrect' AND h2.original_check = 'incorrect'
-               AND h1.corrected_doi_o IS NOT NULL AND h1.corrected_doi_o = h2.corrected_doi_o
-               AND h1.corrected_doi_o IS DISTINCT FROM u.doi_o
-               AND COALESCE(u.final_doi_o, u.doi_o) = u.doi_o)
-           OR (h1.original_check = 'incorrect' AND h2.original_check = 'incorrect'
-               AND h1.corrected_study_o IS NOT NULL AND h1.corrected_study_o = h2.corrected_study_o
-               AND h1.corrected_study_o IS DISTINCT FROM u.study_o
-               AND COALESCE(u.final_study_o, u.study_o) = u.study_o)
-          )
-      ))
-      OR
-      -- Branch B: tiebreaker — the LLM-matched winner's correction was reset to extracted.
-      (u.is_tiebreaker = TRUE
-       AND u.llm_validator IS NOT NULL AND NOT jsonb_exists(u.llm_validator, 'error')
-       AND EXISTS (
-        SELECT 1
-        FROM validation_queue h1
-        JOIN validation_queue h2
-          ON h2.record_id = h1.record_id AND h2.validator_slot = 'human_2' AND h2.is_validated = TRUE
-        WHERE h1.record_id = u.record_id AND h1.validator_slot = 'human_1' AND h1.is_validated = TRUE
-          AND ({_MH1}) <> ({_MH2})   -- exactly one human matched the LLM
-          AND (
-              (COALESCE(u.final_outcome, u.outcome) = u.outcome AND CASE WHEN ({_MH1})
-                 THEN (h1.outcome_check = 'incorrect' AND h1.corrected_outcome IS NOT NULL AND h1.corrected_outcome IS DISTINCT FROM u.outcome)
-                 ELSE (h2.outcome_check = 'incorrect' AND h2.corrected_outcome IS NOT NULL AND h2.corrected_outcome IS DISTINCT FROM u.outcome) END)
-           OR (COALESCE(u.final_type, u.type) = u.type AND CASE WHEN ({_MH1})
-                 THEN (h1.type_check = 'incorrect' AND h1.corrected_type IS NOT NULL AND h1.corrected_type <> 'not_validation' AND h1.corrected_type IS DISTINCT FROM u.type)
-                 ELSE (h2.type_check = 'incorrect' AND h2.corrected_type IS NOT NULL AND h2.corrected_type <> 'not_validation' AND h2.corrected_type IS DISTINCT FROM u.type) END)
-           OR (COALESCE(u.final_doi_o, u.doi_o) = u.doi_o AND CASE WHEN ({_MH1})
-                 THEN (h1.original_check = 'incorrect' AND h1.corrected_doi_o IS NOT NULL AND h1.corrected_doi_o IS DISTINCT FROM u.doi_o)
-                 ELSE (h2.original_check = 'incorrect' AND h2.corrected_doi_o IS NOT NULL AND h2.corrected_doi_o IS DISTINCT FROM u.doi_o) END)
-           OR (COALESCE(u.final_study_o, u.study_o) = u.study_o AND CASE WHEN ({_MH1})
-                 THEN (h1.original_check = 'incorrect' AND h1.corrected_study_o IS NOT NULL AND h1.corrected_study_o IS DISTINCT FROM u.study_o)
-                 ELSE (h2.original_check = 'incorrect' AND h2.corrected_study_o IS NOT NULL AND h2.corrected_study_o IS DISTINCT FROM u.study_o) END)
-          )
-      ))
-    )
-"""
-
 # Whitelist of sortable columns → safe SQL expression (never interpolate raw input).
 _ENTRIES_SORT = {
-    "study":       "u.study_r",
+    "study":       "COALESCE(u.final_study_r, u.study_r)",
     "type":        "COALESCE(u.final_type, u.type)",
     "outcome":     "COALESCE(u.final_outcome, u.outcome)",
     "status":      "u.validation_status",
@@ -2079,7 +2136,6 @@ def admin_entries(
         "validated":        "WHERE u.validation_status = 'validated'",
         "rejected":         "WHERE u.validation_status = 'rejected'",
         "admin_checked":    "WHERE u.admin_checked = TRUE",
-        "reverted":         f"WHERE {_REVERTED_WHERE}",
     }.get(filter, "")
 
     search = search.strip()
@@ -2104,6 +2160,7 @@ def admin_entries(
                 u.record_id::text,
                 u.pair_id,
                 u.study_r,
+                u.final_study_r,
                 u.year_r,
                 u.doi_r,
                 u.type,
@@ -2154,8 +2211,6 @@ def admin_entries(
         c_admin = cur.fetchone()["n"]
         cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE validation_status = 'rejected'")
         c_rejected = cur.fetchone()["n"]
-        cur.execute(f"SELECT COUNT(*) AS n FROM unvalidated u WHERE {_REVERTED_WHERE}")
-        c_reverted = cur.fetchone()["n"]
 
     return {
         "entries": entries,
@@ -2170,7 +2225,6 @@ def admin_entries(
             "validated": c_validated,
             "rejected": c_rejected,
             "admin_checked": c_admin,
-            "reverted": c_reverted,
         },
     }
 
@@ -2702,7 +2756,7 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
                 UPDATE unvalidated SET
                     admin_checked       = TRUE,
                     admin_name          = %s,
-                    admin_notes         = %s,
+                    admin_notes         = COALESCE(%s, admin_notes),
                     validation_status   = 'rejected',
                     updated_at          = NOW()
                 WHERE record_id = %s
@@ -2719,7 +2773,7 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
             UPDATE unvalidated SET
                 admin_checked       = TRUE,
                 admin_name          = %s,
-                admin_notes         = %s,
+                admin_notes         = COALESCE(%s, admin_notes),
                 validation_status   = 'validated',
                 final_type          = %s,
                 final_doi_o         = %s,

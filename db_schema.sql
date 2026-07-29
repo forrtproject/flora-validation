@@ -389,3 +389,22 @@ ALTER TABLE validators ADD COLUMN IF NOT EXISTS last_seen_update INTEGER NOT NUL
 
 -- My Judgements: link flag messages back to the specific judgement that triggered them
 ALTER TABLE validator_messages ADD COLUMN IF NOT EXISTS queue_id UUID REFERENCES validation_queue(queue_id);
+
+-- Pool serving priority (single-row config). Lets admins bias which records are
+-- served for validation — e.g. prioritise 'failed' replications from 2011–2021.
+-- Disabled by default → serving stays fully random, exactly like before.
+CREATE TABLE IF NOT EXISTS serving_config (
+    id                INTEGER     PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    enabled           BOOLEAN     NOT NULL DEFAULT FALSE,
+    priority_outcome  TEXT,                              -- 'failed' | 'successful' | 'mixed' | NULL
+    priority_year_min INTEGER,
+    priority_year_max INTEGER,
+    priority_share    INTEGER     NOT NULL DEFAULT 70 CHECK (priority_share BETWEEN 0 AND 100),
+    updated_by        TEXT,
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- Seed the single row with the "failed · 2011–2021 · 70%" preset PRE-FILLED but
+-- DISABLED, so turning it on applies that preset immediately.
+INSERT INTO serving_config (id, enabled, priority_outcome, priority_year_min, priority_year_max, priority_share)
+VALUES (1, FALSE, 'failed', 2011, 2021, 70)
+ON CONFLICT (id) DO NOTHING;
