@@ -146,13 +146,19 @@ def _insert_validated(cur, record: dict, final: dict) -> None:
     # (doi_r, study_r, doi_o, study_o) is mutable, so a correction to those
     # fields would otherwise leave a stale duplicate under the old key.
     cur.execute("DELETE FROM validated WHERE record_id = %s", (record.get("record_id"),))
+    # A work id belongs to a specific DOI: if consensus resolves the original to a
+    # different DOI than the one the work id was fetched for, drop it so we never
+    # publish a work id pointing at the old paper. (doi_r isn't corrected in consensus.)
+    wid_o = record.get("oa_work_id_o") if final["doi_o"] == (record.get("final_doi_o") or record.get("doi_o")) else None
+    wid_r = record.get("oa_work_id_r")
     cur.execute(
         """
         INSERT INTO validated (
             record_id, doi_r, study_r, year_r, url_r, ref_r, abstract_r,
             doi_o, study_o, year_o, url_o, ref_o,
+            oa_work_id_o, oa_work_id_r,
             type, outcome, outcome_quote, out_quote_source, validated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (doi_r, study_r, doi_o, study_o) DO UPDATE SET
             record_id        = EXCLUDED.record_id,
             year_r           = EXCLUDED.year_r,
@@ -162,6 +168,8 @@ def _insert_validated(cur, record: dict, final: dict) -> None:
             year_o           = EXCLUDED.year_o,
             url_o            = EXCLUDED.url_o,
             ref_o            = EXCLUDED.ref_o,
+            oa_work_id_o     = EXCLUDED.oa_work_id_o,
+            oa_work_id_r     = EXCLUDED.oa_work_id_r,
             type             = EXCLUDED.type,
             outcome          = EXCLUDED.outcome,
             outcome_quote    = EXCLUDED.outcome_quote,
@@ -181,6 +189,8 @@ def _insert_validated(cur, record: dict, final: dict) -> None:
             record.get("year_o"),
             record.get("url_o"),
             record.get("ref_o"),
+            wid_o,
+            wid_r,
             final["type"],
             final["outcome"],
             final.get("outcome_quote") or record.get("outcome_quote"),
