@@ -2605,6 +2605,11 @@ def admin_approve(record_id: str, x_admin_token: str = Header(...)):
             (admin_handle, record_id),
         )
 
+        # Read work ids post-trigger (approve doesn't change DOIs, but stay uniform
+        # with resolve so a stale work id can never reach the validated row).
+        cur.execute("SELECT oa_work_id_o, oa_work_id_r FROM unvalidated WHERE record_id = %s", (record_id,))
+        _wid = cur.fetchone() or {}
+
         # Drop any prior row for this record (the natural key is mutable, so a
         # correction could otherwise leave a stale duplicate under the old key).
         cur.execute("DELETE FROM validated WHERE record_id = %s", (record_id,))
@@ -2613,8 +2618,9 @@ def admin_approve(record_id: str, x_admin_token: str = Header(...)):
             INSERT INTO validated (
                 record_id, doi_r, study_r, year_r, url_r, ref_r, abstract_r,
                 doi_o, study_o, year_o, url_o, ref_o,
+                oa_work_id_o, oa_work_id_r,
                 type, outcome, outcome_quote, out_quote_source, admin_approved
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, TRUE)
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, TRUE)
             ON CONFLICT (doi_r, study_r, doi_o, study_o) DO UPDATE SET
                 record_id        = EXCLUDED.record_id,
                 year_r           = EXCLUDED.year_r,
@@ -2624,6 +2630,8 @@ def admin_approve(record_id: str, x_admin_token: str = Header(...)):
                 year_o           = EXCLUDED.year_o,
                 url_o            = EXCLUDED.url_o,
                 ref_o            = EXCLUDED.ref_o,
+                oa_work_id_o     = EXCLUDED.oa_work_id_o,
+                oa_work_id_r     = EXCLUDED.oa_work_id_r,
                 type             = EXCLUDED.type,
                 outcome          = EXCLUDED.outcome,
                 outcome_quote    = EXCLUDED.outcome_quote,
@@ -2637,6 +2645,7 @@ def admin_approve(record_id: str, x_admin_token: str = Header(...)):
                 rec.get("final_doi_o") or rec["doi_o"],
                 rec.get("final_study_o") or rec["study_o"],
                 rec["year_o"], rec["url_o"], rec["ref_o"],
+                _wid.get("oa_work_id_o"), _wid.get("oa_work_id_r"),
                 rec.get("final_type") or rec["type"],
                 rec.get("final_outcome") or rec["outcome"],
                 rec.get("final_outcome_quote") or rec["outcome_quote"],
@@ -2793,6 +2802,12 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
             (admin_handle, req.admin_notes, final_type, final_doi_o, final_study_o, final_outcome, final_outcome_q, final_study_r, final_doi_r, final_url_r, final_abstract_r, final_src, final_src_by, was_rejected, record_id),
         )
 
+        # The UPDATE above fires the DOI trigger, which NULLs a work id whose DOI just
+        # changed. Re-read the post-trigger values so the validated row never carries a
+        # work id that points at the old paper.
+        cur.execute("SELECT oa_work_id_o, oa_work_id_r FROM unvalidated WHERE record_id = %s", (record_id,))
+        _wid = cur.fetchone() or {}
+
         # Drop any prior row for this record (the natural key is mutable, so a
         # correction could otherwise leave a stale duplicate under the old key).
         cur.execute("DELETE FROM validated WHERE record_id = %s", (record_id,))
@@ -2801,14 +2816,17 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
             INSERT INTO validated (
                 record_id, doi_r, study_r, year_r, url_r, ref_r, abstract_r,
                 doi_o, study_o, year_o, url_o, ref_o,
+                oa_work_id_o, oa_work_id_r,
                 type, outcome, outcome_quote, out_quote_source, out_quote_source_by, admin_approved
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, TRUE)
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, TRUE)
             ON CONFLICT (doi_r, study_r, doi_o, study_o) DO UPDATE SET
                 doi_r         = EXCLUDED.doi_r,
                 study_r       = EXCLUDED.study_r,
                 abstract_r    = EXCLUDED.abstract_r,
                 doi_o         = EXCLUDED.doi_o,
                 study_o       = EXCLUDED.study_o,
+                oa_work_id_o  = EXCLUDED.oa_work_id_o,
+                oa_work_id_r  = EXCLUDED.oa_work_id_r,
                 type          = EXCLUDED.type,
                 outcome       = EXCLUDED.outcome,
                 outcome_quote = EXCLUDED.outcome_quote,
@@ -2821,6 +2839,7 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
                 record_id,
                 final_doi_r, final_study_r, rec["year_r"], final_url_r, rec["ref_r"], final_abstract_r,
                 final_doi_o, final_study_o, rec["year_o"], rec["url_o"], rec["ref_o"],
+                _wid.get("oa_work_id_o"), _wid.get("oa_work_id_r"),
                 final_type, final_outcome, final_outcome_q, final_src, final_src_by,
             ),
         )
@@ -2902,10 +2921,23 @@ def _reap_stale_slots() -> None:
         traceback.print_exc()
 
 
+def _backfill_oa_work_ids() -> None:
+    """Fill any missing OpenAlex work ids (new imports, or DOI corrections that the
+    trigger NULLed) from OpenAlex by DOI. Runs nightly after the sync."""
+    try:
+        from backfill_oa_work_ids import run
+        run()
+    except Exception:
+        import traceback
+        print("[backfill_oa_work_ids] ERROR:")
+        traceback.print_exc()
+
+
 def _start_scheduler() -> None:
     from sync_csv import sync_once
     scheduler = BackgroundScheduler(timezone="UTC")
     scheduler.add_job(sync_once, CronTrigger(hour=2, minute=0))
+    scheduler.add_job(_backfill_oa_work_ids, CronTrigger(hour=2, minute=30))
     scheduler.add_job(_retry_tiebreakers, CronTrigger(hour=00, minute=22))
     scheduler.add_job(_reap_stale_slots, IntervalTrigger(minutes=2))
     scheduler.start()

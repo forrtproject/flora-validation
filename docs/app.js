@@ -4639,7 +4639,7 @@ function renderServingConfig(cfg) {
         <button id="sp-reset" class="btn-outline">Reset to defaults</button>
         <span id="sp-saved" class="sp-saved hidden">Saved ✓</span>
       </div>
-      ${cfg.updated_by ? `<p class="sp-meta">Last changed by <strong>${escapeHtml(cfg.updated_by)}</strong>${cfg.updated_at ? ` · ${fmtDate(cfg.updated_at)}` : ""}</p>` : ""}
+      ${cfg.updated_by ? `<p class="sp-meta">Last changed by <strong>${escapeHtml(cfg.updated_by)}</strong>${cfg.updated_at ? ` · ${new Date(cfg.updated_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}` : ""}</p>` : ""}
     </div>`;
 
   const shareEl = $("#sp-share");

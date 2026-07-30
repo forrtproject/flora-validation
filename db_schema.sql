@@ -408,3 +408,48 @@ CREATE TABLE IF NOT EXISTS serving_config (
 INSERT INTO serving_config (id, enabled, priority_outcome, priority_year_min, priority_year_max, priority_share)
 VALUES (1, FALSE, 'failed', 2011, 2021, 70)
 ON CONFLICT (id) DO NOTHING;
+
+-- OpenAlex work IDs (bare 'W…') carried alongside the DOIs for both the original (_o)
+-- and replication (_r) papers. Populated from the extractor CSV going forward, and
+-- backfilled from OpenAlex by DOI for existing rows (backfill_oa_work_ids.py).
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS oa_work_id_o TEXT;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS oa_work_id_r TEXT;
+ALTER TABLE validated   ADD COLUMN IF NOT EXISTS oa_work_id_o TEXT;
+ALTER TABLE validated   ADD COLUMN IF NOT EXISTS oa_work_id_r TEXT;
+
+-- Seed the replication work ID from the extractor's record_metadata.openalex_id_r
+-- (a full 'https://openalex.org/W…' URL → keep just the bare 'W…'). Idempotent: only
+-- fills rows that don't already have one.
+--
+-- IMPORTANT: this schema re-runs on every startup, and record_metadata.openalex_id_r is
+-- extraction-time data that is NEVER updated on a correction. So we must NOT re-seed a
+-- replication whose DOI was corrected — the trigger deliberately NULLed its work id, and
+-- re-seeding here would restore the STALE id for the old DOI. Rows with a changed doi_r
+-- are left for backfill_oa_work_ids.py, which fetches by the corrected DOI.
+UPDATE unvalidated u
+   SET oa_work_id_r = substring(m.openalex_id_r FROM 'W[0-9]+')
+  FROM record_metadata m
+ WHERE m.record_id = u.record_id
+   AND u.oa_work_id_r IS NULL
+   AND (u.final_doi_r IS NULL OR u.final_doi_r = u.doi_r)
+   AND m.openalex_id_r ~ 'W[0-9]+';
+
+-- Option A: clear a stale work ID whenever the paper's effective DOI changes (a
+-- correction), so the backfill re-fetches it for the new DOI. Centralised in a trigger
+-- so every write path (consensus, admin resolve, assignment) is covered automatically.
+CREATE OR REPLACE FUNCTION clear_stale_oa_work_id() RETURNS trigger AS $$
+BEGIN
+    IF COALESCE(NEW.final_doi_o, NEW.doi_o) IS DISTINCT FROM COALESCE(OLD.final_doi_o, OLD.doi_o) THEN
+        NEW.oa_work_id_o := NULL;
+    END IF;
+    IF COALESCE(NEW.final_doi_r, NEW.doi_r) IS DISTINCT FROM COALESCE(OLD.final_doi_r, OLD.doi_r) THEN
+        NEW.oa_work_id_r := NULL;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_clear_stale_oa_work_id ON unvalidated;
+CREATE TRIGGER trg_clear_stale_oa_work_id
+    BEFORE UPDATE ON unvalidated
+    FOR EACH ROW EXECUTE FUNCTION clear_stale_oa_work_id();

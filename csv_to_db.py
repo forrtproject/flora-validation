@@ -19,6 +19,7 @@ Required environment variables:
 """
 import argparse
 import os
+import re
 import uuid
 from pathlib import Path
 
@@ -64,6 +65,12 @@ def _int_or_none(val) -> "int | None":
         return None
 
 
+def _work_id(val) -> str:
+    """Bare 'W…' OpenAlex work id (strip any 'https://openalex.org/' prefix); '' if none."""
+    m = re.search(r"W\d+", _s(val))
+    return m.group(0) if m else ""
+
+
 def _build_unvalidated_row(record_id: str, pair_id: str, row: pd.Series) -> dict:
     return {
         "record_id":         record_id,
@@ -79,6 +86,9 @@ def _build_unvalidated_row(record_id: str, pair_id: str, row: pd.Series) -> dict
         "year_o":            _s(row.get("year_o")),
         "url_o":             _derive_url_o(row.get("doi_o")),
         "ref_o":             _s(row.get("ref_o")),
+        # OpenAlex work ids ship with newer extractor data; accept either name.
+        "oa_work_id_o":      _work_id(row.get("oa_work_id_o") or row.get("openalex_id_o")),
+        "oa_work_id_r":      _work_id(row.get("oa_work_id_r") or row.get("openalex_id_r")),
         "type":              _s(row.get("type")),
         "outcome":           _OUTCOME_RENAME.get(_s(row.get("outcome")), _s(row.get("outcome"))),
         "outcome_quote":     _s(row.get("outcome_phrase")),
@@ -119,11 +129,13 @@ def _insert_unvalidated(cur, row: dict) -> bool:
             record_id, pair_id,
             doi_r, study_r, year_r, url_r, ref_r, abstract_r,
             doi_o, study_o, year_o, url_o, ref_o,
+            oa_work_id_o, oa_work_id_r,
             type, outcome, outcome_quote, out_quote_source, validation_status
         ) VALUES (
             %(record_id)s, %(pair_id)s,
             %(doi_r)s, %(study_r)s, %(year_r)s, %(url_r)s, %(ref_r)s, %(abstract_r)s,
             %(doi_o)s, %(study_o)s, %(year_o)s, %(url_o)s, %(ref_o)s,
+            %(oa_work_id_o)s, %(oa_work_id_r)s,
             %(type)s, %(outcome)s, %(outcome_quote)s, %(out_quote_source)s, %(validation_status)s
         )
         ON CONFLICT (pair_id) DO NOTHING

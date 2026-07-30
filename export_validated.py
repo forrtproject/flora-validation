@@ -107,6 +107,8 @@ QUERY = """
     SELECT
         v.doi_r,
         v.doi_o,
+        v.oa_work_id_r,
+        v.oa_work_id_o,
         v.url_r,
         v.url_o,
         v.ref_r,
