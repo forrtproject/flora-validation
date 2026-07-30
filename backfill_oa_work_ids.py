@@ -41,8 +41,11 @@ def _norm_doi(doi: str) -> str:
 def _fetch_batch(dois: list[str]) -> dict[str, str]:
     """Look up a batch of ≤50 DOIs → {normalized_doi: 'W…'}."""
     filt = "doi:" + "|".join(dois)
+    # per-page > BATCH: a DOI can match more than one OpenAlex work (duplicates/versions),
+    # so 50 DOIs may return >50 rows — a per-page of 50 would truncate and silently drop
+    # another DOI's only match. 200 is OpenAlex's max and can never overflow a 50-DOI batch.
     url = (f"https://api.openalex.org/works?filter={quote(filt, safe='|:/().-_')}"
-           f"&per-page={BATCH}&select=id,doi&mailto={MAILTO}")
+           f"&per-page=200&select=id,doi&mailto={MAILTO}")
     req = Request(url, headers={"User-Agent": f"flora-backfill (mailto:{MAILTO})"})
     with urlopen(req, timeout=30) as resp:
         data = json.loads(resp.read().decode("utf-8"))
@@ -55,29 +58,56 @@ def _fetch_batch(dois: list[str]) -> dict[str, str]:
     return out
 
 
+SIDES = [
+    ("original",    "COALESCE(final_doi_o, doi_o)", "oa_work_id_o"),
+    ("replication", "COALESCE(final_doi_r, doi_r)", "oa_work_id_r"),
+]
+
+
+def _connect(database_url: str):
+    """Connect with TCP keepalives so a cloud pooler doesn't silently drop the socket."""
+    return psycopg2.connect(
+        database_url, connect_timeout=30,
+        keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=5,
+    )
+
+
+def _read_missing(database_url: str) -> list[dict]:
+    """Short DB session: collect the rows still missing each work id, grouped by DOI.
+    Returns one plan entry per side. The connection is opened and closed here so it is
+    never held open across the slow OpenAlex fetch (a cloud DB drops idle connections)."""
+    conn = _connect(database_url)
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        plan = []
+        for side, doi_expr, col in SIDES:
+            cur.execute(
+                f"""SELECT record_id, {doi_expr} AS doi FROM unvalidated
+                    WHERE {col} IS NULL AND {doi_expr} IS NOT NULL AND {doi_expr} <> ''"""
+            )
+            by_doi: dict[str, list] = {}
+            n = 0
+            for r in cur.fetchall():
+                by_doi.setdefault(_norm_doi(r["doi"]), []).append(r["record_id"])
+                n += 1
+            plan.append({"side": side, "col": col, "by_doi": by_doi, "n_rows": n})
+        return plan
+    finally:
+        conn.close()
+
+
 def run(dry_run: bool = False) -> None:
     database_url = os.environ.get("DATABASE_URL", "")
     if not database_url:
         raise EnvironmentError("DATABASE_URL must be set")
-    conn = psycopg2.connect(database_url)
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    filled = missing = 0
 
-    for side, doi_expr, col in [
-        ("original",    "COALESCE(final_doi_o, doi_o)", "oa_work_id_o"),
-        ("replication", "COALESCE(final_doi_r, doi_r)", "oa_work_id_r"),
-    ]:
-        cur.execute(
-            f"""SELECT record_id, {doi_expr} AS doi FROM unvalidated
-                WHERE {col} IS NULL AND {doi_expr} IS NOT NULL AND {doi_expr} <> ''"""
-        )
-        rows = cur.fetchall()
-        by_doi: dict[str, list] = {}
-        for r in rows:
-            by_doi.setdefault(_norm_doi(r["doi"]), []).append(r["record_id"])
-        dois = [d for d in by_doi if d]
-        print(f"[{side}] {len(rows)} rows missing {col} across {len(dois)} distinct DOIs")
+    # Phase 1 — read what's missing (quick DB session, then disconnect).
+    plan = _read_missing(database_url)
 
+    # Phase 2 — fetch from OpenAlex. No DB connection is held during this slow step.
+    for entry in plan:
+        dois = [d for d in entry["by_doi"] if d]
+        print(f"[{entry['side']}] {entry['n_rows']} rows missing {entry['col']} across {len(dois)} distinct DOIs")
         found: dict[str, str] = {}
         for i in range(0, len(dois), BATCH):
             try:
@@ -86,27 +116,47 @@ def run(dry_run: bool = False) -> None:
                 print(f"  batch {i // BATCH} error: {e}")
             time.sleep(0.15)   # be polite to the API
             print(f"  … {min(i + BATCH, len(dois))}/{len(dois)} DOIs queried")
-
-        updates = 0
-        for dn, wid in found.items():
-            for rid in by_doi.get(dn, []):
-                if not dry_run:
-                    cur.execute(
-                        f"UPDATE unvalidated SET {col} = %s WHERE record_id = %s AND {col} IS NULL",
-                        (wid, rid),
-                    )
-                updates += 1
-        filled += updates
-        missing += len(rows) - updates
-        print(f"[{side}] matched {updates} / {len(rows)}  (not found on OpenAlex: {len(rows) - updates})")
+        entry["found"] = found
 
     if dry_run:
-        conn.rollback()
+        for entry in plan:
+            hits = sum(len(entry["by_doi"].get(dn, [])) for dn in entry["found"])
+            print(f"[{entry['side']}] would fill {hits} / {entry['n_rows']}")
         print("DRY RUN — nothing written.")
-    else:
+        return
+
+    # Phase 3 — write results (fresh DB session, so the connection is never stale). Each
+    # side is written as ONE bulk UPDATE via a VALUES join instead of ~1500 round-trips,
+    # which both is far faster and avoids the pooler dropping a long-running transaction.
+    conn = _connect(database_url)
+    filled = missing = 0
+    try:
+        cur = conn.cursor()
+        for entry in plan:
+            col = entry["col"]
+            pairs = [
+                (str(rid), wid)
+                for dn, wid in entry["found"].items()
+                for rid in entry["by_doi"].get(dn, [])
+            ]
+            if pairs:
+                psycopg2.extras.execute_values(
+                    cur,
+                    f"UPDATE unvalidated u SET {col} = v.wid "
+                    f"FROM (VALUES %s) AS v(record_id, wid) "
+                    f"WHERE u.record_id = v.record_id::uuid AND u.{col} IS NULL",
+                    pairs,
+                    page_size=len(pairs),   # one statement so cur.rowcount is the true total
+                )
+            updates = cur.rowcount if pairs else 0
+            filled += updates
+            missing += entry["n_rows"] - updates
+            print(f"[{entry['side']}] matched {updates} / {entry['n_rows']}  "
+                  f"(not found on OpenAlex: {entry['n_rows'] - updates})")
         conn.commit()
         print("Committed.")
-    conn.close()
+    finally:
+        conn.close()
     print(f"TOTAL filled: {filled}  |  still missing: {missing}")
 
 
