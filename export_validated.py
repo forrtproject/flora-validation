@@ -39,6 +39,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Progress output uses a few non-ASCII glyphs (⚠ → ✓). On a Windows cp1252 console
+# those raise UnicodeEncodeError and abort the script AFTER the CSVs are written, which
+# looks like a failure. Force UTF-8 on stdout so the run finishes cleanly everywhere.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     sys.exit("ERROR: DATABASE_URL is not set. Add it to your .env file.")

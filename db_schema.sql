@@ -417,6 +417,13 @@ ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS oa_work_id_r TEXT;
 ALTER TABLE validated   ADD COLUMN IF NOT EXISTS oa_work_id_o TEXT;
 ALTER TABLE validated   ADD COLUMN IF NOT EXISTS oa_work_id_r TEXT;
 
+-- Normalise empty strings to NULL. The seed/backfill below (and the trigger) key on
+-- IS NULL, so a stray '' would be treated as 'already filled' and never get an id.
+UPDATE unvalidated SET oa_work_id_o = NULL WHERE oa_work_id_o = '';
+UPDATE unvalidated SET oa_work_id_r = NULL WHERE oa_work_id_r = '';
+UPDATE validated   SET oa_work_id_o = NULL WHERE oa_work_id_o = '';
+UPDATE validated   SET oa_work_id_r = NULL WHERE oa_work_id_r = '';
+
 -- Seed the replication work ID from the extractor's record_metadata.openalex_id_r
 -- (a full 'https://openalex.org/W…' URL → keep just the bare 'W…'). Idempotent: only
 -- fills rows that don't already have one.
@@ -453,3 +460,22 @@ DROP TRIGGER IF EXISTS trg_clear_stale_oa_work_id ON unvalidated;
 CREATE TRIGGER trg_clear_stale_oa_work_id
     BEFORE UPDATE ON unvalidated
     FOR EACH ROW EXECUTE FUNCTION clear_stale_oa_work_id();
+
+-- Backfill EXISTING validated rows' work IDs from their unvalidated source (by
+-- record_id). Rows validated AFTER the feature set these at insert time; this covers
+-- rows validated before the feature existed, so the export (which reads validated) is
+-- never blank for a paper whose id we already know. Idempotent: only fills NULLs, and
+-- only from a non-NULL source (a source that was NULLed by a DOI correction is left for
+-- the backfill to re-fetch, then this copies the corrected id on the next run).
+UPDATE validated v
+   SET oa_work_id_r = u.oa_work_id_r
+  FROM unvalidated u
+ WHERE u.record_id = v.record_id
+   AND v.oa_work_id_r IS NULL
+   AND u.oa_work_id_r IS NOT NULL;
+UPDATE validated v
+   SET oa_work_id_o = u.oa_work_id_o
+  FROM unvalidated u
+ WHERE u.record_id = v.record_id
+   AND v.oa_work_id_o IS NULL
+   AND u.oa_work_id_o IS NOT NULL;

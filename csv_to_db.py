@@ -65,10 +65,12 @@ def _int_or_none(val) -> "int | None":
         return None
 
 
-def _work_id(val) -> str:
-    """Bare 'W…' OpenAlex work id (strip any 'https://openalex.org/' prefix); '' if none."""
+def _work_id(val) -> "str | None":
+    """Bare 'W…' OpenAlex work id (strip any 'https://openalex.org/' prefix).
+    Returns None (not '') when absent, so the NULL-keyed schema seed and OpenAlex
+    backfill will still fill it later — an empty string would look 'already filled'."""
     m = re.search(r"W\d+", _s(val))
-    return m.group(0) if m else ""
+    return m.group(0) if m else None
 
 
 def _build_unvalidated_row(record_id: str, pair_id: str, row: pd.Series) -> dict:
