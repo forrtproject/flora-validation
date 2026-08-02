@@ -48,6 +48,9 @@
   "10.1002/jae.2922": {
     "ref": "Nino Buliskeria, Jarom\u00edr Baxa (2022) Do rural banks matter that much? Burgess and Pande (2005) reconsidered. Journal of Applied Econometrics."
   },
+  "10.1002/rrq.027": {
+    "ref": "Susan R. Goldman, Jason L. G. Braasch, Jennifer Wiley, Arthur C. Graesser, Kamila Brodowinska (2012) Comprehending and Learning From Internet Sources: Processing Patterns of Better and Poorer Learners. Reading Research Quarterly."
+  },
   "10.1007/bf01371820": {
     "ref": "Thomas H. Stoffer (1991) Attentional focussing and spatial stimulus-response compatibility. Psychological Research."
   },
@@ -99,6 +102,9 @@
   "10.1007/s12144-024-06067-5": {
     "ref": "Jayne Morriss, Charlotte E. Lee, Antony Wood, Jin Zhang, Tina Seabrooke (2024) Attentional bias to uncertainty-based information: a conceptual replication of Fergus et al. (2013). Current Psychology."
   },
+  "10.1007/s40881-021-00109-5": {
+    "ref": "Fatih S\u00f6nmez (2021) The effect of COVID-19-induced mortality salience on delay discounting: a replication. Journal of the Economic Science Association."
+  },
   "10.1016/0010-0285(89)90003-0": {
     "ref": "Jacqueline S. Johnson, Elissa L. Newport (1989) Critical period effects in second language learning: The influence of maturational state on the acquisition of English as a second language. Cognitive Psychology."
   },
@@ -119,6 +125,9 @@
   },
   "10.1016/j.brat.2020.103798": {
     "ref": "Karen Salmon, Laina Isler, Paul E. Jose, Ruth Glynn, Claire Mitchell, Mary Dewhirst, Belinda A. Buxton, Charlotte Gutenbrunner, Elaine Reese (2021) Delving into the detail: Greater episodic detail in narratives of a critical life event predicts an increase in adolescent depressive symptoms across one year. Behaviour Research and Therapy."
+  },
+  "10.1016/j.cognition.2003.10.003": {
+    "ref": "\u00c9douard Machery (2003) Semantics, cross-cultural style. Cognition."
   },
   "10.1016/j.cognition.2006.12.015": {
     "ref": "Ben Ambridge, Juli\u00e1n M. Pine, Caroline F. Rowland, Chris R. Young (2007) The effect of verb semantic class and verb frequency (entrenchment) on children\u2019s and adults\u2019 graded judgements of argument-structure overgeneralization errors. Cognition."
@@ -243,6 +252,9 @@
   "10.1017/S0272263119000093": {
     "ref": "YouJin Kim, YeonJoo Jung, Stephen Skalicky (2019) LINGUISTIC ALIGNMENT, LEARNER CHARACTERISTICS, AND THE PRODUCTION OF STRANDED PREPOSITIONS IN RELATIVE CLAUSES. Studies in Second Language Acquisition."
   },
+  "10.1017/prp.2020.6": {
+    "ref": "Fangzhu Qi, Qian Sun, Jin Yao, Rubing Dai, Xiuxin Wang, Yongfang Liu (2020) Pain and sharing: A re-examination of the findings of Bastian, Jetten, and Ferris (2014). Journal of Pacific Rim Psychology."
+  },
   "10.1017/s0007123420000046": {
     "ref": "Gabriele Magni (2020) Economic Inequality, Immigrants and Selective Solidarity: From Perceived Lack of Opportunity to In-group Favoritism. British Journal of Political Science."
   },
@@ -298,6 +310,12 @@
   "10.1037/0022-3514.32.6.951": {
     "ref": "Ellen J. Langer, Jane Roth (1975) Heads I win, tails it's chance: The illusion of control as a function of the sequence of outcomes in a purely chance task. Journal of Personality and Social Psychology."
   },
+  "10.1037/0022-3514.37.3.433": {
+    "ref": "Charlene M. Callahan-Levy, Lawrence A. Mess\u00e9 (1979) Sex differences in the allocation of pay. Journal of Personality and Social Psychology."
+  },
+  "10.1037/0022-3514.41.4.703": {
+    "ref": "Leon Mann (1981) The baiting crowd in episodes of threatened suicide. Journal of Personality and Social Psychology."
+  },
   "10.1037/0022-3514.72.5.1202": {
     "ref": "Bill E. Peterson, Kimberly Ann Smirles, Phyllis A. Wentworth (1997) Generativity and authoritarianism: Implications for personality, political involvement, and parenting. Journal of Personality and Social Psychology."
   },
@@ -322,11 +340,20 @@
   "10.1037/a0023597": {
     "ref": "John M. Horner, San K. Tung (2011) Playing Cards with Thomas Kuhn: A Critical Reexamination of the Bruner and Postman (1949) Experiment. Review of General Psychology."
   },
+  "10.1037/a0026099": {
+    "ref": "Kinga Morsanyi, Simon J. Handley (2011) Logic feels so good\u2014I like it! Evidence for intuitive detection of logicality in syllogistic reasoning. Journal of Experimental Psychology Learning Memory and Cognition."
+  },
   "10.1037/a0027395": {
     "ref": "Michael L. Slepian, Nalini Ambady (2012) Fluid movement and creativity. Journal of Experimental Psychology General."
   },
+  "10.1037/a0030530": {
+    "ref": "Karl Christoph Klauer, Henrik Singmann (2012) Does logic feel good? Testing for intuitive detection of logicality in syllogistic reasoning. Journal of Experimental Psychology Learning Memory and Cognition."
+  },
   "10.1037/a0031138": {
     "ref": "Anna J. Maslany, Jamie I. D. Campbell (2013) Failures to replicate hyper-retrieval-induced forgetting in arithmetic memory. Canadian Journal of Experimental Psychology/Revue canadienne de psychologie exp\u00e9rimentale."
+  },
+  "10.1037/a0033010": {
+    "ref": "Cynthia C. Woo, Michael Leon (2013) Environmental enrichment as an effective treatment for autism: A randomized controlled trial. Behavioral Neuroscience."
   },
   "10.1037/a0034755": {
     "ref": "Carolyn MacCann, Dana L. Joseph, Daniel Aureliano Newman, Richard D. Roberts (2013) Emotional intelligence is a second-stratum factor of intelligence: Evidence from hierarchical and bifactor models. Emotion."
@@ -334,17 +361,29 @@
   "10.1037/abn0000277": {
     "ref": "Melanie Ring, Claire L. T. Derwent, Sebastian Gaigg, Dermot Bowler (2017) Structural learning difficulties implicate altered hippocampal functioning in adults with autism spectrum disorder. Journal of Abnormal Psychology."
   },
+  "10.1037/bne0000068": {
+    "ref": "Cynthia C. Woo, Joseph H. Donnelly, Robin Steinberg-Epstein, Michael Leon (2015) Environmental enrichment as a therapy for autism: A clinical trial replication and extension. Behavioral Neuroscience."
+  },
   "10.1037/h0021797": {
     "ref": "Nancy C. Waugh, Donald A. Norman (1965) Primary memory. Psychological Review."
   },
   "10.1037/h0076284": {
     "ref": "Robert B. Cialdini, Joyce E. Vincent, Stephen K. Lewis, Jos\u00e9 Catal\u00e1n, Diane Wheeler, Betty L. Darby (1975) Reciprocal concessions procedure for inducing compliance: The door-in-the-face technique. Journal of Personality and Social Psychology."
   },
+  "10.1037/h0087446": {
+    "ref": "George Wolford, Sarah Newman, Michael B. Miller, Gagan S. Wig (2004) Searching for Patterns in Random Sequences. Canadian Journal of Experimental Psychology/Revue canadienne de psychologie exp\u00e9rimentale."
+  },
   "10.1037/pspa0000261": {
     "ref": "Oliver Genschow, Mareike Westfal, Jan Crusius, L\u00e9on Bartosch, Kyra Isabel Feikes, Nina Pallasch, Mirella Wozniak (2020) Does social psychology persist over half a century? A direct replication of Cialdini et al.\u2019s (1975) classic door-in-the-face technique. Journal of Personality and Social Psychology."
   },
   "10.1037/tps0000068": {
     "ref": "Amy J. Henley, Florence D. DiGennaro Reed, Brent A. Kaplan, Derek D. Reed (2016) Quantifying efficacy of workplace reinforcers: An application of behavioral economic demand to evaluate hypothetical work performance. Translational Issues in Psychological Science."
+  },
+  "10.1037/xge0000165": {
+    "ref": "Jim A. C. Everett, David A. Pizarro, Molly J. Crockett (2016) Inference of trustworthiness from intuitive moral judgments. Journal of Experimental Psychology General."
+  },
+  "10.1037/xge0000295": {
+    "ref": "Dries H. Bostyn, Arne Roets (2017) Trust, trolleys and social dilemmas: A replication study. Journal of Experimental Psychology General."
   },
   "10.1037/xge0000466": {
     "ref": "Alexander Rich, Todd M. Gureckis (2018) The limits of learning: Exploration, generalization, and the development of learning traps. Journal of Experimental Psychology General."
@@ -361,6 +400,9 @@
   "10.1038/358749a0": {
     "ref": "Karen Wynn (1992) Addition and subtraction by human infants. Nature."
   },
+  "10.1038/nature06176": {
+    "ref": "Mark Pagel, Quentin D. Atkinson, Andrew Meade (2007) Frequency of word-use predicts rates of lexical evolution throughout Indo-European history. Nature."
+  },
   "10.1038/ncomms1262": {
     "ref": "Vanessa Schmitt, Julia Fischer (2011) Representational format determines numerical competence in monkeys. Nature Communications."
   },
@@ -372,6 +414,12 @@
   },
   "10.1038/s41598-022-18520-1": {
     "ref": "Magdalena Sabat, Bartosz Ha\u0142adus, Micha\u0142 Klincewicz, Grzegorz J. Nalepa (2022) Cognitive load, fatigue and aversive simulator symptoms but not manipulated zeitgebers affect duration perception in virtual reality. Scientific Reports."
+  },
+  "10.1057/ejis.2009.6": {
+    "ref": "Tejaswini Herath, H. Raghav Rao (2009) Protection motivation and deterrence: a framework for security policy compliance in organisations. European Journal of Information Systems."
+  },
+  "10.1073/pnas.0607716103": {
+    "ref": "Hakwan Lau, Richard E. Passingham (2006) Relative blindsight in normal observers and the neural correlate of visual consciousness. Proceedings of the National Academy of Sciences."
   },
   "10.1073/pnas.0811323106": {
     "ref": "\u00c1gnes Melinda Kov\u00e1cs, Jacques Mehler (2009) Cognitive gains in 7-month-old bilingual infants. Proceedings of the National Academy of Sciences."
@@ -418,6 +466,9 @@
   "10.1080/03634520216516": {
     "ref": "Travis L. Russ, Cheri J. Simonds, Stephen Hunt (2002) Coming Out in the Classroom... An Occupational Hazard?: The Influence of Sexual Orientation on Teacher Credibility and Perceived Student Learning. Communication Education."
   },
+  "10.1080/07421222.2017.1394083": {
+    "ref": "Philip Menard, Gregory J. Bott, Robert E. Crossler (2017) User Motivations in Protecting Information Security: Protection Motivation Theory Versus Self-Determination Theory. Journal of Management Information Systems."
+  },
   "10.1080/09720510.2020.1848040": {
     "ref": "Sean Pradhan, Ravi Chachad (2021) Re-ranking regular seasons in the National Basketball Association\u2019s modern era : A replication and extension of Pradhan (2018). Journal of Statistics and Management Systems."
   },
@@ -450,6 +501,9 @@
   },
   "10.1080/14640746908400204": {
     "ref": "P. C. Dodwell, Lionel Standing, Harriet Thio (1969) Are Thresholds Reduced by Illusions? An Attempt at Replication. Quarterly Journal of Experimental Psychology."
+  },
+  "10.1080/15534510.2019.1669488": {
+    "ref": "Christine M. Smith, Paulina Dzik, Errin Fornicola (2019) Threatened suicide and baiting crowd formation: a replication and extension of Mann (1981). Social Influence."
   },
   "10.1080/16506073.2018.1475505": {
     "ref": "Philip Hyland, Gr\u00e1inne McGinty, Thanos Karatzias, Jamie Murphy, Fr\u00e9d\u00e9rique Valli\u00e8res, Joanna McHugh Power (2018) Can the REBT theory explain loneliness? Theoretical and clinical applications. Cognitive Behaviour Therapy."
@@ -494,6 +548,9 @@
     "error": "http 404",
     "ref": ""
   },
+  "10.1086/598971": {
+    "ref": "Joseph P. Redden, Stephen J. Hoch (2009) The Presence of Variety Reduces Perceived Quantity. Journal of Consumer Research."
+  },
   "10.1086/648381": {
     "ref": "Uma R. Karmarkar, Zakary L. Tormala (2009) Believe Me, I Have No Idea What I\u2019m Talking About: The Effects of Source Certainty on Consumer Involvement and Persuasion. Journal of Consumer Research."
   },
@@ -521,6 +578,12 @@
   "10.1093/hcr/hqae016": {
     "ref": "Lea\u2010Johanna Klebba, Stephan Winter (2024) The influence of threat and right-wing authoritarianism on the selection of online (dis)information\u2014a conceptual replication and extension of Lavine et al. (2005). Human Communication Research."
   },
+  "10.1093/jos/ffaa001": {
+    "ref": "Farjana Islam, Giosu\u00e8 Baggio (2020) Kripkeans of the world, unite!. Journal of Semantics."
+  },
+  "10.1093/nc/niw002": {
+    "ref": "Brian Maniscalco, Hakwan Lau (2016) The signal processing architecture underlying subjective reports of sensory awareness. Neuroscience of Consciousness."
+  },
   "10.1093/poq/nfab031": {
     "ref": "Yanna Krupnikov, Hillary Style, Michael Yontz (2021) Does Measurement Affect the Gender Gap in Political Partisanship?. Public Opinion Quarterly."
   },
@@ -532,6 +595,12 @@
   },
   "10.1093/qje/qjr029": {
     "ref": "Seema Jayachandran, Ilyana Kuziemko (2011) Why Do Mothers Breastfeed Girls Less than Boys? Evidence and Implications for Child Health in India. The Quarterly Journal of Economics."
+  },
+  "10.1093/scan/nsw175": {
+    "ref": "Roberta Riccelli, Nicola Toschi, Salvatore Nigro, Antonio Terracciano, Luca Passamonti (2016) Surface-based morphometry reveals the neuroanatomical basis of the five-factor model of personality. Social Cognitive and Affective Neuroscience."
+  },
+  "10.1093/scan/nsz017": {
+    "ref": "Max M. Owens, Courtland S. Hyatt, Joshua C. Gray, Nathan T. Carter, James MacKillop, Joshua D. Miller, Lawrence H. Sweet (2019) Cortical morphometry of the five-factor model of personality: findings from the Human Connectome Project full sample. Social Cognitive and Affective Neuroscience."
   },
   "10.1093/ser/mwm006": {
     "ref": "Lane Kenworthy, Leslie McCall (2007) Inequality, public opinion and redistribution. Socio-Economic Review."
@@ -556,6 +625,9 @@
   },
   "10.1098/rsos.250669": {
     "ref": "Kerou Ding, Gilad Feldman (2025) Revisiting partition priming in judgement under uncertainty: replication and extension Registered Report of Fox and Rottenstreich (2003). Royal Society Open Science."
+  },
+  "10.1098/rstb.2016.0517": {
+    "ref": "Mark Pagel, Andrew Meade (2018) The deep history of the number words. Philosophical Transactions of the Royal Society B Biological Sciences."
   },
   "10.1108/00438029710171980": {
     "ref": "Mary R. Lind (1997) A replication of the amount and equivocality of information processing in organizational work units. Work Study."
@@ -614,11 +686,17 @@
   "10.1111/j.1467-9280.2008.02090.x": {
     "ref": "Tanya Kraljic, Arthur G. Samuel, Susan E. Brennan (2008) First Impressions and Last Resorts. Psychological Science."
   },
+  "10.1111/j.1467-9280.2008.02124.x": {
+    "ref": "Jaime L. Napier, John T. Jost (2008) Why Are Conservatives Happier Than Liberals?. Psychological Science."
+  },
   "10.1111/j.1468-2958.2001.tb00792.x": {
     "ref": "Xu Yan, Brant R. Burleson (2001) Effects of Sex, Culture, and Support Type on Perceptions of Spousal Social Support: An Assessment of the \"Support Gap\" Hypothesis in Early Marriage. Human Communication Research."
   },
   "10.1111/j.1469-8986.2008.00688.x": {
     "ref": "Michael M. Richter, Antonia Friedrich, Guido H. E. Gendolla (2008) Task difficulty effects on cardiac activity. Psychophysiology."
+  },
+  "10.1111/j.1471-6402.1997.tb00120.x": {
+    "ref": "John T. Jost (1997) An Experimental Replication of the Depressed-Entitlement Effect Among Women. Psychology of Women Quarterly."
   },
   "10.1111/j.1744-6570.1997.tb00707.x": {
     "ref": "Daniel P. Skarlicki, Gary P. Latham (1997) LEADERSHIP TRAINING IN ORGANIZATIONAL JUSTICE TO INCREASE CITIZENSHIP BEHAVIOR WITHIN A LABOR UNION: A REPLICATION. Personnel Psychology."
@@ -664,6 +742,9 @@
   },
   "10.1126/science.288.5467.850": {
     "ref": "Claus Wedekind, Manfred Milinski (2000) Cooperation Through Image Scoring in Humans. Science."
+  },
+  "10.1136/bmj.g7015": {
+    "ref": "Petroc Sumner, Solveiga Vivian-Griffiths, Jacky Boivin, Andrew Williams, Christos Venetis, Andrew Davies, Jenna Ogden, Louise Whelan, Bethan Hughes, Bethan Dalton, Fr\u00e9d\u00e9ric Boy, Chris Chambers (2014) The association between exaggeration in health related science news and academic press releases: retrospective observational study. BMJ."
   },
   "10.1145/2168556.2168644": {
     "ref": "Poja Shams, Erik W\u00e4stlund, Lars Witell (2012) Revisiting Russo and Leclerc."
@@ -751,6 +832,9 @@
   "10.1177/0956797613482943": {
     "ref": "Adam D. Galinsky, Cynthia S. Wang, Jennifer Whitson, Eric M. Anicich, Kurt Hugenberg, Galen V. Bodenhausen (2013) The Reappropriation of Stigmatizing Labels. Psychological Science."
   },
+  "10.1177/0956797614545886": {
+    "ref": "Brock Bastian, Jolanda Jetten, Laura J. Ferris (2014) Pain as Social Glue: Shared Pain Increases Cooperation. Psychological Science."
+  },
   "10.1177/0956797616667459": {
     "ref": "Margaret R. Tarampi, Nahal Heydari, Mary Hegarty (2016) A Tale of Two Types of Perspective Taking. Psychological Science."
   },
@@ -774,6 +858,9 @@
   },
   "10.1177/1948550609360261": {
     "ref": "Nancy L. Carter, J. Mark Weber (2010) Not Pollyannas. Social Psychological and Personality Science."
+  },
+  "10.1177/1948550612439721": {
+    "ref": "Jolanda Jetten, S. Alexander Haslam, Fiona Kate Barlow (2012) Bringing Back the System. Social Psychological and Personality Science."
   },
   "10.1177/1948550612447114": {
     "ref": "Kendall J. Eskine (2012) Wholesome Foods and Wholesome Morals?. Social Psychological and Personality Science."
@@ -814,6 +901,9 @@
   "10.1257/aer.20180338": {
     "ref": "Nicholas Bloom, Charles I. Jones, John Van Reenen, Michael A. Webb (2020) Are Ideas Getting Harder to Find?. American Economic Review."
   },
+  "10.12688/wellcomeopenres.15486.2": {
+    "ref": "Luke Bratton, Rachel C. Adams, Aim\u00e9e Challenger, Jacky Boivin, Lewis Bott, Chris Chambers, Petroc Sumner (2019) The association between exaggeration in health-related science news and academic press releases: a replication study. Wellcome Open Research."
+  },
   "10.12794/metadc2415972": {
     "ref": "Harris, Josef Martin (2024) Learning New Response Sequences: A PORTL Replication and Extension of Reid 1994."
   },
@@ -841,8 +931,17 @@
   "10.1371/journal.pone.0072626": {
     "ref": "Wouter Kool, Joseph T. McGuire, Gary J. Wang, Matthew Botvinick (2013) Neural and Behavioral Evidence for an Intrinsic Cost of Self-Control. PLoS ONE."
   },
+  "10.1371/journal.pone.0144228": {
+    "ref": "Nicholas J. Kelley, Brandon J. Schmeichel (2015) Thinking about Death Reduces Delay Discounting. PLoS ONE."
+  },
+  "10.1371/journal.pone.0197268": {
+    "ref": "Zhi Nie, Srinivasan Vairavan, Vaibhav A. Narayan, Jieping Ye, Qingqin S. Li (2018) Predictive modeling of treatment resistant depression using data from STAR*D and an independent clinical study. PLoS ONE."
+  },
   "10.1371/journal.pone.0236825": {
     "ref": "Shu Imaizumi, Ubuka Tagami, Yi Yang (2020) Fluid movements enhance creative fluency: A replication of Slepian and Ambady (2012). PLoS ONE."
+  },
+  "10.1371/journal.pone.0253023": {
+    "ref": "John-Jose Nu\u00f1ez, Teyden T. Nguyen, Yihan Zhou, Bo Cao, Raymond T. Ng, Jun Chen, Ben\u00edcio N. Frey, Roumen Milev, Daniel J. M\u00fcller, Susan Rotzinger, Cl\u00e1udio N. Soares, Rudolf Uher, Sidney H. Kennedy, Raymond W. Lam (2021) Replication of machine learning methods to predict treatment outcome with antidepressant medications in patients with major depressive disorder from STAR*D and CAN-BIND-1. PLoS ONE."
   },
   "10.1371/journal.pone.0341334": {
     "ref": "Audrey A. Ryback, Charles B. Hillier, Camila M. Loureiro, Chris P. Ponting, Caroline F. Dalton (2026) Indistinguishable mitochondrial phenotypes after exposure of healthy myoblasts to myalgic encephalomyelitis/chronic fatigue syndrome or control serum. PLoS ONE."
@@ -865,8 +964,14 @@
   "10.1556/jep.7.2009.1.3": {
     "ref": "Kimmo Eriksson, Julie C. Coultas (2009) Are people really conformist-biased? An empirical test and a new mathematical model. Journal of Evolutionary Psychology."
   },
+  "10.1558/cj.v32i2.25139": {
+    "ref": "Susanne Rott, Bianca Gavin (2015) Comprehending and learning from Internet sources: A conceptual replication study of Goldman, Braasch, Wiley, Greasser and Brodowinska (2012). CALICO Journal."
+  },
   "10.1561/107.00000066": {
     "ref": "Burak Tunca, Evrim Yanar (2020) Women\u2019s Luxury Products as Signals to Other Women. Journal of Marketing Behavior."
+  },
+  "10.15626/mp.2020.2639": {
+    "ref": "Lukas R\u00f6seler, Georg Felser, Jana Asberger, Astrid Sch\u00fctz (2024) The Effect of Variety on Perceived Quantity. Meta-Psychology."
   },
   "10.16910/jemr.11.4.6": {
     "ref": "Jan Churan, Doris I. Braun, Karl R. Gegenfurtner, Frank Bremmer (2018) Comparison of the precision of smooth pursuit in humans and head unrestrained monkeys. Journal of Eye Movement Research."
@@ -883,8 +988,17 @@
   "10.17705/1atrr.00026": {
     "ref": "Teresa M. Shaft, Dawei Wang, Zhu Ling (2018) Maybe Waiting is Bad: A Replication Investigating Website Delay, Familiarity, and Breadth. AIS Transactions on Replication Research."
   },
+  "10.17705/1atrr.00027": {
+    "ref": "David Sikolia, Douglas P. Twitchell, Glen Sagers (2018) Protection Motivation and Deterrence: Evidence from a Fortune 100 Company. AIS Transactions on Replication Research."
+  },
+  "10.17705/1atrr.00032": {
+    "ref": "Alex Stewart, John L. Cotton (2018) Does \u201cEvaluating Journal Quality and the Association for Information Systems Senior Scholars Journal Basket\u2026\u201d Support the Basket with Bibliometric Measures?. AIS Transactions on Replication Research."
+  },
   "10.17705/1atrr.00046": {
     "ref": "Miaoyi Zeng, Shuai-fu Lin, Deborah J. Armstrong (2020) Are All Internet Users\u2019 Information Privacy Concerns (IUIPC) Created Equal?. Journal of the Association for Information Systems."
+  },
+  "10.17705/1atrr.00053": {
+    "ref": "Ning Yang, Tripti Singh, Allen C. Johnston (2020) Open Data: A Replication Study of User Motivation in Protecting Information Security using Protection Motivation Theory and Self-Determination Theory. Journal of the Association for Information Systems."
   },
   "10.17705/1atrr.00066": {
     "ref": "Traci Carte, Nan Wang, Emre Yetgin, Inchan Kim (2021) Conflict Asymmetry in Face-to-face and Computer Mediated Teams. Journal of the Association for Information Systems."
@@ -925,6 +1039,9 @@
   "10.2132/personality.33.3.13": {
     "ref": "Takayuki Goto (2025) Temptation-Coping Self-Control Strategies are also Seen as Less Indicative of Self-Control than Just Willpower in Japan: Replication of Gennara et al. (2023) with Additional Investigation Focusing on Cultural Self-Construal. The Japanese Journal of Personality."
   },
+  "10.2224/sbp.2008.36.6.753": {
+    "ref": "Eun Hee Seo (2008) SELF-EFFICACY AS A MEDIATOR IN THE RELATIONSHIP BETWEEN SELF-ORIENTED PERFECTIONISM AND ACADEMIC PROCRASTINATION. Social Behavior and Personality An International Journal."
+  },
   "10.2307/20466649": {
     "ref": "Marilyn Chapman, Margot Filipenko, Marianne McTavish, Jon Shapiro (2007) First Graders' Preferences for Narrative and/or Information Books and Perceptions of Other Boys' and Girls' Book Preferences. Canadian Journal of Education / Revue canadienne de l \u00e9ducation."
   },
@@ -951,6 +1068,9 @@
   },
   "10.2466/04.03.pr0.112.2.533-544": {
     "ref": "Sean P. Carlin, Lionel Standing (2013) Is Intelligence Enhanced by Letter Priming? A Failure to Replicate the Results of Ciani and Sheldon (2010). Psychological Reports."
+  },
+  "10.25300/misq/2013/37.4.01": {
+    "ref": "Paul Benjamin Lowry, Gregory D. Moody, James Gaskin, Dennis F. Galletta, Sean L. Humpherys, Jordan B. Barlow, David W. Wilson (2013) Evaluating Journal Quality and the Association for Information Systems Senior Scholars\u2019 Journal Basket Via Bibliometric Measures: Do Expert Journal Assessments Add Value?1. MIS Quarterly."
   },
   "10.25300/misq/2014/38.1.14": {
     "ref": "Ho-Chang Chae, Chang E. Koh, Victor R. Prybutok (2014) Information Technology Capability and Firm Performance: Contradictory Findings and Their Possible Causes1. MIS Quarterly."
@@ -1086,6 +1206,12 @@
   "10.3758/mc.37.1.65": {
     "ref": "Jamie I. D. Campbell, Thomas L. Phenix (2008) Target strength and retrieval-induced forgetting in semantic recall. Memory & Cognition."
   },
+  "10.3758/s13414-018-1498-7": {
+    "ref": "Tarini Singh, Birte Moeller, Iring Koch, Christian Frings (2018) May I have your attention please: Binding of attended but response-irrelevant features. Attention Perception & Psychophysics."
+  },
+  "10.3758/s13421-018-0888-3": {
+    "ref": "Christin Schulze, Greta James, Derek J. Koehler, Ben R. Newell (2019) Probability matching does not decrease under cognitive load: A preregistered failure to replicate. Memory & Cognition."
+  },
   "10.3758/s13428-020-01440-1": {
     "ref": "Benedetta Cevoli, Chris Watkins, Kathleen Rastle (2020) What is semantic diversity and why does it facilitate visual word recognition?. Behavior Research Methods."
   },
@@ -1113,11 +1239,17 @@
   "10.4995/muse.2019.10390": {
     "ref": "Thomas Pl\u00f6tz, F. Hollenthoner (2019) Replicating a study about children\u2019s drawings concerning radiation. Multidisciplinary Journal for Education Social and Technological Sciences."
   },
+  "10.5114/cipp.2021.110948": {
+    "ref": "Matt N Williams, Shoni R. Edwards (2021) Conceptual replication of Seo (2008), \u201cSelf-efficacy as a mediator in the relationship between self-oriented perfectionism and academicprocrastination\u201d. Current Issues in Personality Psychology."
+  },
   "10.5117/2017.045.002.002": {
     "ref": "Monique Pollmann, Marije van Amelsvoort, Marjolijn L. Antheunis, Debby Damen, Loes Janssen, Emiel Krahmer, Alfons Maes, Juli\u00ebtte Schaafsma, Alexander Schouten, Per van der Wijst (2017) Boosheid en blijdschap in onderhandelingen. Tijdschrift voor Communicatiewetenschappen."
   },
   "10.5281/zenodo.18538611": {
     "ref": "Manuel Soler Cruz, Jos\u00e9 Manuel Colmenero, Tom\u00e1s P\u00e9rez\u2010Contreras, Juan Manuel Peralta-S\u00e1nchez (2020) Replication of the Mirror Mark Test Experiment in the Magpie (Pica pica) Does Not Provide Evidence of Self-Recognition. Zenodo (CERN European Organization for Nuclear Research)."
+  },
+  "10.5334/joc.432": {
+    "ref": "Tarini Singh, Lars-Michael Sch\u00f6pper, Christian Frings (2025) I am Once Again Asking for Your Attention: A Replication of Feature-Based Attention Modulations of Binding Effects with Picture Stimuli. Journal of Cognition."
   },
   "10.5465/amj.2010.0608": {
     "ref": "Anastasiya Zavyalova, Michael D. Pfarrer, Rhonda K. Reger, Debra L. Shapiro (2012) Managing the Message: The Effects of Firm Actions and Industry Spillovers on Media Coverage Following Wrongdoing. Academy of Management Journal."
