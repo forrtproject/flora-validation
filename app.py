@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 import os
 import random
@@ -13,12 +15,13 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
-from fastapi import Body, FastAPI, Header, HTTPException
+from fastapi import Body, FastAPI, Header, HTTPException, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import hashlib
 import resend
+import source_records_service
 from email_templates import forgot_handle_email
 
 load_dotenv()
@@ -2845,6 +2848,183 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
         )
 
     return {"resolved": True, "rejected": False, "record_id": record_id}
+
+
+# ---------------------------------------------------------------------------
+# Source records — entry-sheet datatable (see sources.yml, sync_sources.py)
+# ---------------------------------------------------------------------------
+# Routes stay thin on purpose: all SQL and business logic lives in
+# source_records_service, which has no FastAPI types in it, so the Lambda
+# handlers planned for the next phase can call the identical functions.
+
+def _source_filters(
+    type: str = "", status: str = "", outcome: str = "",
+    search: str = "", reviewed: str = "", flagged: bool = False,
+) -> dict:
+    return {
+        "type": type, "status": status, "outcome": outcome,
+        "search": search, "reviewed": reviewed, "flagged": flagged,
+    }
+
+
+@app.get("/api/admin/source-records")
+def admin_source_records(
+    type: str = "", status: str = "", outcome: str = "",
+    search: str = "", reviewed: str = "", flagged: bool = False,
+    sort: str = "", dir: str = "asc",
+    page: int = 1, per_page: int = 50,
+    x_admin_token: str = Header(...),
+):
+    _require_admin(x_admin_token)
+    filters = _source_filters(type, status, outcome, search, reviewed, flagged)
+    with db() as cur:
+        return source_records_service.list_records(
+            cur, filters, sort=sort, direction=dir, page=page, per_page=per_page
+        )
+
+
+@app.get("/api/admin/source-records/export.csv")
+def admin_source_records_export(
+    type: str = "", status: str = "", outcome: str = "",
+    search: str = "", reviewed: str = "", flagged: bool = False,
+    x_admin_token: str = Header(...),
+):
+    """Every row matching the current filter, not just the current page."""
+    _require_admin(x_admin_token)
+    filters = _source_filters(type, status, outcome, search, reviewed, flagged)
+    with db() as cur:
+        columns, rows = source_records_service.export_rows(cur, filters)
+
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=columns, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({k: ("" if v is None else v) for k, v in row.items()})
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="source_records.csv"'},
+    )
+
+
+@app.get("/api/admin/source-records/sync-status")
+def admin_source_sync_status(x_admin_token: str = Header(...)):
+    """Feeds the freshness banner above the grid."""
+    _require_admin(x_admin_token)
+    with db() as cur:
+        return source_records_service.sync_status(cur)
+
+
+@app.get("/api/admin/source-records/duplicates")
+def admin_source_duplicates(unresolved_only: bool = True, x_admin_token: str = Header(...)):
+    """Papers appearing under more than one sheet UUID, grouped for comparison."""
+    _require_admin(x_admin_token)
+    with db() as cur:
+        return source_records_service.duplicate_groups(cur, unresolved_only)
+
+
+class DuplicateResolution(BaseModel):
+    status: str                       # 'distinct' | 'duplicate'
+    duplicate_of: str | None = None
+
+
+@app.post("/api/admin/source-records/{record_id}/duplicate")
+def admin_resolve_duplicate(record_id: str, req: DuplicateResolution,
+                            x_admin_token: str = Header(...)):
+    handle = _require_admin(x_admin_token)
+    with db() as cur:
+        try:
+            return source_records_service.resolve_duplicate(
+                cur, record_id, req.status, handle, req.duplicate_of
+            )
+        except source_records_service.RecordNotFound:
+            raise HTTPException(404, "Record not found")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+
+@app.get("/api/admin/source-records/vocabularies")
+def admin_source_vocabularies(x_admin_token: str = Header(...)):
+    """Dropdown options for the review panel, derived from the stored rows so a
+    new value appearing upstream needs no code change."""
+    _require_admin(x_admin_token)
+    with db() as cur:
+        return source_records_service.field_vocabularies(cur)
+
+
+class SourceRecordUpdate(BaseModel):
+    fields: dict = {}
+    version: int          # required: an absent version would skip the concurrency check
+    note: str = ""
+
+
+@app.patch("/api/admin/source-records/{record_id}")
+def admin_source_record_update(
+    record_id: str,
+    req: SourceRecordUpdate,
+    type: str = "", status: str = "", outcome: str = "",
+    search: str = "", reviewed: str = "", flagged: bool = False,
+    sort: str = "", dir: str = "asc",
+    x_admin_token: str = Header(...),
+):
+    """Save a review. Stamps reviewer + timestamp even when nothing changed, and
+    returns the next record in the active filter so 'Save & next' is one trip."""
+    handle = _require_admin(x_admin_token)
+    filters = _source_filters(type, status, outcome, search, reviewed, flagged)
+    with db() as cur:
+        # Computed BEFORE the save: stamping reviewed_at can move this row out of
+        # its own filter (the "not reviewed" queue is exactly that case), and then
+        # there would be no next id to advance to.
+        try:
+            neighbours = source_records_service.neighbours(
+                cur, record_id, filters, sort, dir
+            )
+        except source_records_service.RecordNotFound:
+            raise HTTPException(404, "Record not found")
+
+        try:
+            result = source_records_service.update_record(
+                cur, record_id, req.fields or {}, req.version, handle, req.note
+            )
+        except source_records_service.RecordNotFound:
+            raise HTTPException(404, "Record not found")
+        except source_records_service.VersionConflict as e:
+            # Detail is a plain string so it survives the client's `err.detail`
+            # unwrapping; the structured bits go in dedicated headers.
+            raise HTTPException(
+                409, "This record was changed by someone else.",
+                headers={
+                    "X-Current-Version": str(e.current.get("version") or ""),
+                    "X-Reviewed-By": str(e.current.get("reviewed_by") or ""),
+                },
+            )
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+        result["neighbours"] = neighbours
+        return result
+
+
+@app.get("/api/admin/source-records/{record_id}")
+def admin_source_record_detail(
+    record_id: str,
+    type: str = "", status: str = "", outcome: str = "",
+    search: str = "", reviewed: str = "", flagged: bool = False,
+    sort: str = "", dir: str = "asc",
+    x_admin_token: str = Header(...),
+):
+    """Full record for the review panel. The filter params are passed through so
+    prev/next walk the queue the reviewer is actually looking at."""
+    _require_admin(x_admin_token)
+    filters = _source_filters(type, status, outcome, search, reviewed, flagged)
+    with db() as cur:
+        try:
+            return source_records_service.get_record(
+                cur, record_id, filters, sort=sort, direction=dir
+            )
+        except source_records_service.RecordNotFound:
+            raise HTTPException(404, "Record not found")
 
 
 # ---------------------------------------------------------------------------

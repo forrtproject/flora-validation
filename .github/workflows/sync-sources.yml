@@ -1,0 +1,65 @@
+name: Sync entry sheets
+
+on:
+  schedule:
+    # 03:00 UTC — deliberately ahead of the 04:00 daily-export job so the two
+    # never contend, and so a night's new rows are in place before the export runs.
+    # NOTE: GitHub cron is always UTC (no DST).
+    - cron: "0 3 * * *"
+  workflow_dispatch: {}   # also allow manual runs from the Actions tab
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Sync entry sheets
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python sync_sources.py
+
+      # Runs after the sync so the output reflects the night's new rows. Pure
+      # function of the database — writes nothing back, so it is safe to re-run.
+      - name: Build FLoRA dataset
+        # Runs even when a source failed a gate: the transform reads only the
+        # database, so a temporarily unshared sheet should not also cost us the
+        # nightly dataset built from the rows already stored.
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python transform_sources.py
+
+      # Uploaded rather than committed: whether the R pipeline should read this
+      # from a raw.githubusercontent URL (as it does for validated_export.csv) is
+      # still an open decision. Committing it is a `git add` step away.
+      - name: Upload FLoRA dataset
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flora-entry-sheets-${{ github.run_id }}
+          path: output/flora_entry_sheets.csv
+          retention-days: 90
+          if-no-files-found: warn
+
+      # Snapshots go to artifacts rather than the repo: the payloads are several MB
+      # a night and would bloat git permanently. The hash and row count live in
+      # source_sync_runs, so the audit trail outlives the 90-day retention.
+      - name: Upload sheet snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: entry-sheet-snapshots-${{ github.run_id }}
+          path: snapshots/
+          retention-days: 90
+          if-no-files-found: ignore

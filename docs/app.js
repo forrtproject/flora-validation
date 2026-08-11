@@ -3635,7 +3635,16 @@ async function adminApi(path, method = "GET", body = null) {
   const res = await fetch("/api/admin" + path, opts);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || res.statusText || `Server error (HTTP ${res.status})`);
+    // FastAPI's detail can be an object (or a validation array); String()-ing one
+    // yields "[object Object]", so unwrap it before building the message.
+    let detail = err.detail;
+    if (detail && typeof detail === "object") {
+      detail = detail.message || (Array.isArray(detail) ? detail.map((d) => d.msg).join("; ") : null);
+    }
+    const error = new Error(detail || res.statusText || `Server error (HTTP ${res.status})`);
+    error.status = res.status;          // callers branch on this, never on the text
+    error.headers = res.headers;
+    throw error;
   }
   return res.json();
 }
@@ -4455,6 +4464,7 @@ function closeAdminDetail() {
 /* ---------- Admin tabs ---------- */
 function switchAdminTab(tab) {
   $("#admin-tab-entries").classList.toggle("hidden",    tab !== "entries");
+  $("#admin-tab-sources").classList.toggle("hidden",    tab !== "sources");
   $("#admin-tab-stats").classList.toggle("hidden",      tab !== "stats");
   $("#admin-tab-admins").classList.toggle("hidden",     tab !== "admins");
   $("#admin-tab-dashboard").classList.toggle("hidden",  tab !== "dashboard");
@@ -4464,6 +4474,7 @@ function switchAdminTab(tab) {
   $("#admin-tabs").querySelectorAll(".admin-tab-btn").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === tab);
   });
+  if (tab === "sources")    { resetSourceView(); fetchSourceRecords(); }
   if (tab === "stats")      fetchAdminStats();
   if (tab === "admins")     { fetchAdminAdmins(); fetchAdminBannerStatus(); }
   if (tab === "dashboard")  fetchAdminDashboard();
@@ -5654,3 +5665,548 @@ $("#forgot-cancel-btn").onclick  = closeForgotModal;
 $("#forgot-modal").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeForgotModal(); });
 $("#forgot-submit-btn").onclick  = submitForgotHandle;
 $("#forgot-email-input").addEventListener("keydown", (e) => { if (e.key === "Enter") submitForgotHandle(); });
+
+/* ============================================================
+   ADMIN: SOURCE RECORDS
+   The FLoRA entry sheets (replications + reproductions), ingested by
+   sync_sources.py. Insert-only upstream, so this table is authoritative once a
+   row lands — nothing edited here ever goes back to the Google Sheet.
+   ============================================================ */
+
+let _srcFilter  = "all";   // all | replication | reproduction | reviewed | unreviewed | flagged
+let _srcStatus  = "";
+let _srcSearch  = "";
+let _srcPage    = 1;
+let _srcSort    = "";
+let _srcSortDir = "asc";
+let _srcNeighbours = { prev_id: null, next_id: null };
+let _srcCurrent    = null;   // record currently open in the review panel
+let _srcVocab      = {};     // field -> allowed values, fetched once per session
+// Identity and derived fields: shown for context, never editable here. oa_work_id_*
+// is re-derived from the DOI, so editing it directly would just be overwritten.
+const SRC_READONLY_FIELDS = ["oa_work_id_o", "oa_work_id_r"];
+const SRC_PER_PAGE = 50;
+
+/** Chips map onto several different query params, so translate in one place. */
+function srcQueryParams() {
+  const p = { page: _srcPage, per_page: SRC_PER_PAGE };
+  if (_srcFilter === "replication" || _srcFilter === "reproduction") p.type = _srcFilter;
+  if (_srcFilter === "reviewed")   p.reviewed = "yes";
+  if (_srcFilter === "unreviewed") p.reviewed = "no";
+  if (_srcFilter === "flagged")    p.flagged  = "true";
+  if (_srcStatus) p.status = _srcStatus;
+  if (_srcSearch) p.search = _srcSearch;
+  if (_srcSort)   { p.sort = _srcSort; p.dir = _srcSortDir; }
+  return p;
+}
+
+function srcQueryString(extra) {
+  return new URLSearchParams(Object.assign({}, srcQueryParams(), extra || {})).toString();
+}
+
+/** Replications carry `outcome`; reproductions carry two dimensions. One column
+ *  renders both, so 18 reproduction rows never need their own grid. */
+function srcOutcomeCell(r) {
+  if (r.type === "reproduction") {
+    const c = r.outcome_computational || "—";
+    const b = r.outcome_robustness    || "—";
+    return '<span class="src-outcome-dim" title="computational / robustness">' +
+           escapeHtml(c) + '<br><span class="src-dim2">' + escapeHtml(b) + "</span></span>";
+  }
+  return escapeHtml(r.outcome || "—");
+}
+
+function srcShorten(s, n) {
+  n = n || 70;
+  if (!s) return "—";
+  const t = String(s).trim();
+  return escapeHtml(t.length > n ? t.slice(0, n) + "…" : t);
+}
+
+async function fetchSourceRecords() {
+  const body = $("#src-table-body");
+  if (!body) return;
+  body.innerHTML = '<tr><td colspan="8" class="admin-loading">Loading…</td></tr>';
+  try {
+    if (!Object.keys(_srcVocab).length) {
+      _srcVocab = await adminApi("/source-records/vocabularies").catch(() => ({}));
+    }
+    const data = await adminApi("/source-records?" + srcQueryString());
+    renderSourceRecords(data);
+    fetchSourceFreshness();
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="8" class="admin-loading">Error: ' +
+                     escapeHtml(e.message) + "</td></tr>";
+  }
+}
+
+function renderSourceRecords(data) {
+  const c = data.counts || {};
+  const set = (id, v) => { const el = $(id); if (el) el.textContent = (v === undefined || v === null) ? "—" : v; };
+  set("#sfc-all", c.all_records);
+  set("#sfc-repl", c.replications);
+  set("#sfc-repro", c.reproductions);
+  set("#sfc-reviewed", c.reviewed);
+  set("#sfc-unreviewed", c.unreviewed);
+  set("#sfc-flagged", c.flagged);
+
+  const body  = $("#src-table-body");
+  const empty = $("#src-empty");
+  const rows  = data.records || [];
+  empty.classList.toggle("hidden", rows.length > 0);
+
+  body.innerHTML = rows.map((r) => {
+    const flag = r.is_duplicate
+      ? ' <span class="src-flag" title="This paper appears under more than one sheet id">⚑</span>'
+      : "";
+    const reviewed = r.reviewed_by
+      ? escapeHtml(r.reviewed_by) + '<br><span class="src-dim2">' +
+        new Date(r.reviewed_at).toLocaleDateString() + "</span>"
+      : "—";
+    return '<tr class="src-row' + (r.reviewed_at ? " src-reviewed" : "") + '" data-id="' + r.record_id + '">' +
+      '<td class="src-id">' + escapeHtml(r.display_id || "") + flag + "</td>" +
+      '<td><span class="src-type-badge src-type-' + r.type + '">' +
+        (r.type === "reproduction" ? "repro" : "repl") + "</span></td>" +
+      "<td>" + srcShorten(r.ref_o) + "</td>" +
+      "<td>" + srcShorten(r.ref_r) + "</td>" +
+      "<td>" + srcOutcomeCell(r) + "</td>" +
+      '<td class="src-status">' + escapeHtml((r.validation_status || "").replace("validated - ", "")) + "</td>" +
+      '<td class="src-reviewed-cell">' + reviewed + "</td>" +
+      '<td><button class="ghost-btn src-open-btn" data-id="' + r.record_id + '">Open</button></td>' +
+      "</tr>";
+  }).join("");
+
+  renderSourcePagination(data.total, data.page);
+}
+
+function renderSourcePagination(total, page) {
+  const pages = Math.ceil(total / SRC_PER_PAGE);
+  const el = $("#src-pagination");
+  if (pages <= 1) {
+    el.innerHTML = '<span class="admin-page-info">' + total + " record" + (total === 1 ? "" : "s") + "</span>";
+    return;
+  }
+  el.innerHTML =
+    '<button class="ghost-btn" id="src-prev" ' + (page <= 1 ? "disabled" : "") + ">← Prev</button>" +
+    '<span class="admin-page-info">Page ' + page + " of " + pages + " (" + total + " records)</span>" +
+    '<button class="ghost-btn" id="src-next" ' + (page >= pages ? "disabled" : "") + ">Next →</button>";
+  $("#src-prev").onclick = () => { _srcPage--; fetchSourceRecords(); };
+  $("#src-next").onclick = () => { _srcPage++; fetchSourceRecords(); };
+}
+
+function srcTimeAgo(d) {
+  const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (mins < 60)   return mins + "m ago";
+  if (mins < 1440) return Math.floor(mins / 60) + "h ago";
+  return Math.floor(mins / 1440) + "d ago";
+}
+
+/** Stale-but-plausible data is worse than obviously-broken data, so the grid
+ *  always says when it was last filled. */
+async function fetchSourceFreshness() {
+  const el = $("#src-freshness");
+  if (!el) return;
+  try {
+    const data = await adminApi("/source-records/sync-status");
+    if (!data.sources || !data.sources.length) {
+      el.innerHTML = '<span class="src-fresh-warn">Never synced.</span>';
+      return;
+    }
+    const parts = data.sources.map((s) => {
+      const when = s.started_at ? srcTimeAgo(new Date(s.started_at)) : "—";
+      if (s.status === "failed") {
+        return '<span class="src-fresh-warn">' + escapeHtml(s.source) + ": FAILED " + when +
+               " — " + escapeHtml(s.failure_reason || "") + "</span>";
+      }
+      const bits = [escapeHtml(s.source) + " " + when];
+      if (s.rows_inserted) bits.push("+" + s.rows_inserted + " new");
+      if (s.rows_skipped)  bits.push(s.rows_skipped + " skipped");
+      if (s.dup_ids)       bits.push(s.dup_ids + " dup ids");
+      return bits.join(" · ");
+    });
+    el.innerHTML = "Last sync — " + parts.join("&nbsp;&nbsp;|&nbsp;&nbsp;");
+  } catch (e) {
+    el.innerHTML = "";
+  }
+}
+
+/* ---------- Review panel (read-only in this phase) ---------- */
+
+const SRC_FIELD_GROUPS = {
+  replication: [
+    ["Original",    ["ref_o", "doi_o", "url_o", "alt_identifier_o", "oa_work_id_o"]],
+    ["Replication", ["ref_r", "doi_r", "url_r", "year_r", "alt_identifier_r", "oa_work_id_r", "abstract_r"]],
+    ["Outcome",     ["outcome", "outcome_quote", "out_quote_source"]],
+    ["Status",      ["validation_status"]]
+  ],
+  reproduction: [
+    ["Original",      ["ref_o", "doi_o", "url_o", "study_o", "oa_work_id_o"]],
+    ["Reproduction",  ["ref_r", "doi_r", "url_r", "oa_work_id_r", "abstract_r"]],
+    ["Computational", ["outcome_computational", "outcome_computational_quote", "out_quote_computational_source"]],
+    ["Robustness",    ["outcome_robustness", "outcome_robustness_quote", "out_quote_robust_source"]],
+    ["Status",        ["validation_status"]]
+  ]
+};
+
+async function openSourceRecord(recordId) {
+  const modal = $("#src-detail-modal");
+  const body  = $("#src-detail-body");
+  modal.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+  body.innerHTML = '<p class="admin-loading">Loading…</p>';
+  try {
+    const r = await adminApi("/source-records/" + recordId + "?" + srcQueryString());
+    renderSourceRecord(r);
+  } catch (e) {
+    body.innerHTML = '<p class="admin-loading">Error: ' + escapeHtml(e.message) + "</p>";
+  }
+}
+
+function renderSourceRecord(r) {
+  _srcCurrent = r;
+  $("#src-detail-title").textContent = r.display_id || "Source Record";
+
+  const n = r.neighbours || {};
+  _srcNeighbours = n;
+  $("#src-detail-pos").textContent = n.pos ? n.pos + " / " + n.total : "";
+  $("#src-prev-btn").disabled = !n.prev_id;
+  $("#src-next-btn").disabled = !n.next_id;
+
+  const groups = SRC_FIELD_GROUPS[r.type] || SRC_FIELD_GROUPS.replication;
+
+  const field = (k) => {
+    const v = r[k] === null || r[k] === undefined ? "" : String(r[k]);
+    const readOnly = SRC_READONLY_FIELDS.indexOf(k) !== -1;
+    const long = k.indexOf("abstract") === 0 || k.indexOf("quote") !== -1;
+    let control;
+
+    if (readOnly) {
+      control = '<div class="src-value src-value-ro">' +
+                  (v ? escapeHtml(v) : '<span class="src-dim2">—</span>') + "</div>";
+    } else if (_srcVocab[k]) {
+      // Keep the current value selectable even if it is not in the vocabulary,
+      // so opening a record can never silently change it.
+      const opts = _srcVocab[k].slice();
+      if (v && opts.indexOf(v) === -1) opts.unshift(v);
+      control = '<select class="src-input" data-field="' + k + '">' +
+                  '<option value="">—</option>' +
+                  opts.map((o) =>
+                    '<option value="' + escapeHtml(o) + '"' + (o === v ? " selected" : "") + ">" +
+                    escapeHtml(o) + "</option>").join("") +
+                "</select>";
+    } else if (long) {
+      control = '<textarea class="src-input src-textarea" data-field="' + k + '" rows="4">' +
+                  escapeHtml(v) + "</textarea>";
+    } else {
+      control = '<input class="src-input" type="text" data-field="' + k + '" value="' +
+                  escapeHtml(v) + '">';
+    }
+
+    return '<div class="src-field' + (long ? " src-field-long" : "") + '">' +
+             "<label>" + escapeHtml(k) + "</label>" + control + "</div>";
+  };
+
+  const dups = r.duplicates || [];
+  const dupWarning = dups.length
+    ? '<div class="src-dup-warn">⚑ This paper also appears as ' +
+      dups.map((d) => escapeHtml(d.display_id)).join(", ") +
+      " — same DOIs under a different sheet id.</div>"
+    : "";
+
+  const hist = r.history || [];
+  const history = hist.length
+    ? '<div class="src-group"><h4>History</h4>' + hist.map((h) =>
+        '<div class="src-history-row"><span class="src-dim2">' +
+        new Date(h.edited_at).toLocaleString() + "</span> <strong>" +
+        escapeHtml(h.edited_by) + "</strong> changed <code>" + escapeHtml(h.field) +
+        '</code><div class="src-dim2">' + escapeHtml(h.old_value || "—") + " → " +
+        escapeHtml(h.new_value || "—") +
+        (h.note ? ' <em>— ' + escapeHtml(h.note) + "</em>" : "") + "</div></div>"
+      ).join("") + "</div>"
+    : "";
+
+  const reviewed = r.reviewed_by
+    ? "Last reviewed by " + escapeHtml(r.reviewed_by) + " · " +
+      new Date(r.reviewed_at).toLocaleString()
+    : "Not yet reviewed";
+
+  $("#src-detail-body").innerHTML =
+    '<div class="src-detail-meta">' +
+      '<span class="src-type-badge src-type-' + r.type + '">' + escapeHtml(r.type) + "</span> " +
+      '<span class="src-dim2">' + escapeHtml(r.source) + " · sheet id " +
+        escapeHtml(r.sheet_row_id || "—") + "</span>" +
+    "</div>" +
+    dupWarning +
+    groups.map((g) =>
+      '<div class="src-group"><h4>' + escapeHtml(g[0]) + "</h4>" +
+      g[1].map(field).join("") + "</div>"
+    ).join("") +
+    history +
+    '<div class="src-save-bar">' +
+      '<input id="src-note" class="src-input src-note" type="text" placeholder="Note (optional)">' +
+      '<span id="src-save-msg" class="src-dim2">' + reviewed + "</span>" +
+      '<button id="src-save-btn" class="btn-primary">Save</button>' +
+      '<button id="src-save-next-btn" class="btn-primary" ' +
+        (n.next_id ? "" : "disabled") + ">Save &amp; next</button>" +
+    "</div>";
+
+  $("#src-save-btn").onclick      = () => saveSourceRecord(false);
+  $("#src-save-next-btn").onclick = () => saveSourceRecord(true);
+}
+
+/** Collect only what the reviewer actually touched. The server diffs again, so
+ *  this is about payload size and intent, not correctness. */
+function collectSourceEdits() {
+  const out = {};
+  $("#src-detail-body").querySelectorAll("[data-field]").forEach((el) => {
+    out[el.dataset.field] = el.value;
+  });
+  return out;
+}
+
+async function saveSourceRecord(advance) {
+  const r = _srcCurrent;
+  if (!r) return;
+  const saveBtn = $("#src-save-btn");
+  const nextBtn = $("#src-save-next-btn");
+  const msg     = $("#src-save-msg");
+  saveBtn.disabled = true;
+  if (nextBtn) nextBtn.disabled = true;
+  msg.textContent = "Saving…";
+
+  const noteEl = $("#src-note");
+  try {
+    const res = await adminApi(
+      "/source-records/" + r.record_id + "?" + srcQueryString(),
+      "PATCH",
+      { fields: collectSourceEdits(), version: r.version, note: noteEl ? noteEl.value : "" }
+    );
+    const changed = res.changed_fields || [];
+    showToast(changed.length
+      ? "Saved — " + changed.length + " field" + (changed.length === 1 ? "" : "s") + " changed."
+      : "Marked as reviewed.");
+
+    const nextId = (res.neighbours || {}).next_id;
+    if (advance && nextId) {
+      openSourceRecord(nextId);
+    } else {
+      await openSourceRecord(r.record_id);   // reload for the new version + history
+    }
+    fetchSourceRecords();
+  } catch (e) {
+    saveBtn.disabled = false;
+    if (nextBtn) nextBtn.disabled = false;
+    // 409: someone else saved this row while it was open. Reloading is the only
+    // safe move — silently overwriting their edit is exactly what version guards against.
+    if (e.status === 409) {
+      msg.innerHTML = '<span class="src-fresh-warn">Changed by someone else — reloading…</span>';
+      setTimeout(() => openSourceRecord(r.record_id), 1200);
+    } else {
+      msg.innerHTML = '<span class="src-fresh-warn">' + escapeHtml(e.message) + "</span>";
+    }
+  }
+}
+
+function closeSourceRecord() {
+  $("#src-detail-modal").classList.add("hidden");
+  document.body.style.overflow = "";
+}
+
+/* ---------- Wiring ---------- */
+
+$("#src-filters").addEventListener("click", (e) => {
+  const btn = e.target.closest(".admin-filter-btn");
+  if (!btn) return;
+  $("#src-filters").querySelectorAll(".admin-filter-btn").forEach((b) => b.classList.remove("active"));
+  btn.classList.add("active");
+  _srcFilter = btn.dataset.filter;
+  _srcPage = 1;
+  if (_srcFilter === "flagged") { showSourceDuplicates(); return; }
+  resetSourceView();
+  fetchSourceRecords();
+});
+
+$("#src-search-input").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  _srcSearch = e.target.value.trim();
+  _srcPage = 1;
+  fetchSourceRecords();
+});
+
+$("#src-status-filter").addEventListener("change", (e) => {
+  _srcStatus = e.target.value;
+  _srcPage = 1;
+  fetchSourceRecords();
+});
+
+$("#admin-tab-sources").addEventListener("click", (e) => {
+  const th = e.target.closest(".th-sort");
+  if (th) {
+    const key = th.dataset.sort;
+    if (_srcSort === key) {
+      _srcSortDir = _srcSortDir === "asc" ? "desc" : "asc";
+    } else {
+      _srcSort = key;
+      _srcSortDir = "asc";
+    }
+    _srcPage = 1;
+    fetchSourceRecords();
+    return;
+  }
+  const open = e.target.closest(".src-open-btn") || e.target.closest(".src-row");
+  if (open) openSourceRecord(open.dataset.id);
+});
+
+// Export streams a file, so it bypasses adminApi's JSON path.
+$("#src-export-btn").onclick = async () => {
+  const res = await fetch("/api/admin/source-records/export.csv?" + srcQueryString(),
+                          { headers: { "X-Admin-Token": _adminToken } });
+  if (!res.ok) { await showAlert("Export failed."); return; }
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "source_records.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+$("#src-detail-close").onclick = closeSourceRecord;
+$("#src-detail-modal").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) closeSourceRecord();
+});
+$("#src-prev-btn").onclick = () => { if (_srcNeighbours.prev_id) openSourceRecord(_srcNeighbours.prev_id); };
+$("#src-next-btn").onclick = () => { if (_srcNeighbours.next_id) openSourceRecord(_srcNeighbours.next_id); };
+
+/* ---------- Duplicate review ----------
+   Same paper under two sheet UUIDs. The sync flags these but never blocks the
+   insert, so a human rules on each row and the transform honours the decision. */
+
+let _srcDupShowResolved = false;
+
+function showSourceDuplicates() {
+  $("#src-dup-view").classList.remove("hidden");
+  $(".src-toolbar").classList.add("hidden");
+  $("#admin-tab-sources").querySelector(".admin-table-wrap").classList.add("hidden");
+  $("#src-pagination").classList.add("hidden");
+  fetchSourceDuplicates();
+}
+
+/** Restore the grid chrome without fetching, so callers control when to reload. */
+function resetSourceView() {
+  $("#src-dup-view").classList.add("hidden");
+  $(".src-toolbar").classList.remove("hidden");
+  $("#admin-tab-sources").querySelector(".admin-table-wrap").classList.remove("hidden");
+  $("#src-pagination").classList.remove("hidden");
+}
+
+function hideSourceDuplicates() {
+  resetSourceView();
+  // The "Duplicates" chip is what opened this view; leave it active and the next
+  // grid fetch would filter to flagged rows behind a chip the user just left.
+  if (_srcFilter === "flagged") {
+    _srcFilter = "all";
+    _srcPage = 1;
+    const chips = $("#src-filters").querySelectorAll(".admin-filter-btn");
+    chips.forEach((b) => b.classList.toggle("active", b.dataset.filter === "all"));
+  }
+  fetchSourceRecords();
+}
+
+async function fetchSourceDuplicates() {
+  const body = $("#src-dup-body");
+  body.innerHTML = '<p class="admin-loading">Loading…</p>';
+  try {
+    const data = await adminApi("/source-records/duplicates?unresolved_only=" +
+                                (_srcDupShowResolved ? "false" : "true"));
+    renderSourceDuplicates(data);
+  } catch (e) {
+    body.innerHTML = '<p class="admin-loading">Error: ' + escapeHtml(e.message) + "</p>";
+  }
+}
+
+function renderSourceDuplicates(data) {
+  const groups = data.groups || [];
+  $("#src-dup-count").textContent =
+    groups.length + " group" + (groups.length === 1 ? "" : "s");
+
+  if (!groups.length) {
+    $("#src-dup-body").innerHTML =
+      '<p class="admin-empty">No duplicate groups need review.</p>';
+    return;
+  }
+
+  $("#src-dup-body").innerHTML = groups.map((g) => {
+    const flags = [];
+    if (g.outcomes_differ) flags.push('<span class="src-dup-badge src-dup-badge-warn">outcomes differ</span>');
+    if (g.cross_sheet)     flags.push('<span class="src-dup-badge">both sheets</span>');
+    if (g.resolved)        flags.push('<span class="src-dup-badge src-dup-badge-ok">resolved</span>');
+
+    const cards = g.members.map((m) => {
+      const outcome = m.type === "reproduction"
+        ? escapeHtml((m.outcome_computational || "—") + " / " + (m.outcome_robustness || "—"))
+        : escapeHtml(m.outcome || "—");
+      const state = m.duplicate_status
+        ? '<div class="src-dup-state">' +
+            (m.duplicate_status === "duplicate" ? "marked duplicate" : "marked distinct") +
+            ' <span class="src-dim2">by ' + escapeHtml(m.duplicate_reviewed_by || "") + "</span></div>"
+        : "";
+      const others = g.members.filter((o) => o.record_id !== m.record_id);
+      return '<div class="src-dup-card' + (m.duplicate_status ? " src-dup-done" : "") + '">' +
+        '<div class="src-dup-card-head">' +
+          '<strong>' + escapeHtml(m.display_id) + "</strong> " +
+          '<span class="src-type-badge src-type-' + m.type + '">' +
+            (m.type === "reproduction" ? "repro" : "repl") + "</span>" +
+        "</div>" +
+        '<dl class="src-dup-fields">' +
+          "<dt>doi_o</dt><dd>" + escapeHtml(m.doi_o || "—") + "</dd>" +
+          "<dt>doi_r</dt><dd>" + escapeHtml(m.doi_r || "—") + "</dd>" +
+          "<dt>url_r</dt><dd>" + escapeHtml(m.url_r || "—") + "</dd>" +
+          "<dt>ref_r</dt><dd>" + srcShorten(m.ref_r, 110) + "</dd>" +
+          "<dt>outcome</dt><dd>" + outcome + "</dd>" +
+          "<dt>status</dt><dd>" + escapeHtml(m.validation_status || "—") + "</dd>" +
+          "<dt>sheet id</dt><dd><code>" + escapeHtml((m.sheet_row_id || "").slice(0, 8)) + "</code></dd>" +
+        "</dl>" +
+        state +
+        '<div class="src-dup-actions">' +
+          '<button class="ghost-btn src-dup-distinct" data-id="' + m.record_id + '">Keep — distinct</button>' +
+          others.map((o) =>
+            '<button class="ghost-btn src-dup-dupe" data-id="' + m.record_id +
+            '" data-of="' + o.record_id + '">Duplicate of ' + escapeHtml(o.display_id) + "</button>"
+          ).join("") +
+        "</div>" +
+        '<button class="ghost-btn src-dup-open" data-id="' + m.record_id + '">Open full record</button>' +
+      "</div>";
+    }).join("");
+
+    return '<div class="src-dup-group">' +
+      '<div class="src-dup-group-head">' + flags.join(" ") + "</div>" +
+      '<div class="src-dup-cards">' + cards + "</div>" +
+    "</div>";
+  }).join("");
+}
+
+async function resolveSourceDuplicate(recordId, status, duplicateOf) {
+  try {
+    await adminApi("/source-records/" + recordId + "/duplicate", "POST",
+                   { status: status, duplicate_of: duplicateOf || null });
+    showToast(status === "duplicate" ? "Marked as duplicate." : "Marked as distinct.");
+    fetchSourceDuplicates();
+  } catch (e) {
+    await showAlert("Error: " + e.message);
+  }
+}
+
+$("#src-dup-back").onclick = hideSourceDuplicates;
+$("#src-dup-show-resolved").addEventListener("change", (e) => {
+  _srcDupShowResolved = e.target.checked;
+  fetchSourceDuplicates();
+});
+
+$("#src-dup-body").addEventListener("click", (e) => {
+  const distinct = e.target.closest(".src-dup-distinct");
+  if (distinct) { resolveSourceDuplicate(distinct.dataset.id, "distinct"); return; }
+  const dupe = e.target.closest(".src-dup-dupe");
+  if (dupe) { resolveSourceDuplicate(dupe.dataset.id, "duplicate", dupe.dataset.of); return; }
+  const open = e.target.closest(".src-dup-open");
+  if (open) openSourceRecord(open.dataset.id);
+});

@@ -1,0 +1,81 @@
+# sources.yml — registry of the FLoRA entry sheets.
+#
+# Single definition of where the entry-sheet data comes from and how it maps onto
+# source_records. sync_sources.py reads this; the R pipeline can read the same file
+# via yaml::read_yaml() so the two never drift.
+#
+# Adding or repointing a sheet is a config change here — never a code change.
+
+# All entry sheets are tabs of one published Google spreadsheet, so they share a
+# single permission: if it is unshared, every source fails together.
+document: "2PACX-1vT0VnLyrf9GCYXtN6l1DgaoLlg6H5r-08Op9eJzSripS1QBSHL031Arc27yUDe0YY7cB4TOnYMm2Vh1"
+url_template: "https://docs.google.com/spreadsheets/d/e/{document}/pub?gid={gid}&single=true&output=csv"
+
+# Statuses that qualify a row for ingest. Everything else is left in the sheet.
+accepted_values:
+  - "validated - chosen"
+  - "validated - changed"
+  - "validated - unchanged"
+
+# Abort a source if its row count drops below this fraction of the last successful
+# run. Sheets grow and shrink by tens of rows; they do not halve overnight.
+row_count_floor: 0.5
+
+sources:
+  - key: replications
+    label: "Replications"
+    gid: 863031634
+    type_label: replication
+    display_prefix: REPL
+    enabled: true
+
+    # Static UUID written by Apps Script (Utilities.getUuid()). Never regenerated,
+    # never reused. Rows with a blank id are skipped, never given a fallback.
+    id_column: id
+    validation_column: validation_status
+
+    # Checked by gate 4. A rename upstream fails the sync loudly instead of
+    # silently producing a permanently NULL column.
+    expected_columns:
+      [id, ref_o, doi_o, url_o, ref_r, doi_r, url_r, abstract_r, outcome,
+       outcome_quote, out_quote_source, validation_status, year,
+       alt_identifier_o, alt_identifier_r]
+
+    # sheet column -> source_records column. Unlisted promoted columns keep their
+    # sheet name. Everything not promoted still lands verbatim in raw JSONB.
+    column_map:
+      year: year_r
+
+    promoted:
+      [ref_o, doi_o, url_o, ref_r, doi_r, url_r, abstract_r, outcome,
+       outcome_quote, out_quote_source, validation_status, year_r,
+       alt_identifier_o, alt_identifier_r]
+
+  - key: reproductions
+    label: "Reproductions"
+    gid: 984458430
+    type_label: reproduction
+    display_prefix: REPRO
+    enabled: true
+
+    id_column: id
+    # Same concept as replications' validation_status, different sheet name.
+    validation_column: validation
+
+    expected_columns:
+      [id, ref_o, doi_o, url_o, study_o, ref_r, doi_r, url_r, abstract_r,
+       outcome_computational, outcome_computational_quote,
+       out_quote_computational_source, outcome_robustness,
+       outcome_robustness_quote, out_quote_robust_source, validation]
+
+    column_map:
+      validation: validation_status
+
+    # The two outcome dimensions stay unmerged. The single FLoRA `outcome` label is
+    # derived downstream in the transform, so extending the vocabulary is a lookup
+    # change rather than a migration over stored rows.
+    promoted:
+      [ref_o, doi_o, url_o, study_o, ref_r, doi_r, url_r, abstract_r,
+       outcome_computational, outcome_computational_quote,
+       out_quote_computational_source, outcome_robustness,
+       outcome_robustness_quote, out_quote_robust_source, validation_status]
