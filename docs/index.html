@@ -280,6 +280,7 @@
   <div class="admin-body">
     <div class="admin-tabs" id="admin-tabs">
       <button class="admin-tab-btn active" data-tab="entries">Entries</button>
+      <button class="admin-tab-btn" data-tab="sources">Source Records</button>
       <button class="admin-tab-btn" data-tab="stats">Validator Stats</button>
       <button class="admin-tab-btn" data-tab="admins">Admins</button>
       <button class="admin-tab-btn" data-tab="dashboard">Dashboard</button>
@@ -325,6 +326,68 @@
 
     <div class="admin-pagination" id="admin-pagination"></div>
     </div><!-- end admin-tab-entries -->
+
+    <!-- Source Records: the FLoRA entry sheets (replications + reproductions),
+         ingested by sync_sources.py. Insert-only, so this table is authoritative
+         once a row lands — edits here never go back to the Google Sheet. -->
+    <div id="admin-tab-sources" class="hidden">
+      <div id="src-freshness" class="src-freshness"></div>
+
+      <div class="admin-filters" id="src-filters">
+        <button class="admin-filter-btn active" data-filter="all">All <span class="filter-count" id="sfc-all">—</span></button>
+        <button class="admin-filter-btn" data-filter="replication">Replications <span class="filter-count" id="sfc-repl">—</span></button>
+        <button class="admin-filter-btn" data-filter="reproduction">Reproductions <span class="filter-count" id="sfc-repro">—</span></button>
+        <button class="admin-filter-btn" data-filter="unreviewed">Not reviewed <span class="filter-count" id="sfc-unreviewed">—</span></button>
+        <button class="admin-filter-btn" data-filter="reviewed">Reviewed <span class="filter-count" id="sfc-reviewed">—</span></button>
+        <button class="admin-filter-btn" data-filter="flagged">Duplicates <span class="filter-count" id="sfc-flagged">—</span></button>
+      </div>
+
+      <div class="admin-search-bar src-toolbar">
+        <input id="src-search-input" type="search" class="admin-search-input"
+               placeholder="Search reference, DOI or ID…">
+        <select id="src-status-filter" class="admin-input">
+          <option value="">All statuses</option>
+          <option value="validated - chosen">validated - chosen</option>
+          <option value="validated - changed">validated - changed</option>
+          <option value="validated - unchanged">validated - unchanged</option>
+        </select>
+        <button id="src-export-btn" class="ghost-btn">Export CSV</button>
+      </div>
+
+      <div class="admin-table-wrap">
+        <table class="admin-table src-table">
+          <thead>
+            <tr>
+              <th class="th-sort" data-sort="display_id">ID</th>
+              <th class="th-sort" data-sort="type">Type</th>
+              <th class="th-sort" data-sort="ref_o">Original</th>
+              <th class="th-sort" data-sort="ref_r">Replication / Reproduction</th>
+              <th class="th-sort" data-sort="outcome">Outcome</th>
+              <th class="th-sort" data-sort="validation_status">Status</th>
+              <th class="th-sort" data-sort="reviewed_at">Reviewed</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="src-table-body"></tbody>
+        </table>
+        <p class="admin-empty hidden" id="src-empty">No records match this filter.</p>
+      </div>
+
+      <div class="admin-pagination" id="src-pagination"></div>
+
+      <!-- Duplicate review: papers that arrived under more than one sheet UUID.
+           Shown grouped so the two rows can be compared side by side. -->
+      <div id="src-dup-view" class="hidden">
+        <div class="src-dup-toolbar">
+          <button id="src-dup-back" class="ghost-btn">← Back to grid</button>
+          <label class="src-dup-toggle">
+            <input type="checkbox" id="src-dup-show-resolved"> Show resolved
+          </label>
+          <span id="src-dup-count" class="src-dim2"></span>
+        </div>
+        <div id="src-dup-body"></div>
+      </div>
+    </div><!-- end admin-tab-sources -->
 
     <div id="admin-tab-stats" class="hidden">
       <div class="admin-summary-bar" id="admin-summary-bar"></div>
@@ -444,6 +507,22 @@
       <button id="admin-detail-close" class="faq-close" title="Close">×</button>
     </div>
     <div class="admin-detail-body" id="admin-detail-body"></div>
+  </div>
+</div>
+
+<!-- ------------ SOURCE RECORD REVIEW PANEL ------------ -->
+<div id="src-detail-modal" class="faq-overlay hidden" role="dialog" aria-modal="true">
+  <div class="admin-detail-panel">
+    <div class="faq-panel-header">
+      <span class="faq-panel-title" id="src-detail-title">Source Record</span>
+      <span class="src-detail-nav">
+        <button id="src-prev-btn" class="ghost-btn" title="Previous">‹</button>
+        <span id="src-detail-pos" class="src-detail-pos"></span>
+        <button id="src-next-btn" class="ghost-btn" title="Next">›</button>
+      </span>
+      <button id="src-detail-close" class="faq-close" title="Close">×</button>
+    </div>
+    <div class="admin-detail-body" id="src-detail-body"></div>
   </div>
 </div>
 

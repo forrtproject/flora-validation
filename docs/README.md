@@ -115,6 +115,21 @@ Full schema: [shared/schema.py](shared/schema.py)
 | Team Extract | Stage 3 | `feature/extract` | [docs/STAGE3_EXTRACT.md](docs/STAGE3_EXTRACT.md) |
 | Team Validate | Stage 4 | `feature/validate` | [docs/STAGE4_VALIDATE.md](docs/STAGE4_VALIDATE.md) |
 
+### This repository — Stage 4
+
+**Start here:** [docs/PROJECT.md](PROJECT.md) — the complete technical reference for the
+validation app: record lifecycle, consensus engine, LLM validator, admin panel, full
+schema, API, scheduled jobs, scripts, deployment, troubleshooting.
+
+**Source Records** — the admin tab that ingests the FLoRA entry sheets (replications +
+reproductions) into a reviewable table and builds the FLoRA dataset from it:
+[docs/SOURCE_RECORDS.md](SOURCE_RECORDS.md).
+
+> ⚠ `ARCHITECTURE.md`, `VALIDATION_DB_SCHEMA.md` and `STAGE4_VALIDATE.md` date from
+> May 2026 and are stale — they predate validator tiers, assignments, serving priority,
+> restricted access, messages and Source Records. See
+> [PROJECT.md §17](PROJECT.md#17-documentation-map).
+
 **New team member?** Read [CLAUDE.md](CLAUDE.md) first — it contains architecture, schema, and coding rules.  
 **AI coding agent?** Read [CLAUDE.md](CLAUDE.md) (Claude Code) or [AGENTS.md](AGENTS.md) (all others).  
 **Working in R?** See the R note in [CLAUDE.md](CLAUDE.md#r-support).

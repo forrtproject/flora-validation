@@ -4655,3 +4655,263 @@ body.has-maint-banner #admin-screen {
 .sp-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 1.4rem; }
 .sp-saved { color: var(--green); font-size: 0.85rem; font-weight: 600; }
 .sp-meta { font-size: 0.78rem; color: var(--muted); margin-top: 0.9rem; }
+
+/* ============================================================
+   ADMIN: SOURCE RECORDS
+   Entry-sheet datatable. Reuses .admin-table / .admin-filters / .ghost-btn;
+   only the source-specific pieces live here.
+   ============================================================ */
+
+.src-freshness {
+  font-size: 0.82rem;
+  color: var(--muted);
+  padding: 0.5rem 0.1rem 0.75rem;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 0.9rem;
+}
+
+.src-fresh-warn { color: var(--red); font-weight: 600; }
+
+.src-toolbar {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.src-toolbar .admin-search-input { flex: 1 1 260px; }
+.src-toolbar select.admin-input { padding: 0.4rem 0.5rem; }
+
+.src-table td { vertical-align: top; }
+
+.src-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+/* Reviewed rows recede so the unreviewed queue stands out at a glance. */
+.src-row.src-reviewed td { opacity: 0.72; }
+.src-row { cursor: pointer; }
+.src-row:hover td { background: var(--bg-alt); }
+
+.src-type-badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 3px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.src-type-replication  { background: #dfe7d8; color: var(--green); }
+.src-type-reproduction { background: #f0e2c8; color: var(--amber); }
+
+.src-status { font-size: 0.82rem; white-space: nowrap; }
+.src-reviewed-cell { font-size: 0.8rem; white-space: nowrap; }
+
+.src-dim2 { color: var(--muted); font-size: 0.78rem; }
+
+/* Reproductions show computational over robustness in one column, so the grid
+   keeps a single shape for both types. */
+.src-outcome-dim { display: inline-block; line-height: 1.3; font-size: 0.84rem; }
+
+.src-flag { color: var(--amber); cursor: help; }
+
+/* ---- Review panel ---- */
+
+.src-detail-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+  margin-right: 0.75rem;
+}
+.src-detail-nav .ghost-btn { padding: 0.1rem 0.55rem; font-size: 1rem; line-height: 1.2; }
+.src-detail-pos {
+  font-size: 0.78rem;
+  color: var(--muted);
+  min-width: 68px;
+  text-align: center;
+}
+
+.src-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 1rem;
+}
+
+.src-dup-warn {
+  background: #f6ecd4;
+  border-left: 3px solid var(--amber);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.src-group { margin-bottom: 1.4rem; }
+.src-group h4 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 0 0 0.55rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.src-field {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 0.75rem;
+  padding: 0.3rem 0;
+  align-items: start;
+}
+.src-field label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.76rem;
+  color: var(--muted);
+  padding-top: 0.12rem;
+}
+.src-value {
+  font-size: 0.88rem;
+  word-break: break-word;
+}
+/* Abstracts and quotes are long enough to need their own scroll box rather
+   than pushing every other field off screen. */
+.src-field-long .src-value {
+  max-height: 8.5rem;
+  overflow-y: auto;
+  background: var(--bg-alt);
+  padding: 0.45rem 0.6rem;
+  border-radius: 3px;
+  white-space: pre-wrap;
+}
+
+.src-history-row {
+  font-size: 0.83rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.src-history-row code {
+  font-size: 0.78rem;
+  background: var(--bg-alt);
+  padding: 0.05rem 0.25rem;
+  border-radius: 2px;
+}
+
+@media (max-width: 720px) {
+  .src-field { grid-template-columns: 1fr; gap: 0.15rem; }
+}
+
+/* ---- Review panel: editing ---- */
+
+.src-input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.86rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: #fff;
+  color: var(--ink);
+}
+.src-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(181, 70, 20, 0.12);
+}
+.src-textarea { resize: vertical; min-height: 4.5rem; line-height: 1.45; }
+
+/* Read-only fields keep the grid alignment but must not look editable. */
+.src-value-ro {
+  padding: 0.3rem 0.45rem;
+  background: var(--bg-alt);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--muted);
+}
+
+.src-save-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 0;
+  margin-top: 1rem;
+  border-top: 1px solid var(--rule);
+  background: var(--bg);
+}
+.src-save-bar .src-note { flex: 0 1 240px; }
+.src-save-bar #src-save-msg { flex: 1 1 auto; text-align: right; }
+.src-save-bar .btn-primary { padding: 0.4rem 0.9rem; font-size: 0.85rem; white-space: nowrap; }
+
+/* ---- Duplicate review ---- */
+
+.src-dup-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 0 1rem;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 1rem;
+}
+.src-dup-toggle { font-size: 0.83rem; color: var(--muted); cursor: pointer; }
+.src-dup-toolbar #src-dup-count { margin-left: auto; }
+
+.src-dup-group {
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  margin-bottom: 1.25rem;
+  background: #fff;
+}
+.src-dup-group-head {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg-alt);
+  min-height: 2.1rem;
+}
+
+.src-dup-badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 3px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: var(--bg);
+  color: var(--muted);
+  border: 1px solid var(--rule);
+}
+.src-dup-badge-warn { background: #f6ecd4; color: var(--amber); border-color: var(--amber); }
+.src-dup-badge-ok   { background: #dfe7d8; color: var(--green); border-color: var(--green); }
+
+/* Side by side is the whole point — the differences have to be scannable. */
+.src-dup-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1px;
+  background: var(--rule);
+}
+.src-dup-card { background: #fff; padding: 0.75rem; }
+.src-dup-card.src-dup-done { opacity: 0.6; }
+.src-dup-card-head { margin-bottom: 0.5rem; display: flex; gap: 0.5rem; align-items: center; }
+
+.src-dup-fields {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 0.15rem 0.6rem;
+  margin: 0 0 0.6rem;
+  font-size: 0.82rem;
+}
+.src-dup-fields dt { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.74rem; }
+.src-dup-fields dd { margin: 0; word-break: break-word; }
+
+.src-dup-state { font-size: 0.8rem; color: var(--green); margin-bottom: 0.5rem; }
+.src-dup-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.4rem; }
+.src-dup-actions .ghost-btn,
+.src-dup-open { font-size: 0.78rem; padding: 0.25rem 0.55rem; }
+.src-dup-open { width: 100%; }

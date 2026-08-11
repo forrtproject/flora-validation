@@ -479,3 +479,337 @@ UPDATE validated v
  WHERE u.record_id = v.record_id
    AND v.oa_work_id_o IS NULL
    AND u.oa_work_id_o IS NOT NULL;
+
+-- ============================================================================
+-- Entry-sheet source records (see sources.yml)
+-- ============================================================================
+-- One row per accepted row of the FLoRA entry sheets (replications /
+-- reproductions). Populated by sync_sources.py.
+--
+-- INSERT-ONLY: a row is written the first time it is seen as accepted and is
+-- never updated or deleted by the sync. Upstream sheet edits after that point
+-- are ignored — this database is authoritative once a row lands, and changes
+-- made in the web app never need to go back to the sheet.
+--
+-- Identity is the static UUID the sheet carries in its `id` column (written by
+-- Apps Script, never regenerated, never reused). Keyed on (source, sheet_row_id)
+-- so the two tabs can never collide even if their id spaces overlap.
+--
+-- Values are stored as the sheet has them — dirty DOIs and implausible years
+-- included. Cleaning happens in the downstream transform, so a reviewer can see
+-- and fix the real problem rather than having it silently normalised away.
+CREATE TABLE IF NOT EXISTS source_records (
+    record_id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    -- Identity
+    source              TEXT        NOT NULL,   -- registry key: replications | reproductions
+    sheet_row_id        TEXT        NOT NULL,   -- static UUID from the sheet's id column
+    display_id          TEXT        UNIQUE,     -- human-facing, e.g. REPL-000847
+    type                TEXT        NOT NULL CHECK (type IN ('replication', 'reproduction')),
+
+    -- Shared across both sheets
+    ref_o               TEXT,
+    doi_o               TEXT,
+    url_o               TEXT,
+    ref_r               TEXT,
+    doi_r               TEXT,
+    url_r               TEXT,
+    abstract_r          TEXT,
+
+    -- replications only (NULL on reproductions)
+    outcome             TEXT,
+    outcome_quote       TEXT,
+    out_quote_source    TEXT,
+    year_r              TEXT,       -- sheet's `year`; text because values are dirty (0, 2366)
+    alt_identifier_o    TEXT,
+    alt_identifier_r    TEXT,
+
+    -- reproductions only (NULL on replications). The two outcome dimensions are
+    -- kept unmerged; the single FLoRA `outcome` label is derived downstream.
+    study_o                         TEXT,
+    outcome_computational           TEXT,
+    outcome_computational_quote     TEXT,
+    out_quote_computational_source  TEXT,
+    outcome_robustness              TEXT,
+    outcome_robustness_quote        TEXT,
+    out_quote_robust_source         TEXT,
+
+    -- Merged from validation_status (replications) / validation (reproductions)
+    validation_status   TEXT,
+
+    -- Derived from OpenAlex by DOI (cache-backed). Cleared by trigger when the
+    -- corresponding DOI is edited, so the backfill re-fetches for the new paper.
+    oa_work_id_o        TEXT,
+    oa_work_id_r        TEXT,
+
+    -- Complete sheet row, verbatim, keys exactly as the header reads. Promoted
+    -- columns above are a projection of this, never a replacement — so anything
+    -- not promoted (prep_notes, quote validated, Coder, validator_notes, …) is
+    -- still here and can be promoted later by backfill instead of re-download.
+    raw                 JSONB,
+
+    -- Duplicate detector: normalised doi_o + doi_r/url_r. NOT an identity key —
+    -- only used to flag two different UUIDs describing the same paper.
+    content_fingerprint TEXT,
+
+    -- Review state (Stage 8). Stamped even when a save changes nothing, so
+    -- "checked and correct" is distinguishable from "not yet checked".
+    reviewed_by         TEXT,
+    reviewed_at         TIMESTAMPTZ,
+    version             INTEGER     NOT NULL DEFAULT 1,
+
+    first_seen_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    UNIQUE (source, sheet_row_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_source_records_type       ON source_records (type);
+CREATE INDEX IF NOT EXISTS idx_source_records_status     ON source_records (validation_status);
+CREATE INDEX IF NOT EXISTS idx_source_records_reviewed   ON source_records (reviewed_at NULLS FIRST);
+CREATE INDEX IF NOT EXISTS idx_source_records_fingerprint
+    ON source_records (content_fingerprint) WHERE content_fingerprint IS NOT NULL;
+
+-- Append-only edit history. reviewed_by/reviewed_at on the row carry the LAST
+-- review for cheap rendering; this carries the full history.
+CREATE TABLE IF NOT EXISTS source_record_edits (
+    edit_id     UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    record_id   UUID        NOT NULL REFERENCES source_records(record_id) ON DELETE CASCADE,
+    field       TEXT        NOT NULL,
+    old_value   TEXT,
+    new_value   TEXT,
+    edited_by   TEXT        NOT NULL,   -- admin handle from _require_admin()
+    edited_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    note        TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_source_record_edits_record
+    ON source_record_edits (record_id, edited_at DESC);
+
+-- One row per sync run per source. Feeds the freshness banner above the grid —
+-- without it nobody can tell whether the table is current, and stale-but-plausible
+-- data is worse than obviously-broken data.
+CREATE TABLE IF NOT EXISTS source_sync_runs (
+    run_id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    source          TEXT        NOT NULL,
+    started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    finished_at     TIMESTAMPTZ,
+    status          TEXT        NOT NULL CHECK (status IN ('ok', 'unchanged', 'failed', 'skipped')),
+    failure_reason  TEXT,               -- which gate failed, and why
+
+    rows_fetched    INTEGER,
+    rows_accepted   INTEGER,
+    rows_inserted   INTEGER,
+    rows_existing   INTEGER,
+    rows_skipped    INTEGER,            -- blank sheet_row_id
+    dup_ids         INTEGER,            -- same UUID twice within the sheet
+    dup_fingerprints INTEGER,           -- same paper under two UUIDs
+
+    payload_sha256  TEXT,               -- gate 6: identical hash => source skipped
+    notes           TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_source_sync_runs_recent
+    ON source_sync_runs (source, started_at DESC);
+
+-- Per-source display_id counters. Sequential, assigned once, never reused —
+-- a raw UUID is unreadable aloud or in Slack, so rows also get REPL-000847.
+CREATE TABLE IF NOT EXISTS source_display_counters (
+    source      TEXT    PRIMARY KEY,
+    -- Stores the LAST value handed out, not the next one: _next_display_id
+    -- returns the post-increment value. A reader taking "next" at face value
+    -- would reissue the id just used and collide on the display_id index.
+    last_value  INTEGER NOT NULL DEFAULT 1
+);
+
+-- Editing a DOI in the web app makes the derived OpenAlex work id point at the
+-- wrong paper. Same guard the unvalidated table already has (trg_clear_stale_oa_work_id).
+CREATE OR REPLACE FUNCTION clear_stale_source_oa_work_id() RETURNS trigger AS $$
+BEGIN
+    IF NEW.doi_o IS DISTINCT FROM OLD.doi_o THEN
+        NEW.oa_work_id_o := NULL;
+    END IF;
+    IF NEW.doi_r IS DISTINCT FROM OLD.doi_r THEN
+        NEW.oa_work_id_r := NULL;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_clear_stale_source_oa_work_id ON source_records;
+CREATE TRIGGER trg_clear_stale_source_oa_work_id
+    BEFORE UPDATE ON source_records
+    FOR EACH ROW EXECUTE FUNCTION clear_stale_source_oa_work_id();
+
+-- ============================================================================
+-- Source records: duplicate resolution + transform rule tables (phase 4)
+-- ============================================================================
+
+-- A paper can arrive under two different sheet UUIDs (re-entered rather than
+-- copied). The sync flags these via content_fingerprint but never blocks the
+-- insert; a human decides here, and the transform honours the decision.
+ALTER TABLE source_records ADD COLUMN IF NOT EXISTS duplicate_status TEXT
+    CHECK (duplicate_status IN ('distinct', 'duplicate'));
+ALTER TABLE source_records ADD COLUMN IF NOT EXISTS duplicate_of UUID
+    REFERENCES source_records(record_id);
+ALTER TABLE source_records ADD COLUMN IF NOT EXISTS duplicate_reviewed_by TEXT;
+ALTER TABLE source_records ADD COLUMN IF NOT EXISTS duplicate_reviewed_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_source_records_dupstatus
+    ON source_records (duplicate_status) WHERE content_fingerprint IS NOT NULL;
+
+-- Rows dropped from the transform output. Replaces the exclusions sheet and the
+-- hardcoded manual_exclusion_dois list in the R notebook: these are decisions,
+-- not data, and changing one should not require editing R.
+CREATE TABLE IF NOT EXISTS transform_exclusions (
+    exclusion_id UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    doi_r        TEXT,
+    url_r        TEXT,
+    reason       TEXT        NOT NULL,
+    added_by     TEXT,
+    added_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (doi_r IS NOT NULL OR url_r IS NOT NULL)
+);
+
+CREATE INDEX IF NOT EXISTS idx_transform_exclusions_doi ON transform_exclusions (lower(doi_r));
+CREATE INDEX IF NOT EXISTS idx_transform_exclusions_url ON transform_exclusions (lower(url_r));
+
+-- Replication outcome spellings drift between sources. Mapped at transform time
+-- rather than stored, so fixing a spelling is a row here and a re-run, never a
+-- migration over stored data.
+CREATE TABLE IF NOT EXISTS outcome_alias (
+    raw_value       TEXT PRIMARY KEY,
+    canonical_value TEXT NOT NULL
+);
+
+INSERT INTO outcome_alias (raw_value, canonical_value) VALUES
+    ('successful',      'successful'),
+    ('failed',          'failed'),
+    ('mixed',           'mixed'),
+    ('uninformative',   'uninformative'),
+    ('unclear',         'cannot_be_determined'),
+    ('descriptive only','descriptive'),
+    ('statistically successful but flawed',                'mixed'),
+    ('statistically_successful_but_fundamentally_flawed',  'mixed')
+ON CONFLICT (raw_value) DO NOTHING;
+
+-- Reproductions carry a 2-D outcome (computational x robustness). The single
+-- FLoRA label is derived from this table, so an unseen combination is a row to
+-- add rather than a stored value to migrate.
+CREATE TABLE IF NOT EXISTS reproduction_outcome_map (
+    computational TEXT NOT NULL,
+    robustness    TEXT NOT NULL,
+    canonical     TEXT NOT NULL,
+    PRIMARY KEY (computational, robustness)
+);
+
+INSERT INTO reproduction_outcome_map (computational, robustness, canonical) VALUES
+    ('computationally reproducible', 'robust',                'computationally successful, robust'),
+    ('computationally reproducible', 'robustness challenges', 'computationally successful, robustness challenges'),
+    ('computationally reproducible', 'not checked',           'computationally successful, robustness not checked'),
+    ('not checked',                  'robust',                'computation not checked, robust'),
+    ('not checked',                  'robustness challenges', 'computation not checked, robustness challenges'),
+    ('not checked',                  'not checked',           'cannot_be_determined'),
+    ('computational issues',         'robustness challenges', 'computational issues, robustness challenges'),
+    -- Two combinations present in the accepted rows that the original
+    -- unvalidated CHECK vocabulary never covered.
+    ('computational issues',         'robust',                'computational issues, robust'),
+    ('computational issues',         'not checked',           'computational issues, robustness not checked'),
+    ('failed',                       'not checked',           'failed'),
+    ('failed',                       'robust',                'failed'),
+    ('failed',                       'robustness challenges', 'failed')
+ON CONFLICT (computational, robustness) DO NOTHING;
+
+-- ============================================================================
+-- Source records: correctness fixes found in review
+-- ============================================================================
+
+-- content_fingerprint must move when a reviewer corrects a DOI. Computing it in
+-- Python at insert time froze it to the pre-edit strings, which both hid real
+-- duplicates and left false flags a reviewer could act on by marking a good row
+-- 'duplicate' (removing it from the transform). The database now owns it, for
+-- the same reason trg_clear_stale_source_oa_work_id exists.
+-- These mirror _norm_doi / _norm_url / _fingerprint in sync_sources.py.
+CREATE OR REPLACE FUNCTION source_norm_doi(v TEXT) RETURNS TEXT AS $$
+    SELECT CASE WHEN v IS NULL THEN '' ELSE
+        regexp_replace(
+            regexp_replace(
+                regexp_replace(lower(btrim(v)), '^https?://(dx\.)?doi\.org/', ''),
+            '^doi:\s*', ''),
+        '\s.*$', '')
+    END;
+$$ LANGUAGE sql IMMUTABLE;
+
+CREATE OR REPLACE FUNCTION source_norm_url(v TEXT) RETURNS TEXT AS $$
+    SELECT CASE WHEN v IS NULL THEN '' ELSE
+        rtrim(
+            regexp_replace(
+                regexp_replace(lower(btrim(v)), '^https?://', ''),
+            '^www\.', ''),
+        '/')
+    END;
+$$ LANGUAGE sql IMMUTABLE;
+
+CREATE OR REPLACE FUNCTION source_content_fingerprint(p_doi_o TEXT, p_doi_r TEXT, p_url_r TEXT)
+RETURNS TEXT AS $$
+DECLARE l TEXT; r TEXT;
+BEGIN
+    l := source_norm_doi(p_doi_o);
+    r := source_norm_doi(p_doi_r);
+    IF r = '' THEN r := source_norm_url(p_url_r); END IF;
+    IF l = '' AND r = '' THEN RETURN NULL; END IF;
+    RETURN md5(l || '|' || r);
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+CREATE OR REPLACE FUNCTION set_source_content_fingerprint() RETURNS trigger AS $$
+BEGIN
+    NEW.content_fingerprint := source_content_fingerprint(NEW.doi_o, NEW.doi_r, NEW.url_r);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_set_source_content_fingerprint ON source_records;
+CREATE TRIGGER trg_set_source_content_fingerprint
+    BEFORE INSERT OR UPDATE OF doi_o, doi_r, url_r ON source_records
+    FOR EACH ROW EXECUTE FUNCTION set_source_content_fingerprint();
+
+UPDATE source_records
+   SET content_fingerprint = source_content_fingerprint(doi_o, doi_r, url_r)
+ WHERE content_fingerprint IS DISTINCT FROM source_content_fingerprint(doi_o, doi_r, url_r);
+
+-- Nothing previously stopped two rows from each being marked a duplicate of the
+-- other. transform_sources.py excludes every 'duplicate' row and does not follow
+-- chains, so that combination deleted the paper from the FLoRA dataset outright.
+ALTER TABLE source_records DROP CONSTRAINT IF EXISTS source_records_duplicate_coherent;
+ALTER TABLE source_records ADD CONSTRAINT source_records_duplicate_coherent CHECK (
+       (duplicate_status IS NULL       AND duplicate_of IS NULL)
+    OR (duplicate_status = 'distinct'  AND duplicate_of IS NULL)
+    OR (duplicate_status = 'duplicate' AND duplicate_of IS NOT NULL)
+);
+
+ALTER TABLE source_records DROP CONSTRAINT IF EXISTS source_records_not_self_duplicate;
+ALTER TABLE source_records ADD CONSTRAINT source_records_not_self_duplicate
+    CHECK (duplicate_of IS NULL OR duplicate_of <> record_id);
+
+-- Migration for databases created before the column was named honestly. Guarded
+-- because db_schema.sql is re-executed by init_db() on every app start.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'source_display_counters' AND column_name = 'next_value')
+    THEN
+        ALTER TABLE source_display_counters RENAME COLUMN next_value TO last_value;
+    END IF;
+END $$;
+
+-- ON DELETE CASCADE destroyed the append-only history along with its parent row —
+-- exactly backwards for an audit trail, whose whole purpose is to outlive the
+-- record. display_id is denormalised so history stays readable if a row is gone.
+ALTER TABLE source_record_edits DROP CONSTRAINT IF EXISTS source_record_edits_record_id_fkey;
+ALTER TABLE source_record_edits ADD COLUMN IF NOT EXISTS display_id TEXT;
+
+UPDATE source_record_edits e
+   SET display_id = s.display_id
+  FROM source_records s
+ WHERE s.record_id = e.record_id AND e.display_id IS NULL;
