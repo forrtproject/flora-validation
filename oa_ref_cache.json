@@ -72,6 +72,9 @@
   "10.1002/rrq.027": {
     "ref": "Susan R. Goldman, Jason L. G. Braasch, Jennifer Wiley, Arthur C. Graesser, Kamila Brodowinska (2012) Comprehending and Learning From Internet Sources: Processing Patterns of Better and Poorer Learners. Reading Research Quarterly."
   },
+  "10.1002/smj.2573": {
+    "ref": "Michael D. Howard, Michael C. Withers, Christina Matz Carnes, Amy J. Hillman (2016) Friends or strangers? It all depends on context: A replication and extension of <scp>B</scp> eckman, Haunschild, and <scp>P</scp> hillips (2004). Strategic Management Journal."
+  },
   "10.1007/bf01371820": {
     "ref": "Thomas H. Stoffer (1991) Attentional focussing and spatial stimulus-response compatibility. Psychological Research."
   },
@@ -143,6 +146,9 @@
   },
   "10.1016/0030-5073(76)90005-2": {
     "ref": "Barry M. Staw (1976) Knee-deep in the big muddy: a study of escalating commitment to a chosen course of action. Organizational Behavior and Human Performance."
+  },
+  "10.1016/0042-6989(86)90090-8": {
+    "ref": "John Krauskopf, Qasim Zaidi (1986) Induced desensitization. Vision Research."
   },
   "10.1016/0376-6357(94)90072-8": {
     "ref": "Alliston K. Reid (1994) Learning new response sequences. Behavioural Processes."
@@ -234,11 +240,20 @@
   "10.1016/j.jesp.2024.104619": {
     "ref": "Erik L\u00f8hre, Subramanya Prasad Chandrashekar, Lewend Mayiwar, Thorvald H\u00e6rem (2024) Uncertainty, expertise, and persuasion: A replication and extension of. Journal of Experimental Social Psychology."
   },
+  "10.1016/j.jfbs.2016.08.001": {
+    "ref": "Jana Hauck, Julia Suess\u2013Reyes, Susanne Beck, Reinhard Pr\u00fcgl, Hermann Frank (2016) Measuring socioemotional wealth in family-owned and -managed firms: A validation and short form of the FIBER Scale. Journal of Family Business Strategy."
+  },
+  "10.1016/j.jfbs.2022.100497": {
+    "ref": "Maike Gerken, Marcel H\u00fclsbeck, Thomas Ostermann, Andreas Hack (2022) Validating the FIBER scale to measure family firm heterogeneity \u2013 A replication study with extensions. Journal of Family Business Strategy."
+  },
   "10.1016/j.jfineco.2018.01.009": {
     "ref": "Roie Hauser (2018) Busy directors and firm performance: Evidence from mergers. Journal of Financial Economics."
   },
   "10.1016/j.jneuroling.2010.05.001": {
     "ref": "Clare McCann, John Doleman (2010) Verb retrieval in nonfluent aphasia: A replication of Edwards &amp; Tucker, 2006. Journal of Neurolinguistics."
+  },
+  "10.1016/j.jrp.2014.06.006": {
+    "ref": "Michael C. Ashton, Alyssa C. Pilkington, Kibeom Lee (2014) Do prosocial people prefer sweet-tasting foods? An attempted replication of Meier, Moeller, Riemer-Peltz, and Robinson (2012). Journal of Research in Personality."
   },
   "10.1016/j.jsams.2017.06.007": {
     "ref": "William Johnston, Kara Dolan, Niamh Reid, Garrett F. Coughlan, Brian Caulfield (2017) Investigating the effects of maximal anaerobic fatigue on dynamic postural control using the Y-Balance Test. Journal of science and medicine in sport."
@@ -421,6 +436,9 @@
   "10.1037/a0023597": {
     "ref": "John M. Horner, San K. Tung (2011) Playing Cards with Thomas Kuhn: A Critical Reexamination of the Bruner and Postman (1949) Experiment. Review of General Psychology."
   },
+  "10.1037/a0025253": {
+    "ref": "Brian P. Meier, Sara K. Moeller, Miles Riemer-Peltz, Michael D. Robinson (2011) Sweet taste preferences and experiences predict prosocial inferences, personalities, and behaviors. Journal of Personality and Social Psychology."
+  },
   "10.1037/a0026099": {
     "ref": "Kinga Morsanyi, Simon J. Handley (2011) Logic feels so good\u2014I like it! Evidence for intuitive detection of logicality in syllogistic reasoning. Journal of Experimental Psychology Learning Memory and Cognition."
   },
@@ -453,6 +471,9 @@
   },
   "10.1037/h0087446": {
     "ref": "George Wolford, Sarah Newman, Michael B. Miller, Gagan S. Wig (2004) Searching for Patterns in Random Sequences. Canadian Journal of Experimental Psychology/Revue canadienne de psychologie exp\u00e9rimentale."
+  },
+  "10.1037/pac0000609": {
+    "ref": "Sauro Civitillo, Francesca Ialuna, Dwayne Lieck, Philipp Jugert (2022) Do infrahumanization or affective prejudice drive teacher discrimination against Romani students? A conceptual replication of Bruneau et al. (2020) in Germany. Peace and Conflict Journal of Peace Psychology."
   },
   "10.1037/pspa0000261": {
     "ref": "Oliver Genschow, Mareike Westfal, Jan Crusius, L\u00e9on Bartosch, Kyra Isabel Feikes, Nina Pallasch, Mirella Wozniak (2020) Does social psychology persist over half a century? A direct replication of Cialdini et al.\u2019s (1975) classic door-in-the-face technique. Journal of Personality and Social Psychology."
@@ -520,6 +541,9 @@
   "10.1073/pnas.1520027113": {
     "ref": "Timothy F. Brady, Viola S. St\u00f6rmer, George A. Alvarez (2016) Working memory is not fixed-capacity: More active storage capacity for real-world objects than for simple stimuli. Proceedings of the National Academy of Sciences."
   },
+  "10.1073/pnas.1523586113": {
+    "ref": "Maryam Kouchaki, Francesca Gino (2016) Memories of unethical actions become obfuscated over time. Proceedings of the National Academy of Sciences."
+  },
   "10.1073/pnas.1619717114": {
     "ref": "Jonathan Phillips, Fiery Cushman (2017) Morality constrains the default representation of what is possible. Proceedings of the National Academy of Sciences."
   },
@@ -528,6 +552,9 @@
   },
   "10.1075/bpa.3.13goo": {
     "ref": "Jaemyung Goo (2016) Corrective feedback and working memory capacity. Bilingual processing and acquisition."
+  },
+  "10.1075/lab.23071.bra": {
+    "ref": "Adam A. Bramlett, Seth Wiener (2024) The art of wrangling. Linguistic Approaches to Bilingualism."
   },
   "10.1080/00223891.1973.10119882": {
     "ref": "Charles S. Newmark, Ramon Flouranzano (1973) Replication of an Empirically Derived TAT Set with Hospitalized Psychiatric Patients. Journal of Personality Assessment."
@@ -671,8 +698,14 @@
   "10.1093/alcalc/agaa009": {
     "ref": "Nina Tello, N\u00e9matollah Jaafari, Armand Chatard (2020) Effects of Evaluative Conditioning on Implicit Evaluation of Alcohol and Drinking Behaviors: A Direct Replication. Alcohol and Alcoholism."
   },
+  "10.1093/hcr/hqab013": {
+    "ref": "Chris Skurka, Rainer Romero\u2010Canyas, Helen H. Joo, David Acup, Jeff Niederdeppe (2021) Emotional Appeals, Climate Change, and Young Adults: A Direct Replication of Skurka et al. (2018). Human Communication Research."
+  },
   "10.1093/hcr/hqae016": {
     "ref": "Lea\u2010Johanna Klebba, Stephan Winter (2024) The influence of threat and right-wing authoritarianism on the selection of online (dis)information\u2014a conceptual replication and extension of Lavine et al. (2005). Human Communication Research."
+  },
+  "10.1093/joc/jqx008": {
+    "ref": "Chris Skurka, Jeff Niederdeppe, Rainer Romero\u2010Canyas, David Acup (2018) Pathways of Influence in Emotional Appeals: Benefits and Tradeoffs of Using Fear or Humor to Promote Climate Change-Related Intentions and Risk Perceptions. Journal of Communication."
   },
   "10.1093/jopart/muu053": {
     "ref": "John D. Marvel (2015) Unconscious Bias in Citizens\u2019 Evaluations of Public Sector Performance. Journal of Public Administration Research and Theory."
@@ -887,6 +920,9 @@
   "10.1167/12.11.12": {
     "ref": "Lee de\u2010Wit, Jonas Kubilius, Johan Wagemans, Hans Op de Beeck (2012) Bistable Gestalts reduce activity in the whole of V1, not just the retinotopically predicted parts. Journal of Vision."
   },
+  "10.1167/13.6.11": {
+    "ref": "Jenny M. Bosten, D. I. A. MacLeod (2013) Mechanisms of the dimming and brightening aftereffects. Journal of Vision."
+  },
   "10.1167/16.13.4": {
     "ref": "Doris I. Braun, Karl R. Gegenfurtner (2016) Dynamics of oculomotor direction discrimination. Journal of Vision."
   },
@@ -973,6 +1009,9 @@
   "10.1177/0956797619875482": {
     "ref": "Tom Heyman, Anne-Sofie Maerten, Hendrik Vankrunkelsven, Wouter Voorspoels, Pieter Moors (2019) Sound-Symbolism Effects in the Absence of Awareness: A Replication Study. Psychological Science."
   },
+  "10.1177/0956797620968526": {
+    "ref": "Tal Moran, Sean Hughes, Ian Hussey, Miguel A. Vadillo, Michael A. Olson, Frederik Aust, Karoline Corinna Bading, Robert Balas, Taylor Benedict, Olivier Corneille, Samantha B. Douglas, Melissa J. Ferguson, Katherine A. Fritzlen, Anne Gast, Bertram Gawronski et al. (2020) Incidental Attitude Formation via the Surveillance Task: A Preregistered Replication of the Olson and Fazio (2001) Study. Psychological Science."
+  },
   "10.1177/09567976211068045": {
     "ref": "Klaus Oberauer (2022) Little Support for Discrete Item Limits in Visual Working Memory. Psychological Science."
   },
@@ -984,6 +1023,9 @@
   },
   "10.1177/13621688211044240": {
     "ref": "Jody H. Cripps, Russell S. Rosen, Sheryl B. Cooper, Ronald Fenicle, Aimee M. Sever\u2010Hall (2021) Effects of inverted L2/Ln language pedagogy on student experiences and outcomes: The case of American Sign Language. Language Teaching Research."
+  },
+  "10.1177/1368430219845462": {
+    "ref": "Emile Bruneau, Hanna Szekeres, Nour Kteily, Linda R. Tropp, Anna Kende (2019) Beyond dislike: Blatant dehumanization predicts teacher discrimination. Group Processes & Intergroup Relations."
   },
   "10.1177/1745691617697077": {
     "ref": "Ed Diener, Martin E. P. Seligman, Hyewon Choi, Shigehiro Oishi (2018) Happiest People Revisited. Perspectives on Psychological Science."
@@ -1059,6 +1101,9 @@
   },
   "10.1287/mnsc.2016.2664": {
     "ref": "Nicos Nicolaou, Pankaj C. Patel, Marcus T. Wolfe (2017) Testosterone and Tendency to Engage in Self-Employment. Management Science."
+  },
+  "10.1287/orsc.1040.0065": {
+    "ref": "Christine M. Beckman, Pamela R. Haunschild, Damon J. Phillips (2004) Friends or Strangers? Firm-Specific Uncertainty, Market Uncertainty, and Network Partner Selection. Organization Science."
   },
   "10.13023/etd.2019.180": {
     "ref": "Elana M. Gloger (2019) Cognition, Repetitive Thought, and Systemic Inflammation in the Midlife in the United States Study. UKnowledge (University of Kentucky)."
@@ -1404,6 +1449,12 @@
   "10.3758/s13414-018-1498-7": {
     "ref": "Tarini Singh, Birte Moeller, Iring Koch, Christian Frings (2018) May I have your attention please: Binding of attended but response-irrelevant features. Attention Perception & Psychophysics."
   },
+  "10.3758/s13414-019-01946-7": {
+    "ref": "Vincent Porretta, Lori Buchanan, Juhani J\u00e4rvikivi (2020) When processing costs impact predictive processing: The case of foreign-accented speech and accent experience. Attention Perception & Psychophysics."
+  },
+  "10.3758/s13421-018-0803-y": {
+    "ref": "Matthew L. Stanley, Brenda W. Yang, Felipe De Brigard (2018) No evidence for unethical amnesia for imagined actions: A failed replication and extension. Memory & Cognition."
+  },
   "10.3758/s13421-018-0888-3": {
     "ref": "Christin Schulze, Greta James, Derek J. Koehler, Ben R. Newell (2019) Probability matching does not decrease under cognitive load: A preregistered failure to replicate. Memory & Cognition."
   },
@@ -1442,6 +1493,9 @@
   },
   "10.5281/zenodo.18538611": {
     "ref": "Manuel Soler Cruz, Jos\u00e9 Manuel Colmenero, Tom\u00e1s P\u00e9rez\u2010Contreras, Juan Manuel Peralta-S\u00e1nchez (2020) Replication of the Mirror Mark Test Experiment in the Magpie (Pica pica) Does Not Provide Evidence of Self-Recognition. Zenodo (CERN European Organization for Nuclear Research)."
+  },
+  "10.5334/irsp.546": {
+    "ref": "Benedek Kurdi, Ian Hussey, Christoph Stahl, Sean Hughes, Christian Unkelbach, Melissa J. Ferguson, Olivier Corneille (2022) Unaware Attitude Formation in the Surveillance Task? Revisiting the Findings of Moran et al. (2021). International Review of Social Psychology."
   },
   "10.5334/joc.432": {
     "ref": "Tarini Singh, Lars-Michael Sch\u00f6pper, Christian Frings (2025) I am Once Again Asking for Your Attention: A Replication of Feature-Based Attention Modulations of Binding Effects with Picture Stimuli. Journal of Cognition."
