@@ -4046,6 +4046,8 @@ function renderAdminDetail(data) {
     ? `<span class="chk-ok">✓ correct</span>`
     : val === "incorrect"
     ? `<span class="chk-fail">✗ incorrect</span>`
+    : val === "uncertain"
+    ? `<span class="chk-uncertain" title="The LLM couldn't confidently judge this from the abstract">? uncertain</span>`
     : `<span class="chk-na">—</span>`;
 
   const tierBadge = (tier) => {
