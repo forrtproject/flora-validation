@@ -178,6 +178,7 @@ class JudgeRequest(BaseModel):
     corrected_type: str | None = None
     corrected_outcome_quote: str | None = None
     corrected_abstract: str | None = None
+    doi_r_published: str | None = None      # preprint replications: DOI of the published article
     validator_notes: str | None = None
     additional_checks: dict | None = None   # e.g. {"was_unsure_original": true}
 
@@ -245,6 +246,9 @@ class AdminResolveRequest(BaseModel):
     corrected_url_r: str | None = None
     corrected_abstract_r: str | None = None
     out_quote_source: str | None = None   # 'abstract' | 'full_text' | None (auto-detect)
+    # None = unchanged; '' = clear the stored value; anything else = set it.
+    doi_r_published: str | None = None
+    alt_identifier_r: str | None = None
     admin_notes: str | None = None
 
 
@@ -259,6 +263,14 @@ class ServingConfigRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Business logic
 # ---------------------------------------------------------------------------
+
+def _normalize_doi(doi: str | None) -> str | None:
+    """Bare DOI: strip a doi.org resolver prefix / 'doi:' and whitespace.
+    Returns None for empty input so '' keeps its 'clear the value' meaning."""
+    if doi is None:
+        return None
+    return re.sub(r'(?i)^(?:https?://(?:dx\.)?doi\.org/|doi:)\s*', '', doi.strip()) or None
+
 
 def _points_for(req: JudgeRequest, vote_score: int) -> int:
     """Calculate points for a submission. Base = validator's vote_score."""
@@ -1016,6 +1028,7 @@ def assignment_judge(req: JudgeRequest):
         final_doi_o    = req.corrected_doi_o          or rec.get("final_doi_o")          or rec["doi_o"]
         final_study_o  = req.corrected_study_o        or rec.get("final_study_o")        or rec["study_o"]
         final_quote    = req.corrected_outcome_quote  or rec.get("final_outcome_quote")  or rec["outcome_quote"]
+        final_doi_pub  = _normalize_doi(req.doi_r_published) or rec.get("doi_r_published")
 
         summary = {
             "validator_id":   req.coder_id,
@@ -1032,6 +1045,7 @@ def assignment_judge(req: JudgeRequest):
             "corrected_abstract": req.corrected_abstract,
             "corrected_study_r": req.corrected_study_r,
             "corrected_url_r": req.corrected_url_r,
+            "doi_r_published": _normalize_doi(req.doi_r_published),
             "validator_notes": req.validator_notes or "",
             "points": pts,
             "validated_at": datetime.now(timezone.utc).isoformat(),
@@ -1049,13 +1063,14 @@ def assignment_judge(req: JudgeRequest):
                 final_doi_o         = %s,
                 final_study_o       = %s,
                 final_outcome_quote = %s,
+                doi_r_published     = %s,
                 validator_1         = %s,
                 restricted_access   = FALSE,
                 updated_at          = NOW()
             WHERE record_id = %s
             """,
             (new_status, final_type, final_outcome, final_study_r, final_url_r,
-             final_abstract, final_doi_o, final_study_o, final_quote,
+             final_abstract, final_doi_o, final_study_o, final_quote, final_doi_pub,
              json.dumps(summary), req.record_id),
         )
         cur.execute(
@@ -1141,6 +1156,7 @@ def judge(req: JudgeRequest):
                     corrected_abstract = %s,
                     corrected_study_r = %s,
                     corrected_url_r = %s,
+                    doi_r_published = %s,
                     validator_notes = %s,
                     additional_checks = %s,
                     points = %s,
@@ -1159,6 +1175,7 @@ def judge(req: JudgeRequest):
                     req.corrected_abstract,
                     req.corrected_study_r,
                     req.corrected_url_r,
+                    _normalize_doi(req.doi_r_published),
                     req.validator_notes,
                     json.dumps(req.additional_checks) if req.additional_checks else None,
                     pts,
@@ -1185,6 +1202,7 @@ def judge(req: JudgeRequest):
             "corrected_abstract": req.corrected_abstract,
             "corrected_study_r": req.corrected_study_r,
             "corrected_url_r": req.corrected_url_r,
+            "doi_r_published": _normalize_doi(req.doi_r_published),
             "additional_checks": req.additional_checks,
             "validator_notes": req.validator_notes or "",
             "points": pts,
@@ -2316,7 +2334,12 @@ def admin_entry_detail(record_id: str, x_admin_token: str = Header(...)):
     check_fields      = ["type_check", "original_check", "outcome_check"]
 
     checks_agree      = all(v1.get(f) == v2.get(f) for f in check_fields)
-    corrections_agree = all(v1.get(f) == v2.get(f) for f in correction_fields)
+    corrections_agree = (
+        all(v1.get(f) == v2.get(f) for f in correction_fields)
+        # same normalized compare as consensus: a resolver-link paste is not a conflict
+        and (_normalize_doi(v1.get("doi_r_published")) or "").lower()
+            == (_normalize_doi(v2.get("doi_r_published")) or "").lower()
+    )
     abstracts_differ  = _norm(v1.get("corrected_abstract")) != _norm(v2.get("corrected_abstract"))
 
     abstract_only_conflict = (
@@ -2669,8 +2692,9 @@ def admin_approve(record_id: str, x_admin_token: str = Header(...)):
                 record_id, doi_r, study_r, year_r, url_r, ref_r, abstract_r,
                 doi_o, study_o, year_o, url_o, ref_o,
                 oa_work_id_o, oa_work_id_r,
-                type, outcome, outcome_quote, out_quote_source, admin_approved
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, TRUE)
+                type, outcome, outcome_quote, out_quote_source,
+                doi_r_published, alt_identifier_r, admin_approved
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, TRUE)
             ON CONFLICT (doi_r, study_r, doi_o, study_o) DO UPDATE SET
                 record_id        = EXCLUDED.record_id,
                 year_r           = EXCLUDED.year_r,
@@ -2686,6 +2710,8 @@ def admin_approve(record_id: str, x_admin_token: str = Header(...)):
                 outcome          = EXCLUDED.outcome,
                 outcome_quote    = EXCLUDED.outcome_quote,
                 out_quote_source = EXCLUDED.out_quote_source,
+                doi_r_published  = EXCLUDED.doi_r_published,
+                alt_identifier_r = EXCLUDED.alt_identifier_r,
                 admin_approved   = TRUE,
                 validated_at     = NOW()
             """,
@@ -2700,6 +2726,7 @@ def admin_approve(record_id: str, x_admin_token: str = Header(...)):
                 rec.get("final_outcome") or rec["outcome"],
                 rec.get("final_outcome_quote") or rec["outcome_quote"],
                 rec.get("final_out_quote_source") or rec.get("out_quote_source"),
+                rec.get("doi_r_published"), rec.get("alt_identifier_r"),
             ),
         )
 
@@ -2797,6 +2824,9 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
         final_doi_r      = req.corrected_doi_r      if req.corrected_doi_r      else rec.get("final_doi_r")      or rec["doi_r"]
         final_url_r      = req.corrected_url_r      if req.corrected_url_r      else rec.get("final_url_r")      or rec["url_r"]
         final_abstract_r = req.corrected_abstract_r if req.corrected_abstract_r else rec.get("final_abstract_r") or rec["abstract_r"]
+        # These two can be deliberately cleared: None = untouched, '' = clear.
+        final_doi_r_pub  = _normalize_doi(req.doi_r_published) if req.doi_r_published  is not None else rec.get("doi_r_published")
+        final_alt_ids    = (req.alt_identifier_r.strip() or None) if req.alt_identifier_r is not None else rec.get("alt_identifier_r")
 
         # Outcome-quote source: honour an explicit admin choice, otherwise (re)detect
         # from the final quote against the final abstract, falling back to any stored value.
@@ -2845,11 +2875,13 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
                 final_abstract_r    = %s,
                 final_out_quote_source = %s,
                 out_quote_source_by = %s,
+                doi_r_published     = %s,
+                alt_identifier_r    = %s,
                 admin_override      = %s,
                 updated_at          = NOW()
             WHERE record_id = %s
             """,
-            (admin_handle, req.admin_notes, final_type, final_doi_o, final_study_o, final_outcome, final_outcome_q, final_study_r, final_doi_r, final_url_r, final_abstract_r, final_src, final_src_by, was_rejected, record_id),
+            (admin_handle, req.admin_notes, final_type, final_doi_o, final_study_o, final_outcome, final_outcome_q, final_study_r, final_doi_r, final_url_r, final_abstract_r, final_src, final_src_by, final_doi_r_pub, final_alt_ids, was_rejected, record_id),
         )
 
         # The UPDATE above fires the DOI trigger, which NULLs a work id whose DOI just
@@ -2867,8 +2899,9 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
                 record_id, doi_r, study_r, year_r, url_r, ref_r, abstract_r,
                 doi_o, study_o, year_o, url_o, ref_o,
                 oa_work_id_o, oa_work_id_r,
-                type, outcome, outcome_quote, out_quote_source, out_quote_source_by, admin_approved
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, TRUE)
+                type, outcome, outcome_quote, out_quote_source, out_quote_source_by,
+                doi_r_published, alt_identifier_r, admin_approved
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, TRUE)
             ON CONFLICT (doi_r, study_r, doi_o, study_o) DO UPDATE SET
                 doi_r         = EXCLUDED.doi_r,
                 study_r       = EXCLUDED.study_r,
@@ -2882,6 +2915,8 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
                 outcome_quote = EXCLUDED.outcome_quote,
                 out_quote_source = EXCLUDED.out_quote_source,
                 out_quote_source_by = EXCLUDED.out_quote_source_by,
+                doi_r_published  = EXCLUDED.doi_r_published,
+                alt_identifier_r = EXCLUDED.alt_identifier_r,
                 admin_approved = TRUE,
                 validated_at  = NOW()
             """,
@@ -2891,6 +2926,7 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
                 final_doi_o, final_study_o, rec["year_o"], rec["url_o"], rec["ref_o"],
                 _wid.get("oa_work_id_o"), _wid.get("oa_work_id_r"),
                 final_type, final_outcome, final_outcome_q, final_src, final_src_by,
+                final_doi_r_pub, final_alt_ids,
             ),
         )
 

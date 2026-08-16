@@ -21,6 +21,7 @@ function blankJudgement() {
     corrected_study_o: null,
     corrected_study_r: null,
     corrected_url_r: null,
+    doi_r_published: null,     // preprint replications: DOI of the published article
     comment: "",
     edited_abstract: null,
     edited_outcome_quote: null,
@@ -402,6 +403,7 @@ function buildConsensusSummary(v1, v2, llm) {
   if ((e = editors("corrected_abstract")).length)      lines.push(`${_nameList(e)} edited the abstract.`);
   if ((e = editors("corrected_study_r")).length)        lines.push(`${_nameList(e)} fixed the replication title.`);
   if ((e = editors("corrected_url_r")).length)          lines.push(`${_nameList(e)} suggested a replication link.`);
+  if ((e = editors("doi_r_published")).length)          lines.push(`${_nameList(e)} added a published-article DOI.`);
 
   return lines;
 }
@@ -1907,6 +1909,9 @@ function _restoreDraftInputs(card, draft) {
   const urlBtn = card.querySelector("#suggest-url-r-btn");
   if (urlBtn && draft.corrected_url_r) urlBtn.textContent = "suggest link (✓ edited)";
 
+  const pubBtn = card.querySelector("#doi-r-published-btn");
+  if (pubBtn && draft.doi_r_published) pubBtn.textContent = "published DOI (✓ added)";
+
   // Restore the hard-mode "can't access" checkbox so state and UI stay in sync.
   const noAccessCb = card.querySelector("#no-access-cb");
   if (noAccessCb && draft.no_access) {
@@ -2357,8 +2362,11 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
           <span class="abstract-tools-spacer"></span>
           <a href="${escapeHtml(scholarUrl)}" target="_blank" rel="noopener" title="Search for an alternate copy">Scholar</a>
           <button class="link-btn" id="suggest-url-r-btn" title="Suggest the correct link for this paper">suggest link</button>
+          <button class="link-btn" id="doi-r-published-btn" title="If the replication is a preprint, add the DOI of the published article, if it is available">published DOI</button>
         </div>
         <input type="text" class="title-edit hidden" id="url-r-edit" placeholder="https://… correct link for this paper">
+        <div class="field-hint hidden" id="doi-r-published-hint">If the replication is a preprint, add the DOI of the published article, if it is available.</div>
+        <input type="text" class="title-edit hidden" id="doi-r-published-edit" placeholder="10.xxxx/… DOI of the published article">
       </div>
     </div>
 
@@ -2674,6 +2682,39 @@ function wireEditButtons(container, p) {
     urlEdit.addEventListener("blur", (e) => {
       if (e.relatedTarget === suggestUrlBtn) return;
       _saveUrl();
+    });
+  }
+
+  const pubDoiBtn = container.querySelector("#doi-r-published-btn");
+  if (pubDoiBtn) {
+    const pubDoiEdit = container.querySelector("#doi-r-published-edit");
+    const pubDoiHint = container.querySelector("#doi-r-published-hint");
+    const _savePubDoi = () => {
+      if (pubDoiEdit.classList.contains("hidden")) return;
+      // Net-new data (no extracted value to compare against): keep any non-empty
+      // DOI; the admin verifies it during review. Accept a pasted DOI *link* by
+      // stripping the resolver prefix — the pipeline stores bare DOIs.
+      const v = pubDoiEdit.value.trim().replace(/^(?:https?:\/\/(?:dx\.)?doi\.org\/|doi:)\s*/i, "");
+      state.judgement.doi_r_published = v || null;
+      pubDoiEdit.classList.add("hidden");
+      pubDoiHint.classList.add("hidden");
+      pubDoiBtn.textContent = state.judgement.doi_r_published ? "published DOI (✓ added)" : "published DOI";
+    };
+    pubDoiBtn.onclick = () => {
+      if (pubDoiEdit.classList.contains("hidden")) {
+        pubDoiEdit.value = state.judgement.doi_r_published || "";
+        pubDoiHint.classList.remove("hidden");
+        pubDoiEdit.classList.remove("hidden");
+        pubDoiBtn.textContent = "save published DOI";
+        pubDoiEdit.focus();
+      } else {
+        _savePubDoi();
+      }
+    };
+    // Auto-save when the user clicks/tabs away from the field.
+    pubDoiEdit.addEventListener("blur", (e) => {
+      if (e.relatedTarget === pubDoiBtn) return;
+      _savePubDoi();
     });
   }
 
@@ -3173,6 +3214,7 @@ async function submitJudgement() {
     corrected_abstract:      j.edited_abstract || null,
     corrected_study_r:       j.corrected_study_r || null,
     corrected_url_r:         j.corrected_url_r || null,
+    doi_r_published:         j.doi_r_published || null,
     validator_notes:         j.comment || null,
   };
 
@@ -3542,6 +3584,13 @@ async function guardedSubmit() {
   // "I cannot access this article" — this is a report, not a judgement, so skip
   // all the judgement guards (unsaved edits, abstract, too-fast).
   if (state.judgement.no_access) { await submitJudgement(); return; }
+
+  // Keyboard submits (Ctrl/Cmd+Enter) bypass the blur auto-save of the two
+  // inline link/DOI inputs — persist any open one before the guards run.
+  ["#url-r-edit", "#doi-r-published-edit"].forEach((sel) => {
+    const el = card?.querySelector(sel);
+    if (el && !el.classList.contains("hidden")) el.blur();
+  });
 
   // 1. Title correction panel open but not saved — block regardless of content
   const titleEdit = card?.querySelector("#title-edit");
@@ -4094,6 +4143,10 @@ function renderAdminDetail(data) {
         <div class="chk-long-group"><span class="chk-long-tag">Extracted</span><span class="chk-long-val">${rec.url_r ? urlLink(rec.url_r) : "—"}</span></div>
         <div class="chk-long-group chk-long-group-diff"><span class="chk-long-tag">→ Suggests</span><span class="chk-long-val">${urlLink(v.corrected_url_r)}</span></div>
       </div>` : "";
+    const pubDoiRow = v.doi_r_published ? `<div class="chk-row-long">
+        <div class="chk-row-long-head"><span class="chk-label">Published DOI</span><span class="chk-edit-badge">✎ ${who} added</span></div>
+        <div class="chk-long-group chk-long-group-diff"><span class="chk-long-tag">→ Suggests</span><span class="chk-long-val">${doiLink(v.doi_r_published)}</span></div>
+      </div>` : "";
 
     return `<div class="admin-val-card${isSeniorReject ? " admin-val-senior-reject" : ""}">
       <div class="admin-val-label">
@@ -4120,6 +4173,7 @@ function renderAdminDetail(data) {
         ${editRow("Title fix",  rec.study_r,      v.corrected_study_r)}
         ${repDoiCorrRow}
         ${repUrlCorrRow}
+        ${pubDoiRow}
         ${editRow("Quote",      rec.outcome_quote, v.corrected_outcome_quote, true)}
         ${editRow("Abstract",   rec.abstract_r,    v.corrected_abstract,      true)}
         ${v.validator_notes ? `<div class="chk-row-long"><div class="chk-row-long-head"><span class="chk-label">Notes</span></div><p class="chk-notes-text">${escapeHtml(v.validator_notes)}</p></div>` : ""}
@@ -4155,15 +4209,16 @@ function renderAdminDetail(data) {
     // Uses outer final* variables computed above
 
     const changes = [
-      rec.final_study_r        && rec.final_study_r        !== rec.study_r        ? ["Replication title", rec.study_r,        rec.final_study_r]        : null,
-      rec.final_doi_r          && rec.final_doi_r          !== rec.doi_r          ? ["Replication DOI",   rec.doi_r,          rec.final_doi_r]          : null,
-      rec.final_url_r          && rec.final_url_r          !== rec.url_r          ? ["Replication URL",   rec.url_r,          rec.final_url_r]          : null,
-      rec.final_study_o        && rec.final_study_o        !== rec.study_o        ? ["Original title",    rec.study_o,        rec.final_study_o]        : null,
-      rec.final_doi_o          && rec.final_doi_o          !== rec.doi_o          ? ["Original DOI",      rec.doi_o,          rec.final_doi_o]          : null,
-      rec.final_type           && rec.final_type           !== rec.type           ? ["Type",              rec.type,           rec.final_type]           : null,
-      rec.final_outcome        && rec.final_outcome        !== rec.outcome        ? ["Outcome",           fmtOutcome(rec.outcome),        fmtOutcome(rec.final_outcome)]        : null,
-      rec.final_outcome_quote  && rec.final_outcome_quote  !== rec.outcome_quote  ? ["Quote",             rec.outcome_quote,  rec.final_outcome_quote]  : null,
-      finalAbstractR           && finalAbstractR           !== rec.abstract_r     ? ["Abstract",          rec.abstract_r,     finalAbstractR]           : null,
+      finalStudyR    && finalStudyR    !== rec.study_r        ? ["Replication title", rec.study_r,        finalStudyR]    : null,
+      finalDoiR      && finalDoiR      !== rec.doi_r          ? ["Replication DOI",   rec.doi_r,          finalDoiR]      : null,
+      finalUrlR      && finalUrlR      !== rec.url_r          ? ["Replication URL",   rec.url_r,          finalUrlR]      : null,
+      finalStudyO    && finalStudyO    !== rec.study_o        ? ["Original title",    rec.study_o,        finalStudyO]    : null,
+      finalDoiO      && finalDoiO      !== rec.doi_o          ? ["Original DOI",      rec.doi_o,          finalDoiO]      : null,
+      finalType      && finalType      !== rec.type           ? ["Type",              rec.type,           finalType]      : null,
+      finalOutcome   && finalOutcome   !== rec.outcome        ? ["Outcome",           fmtOutcome(rec.outcome), fmtOutcome(finalOutcome)] : null,
+      finalQuote     && finalQuote     !== rec.outcome_quote  ? ["Quote",             rec.outcome_quote,  finalQuote]     : null,
+      finalAbstractR && finalAbstractR !== rec.abstract_r     ? ["Abstract",          rec.abstract_r,     finalAbstractR] : null,
+      finalPubDoiR   && finalPubDoiR   !== storedPubDoi       ? ["Published DOI",     storedPubDoi,       finalPubDoiR]   : null,
     ].filter(Boolean);
 
     const changesSection = changes.length > 0 ? `
@@ -4190,6 +4245,8 @@ function renderAdminDetail(data) {
         <div class="fp-row"><span class="fp-label">Replication</span><span class="fp-value">${escapeHtml(finalStudyR || "—")}</span></div>
         <div class="fp-row"><span class="fp-label">DOI</span><span class="fp-value">${doiLink(finalDoiR)} · ${fmtYear(rec.year_r)}</span></div>
         ${finalUrlR ? `<div class="fp-row"><span class="fp-label">URL</span><span class="fp-value"><a href="${escapeHtml(finalUrlR)}" target="_blank" rel="noopener" class="doi-link">${escapeHtml(finalUrlR.length > 50 ? finalUrlR.substring(0, 50) + "…" : finalUrlR)}</a></span></div>` : ""}
+        ${finalPubDoiR ? `<div class="fp-row"><span class="fp-label">Published DOI</span><span class="fp-value">${doiLink(finalPubDoiR)}</span></div>` : ""}
+        ${finalAltIds ? `<div class="fp-row"><span class="fp-label">Alt. identifiers</span><span class="fp-value">${escapeHtml(finalAltIds)}</span></div>` : ""}
         <div class="fp-row fp-divider"></div>
         <div class="fp-row"><span class="fp-label">Original</span><span class="fp-value">${escapeHtml(finalStudyO || "—")}</span></div>
         <div class="fp-row"><span class="fp-label">DOI</span><span class="fp-value">${doiLink(finalDoiO)}</span></div>
@@ -4217,18 +4274,55 @@ function renderAdminDetail(data) {
     ? _abstractEdits.reduce((a, b) => (b.length > a.length ? b : a))
     : null;
 
-  // Final values for the unified edit form (pre-filled from consensus / admin corrections)
-  const finalStudyR    = rec.final_study_r       || rec.study_r;
+  // Corrections BOTH validators agreed on: a need_review record has no stored
+  // finals, so without this the form would pre-fill raw extracted values and an
+  // agreed correction could be silently dropped on resolve. Mirror the abstract
+  // treatment: show the agreed value, keep data-orig-* on the STORED value so
+  // resolving detects it as a change and saves it.
+  const _agreed = (key) => {
+    const a = (v1 && v1[key]) || null;
+    const b = (v2 && v2[key]) || null;
+    return a && b && a === b ? a : null;
+  };
+  const _agreedType = (() => { const t = _agreed("corrected_type"); return t === "not_validation" ? null : t; })();
+  // Quote edits mirror consensus _resolve_final: the longest edit wins.
+  const _quoteEdits = [v1, v2].map((v) => ((v && v.corrected_outcome_quote) || "").trim()).filter(Boolean);
+  const proposedQuote = _quoteEdits.length ? _quoteEdits.reduce((a, b) => (b.length > a.length ? b : a)) : null;
+
+  // Final values for the unified edit form: stored final → validators' agreed
+  // correction → raw extracted. stored* is what the DB holds (change-detection base).
+  const storedStudyR   = rec.final_study_r       || rec.study_r;
+  const storedStudyO   = rec.final_study_o       || rec.study_o;
+  const storedDoiO     = rec.final_doi_o         || rec.doi_o;
+  const storedType     = rec.final_type          || rec.type;
+  const storedOutcome  = rec.final_outcome       || rec.outcome;
+  const storedUrlR     = rec.final_url_r         || rec.url_r;
+  const storedQuote    = rec.final_outcome_quote || rec.outcome_quote;
+  const finalStudyR    = rec.final_study_r       || _agreed("corrected_study_r") || rec.study_r;
   const finalDoiR      = rec.final_doi_r         || rec.doi_r;
-  const finalStudyO    = rec.final_study_o       || rec.study_o;
-  const finalDoiO      = rec.final_doi_o         || rec.doi_o;
-  const finalType      = rec.final_type          || rec.type;
-  const finalOutcome   = rec.final_outcome       || rec.outcome;
-  const finalQuote     = rec.final_outcome_quote || rec.outcome_quote;
+  const finalStudyO    = rec.final_study_o       || _agreed("corrected_study_o") || rec.study_o;
+  const finalDoiO      = rec.final_doi_o         || _agreed("corrected_doi_o")   || rec.doi_o;
+  const finalType      = rec.final_type          || _agreedType                  || rec.type;
+  const finalOutcome   = rec.final_outcome       || _agreed("corrected_outcome") || rec.outcome;
+  const finalQuote     = rec.final_outcome_quote || proposedQuote                || rec.outcome_quote;
   const storedAbstractR = rec.final_abstract_r   || rec.abstract_r;
   const finalAbstractR = rec.final_abstract_r    || proposedAbstractR || rec.abstract_r;
-  const finalUrlR      = rec.final_url_r         || rec.url_r;
+  const finalUrlR      = rec.final_url_r         || _agreed("corrected_url_r")   || rec.url_r;
   const finalSource    = rec.final_out_quote_source || rec.out_quote_source || "";
+  // Published DOI: net-new data — surface a validator's suggestion the same way
+  // as the proposed abstract (pre-filled, saved on resolve). First non-empty wins.
+  const proposedPubDoi = ((v1 && v1.doi_r_published) || (v2 && v2.doi_r_published) || "").trim();
+  const storedPubDoi   = rec.doi_r_published || "";
+  const finalPubDoiR   = storedPubDoi || proposedPubDoi;
+  const finalAltIds    = rec.alt_identifier_r || "";
+
+  // Any pre-filled proposal not yet stored? Drives the hint above the form.
+  const hasProposals =
+    finalStudyR !== storedStudyR || finalStudyO !== storedStudyO ||
+    finalDoiO !== storedDoiO || finalType !== storedType ||
+    finalOutcome !== storedOutcome || finalUrlR !== storedUrlR ||
+    (finalQuote || "") !== (storedQuote || "") ||
+    finalAbstractR !== storedAbstractR || finalPubDoiR !== storedPubDoi;
 
 
   const outcomeOpts = _outcomeOptionsFor(finalType, finalOutcome);
@@ -4292,16 +4386,20 @@ function renderAdminDetail(data) {
         ` : ""}
 
         <div id="ar-normal-form" class="${rec.validation_status === "rejected" ? "hidden" : ""}"
-             data-orig-study-r="${escapeHtml(finalStudyR || "")}"
+             data-orig-study-r="${escapeHtml(storedStudyR || "")}"
              data-orig-doi-r="${escapeHtml(finalDoiR || "")}"
-             data-orig-study-o="${escapeHtml(finalStudyO || "")}"
-             data-orig-doi-o="${escapeHtml(finalDoiO || "")}"
-             data-orig-type="${escapeHtml(finalType || "")}"
-             data-orig-outcome="${escapeHtml(finalOutcome || "")}"
+             data-orig-study-o="${escapeHtml(storedStudyO || "")}"
+             data-orig-doi-o="${escapeHtml(storedDoiO || "")}"
+             data-orig-type="${escapeHtml(storedType || "")}"
+             data-orig-outcome="${escapeHtml(storedOutcome || "")}"
              data-orig-abstract-r="${escapeHtml(storedAbstractR || "")}"
-             data-orig-url-r="${escapeHtml(finalUrlR || "")}">
+             data-orig-url-r="${escapeHtml(storedUrlR || "")}"
+             data-orig-doi-r-published="${escapeHtml(storedPubDoi)}"
+             data-orig-alt-identifier-r="${escapeHtml(finalAltIds)}">
           ${hasNotValidation
             ? `<p class="admin-resolve-hint">Fill in the correct values — this will override the "not a replication" call.</p>`
+            : hasProposals
+            ? `<p class="admin-resolve-hint">Validators' corrections are <strong>pre-filled below</strong> and will be saved when you resolve — review and adjust as needed.</p>`
             : `<p class="admin-resolve-hint">Edit the final values directly and mark as resolved. Changes are auto-detected.</p>`}
 
           <label class="admin-form-label">Replication Title</label>
@@ -4312,6 +4410,12 @@ function renderAdminDetail(data) {
 
           <label class="admin-form-label">Replication URL</label>
           <input id="ar-url-r" class="admin-input" value="${escapeHtml(finalUrlR || "")}" placeholder="https://…">
+
+          <label class="admin-form-label">Published DOI${finalPubDoiR && finalPubDoiR !== storedPubDoi ? `<span class="admin-label-note">✎ pre-filled with validator's suggestion — saved on resolve</span>` : ""}</label>
+          <input id="ar-doi-r-published" class="admin-input" value="${escapeHtml(finalPubDoiR)}" placeholder="If the replication is a preprint: DOI of the published article">
+
+          <label class="admin-form-label">Alternative Identifiers</label>
+          <input id="ar-alt-identifier-r" class="admin-input" value="${escapeHtml(finalAltIds)}" placeholder="Comma separated — another DOI, a different version, a meta paper">
 
           <label class="admin-form-label">Original Title</label>
           <input id="ar-study-o" class="admin-input" value="${escapeHtml(finalStudyO || "")}">
@@ -4501,6 +4605,8 @@ async function submitAdminResolve(recordId) {
   const newOutcome   = $("#ar-outcome-sel").value;
   const newQuote     = $("#ar-quote").value.trim();
   const newAbstractR = $("#ar-abstract-r").value.trim();
+  const newPubDoi    = $("#ar-doi-r-published").value.trim();
+  const newAltIds    = $("#ar-alt-identifier-r").value.trim();
 
   const origStudyR    = form.dataset.origStudyR;
   const origDoiR      = form.dataset.origDoiR;
@@ -4510,6 +4616,8 @@ async function submitAdminResolve(recordId) {
   const origType      = form.dataset.origType;
   const origOutcome   = form.dataset.origOutcome;
   const origAbstractR = form.dataset.origAbstractR;
+  const origPubDoi    = form.dataset.origDoiRPublished;
+  const origAltIds    = form.dataset.origAltIdentifierR;
 
   const typeChanged     = newType      !== origType;
   const origChanged     = newStudyO    !== origStudyO || newDoiO !== origDoiO;
@@ -4533,6 +4641,9 @@ async function submitAdminResolve(recordId) {
     corrected_doi_r:         doiRChanged     ? (newDoiR      || null)   : null,
     corrected_url_r:         urlRChanged     ? (newUrlR      || null)   : null,
     corrected_abstract_r:    abstractChanged ? (newAbstractR || null)   : null,
+    // '' is meaningful here (clear the stored value); null means unchanged.
+    doi_r_published:         newPubDoi !== origPubDoi ? newPubDoi : null,
+    alt_identifier_r:        newAltIds !== origAltIds ? newAltIds : null,
     out_quote_source:        $("#ar-quote-source")?.value || null,
     admin_notes:             $("#admin-note-text")?.value.trim() || null,
   };

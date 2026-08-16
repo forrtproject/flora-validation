@@ -130,7 +130,10 @@ QUERY = """
         v.outcome,
         v.outcome_quote,
         v.out_quote_source   AS outcome_quote_source,
-        COALESCE(m.source, 'validated_db') AS source
+        COALESCE(m.source, 'validated_db') AS source,
+        -- New columns go LAST so positional readers of the daily CSV keep working
+        v.doi_r_published,
+        v.alt_identifier_r
     FROM  validated v
     LEFT JOIN LATERAL (
         SELECT source FROM record_metadata

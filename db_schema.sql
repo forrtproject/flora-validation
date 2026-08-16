@@ -417,6 +417,16 @@ ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS oa_work_id_r TEXT;
 ALTER TABLE validated   ADD COLUMN IF NOT EXISTS oa_work_id_o TEXT;
 ALTER TABLE validated   ADD COLUMN IF NOT EXISTS oa_work_id_r TEXT;
 
+-- Published-article DOI for preprint replications (validator-suggested, admin-verified)
+-- and free-form alternative identifiers (admin-curated during review; comma separated —
+-- another DOI, a different version, a meta paper). alt_identifier_r mirrors the
+-- source_records column of the same name.
+ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS doi_r_published  TEXT;
+ALTER TABLE unvalidated      ADD COLUMN IF NOT EXISTS doi_r_published  TEXT;
+ALTER TABLE validated        ADD COLUMN IF NOT EXISTS doi_r_published  TEXT;
+ALTER TABLE unvalidated      ADD COLUMN IF NOT EXISTS alt_identifier_r TEXT;
+ALTER TABLE validated        ADD COLUMN IF NOT EXISTS alt_identifier_r TEXT;
+
 -- Normalise empty strings to NULL. The seed/backfill below (and the trigger) key on
 -- IS NULL, so a stray '' would be treated as 'already filled' and never get an id.
 UPDATE unvalidated SET oa_work_id_o = NULL WHERE oa_work_id_o = '';

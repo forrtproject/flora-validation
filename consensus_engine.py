@@ -23,6 +23,12 @@ def _normalize(text: str | None) -> str:
     return re.sub(r'[^a-z0-9]', '', text.lower())
 
 
+def _norm_doi(doi: str | None) -> str:
+    """DOIs are case-insensitive and often pasted as resolver links — compare the
+    bare, lowercased form so '10.1/X' and 'https://doi.org/10.1/x' agree."""
+    return re.sub(r'(?i)^(?:https?://(?:dx\.)?doi\.org/|doi:)\s*', '', (doi or '').strip()).lower()
+
+
 def _additional_checks(h: dict) -> dict:
     """The validator's additional_checks as a dict. Tolerates the column arriving
     as a dict (jsonb adapter) or a raw JSON string."""
@@ -56,6 +62,9 @@ def _checks_agree(h1: dict, h2: dict) -> bool:
 
 def _corrections_agree(h1: dict, h2: dict) -> bool:
     if not all(h1.get(f) == h2.get(f) for f in _CORRECTION_FIELDS):
+        return False
+    # Published DOIs compare in bare, case-folded form (resolver-link paste ≠ conflict)
+    if _norm_doi(h1.get("doi_r_published")) != _norm_doi(h2.get("doi_r_published")):
         return False
     # Normalize text fields before comparing so minor formatting differences don't cause conflicts
     return _normalize(h1.get("corrected_abstract")) == _normalize(h2.get("corrected_abstract"))
@@ -115,6 +124,7 @@ def _resolve_final(record: dict, winner: dict, other: dict | None = None) -> dic
         # check the source against the same abstract we publish (corrected if present)
         "out_quote_source": _resolve_quote_source(record, quotes, final_abstract or record.get("abstract_r")),
         "abstract_r": final_abstract,
+        "doi_r_published": winner.get("doi_r_published") or record.get("doi_r_published"),
     }
 
 
@@ -137,6 +147,9 @@ def _update_status(cur, record_id: str, status: str, is_tiebreaker: bool,
         if final.get("abstract_r"):
             set_clauses.append("abstract_r = %s")
             params.append(final["abstract_r"])
+        if final.get("doi_r_published"):
+            set_clauses.append("doi_r_published = %s")
+            params.append(final["doi_r_published"])
 
     if llm_summary is not None:
         set_clauses.append("llm_validator = %s")
@@ -169,8 +182,9 @@ def _insert_validated(cur, record: dict, final: dict) -> None:
             record_id, doi_r, study_r, year_r, url_r, ref_r, abstract_r,
             doi_o, study_o, year_o, url_o, ref_o,
             oa_work_id_o, oa_work_id_r,
-            type, outcome, outcome_quote, out_quote_source, validated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            type, outcome, outcome_quote, out_quote_source,
+            doi_r_published, alt_identifier_r, validated_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (doi_r, study_r, doi_o, study_o) DO UPDATE SET
             record_id        = EXCLUDED.record_id,
             year_r           = EXCLUDED.year_r,
@@ -186,6 +200,8 @@ def _insert_validated(cur, record: dict, final: dict) -> None:
             outcome          = EXCLUDED.outcome,
             outcome_quote    = EXCLUDED.outcome_quote,
             out_quote_source = EXCLUDED.out_quote_source,
+            doi_r_published  = EXCLUDED.doi_r_published,
+            alt_identifier_r = EXCLUDED.alt_identifier_r,
             validated_at     = NOW()
         """,
         (
@@ -207,6 +223,8 @@ def _insert_validated(cur, record: dict, final: dict) -> None:
             final["outcome"],
             final.get("outcome_quote") or record.get("outcome_quote"),
             final.get("out_quote_source") or record.get("out_quote_source"),
+            final.get("doi_r_published") or record.get("doi_r_published"),
+            record.get("alt_identifier_r"),
             datetime.now(timezone.utc).isoformat(),
         ),
     )
@@ -227,7 +245,7 @@ def evaluate_consensus(cur, record_id: str) -> None:
         SELECT validator_slot, type_check, original_check, outcome_check,
                corrected_doi_o, corrected_study_o, corrected_outcome, corrected_type,
                corrected_study_r, corrected_url_r, corrected_abstract, corrected_outcome_quote,
-               additional_checks
+               doi_r_published, additional_checks
         FROM validation_queue
         WHERE record_id = %s AND is_validated = TRUE
           AND validator_slot IN ('human_1', 'human_2')
@@ -243,7 +261,7 @@ def evaluate_consensus(cur, record_id: str) -> None:
     _human_cols = ["validator_slot", "type_check", "original_check", "outcome_check",
                    "corrected_doi_o", "corrected_study_o", "corrected_outcome", "corrected_type",
                    "corrected_study_r", "corrected_url_r", "corrected_abstract", "corrected_outcome_quote",
-                   "additional_checks"]
+                   "doi_r_published", "additional_checks"]
     if rows and isinstance(rows[0], dict):
         humans = [dict(row) for row in rows]
     else:

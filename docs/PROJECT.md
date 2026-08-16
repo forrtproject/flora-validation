@@ -230,7 +230,14 @@ A validator answers three questions in one progressive form:
 
 Any answer can carry a correction: `corrected_doi_o`, `corrected_study_o`,
 `corrected_outcome`, `corrected_type`, `corrected_study_r`, `corrected_url_r`,
-`corrected_outcome_quote`, `corrected_abstract`.
+`corrected_outcome_quote`, `corrected_abstract`. A validator can additionally supply
+`doi_r_published` ("published DOI" button next to "suggest link") — for preprint
+replications, the DOI of the published article, if it is available. It is net-new
+data (no extracted counterpart) and counts as a correction in consensus, so a
+one-sided or conflicting suggestion routes to admin review like a link suggestion.
+Published DOIs are normalised at every entry point (resolver-link prefix and `doi:`
+stripped; consensus compares case-insensitively), so pasting
+`https://doi.org/10.1/X` vs typing `10.1/x` is agreement, not a conflict.
 
 **"Can't tell" is not a hard vote.** It is recorded in `additional_checks` as
 `was_unsure_original` / `was_unsure_outcome`, and the consensus engine routes any record
@@ -454,11 +461,26 @@ their name — lifetime judgements submitted (`validators.total_judgements`, so
 assignment work counts) and how many of their judgements admins have flagged
 (served as `validator_stats` on the entry-detail endpoint).
 
+The resolution form also carries two identifier fields: **Published DOI**
+(`doi_r_published` — pre-filled from a validator's suggestion the same way as the
+proposed abstract, saved on resolve) and **Alternative Identifiers**
+(`alt_identifier_r` — admin-curated, comma separated: another DOI, a different
+version, a meta paper; same name as the `source_records` column). Unlike the other
+form fields, clearing either of these to empty *deletes* the stored value on resolve.
+Both are published to `validated` and included in the daily export.
+
 Abstract edits: a record whose validators disagree only on an edited abstract lands in
 `need_review` with **no** `final_*` values written. The admin detail screen therefore
 pre-fills both the Final Preview and the resolution form's Abstract field with the
 validators' proposed edit (longest wins when the two differ), flags it as a pending
 change, and publishes it on resolve — no manual copy-paste needed.
+
+The same pre-fill protects every other correction on a `need_review` record: when
+**both** validators agreed on a corrected type/outcome/title/DOI/link, the form shows
+the agreed value (with a hint that pre-filled corrections are saved on resolve)
+instead of the raw extracted value — so resolving a record that landed in review for
+an unrelated reason can no longer silently drop the corrections the validators agreed
+on. Quote edits pre-fill with the longest edit, mirroring consensus.
 
 ---
 
@@ -476,7 +498,7 @@ A non-idempotent statement takes the server down on the next restart.
 `total_points`, `total_judgements`, `skipped_count`, `accuracy_score`, `onboarded_at`,
 `last_login_at`, `last_seen_update`, forgot-handle rate limiting.
 
-**`unvalidated`** (46 cols) — one row per resolved pair. Display columns for both sides
+**`unvalidated`** (48 cols) — one row per resolved pair. Display columns for both sides
 (`doi_r`/`study_r`/`year_r`/`url_r`/`ref_r`/`abstract_r` and the `_o` equivalents),
 classification (`type`, `outcome`, `outcome_quote`, `out_quote_source`), workflow state
 (`validation_status`, `is_tiebreaker`, `restricted_access`, `admin_checked`,
@@ -486,12 +508,13 @@ classification (`type`, `outcome`, `outcome_quote`, `out_quote_source`), workflo
 `validation_status` ∈ `unvalidated`, `validation_inprogress`, `validated`,
 `need_review`, `consensus_reached`, `rejected`.
 
-**`validation_queue`** (26 cols) — exactly three rows per record: `human_1`, `human_2`,
+**`validation_queue`** (27 cols) — exactly three rows per record: `human_1`, `human_2`,
 `llm`. Holds the three checks, all corrections, `additional_checks` JSONB, notes,
 points, `flagged`/`flag_reason`, and the `is_shown` / `started_at` / `validated_at`
 timing that drives claiming and reaping. `UNIQUE (record_id, validator_slot)`.
 
-**`validated`** (22 cols) — final consensus records, `UNIQUE (doi_r, study_r, doi_o, study_o)`.
+**`validated`** (24 cols) — final consensus records, `UNIQUE (doi_r, study_r, doi_o, study_o)`.
+Includes `doi_r_published` and `alt_identifier_r` (added Aug 2026).
 This is what gets exported.
 
 **`record_metadata`** (24 cols) — upstream extraction provenance: filter and link method,
