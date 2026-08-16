@@ -1,8 +1,13 @@
 """
 csv_to_db.py — Import resolved rows from extracted.csv into the validation database.
 
-Only rows where filter_status is 'replication' or 'reproduction' AND link_method is
+Only rows whose paper type is 'replication' or 'reproduction' AND whose link_method is
 one of the resolved methods are imported. These are the rows ready for validation.
+
+The paper type arrives as `paper_type` (flora-extractor issue #93) or, on a CSV
+exported before that rename, as `filter_status`. This script is the conversion
+point: it reads either name and writes the database column, which keeps the name
+`record_metadata.filter_status`.
 
 For each imported row this script creates:
   - 1 row in 'unvalidated'      (the record, validation_status = 'unvalidated')
@@ -37,6 +42,9 @@ _RESOLVED_METHODS = {
 }
 _RESOLVED_STATUSES = {"replication", "reproduction"}
 
+# The extractor's paper-type column, newest name first (issue #93).
+_PAPER_TYPE_NAMES = ("paper_type", "filter_status")
+
 # Validator slots created per record
 _VALIDATOR_SLOTS = ("human_1", "human_2", "llm")
 
@@ -63,6 +71,25 @@ def _int_or_none(val) -> "int | None":
         return int(val)
     except (TypeError, ValueError):
         return None
+
+
+def _paper_type(row) -> str:
+    """One row's paper type, under whichever name the CSV carries."""
+    for name in _PAPER_TYPE_NAMES:
+        value = _s(row.get(name))
+        if value:
+            return value
+    return ""
+
+
+def _paper_type_column(df: pd.DataFrame) -> "pd.Series":
+    """The paper-type column of *df*, under whichever name the CSV carries."""
+    for name in _PAPER_TYPE_NAMES:
+        if name in df.columns:
+            return df[name]
+    raise KeyError(
+        f"{Path(__file__).name}: the CSV has no paper-type column "
+        f"(looked for {', '.join(_PAPER_TYPE_NAMES)})")
 
 
 def _work_id(val) -> "str | None":
@@ -103,7 +130,8 @@ def _build_metadata_row(record_id: str, pair_id: str, row: pd.Series) -> dict:
     return {
         "record_id":                  record_id,
         "pair_id":                    pair_id,
-        "filter_status":              _s(row.get("filter_status")),
+        # The DB column keeps the old name; the CSV may use either (issue #93).
+        "filter_status":              _paper_type(row),
         "filter_method":              _s(row.get("filter_method")),
         "filter_evidence":            _s(row.get("filter_evidence")),
         "filter_confidence":          _s(row.get("filter_confidence")),
@@ -198,14 +226,15 @@ def run_import(csv_path: Path, dry_run: bool = False) -> None:
     df = pd.read_csv(csv_path, dtype=str, encoding="utf-8-sig").fillna("")
 
     # Filter to resolved rows only
+    paper_type = _paper_type_column(df)
     resolved_mask = (
-        df["filter_status"].isin(_RESOLVED_STATUSES) &
+        paper_type.isin(_RESOLVED_STATUSES) &
         df["link_method"].isin(_RESOLVED_METHODS)
     )
     resolved = df[resolved_mask].copy()
-    skipped_fp = (df["filter_status"] == "false_positive").sum()
+    skipped_fp = (paper_type == "false_positive").sum()
     skipped_no_orig = (df["link_method"] == "no_original_found").sum()
-    skipped_pending = (~resolved_mask & ~(df["filter_status"] == "false_positive")).sum()
+    skipped_pending = (~resolved_mask & ~(paper_type == "false_positive")).sum()
 
     print(f"  Total rows:         {len(df)}")
     print(f"  Resolved (import):  {len(resolved)}")
@@ -219,7 +248,7 @@ def run_import(csv_path: Path, dry_run: bool = False) -> None:
 
     if dry_run:
         print("[dry-run] Would import the following rows:")
-        print(resolved[["doi_r", "doi_o", "filter_status", "link_method"]].to_string())
+        print(resolved[["doi_r", "doi_o", paper_type.name, "link_method"]].to_string())
         return
 
     conn = psycopg2.connect(database_url)

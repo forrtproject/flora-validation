@@ -50,16 +50,21 @@ Stage 2 removes false positives. Each paper is first checked by a fast rule-base
 
 ### New columns added
 
+`paper_type` was called `filter_status` until flora-extractor issue #93. `csv_to_db.py`
+reads either name and writes the database column, which keeps the old name
+(`record_metadata.filter_status`); CSVs exported before the rename still carry
+`filter_status` and import unchanged.
+
 | Column | Type | Values | Description |
 |---|---|---|---|
-| `filter_status` | str | `replication` · `reproduction` · `false_positive` · `needs_review` | Classification result. `replication` = same methods, different sample. `reproduction` = same data, re-analysis. `false_positive` = not a replication at all. `needs_review` = ambiguous; human review needed. |
+| `paper_type` | str | `replication` · `reproduction` · `false_positive` · `needs_review` | Classification result. `replication` = same methods, different sample. `reproduction` = same data, re-analysis. `false_positive` = not a replication at all. `needs_review` = ambiguous; human review needed. |
 | `filter_method` | str | `rule_based` · `llm` · `both` | Which classifier produced the label. `both` means the rule-based and LLM classifiers agreed. |
 | `filter_evidence` | str | — | The phrase or quote from the abstract that triggered the classification. Helps reviewers understand why a paper was included or excluded. |
-| `filter_confidence` | str | `high` · `medium` · `low` | Categorical confidence in `filter_status`. **Not a float** — a three-level label is more honest than a pseudo-probability from a single LLM call. |
+| `filter_confidence` | str | `high` · `medium` · `low` | Categorical confidence in `paper_type`. **Not a float** — a three-level label is more honest than a pseudo-probability from a single LLM call. |
 
 ### All columns at this stage
 
-`doi_r`, `title_r`, `abstract_r`, `year_r`, `authors_r`, `journal_r`, `url_r`, `openalex_id_r`, `source`, `ref_r`, `filter_status`, `filter_method`, `filter_evidence`, `filter_confidence`
+`doi_r`, `title_r`, `abstract_r`, `year_r`, `authors_r`, `journal_r`, `url_r`, `openalex_id_r`, `source`, `ref_r`, `paper_type`, `filter_method`, `filter_evidence`, `filter_confidence`
 
 ---
 
@@ -69,7 +74,7 @@ Stage 2 removes false positives. Each paper is first checked by a fast rule-base
 **Input:** `data/filtered.csv`  
 **Output:** `data/extracted.csv`
 
-Stage 3 answers two questions for each confirmed replication: which original study does it target, and what was the outcome? It first classifies how many originals the paper targets, then routes through the appropriate pipeline. False positives (`filter_status = false_positive`) are passed through with extraction columns empty — they are included in `extracted.csv` so Stage 4 can see the full picture.
+Stage 3 answers two questions for each confirmed replication: which original study does it target, and what was the outcome? It first classifies how many originals the paper targets, then routes through the appropriate pipeline. False positives (`paper_type = false_positive`) are passed through with extraction columns empty — they are included in `extracted.csv` so Stage 4 can see the full picture.
 
 ### Leading identifier
 
@@ -118,7 +123,7 @@ Stage 3 answers two questions for each confirmed replication: which original stu
 
 | Column | Type | Description |
 |---|---|---|
-| `type` | str | `replication` or `reproduction`. Carried from Stage 2's `filter_status`. |
+| `type` | str | `replication` or `reproduction`. Carried from Stage 2's `paper_type`. |
 | `original_rank` | int | `1` for single-original papers. For multi-original papers (`multiple_original`), each original gets its own row with ranks `1`, `2`, `3`, …. |
 | `n_originals` | int | Total number of originals for this replication paper. `1` for single-original papers. |
 
@@ -126,7 +131,7 @@ Stage 3 answers two questions for each confirmed replication: which original stu
 
 `pair_id`,  
 `doi_r`, `title_r`, `abstract_r`, `year_r`, `authors_r`, `journal_r`, `url_r`, `openalex_id_r`, `source`, `ref_r`,  
-`filter_status`, `filter_method`, `filter_evidence`, `filter_confidence`,  
+`paper_type`, `filter_method`, `filter_evidence`, `filter_confidence`,  
 `original_match_type`, `original_match_confidence`,  
 `doi_o`, `title_o`, `year_o`, `authors_o`, `ref_o`,  
 `link_method`, `link_evidence`, `link_confidence`, `link_llm_model`,  
@@ -177,7 +182,7 @@ All 36 columns from Stage 3, plus:
 
 | Column | Valid values |
 |---|---|
-| `filter_status` | `replication` · `reproduction` · `false_positive` · `needs_review` |
+| `paper_type` | `replication` · `reproduction` · `false_positive` · `needs_review` |
 | `filter_confidence` | `high` · `medium` · `low` |
 | `original_match_type` | `single_original` · `multiple_match` · `multiple_original` |
 | `link_method` | `author_year_match` · `llm_abstract` · `llm_fulltext` · `target_pending` · `api_error` |
