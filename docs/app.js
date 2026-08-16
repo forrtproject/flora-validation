@@ -3894,7 +3894,7 @@ function renderAdminDetail(data) {
   const rec = data.record;
   const abstractBanner = data.abstract_only_conflict
     ? `<div class="admin-abstract-banner">
-         <strong>Abstract conflict only</strong> — all checks and corrections agree. Only the edited abstract differs between the two validators.
+         <strong>Abstract conflict only</strong> — all checks and corrections agree. Only the edited abstract differs between the two validators. The longer edit is pre-filled in the resolution form and will be published when you resolve.
        </div>`
     : "";
   const overrideBanner = rec.admin_override
@@ -4073,7 +4073,7 @@ function renderAdminDetail(data) {
       rec.final_type           && rec.final_type           !== rec.type           ? ["Type",              rec.type,           rec.final_type]           : null,
       rec.final_outcome        && rec.final_outcome        !== rec.outcome        ? ["Outcome",           fmtOutcome(rec.outcome),        fmtOutcome(rec.final_outcome)]        : null,
       rec.final_outcome_quote  && rec.final_outcome_quote  !== rec.outcome_quote  ? ["Quote",             rec.outcome_quote,  rec.final_outcome_quote]  : null,
-      rec.final_abstract_r     && rec.final_abstract_r     !== rec.abstract_r     ? ["Abstract",          rec.abstract_r,     rec.final_abstract_r]     : null,
+      finalAbstractR           && finalAbstractR           !== rec.abstract_r     ? ["Abstract",          rec.abstract_r,     finalAbstractR]           : null,
     ].filter(Boolean);
 
     const changesSection = changes.length > 0 ? `
@@ -4109,10 +4109,23 @@ function renderAdminDetail(data) {
         ${finalQuote ? `<div class="fp-row fp-quote-row"><span class="fp-label">Quote</span><span class="fp-value fp-quote">"${escapeHtml(finalQuote)}"</span></div>` : ""}
         ${finalQuote ? `<div class="fp-row"><span class="fp-label">Quote source</span><span class="fp-value">${finalSource === "abstract" ? "Abstract" : finalSource === "full_text" ? "Full text" : "<em>auto-detect on save</em>"}${rec.out_quote_source_by ? ` <span class="fp-src-by">· set by ${escapeHtml(rec.out_quote_source_by)}</span>` : ""}</span></div>` : ""}
       </div>
-      ${finalAbstractR ? `<details class="fp-abstract"><summary>Abstract${rec.final_abstract_r && rec.final_abstract_r !== rec.abstract_r ? " (edited)" : ""}</summary><p class="fp-abstract-text">${escapeHtml(finalAbstractR)}</p></details>` : ""}
+      ${finalAbstractR ? `<details class="fp-abstract"><summary>Abstract${finalAbstractR !== rec.abstract_r ? " (edited)" : ""}</summary><p class="fp-abstract-text">${escapeHtml(finalAbstractR)}</p></details>` : ""}
       ${changesSection}
     </div>`;
   };
+
+  // Validators' abstract edits never reach final_abstract_r when the record lands
+  // in review (consensus writes no finals on need_review), so surface them here:
+  // longest edit wins when the two differ (mirrors _resolve_final), either one
+  // when they're identical. Both the Final Preview and the resolution form show
+  // this same proposed value; data-orig keeps the STORED abstract so resolving
+  // detects the proposal as a change and publishes it.
+  const _abstractEdits = [v1, v2]
+    .map((v) => ((v && v.corrected_abstract) || "").trim())
+    .filter(Boolean);
+  const proposedAbstractR = _abstractEdits.length
+    ? _abstractEdits.reduce((a, b) => (b.length > a.length ? b : a))
+    : null;
 
   // Final values for the unified edit form (pre-filled from consensus / admin corrections)
   const finalStudyR    = rec.final_study_r       || rec.study_r;
@@ -4122,7 +4135,8 @@ function renderAdminDetail(data) {
   const finalType      = rec.final_type          || rec.type;
   const finalOutcome   = rec.final_outcome       || rec.outcome;
   const finalQuote     = rec.final_outcome_quote || rec.outcome_quote;
-  const finalAbstractR = rec.final_abstract_r    || rec.abstract_r;
+  const storedAbstractR = rec.final_abstract_r   || rec.abstract_r;
+  const finalAbstractR = rec.final_abstract_r    || proposedAbstractR || rec.abstract_r;
   const finalUrlR      = rec.final_url_r         || rec.url_r;
   const finalSource    = rec.final_out_quote_source || rec.out_quote_source || "";
 
@@ -4193,7 +4207,7 @@ function renderAdminDetail(data) {
              data-orig-doi-o="${escapeHtml(finalDoiO || "")}"
              data-orig-type="${escapeHtml(finalType || "")}"
              data-orig-outcome="${escapeHtml(finalOutcome || "")}"
-             data-orig-abstract-r="${escapeHtml(finalAbstractR || "")}"
+             data-orig-abstract-r="${escapeHtml(storedAbstractR || "")}"
              data-orig-url-r="${escapeHtml(finalUrlR || "")}">
           ${hasNotValidation
             ? `<p class="admin-resolve-hint">Fill in the correct values — this will override the "not a replication" call.</p>`
@@ -4230,7 +4244,7 @@ function renderAdminDetail(data) {
             <option value="full_text" ${finalSource === "full_text" ? "selected" : ""}>Full text — quote is from the paper body</option>
           </select>
 
-          <label class="admin-form-label">Abstract</label>
+          <label class="admin-form-label">Abstract${finalAbstractR !== storedAbstractR ? `<span class="admin-label-note">✎ pre-filled with validator's edit — saved on resolve</span>` : ""}</label>
           <textarea id="ar-abstract-r" class="admin-textarea" style="min-height:120px" placeholder="Abstract…">${escapeHtml(finalAbstractR || "")}</textarea>
 
           <div class="admin-resolve-actions">
