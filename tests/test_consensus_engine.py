@@ -140,6 +140,48 @@ def test_unsure_routes_to_need_review():
     assert "INSERT INTO validated" not in calls_str  # never written to the export table
 
 
+def test_diverging_published_doi_sets_need_review():
+    """Only one validator supplies a published-article DOI → treated like any other
+    correction conflict: need_review, no LLM call."""
+    from consensus_engine import evaluate_consensus
+    h1 = {**H1_AGREE, "doi_r_published": "10.1234/published"}
+    cur = _make_cur([h1, H2_AGREE], BASE_RECORD)
+    with patch("consensus_engine.run_llm_validation") as mock_llm:
+        evaluate_consensus(cur, "rec-001")
+    mock_llm.assert_not_called()
+    calls_str = str(cur.execute.call_args_list)
+    assert "need_review" in calls_str
+    assert "INSERT INTO validated" not in calls_str
+
+
+def test_agreeing_published_doi_flows_to_final():
+    """Both validators supply the same published DOI → it is written to the record."""
+    from consensus_engine import evaluate_consensus
+    h1 = {**H1_AGREE, "doi_r_published": "10.1234/published"}
+    h2 = {**H2_AGREE, "doi_r_published": "10.1234/published"}
+    cur = _make_cur([h1, h2], BASE_RECORD)
+    with patch("consensus_engine.run_llm_validation", return_value=LLM_AGREE_ALL):
+        evaluate_consensus(cur, "rec-001")
+    calls_str = str(cur.execute.call_args_list)
+    assert "doi_r_published" in calls_str      # column written
+    assert "10.1234/published" in calls_str    # with the agreed value
+    assert "need_review" not in calls_str
+
+
+def test_published_doi_formats_agree():
+    """The same DOI pasted as a resolver link vs bare, different case → still
+    agreement (normalized compare), not a spurious conflict."""
+    from consensus_engine import evaluate_consensus
+    h1 = {**H1_AGREE, "doi_r_published": "10.1234/Published"}
+    h2 = {**H2_AGREE, "doi_r_published": "https://doi.org/10.1234/published"}
+    cur = _make_cur([h1, h2], BASE_RECORD)
+    with patch("consensus_engine.run_llm_validation", return_value=LLM_AGREE_ALL):
+        evaluate_consensus(cur, "rec-001")
+    calls_str = str(cur.execute.call_args_list)
+    assert "need_review" not in calls_str
+    assert "doi_r_published" in calls_str
+
+
 def test_quote_flag_routes_to_need_review():
     """A submission auto-flagged by the frontend quote gate (outcome quote not
     found in the abstract) sends the record to review, no LLM, even on agreement."""
