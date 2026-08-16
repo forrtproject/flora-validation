@@ -28,6 +28,17 @@ _RESOLVED_METHODS = {
     "citation_context_match", "same_author_year_title_overlap",
 }
 _RESOLVED_STATUSES = {"replication", "reproduction"}
+# The extractor's paper-type column, newest name first (issue #93).
+_PAPER_TYPE_NAMES = ("paper_type", "filter_status")
+
+
+def _paper_type_column(df: pd.DataFrame) -> "pd.Series":
+    """The paper-type column of *df*, under whichever name the CSV carries."""
+    for name in _PAPER_TYPE_NAMES:
+        if name in df.columns:
+            return df[name]
+    raise KeyError("the CSV has no paper-type column "
+                   f"(looked for {', '.join(_PAPER_TYPE_NAMES)})")
 
 
 def main(csv_path: Path) -> None:
@@ -37,7 +48,7 @@ def main(csv_path: Path) -> None:
 
     df = pd.read_csv(csv_path, dtype=str, encoding="utf-8-sig").fillna("")
     resolved = df[
-        df["filter_status"].isin(_RESOLVED_STATUSES)
+        _paper_type_column(df).isin(_RESOLVED_STATUSES)
         & df["link_method"].isin(_RESOLVED_METHODS)
     ]
     csv_pair_ids = {p.strip() for p in resolved["pair_id"] if p.strip()}
