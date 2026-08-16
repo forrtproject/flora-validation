@@ -8,7 +8,7 @@ This script fills that gap.
 
 What it touches (extracted source values only):
     unvalidated:      doi_o, study_o (CSV title_o), year_o, url_o, ref_o
-    record_metadata:  authors_o
+    record_metadata:  authors_o, doi_o_verification
 
 What it deliberately NEVER touches:
     final_* values, validator_1/2/llm blobs, validation_status, assignments —
@@ -17,7 +17,13 @@ What it deliberately NEVER touches:
 Rules:
     - Only rows whose pair_id already exists in the DB are updated.
     - A field is overwritten only when the new CSV value is non-empty AND differs
-      (so a blank CSV cell never wipes a good existing value).
+      (so a blank CSV cell never wipes a good existing value) — EXCEPT doi_o,
+      which the extractor can legitimately correct TO blank (a book/chapter/
+      pre-DOI paper the extractor has now verified has no DOI, replacing an
+      earlier wrong guess). That blank is trusted only when this CSV pull's row
+      carries doi_o_verification == 'no_doi' — an explicit verification, not
+      just an empty cell — so a genuinely incomplete pull still can't wipe a
+      good DOI.
 
 Usage:
     python update_originals.py [csv_path]            # dry-run (default)
@@ -33,7 +39,7 @@ import psycopg2.extras
 import pandas as pd
 from dotenv import load_dotenv
 
-from csv_to_db import _s, _derive_url_o
+from csv_to_db import _s, _url_o, _flag_ambiguous_doi_o_titles, _note_ambiguous_original
 
 load_dotenv()
 
@@ -44,7 +50,9 @@ _UNVAL_FIELDS = {
     "doi_o":   lambda r: _s(r.get("doi_o")),
     "study_o": lambda r: _s(r.get("title_o")),
     "year_o":  lambda r: _s(r.get("year_o")),
-    "url_o":   lambda r: _derive_url_o(r.get("doi_o")),
+    # CSV url_o preferred (DOI-less originals carry an OpenAlex link there),
+    # else derived from doi_o — same rule as the import (csv_to_db._url_o).
+    "url_o":   lambda r: _url_o(r),
     "ref_o":   lambda r: _s(r.get("ref_o")),
 }
 
@@ -66,8 +74,9 @@ def run(csv_path: Path, apply: bool) -> None:
             cur.execute(
                 """
                 SELECT u.pair_id, u.record_id::text AS record_id,
+                       u.doi_r, u.study_r,
                        u.doi_o, u.study_o, u.year_o, u.url_o, u.ref_o,
-                       m.authors_o
+                       m.authors_o, m.doi_o_verification
                 FROM unvalidated u
                 LEFT JOIN record_metadata m ON m.record_id = u.record_id
                 WHERE u.pair_id IS NOT NULL
@@ -77,9 +86,10 @@ def run(csv_path: Path, apply: bool) -> None:
             print(f"  Rows in DB:        {len(current)}")
             print(f"  Rows in CSV:       {len(df)}")
 
-            field_changes = {f: 0 for f in list(_UNVAL_FIELDS) + ["authors_o"]}
+            field_changes = {f: 0 for f in list(_UNVAL_FIELDS) + ["authors_o", "doi_o_verification"]}
             rows_changed = 0
             samples = []
+            post_state = {}
 
             for _, row in df.iterrows():
                 pid = _s(row.get("pair_id"))
@@ -88,10 +98,26 @@ def run(csv_path: Path, apply: bool) -> None:
                 cur_row = current[pid]
 
                 unval_set, diffs = {}, []
+
+                # doi_o_verification computed first: doi_o's own blank-is-valid
+                # exception (below) depends on it.
+                new_doi_verif = _s(row.get("doi_o_verification"))
+                old_doi_verif = _s(cur_row.get("doi_o_verification"))
+                doi_verif_changed = bool(new_doi_verif and new_doi_verif != old_doi_verif)
+                if doi_verif_changed:
+                    field_changes["doi_o_verification"] += 1
+                    diffs.append(("doi_o_verification", old_doi_verif, new_doi_verif))
+
                 for col, getter in _UNVAL_FIELDS.items():
                     new_v = getter(row)
                     old_v = _s(cur_row.get(col))
-                    if new_v and new_v != old_v:
+                    # doi_o's blank IS a real correction when the extractor has
+                    # verified there's no DOI — trust it even though new_v is
+                    # empty. Every other field keeps the "blank never overwrites"
+                    # safety rule, since a blank cell there is far more likely a
+                    # missing-data gap in this CSV pull than genuine intent.
+                    allow_blank = col == "doi_o" and new_doi_verif == "no_doi"
+                    if (new_v or allow_blank) and new_v != old_v:
                         unval_set[col] = new_v
                         field_changes[col] += 1
                         diffs.append((col, old_v, new_v))
@@ -103,9 +129,21 @@ def run(csv_path: Path, apply: bool) -> None:
                     field_changes["authors_o"] += 1
                     diffs.append(("authors_o", old_authors, new_authors))
 
-                if not unval_set and not authors_changed:
+                meta_changed = authors_changed or doi_verif_changed
+                if not unval_set and not meta_changed:
                     continue
                 rows_changed += 1
+                # Post-update view of this record, for the ambiguity check below —
+                # a record only becomes DOI-less here, so it must be judged on
+                # what it will look like AFTER this run, not before.
+                post_state[pid] = {
+                    "key": pid,
+                    "record_id": cur_row["record_id"],
+                    "doi_r": cur_row["doi_r"],
+                    "study_r": cur_row["study_r"],
+                    "doi_o": unval_set.get("doi_o", _s(cur_row.get("doi_o"))),
+                    "study_o": unval_set.get("study_o", _s(cur_row.get("study_o"))),
+                }
                 if len(samples) < 12:
                     samples.append((pid, diffs))
 
@@ -116,11 +154,36 @@ def run(csv_path: Path, apply: bool) -> None:
                             f"UPDATE unvalidated SET {sets} WHERE pair_id = %s",
                             list(unval_set.values()) + [pid],
                         )
-                    if authors_changed:
+                    if meta_changed:
+                        meta_sets, meta_params = [], []
+                        if authors_changed:
+                            meta_sets.append("authors_o = %s"); meta_params.append(new_authors)
+                        if doi_verif_changed:
+                            meta_sets.append("doi_o_verification = %s"); meta_params.append(new_doi_verif)
+                        meta_params.append(cur_row["record_id"])
                         cur.execute(
-                            "UPDATE record_metadata SET authors_o = %s WHERE record_id = %s",
-                            (new_authors, cur_row["record_id"]),
+                            f"UPDATE record_metadata SET {', '.join(meta_sets)} WHERE record_id = %s",
+                            meta_params,
                         )
+
+            # A record only ever BECOMES DOI-less here, so flag against the state
+            # this run leaves behind: changed rows as they will be, every other DB
+            # row as it already is (a newly-blank doi_o must be compared with the
+            # replication's untouched originals too, not just the ones in this CSV).
+            ambiguous = _flag_ambiguous_doi_o_titles([
+                post_state.get(pid, {
+                    "key": pid, "record_id": r["record_id"],
+                    "doi_r": r["doi_r"], "study_r": r["study_r"],
+                    "doi_o": _s(r.get("doi_o")), "study_o": _s(r.get("study_o")),
+                })
+                for pid, r in current.items()
+            ])
+            # Only report/annotate records this run actually touched — pre-existing
+            # ambiguity elsewhere isn't this run's business (and was flagged at import).
+            newly_ambiguous = {pid: why for pid, why in ambiguous.items() if pid in post_state}
+            if newly_ambiguous and apply:
+                for pid, why in newly_ambiguous.items():
+                    _note_ambiguous_original(cur, post_state[pid]["record_id"], why)
 
         print(f"\n  Rows that {'changed' if apply else 'would change'}: {rows_changed}")
         for f, n in field_changes.items():
@@ -134,6 +197,15 @@ def run(csv_path: Path, apply: bool) -> None:
                 old_s = (old[:60] + "…") if len(old) > 60 else old
                 new_s = (new[:60] + "…") if len(new) > 60 else new
                 print(f"      {col}: {old_s!r}  ->  {new_s!r}")
+
+        if newly_ambiguous:
+            print(f"\n  ⚠  {len(newly_ambiguous)} record(s) now have a DOI-less original with a "
+                  f"blank or duplicate title.")
+            print(f"     {'Flagged in admin_notes for review' if apply else 'Would be flagged in admin_notes'}. pair_ids:")
+            for pid in list(newly_ambiguous)[:20]:
+                print(f"       {pid}")
+            if len(newly_ambiguous) > 20:
+                print(f"       … and {len(newly_ambiguous) - 20} more")
 
         if apply:
             conn.commit()

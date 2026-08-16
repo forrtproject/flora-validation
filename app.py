@@ -626,7 +626,7 @@ def get_my_judgement_detail(queue_id: str, coder_id: int):
 _PAIR_SELECT = """
     u.record_id, u.pair_id,
     u.doi_r, u.study_r, u.year_r, u.url_r, u.ref_r, u.abstract_r,
-    u.doi_o, u.study_o, u.year_o, u.url_o, u.ref_o,
+    u.doi_o, u.study_o, u.year_o, u.url_o, u.ref_o, u.oa_work_id_o,
     u.type, u.outcome, u.outcome_quote, u.out_quote_source,
     rm.authors_r, rm.authors_o, rm.journal_r, rm.openalex_id_r,
     (SELECT COUNT(*) FROM validation_queue vq2
@@ -1025,7 +1025,12 @@ def assignment_judge(req: JudgeRequest):
         final_study_r  = req.corrected_study_r        or rec.get("final_study_r")        or rec["study_r"]
         final_url_r    = req.corrected_url_r          or rec.get("final_url_r")          or rec["url_r"]
         final_abstract = req.corrected_abstract       or rec.get("final_abstract_r")     or rec["abstract_r"]
-        final_doi_o    = req.corrected_doi_o          or rec.get("final_doi_o")          or rec["doi_o"]
+        # doi_o has a legitimate blank state (see admin_resolve) — the assignment
+        # flow currently never sends '' (a blank client-side input collapses to
+        # null before submission), but a prior deliberate clear stored on the
+        # record must still survive here rather than reverting via `or`.
+        final_doi_o    = req.corrected_doi_o if req.corrected_doi_o is not None else (
+            rec["final_doi_o"] if rec.get("final_doi_o") is not None else rec["doi_o"])
         final_study_o  = req.corrected_study_o        or rec.get("final_study_o")        or rec["study_o"]
         final_quote    = req.corrected_outcome_quote  or rec.get("final_outcome_quote")  or rec["outcome_quote"]
         final_doi_pub  = _normalize_doi(req.doi_r_published) or rec.get("doi_r_published")
@@ -1806,7 +1811,7 @@ def admin_dashboard(x_admin_token: str = Header(...)):
         b_type.append((et, ft)); b_out.append((eo, fo))
         if et != ft: b_counts["type"] += 1
         if eo != fo: b_counts["outcome"] += 1
-        if r["final_doi_o"] and r["final_doi_o"] != r["doi_o"]: b_counts["original"] += 1
+        if r["final_doi_o"] is not None and r["final_doi_o"] != r["doi_o"]: b_counts["original"] += 1
 
     disagreements = {
         "validator": {
@@ -2718,7 +2723,9 @@ def admin_approve(record_id: str, x_admin_token: str = Header(...)):
             (
                 record_id,
                 rec["doi_r"], rec.get("final_study_r") or rec["study_r"], rec["year_r"], rec.get("final_url_r") or rec["url_r"], rec["ref_r"], rec.get("final_abstract_r") or rec["abstract_r"],
-                rec.get("final_doi_o") or rec["doi_o"],
+                # doi_o has a legitimate blank state (see admin_resolve) — a prior
+                # deliberate clear ('') must not fall through to the raw doi_o here.
+                rec["final_doi_o"] if rec.get("final_doi_o") is not None else rec["doi_o"],
                 rec.get("final_study_o") or rec["study_o"],
                 rec["year_o"], rec["url_o"], rec["ref_o"],
                 _wid.get("oa_work_id_o"), _wid.get("oa_work_id_r"),
@@ -2816,7 +2823,19 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
         # When a field isn't re-corrected this pass, keep any prior admin/consensus
         # correction (final_*) — never silently revert to the raw extracted value.
         final_type      = req.corrected_type      if req.type_check     == "incorrect" and req.corrected_type      else (rec.get("final_type")    or rec["type"])
-        final_doi_o     = req.corrected_doi_o     if req.original_check == "incorrect" and req.corrected_doi_o     else (rec.get("final_doi_o")   or rec["doi_o"])
+        # Original DOI can be a legitimate blank (books, chapters, pre-DOI papers,
+        # or an admin deliberately clearing a wrong DOI-less-original mismatch) —
+        # '' is a real correction here, not "no correction submitted", so it can't
+        # use the truthy-`or` pattern the other fields use. None = untouched this
+        # pass; falls back through the prior stored correction (even if '') before
+        # the raw extracted value, so a deliberate clear survives a later
+        # re-resolve instead of reverting to the wrong DOI.
+        if req.original_check == "incorrect" and req.corrected_doi_o is not None:
+            final_doi_o = req.corrected_doi_o.strip()
+        else:
+            final_doi_o = rec.get("final_doi_o")
+            if final_doi_o is None:
+                final_doi_o = rec["doi_o"]
         final_study_o   = req.corrected_study_o   if req.original_check == "incorrect" and req.corrected_study_o   else (rec.get("final_study_o") or rec["study_o"])
         final_outcome   = req.corrected_outcome   if req.outcome_check  == "incorrect" and req.corrected_outcome   else (rec.get("final_outcome") or rec["outcome"])
         final_outcome_q = req.corrected_outcome_quote if req.corrected_outcome_quote else (rec.get("final_outcome_quote") or rec["outcome_quote"])

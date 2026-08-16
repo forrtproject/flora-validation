@@ -1463,13 +1463,18 @@ function renderHistDetail(d) {
 
   const dateStr = d.validated_at ? fmtDate(d.validated_at) : "";
 
-  // Use validated consensus values if available, else fall back to extracted
+  // Use validated consensus values if available, else fall back to extracted.
+  // doi_o alone gets a null-check instead of `||`: validated.doi_o is never SQL
+  // NULL once a validated row exists (see docs/PROJECT.md "DOI-less originals"),
+  // so d.val_doi_o == null unambiguously means "not validated yet" — a validated
+  // '' (always-DOI-less, or an admin's deliberate correction of a wrong DOI)
+  // must display as-is, not fall through to the raw (possibly wrong) d.doi_o.
   const rec = {
     study_r:  d.val_study_r  || d.study_r,
     doi_r:    d.val_doi_r    || d.doi_r,
     year_r:   d.val_year_r   || d.year_r,
     abstract_r: d.val_abstract_r || d.abstract_r,
-    doi_o:    d.val_doi_o    || d.doi_o,
+    doi_o:    d.val_doi_o != null ? d.val_doi_o : d.doi_o,
     study_o:  d.val_study_o  || d.study_o,
     year_o:   d.val_year_o   || d.year_o,
     type:     d.val_type     || d.extracted_type,
@@ -2310,6 +2315,12 @@ function renderPairInto(container, p, { onboarding, judgeCount }) {
   const scholarUrl = `https://scholar.google.com/scholar?q=${scholarQuery}`;
   const oUrl = p.doi_o ? `https://doi.org/${p.doi_o}` : null;
   const oOaUrl = p.oa_url_o || null;
+  // DOI-less originals (books, chapters, pre-DOI papers): no doi.org link exists.
+  // Fall back to the extractor's link (url_o, usually OpenAlex) or one built from
+  // the OpenAlex work id, so there's still something to click through and verify.
+  const oFallbackUrl = !p.doi_o
+    ? (p.url_o || (p.oa_work_id_o ? `https://openalex.org/${p.oa_work_id_o}` : null))
+    : null;
   // Journal of the original study, pulled from ref_o ("Surname · Year · Journal").
   const oJournal = (() => {
     const parts = (p.ref_o || "").split("·").map(s => s.trim()).filter(Boolean);
@@ -2407,8 +2418,13 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
             <div class="meta">
               ${escapeHtml(p.authors_o || "?")} · ${fmtYear(p.year_o)}${oJournal ? " · " + escapeHtml(oJournal) : ""}
               ${oOaUrl ? ` · <a href="${escapeHtml(oOaUrl)}" target="_blank" rel="noopener" title="Open access PDF">${lockIcon(true)} OA</a>` : ""}
-              ${oUrl ? ` · <a href="${escapeHtml(oUrl)}" target="_blank" rel="noopener" title="${oOaUrl ? "DOI page" : "Publisher page (likely paywalled)"}">${oOaUrl ? "" : lockIcon(false) + " "}${escapeHtml(p.doi_o)}</a>` : ""}
+              ${oUrl
+                ? ` · <a href="${escapeHtml(oUrl)}" target="_blank" rel="noopener" title="${oOaUrl ? "DOI page" : "Publisher page (likely paywalled)"}">${oOaUrl ? "" : lockIcon(false) + " "}${escapeHtml(p.doi_o)}</a>`
+                : oFallbackUrl
+                ? ` · <a href="${escapeHtml(oFallbackUrl)}" target="_blank" rel="noopener" title="OpenAlex record">OpenAlex ↗</a>`
+                : ""}
             </div>
+            ${!p.doi_o ? `<div class="evidence">No registered DOI for the original — verify using title, author, and year.</div>` : ""}
             ${p.link_evidence ? `<div class="evidence">Evidence: ${escapeHtml(p.link_evidence)}</div>` : ""}
           </div>
           <div class="choices">
@@ -4065,6 +4081,28 @@ function renderAdminDetail(data) {
     ? `<a href="https://doi.org/${escapeHtml(doi)}" target="_blank" rel="noopener">${escapeHtml(doi)}</a>`
     : "—";
 
+  // Original DOI, with an OpenAlex fallback ONLY for originals that were ALWAYS
+  // DOI-less (raw doi_o blank at import — the extractor's dedicated no-DOI path,
+  // where url_o/oa_work_id_o are populated independently of any DOI). When a
+  // NON-blank raw doi_o was later cleared here as wrong, url_o/oa_work_id_o are
+  // NOT a safe substitute: url_o is mechanically derived from doi_o at import
+  // for any record whose CSV didn't supply its own (csv_to_db._url_o, and
+  // unconditionally so for every record imported before that fix), and
+  // oa_work_id_o gets backfilled via an OpenAlex lookup keyed on doi_o
+  // (backfill_oa_work_ids.py) — so a wrong DOI contaminates both fields too.
+  // Showing either here would silently relink to the very page the admin just
+  // rejected, mislabeled as a verified "no registered DOI" OpenAlex record.
+  const origIdLink = (doi) => {
+    if (doi) return doiLink(doi);
+    if (rec.doi_o) {
+      return `<span class="chk-na-note">DOI cleared — no verified link available</span>`;
+    }
+    const fallback = rec.url_o || (rec.oa_work_id_o ? `https://openalex.org/${rec.oa_work_id_o}` : null);
+    return fallback
+      ? `<a href="${escapeHtml(fallback)}" target="_blank" rel="noopener">OpenAlex ↗</a> <span class="chk-na-note">no registered DOI</span>`
+      : `<span class="chk-na-note">no registered DOI</span>`;
+  };
+
   const humanCard = (label, v, qs = {}) => {
     if (!v) return `<div class="admin-val-card admin-val-empty"><div class="admin-val-label">${label}</div><p>Not yet submitted.</p></div>`;
     const tier = v.validator_tier ?? 0;
@@ -4215,7 +4253,7 @@ function renderAdminDetail(data) {
       finalDoiR      && finalDoiR      !== rec.doi_r          ? ["Replication DOI",   rec.doi_r,          finalDoiR]      : null,
       finalUrlR      && finalUrlR      !== rec.url_r          ? ["Replication URL",   rec.url_r,          finalUrlR]      : null,
       finalStudyO    && finalStudyO    !== rec.study_o        ? ["Original title",    rec.study_o,        finalStudyO]    : null,
-      finalDoiO      && finalDoiO      !== rec.doi_o          ? ["Original DOI",      rec.doi_o,          finalDoiO]      : null,
+      finalDoiO      !== rec.doi_o                            ? ["Original DOI",      rec.doi_o,          finalDoiO]      : null,
       finalType      && finalType      !== rec.type           ? ["Type",              rec.type,           finalType]      : null,
       finalOutcome   && finalOutcome   !== rec.outcome        ? ["Outcome",           fmtOutcome(rec.outcome), fmtOutcome(finalOutcome)] : null,
       finalQuote     && finalQuote     !== rec.outcome_quote  ? ["Quote",             rec.outcome_quote,  finalQuote]     : null,
@@ -4251,7 +4289,7 @@ function renderAdminDetail(data) {
         ${finalAltIds ? `<div class="fp-row"><span class="fp-label">Alt. identifiers</span><span class="fp-value">${escapeHtml(finalAltIds)}</span></div>` : ""}
         <div class="fp-row fp-divider"></div>
         <div class="fp-row"><span class="fp-label">Original</span><span class="fp-value">${escapeHtml(finalStudyO || "—")}</span></div>
-        <div class="fp-row"><span class="fp-label">DOI</span><span class="fp-value">${doiLink(finalDoiO)}</span></div>
+        <div class="fp-row"><span class="fp-label">DOI</span><span class="fp-value">${origIdLink(finalDoiO)}</span></div>
         <div class="fp-row fp-divider"></div>
         <div class="fp-row"><span class="fp-label">Type</span><span class="fp-value">${escapeHtml(finalType || "—")}</span></div>
         <div class="fp-row"><span class="fp-label">Outcome</span><span class="fp-value">${escapeHtml(fmtOutcome(finalOutcome) || "—")}</span></div>
@@ -4295,7 +4333,11 @@ function renderAdminDetail(data) {
   // correction → raw extracted. stored* is what the DB holds (change-detection base).
   const storedStudyR   = rec.final_study_r       || rec.study_r;
   const storedStudyO   = rec.final_study_o       || rec.study_o;
-  const storedDoiO     = rec.final_doi_o         || rec.doi_o;
+  // final_doi_o has a legitimate blank state — a deliberately-cleared "" (books,
+  // chapters, pre-DOI originals, or an admin correcting a wrong DOI-less-original
+  // match) must not fall through to the raw doi_o like the truthy-`||` fields
+  // below do; only a genuine null ("never resolved") should fall through.
+  const storedDoiO     = rec.final_doi_o != null ? rec.final_doi_o : rec.doi_o;
   const storedType     = rec.final_type          || rec.type;
   const storedOutcome  = rec.final_outcome       || rec.outcome;
   const storedUrlR     = rec.final_url_r         || rec.url_r;
@@ -4303,7 +4345,7 @@ function renderAdminDetail(data) {
   const finalStudyR    = rec.final_study_r       || _agreed("corrected_study_r") || rec.study_r;
   const finalDoiR      = rec.final_doi_r         || rec.doi_r;
   const finalStudyO    = rec.final_study_o       || _agreed("corrected_study_o") || rec.study_o;
-  const finalDoiO      = rec.final_doi_o         || _agreed("corrected_doi_o")   || rec.doi_o;
+  const finalDoiO      = rec.final_doi_o != null ? rec.final_doi_o : (_agreed("corrected_doi_o") || rec.doi_o);
   const finalType      = rec.final_type          || _agreedType                  || rec.type;
   const finalOutcome   = rec.final_outcome       || _agreed("corrected_outcome") || rec.outcome;
   const finalQuote     = rec.final_outcome_quote || proposedQuote                || rec.outcome_quote;
@@ -4423,7 +4465,7 @@ function renderAdminDetail(data) {
           <input id="ar-study-o" class="admin-input" value="${escapeHtml(finalStudyO || "")}">
 
           <label class="admin-form-label">Original DOI</label>
-          <input id="ar-doi-o" class="admin-input" value="${escapeHtml(finalDoiO || "")}">
+          <input id="ar-doi-o" class="admin-input" value="${escapeHtml(finalDoiO || "")}" placeholder="Leave blank if the original has no registered DOI (book, chapter, pre-DOI paper)">
 
           <label class="admin-form-label">Type</label>
           <select id="ar-type-sel" class="admin-select">${typeOpts}</select>
@@ -4622,7 +4664,9 @@ async function submitAdminResolve(recordId) {
   const origAltIds    = form.dataset.origAltIdentifierR;
 
   const typeChanged     = newType      !== origType;
-  const origChanged     = newStudyO    !== origStudyO || newDoiO !== origDoiO;
+  const studyOChanged   = newStudyO    !== origStudyO;
+  const doiOChanged     = newDoiO      !== origDoiO;
+  const origChanged     = studyOChanged || doiOChanged;
   const outcomeChanged  = newOutcome   !== origOutcome;
   const studyRChanged   = newStudyR    !== origStudyR;
   const doiRChanged     = newDoiR      !== origDoiR;
@@ -4635,8 +4679,11 @@ async function submitAdminResolve(recordId) {
     original_check:          origChanged    ? "incorrect" : "correct",
     outcome_check:           outcomeChanged ? "incorrect" : "correct",
     corrected_type:          typeChanged     ? newType                  : null,
-    corrected_doi_o:         origChanged     ? (newDoiO      || null)   : null,
-    corrected_study_o:       origChanged     ? (newStudyO    || null)   : null,
+    // '' is meaningful for the Original DOI (deliberately clears a wrong or
+    // no-DOI original); null means untouched. Title has no legitimate blank
+    // state, so it keeps the "empty means no correction" rule.
+    corrected_doi_o:         doiOChanged     ? newDoiO                  : null,
+    corrected_study_o:       studyOChanged   ? (newStudyO    || null)   : null,
     corrected_outcome:       outcomeChanged  ? newOutcome               : null,
     corrected_outcome_quote: newQuote        || null,
     corrected_study_r:       studyRChanged   ? (newStudyR    || null)   : null,
