@@ -172,6 +172,28 @@ def test_dropped_outcome_note_survives_verbose_model_notes():
     assert "a totally invented category" in result["notes"]
 
 
+def test_blank_doi_o_gets_an_honest_sentinel_not_a_blank_line():
+    """A DOI-less original (book, chapter, pre-DOI paper) must not render as a
+    blank 'Original study DOI:' line in the prompt — that reads as a data-quality
+    gap and could bias original_check. It should say plainly that none exists."""
+    from llm_validator import run_llm_validation
+    record = {**SAMPLE_RECORD, "doi_o": ""}
+    captured = {}
+
+    def fake_call(prompt, record_type):
+        captured["prompt"] = prompt
+        return json.dumps({
+            "type_check": "correct", "original_check": "correct", "outcome_check": "correct",
+            "corrected_outcome": None, "corrected_doi_o": None, "corrected_type": None, "notes": "",
+        })
+
+    with patch("llm_validator._call_gemini", side_effect=fake_call):
+        run_llm_validation(record, context="sanity_check")
+
+    assert "Original study DOI: \n" not in captured["prompt"]
+    assert "no registered DOI" in captured["prompt"]
+
+
 def test_reproduction_type_accepts_valid_reproduction_label():
     """The real reproduction vocabulary (compound labels) passes through unchanged."""
     from llm_validator import run_llm_validation

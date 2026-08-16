@@ -179,7 +179,13 @@ def _insert_validated(cur, record: dict, final: dict) -> None:
     # A work id belongs to a specific DOI: if consensus resolves the original to a
     # different DOI than the one the work id was fetched for, drop it so we never
     # publish a work id pointing at the old paper. (doi_r isn't corrected in consensus.)
-    wid_o = record.get("oa_work_id_o") if final["doi_o"] == (record.get("final_doi_o") or record.get("doi_o")) else None
+    # doi_o has a legitimate blank state (see admin_resolve/db_schema.sql) — a
+    # deliberate '' clear must not collapse to the raw doi_o here either, even
+    # though today's call graph can't actually reach this branch with one (only
+    # admin actions can produce a '' final_doi_o, and they never re-enter this
+    # function) — matches the same fix applied everywhere else doi_o is read.
+    _prior_doi_o = record["final_doi_o"] if record.get("final_doi_o") is not None else record.get("doi_o")
+    wid_o = record.get("oa_work_id_o") if final["doi_o"] == _prior_doi_o else None
     wid_r = record.get("oa_work_id_r")
     cur.execute(
         """

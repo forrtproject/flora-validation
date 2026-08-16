@@ -530,9 +530,89 @@ timing that drives claiming and reaping. `UNIQUE (record_id, validator_slot)`.
 Includes `doi_r_published` and `alt_identifier_r` (added Aug 2026).
 This is what gets exported.
 
-**`record_metadata`** (24 cols) — upstream extraction provenance: filter and link method,
-evidence, confidence, model, author lists, OpenAlex ids, `original_rank`/`n_originals`
-for multi-original papers. Not shown in the validation UI.
+**`record_metadata`** (25 cols) — upstream extraction provenance: filter and link method,
+evidence, confidence, model, author lists, OpenAlex ids, `doi_o_verification`,
+`original_rank`/`n_originals` for multi-original papers. Not shown in the validation UI.
+
+### DOI-less originals
+
+Some replication targets have no registered DOI at all — books, book chapters,
+pre-DOI-era papers. The extractor marks these `doi_o_verification = 'no_doi'` and
+ships `doi_o = ''` with identity carried in columns that already exist: `title_o`,
+`oa_work_id_o`, and a `url_o` pointing at OpenAlex instead of doi.org. **`doi_o`
+stays `''`, never `NULL`**, on these rows — `validated`'s natural key
+`(doi_r, study_r, doi_o, study_o)` and its `ON CONFLICT` clause rely on equality,
+and Postgres never treats two NULLs as equal, so a NULL `doi_o` would silently
+break upsert/dedup for these records.
+
+What honors this end to end:
+- **Import** (`csv_to_db.py`, `update_originals.py`) — `_url_o()` prefers the CSV's
+  own `url_o` over the derived `https://doi.org/{doi_o}` link, so the OpenAlex
+  identity survives instead of being overwritten by an empty derived link.
+  `update_originals.py` additionally exempts `doi_o` from its "a blank CSV cell
+  never overwrites a good value" rule — but **only** when that row carries
+  `doi_o_verification == 'no_doi'`, i.e. the extractor explicitly asserts there is
+  no DOI. Without that exemption the script could never correct a wrong DOI *to*
+  blank; without the `'no_doi'` condition an incomplete CSV pull could wipe good
+  DOIs wholesale.
+- **Validator app** — Gate II falls back to an "OpenAlex ↗" link (`url_o`, or one
+  built from `oa_work_id_o`) when `doi_o` is blank, with a "No registered DOI —
+  verify using title, author, and year" note, instead of rendering with no link
+  at all.
+- **Admin review** — the Final Preview's Original DOI row does the same fallback,
+  **but only when the raw extracted `doi_o` was itself blank**. When a non-blank
+  `doi_o` was deliberately cleared as wrong, it shows "DOI cleared — no verified
+  link available" and no link: `url_o` is mechanically derived from `doi_o` at
+  import for any row whose CSV didn't supply its own, and `oa_work_id_o` is
+  backfilled from a DOI lookup (`backfill_oa_work_ids.py`), so **both fallback
+  fields are contaminated by a wrong DOI** and would silently relink to the very
+  page the admin just rejected.
+  The **Original DOI** field in the resolution form treats `''` as a deliberate,
+  persisted correction (distinct from `null` = "never resolved, use the raw
+  extracted value") — the same clear-to-empty pattern as `doi_r_published` /
+  `alt_identifier_r` — so an admin can correct a wrongly-linked DOI-less original
+  (e.g. the extractor matching a book to an unrelated review's DOI) back to blank,
+  and it stays blank on a later re-resolve instead of reverting.
+- **LLM validator** — a blank `doi_o` renders as an explicit
+  `"(none — original has no registered DOI, e.g. a book or pre-DOI-era paper)"`
+  sentinel in the prompt rather than a bare blank line, so the model doesn't read
+  the absence as a data-quality problem.
+- **Export** — `export_validated.py`'s manual-references flagging already treats a
+  non-empty `url_o` as resolvable-enough (`is_real_doi(doi_o) OR url_o present`),
+  so once import carries the real `url_o` through, these rows stop being flagged
+  for manual reference-filling automatically — no export change was needed.
+
+**The `'' or NULL` trap.** Everywhere `final_doi_o` is read, use an explicit
+`is not None` / `!= null` check, never the `x or y` truthy fallback this codebase
+uses for every other field — `''` (deliberately cleared) and `None` (never touched)
+are different states, and collapsing them silently reverts an admin's correction to
+the wrong extracted DOI. Sites that must honor this: `admin_resolve`,
+`assignment_judge`, `admin_approve`, the dashboard disagreement counter, and
+`consensus_engine._insert_validated`'s `wid_o` guard (dormant today — nothing can
+currently reach it with a `''` — but kept consistent so a future re-validation path
+can't reintroduce the bug). On the frontend: `storedDoiO` / `finalDoiO` in
+`renderAdminDetail`, the Final Preview's changes-table row, and `renderHistDetail`'s
+`val_doi_o` fallback.
+
+**Ambiguous DOI-less originals (warning, not a block).** Because `doi_o` is `''` for
+*all* DOI-less originals, `study_o` is the only field left distinguishing two of them
+cited by the *same* replication. If two such originals share a title (compared loosely
+— casefolded, whitespace-collapsed) or one has a blank title, they collide on
+`(doi_r, study_r, doi_o, study_o)` and the second silently overwrites the first via
+`ON CONFLICT DO UPDATE`. `csv_to_db._flag_ambiguous_doi_o_titles()` detects this;
+both import paths call it and **still import the row** — this is deliberately a
+warning, not a hard constraint, so a legitimately odd row can never break the
+pipeline. Each flagged record is surfaced twice, because an unattended nightly import
+makes console output easy to miss:
+1. a console summary listing the affected `pair_id`s, and
+2. an `⚠ Auto-flagged:` line appended to the record's `admin_notes`, which renders at
+   the top of the admin review screen — so the next person to open that record sees
+   it regardless of who was watching the import.
+
+Note this is scoped to a single replication's originals: two *different* replications
+citing the same DOI-less book is fine (`doi_r` differs, so the rows stay distinct) and
+is not flagged. As of the current extractor CSV, 38 DOI-less originals exist and none
+are ambiguous.
 
 ### Supporting tables
 

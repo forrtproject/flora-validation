@@ -59,11 +59,65 @@ def _derive_url_o(doi_o: str) -> str:
     return f"https://doi.org/{doi_o}" if doi_o else ""
 
 
+def _url_o(row) -> str:
+    """The original's URL: prefer the CSV's url_o (for DOI-less originals —
+    books, chapters, pre-DOI papers — the extractor points it at OpenAlex),
+    falling back to a doi.org link derived from doi_o."""
+    return _s(row.get("url_o")) or _derive_url_o(row.get("doi_o"))
+
+
 def _s(val) -> str:
     """Coerce to stripped string; treat NaN/None as empty string."""
     if val is None or (isinstance(val, float) and val != val):
         return ""
     return str(val).strip()
+
+
+def _normalize_title(t) -> str:
+    """Casefold + collapse whitespace, for loose duplicate-title comparison
+    (catches near-dupes like trailing periods or double spaces, not just
+    byte-identical strings)."""
+    return re.sub(r'\s+', ' ', _s(t)).casefold()
+
+
+def _flag_ambiguous_doi_o_titles(rows: list) -> dict:
+    """Among DOI-less originals (doi_o == ''), find ones whose title can't tell
+    them apart from another original of the SAME replication. doi_o is blank
+    for every DOI-less original, so the title is the only thing left to keep
+    two distinct originals of one replication from silently merging into a
+    single row under validated's (doi_r, study_r, doi_o, study_o) natural key.
+
+    rows: dicts with 'key' (caller-chosen id — pair_id or record_id), 'doi_r',
+          'study_r', 'study_o', 'doi_o'. Rows with a non-blank doi_o are ignored.
+    Returns {key: reason} for every row that should be flagged for admin review.
+    Warning only — callers still import/update the row, just attach the reason
+    somewhere a human will see it (admin_notes, a console summary, etc).
+    """
+    groups = {}
+    for r in rows:
+        if _s(r.get("doi_o")):
+            continue
+        groups.setdefault((_s(r.get("doi_r")), _s(r.get("study_r"))), []).append(r)
+
+    flagged = {}
+    for members in groups.values():
+        by_title = {}
+        for r in members:
+            by_title.setdefault(_normalize_title(r.get("study_o")), []).append(r)
+        for norm_title, dupes in by_title.items():
+            if not norm_title:
+                for r in dupes:
+                    flagged[r["key"]] = (
+                        "this original has no registered DOI and a blank title — "
+                        "cannot be distinguished from other originals of this replication"
+                    )
+            elif len(dupes) > 1:
+                for r in dupes:
+                    flagged[r["key"]] = (
+                        "this original has no registered DOI and shares its title with "
+                        "another original of this replication — cannot be told apart"
+                    )
+    return flagged
 
 
 def _int_or_none(val) -> "int | None":
@@ -113,7 +167,7 @@ def _build_unvalidated_row(record_id: str, pair_id: str, row: pd.Series) -> dict
         "doi_o":             _s(row.get("doi_o")),
         "study_o":           _s(row.get("title_o")),
         "year_o":            _s(row.get("year_o")),
-        "url_o":             _derive_url_o(row.get("doi_o")),
+        "url_o":             _url_o(row),
         "ref_o":             _s(row.get("ref_o")),
         # OpenAlex work ids ship with newer extractor data; accept either name.
         "oa_work_id_o":      _work_id(row.get("oa_work_id_o") or row.get("openalex_id_o")),
@@ -137,6 +191,9 @@ def _build_metadata_row(record_id: str, pair_id: str, row: pd.Series) -> dict:
         "filter_confidence":          _s(row.get("filter_confidence")),
         "original_match_type":        _s(row.get("original_match_type")),
         "original_match_confidence":  _s(row.get("original_match_confidence")),
+        # 'no_doi' marks originals with no registered DOI by design (books,
+        # chapters, pre-DOI papers) — distinguishes them from lookup failures.
+        "doi_o_verification":         _s(row.get("doi_o_verification")),
         "link_method":                _s(row.get("link_method")),
         "link_evidence":              _s(row.get("link_evidence")),
         "link_confidence":            _s(row.get("link_confidence")),
@@ -181,7 +238,7 @@ def _insert_metadata(cur, row: dict) -> None:
         INSERT INTO record_metadata (
             record_id, pair_id,
             filter_status, filter_method, filter_evidence, filter_confidence,
-            original_match_type, original_match_confidence,
+            original_match_type, original_match_confidence, doi_o_verification,
             link_method, link_evidence, link_confidence, link_llm_model,
             outcome_confidence,
             authors_r, authors_o, journal_r, openalex_id_r, source,
@@ -189,7 +246,7 @@ def _insert_metadata(cur, row: dict) -> None:
         ) VALUES (
             %(record_id)s, %(pair_id)s,
             %(filter_status)s, %(filter_method)s, %(filter_evidence)s, %(filter_confidence)s,
-            %(original_match_type)s, %(original_match_confidence)s,
+            %(original_match_type)s, %(original_match_confidence)s, %(doi_o_verification)s,
             %(link_method)s, %(link_evidence)s, %(link_confidence)s, %(link_llm_model)s,
             %(outcome_confidence)s,
             %(authors_r)s, %(authors_o)s, %(journal_r)s, %(openalex_id_r)s, %(source)s,
@@ -197,6 +254,30 @@ def _insert_metadata(cur, row: dict) -> None:
         )
         """,
         row,
+    )
+
+
+_AMBIGUOUS_NOTE_PREFIX = "⚠ Auto-flagged:"
+
+
+def _note_ambiguous_original(cur, record_id: str, reason: str) -> None:
+    """Append the flag to admin_notes so it surfaces on the admin review screen
+    (the import runs unattended — a console line alone is easy to miss). Appends
+    rather than overwrites, and won't duplicate itself on a re-run."""
+    note = f"{_AMBIGUOUS_NOTE_PREFIX} {reason} — please verify before resolving."
+    cur.execute(
+        """
+        UPDATE unvalidated
+        SET admin_notes = CASE
+                WHEN admin_notes IS NULL OR admin_notes = '' THEN %s
+                WHEN position(%s in admin_notes) > 0 THEN admin_notes
+                ELSE admin_notes || E'\n' || %s
+            END,
+            note_saved_by = COALESCE(note_saved_by, 'import'),
+            note_saved_at = NOW()
+        WHERE record_id = %s
+        """,
+        (note, note, note, record_id),
     )
 
 
@@ -258,8 +339,19 @@ def run_import(csv_path: Path, dry_run: bool = False) -> None:
                 existing_pair_ids = _load_existing_pair_ids(cur)
                 print(f"  Already in DB:      {len(existing_pair_ids)} pair_ids — will skip")
 
+                # Which DOI-less originals can't be told apart by title? Computed
+                # over the whole resolved set, so an incoming row is compared
+                # against its siblings in this same CSV.
+                ambiguous = _flag_ambiguous_doi_o_titles([
+                    {"key": _s(r.get("pair_id")), "doi_r": r.get("doi_r"),
+                     "study_r": r.get("title_r"), "study_o": r.get("title_o"),
+                     "doi_o": r.get("doi_o")}
+                    for _, r in resolved.iterrows()
+                ])
+
                 inserted = 0
                 skipped_dup = 0
+                flagged_ambiguous = []
 
                 for _, row in resolved.iterrows():
                     pair_id = _s(row.get("pair_id"))
@@ -272,6 +364,10 @@ def run_import(csv_path: Path, dry_run: bool = False) -> None:
                     if _insert_unvalidated(cur, _build_unvalidated_row(record_id, pair_id, row)):
                         _insert_metadata(cur, _build_metadata_row(record_id, pair_id, row))
                         _insert_queue_slots(cur, record_id)
+                        # Warning only — the row is imported either way.
+                        if pair_id in ambiguous:
+                            _note_ambiguous_original(cur, record_id, ambiguous[pair_id])
+                            flagged_ambiguous.append(pair_id)
                         inserted += 1
                         if inserted % 10 == 0:
                             print(f"  … imported {inserted} records")
@@ -279,6 +375,14 @@ def run_import(csv_path: Path, dry_run: bool = False) -> None:
                         skipped_dup += 1
 
         print(f"\nDone. Inserted: {inserted}  |  Skipped (already in DB): {skipped_dup}")
+        if flagged_ambiguous:
+            print(f"\n  ⚠  {len(flagged_ambiguous)} imported record(s) have a DOI-less original "
+                  f"with a blank or duplicate title.")
+            print("     Flagged in admin_notes for review. pair_ids:")
+            for pid in flagged_ambiguous[:20]:
+                print(f"       {pid}")
+            if len(flagged_ambiguous) > 20:
+                print(f"       … and {len(flagged_ambiguous) - 20} more")
     finally:
         conn.close()
 

@@ -225,10 +225,15 @@ def run_llm_validation(record: dict, context: str) -> dict:
     # override this via corrected_type if the abstract says otherwise).
     record_type = record.get("type") if record.get("type") == "reproduction" else "replication"
 
+    # Some originals genuinely have no DOI (books, chapters, pre-DOI-era papers) —
+    # a blank line here would read as a data-quality gap rather than an honest "no
+    # DOI exists", and could bias the model toward flagging original_check.
+    doi_o = record.get("doi_o") or "(none — original has no registered DOI, e.g. a book or pre-DOI-era paper)"
+
     prompt = _PROMPT_TEMPLATE.format(
         abstract_r=record.get("abstract_r") or "(no abstract)",
         type=record.get("type") or "",
-        doi_o=record.get("doi_o") or "",
+        doi_o=doi_o,
         study_o=record.get("study_o") or "",
         year_o=record.get("year_o") or "",
         outcome=record.get("outcome") or "",

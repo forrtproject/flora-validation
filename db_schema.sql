@@ -427,6 +427,13 @@ ALTER TABLE validated        ADD COLUMN IF NOT EXISTS doi_r_published  TEXT;
 ALTER TABLE unvalidated      ADD COLUMN IF NOT EXISTS alt_identifier_r TEXT;
 ALTER TABLE validated        ADD COLUMN IF NOT EXISTS alt_identifier_r TEXT;
 
+-- DOI-less originals (books, chapters, pre-DOI papers): the extractor marks them
+-- 'no_doi' in doi_o_verification and ships doi_o = '' with identity in
+-- oa_work_id_o / title_o / url_o (an OpenAlex link). NOTE: doi_o stays '' (never
+-- NULL) on these rows — the validated natural key and its ON CONFLICT clause rely
+-- on equality, and Postgres treats NULLs as never-equal in unique constraints.
+ALTER TABLE record_metadata ADD COLUMN IF NOT EXISTS doi_o_verification TEXT;
+
 -- Normalise empty strings to NULL. The seed/backfill below (and the trigger) key on
 -- IS NULL, so a stray '' would be treated as 'already filled' and never get an id.
 UPDATE unvalidated SET oa_work_id_o = NULL WHERE oa_work_id_o = '';
