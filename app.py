@@ -2279,6 +2279,34 @@ def admin_entry_detail(record_id: str, x_admin_token: str = Header(...)):
             s["record_id"] = str(s["record_id"])
             queue_slots.append(s)
 
+        # Track record for the two human cards: lifetime judgement count (from
+        # validators, so assignment work counts too) and how many of their
+        # judgements an admin has flagged. Keyed by validator id (as a string —
+        # JSON object keys always are).
+        human_ids = {s.get("validator_id") for s in queue_slots
+                     if s.get("validator_slot") in ("human_1", "human_2")}
+        for key in ("validator_1", "validator_2"):
+            human_ids.add((record.get(key) or {}).get("validator_id"))
+        human_ids = [i for i in human_ids if i]
+
+        validator_stats = {}
+        if human_ids:
+            cur.execute(
+                """
+                SELECT v.id AS validator_id,
+                       v.total_judgements AS judged,
+                       (SELECT COUNT(*) FROM validation_queue vq
+                        WHERE vq.validator_id = v.id AND vq.flagged) AS flags
+                FROM validators v
+                WHERE v.id = ANY(%s)
+                """,
+                (human_ids,),
+            )
+            for r in cur.fetchall():
+                validator_stats[str(r["validator_id"])] = {
+                    "judged": r["judged"], "flags": r["flags"],
+                }
+
     # Detect abstract-only conflict
     import re as _re
     def _norm(t): return _re.sub(r'[^a-z0-9]', '', (t or "").lower())
@@ -2299,7 +2327,9 @@ def admin_entry_detail(record_id: str, x_admin_token: str = Header(...)):
         and bool(v1) and bool(v2)
     )
 
-    return {"record": record, "queue_slots": queue_slots, "abstract_only_conflict": abstract_only_conflict}
+    return {"record": record, "queue_slots": queue_slots,
+            "abstract_only_conflict": abstract_only_conflict,
+            "validator_stats": validator_stats}
 
 
 @app.post("/api/admin/queue/{queue_id}/flag")

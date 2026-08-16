@@ -449,6 +449,11 @@ human consensus could display as 0%.) Sorting the column sorts by the human-only
 and stamps `admin_approved`. Flagging sends it to `need_review`. Every admin action is
 attributed by handle.
 
+Each validator card on the review screen shows the validator's track record next to
+their name — lifetime judgements submitted (`validators.total_judgements`, so
+assignment work counts) and how many of their judgements admins have flagged
+(served as `validator_stats` on the entry-detail endpoint).
+
 Abstract edits: a record whose validators disagree only on an edited abstract lands in
 `need_review` with **no** `final_*` values written. The admin detail screen therefore
 pre-fills both the Final Preview and the resolution form's Abstract field with the
