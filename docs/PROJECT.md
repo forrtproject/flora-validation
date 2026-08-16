@@ -409,6 +409,12 @@ Eight tabs:
 and stamps `admin_approved`. Flagging sends it to `need_review`. Every admin action is
 attributed by handle.
 
+Abstract edits: a record whose validators disagree only on an edited abstract lands in
+`need_review` with **no** `final_*` values written. The admin detail screen therefore
+pre-fills both the Final Preview and the resolution form's Abstract field with the
+validators' proposed edit (longest wins when the two differ), flags it as a pending
+change, and publishes it on resolve — no manual copy-paste needed.
+
 ---
 
 ## 10. Database schema

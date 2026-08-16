@@ -2726,6 +2726,14 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
   margin-bottom: 0.3rem;
 }
 
+.admin-label-note {
+  margin-left: 0.5rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--amber);
+}
+
 .admin-select, .admin-input, .admin-textarea {
   width: 100%;
   padding: 0.45rem 0.7rem;
