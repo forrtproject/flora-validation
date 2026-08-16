@@ -3142,6 +3142,21 @@ async function submitJudgement() {
   if (!isNotValidation && j.original === "unsure") addl.was_unsure_original = true;
   if (!isNotValidation && j.outcome  === "unsure") addl.was_unsure_outcome  = true;
 
+  // Quote gate (silent): if the outcome quote (validator's edit, else extracted)
+  // isn't fuzzily in the abstract, don't bother the validator — flag it, so the
+  // consensus engine routes the record to need_review and the admin screen shows
+  // a hint. Skipped where checking is meaningless: full-text-quote records, hard
+  // mode / assignments (no reliable abstract), "not a replication" calls, or no
+  // quote/abstract to compare.
+  if (!isNotValidation && state.mode !== "hard" && !state.assignment &&
+      p.out_quote_source !== "full_text") {
+    const effQuote    = (j.edited_outcome_quote || p.outcome_phrase || "").trim();
+    const effAbstract = (j.edited_abstract || p.abstract_r || "").trim();
+    if (effQuote && effAbstract && !quoteAppearsInAbstract(effQuote, effAbstract)) {
+      addl.quote_not_in_abstract = true;
+    }
+  }
+
   const payload = {
     coder_id:  state.coder.coder_id,
     record_id: String(p.record_id),
@@ -3463,6 +3478,61 @@ function _shakeAndHint(anchorEl, message) {
 
   // Auto-remove after 6 seconds
   setTimeout(() => hint.remove(), 6000);
+}
+
+/* ---------- Quote-in-abstract gate ---------- */
+// Mirrors the backend's normalisation (consensus_engine._normalize): lowercase,
+// keep only a-z0-9 — case, punctuation and whitespace never cause a mismatch.
+function _normForMatch(s) {
+  return (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+// Smallest edit distance between `needle` and ANY substring of `haystack`
+// (semi-global alignment: the window may start and end anywhere). O(m·n),
+// two rolling rows — a few ms at abstract sizes.
+function _bestWindowEditDistance(needle, haystack) {
+  const m = needle.length, n = haystack.length;
+  let prev = new Int32Array(n + 1);   // i = 0 row: all zeros (window start is free)
+  let curr = new Int32Array(n + 1);
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    const nc = needle.charCodeAt(i - 1);
+    for (let j = 1; j <= n; j++) {
+      const sub = prev[j - 1] + (nc === haystack.charCodeAt(j - 1) ? 0 : 1);
+      const del = prev[j] + 1;
+      const ins = curr[j - 1] + 1;
+      curr[j] = sub < del ? (sub < ins ? sub : ins) : (del < ins ? del : ins);
+    }
+    const swap = prev; prev = curr; curr = swap;
+  }
+  let best = prev[0];
+  for (let j = 1; j <= n; j++) if (prev[j] < best) best = prev[j];
+  return best;
+}
+
+// Does the quote (fuzzily) appear in the abstract? Exact normalised containment
+// first; otherwise accept when the closest window differs by ≤15% of the quote
+// length — tolerant of OCR/parsing fixes, still catches absent quotes.
+// Validators legitimately splice non-adjacent passages with an ellipsis
+// ("A ... B"); normalisation would glue the halves together and bill the whole
+// skipped gap as edit distance, so each ellipsis-separated fragment is checked
+// on its own instead.
+function _fragmentInAbstract(q, a) {
+  if (a.includes(q)) return true;
+  if (q.length * a.length > 5e6) return false;  // degenerate sizes: exact check only
+  return _bestWindowEditDistance(q, a) <= Math.ceil(q.length * 0.15);
+}
+
+function quoteAppearsInAbstract(quote, abstract) {
+  const a = _normForMatch(abstract);
+  if (!a) return true;                          // nothing to check against
+  const fragments = String(quote || "")
+    .split(/(?:\.{3,}|…|\[\s*(?:\.{3,}|…)\s*\])/)
+    .map(_normForMatch)
+    .filter((f) => f.length >= 10);             // too short to match meaningfully
+  if (fragments.length) return fragments.every((f) => _fragmentInAbstract(f, a));
+  const q = _normForMatch(quote);
+  return !q || _fragmentInAbstract(q, a);
 }
 
 async function guardedSubmit() {
@@ -3792,9 +3862,12 @@ function renderAdminTable(entries, total) {
       ? `<span class="admin-note-flag" title="${escapeHtml((e.note_saved_by ? e.note_saved_by + ": " : "") + e.admin_notes)}">📝</span>`
       : "";
     const ap = e.agreement_pct;
+    const llmMark = e.llm_dissent
+      ? `<span class="agree-llm-dissent" title="LLM disagrees with the validators on: ${escapeHtml(e.llm_dissent)}">🤖✗</span>`
+      : "";
     const agreeCell = (ap == null)
       ? '<span class="agree-na">—</span>'
-      : `<span class="agree-pct ${ap >= 100 ? "agree-full" : ap >= 67 ? "agree-mid" : "agree-low"}">${ap}%</span>`;
+      : `<span class="agree-pct ${ap >= 100 ? "agree-full" : ap >= 67 ? "agree-mid" : "agree-low"}">${ap}%</span>${llmMark}`;
     const approveCell = e.validation_status === "consensus_reached"
       ? `<button class="admin-approve-btn" data-id="${e.record_id}">Approve ✓</button>`
       : `<span class="agree-na">—</span>`;
@@ -3905,6 +3978,16 @@ function renderAdminDetail(data) {
   const v1  = rec.validator_1;
   const v2  = rec.validator_2;
   const llm = rec.llm_validator;
+
+  const _quoteFlagWho = [v1, v2]
+    .filter((v) => v && v.additional_checks && v.additional_checks.quote_not_in_abstract)
+    .map((v) => v.validator_name || "a validator");
+  const quoteBanner = _quoteFlagWho.length && ["need_review", "consensus_reached"].includes(rec.validation_status)
+    ? `<div class="admin-quote-banner">
+         <strong>Quote may not be from the abstract</strong> — auto-flagged at submission by ${escapeHtml(_quoteFlagWho.join(" and "))}: the outcome quote wasn't found in the abstract, even with fuzzy matching. Either it's a legitimate full-text quote (set <em>Outcome Quote Source</em> to "Full text") or it was mis-copied — fix the quote before resolving.
+       </div>`
+    : "";
+
   const slots = data.queue_slots || [];
   const q1 = slots.find(s => s.validator_slot === "human_1") || {};
   const q2 = slots.find(s => s.validator_slot === "human_2") || {};
@@ -4155,6 +4238,7 @@ function renderAdminDetail(data) {
   $("#admin-detail-title").textContent = (rec.study_r || rec.doi_r || "Entry Review").substring(0, 80);
   $("#admin-detail-body").innerHTML = `
     ${abstractBanner}
+    ${quoteBanner}
     ${overrideBanner}
     <div class="admin-detail-cols">
       <!-- Left: final preview + validator cards -->

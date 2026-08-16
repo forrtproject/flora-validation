@@ -23,19 +23,31 @@ def _normalize(text: str | None) -> str:
     return re.sub(r'[^a-z0-9]', '', text.lower())
 
 
-def _is_unsure(h: dict) -> bool:
-    """Did this validator answer 'Can't tell' on the original or outcome? The check
-    columns store 'incorrect' for unsure, so the real signal lives in additional_checks.
-    Tolerates the column arriving as a dict (jsonb adapter) or a raw JSON string."""
+def _additional_checks(h: dict) -> dict:
+    """The validator's additional_checks as a dict. Tolerates the column arriving
+    as a dict (jsonb adapter) or a raw JSON string."""
     ac = h.get("additional_checks")
     if isinstance(ac, str):
         try:
             ac = json.loads(ac)
         except (ValueError, TypeError):
-            return False
-    if not isinstance(ac, dict):
-        return False
+            return {}
+    return ac if isinstance(ac, dict) else {}
+
+
+def _is_unsure(h: dict) -> bool:
+    """Did this validator answer 'Can't tell' on the original or outcome? The check
+    columns store 'incorrect' for unsure, so the real signal lives in additional_checks."""
+    ac = _additional_checks(h)
     return bool(ac.get("was_unsure_original") or ac.get("was_unsure_outcome"))
+
+
+def _quote_flagged(h: dict) -> bool:
+    """Did the frontend's quote gate flag this submission? Stamped when the outcome
+    quote (validator's edit, else extracted) wasn't found in the abstract even with
+    fuzzy matching — either a legitimate full-text quote or a mis-copied one, and
+    only a human can tell which."""
+    return bool(_additional_checks(h).get("quote_not_in_abstract"))
 
 
 def _checks_agree(h1: dict, h2: dict) -> bool:
@@ -274,6 +286,15 @@ def evaluate_consensus(cur, record_id: str) -> None:
     # the record can't be auto-resolved — a validator explicitly couldn't judge it.
     # Route it to human review instead of treating unsure as a hard 'incorrect'.
     if _is_unsure(h1) or _is_unsure(h2):
+        _update_status(cur, record_id, "need_review", False, None, None)
+        return
+
+    # If the quote gate flagged either submission (outcome quote not found in the
+    # abstract, even fuzzily), an admin must look before anything gets published:
+    # it's either a legitimate full-text quote — the admin sets the quote source —
+    # or a mis-copied quote that needs fixing. This intentionally also stops the
+    # senior auto-validate shortcut.
+    if _quote_flagged(h1) or _quote_flagged(h2):
         _update_status(cur, record_id, "need_review", False, None, None)
         return
 

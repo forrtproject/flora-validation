@@ -1100,6 +1100,7 @@ details[open] .senior-reject-summary::before { content: "▾ "; }
 
 /* Admin: agreement % column */
 .agree-pct { font-weight: 700; font-size: 0.85rem; padding: 0.1rem 0.45rem; border-radius: 10px; white-space: nowrap; }
+.agree-llm-dissent { margin-left: 0.3rem; font-size: 0.75rem; cursor: help; white-space: nowrap; }
 .agree-full { background: #dcfce7; color: #15803d; }
 .agree-mid  { background: #fef9c3; color: #854d0e; }
 .agree-low  { background: #fee2e2; color: #b91c1c; }
@@ -2904,7 +2905,7 @@ details[open] > .chk-collapsible-summary::before { transform: rotate(90deg); }
 }
 .btn-outline:hover { background: var(--ink); color: var(--bg); }
 
-.admin-abstract-banner {
+.admin-abstract-banner, .admin-quote-banner {
   background: #fdf3e0;
   border: 1px solid var(--amber);
   border-radius: 0.75rem;
@@ -2913,7 +2914,7 @@ details[open] > .chk-collapsible-summary::before { transform: rotate(90deg); }
   font-size: 0.88rem;
   color: var(--ink-soft);
 }
-.admin-abstract-banner strong { color: var(--amber); }
+.admin-abstract-banner strong, .admin-quote-banner strong { color: var(--amber); }
 
 .admin-override-banner {
   background: #eaf2e8;

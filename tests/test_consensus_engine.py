@@ -140,6 +140,46 @@ def test_unsure_routes_to_need_review():
     assert "INSERT INTO validated" not in calls_str  # never written to the export table
 
 
+def test_quote_flag_routes_to_need_review():
+    """A submission auto-flagged by the frontend quote gate (outcome quote not
+    found in the abstract) sends the record to review, no LLM, even on agreement."""
+    from consensus_engine import evaluate_consensus
+    h1 = {**H1_AGREE, "additional_checks": {"quote_not_in_abstract": True}}
+    cur = _make_cur([h1, H2_AGREE], BASE_RECORD)
+    with patch("consensus_engine.run_llm_validation") as mock_llm:
+        evaluate_consensus(cur, "rec-001")
+    mock_llm.assert_not_called()
+    calls_str = str(cur.execute.call_args_list)
+    assert "need_review" in calls_str
+    assert "INSERT INTO validated" not in calls_str
+
+
+def test_quote_flag_stops_senior_auto_validate():
+    """The quote flag must also stop the senior auto-validate shortcut — nothing
+    with a suspect quote reaches the export table unreviewed."""
+    from consensus_engine import evaluate_consensus
+    h2 = {**H2_AGREE, "additional_checks": {"quote_not_in_abstract": True}}
+    cur = _make_cur([H1_AGREE, h2], BASE_RECORD, senior_count=2)
+    with patch("consensus_engine.run_llm_validation") as mock_llm:
+        evaluate_consensus(cur, "rec-001")
+    mock_llm.assert_not_called()
+    calls_str = str(cur.execute.call_args_list)
+    assert "need_review" in calls_str
+    assert "INSERT INTO validated" not in calls_str
+
+
+def test_quote_flag_tolerates_json_string_column():
+    """additional_checks arriving as a raw JSON string (no jsonb adapter) still routes."""
+    from consensus_engine import evaluate_consensus
+    h1 = {**H1_AGREE, "additional_checks": json.dumps({"quote_not_in_abstract": True})}
+    cur = _make_cur([h1, H2_AGREE], BASE_RECORD)
+    with patch("consensus_engine.run_llm_validation") as mock_llm:
+        evaluate_consensus(cur, "rec-001")
+    mock_llm.assert_not_called()
+    calls_str = str(cur.execute.call_args_list)
+    assert "need_review" in calls_str
+
+
 def test_humans_disagree_llm_agrees_h1_sets_validated():
     """Humans disagree; LLM matches H1 → validated with H1 verdict."""
     from consensus_engine import evaluate_consensus
