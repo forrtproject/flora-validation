@@ -2071,27 +2071,43 @@ def admin_login(req: AdminLoginRequest):
     return {"token": _make_token(row["password"]), "handle": row["handle"], "trusted": row["trusted"]}
 
 
-# Agreement %: across V1, V2, and the LLM (when it ran without error), the share
-# of the 3 checks (type/original/outcome) on which everyone gave the same answer.
-# NULL when fewer than 2 validators exist. Computed in SQL so it's sortable.
+# Agreement %: between the two HUMAN validators only — the share of the 3 checks
+# (type/original/outcome) on which V1 and V2 gave the same answer. NULL until both
+# humans have submitted. The LLM is deliberately not a voter here: a clean human
+# consensus must never read as 0% just because the LLM dissents. LLM dissent is
+# surfaced separately (llm_dissent below). Computed in SQL so it's sortable.
 def _agree_field(f):
-    return (
-        "(SELECT COUNT(DISTINCT v) FROM (VALUES "
-        f"(u.validator_1->>'{f}'), (u.validator_2->>'{f}'), "
-        f"(CASE WHEN jsonb_exists(u.llm_validator, 'error') THEN NULL ELSE u.llm_validator->>'{f}' END)"
-        ") AS t(v) WHERE v IS NOT NULL) <= 1"
-    )
+    return f"(u.validator_1->>'{f}' = u.validator_2->>'{f}')"
 
-_AGREEMENT_VOTERS = (
-    "((u.validator_1 IS NOT NULL)::int + (u.validator_2 IS NOT NULL)::int "
-    "+ (u.llm_validator IS NOT NULL AND NOT jsonb_exists(u.llm_validator, 'error'))::int)"
-)
 _AGREEMENT_SQL = (
-    f"(CASE WHEN {_AGREEMENT_VOTERS} >= 2 THEN round(100.0 * ("
+    "(CASE WHEN u.validator_1 IS NOT NULL AND u.validator_2 IS NOT NULL "
+    "THEN round(100.0 * ("
     f"(CASE WHEN {_agree_field('type_check')} THEN 1 ELSE 0 END) + "
     f"(CASE WHEN {_agree_field('original_check')} THEN 1 ELSE 0 END) + "
     f"(CASE WHEN {_agree_field('outcome_check')} THEN 1 ELSE 0 END)"
     ") / 3.0)::int ELSE NULL END)"
+)
+
+# LLM dissent: comma-separated list of checks where the LLM ran cleanly, the two
+# humans agree on an answer, and the LLM contradicts it. NULL when there is none —
+# shown as a marker next to the agreement % so the signal the old 3-way metric
+# carried ("the LLM is the odd one out") isn't lost.
+def _llm_dissent_field(f, label):
+    return (
+        "(CASE WHEN u.llm_validator IS NOT NULL "
+        "AND NOT jsonb_exists(u.llm_validator, 'error') "
+        f"AND u.validator_1->>'{f}' = u.validator_2->>'{f}' "
+        f"AND u.llm_validator->>'{f}' IS NOT NULL "
+        f"AND u.llm_validator->>'{f}' <> u.validator_1->>'{f}' "
+        f"THEN '{label}' END)"
+    )
+
+_LLM_DISSENT_SQL = (
+    "NULLIF(concat_ws(', ', "
+    f"{_llm_dissent_field('type_check', 'type')}, "
+    f"{_llm_dissent_field('original_check', 'original')}, "
+    f"{_llm_dissent_field('outcome_check', 'outcome')}"
+    "), '')"
 )
 
 # Whitelist of sortable columns → safe SQL expression (never interpolate raw input).
@@ -2183,6 +2199,7 @@ def admin_entries(
                 u.validator_2->>'validator_name' AS v2_handle,
                 (u.llm_validator IS NOT NULL AND (u.llm_validator)::jsonb ? 'error')::boolean AS has_llm_error,
                 {_AGREEMENT_SQL} AS agreement_pct,
+                {_LLM_DISSENT_SQL} AS llm_dissent,
                 (SELECT COUNT(*) FROM validation_queue vq
                  WHERE vq.record_id = u.record_id AND vq.is_validated = TRUE) AS validator_count,
                 (SELECT COUNT(*) FROM validation_queue vq

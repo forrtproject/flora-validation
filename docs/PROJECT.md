@@ -236,6 +236,32 @@ Any answer can carry a correction: `corrected_doi_o`, `corrected_study_o`,
 `was_unsure_original` / `was_unsure_outcome`, and the consensus engine routes any record
 with an unsure answer straight to `need_review` rather than treating it as `incorrect`.
 
+### Submit guards
+
+`guardedSubmit()` runs a gauntlet before a judgement is accepted: unsaved title /
+paper-suggestion / quote / abstract edits block with a shake-and-hint; the abstract
+must be non-empty in normal mode; a sub-17-second submission gets an "are you sure"
+dialog.
+
+**Quote-in-abstract gate** (added Aug 2026): at submission the effective outcome quote
+(the validator's edit, else the extracted one) is fuzzily matched against the
+effective abstract. Matching mirrors the backend's normalisation (lowercase,
+alphanumerics only) so case/punctuation/whitespace never mismatch, then falls back to
+a best-window edit distance allowing ≤15% of the quote length — tolerant of
+OCR/parsing fixes, still catching quotes that aren't there. Quotes spliced with an
+ellipsis ("A … B") are checked fragment by fragment, so skipping non-adjacent
+passages never counts against the match. A miss does **not** warn
+or block the validator: the submission is silently stamped with
+`additional_checks.quote_not_in_abstract`, the consensus engine routes the record to
+`need_review` (see [§7](#7-the-consensus-engine) pre-checks — this also stops the
+senior auto-validate shortcut), and the admin detail screen shows a banner naming who
+triggered the flag, with the choice: legitimate full-text quote → set *Outcome Quote
+Source* to "Full text", or mis-copied quote → fix it before resolving. The check is
+skipped in hard mode, for assignments, for "not a replication" judgements, for records
+already marked `out_quote_source = 'full_text'`, and when there is no quote or
+abstract to compare. Server-side classification (`quote_source_for` in
+`consensus_engine.py`) is unchanged and still auto-labels the published source.
+
 ### Modes
 
 - **Normal mode** — records with an abstract
@@ -316,6 +342,9 @@ submission and returns immediately if fewer than two humans have completed.
 
 1. **Senior reject present?** → `rejected`. Nothing else is consulted.
 2. **Either human unsure?** (`was_unsure_original` / `was_unsure_outcome`) → `need_review`.
+3. **Quote flagged?** (`quote_not_in_abstract`, stamped by the frontend quote gate) →
+   `need_review`. This also stops the senior auto-validate shortcut: a suspect quote
+   never reaches the export table unreviewed.
 
 ### The decision tree
 
@@ -394,7 +423,7 @@ Eight tabs:
 
 | Tab | What it does |
 |---|---|
-| **Entries** | Every record, filterable by All / Pending Approval / Needs Review / Validated / Excluded. Shows validator handles, agreement %, LLM errors. Approve, flag for review, add notes, resolve conflicts. |
+| **Entries** | Every record, filterable by All / Pending Approval / Needs Review / Validated / Excluded. Shows validator handles, human agreement % (with an LLM-dissent marker — see below), LLM errors. Approve, flag for review, add notes, resolve conflicts. |
 | **Source Records** | The entry-sheet table — see [SOURCE_RECORDS.md](SOURCE_RECORDS.md) |
 | **Validator Stats** | Per-validator throughput, accuracy, flagged judgements; set tier |
 | **Admins** | Add/remove admins, toggle trusted, set the site banner |
@@ -402,6 +431,17 @@ Eight tabs:
 | **Pool Priority** | Edit `serving_config` with a live preview of how many records match |
 | **Restricted access** | Records reported as inaccessible; assign them to specific validators |
 | **Messages** | Threaded inbox with validators |
+
+### The Agreement column
+
+The Entries table's **Agreement %** measures the two *human* validators only: the share
+of the three checks (type / original / outcome) on which V1 and V2 gave the same
+answer — so 0 / 33 / 67 / 100%, and blank until both humans have submitted. The LLM is
+**not** a voter. When the LLM ran cleanly and contradicts an answer the humans agree
+on, the cell instead shows a 🤖✗ marker whose tooltip lists the dissenting checks —
+that's the signal that a record like "both humans reject, LLM disagrees" is in review.
+(Until Aug 2026 the % was 3-way unanimity *including* the LLM, so a record with full
+human consensus could display as 0%.) Sorting the column sorts by the human-only %.
 
 ### Approval
 
