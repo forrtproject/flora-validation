@@ -77,6 +77,115 @@ def test_run_llm_validation_handles_malformed_json():
     assert "error" in result
 
 
+def test_missing_check_becomes_uncertain_not_correct():
+    """A check field the model omits must default to 'uncertain' — the old
+    behavior silently defaulted to 'correct', which could win a tiebreak on a
+    guess rather than genuine confidence."""
+    from llm_validator import run_llm_validation
+    mock_response_text = json.dumps({
+        "original_check": "correct", "outcome_check": "correct",
+        "corrected_outcome": None, "corrected_doi_o": None, "corrected_type": None, "notes": "",
+    })
+    with patch("llm_validator._call_gemini", return_value=mock_response_text):
+        result = run_llm_validation(SAMPLE_RECORD, context="sanity_check")
+    assert result["type_check"] == "uncertain"
+
+
+def test_invalid_check_value_coerced_to_uncertain():
+    """A malformed/unexpected check value (not correct/incorrect/uncertain) is
+    coerced to 'uncertain', never silently accepted or defaulted to 'correct'."""
+    from llm_validator import run_llm_validation
+    mock_response_text = json.dumps({
+        "type_check": "not sure honestly", "original_check": "correct", "outcome_check": "correct",
+        "corrected_outcome": None, "corrected_doi_o": None, "corrected_type": None, "notes": "",
+    })
+    with patch("llm_validator._call_gemini", return_value=mock_response_text):
+        result = run_llm_validation(SAMPLE_RECORD, context="sanity_check")
+    assert result["type_check"] == "uncertain"
+
+
+def test_offschema_outcome_synonym_is_mapped():
+    """A near-miss label the model invents (e.g. 'inconsistent') is mapped onto
+    the real schema category ('failed') rather than passed through verbatim —
+    this is the exact scenario from FLoRA issue #4."""
+    from llm_validator import run_llm_validation
+    mock_response_text = json.dumps({
+        "type_check": "correct", "original_check": "correct", "outcome_check": "incorrect",
+        "corrected_outcome": "inconsistent", "corrected_doi_o": None, "corrected_type": None,
+        "notes": "Abstract says results were inconsistent with the previous study.",
+    })
+    with patch("llm_validator._call_gemini", return_value=mock_response_text):
+        result = run_llm_validation(SAMPLE_RECORD, context="tiebreaker")
+    assert result["corrected_outcome"] == "failed"
+    assert result["outcome_check"] == "incorrect"
+
+
+def test_unmappable_outcome_is_dropped_and_check_downgraded():
+    """A suggestion with no synonym mapping is never passed through as an
+    off-schema string: corrected_outcome becomes null, the check is downgraded
+    to 'uncertain' (a confident 'incorrect' with no valid fix is misleading),
+    and the raw suggestion is preserved in notes so nothing is silently lost."""
+    from llm_validator import run_llm_validation
+    mock_response_text = json.dumps({
+        "type_check": "correct", "original_check": "correct", "outcome_check": "incorrect",
+        "corrected_outcome": "sort of replicated with caveats", "corrected_doi_o": None,
+        "corrected_type": None, "notes": "Complicated result.",
+    })
+    with patch("llm_validator._call_gemini", return_value=mock_response_text):
+        result = run_llm_validation(SAMPLE_RECORD, context="sanity_check")
+    assert result["corrected_outcome"] is None
+    assert result["outcome_check"] == "uncertain"
+    assert "sort of replicated with caveats" in result["notes"]
+
+
+def test_reproduction_type_validates_against_reproduction_vocabulary():
+    """A replication-only label ('successful') is not valid for a reproduction
+    record — the vocabulary check is conditioned on the record's type, so it is
+    dropped rather than accepted as-is."""
+    from llm_validator import run_llm_validation
+    repro_record = {**SAMPLE_RECORD, "type": "reproduction"}
+    mock_response_text = json.dumps({
+        "type_check": "correct", "original_check": "correct", "outcome_check": "incorrect",
+        "corrected_outcome": "successful", "corrected_doi_o": None, "corrected_type": None, "notes": "",
+    })
+    with patch("llm_validator._call_gemini", return_value=mock_response_text):
+        result = run_llm_validation(repro_record, context="sanity_check")
+    assert result["corrected_outcome"] is None
+    assert result["outcome_check"] == "uncertain"
+
+
+def test_dropped_outcome_note_survives_verbose_model_notes():
+    """The 'suggestion dropped' flag must never be crowded out of the 200-char
+    notes budget by a verbose model `notes` field — truncating notes first and
+    appending second would silently lose exactly the information this feature
+    exists to preserve."""
+    from llm_validator import run_llm_validation
+    mock_response_text = json.dumps({
+        "type_check": "correct", "original_check": "correct", "outcome_check": "incorrect",
+        "corrected_outcome": "a totally invented category", "corrected_doi_o": None,
+        "corrected_type": None,
+        "notes": "x" * 250,   # long enough to fill the 200-char budget alone
+    })
+    with patch("llm_validator._call_gemini", return_value=mock_response_text):
+        result = run_llm_validation(SAMPLE_RECORD, context="sanity_check")
+    assert len(result["notes"]) <= 200
+    assert "a totally invented category" in result["notes"]
+
+
+def test_reproduction_type_accepts_valid_reproduction_label():
+    """The real reproduction vocabulary (compound labels) passes through unchanged."""
+    from llm_validator import run_llm_validation
+    repro_record = {**SAMPLE_RECORD, "type": "reproduction"}
+    label = "computationally successful, robustness challenges"
+    mock_response_text = json.dumps({
+        "type_check": "correct", "original_check": "correct", "outcome_check": "incorrect",
+        "corrected_outcome": label, "corrected_doi_o": None, "corrected_type": None, "notes": "",
+    })
+    with patch("llm_validator._call_gemini", return_value=mock_response_text):
+        result = run_llm_validation(repro_record, context="sanity_check")
+    assert result["corrected_outcome"] == label
+
+
 def test_run_llm_validation_retries_once_on_failure():
     """_call_gemini is called twice when first call fails then succeeds."""
     from llm_validator import run_llm_validation

@@ -168,6 +168,36 @@ def test_agreeing_published_doi_flows_to_final():
     assert "need_review" not in calls_str
 
 
+def test_llm_matches_uncertain_never_matches_human():
+    """'uncertain' must never equal a human's 'correct'/'incorrect' — this is the
+    whole mechanism that lets an unconfident LLM fall through to need_review
+    without any special-casing in _llm_matches itself."""
+    from consensus_engine import _llm_matches
+    llm = {"type_check": "uncertain", "original_check": "correct", "outcome_check": "correct"}
+    human = {"type_check": "correct", "original_check": "correct", "outcome_check": "correct"}
+    assert _llm_matches(llm, human) is False
+
+
+def test_tiebreaker_llm_uncertain_on_disputed_field_sets_need_review():
+    """Humans disagree; the LLM is 'uncertain' (not 'correct'/'incorrect') on the
+    very field they disagree on → LLM matches neither → need_review, same as a
+    genuine 3-way split. Confirms an unconfident LLM can no longer accidentally
+    resolve a tiebreak by defaulting to 'correct'."""
+    from consensus_engine import evaluate_consensus
+    llm_uncertain = {
+        "type_check": "correct", "original_check": "correct", "outcome_check": "uncertain",
+        "corrected_outcome": None, "corrected_doi_o": None, "corrected_type": None,
+        "context": "tiebreaker", "model": "gemini-3.1-flash-lite", "vote_score": 15,
+        "validated_at": "2026-08-16T00:00:00+00:00", "notes": "",
+    }
+    cur = _make_cur([H1_DISAGREE, H2_DISAGREE], BASE_RECORD)
+    with patch("consensus_engine.run_llm_validation", return_value=llm_uncertain):
+        evaluate_consensus(cur, "rec-001")
+    calls_str = str(cur.execute.call_args_list)
+    assert "need_review" in calls_str
+    assert "INSERT INTO validated" not in calls_str
+
+
 def test_published_doi_formats_agree():
     """The same DOI pasted as a resolver link vs bare, different case → still
     agreement (normalized compare), not a spurious conflict."""

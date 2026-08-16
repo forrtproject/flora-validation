@@ -73,6 +73,11 @@ def _corrections_agree(h1: dict, h2: dict) -> bool:
 def _llm_matches(llm: dict, human: dict) -> bool:
     if llm.get("error"):
         return False
+    # Equality check, no special-casing needed: llm_validator can return "uncertain"
+    # for any of the three checks, which never equals a human's "correct"/"incorrect"
+    # — so an unconfident LLM automatically fails to match, the same as a genuine
+    # disagreement, and the record falls through to need_review instead of the LLM
+    # accidentally winning a tiebreak or forcing a reject on a guess.
     return all(llm.get(f) == human.get(f) for f in _CHECK_FIELDS)
 
 

@@ -2668,8 +2668,9 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
 .chk-label   { min-width: 4.5rem; color: var(--muted); font-size: 0.76rem; flex-shrink: 0; }
 .chk-extr-val  { color: var(--ink); font-size: 0.8rem; flex: 1; }
 .chk-extr-empty { color: var(--muted); font-style: italic; }
-.chk-ok      { color: var(--green, #2a9d2a); font-weight: 600; white-space: nowrap; }
-.chk-fail    { color: var(--red); font-weight: 600; }
+.chk-ok        { color: var(--green, #2a9d2a); font-weight: 600; white-space: nowrap; }
+.chk-fail      { color: var(--red); font-weight: 600; }
+.chk-uncertain { color: var(--amber); font-weight: 600; white-space: nowrap; cursor: help; }
 .chk-na      { color: var(--muted); }
 .chk-na-note { color: var(--muted); font-style: italic; font-size: 0.78rem; }
 .chk-correction { color: var(--amber); font-size: 0.82rem; font-weight: 600; }

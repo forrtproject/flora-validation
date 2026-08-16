@@ -410,8 +410,21 @@ so light formatting edits do not register as disagreements.
 - Input: the replication abstract plus the extracted metadata — **nothing else**. The
   prompt explicitly instructs the model to use no external knowledge.
 - Output: JSON with `type_check`, `original_check`, `outcome_check`, plus reasoning.
-- **Defaults to "correct" when uncertain** — conservative by design, so the LLM rarely
-  manufactures a disagreement.
+- **Each check is `"correct"`, `"incorrect"`, or `"uncertain"`** (changed Aug 2026 — it
+  used to default to `"correct"` when unsure, which could make a guess accidentally
+  win a tiebreak). The prompt instructs the model to answer `"uncertain"` rather than
+  guess. No consensus-engine change was needed: `_llm_matches` is a plain equality
+  check, and `"uncertain"` never equals a human's `"correct"`/`"incorrect"`, so an
+  unconfident LLM automatically fails to match — same effect as a genuine
+  disagreement, routing to `need_review`.
+- **`corrected_outcome` is constrained to the real outcome vocabulary** (mirrors the
+  `unvalidated_outcome_check` CHECK constraint, split by record type) through three
+  independent layers: the prompt lists the categories with one-line definitions;
+  Gemini's structured-output `response_schema` constrains the field to that enum;
+  and `_coerce_outcome` re-validates server-side regardless, mapping common
+  near-misses (e.g. `"inconsistent"` → `"failed"`) and dropping anything else rather
+  than passing an invented label through. This fixes the LLM occasionally suggesting
+  off-schema outcome labels like `"inconsistent"`.
 
 Errors are captured rather than raised: the verdict dict carries an `error` key, the
 engine treats it as "matches nobody", and the record goes to `need_review`. A nightly
