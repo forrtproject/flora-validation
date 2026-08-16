@@ -2636,6 +2636,7 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
 .admin-val-empty { color: var(--muted); font-style: italic; }
 .admin-val-label { font-weight: 600; margin-bottom: 0.2rem; color: var(--ink); display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; justify-content: space-between; }
 .admin-val-label-text { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
+.val-name-stats { font-size: 0.72rem; font-weight: 500; color: var(--muted); white-space: nowrap; cursor: help; }
 .admin-val-meta { font-size: 0.76rem; color: var(--muted); margin-bottom: 0.45rem; }
 .admin-val-checks { display: flex; flex-direction: column; gap: 0.2rem; }
 

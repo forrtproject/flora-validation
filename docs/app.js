@@ -3991,6 +3991,7 @@ function renderAdminDetail(data) {
   const slots = data.queue_slots || [];
   const q1 = slots.find(s => s.validator_slot === "human_1") || {};
   const q2 = slots.find(s => s.validator_slot === "human_2") || {};
+  const vstats = data.validator_stats || {};
 
   const chk = (val) => val === "correct"
     ? `<span class="chk-ok">✓ correct</span>`
@@ -4100,6 +4101,12 @@ function renderAdminDetail(data) {
           ${label}${v.validator_name ? ` · <em>${escapeHtml(v.validator_name)}</em>` : ""}
           ${tierBadge(tier)}
           ${isSeniorReject ? `<span class="tier-badge tier-fast-reject">Fast Reject</span>` : ""}
+          ${(() => {
+            const st = vstats[v.validator_id];
+            return st
+              ? `<span class="val-name-stats" title="${st.judged || 0} judgements submitted overall · ${st.flags || 0} of them flagged by admins">${st.judged || 0} validated · ${st.flags || 0} 🚩</span>`
+              : "";
+          })()}
         </span>
         ${queueId ? `<button class="val-flag-btn${isFlagged ? " flagged" : ""}" data-queue-id="${queueId}" title="${isFlagged ? "Unflag judgement" : "Flag judgement as problematic"}">🚩</button>` : ""}
       </div>
@@ -4438,6 +4445,16 @@ function renderAdminDetail(data) {
           if (slot) {
             slot.flagged = resp.flagged;
             slot.flag_reason = resp.flagged ? (reason || null) : null;
+            // Keep the track-record chip next to the button honest without a refetch
+            const stats = (cachedRecord.validator_stats || {})[slot.validator_id];
+            if (stats) {
+              stats.flags = Math.max(0, (stats.flags || 0) + (resp.flagged ? 1 : -1));
+              const chip = btn.closest(".admin-val-card")?.querySelector(".val-name-stats");
+              if (chip) {
+                chip.textContent = `${stats.judged || 0} validated · ${stats.flags} 🚩`;
+                chip.title = `${stats.judged || 0} judgements submitted overall · ${stats.flags} of them flagged by admins`;
+              }
+            }
           }
         }
       } catch (e) {
