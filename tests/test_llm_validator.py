@@ -194,18 +194,36 @@ def test_blank_doi_o_gets_an_honest_sentinel_not_a_blank_line():
     assert "no registered DOI" in captured["prompt"]
 
 
-def test_reproduction_type_accepts_valid_reproduction_label():
-    """The real reproduction vocabulary (compound labels) passes through unchanged."""
+def _repro_result(label):
     from llm_validator import run_llm_validation
     repro_record = {**SAMPLE_RECORD, "type": "reproduction"}
-    label = "computationally successful, robustness challenges"
     mock_response_text = json.dumps({
         "type_check": "correct", "original_check": "correct", "outcome_check": "incorrect",
         "corrected_outcome": label, "corrected_doi_o": None, "corrected_type": None, "notes": "",
     })
     with patch("llm_validator._call_gemini", return_value=mock_response_text):
-        result = run_llm_validation(repro_record, context="sanity_check")
-    assert result["corrected_outcome"] == label
+        return run_llm_validation(repro_record, context="sanity_check")
+
+
+def test_reproduction_type_accepts_valid_reproduction_label():
+    """The real reproduction vocabulary (compound labels) passes through unchanged."""
+    label = "computationally reproducible, robustness challenges"
+    assert _repro_result(label)["corrected_outcome"] == label
+
+
+def test_reproduction_retired_spelling_is_translated_not_dropped():
+    """The model saw 'computationally successful, X' in the prompt until the
+    reproduction relabelling, and it reads as natural English either way. A real
+    judgement in outdated words is worth translating, not discarding."""
+    result = _repro_result("computationally successful, robustness challenges")
+    assert result["corrected_outcome"] == "computationally reproducible, robustness challenges"
+
+
+def test_reproduction_invented_label_is_still_dropped():
+    """Translation must not become a licence to accept anything."""
+    result = _repro_result("mostly reproducible-ish")
+    assert result["corrected_outcome"] is None
+    assert "not a valid category" in result["notes"]
 
 
 def test_run_llm_validation_retries_once_on_failure():

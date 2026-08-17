@@ -231,15 +231,58 @@ UPDATE unvalidated SET llm_validator = jsonb_set(llm_validator, '{corrected_outc
 UPDATE unvalidated SET llm_validator = jsonb_set(llm_validator, '{corrected_outcome}', '"failed"')
     WHERE llm_validator->>'corrected_outcome' = 'failure';
 
+-- The reproduction labels were relabelled upstream (flora-extractor §8.3):
+--   'computationally successful, X' -> 'computationally reproducible, X'
+--   'computation not checked, X'    -> 'not checked, X'
+-- Stored rows are normalised here and incoming CSV rows at the import boundary
+-- (extractor_vocab.OUTCOME_RENAME), so only one spelling ever exists and the
+-- constraint below doesn't have to accept both. Driven off a mapping table
+-- rather than 28 hand-written UPDATEs; idempotent, matching zero rows once
+-- applied. Dropped explicitly at the end so this works whether the file runs in
+-- one transaction (init_db) or statement-by-statement (psql).
+DROP TABLE IF EXISTS _outcome_relabel;
+CREATE TEMP TABLE _outcome_relabel (old_value TEXT PRIMARY KEY, new_value TEXT NOT NULL);
+INSERT INTO _outcome_relabel (old_value, new_value) VALUES
+    ('computationally successful, robust',                'computationally reproducible, robust'),
+    ('computationally successful, robustness challenges', 'computationally reproducible, robustness challenges'),
+    ('computation not checked, robust',                   'not checked, robust'),
+    ('computation not checked, robustness challenges',    'not checked, robustness challenges');
+
+UPDATE unvalidated      u SET outcome           = m.new_value FROM _outcome_relabel m WHERE u.outcome           = m.old_value;
+UPDATE unvalidated      u SET final_outcome     = m.new_value FROM _outcome_relabel m WHERE u.final_outcome     = m.old_value;
+UPDATE validated        v SET outcome           = m.new_value FROM _outcome_relabel m WHERE v.outcome           = m.old_value;
+UPDATE validation_queue q SET corrected_outcome = m.new_value FROM _outcome_relabel m WHERE q.corrected_outcome = m.old_value;
+
+-- Mirrored inside the validator/LLM JSONB summaries, as with the rename above.
+UPDATE unvalidated u SET validator_1   = jsonb_set(validator_1,   '{corrected_outcome}', to_jsonb(m.new_value))
+    FROM _outcome_relabel m WHERE u.validator_1->>'corrected_outcome'   = m.old_value;
+UPDATE unvalidated u SET validator_2   = jsonb_set(validator_2,   '{corrected_outcome}', to_jsonb(m.new_value))
+    FROM _outcome_relabel m WHERE u.validator_2->>'corrected_outcome'   = m.old_value;
+UPDATE unvalidated u SET llm_validator = jsonb_set(llm_validator, '{corrected_outcome}', to_jsonb(m.new_value))
+    FROM _outcome_relabel m WHERE u.llm_validator->>'corrected_outcome' = m.old_value;
+
+DROP TABLE _outcome_relabel;
+
+-- Must stay in step with extractor_vocab.STORED_OUTCOMES (Python side) and the
+-- vocabulary llm_validator.py shows the model. A value accepted by one and not
+-- the other fails the whole import transaction, not just its own row.
 ALTER TABLE unvalidated ADD CONSTRAINT unvalidated_outcome_check
     CHECK (outcome IN (
+        -- replications
         'successful', 'failed', 'mixed',
         'uninformative', 'descriptive', 'cannot_be_determined',
-        'computationally successful, robust',
-        'computationally successful, robustness challenges',
-        'computation not checked, robust',
-        'computation not checked, robustness challenges',
-        'computational issues, robustness challenges'));
+        -- statistically successful, but flagged by the authors as
+        -- methodologically compromised. Counted with the successes; kept
+        -- distinct so the caveat survives import.
+        'statistically_successful_but_flawed',
+        -- reproductions (computational axis, robustness axis)
+        'computationally reproducible, robust',
+        'computationally reproducible, robustness challenges',
+        'computationally reproducible, not checked',
+        'computational issues, robust',
+        'computational issues, robustness challenges',
+        'not checked, robust',
+        'not checked, robustness challenges'));
 
 -- Admin approval column on validated table
 ALTER TABLE validated ADD COLUMN IF NOT EXISTS admin_approved BOOLEAN NOT NULL DEFAULT FALSE;
@@ -433,6 +476,16 @@ ALTER TABLE validated        ADD COLUMN IF NOT EXISTS alt_identifier_r TEXT;
 -- NULL) on these rows — the validated natural key and its ON CONFLICT clause rely
 -- on equality, and Postgres treats NULLs as never-equal in unique constraints.
 ALTER TABLE record_metadata ADD COLUMN IF NOT EXISTS doi_o_verification TEXT;
+
+-- Full-text provenance (flora-extractor #124). pdf_source is the acquisition tier
+-- that supplied the document (arxiv, osf, openalex_oa, unpaywall_pdf, core, …);
+-- parse_method is the parser whose output went to the LLM (grobid, pdfminer,
+-- openalex_xml, …). Both blank on rows that never acquired or parsed a document.
+-- These must exist before flora-extractor#124 merges: that side writes through
+-- PostgREST, which rejects an entire insert when the payload names a column the
+-- table lacks.
+ALTER TABLE record_metadata ADD COLUMN IF NOT EXISTS pdf_source   TEXT;
+ALTER TABLE record_metadata ADD COLUMN IF NOT EXISTS parse_method TEXT;
 
 -- Normalise empty strings to NULL. The seed/backfill below (and the trigger) key on
 -- IS NULL, so a stray '' would be treated as 'already filled' and never get an id.
@@ -706,9 +759,23 @@ INSERT INTO outcome_alias (raw_value, canonical_value) VALUES
     ('uninformative',   'uninformative'),
     ('unclear',         'cannot_be_determined'),
     ('descriptive only','descriptive'),
-    ('statistically successful but flawed',                'mixed'),
-    ('statistically_successful_but_fundamentally_flawed',  'mixed')
+    -- The flawed category: the result held statistically but the authors flag a
+    -- methodological problem that undermines it. A category in its own right, not
+    -- a flavour of 'successful' and not 'mixed'. It arrives under three spellings
+    -- — the extractor writes the first, the entry sheets the other two — so all
+    -- three normalise onto the extractor's, matching extractor_vocab.py.
+    ('statistically_successful_but_flawed',                'statistically_successful_but_flawed'),
+    ('statistically successful but flawed',                'statistically_successful_but_flawed'),
+    ('statistically_successful_but_fundamentally_flawed',  'statistically_successful_but_flawed')
 ON CONFLICT (raw_value) DO NOTHING;
+
+-- Rows seeded before the flawed category existed mapped these onto 'mixed'.
+-- ON CONFLICT above leaves an existing row alone, so correct them explicitly.
+UPDATE outcome_alias SET canonical_value = 'statistically_successful_but_flawed'
+ WHERE raw_value IN (
+    'statistically_successful_but_flawed',
+    'statistically successful but flawed',
+    'statistically_successful_but_fundamentally_flawed');
 
 -- Reproductions carry a 2-D outcome (computational x robustness). The single
 -- FLoRA label is derived from this table, so an unseen combination is a row to

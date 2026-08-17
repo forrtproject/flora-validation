@@ -36,16 +36,15 @@ from urllib.request import Request, urlopen
 import pandas as pd
 import psycopg2
 from dotenv import load_dotenv
+from console_encoding import use_utf8_output
 
 load_dotenv()
 
 # Progress output uses a few non-ASCII glyphs (⚠ → ✓). On a Windows cp1252 console
 # those raise UnicodeEncodeError and abort the script AFTER the CSVs are written, which
-# looks like a failure. Force UTF-8 on stdout so the run finishes cleanly everywhere.
-try:
-    sys.stdout.reconfigure(encoding="utf-8")
-except Exception:
-    pass
+# looks like a failure. See console_encoding.py — this covers stderr too, so a traceback
+# carrying one of those glyphs still reaches the log.
+use_utf8_output()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:

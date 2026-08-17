@@ -38,10 +38,15 @@ import psycopg2
 import psycopg2.extras
 import pandas as pd
 from dotenv import load_dotenv
+from console_encoding import use_utf8_output
 
 from csv_to_db import _s, _url_o, _flag_ambiguous_doi_o_titles, _note_ambiguous_original
 
 load_dotenv()
+
+# Progress output below uses non-ASCII glyphs; a cp1252 console cannot encode
+# them and print() would abort the run. See console_encoding.py.
+use_utf8_output()
 
 _DEFAULT_CSV = Path(__file__).parent / "data" / "extracted_latest.csv"
 

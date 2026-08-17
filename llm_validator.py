@@ -28,27 +28,40 @@ from datetime import datetime, timezone
 from google import genai
 from google.genai import types
 
+from extractor_vocab import OUTCOME_RENAME, REPLICATION_OUTCOMES, REPRODUCTION_OUTCOMES
+
 _LLM_VOTE_SCORE = 15
 _MODEL_NAME = "gemini-3.1-flash-lite"
 
-# Outcome vocabulary — must mirror the `unvalidated_outcome_check` CHECK constraint
-# in db_schema.sql exactly. Split by record type: the two are mutually-exclusive
-# subsets of the same `outcome` column (replications use one set, reproductions
-# the other), so the model is only ever shown the categories that apply.
-_REPLICATION_OUTCOMES = {
+# Outcome vocabulary. The valid labels come from extractor_vocab, which is also
+# what db_schema.sql's `unvalidated_outcome_check` mirrors — showing the model a
+# label the constraint rejects would fail the import, and describing one it has
+# dropped would waste prompt space. Only the wording lives here.
+#
+# Reproductions carry a two-axis label, "<computational>, <robustness>". The axes
+# are independent: a reproduction can fail computationally and still find the
+# conclusion robust, and vice versa.
+_OUTCOME_DESCRIPTIONS = {
+    # replications
     "successful": "the replication found the same effect/result as the original study",
     "failed": "the replication did NOT find the original effect (result contradicts or is inconsistent with the original)",
     "mixed": "some but not all of the original findings replicated",
     "uninformative": "the study design could not meaningfully test the original finding",
     "descriptive": "the paper is descriptive/exploratory, not a hypothesis-testing replication",
+    # Shared by both record types — see the note above the reproduction block.
+    "statistically_successful_but_flawed": "the result held statistically, but the authors flag a methodological problem that undermines it",
     "cannot_be_determined": "the abstract does not give enough information to judge the outcome",
-}
-_REPRODUCTION_OUTCOMES = {
-    "computationally successful, robust": "the original computation reproduced, and it held up under robustness checks",
-    "computationally successful, robustness challenges": "the original computation reproduced, but robustness checks raised issues",
-    "computation not checked, robust": "computational reproduction wasn't assessed; robustness checks were fine",
-    "computation not checked, robustness challenges": "computational reproduction wasn't assessed; robustness checks raised issues",
+    # reproductions. Two labels above — cannot_be_determined and
+    # statistically_successful_but_flawed — apply here too and are not
+    # (computational, robustness) pairs; extractor_vocab decides membership, so
+    # they reach the model for both record types without being repeated here.
+    "computationally reproducible, robust": "the original computation reproduced, and it held up under robustness checks",
+    "computationally reproducible, robustness challenges": "the original computation reproduced, but robustness checks raised issues",
+    "computationally reproducible, not checked": "the original computation reproduced; robustness was not assessed",
+    "computational issues, robust": "the original computation could not be reproduced, but the conclusion still held under robustness checks",
     "computational issues, robustness challenges": "the original computation could not be reproduced, and robustness checks raised issues",
+    "not checked, robust": "computational reproduction wasn't assessed; robustness checks were fine",
+    "not checked, robustness challenges": "computational reproduction wasn't assessed; robustness checks raised issues",
 }
 
 # Common near-miss labels the model tends to invent, mapped onto the closest real
@@ -68,11 +81,25 @@ _CHECK_VALUES = {"correct", "incorrect", "uncertain"}
 
 
 def _outcome_vocab(record_type: str) -> dict:
-    return _REPRODUCTION_OUTCOMES if record_type == "reproduction" else _REPLICATION_OUTCOMES
+    """{label: description} for the categories that apply to *record_type*.
+
+    Membership comes from extractor_vocab; the order follows
+    _OUTCOME_DESCRIPTIONS. A label added upstream but not yet described still
+    reaches the model with an empty description rather than vanishing from the
+    prompt — silently narrowing the vocabulary is how the model ends up
+    'correcting' a perfectly valid outcome.
+    """
+    values = REPRODUCTION_OUTCOMES if record_type == "reproduction" else REPLICATION_OUTCOMES
+    vocab = {k: v for k, v in _OUTCOME_DESCRIPTIONS.items() if k in values}
+    vocab.update({v: "" for v in sorted(values) if v not in _OUTCOME_DESCRIPTIONS})
+    return vocab
 
 
 def _vocab_block(record_type: str) -> str:
-    return "\n".join(f'- "{label}" — {desc}' for label, desc in _outcome_vocab(record_type).items())
+    return "\n".join(
+        f'- "{label}" — {desc}' if desc else f'- "{label}"'
+        for label, desc in _outcome_vocab(record_type).items()
+    )
 
 
 _PROMPT_TEMPLATE = """You are a research quality checker for a database of replication studies.
@@ -153,16 +180,23 @@ def _coerce_check(value) -> str:
 
 def _coerce_outcome(raw, record_type: str) -> tuple[str | None, str | None]:
     """Validate a suggested outcome against the record type's real vocabulary,
-    mapping common near-misses (see _OUTCOME_SYNONYMS) onto the closest valid
-    category. Returns (outcome_or_None, note_suffix_or_None); an unrecognized
-    suggestion is dropped (never passed through as an off-schema string) but
-    flagged in the note suffix so it isn't silently lost."""
+    mapping retired spellings (OUTCOME_RENAME) and common near-misses
+    (_OUTCOME_SYNONYMS) onto the closest valid category. Returns
+    (outcome_or_None, note_suffix_or_None); an unrecognized suggestion is dropped
+    (never passed through as an off-schema string) but flagged in the note suffix
+    so it isn't silently lost."""
     if not raw:
         return None, None
     raw = str(raw).strip()
     vocab = _outcome_vocab(record_type)
     if raw in vocab:
         return raw, None
+    # A retired label is a real judgement in outdated words — the model saw these
+    # spellings in the prompt until the reproduction relabelling, and they read as
+    # natural English either way. Translate rather than discard.
+    renamed = OUTCOME_RENAME.get(raw)
+    if renamed and renamed in vocab:
+        return renamed, None
     mapped = _OUTCOME_SYNONYMS.get(raw.lower())
     if mapped and mapped in vocab:
         return mapped, None
