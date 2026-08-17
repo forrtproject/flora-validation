@@ -40,9 +40,14 @@ import psycopg2
 import psycopg2.errors
 import yaml
 from dotenv import load_dotenv
+from console_encoding import use_utf8_output
 from psycopg2.extras import Json
 
 load_dotenv()
+
+# Progress output below uses non-ASCII glyphs; a cp1252 console cannot encode
+# them and print() would abort the run. See console_encoding.py.
+use_utf8_output()
 
 # Progress output uses ✓ ⚠ →. On a Windows cp1252 console those raise
 # UnicodeEncodeError and abort the run after work is already done.

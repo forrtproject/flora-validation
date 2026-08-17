@@ -331,7 +331,10 @@ function fmtYear(y) {
 // (e.g. reproduction combined labels) pass through unchanged.
 function fmtOutcome(v) {
   if (!v) return v;
-  return { cannot_be_determined: "Cannot be determined" }[String(v).toLowerCase()] || v;
+  return {
+    cannot_be_determined: "Cannot be determined",
+    statistically_successful_but_flawed: "Successful but flawed",
+  }[String(v).toLowerCase()] || v;
 }
 
 // "Hamid", "Hamid and Luke", "Hamid, Luke, and the LLM"
@@ -1977,6 +1980,11 @@ function _replayGates(card, draft) {
   // 3. Outcome — reproduction has two axes; replication is one pick (+ correction
   //    when "Mischaracterised").
   if (a.type === "reproduction") {
+    // A flat reproduction outcome replaces both axes, so restore it instead of
+    // them — replaying the axis clicks would clear it (see onChoice).
+    if (!a.repro_computation && !a.repro_robustness && a.corrected_outcome) {
+      click(`[data-repro-flat="${a.corrected_outcome}"]`);
+    }
     if (a.repro_computation) click(`[data-repro-comp="${a.repro_computation}"]`);
     if (a.repro_robustness)  click(`[data-repro-robust="${a.repro_robustness}"]`);
   } else if (a.outcome) {
@@ -2485,6 +2493,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
                 <button class="choice success" data-correct-outcome="successful">Success</button>
                 <button class="choice danger" data-correct-outcome="failed">Failed</button>
                 <button class="choice warn" data-correct-outcome="mixed">Mixed</button>
+                <button class="choice warn" data-correct-outcome="statistically_successful_but_flawed" title="The result held statistically, but the authors flag a methodological problem that undermines it">Successful but flawed</button>
                 <button class="choice" data-correct-outcome="uninformative">Uninformative</button>
               </div>
             </div>
@@ -2504,6 +2513,14 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
                 <button class="choice success" data-repro-robust="robust">Robust</button>
                 <button class="choice danger" data-repro-robust="challenges">Challenges</button>
                 <button class="choice warn" data-repro-robust="not_checked">Not checked</button>
+              </div>
+            </div>
+            <!-- Not a point on the two-axis grid: it describes the result rather than
+                 the reproduction attempt, so it overrides both axes when chosen. -->
+            <div class="repro-axis">
+              <span class="repro-axis-label">Or, instead of the two axes</span>
+              <div class="choices">
+                <button class="choice warn" data-repro-flat="statistically_successful_but_flawed" title="The result held statistically, but the authors flag a methodological problem that undermines it">Successful but flawed</button>
               </div>
             </div>
           </div>
@@ -3001,14 +3018,32 @@ function onChoice(btn) {
     btn.classList.add("selected");
     updateSubmitState(pairBody);
     // Now that the correct outcome is chosen, collapse gate-3.
-    const correctMap = { successful: "Success", failed: "Failed", mixed: "Mixed", uninformative: "Uninformative" };
+    const correctMap = { successful: "Success", failed: "Failed", mixed: "Mixed",
+                         [_FLAWED_OUTCOME]: "Successful but flawed", uninformative: "Uninformative" };
     const label = `Mischaracterised → ${correctMap[btn.dataset.correctOutcome] || btn.dataset.correctOutcome}`;
     clearTimeout(_chipTimer);
     _chipTimer = setTimeout(() => answerGate(gate, label, "danger"), 300);
     return;
+  } else if (btn.dataset.reproFlat) {
+    // A reproduction outcome that isn't a point on the grid: it describes the
+    // result, not the reproduction attempt, so it replaces both axes rather than
+    // combining with them. The de-select at the top of onChoice only covers
+    // siblings inside one .choices, so clear the axis buttons here.
+    state.judgement.repro_computation = null;
+    state.judgement.repro_robustness = null;
+    pairBody.querySelectorAll("#repro-outcome [data-repro-comp], #repro-outcome [data-repro-robust]")
+      .forEach((b) => b.classList.remove("selected"));
+    state.judgement.corrected_outcome = btn.dataset.reproFlat;
+    updateSubmitState(pairBody);
+    clearTimeout(_chipTimer);
+    _chipTimer = setTimeout(() => answerGate(gate, fmtOutcome(btn.dataset.reproFlat), "warn"), 300);
+    return;
   } else if (btn.dataset.reproComp || btn.dataset.reproRobust) {
     // Reproduction outcome: two axes → combined string in corrected_outcome.
     // (Sibling de-select within each axis is handled at the top of onChoice.)
+    // Picking an axis means the grid applies after all, so drop the flat choice.
+    pairBody.querySelectorAll("#repro-outcome [data-repro-flat]")
+      .forEach((b) => b.classList.remove("selected"));
     if (btn.dataset.reproComp)   state.judgement.repro_computation = btn.dataset.reproComp;
     if (btn.dataset.reproRobust) state.judgement.repro_robustness  = btn.dataset.reproRobust;
     const comp = state.judgement.repro_computation, rob = state.judgement.repro_robustness;
@@ -3091,12 +3126,18 @@ const _reproLabel = (comp, rob) => `${_REPRO_COMP[comp]}, ${_REPRO_ROBUST[rob]}`
 const _REPRO_OUTCOMES = Object.keys(_REPRO_COMP)
   .flatMap(c => Object.keys(_REPRO_ROBUST).map(r => _reproLabel(c, r)));
 
+// The result held statistically, but the authors flag a methodological problem that
+// undermines it. A category in its own right — not a flavour of "successful", not
+// "mixed" — and it applies to both record types, so it is offered on both lists rather
+// than belonging to the reproduction grid. Mirrors extractor_vocab.FLAWED_OUTCOME.
+const _FLAWED_OUTCOME = "statistically_successful_but_flawed";
+
 // Build <option>s for the admin outcome <select> by type. Keeps the current value even
 // if it isn't in the canonical list (e.g. legacy / cannot_be_determined) so nothing is lost.
 function _outcomeOptionsFor(type, selected) {
   const base = type === "reproduction"
-    ? _REPRO_OUTCOMES.slice()
-    : ["successful", "failed", "mixed", "uninformative", "descriptive"];
+    ? [..._REPRO_OUTCOMES, _FLAWED_OUTCOME]
+    : ["successful", "failed", "mixed", _FLAWED_OUTCOME, "uninformative", "descriptive"];
   if (selected && !base.includes(selected)) base.unshift(selected);
   return base.map(o =>
     `<option value="${escapeHtml(o)}" ${selected === o ? "selected" : ""}>${escapeHtml(fmtOutcome(o))}</option>`

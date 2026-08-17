@@ -37,8 +37,14 @@ import pandas as pd
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
+from console_encoding import use_utf8_output
+from extractor_vocab import REPLICATION_OUTCOMES
 
 load_dotenv()
+
+# Progress output below uses non-ASCII glyphs; a cp1252 console cannot encode
+# them and print() would abort the run. See console_encoding.py.
+use_utf8_output()
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -139,13 +145,20 @@ def load_rules(cur):
     return aliases, repro_map, exclusions
 
 
-def derive_outcome(row, aliases, repro_map, unmapped):
+def derive_outcome(row, aliases, repro_map, problems):
     """One outcome string per row.
 
     Replications carry `outcome` and only need spelling normalised. Reproductions
     carry two dimensions, and the single label comes from reproduction_outcome_map
     — a lookup, so an unseen combination is a row to add rather than stored data
     to migrate.
+
+    Nothing unrecognised is passed through. An outcome spelling absent from
+    outcome_alias used to fall through to the export verbatim, which is how a
+    vocabulary change reaches published data without anyone noticing — the same
+    silent-drift failure that cost five weeks on the extractor side (see
+    extractor_vocab.py). Unknown values are collected and reported instead, and
+    run() refuses to write once any turned up.
     """
     if row["type"] == "reproduction":
         key = (row.get("outcome_computational"), row.get("outcome_robustness"))
@@ -153,12 +166,22 @@ def derive_outcome(row, aliases, repro_map, unmapped):
             return repro_map[key]
         # Both map columns are NOT NULL, so a blank dimension can never match and
         # would otherwise be reported as "blank in the source sheet".
-        unmapped.append((row["display_id"], key))
+        problems["repro_unmapped"].append((row["display_id"], key))
         return None
     raw = row.get("outcome")
     if not raw:
         return None
-    return aliases.get(raw, raw)
+    if raw not in aliases:
+        problems["unknown_alias"].append((row["display_id"], raw))
+        return None
+    canonical = aliases[raw]
+    # A bad alias row is as damaging as a missing one: it silently republishes a
+    # real outcome as the wrong category. Catch a canonical value the rest of the
+    # app would reject.
+    if canonical not in REPLICATION_OUTCOMES:
+        problems["bad_alias"].append((row["display_id"], raw, canonical))
+        return None
+    return canonical
 
 
 def _join_parts(*values):
@@ -218,11 +241,12 @@ def run(output: Path, stats_only: bool = False) -> None:
           f"{(df['type'] == 'reproduction').sum()} reproduction)")
 
     # 1 ── outcome
-    unmapped = []
-    df["outcome"] = df.apply(lambda r: derive_outcome(r, aliases, repro_map, unmapped), axis=1)
+    problems = {"repro_unmapped": [], "unknown_alias": [], "bad_alias": []}
+    df["outcome"] = df.apply(lambda r: derive_outcome(r, aliases, repro_map, problems), axis=1)
     df["outcome_quote"] = df.apply(derive_quote, axis=1)
     df["outcome_quote_source"] = df.apply(derive_quote_source, axis=1)
     print(f"  outcome derived; {df['outcome'].notna().sum()} rows have one")
+    unmapped = problems["repro_unmapped"]
     if unmapped:
         print(f"  ⚠ {len(unmapped)} row(s) have no reproduction_outcome_map entry:")
         for display_id, key in unmapped[:10]:
@@ -293,9 +317,10 @@ def run(output: Path, stats_only: bool = False) -> None:
 
     print(f"\n  final: {len(out)} rows × {len(out.columns)} columns")
 
+    unknown_alias, bad_alias = problems["unknown_alias"], problems["bad_alias"]
     missing = int(out["outcome"].isna().sum())
     if missing:
-        blank = missing - len(unmapped)
+        blank = missing - len(unmapped) - len(unknown_alias) - len(bad_alias)
         if blank > 0:
             print(f"  ⚠ {blank} row(s) have no outcome — blank in the source sheet")
         if unmapped:
@@ -304,6 +329,34 @@ def run(output: Path, stats_only: bool = False) -> None:
     print("\n  outcome distribution:")
     for value, n in out["outcome"].value_counts(dropna=True).items():
         print(f"      {str(value):55} {n}")
+
+    # An unrecognised spelling is not a gap to fill later — it means a real outcome
+    # would be published as blank, or (worse, before this check) verbatim and
+    # unrecognised. Report every one, then refuse to write: a partial export that
+    # looks complete is what makes this class of bug expensive.
+    #
+    # A missing reproduction_outcome_map entry stays a warning by contrast: the two
+    # axes are known values and survive in source_records, so it is a derived label
+    # waiting on a lookup row, not data we have failed to understand.
+    if unknown_alias or bad_alias:
+        print()
+        if unknown_alias:
+            print(f"  ✗ {len(unknown_alias)} row(s) carry an outcome spelling absent from outcome_alias:")
+            for display_id, raw in unknown_alias[:10]:
+                print(f"      {display_id}: {raw!r}")
+            print("    → add a row to outcome_alias mapping it to a canonical value, and re-run")
+        if bad_alias:
+            print(f"  ✗ {len(bad_alias)} row(s) alias onto a value the app does not accept:")
+            for display_id, raw, canonical in bad_alias[:10]:
+                print(f"      {display_id}: {raw!r} → {canonical!r}")
+            print("    → fix the outcome_alias row, or add the value to "
+                  "extractor_vocab.REPLICATION_OUTCOMES and the CHECK constraint")
+        raise ValueError(
+            f"{len(unknown_alias) + len(bad_alias)} row(s) have an outcome this "
+            f"transform does not recognise; refusing to produce an export. "
+            f"Raised under --stats-only too, so a dry run reports the problem "
+            f"rather than passing."
+        )
 
     if stats_only:
         print("\n[stats-only] nothing written")

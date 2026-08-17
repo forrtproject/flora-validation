@@ -88,7 +88,7 @@ Stage 3 answers two questions for each confirmed replication: which original stu
 
 | Column | Type | Values | Description |
 |---|---|---|---|
-| `original_match_type` | str | `single_original` · `multiple_match` · `multiple_original` | Classification of how many distinct original studies this paper targets. `single_original` = one clear target. `multiple_match` = 2–5 OpenAlex candidates with the same author/year (disambiguation needed). `multiple_original` = paper genuinely replicates several independent originals (produces multiple rows in the output, one per original). |
+| `original_match_type` | str | `single_original` · `multiple_original` | Classification of how many distinct original studies this paper targets. `single_original` = one clear target. `multiple_original` = paper genuinely replicates several independent originals (produces multiple rows in the output, one per original), or 2–5 OpenAlex candidates share an author/year and need disambiguation. Supersedes `multiple_match`, which the dated CSVs under `data/` still carry. |
 | `original_match_confidence` | str | `high` · `medium` · `low` | Confidence in the `original_match_type` classification. |
 
 #### Original study identification
@@ -105,7 +105,13 @@ Stage 3 answers two questions for each confirmed replication: which original stu
 
 | Column | Type | Values | Description |
 |---|---|---|---|
-| `link_method` | str | `author_year_match` · `llm_abstract` · `llm_fulltext` · `target_pending` · `api_error` | How the original was identified. `author_year_match` = citation pattern matched directly. `llm_abstract` = LLM identified it from the abstract alone. `llm_fulltext` = LLM needed the full PDF text. `target_pending` = not yet processed. `api_error` = failed after 3 retries. |
+| `link_method` | str | `llm_references` · `llm_title_search` · `llm_author_year_search` · `llm_cited_candidates` · `llm_fulltext` · `title_pattern_match` · `citation_context_match` · `no_original_found` · `target_pending` · `api_error` | How the original was identified. `llm_references` = LLM picked it out of the reference list. `llm_title_search` / `llm_author_year_search` = LLM identified a candidate via a title or author-year lookup. `llm_cited_candidates` = LLM chose among cited works. `llm_fulltext` = LLM needed the full PDF text. `title_pattern_match` / `citation_context_match` = matched without an LLM. `no_original_found` = no identifiable original. `target_pending` = not yet processed. `api_error` = failed after 3 retries. |
+
+The first seven are "resolved" — rows carrying them are imported for validation. The
+importer's copy of this list lives in `extractor_vocab.py`, together with the retired
+names (`author_year_match`, `llm_abstract`, `single_candidate_after_requery`,
+`same_author_year_title_overlap`) that the dated CSVs under `data/` still use. A value
+absent from both is rejected outright rather than skipped — see "Vocabulary drift" below.
 | `link_evidence` | str | — | The quote or citation pattern used to link the replication to its original (e.g. `"Baumeister et al. (1998)"`). |
 | `link_confidence` | str | `high` · `medium` · `low` | Confidence that the identified original is correct. |
 | `link_llm_model` | str | — | Exact model identifier used for DOI resolution (e.g. `gemini-2.0-flash`). Empty when linking was rule-based. |
@@ -114,7 +120,20 @@ Stage 3 answers two questions for each confirmed replication: which original stu
 
 | Column | Type | Values | Description |
 |---|---|---|---|
-| `outcome` | str | `success` · `failure` · `mixed` · `uninformative` · `descriptive` · `pending` · `api_error` | Replication outcome. `success` = original finding replicated. `failure` = original finding not replicated. `mixed` = partially replicated. `uninformative` = study ran but could not determine if it replicated. `descriptive` = replicated methods in a different context without testing the original claim (flag for review). `pending` = not yet processed. `api_error` = extraction failed. |
+| `outcome` | str | `success` · `failure` · `mixed` · `statistically_successful_but_flawed` · `uninformative` · `descriptive` · `cannot_be_determined` · `pending` · `api_error` | Replication outcome. `success` = original finding replicated. `failure` = original finding not replicated. `mixed` = partially replicated. `statistically_successful_but_flawed` = the result held statistically but the authors flag a methodological problem that undermines it — a category in its own right, not a flavour of `success` and not `mixed`, and it applies to reproductions as well as replications. `uninformative` = study ran but could not determine if it replicated. `descriptive` = replicated methods in a different context without testing the original claim (flag for review). `cannot_be_determined` = not enough information. `pending` = not yet processed. `api_error` = extraction failed. |
+
+On **reproduction** rows `outcome` usually carries a two-axis label,
+`"<computational>, <robustness>"` — e.g. `computationally reproducible, robust` or
+`not checked, robustness challenges`. Two values are exceptions that sit outside the
+grid and apply to both record types: `cannot_be_determined` and
+`statistically_successful_but_flawed`. The extractor also ships the axes unjoined in
+`outcome_computation` / `outcome_robustness`, each with its own quote and source; those
+are the coded fields per the FLoRA codebook, and the joined string is legacy. Note the two
+disagree when either axis is `cannot_be_determined`: the joined string collapses to the
+bare label and loses the other axis. `success`/`failure` are renamed to
+`successful`/`failed` on import, as are the retired reproduction spellings
+(`computationally successful, X` → `computationally reproducible, X`,
+`computation not checked, X` → `not checked, X`).
 | `outcome_phrase` | str | — | A verbatim quote from the paper supporting the outcome classification. |
 | `outcome_confidence` | str | `high` · `medium` · `low` | Confidence in the `outcome` classification. |
 | `out_quote_source` | str | `abstract` · `fulltext` · `title` | Where in the paper the `outcome_phrase` was found. |
@@ -184,12 +203,39 @@ All 36 columns from Stage 3, plus:
 |---|---|
 | `paper_type` | `replication` · `reproduction` · `false_positive` · `needs_review` |
 | `filter_confidence` | `high` · `medium` · `low` |
-| `original_match_type` | `single_original` · `multiple_match` · `multiple_original` |
-| `link_method` | `author_year_match` · `llm_abstract` · `llm_fulltext` · `target_pending` · `api_error` |
+| `original_match_type` | `single_original` · `multiple_original` (retired: `multiple_match`) |
+| `link_method` | `llm_references` · `llm_title_search` · `llm_author_year_search` · `llm_cited_candidates` · `llm_fulltext` · `title_pattern_match` · `citation_context_match` · `no_original_found` · `target_pending` · `api_error` |
 | `link_confidence` | `high` · `medium` · `low` |
-| `outcome` | `success` · `failure` · `mixed` · `uninformative` · `descriptive` · `pending` · `api_error` |
+| `outcome` | `success` · `failure` · `mixed` · `statistically_successful_but_flawed` · `uninformative` · `descriptive` · `cannot_be_determined` · `pending` · `api_error` — or, on reproductions, `"<computational>, <robustness>"` |
 | `outcome_confidence` | `high` · `medium` · `low` |
-| `out_quote_source` | `abstract` · `fulltext` · `title` |
+| `out_quote_source` | `abstract` · `fulltext` · `title` · `introduction` · `discussion` · `results` — compound values joined with ` \| ` also occur (e.g. `abstract \| discussion`) |
 | `type` | `replication` · `reproduction` |
 | `validation_status` | `confirmed` · `rejected` · `pending` · `needs_review` |
 | `source` | `openalex` · `bob_reed` · `i4r` · `semantic_scholar` |
+
+---
+
+## Vocabulary drift
+
+These vocabularies are set upstream and have been renamed without notice. In July 2026
+every `link_method` value changed; the importer's allowlist did not, and because an
+unrecognised value was indistinguishable from "not yet resolved", the nightly import took
+31 of 1890 eligible rows for five weeks without raising anything.
+
+Two things prevent a repeat:
+
+- **One definition.** `extractor_vocab.py` owns every vocabulary this repo reads from the
+  CSV. `csv_to_db.py`, `find_orphans.py` and `cleanup_orphans.py` import from it; none of
+  them declares its own copy. `db_schema.sql`'s `unvalidated_outcome_check` and the
+  vocabulary `llm_validator.py` shows the model are covered by a test that fails if they
+  drift from it.
+- **Refuse, don't skip.** `check_csv_vocabulary()` raises `VocabularyDriftError` on any
+  value it does not recognise, naming the value and its row count. The import stops
+  instead of quietly shrinking.
+
+**When the extractor renames something:** add the new value to `CURRENT_METHODS` (or the
+relevant outcome set) in `extractor_vocab.py` and move the old name to `RETIRED_METHODS`.
+Retired values are kept, not deleted — `data/` holds dated CSV snapshots back to May, and
+`find_orphans` / `cleanup_orphans` read whichever is passed to `--input`. For a renamed
+*outcome*, add the old→new pair to `OUTCOME_RENAME` and to the `_outcome_relabel` table in
+`db_schema.sql`, so incoming rows and already-stored rows end up on the same spelling.

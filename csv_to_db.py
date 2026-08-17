@@ -9,6 +9,10 @@ exported before that rename, as `filter_status`. This script is the conversion
 point: it reads either name and writes the database column, which keeps the name
 `record_metadata.filter_status`.
 
+Every value vocabulary the CSV uses — link methods, paper types, outcome labels —
+lives in extractor_vocab.py, which also refuses a CSV carrying a value it has
+never seen. Add new upstream values there, not here.
+
 For each imported row this script creates:
   - 1 row in 'unvalidated'      (the record, validation_status = 'unvalidated')
   - 1 row in 'record_metadata'  (supplementary extraction data)
@@ -31,27 +35,24 @@ from pathlib import Path
 import psycopg2
 import pandas as pd
 from dotenv import load_dotenv
+from console_encoding import use_utf8_output
+
+from extractor_vocab import (
+    check_csv_vocabulary,
+    normalize_outcome,
+    paper_type as _paper_type,
+    paper_type_column as _paper_type_column,
+    resolved_mask as _resolved_mask,
+)
 
 load_dotenv()
 
-# Resolved link methods — rows with these methods are ready for validation
-_RESOLVED_METHODS = {
-    "author_year_match", "llm_abstract", "llm_fulltext",
-    "single_candidate_after_requery", "title_pattern_match",
-    "citation_context_match", "same_author_year_title_overlap",
-}
-_RESOLVED_STATUSES = {"replication", "reproduction"}
-
-# The extractor's paper-type column, newest name first (issue #93).
-_PAPER_TYPE_NAMES = ("paper_type", "filter_status")
+# Progress output below uses non-ASCII glyphs; a cp1252 console cannot encode
+# them and print() would abort the run. See console_encoding.py.
+use_utf8_output()
 
 # Validator slots created per record
 _VALIDATOR_SLOTS = ("human_1", "human_2", "llm")
-
-# The upstream extractor still emits 'success'/'failure'. This app (and the FLoRA
-# export) use 'successful'/'failed', so translate at the import boundary. Exact-match
-# only, so reproduction labels like "computationally successful, robust" pass through.
-_OUTCOME_RENAME = {"success": "successful", "failure": "failed"}
 
 
 def _derive_url_o(doi_o: str) -> str:
@@ -127,25 +128,6 @@ def _int_or_none(val) -> "int | None":
         return None
 
 
-def _paper_type(row) -> str:
-    """One row's paper type, under whichever name the CSV carries."""
-    for name in _PAPER_TYPE_NAMES:
-        value = _s(row.get(name))
-        if value:
-            return value
-    return ""
-
-
-def _paper_type_column(df: pd.DataFrame) -> "pd.Series":
-    """The paper-type column of *df*, under whichever name the CSV carries."""
-    for name in _PAPER_TYPE_NAMES:
-        if name in df.columns:
-            return df[name]
-    raise KeyError(
-        f"{Path(__file__).name}: the CSV has no paper-type column "
-        f"(looked for {', '.join(_PAPER_TYPE_NAMES)})")
-
-
 def _work_id(val) -> "str | None":
     """Bare 'W…' OpenAlex work id (strip any 'https://openalex.org/' prefix).
     Returns None (not '') when absent, so the NULL-keyed schema seed and OpenAlex
@@ -173,7 +155,7 @@ def _build_unvalidated_row(record_id: str, pair_id: str, row: pd.Series) -> dict
         "oa_work_id_o":      _work_id(row.get("oa_work_id_o") or row.get("openalex_id_o")),
         "oa_work_id_r":      _work_id(row.get("oa_work_id_r") or row.get("openalex_id_r")),
         "type":              _s(row.get("type")),
-        "outcome":           _OUTCOME_RENAME.get(_s(row.get("outcome")), _s(row.get("outcome"))),
+        "outcome":           normalize_outcome(row.get("outcome")),
         "outcome_quote":     _s(row.get("outcome_phrase")),
         "out_quote_source":  _s(row.get("out_quote_source")),
         "validation_status": "unvalidated",
@@ -198,6 +180,11 @@ def _build_metadata_row(record_id: str, pair_id: str, row: pd.Series) -> dict:
         "link_evidence":              _s(row.get("link_evidence")),
         "link_confidence":            _s(row.get("link_confidence")),
         "link_llm_model":             _s(row.get("link_llm_model")),
+        # Full-text provenance (flora-extractor #124). Blank on rows that never
+        # acquired or parsed a document — note that link_method = 'llm_fulltext'
+        # with a blank pdf_source is a contradiction, counted in run_import.
+        "pdf_source":                 _s(row.get("pdf_source")),
+        "parse_method":               _s(row.get("parse_method")),
         "outcome_confidence":         _s(row.get("outcome_confidence")),
         "authors_r":                  _s(row.get("authors_r")),
         "authors_o":                  _s(row.get("authors_o")),
@@ -240,6 +227,7 @@ def _insert_metadata(cur, row: dict) -> None:
             filter_status, filter_method, filter_evidence, filter_confidence,
             original_match_type, original_match_confidence, doi_o_verification,
             link_method, link_evidence, link_confidence, link_llm_model,
+            pdf_source, parse_method,
             outcome_confidence,
             authors_r, authors_o, journal_r, openalex_id_r, source,
             original_rank, n_originals
@@ -248,6 +236,7 @@ def _insert_metadata(cur, row: dict) -> None:
             %(filter_status)s, %(filter_method)s, %(filter_evidence)s, %(filter_confidence)s,
             %(original_match_type)s, %(original_match_confidence)s, %(doi_o_verification)s,
             %(link_method)s, %(link_evidence)s, %(link_confidence)s, %(link_llm_model)s,
+            %(pdf_source)s, %(parse_method)s,
             %(outcome_confidence)s,
             %(authors_r)s, %(authors_o)s, %(journal_r)s, %(openalex_id_r)s, %(source)s,
             %(original_rank)s, %(n_originals)s
@@ -306,12 +295,14 @@ def run_import(csv_path: Path, dry_run: bool = False) -> None:
     print(f"Reading {csv_path} …")
     df = pd.read_csv(csv_path, dtype=str, encoding="utf-8-sig").fillna("")
 
+    # Before anything else: refuse a CSV whose vocabulary we don't recognise.
+    # An unknown link_method used to be indistinguishable from "not yet
+    # resolved", which is how a rename upstream cost five weeks of imports.
+    check_csv_vocabulary(df)
+
     # Filter to resolved rows only
     paper_type = _paper_type_column(df)
-    resolved_mask = (
-        paper_type.isin(_RESOLVED_STATUSES) &
-        df["link_method"].isin(_RESOLVED_METHODS)
-    )
+    resolved_mask = _resolved_mask(df)
     resolved = df[resolved_mask].copy()
     skipped_fp = (paper_type == "false_positive").sum()
     skipped_no_orig = (df["link_method"] == "no_original_found").sum()
@@ -322,6 +313,18 @@ def run_import(csv_path: Path, dry_run: bool = False) -> None:
     print(f"  false_positive:     {skipped_fp}  (skipped — not replications)")
     print(f"  no_original_found:  {skipped_no_orig}  (skipped — no identifiable original)")
     print(f"  target_pending / api_error / other: {skipped_pending - skipped_no_orig}  (skipped — not yet resolved)")
+
+    # link_method = 'llm_fulltext' means the LLM read a full document, so a blank
+    # pdf_source contradicts it (flora-extractor #124). Reported, not fatal — the
+    # affected rows import and should be treated as unverified.
+    if "pdf_source" in resolved.columns:
+        contradictory = (
+            (resolved["link_method"] == "llm_fulltext")
+            & (resolved["pdf_source"].map(_s) == "")
+        ).sum()
+        if contradictory:
+            print(f"  WARNING: {contradictory} row(s) claim llm_fulltext but name no "
+                  f"pdf_source - treat as unverified")
 
     if resolved.empty:
         print("Nothing to import.")
