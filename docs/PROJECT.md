@@ -30,6 +30,7 @@ disagrees, this one is current — see [§17](#17-documentation-map).
 16. [Operations and troubleshooting](#16-operations-and-troubleshooting)
 17. [Documentation map](#17-documentation-map)
 18. [Design decisions and gotchas](#18-design-decisions-and-gotchas)
+19. [Deferred security work](#19-deferred-security-work)
 
 ---
 
@@ -110,28 +111,29 @@ folder exist but are **empty vestiges of an abandoned Next.js scaffold** — ign
 **Scheduler** — APScheduler, started in-process when `app.py` is imported.
 
 ```
-app.py                     3,134 lines — every HTTP endpoint (59 of them)
-consensus_engine.py          352     — the decision tree
-llm_validator.py             118     — Gemini prompt and parsing
-source_records_service.py    613     — Source Records data layer (no FastAPI types)
-sync_sources.py              492     — entry-sheet ingest
-transform_sources.py         325     — entry-sheet → FLoRA dataset
-csv_to_db.py                 272     — extracted.csv → unvalidated
-export_validated.py          253     — validated → CSV for the R pipeline
-db_schema.sql                806     — all tables, idempotent
+app.py                     3,915 lines — every HTTP endpoint (59 of them)
+consensus_engine.py          576     — the decision tree
+llm_validator.py             454     — Gemini prompt and parsing
+source_records_service.py    622     — Source Records data layer (no FastAPI types)
+sync_sources.py              515     — entry-sheet ingest
+transform_sources.py         397     — entry-sheet → FLoRA dataset
+csv_to_db.py                 890     — extracted.csv → unvalidated
+export_validated.py          288     — validated → CSV for the R pipeline
+db_schema.sql              1,324     — all tables, idempotent
 email_templates.py           174     — Resend transactional email
 
-docs/index.html               ~590   — all five screens
-docs/app.js                 ~6,190   — the whole frontend
-docs/style.css              ~4,920
+docs/index.html                687   — all five screens
+docs/app.js                  7,177   — the whole frontend
+docs/style.css               5,144
 
-tests/                       28 tests, all passing
+tests/                       275 tests, all passing
 .github/workflows/           daily-export.yml · sync-sources.yml
 ```
 
 ### A caution about the database
 
-The production database contains **26 tables, but only 17 belong to this repo.** The
+The production database contains **27 tables after the current schema applies, but
+only 18 belong to this repo.** The
 nine `engine_*` tables (`engine_verdicts` alone has 40,052 rows) are written by a
 different application sharing the same Postgres instance. Nothing here references them.
 Do not assume the database is exclusively this app's — in particular, never run a
@@ -144,8 +146,8 @@ blanket `DROP` or a schema-wide migration.
 ```
   extracted.csv                      (upstream flora-extractor repo)
       │  csv_to_db.py — imports only rows where
-      │  filter_status ∈ {replication, reproduction}
-      │  AND link_method ∈ {7 resolved methods}
+      │  paper_type ∈ {replication, reproduction}
+      │  AND link_method ∈ {10 current resolved methods}
       ▼
   unvalidated              ─────────────────────────┐
       │  + record_metadata (extraction provenance)   │
@@ -174,19 +176,20 @@ blanket `DROP` or a schema-wide migration.
 
 Only **resolved** rows are imported. A row qualifies when:
 
-- `filter_status` is `replication` or `reproduction`, **and**
-- `link_method` is one of: `author_year_match`, `llm_abstract`, `llm_fulltext`,
-  `single_candidate_after_requery`, `title_pattern_match`, `citation_context_match`,
-  `same_author_year_title_overlap`
+- `paper_type` (or archived `filter_status`) is `replication` or `reproduction`, and
+- `link_method` is one of the ten current resolved methods in
+  `extractor_vocab.CURRENT_METHODS`.
 
-Everything else — `false_positive`, `no_original_found`, `target_pending`, `api_error` —
-is skipped and counted in the run output.
+Known unresolved and quarantined methods are skipped and counted. Unknown values,
+missing current columns, duplicate `pair_id`s, and ambiguous source slots fail the
+whole import.
 
-Deduplication is by `pair_id` (an MD5 from the upstream CSV). Re-running is safe.
+Re-running refreshes `record_metadata`. An upstream correction that changes
+`pair_id` is matched by stable `(work_id, original_rank)` and re-keyed; records with
+validator activity are moved to `need_review`.
 
-One translation happens at the boundary: the extractor emits `success`/`failure`, this
-app uses `successful`/`failed`. Exact-match only, so reproduction labels like
-`computationally successful, robust` pass through untouched.
+The boundary canonicalizes current replication labels and derives a reproduction's
+flat outcome from its independently coded computation and robustness axes.
 
 ---
 
@@ -208,6 +211,15 @@ No passwords, no JWT, no OAuth. A validator supplies a **handle** plus either an
 **email** or a **four-part personal code**. The row in `validators` is created on first
 use and looked up thereafter. Handles are `2–32` chars, `[A-Za-z0-9._-]`.
 
+> **Known security debt:** this is currently identity lookup, not durable
+> authentication. Successful login returns a `coder_id`, and private validator
+> endpoints trust a client-supplied `coder_id` instead of a server-side session.
+> Email login proves knowledge of an address and handle, not control of the mailbox;
+> personal codes are stored in plaintext and can be returned into browser storage.
+> A caller who learns another validator's id can therefore act as that validator.
+> This is intentionally documented, not fixed, in the current change set. See
+> [§19](#19-deferred-security-work) before exposing the service to an untrusted network.
+
 `/api/forgot-handle` emails a reminder via Resend, rate-limited per day by
 `forgot_requests_today` / `forgot_requests_date`.
 
@@ -228,8 +240,8 @@ A validator answers three questions in one progressive form:
 2. **Original matching** — does the linked original study match? (correct / wrong / can't tell)
 3. **Outcome coding** — is the outcome judgement right? (correct / mischaracterised / can't tell)
 
-Any answer can carry a correction: `corrected_doi_o`, `corrected_study_o`,
-`corrected_outcome`, `corrected_type`, `corrected_study_r`, `corrected_url_r`,
+Any answer can carry a correction: `corrected_doi_o`, `corrected_title_o`,
+`corrected_outcome`, `corrected_type`, `corrected_title_r`, `corrected_url_r`,
 `corrected_outcome_quote`, `corrected_abstract`. A validator can additionally supply
 `doi_r_published` ("published DOI" button next to "suggest link") — for preprint
 replications, the DOI of the published article, if it is available. It is net-new
@@ -439,6 +451,12 @@ Sign in at the same URL with a handle and password from `admins`. Auth is an
 `_require_admin()`, which returns the admin's handle for stamping. Some operations
 (creating/deleting admins) additionally require `trusted = TRUE`.
 
+> **Known security debt:** `admins.password` is plaintext, the token is deterministic
+> and has no independent expiry/revocation record, and the application currently falls
+> back to the known first-run password `flora-admin-2025` when `ADMIN_PASSWORD` is
+> absent. Admins sharing a password share a token. The frontend can also persist the
+> password through the login-prefill path. See [§19](#19-deferred-security-work).
+
 Eight tabs:
 
 | Tab | What it does |
@@ -495,6 +513,15 @@ instead of the raw extracted value — so resolving a record that landed in revi
 an unrelated reason can no longer silently drop the corrections the validators agreed
 on. Quote edits pre-fill with the longest edit, mirroring consensus.
 
+If an admin resolution gives record **A** the natural identity already owned by
+validated record **B**, the API returns a structured conflict instead of running an
+overwriting upsert. The admin must confirm **Merge A into B** in a second request. B
+stays authoritative and unchanged; A is removed from validated output but retained
+with its extraction metadata and judgements. `validated_record_merges` records the
+two record ids, admin handle, timestamp, and proposed resolution snapshot. A
+concurrent insert uses `ON CONFLICT DO NOTHING` and returns to the same confirmation
+flow rather than mutating B.
+
 ---
 
 ## 10. Database schema
@@ -512,7 +539,9 @@ A non-idempotent statement takes the server down on the next restart.
 `last_login_at`, `last_seen_update`, forgot-handle rate limiting.
 
 **`unvalidated`** (48 cols) — one row per resolved pair. Display columns for both sides
-(`doi_r`/`study_r`/`year_r`/`url_r`/`ref_r`/`abstract_r` and the `_o` equivalents),
+(`doi_r`/`study_r`/`title_r`/`year_r`/`url_r`/`ref_r`/`abstract_r` and the `_o`
+equivalents). `study_r`/`study_o` are within-paper study numbers; titles never
+occupy those fields,
 classification (`type`, `outcome`, `outcome_quote`, `out_quote_source`), workflow state
 (`validation_status`, `is_tiebreaker`, `restricted_access`, `admin_checked`,
 `admin_override`), the three validator summaries as JSONB (`validator_1`,
@@ -526,13 +555,16 @@ classification (`type`, `outcome`, `outcome_quote`, `out_quote_source`), workflo
 points, `flagged`/`flag_reason`, and the `is_shown` / `started_at` / `validated_at`
 timing that drives claiming and reaping. `UNIQUE (record_id, validator_slot)`.
 
-**`validated`** (24 cols) — final consensus records, `UNIQUE (doi_r, study_r, doi_o, study_o)`.
+**`validated`** — final consensus records. Pair identity includes DOI/OpenAlex paper
+identity, `study_r`/`study_o` within-paper study numbers, and title fallbacks for
+legacy rows.
 Includes `doi_r_published` and `alt_identifier_r` (added Aug 2026).
 This is what gets exported.
 
-**`record_metadata`** (25 cols) — upstream extraction provenance: filter and link method,
-evidence, confidence, model, author lists, OpenAlex ids, `doi_o_verification`,
-`original_rank`/`n_originals` for multi-original papers. Not shown in the validation UI.
+**`record_metadata`** — upstream extraction provenance: filter/link evidence and
+confidence, models, author lists, OpenAlex ids, `doi_o_verification`, full-text
+`pdf_source`/`parse_method`, screen categories, outcome reasoning, BibTeX references,
+`work_id`/`release_id`, and multi-original rank/count. Not shown in the validation UI.
 
 ### DOI-less originals
 
@@ -541,7 +573,7 @@ pre-DOI-era papers. The extractor marks these `doi_o_verification = 'no_doi'` an
 ships `doi_o = ''` with identity carried in columns that already exist: `title_o`,
 `oa_work_id_o`, and a `url_o` pointing at OpenAlex instead of doi.org. **`doi_o`
 stays `''`, never `NULL`**, on these rows — `validated`'s natural key
-`(doi_r, study_r, doi_o, study_o)` and its `ON CONFLICT` clause rely on equality,
+pair-identity constraint and its `ON CONFLICT` clause rely on equality,
 and Postgres never treats two NULLs as equal, so a NULL `doi_o` would silently
 break upsert/dedup for these records.
 
@@ -595,10 +627,10 @@ can't reintroduce the bug). On the frontend: `storedDoiO` / `finalDoiO` in
 `val_doi_o` fallback.
 
 **Ambiguous DOI-less originals (warning, not a block).** Because `doi_o` is `''` for
-*all* DOI-less originals, `study_o` is the only field left distinguishing two of them
-cited by the *same* replication. If two such originals share a title (compared loosely
-— casefolded, whitespace-collapsed) or one has a blank title, they collide on
-`(doi_r, study_r, doi_o, study_o)` and the second silently overwrites the first via
+*all* DOI-less originals, the OpenAlex work id is the primary fallback; title and
+within-paper study number provide legacy fallback identity. If two such originals
+share both (titles compared loosely — casefolded, whitespace-collapsed) or have a
+blank title, the second could otherwise overwrite the first via
 `ON CONFLICT DO UPDATE`. `csv_to_db._flag_ambiguous_doi_o_titles()` detects this;
 both import paths call it and **still import the row** — this is deliberately a
 warning, not a hard constraint, so a legitimately odd row can never break the
@@ -616,7 +648,8 @@ are ambiguous.
 
 ### Supporting tables
 
-`admins` · `assignments` · `validator_messages` · `site_banner` · `serving_config`
+`admins` · `assignments` · `validator_messages` · `validated_record_merges` ·
+`site_banner` · `serving_config`
 
 ### Source Records tables
 
@@ -636,7 +669,10 @@ are ambiguous.
 
 ## 11. API reference
 
-59 endpoints. All admin routes require `X-Admin-Token`.
+59 endpoints. All admin routes currently require `X-Admin-Token`. Validator routes
+currently accept `coder_id` as identity; this is a known authorization vulnerability,
+not an API guarantee. The planned authenticated API will derive the validator id from
+the server-side session and remove these parameters (see [§19](#19-deferred-security-work)).
 
 ### Validator
 
@@ -754,11 +790,16 @@ GEMINI_API_KEY=AIzaSy...
 GITHUB_TOKEN=                       # only if the extractor repo is private
 GITHUB_REPO=forrtproject/flora-extractor
 GITHUB_BRANCH=feature/extract
-ADMIN_PASSWORD=                     # fallback admin password
+ADMIN_PASSWORD=                     # first-run admin seed; MUST be set in any deployment
 RESEND_API_KEY=                     # transactional email
 EMAIL_FROM="Flora Validator <noreply@forrt.org>"
 OPENALEX_MAILTO=                    # OpenAlex/Unpaywall polite-pool contact
 ```
+
+`ADMIN_PASSWORD` is read only when the `admins` table is empty. Setting or changing
+the environment variable does **not** rotate an existing database administrator.
+Until the authentication redesign in §19 lands, use a unique high-entropy value and
+rotate the stored admin credential separately.
 
 ### Running
 
@@ -774,7 +815,7 @@ same database, be aware they will all run the nightly jobs.
 ### Tests
 
 ```bash
-python -m pytest tests/ -q          # 28 tests
+python -m pytest tests/ -q          # 275 tests
 ```
 
 Coverage is on the logic that is hardest to reason about: `test_consensus_engine.py`
@@ -794,8 +835,11 @@ No build step. Edit `docs/app.js` / `docs/style.css` and reload. Check syntax wi
 `python-3.12`. Any Procfile-aware host works; production runs on Supabase for the
 database.
 
-Only `DATABASE_URL` is strictly required to boot. Without `GEMINI_API_KEY` the LLM
-paths record an error and route records to `need_review` — degraded, not broken.
+Only `DATABASE_URL` is technically required to boot, but that is **not a safe
+production configuration**: without `ADMIN_PASSWORD`, a fresh database is seeded with
+the known fallback password described in §19. Set a unique value before first start.
+Without `GEMINI_API_KEY` the LLM paths record an error and route records to
+`need_review` — degraded, not broken.
 
 There is also a **static demo mode**: `build_static.py` writes JSON fixtures into
 `docs/`, which can be served from GitHub Pages with no backend at all.
@@ -838,16 +882,16 @@ the blank columns and add them to `manual_references.xlsx` upstream.
 | [SOURCE_RECORDS.md](SOURCE_RECORDS.md) | Current — the entry-sheet tab and pipeline |
 | [SETUP.md](SETUP.md) | Mostly current — environment and Supabase setup |
 | [CSV_SCHEMA.md](CSV_SCHEMA.md) | Reference for the upstream `extracted.csv` columns |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | ⚠ **Stale** (May 2026) |
-| [VALIDATION_DB_SCHEMA.md](VALIDATION_DB_SCHEMA.md) | ⚠ **Stale** (May 2026) |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Current focused overview — not exhaustive |
+| [VALIDATION_DB_SCHEMA.md](VALIDATION_DB_SCHEMA.md) | Current abridged schema guide; `db_schema.sql` remains authoritative |
 | [STAGE4_VALIDATE.md](STAGE4_VALIDATE.md) | ⚠ **Stale** (May 2026) |
 | [README.md](README.md) | Describes the whole four-stage FLoRA Extractor project, of which this repo is stage 4 |
 
-**On the stale docs:** all three date from 2026-05-14 and predate the validator tier
-system, assignments, serving priority, restricted access, messages, admin trust levels,
-and Source Records. Most visibly, they describe a `validators.level` column that
-**does not exist** — the real column is `validator_tier`, with different semantics.
-Treat them as history; verify against `db_schema.sql` before relying on anything in them.
+**On the remaining stale stage document:** it dates from 2026-05-14 and predates the
+validator tier system, assignments, serving priority, restricted access, messages,
+admin trust levels, Source Records, reproduction axes, and the current extractor
+contract. Treat it as history; verify against this document and `db_schema.sql` before
+relying on anything in it.
 
 ---
 
@@ -889,3 +933,83 @@ mount must stay the *last* route registered — anything added after it is unrea
 two-human requirement, because its input is already human-validated in the Google
 Sheets. Do not model new work on it if the input is machine-extracted — that is what the
 main pipeline is for.
+
+---
+
+## 19. Deferred security work
+
+**Status: acknowledged 2026-08-18; deliberately deferred.** The current change set
+does not implement authentication or credential migration. These items are release
+blockers before treating the service as safe for arbitrary public traffic.
+
+### Validator impersonation
+
+The login response contains `coder_id`, and validator endpoints accept that id in a
+query parameter or request body. Database ownership checks compare queue,
+assignment, judgement, and message rows to the submitted id, but they do not prove
+that the caller owns that identity. The vulnerable surface includes more than
+`/api/judge`: queue claim/start, onboarding completion, update acknowledgement,
+restricted reports, skip, senior reject, assignments, stats, judgement history, and
+message read/reply operations all use client-selected identity.
+
+The email login path also authenticates with handle plus email address without an
+email challenge. The personal-code path is stronger only while that code remains
+secret; today it is stored in plaintext, returned in the login profile, and the full
+profile is persisted in `localStorage` as `flora.coder`.
+
+### Administrator credentials and tokens
+
+`admins.password` is plaintext. `_make_token()` hashes only the password plus a fixed
+string, so equal passwords produce equal bearer tokens, login does not create an
+independent session, and there is no session expiry or per-device revocation. A fresh
+database silently seeds `admin` from `ADMIN_PASSWORD`, whose code default is the
+publicly known `flora-admin-2025`. The seed runs only while `admins` is empty, so
+changing the environment later does not repair an existing installation. The admin
+login path also calls `rememberLogin(handle, password)`; a non-email value can remain
+in `flora.lastLogin` despite the adjacent comment claiming that passwords are never
+stored.
+
+### Approved remediation direction
+
+Implement both identities together rather than putting a signature around
+`coder_id` or replacing the deterministic admin hash with another deterministic
+token:
+
+1. Add server-side, opaque sessions for validators and admins. Generate a fresh
+   cryptographically random token at login, store only its hash with principal,
+   creation, expiry, last-used, and revocation timestamps, and deliver the raw token
+   only in a `Secure`, `HttpOnly`, `SameSite` cookie.
+2. Add a `current_validator` / `current_admin` dependency. Every protected endpoint
+   derives identity and tier/trust from that session. Remove `coder_id` from private
+   request bodies and query strings; never keep an insecure compatibility fallback.
+3. Prove validator identity. Email users receive a short-lived, single-use email
+   challenge before account creation or login. Code-only users authenticate with a
+   sufficiently random personal code stored as an Argon2id hash. Stop returning codes
+   and clear legacy credential-bearing browser storage.
+4. Replace `admins.password` with an adaptive password hash (Argon2id), migrate or
+   reset every existing password, remove the hard-coded fallback, and require either
+   an explicit one-time bootstrap secret or an operator command when no admin exists.
+   Password changes, admin deletion, and logout revoke sessions. Trusted admins should
+   receive MFA as a follow-up hardening step.
+5. Protect cookie-authenticated writes against CSRF with strict cookie attributes plus
+   Origin/Fetch-Metadata validation or a CSRF token. Convert state-changing GETs—most
+   importantly `/api/next-pairs`, which claims queue rows—to POST.
+6. Add account/IP login throttling, generic login errors, security-event audit logs,
+   session cleanup, and `Cache-Control: no-store` on authenticated responses.
+
+### Cutover and acceptance criteria
+
+Deploy schema, backend, and frontend changes together and force every user to log in
+again. All legacy admin tokens must stop working at cutover. There must be no period
+where a valid session is optional and a caller can fall back to `coder_id`.
+
+The work is complete only when: a request with another user's id but no session gets
+`401`; validator A cannot read or mutate B's data; tier 0 cannot senior-reject; two
+logins using the same password receive unrelated revocable sessions; password changes
+and logout revoke sessions immediately; cross-origin state-changing requests fail;
+fresh deployment without explicit bootstrap credentials fails closed; and the
+database/browser contain no plaintext passwords, personal codes, or raw session
+tokens.
+
+Until then, set and rotate a unique admin password, restrict administrator access at
+the hosting layer where possible, and do not describe `coder_id` as authentication.

@@ -12,7 +12,7 @@ row forever. Here, improving a rule means editing it and re-running, and all
 rows get the new behaviour immediately.
 
 Six operations:
-  1. derive the merged outcome  (reproductions: computational x robustness)
+  1. normalise/derive the outcome (reproductions derive it from their two axes)
   2. clean DOIs                 (prefixes, whitespace, trailing garbage)
   3. strip redundant url_r      (~86% are just doi.org/<doi_r>)
   4. apply exclusions           (transform_exclusions table)
@@ -38,18 +38,17 @@ import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
 from console_encoding import use_utf8_output
-from extractor_vocab import REPLICATION_OUTCOMES
+from extractor_vocab import (
+    REPLICATION_OUTCOMES,
+    derive_reproduction_outcome,
+    normalize_axis_value,
+)
 
 load_dotenv()
 
 # Progress output below uses non-ASCII glyphs; a cp1252 console cannot encode
 # them and print() would abort the run. See console_encoding.py.
 use_utf8_output()
-
-try:
-    sys.stdout.reconfigure(encoding="utf-8")
-except Exception:
-    pass
 
 ROOT = Path(__file__).parent
 DEFAULT_OUTPUT = ROOT / "output" / "flora_entry_sheets.csv"
@@ -62,6 +61,11 @@ FLORA_COLUMNS = [
     "outcome", "outcome_quote", "outcome_quote_source",
     "type", "source",
     "alt_identifier_o", "alt_identifier_r",
+    # Reproductions only; NULL on replications. The independent coded axes and
+    # their evidence are exported alongside the derived flat outcome. New columns
+    # go LAST so positional readers of the existing export keep working.
+    "outcome_computation", "outcome_computational_quote", "out_quote_computational_source",
+    "outcome_robustness", "outcome_robustness_quote", "out_quote_robust_source",
 ]
 
 # Placeholder DOIs used upstream for papers with no real identifier (book
@@ -121,7 +125,7 @@ def load(cur):
         SELECT record_id::text AS record_id, display_id, source, type,
                doi_o, ref_o, url_o, doi_r, ref_r, url_r, abstract_r,
                outcome, outcome_quote, out_quote_source,
-               outcome_computational, outcome_computational_quote, out_quote_computational_source,
+               outcome_computation, outcome_computational_quote, out_quote_computational_source,
                outcome_robustness, outcome_robustness_quote, out_quote_robust_source,
                study_o, alt_identifier_o, alt_identifier_r,
                validation_status, reviewed_by, duplicate_status
@@ -137,21 +141,33 @@ def load_rules(cur):
     cur.execute("SELECT raw_value, canonical_value FROM outcome_alias")
     aliases = {r["raw_value"]: r["canonical_value"] for r in cur.fetchall()}
 
-    cur.execute("SELECT computational, robustness, canonical FROM reproduction_outcome_map")
-    repro_map = {(r["computational"], r["robustness"]): r["canonical"] for r in cur.fetchall()}
-
     cur.execute("SELECT doi_r, url_r, reason FROM transform_exclusions")
     exclusions = [dict(r) for r in cur.fetchall()]
-    return aliases, repro_map, exclusions
+    return aliases, exclusions
 
 
-def derive_outcome(row, aliases, repro_map, problems):
-    """One outcome string per row.
+def _canonical_axis(row, column, problems):
+    """Canonical axis value for export, recording rather than hiding bad data."""
+    if row.get("type") != "reproduction":
+        return None
+    try:
+        return normalize_axis_value(column, row.get(column))
+    except ValueError:
+        problems.setdefault("invalid_axis", []).append(
+            (row.get("display_id"), column, row.get(column))
+        )
+        return None
 
-    Replications carry `outcome` and only need spelling normalised. Reproductions
-    carry two dimensions, and the single label comes from reproduction_outcome_map
-    — a lookup, so an unseen combination is a row to add rather than stored data
-    to migrate.
+
+def derive_outcome(row, aliases, problems):
+    """The `outcome` string for a row, or None when the row has none.
+
+    Replications carry `outcome` and only need spelling normalised.
+
+    Reproduction axes remain the authoritative coded fields. The flat outcome is
+    deterministically derived from their settled 4×3 grid for compatibility with
+    the extractor schema; an incomplete or undetermined pair is represented as
+    ``cannot_be_determined``.
 
     Nothing unrecognised is passed through. An outcome spelling absent from
     outcome_alias used to fall through to the export verbatim, which is how a
@@ -161,13 +177,11 @@ def derive_outcome(row, aliases, repro_map, problems):
     run() refuses to write once any turned up.
     """
     if row["type"] == "reproduction":
-        key = (row.get("outcome_computational"), row.get("outcome_robustness"))
-        if key in repro_map:
-            return repro_map[key]
-        # Both map columns are NOT NULL, so a blank dimension can never match and
-        # would otherwise be reported as "blank in the source sheet".
-        problems["repro_unmapped"].append((row["display_id"], key))
-        return None
+        computation = _canonical_axis(row, "outcome_computation", problems)
+        robustness = _canonical_axis(row, "outcome_robustness", problems)
+        return derive_reproduction_outcome(
+            computation, robustness
+        )
     raw = row.get("outcome")
     if not raw:
         return None
@@ -228,7 +242,7 @@ def run(output: Path, stats_only: bool = False) -> None:
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         df = load(cur)
-        aliases, repro_map, exclusions = load_rules(cur)
+        aliases, exclusions = load_rules(cur)
     finally:
         conn.close()
 
@@ -241,17 +255,16 @@ def run(output: Path, stats_only: bool = False) -> None:
           f"{(df['type'] == 'reproduction').sum()} reproduction)")
 
     # 1 ── outcome
-    problems = {"repro_unmapped": [], "unknown_alias": [], "bad_alias": []}
-    df["outcome"] = df.apply(lambda r: derive_outcome(r, aliases, repro_map, problems), axis=1)
+    problems = {"unknown_alias": [], "bad_alias": [], "invalid_axis": []}
+    for axis in ("outcome_computation", "outcome_robustness"):
+        df[axis] = df.apply(lambda r, col=axis: _canonical_axis(r, col, problems), axis=1)
+    df["outcome"] = df.apply(lambda r: derive_outcome(r, aliases, problems), axis=1)
     df["outcome_quote"] = df.apply(derive_quote, axis=1)
     df["outcome_quote_source"] = df.apply(derive_quote_source, axis=1)
-    print(f"  outcome derived; {df['outcome'].notna().sum()} rows have one")
-    unmapped = problems["repro_unmapped"]
-    if unmapped:
-        print(f"  ⚠ {len(unmapped)} row(s) have no reproduction_outcome_map entry:")
-        for display_id, key in unmapped[:10]:
-            print(f"      {display_id}: {key[0]!r} x {key[1]!r}")
-        print("    → add a row to reproduction_outcome_map and re-run")
+    n_repro = int((df["type"] == "reproduction").sum())
+    print(f"  outcome normalized/derived; {df['outcome'].notna().sum()} row(s) have one")
+    if n_repro:
+        print(f"  {n_repro} reproduction row(s) carry two authoritative axes")
 
     # 2 ── DOIs
     before_o, before_r = df["doi_o"].copy(), df["doi_r"].copy()
@@ -317,14 +330,15 @@ def run(output: Path, stats_only: bool = False) -> None:
 
     print(f"\n  final: {len(out)} rows × {len(out.columns)} columns")
 
-    unknown_alias, bad_alias = problems["unknown_alias"], problems["bad_alias"]
+    unknown_alias = problems["unknown_alias"]
+    bad_alias = problems["bad_alias"]
+    invalid_axis = problems["invalid_axis"]
     missing = int(out["outcome"].isna().sum())
     if missing:
-        blank = missing - len(unmapped) - len(unknown_alias) - len(bad_alias)
+        invalid_rows = {display_id for display_id, _, _ in invalid_axis}
+        blank = missing - len(unknown_alias) - len(bad_alias) - len(invalid_rows)
         if blank > 0:
-            print(f"  ⚠ {blank} row(s) have no outcome — blank in the source sheet")
-        if unmapped:
-            print(f"  ⚠ {len(unmapped)} row(s) have no outcome — no reproduction_outcome_map entry")
+            print(f"  ⚠ {blank} row(s) have no outcome — blank or incomplete in the source sheet")
 
     print("\n  outcome distribution:")
     for value, n in out["outcome"].value_counts(dropna=True).items():
@@ -335,10 +349,9 @@ def run(output: Path, stats_only: bool = False) -> None:
     # unrecognised. Report every one, then refuse to write: a partial export that
     # looks complete is what makes this class of bug expensive.
     #
-    # A missing reproduction_outcome_map entry stays a warning by contrast: the two
-    # axes are known values and survive in source_records, so it is a derived label
-    # waiting on a lookup row, not data we have failed to understand.
-    if unknown_alias or bad_alias:
+    # Reproduction outcomes bypass aliases because they are derived from axes,
+    # which are validated by database constraints on the way in.
+    if unknown_alias or bad_alias or invalid_axis:
         print()
         if unknown_alias:
             print(f"  ✗ {len(unknown_alias)} row(s) carry an outcome spelling absent from outcome_alias:")
@@ -351,9 +364,15 @@ def run(output: Path, stats_only: bool = False) -> None:
                 print(f"      {display_id}: {raw!r} → {canonical!r}")
             print("    → fix the outcome_alias row, or add the value to "
                   "extractor_vocab.REPLICATION_OUTCOMES and the CHECK constraint")
+        if invalid_axis:
+            print(f"  INVALID: {len(invalid_axis)} reproduction axis value(s):")
+            for display_id, column, raw in invalid_axis[:10]:
+                print(f"      {display_id}: {column}={raw!r}")
+            print("    correct the source_record value to a codebook category, and re-run")
+        problem_count = len(unknown_alias) + len(bad_alias) + len(invalid_axis)
         raise ValueError(
-            f"{len(unknown_alias) + len(bad_alias)} row(s) have an outcome this "
-            f"transform does not recognise; refusing to produce an export. "
+            f"{problem_count} outcome or axis value(s) are not recognised; "
+            f"refusing to produce an export. "
             f"Raised under --stats-only too, so a dry run reports the problem "
             f"rather than passing."
         )

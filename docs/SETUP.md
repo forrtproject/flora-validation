@@ -109,6 +109,9 @@ Open `.env` and fill in your values:
 # Required — from Supabase dashboard (Settings → Database → URI)
 DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@db.PROJECT_REF.supabase.co:5432/postgres
 
+# Operationally required before first start. Use a unique random value.
+ADMIN_PASSWORD=REPLACE_WITH_A_LONG_RANDOM_SECRET
+
 # Required — from Google AI Studio
 GEMINI_API_KEY=AIzaSy...
 
@@ -119,6 +122,15 @@ GITHUB_TOKEN=github_pat_...
 GITHUB_REPO=forrtproject/flora-extractor
 GITHUB_BRANCH=feature/extract
 ```
+
+> **Current authentication warning:** if `ADMIN_PASSWORD` is omitted while the
+> `admins` table is empty, the application currently uses a known fallback password.
+> The value only seeds the first administrator; changing the environment variable
+> later does not rotate an existing database row. Validator endpoints also currently
+> trust client-supplied `coder_id`. These are acknowledged, deferred issues with a
+> migration plan in [PROJECT.md §19](PROJECT.md#19-deferred-security-work). Until that
+> work lands, never deploy with the fallback and restrict administrator access at the
+> hosting layer where possible.
 
 ---
 

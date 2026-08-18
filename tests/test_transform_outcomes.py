@@ -18,15 +18,13 @@ _ALIASES = {
     "mixed": "mixed",
     "uninformative": "uninformative",
     "unclear": "cannot_be_determined",
-    "descriptive only": "descriptive",
+    "descriptive": "descriptive only",
+    "descriptive only": "descriptive only",
     FLAWED_OUTCOME: FLAWED_OUTCOME,
     **{alias: FLAWED_OUTCOME for alias in FLAWED_OUTCOME_ALIASES},
 }
-_REPRO_MAP = {("computationally reproducible", "robust"): "computationally reproducible, robust"}
-
-
 def _problems():
-    return {"repro_unmapped": [], "unknown_alias": [], "bad_alias": []}
+    return {"unknown_alias": [], "bad_alias": []}
 
 
 def _replication(outcome):
@@ -35,7 +33,7 @@ def _replication(outcome):
 
 def _reproduction(computational, robustness):
     return {"type": "reproduction", "display_id": "R-2",
-            "outcome_computational": computational, "outcome_robustness": robustness}
+            "outcome_computation": computational, "outcome_robustness": robustness}
 
 
 # ---------------------------------------------------------------------------
@@ -44,14 +42,14 @@ def _reproduction(computational, robustness):
 
 def test_known_spelling_is_normalised():
     p = _problems()
-    assert derive_outcome(_replication("descriptive only"), _ALIASES, _REPRO_MAP, p) == "descriptive"
+    assert derive_outcome(_replication("descriptive only"), _ALIASES, p) == "descriptive only"
     assert p["unknown_alias"] == []
 
 
 def test_blank_outcome_stays_blank_and_is_not_an_error():
     """An empty source cell is a known state, not drift."""
     p = _problems()
-    assert derive_outcome(_replication(""), _ALIASES, _REPRO_MAP, p) is None
+    assert derive_outcome(_replication(""), _ALIASES, p) is None
     assert p["unknown_alias"] == []
 
 
@@ -59,7 +57,7 @@ def test_unknown_spelling_is_collected_not_passed_through():
     """The regression. Previously this returned the raw string, which then went
     straight into the FLoRA export under a spelling nothing else recognises."""
     p = _problems()
-    result = derive_outcome(_replication("mostly worked tbh"), _ALIASES, _REPRO_MAP, p)
+    result = derive_outcome(_replication("mostly worked tbh"), _ALIASES, p)
     assert result is None
     assert p["unknown_alias"] == [("R-1", "mostly worked tbh")]
 
@@ -70,7 +68,7 @@ def test_alias_pointing_at_a_rejected_value_is_collected():
     old 'mixed' mapping did."""
     p = _problems()
     aliases = {**_ALIASES, "something": "not_a_real_category"}
-    assert derive_outcome(_replication("something"), aliases, _REPRO_MAP, p) is None
+    assert derive_outcome(_replication("something"), aliases, p) is None
     assert p["bad_alias"] == [("R-1", "something", "not_a_real_category")]
 
 
@@ -83,7 +81,7 @@ def test_all_three_flawed_spellings_normalise_to_one():
     are live data, so all three land on the same stored category."""
     for spelling in (FLAWED_OUTCOME, *FLAWED_OUTCOME_ALIASES):
         p = _problems()
-        assert derive_outcome(_replication(spelling), _ALIASES, _REPRO_MAP, p) == FLAWED_OUTCOME
+        assert derive_outcome(_replication(spelling), _ALIASES, p) == FLAWED_OUTCOME
         assert p["unknown_alias"] == [] and p["bad_alias"] == []
 
 
@@ -91,33 +89,67 @@ def test_flawed_is_its_own_category_not_mixed_or_successful():
     """It was seeded as an alias of 'mixed'. It is a category in its own right."""
     assert FLAWED_OUTCOME in REPLICATION_OUTCOMES
     p = _problems()
-    assert derive_outcome(_replication(FLAWED_OUTCOME), _ALIASES, _REPRO_MAP, p) not in ("mixed", "successful")
+    assert derive_outcome(_replication(FLAWED_OUTCOME), _ALIASES, p) not in ("mixed", "successful")
 
 
-def test_flawed_applies_to_reproductions_too():
+def test_flawed_is_not_a_reproduction_axis_outcome():
     from extractor_vocab import REPRODUCTION_OUTCOMES
-    assert FLAWED_OUTCOME in REPRODUCTION_OUTCOMES
+    assert FLAWED_OUTCOME not in REPRODUCTION_OUTCOMES
 
 
 # ---------------------------------------------------------------------------
-# Reproductions keep their softer handling
+# Reproductions no longer derive a label at all
 # ---------------------------------------------------------------------------
 
-def test_mapped_reproduction_pair_resolves():
+def test_a_reproduction_has_a_derived_outcome():
+    """The two axes are exported as themselves. Deriving one label from them could
+    not represent two independent verdicts, and lost one whenever the other was
+    undetermined."""
     p = _problems()
     row = _reproduction("computationally reproducible", "robust")
-    assert derive_outcome(row, _ALIASES, _REPRO_MAP, p) == "computationally reproducible, robust"
+    assert derive_outcome(row, _ALIASES, p) == "computationally reproducible, robust"
 
 
-def test_unmapped_reproduction_pair_is_reported_separately():
-    """Kept distinct from unknown_alias on purpose: both axes are known values that
-    survive in source_records, so it is a lookup row waiting to be added rather
-    than data we failed to understand — a warning, not a refusal."""
+def test_a_blank_reproduction_outcome_is_not_reported_as_a_problem():
+    """It is blank by design, so it must not show up as drift or a missing mapping —
+    that noise is what would hide a real one."""
     p = _problems()
-    row = _reproduction("technical failure", "robust")
-    assert derive_outcome(row, _ALIASES, _REPRO_MAP, p) is None
-    assert p["repro_unmapped"] == [("R-2", ("technical failure", "robust"))]
-    assert p["unknown_alias"] == []
+    derive_outcome(_reproduction("technical failure", "robust"), _ALIASES, p)
+    assert p == {"unknown_alias": [], "bad_alias": []}
+
+
+def test_technical_failure_needs_no_lookup_row():
+    """Under the old derivation this pair had no reproduction_outcome_map entry and
+    was reported as unmapped. With the axes exported directly there is nothing to
+    map, so a new axis value cannot stall the export."""
+    p = _problems()
+    assert derive_outcome(
+        _reproduction("technical failure", "cannot_be_determined"), _ALIASES, p
+    ) == "cannot_be_determined"
+    assert not any(p.values())
+
+
+def test_the_lookup_table_is_dropped():
+    from pathlib import Path
+    sql = (Path(__file__).resolve().parent.parent / "db_schema.sql").read_text(encoding="utf-8")
+    assert "DROP TABLE IF EXISTS reproduction_outcome_map;" in sql
+    assert "CREATE TABLE IF NOT EXISTS reproduction_outcome_map" not in sql
+
+
+def test_the_axes_are_in_the_exported_column_set():
+    from transform_sources import FLORA_COLUMNS
+    for column in ["outcome_computation", "outcome_computational_quote",
+                   "out_quote_computational_source", "outcome_robustness",
+                   "outcome_robustness_quote", "out_quote_robust_source"]:
+        assert column in FLORA_COLUMNS, f"{column} is not exported"
+
+
+def test_the_new_columns_go_last():
+    """Positional readers of the existing export must keep working."""
+    from transform_sources import FLORA_COLUMNS
+    assert FLORA_COLUMNS[-6:] == [
+        "outcome_computation", "outcome_computational_quote", "out_quote_computational_source",
+        "outcome_robustness", "outcome_robustness_quote", "out_quote_robust_source"]
 
 
 # ---------------------------------------------------------------------------

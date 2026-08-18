@@ -22,6 +22,7 @@ from extractor_vocab import (
     STORED_OUTCOMES,
     VocabularyDriftError,
     check_csv_vocabulary,
+    normalize_axis_value,
     normalize_outcome,
     paper_type,
     paper_type_column,
@@ -82,9 +83,35 @@ def test_outcome_rename_sources_are_not_storable():
 def test_flawed_replication_label_is_kept_distinct():
     """statistically_successful_but_flawed counts with the successes but is
     stored as itself, so the caveat survives the import boundary."""
-    assert "statistically_successful_but_flawed" in REPLICATION_OUTCOMES
+    assert "statistically successful but flawed" in REPLICATION_OUTCOMES
     assert normalize_outcome("statistically_successful_but_flawed") == \
-        "statistically_successful_but_flawed"
+        "statistically successful but flawed"
+
+
+def test_live_extractor_outcome_aliases_are_supported():
+    from extractor_vocab import normalize_outcome
+
+    assert normalize_outcome("descriptive") == "descriptive only"
+    assert normalize_outcome("descriptive only") == "descriptive only"
+    assert normalize_outcome("api_error") == "api_error"
+
+
+def test_live_reproduction_joined_values_are_recognised_and_stored():
+    from extractor_vocab import CURRENT_REPRODUCTION_OUTCOMES, stored_outcome
+
+    for value in (
+        "computational issues, not checked",
+        "not checked, not checked",
+        "technical failure, not checked",
+    ):
+        assert value in CURRENT_REPRODUCTION_OUTCOMES
+        assert stored_outcome(value, "reproduction") == value
+
+
+def test_api_error_is_known_but_stored_as_null():
+    from extractor_vocab import stored_outcome
+
+    assert stored_outcome("api_error", "replication") is None
 
 
 def test_cannot_be_determined_is_shared_by_both_record_types():
@@ -92,6 +119,17 @@ def test_cannot_be_determined_is_shared_by_both_record_types():
     a pair, so reproductions need it too."""
     assert "cannot_be_determined" in REPLICATION_OUTCOMES
     assert "cannot_be_determined" in REPRODUCTION_OUTCOMES
+
+
+def test_axis_values_are_strictly_normalised_at_write_boundaries():
+    assert normalize_axis_value("outcome_computation", "") is None
+    assert normalize_axis_value(
+        "outcome_computation", "computationally successful"
+    ) == "computationally reproducible"
+    with pytest.raises(ValueError, match="invalid outcome_computation"):
+        normalize_axis_value("outcome_computation", "mostly worked")
+    with pytest.raises(ValueError, match="invalid outcome_robustness"):
+        normalize_axis_value("outcome_robustness", "sort of robust")
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +204,12 @@ def test_unknown_link_method_raises():
         check_csv_vocabulary(df)
 
 
+def test_unknown_paper_type_raises():
+    df = _frame(filter_status=["replication", "brand_new_type"])
+    with pytest.raises(VocabularyDriftError, match="brand_new_type"):
+        check_csv_vocabulary(df)
+
+
 def test_unknown_outcome_on_an_importable_row_raises():
     df = _frame(outcome=["success", "wildly_novel_outcome"])
     with pytest.raises(VocabularyDriftError, match="wildly_novel_outcome"):
@@ -182,16 +226,86 @@ def test_unknown_outcome_on_a_non_importable_row_is_ignored():
     check_csv_vocabulary(df)
 
 
-def test_retired_outcome_spelling_passes_and_normalises():
-    """An archived CSV must still import, landing on the current spelling."""
+def test_retired_joined_outcomes_pass_the_drift_check():
+    """The extractor still ships them, so an archived CSV must import. Recognising
+    something we deliberately discard is different from not recognising it — the
+    check must not confuse the two."""
     df = _frame(
         filter_status=["reproduction", "reproduction"],
         outcome=["computationally successful, robust", "computation not checked, robust"],
     )
     check_csv_vocabulary(df)
-    assert normalize_outcome("computationally successful, robust") == \
+
+
+def test_legacy_joined_outcomes_are_recognised_and_normalised():
+    from extractor_vocab import LEGACY_JOINED_OUTCOMES, KNOWN_CSV_OUTCOMES, stored_outcome
+    assert LEGACY_JOINED_OUTCOMES <= KNOWN_CSV_OUTCOMES
+    assert stored_outcome("computationally successful, robust", "reproduction") == \
         "computationally reproducible, robust"
-    assert normalize_outcome("computation not checked, robust") == "not checked, robust"
+
+
+def test_a_reproduction_keeps_the_derived_joined_outcome():
+    """The axes carry the judgement. None, not '' — the CHECK rejects the empty
+    string, and NULL is the honest 'this row's verdict is not that shape'."""
+    from extractor_vocab import stored_outcome
+    assert stored_outcome("computational issues, robust", "reproduction") == \
+        "computational issues, robust"
+    assert stored_outcome("computationally successful, robust", "reproduction") == \
+        "computationally reproducible, robust"
+
+
+def test_a_reproduction_keeps_shared_terminal_values():
+    """Neither flat value is a point on the grid, so the axes cannot hold them —
+    but they only mean anything when the axes are empty."""
+    from extractor_vocab import stored_outcome
+    assert stored_outcome("cannot_be_determined", "reproduction") == "cannot_be_determined"
+    assert stored_outcome("not_a_replication", "reproduction") == "not_a_replication"
+
+
+def test_coded_axes_win_over_a_flat_value():
+    """The extractor writes 'cannot_be_determined' next to coded axes on 6 of 25
+    rows, and on one of those the robustness axis says 'robustness challenges'.
+    Keeping both would restate the joined string's own bug in a second column."""
+    from extractor_vocab import stored_outcome
+    assert stored_outcome(
+        "cannot_be_determined", "reproduction", axes_coded=True,
+        computation="computational issues", robustness="robust",
+    ) == "computational issues, robust"
+    assert stored_outcome(
+        "computational issues, robust", "reproduction", axes_coded=True,
+        computation="cannot_be_determined", robustness="robust",
+    ) == "cannot_be_determined"
+
+
+def test_axes_coded_does_not_affect_a_replication():
+    """Replications have no axes; the flag must not reach into their outcome."""
+    from extractor_vocab import stored_outcome
+    assert stored_outcome("success", "replication", axes_coded=True) == "successful"
+
+
+def test_a_replication_outcome_is_unaffected():
+    from extractor_vocab import stored_outcome
+    assert stored_outcome("success", "replication") == "successful"
+    assert stored_outcome("", "replication") is None
+
+
+def test_every_legacy_joined_value_recovers_into_both_axes():
+    """The schema migration splits stored joined values rather than deleting them.
+    A value that cannot split would be silently dropped instead of migrated."""
+    from extractor_vocab import (OUTCOME_COMPUTATION_VALUES, OUTCOME_ROBUSTNESS_VALUES,
+                                 LEGACY_JOINED_OUTCOMES, split_joined_outcome)
+    for joined in LEGACY_JOINED_OUTCOMES:
+        computation, robustness = split_joined_outcome(joined)
+        assert computation in OUTCOME_COMPUTATION_VALUES, f"{joined!r} -> {computation!r}"
+        assert robustness in OUTCOME_ROBUSTNESS_VALUES, f"{joined!r} -> {robustness!r}"
+
+
+def test_flat_values_do_not_split():
+    """'cannot_be_determined' is not a pair; splitting it would invent an axis."""
+    from extractor_vocab import split_joined_outcome
+    assert split_joined_outcome("cannot_be_determined") == (None, None)
+    assert split_joined_outcome("successful") == (None, None)
+    assert split_joined_outcome("") == (None, None)
 
 
 def test_drift_error_message_is_ascii_printable():

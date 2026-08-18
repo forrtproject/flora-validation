@@ -23,6 +23,13 @@ import hashlib
 import resend
 import source_records_service
 from email_templates import forgot_handle_email
+from extractor_vocab import (
+    REPLICATION_OUTCOMES,
+    derive_reproduction_outcome,
+    normalize_axis_value,
+    normalize_outcome,
+    split_joined_outcome,
+)
 
 load_dotenv()
 
@@ -114,8 +121,14 @@ def init_db():
             if latest_csv.exists():
                 import subprocess, sys
                 subprocess.run(
-                    [sys.executable, str(ROOT / "csv_to_db.py"), "--input", str(latest_csv)],
-                    check=False,
+                    [sys.executable, str(ROOT / "csv_to_db.py"), "--input", str(latest_csv),
+                     "--allow-legacy-schema"],
+                    # The bundled seed is an intentional archived snapshot. It
+                    # predates the current Stage-3 columns, so opt into legacy
+                    # replay explicitly, but never ignore an actual import error:
+                    # an empty app that appears healthy is worse than a failed
+                    # deployment with an actionable traceback.
+                    check=True,
                 )
 
 
@@ -143,13 +156,14 @@ def oa_url_for(doi: str | None) -> str | None:
 
 
 def _enrich_pair(pair: dict) -> dict:
-    """Add OA URLs and legacy field aliases for frontend compatibility."""
+    """Add OA URLs and the one remaining legacy frontend alias."""
     pair = dict(pair)
     pair["oa_url_r"] = oa_url_for(pair.get("doi_r"))
     pair["oa_url_o"] = oa_url_for(pair.get("doi_o"))
-    # Aliases: frontend still uses title_r / title_o / outcome_phrase
-    pair.setdefault("title_r", pair.get("study_r", ""))
-    pair.setdefault("title_o", pair.get("study_o", ""))
+    # Titles are first-class fields. Never fall back to study_* here: those are
+    # Stage-3 within-paper study numbers, not display text.
+    pair.setdefault("title_r", "")
+    pair.setdefault("title_o", "")
     pair.setdefault("outcome_phrase", pair.get("outcome_quote", ""))
     return pair
 
@@ -170,14 +184,25 @@ class JudgeRequest(BaseModel):
     type_check: str                     # "correct" | "incorrect"
     original_check: str                 # "correct" | "incorrect"
     outcome_check: str                  # "correct" | "incorrect"
-    corrected_study_r: str | None = None
+    corrected_title_r: str | None = None
+    corrected_study_r: str | None = None  # legacy client alias for corrected_title_r
     corrected_url_r: str | None = None
     corrected_doi_o: str | None = None
-    corrected_study_o: str | None = None
+    corrected_title_o: str | None = None
+    corrected_study_o: str | None = None  # legacy client alias for corrected_title_o
     corrected_outcome: str | None = None
     corrected_type: str | None = None
     corrected_outcome_quote: str | None = None
     corrected_abstract: str | None = None
+    # Reproductions: two independently coded axes, each with its own evidence. A
+    # validator judges them separately — one quote cannot justify two judgements —
+    # so a correction on one axis must not overwrite the other's.
+    corrected_outcome_computation: str | None = None
+    corrected_computational_quote: str | None = None
+    corrected_computational_source: str | None = None
+    corrected_outcome_robustness: str | None = None
+    corrected_robustness_quote: str | None = None
+    corrected_robustness_source: str | None = None
     doi_r_published: str | None = None      # preprint replications: DOI of the published article
     validator_notes: str | None = None
     additional_checks: dict | None = None   # e.g. {"was_unsure_original": true}
@@ -237,19 +262,35 @@ class AdminResolveRequest(BaseModel):
     original_check: str
     outcome_check: str
     corrected_doi_o: str | None = None
-    corrected_study_o: str | None = None
+    corrected_title_o: str | None = None
+    corrected_study_o: str | None = None  # legacy client alias
     corrected_outcome: str | None = None
     corrected_type: str | None = None
     corrected_outcome_quote: str | None = None
-    corrected_study_r: str | None = None
+    corrected_title_r: str | None = None
+    corrected_study_r: str | None = None  # legacy client alias
     corrected_doi_r: str | None = None
     corrected_url_r: str | None = None
     corrected_abstract_r: str | None = None
-    out_quote_source: str | None = None   # 'abstract' | 'full_text' | None (auto-detect)
+    # A named source ('abstract', 'discussion', 'results', 'abstract|discussion', …)
+    # or 'full_text'. None/'' means auto-detect from the quote against the abstract.
+    out_quote_source: str | None = None
+    # Reproduction axes, edited separately because they are coded separately. Absent
+    # from the form on a replication, so None means "leave the stored value alone".
+    corrected_outcome_computation: str | None = None
+    corrected_computational_quote: str | None = None
+    corrected_computational_source: str | None = None
+    corrected_outcome_robustness: str | None = None
+    corrected_robustness_quote: str | None = None
+    corrected_robustness_source: str | None = None
     # None = unchanged; '' = clear the stored value; anything else = set it.
     doi_r_published: str | None = None
     alt_identifier_r: str | None = None
     admin_notes: str | None = None
+    # Set only by the second, explicitly confirmed duplicate-resolution request.
+    # The server accepts it only when this exact record currently conflicts with
+    # the named authoritative validated record.
+    merge_into_record_id: str | None = None
 
 
 class ServingConfigRequest(BaseModel):
@@ -258,6 +299,136 @@ class ServingConfigRequest(BaseModel):
     priority_year_min: int | None = None
     priority_year_max: int | None = None
     priority_share: int = 70                  # 0–100
+
+
+def _requested_title(req, side: str) -> str | None:
+    """Read the title correction, accepting the pre-split API name during rollout."""
+    value = getattr(req, f"corrected_title_{side}", None)
+    if value is not None:
+        return value
+    return getattr(req, f"corrected_study_{side}", None)
+
+
+def _request_additional_checks(req) -> dict:
+    checks = getattr(req, "additional_checks", None)
+    return checks if isinstance(checks, dict) else {}
+
+
+def _request_is_unsure(req) -> bool:
+    checks = _request_additional_checks(req)
+    axis_checks = checks.get("reproduction_axis_checks")
+    axis_unsure = isinstance(axis_checks, dict) and "unsure" in axis_checks.values()
+    return bool(
+        checks.get("was_unsure_original")
+        or checks.get("was_unsure_outcome")
+        or axis_unsure
+    )
+
+
+def _requested_reproduction_axes(req) -> tuple[str | None, str | None]:
+    """Validate and canonicalise axis corrections, including legacy joined input.
+
+    Older clients sent ``corrected_outcome='computation, robustness'``. Translate
+    that shape at the API boundary, while rejecting a conflict between a joined
+    correction and an explicitly supplied axis instead of silently choosing one.
+    """
+    try:
+        computation = normalize_axis_value(
+            "outcome_computation", getattr(req, "corrected_outcome_computation", None)
+        )
+        robustness = normalize_axis_value(
+            "outcome_robustness", getattr(req, "corrected_outcome_robustness", None)
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    joined = getattr(req, "corrected_outcome", None)
+    legacy_computation, legacy_robustness = split_joined_outcome(joined)
+    if legacy_computation and computation and legacy_computation != computation:
+        raise HTTPException(400, "corrected_outcome conflicts with corrected_outcome_computation")
+    if legacy_robustness and robustness and legacy_robustness != robustness:
+        raise HTTPException(400, "corrected_outcome conflicts with corrected_outcome_robustness")
+    return computation or legacy_computation, robustness or legacy_robustness
+
+
+def _validated_outcome_request(req, base_type: str | None, base_outcome: str | None,
+                               base_computation: str | None = None,
+                               base_robustness: str | None = None) -> tuple[str, str | None, str | None, str | None]:
+    """Return a coherent ``(type, outcome, computation, robustness)`` request.
+
+    The effective values may fall back to the stored record when the caller says a
+    field is unchanged. Type changes never get that fallback: moving between the
+    replication and reproduction vocabularies requires a complete target-shape
+    judgement, preventing a joined reproduction label from surviving as a
+    replication outcome (and vice versa).
+    """
+    corrected_type = (req.corrected_type or "").strip() or None
+    if req.type_check == "incorrect" and not corrected_type:
+        raise HTTPException(400, "corrected_type is required when type_check is incorrect")
+    if req.type_check != "incorrect" and corrected_type:
+        raise HTTPException(400, "corrected_type must be blank when type_check is correct")
+    target_type = (
+        corrected_type
+        if req.type_check == "incorrect" and corrected_type
+        else base_type
+    )
+    if target_type == "not_validation":
+        return target_type, None, None, None
+    if target_type not in {"replication", "reproduction"}:
+        raise HTTPException(400, "corrected_type must be replication, reproduction, or not_validation")
+
+    requested_computation, requested_robustness = _requested_reproduction_axes(req)
+    type_changed = target_type != base_type
+
+    if target_type == "reproduction":
+        joined = getattr(req, "corrected_outcome", None)
+        joined_computation, joined_robustness = split_joined_outcome(joined)
+        if joined and not (joined_computation and joined_robustness):
+            normalised_joined = normalize_outcome(joined)
+            if normalised_joined not in {None, "cannot_be_determined", "not_a_replication"}:
+                raise HTTPException(
+                    400,
+                    "A reproduction corrected_outcome must be a valid joined axis value",
+                )
+        try:
+            computation = requested_computation or normalize_axis_value(
+                "outcome_computation", base_computation
+            )
+            robustness = requested_robustness or normalize_axis_value(
+                "outcome_robustness", base_robustness
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if not computation or not robustness:
+            raise HTTPException(
+                400,
+                "A reproduction requires both outcome_computation and outcome_robustness",
+            )
+        return (
+            target_type,
+            derive_reproduction_outcome(computation, robustness),
+            computation,
+            robustness,
+        )
+
+    # Replications have one categorical outcome and no reproduction axes. Valid
+    # axis fields on this request would still be the wrong data shape, so reject
+    # them just as firmly as an arbitrary axis string.
+    if requested_computation or requested_robustness:
+        raise HTTPException(400, "Replication judgements must not include reproduction axes")
+    requested_outcome = normalize_outcome(req.corrected_outcome)
+    if requested_outcome and requested_outcome not in REPLICATION_OUTCOMES:
+        raise HTTPException(400, f"Invalid replication outcome: {requested_outcome}")
+    if type_changed or req.outcome_check == "incorrect":
+        outcome = requested_outcome
+    else:
+        outcome = requested_outcome or normalize_outcome(base_outcome)
+    if not outcome or outcome not in REPLICATION_OUTCOMES or outcome == "not_a_replication":
+        raise HTTPException(
+            400,
+            "A replication requires a valid replication outcome; choose the corrected outcome",
+        )
+    return target_type, outcome, None, None
 
 
 # ---------------------------------------------------------------------------
@@ -275,9 +446,17 @@ def _normalize_doi(doi: str | None) -> str | None:
 def _points_for(req: JudgeRequest, vote_score: int) -> int:
     """Calculate points for a submission. Base = validator's vote_score."""
     pts = vote_score
-    if req.original_check == "correct":
+    checks = _request_additional_checks(req)
+    if req.original_check == "correct" and not checks.get("was_unsure_original"):
         pts += 2
-    if req.outcome_check == "correct":
+    axis_checks = checks.get("reproduction_axis_checks")
+    axes_affirmed = (
+        not isinstance(axis_checks, dict)
+        or axis_checks.get("computation") == "correct"
+        and axis_checks.get("robustness") == "correct"
+    )
+    if (req.outcome_check == "correct" and not checks.get("was_unsure_outcome")
+            and axes_affirmed):
         pts += 2
     if req.validator_notes and req.validator_notes.strip():
         pts += 1
@@ -419,19 +598,24 @@ def get_my_judgements(coder_id: int):
                 vq.original_check,
                 vq.outcome_check,
                 vq.corrected_doi_o,
-                vq.corrected_study_o,
+                vq.corrected_title_o,
                 vq.corrected_outcome,
+                vq.corrected_outcome_computation,
+                vq.corrected_outcome_robustness,
                 vq.corrected_type,
-                vq.corrected_study_r,
+                vq.corrected_title_r,
                 vq.corrected_url_r,
                 vq.points,
                 vq.validated_at,
                 vq.flagged,
                 vq.flag_reason,
-                u.study_r         AS title_r,
+                u.title_r,
+                u.study_r,
                 u.doi_r,
                 u.year_r,
                 u.outcome         AS extracted_outcome,
+                u.outcome_computation AS extracted_outcome_computation,
+                u.outcome_robustness  AS extracted_outcome_robustness,
                 u.validation_status,
                 vm.id             AS msg_id,
                 vm.body           AS msg_body,
@@ -462,19 +646,26 @@ def get_my_judgements(coder_id: int):
             "original_check":    r["original_check"],
             "outcome_check":     r["outcome_check"],
             "corrected_doi_o":   r["corrected_doi_o"],
-            "corrected_study_o": r["corrected_study_o"],
+            "corrected_title_o": r["corrected_title_o"],
+            "corrected_study_o": r["corrected_title_o"],  # legacy response alias
             "corrected_outcome": r["corrected_outcome"],
+            "corrected_outcome_computation": r["corrected_outcome_computation"],
+            "corrected_outcome_robustness": r["corrected_outcome_robustness"],
             "corrected_type":    r["corrected_type"],
-            "corrected_study_r": r["corrected_study_r"],
+            "corrected_title_r": r["corrected_title_r"],
+            "corrected_study_r": r["corrected_title_r"],  # legacy response alias
             "corrected_url_r":   r["corrected_url_r"],
             "points":            r["points"],
             "validated_at":      r["validated_at"].isoformat() if r["validated_at"] else None,
             "flagged":           bool(r["flagged"]),
             "flag_reason":       r["flag_reason"],
             "title_r":           r["title_r"],
+            "study_r":           r["study_r"],
             "doi_r":             r["doi_r"],
             "year_r":            r["year_r"],
             "extracted_outcome": r["extracted_outcome"],
+            "extracted_outcome_computation": r["extracted_outcome_computation"],
+            "extracted_outcome_robustness": r["extracted_outcome_robustness"],
             "validation_status": r["validation_status"],
             "msg_id":            r["msg_id"],
             "msg_body":          r["msg_body"],
@@ -497,12 +688,18 @@ def get_my_judgement_detail(queue_id: str, coder_id: int):
                 vq.original_check,
                 vq.outcome_check,
                 vq.corrected_doi_o,
-                vq.corrected_study_o,
+                vq.corrected_title_o,
                 vq.corrected_outcome,
                 vq.corrected_outcome_quote,
+                vq.corrected_outcome_computation,
+                vq.corrected_computational_quote,
+                vq.corrected_computational_source,
+                vq.corrected_outcome_robustness,
+                vq.corrected_robustness_quote,
+                vq.corrected_robustness_source,
                 vq.corrected_abstract,
                 vq.corrected_type,
-                vq.corrected_study_r,
+                vq.corrected_title_r,
                 vq.corrected_url_r,
                 vq.additional_checks,
                 vq.validator_notes,
@@ -511,27 +708,47 @@ def get_my_judgement_detail(queue_id: str, coder_id: int):
                 vq.flagged,
                 vq.flag_reason,
                 u.study_r        AS raw_study_r,
+                u.title_r        AS raw_title_r,
                 u.doi_r          AS raw_doi_r,
                 u.year_r         AS raw_year_r,
                 u.abstract_r     AS raw_abstract_r,
                 u.doi_o          AS raw_doi_o,
                 u.study_o        AS raw_study_o,
+                u.title_o        AS raw_title_o,
                 u.year_o         AS raw_year_o,
+                u.url_o          AS raw_url_o,
+                u.oa_work_id_o   AS raw_oa_work_id_o,
                 u.type           AS extracted_type,
                 u.outcome        AS extracted_outcome,
                 u.outcome_quote  AS extracted_outcome_quote,
+                u.outcome_computation            AS extracted_outcome_computation,
+                u.outcome_computational_quote    AS extracted_computational_quote,
+                u.out_quote_computational_source AS extracted_computational_source,
+                u.outcome_robustness             AS extracted_outcome_robustness,
+                u.outcome_robustness_quote       AS extracted_robustness_quote,
+                u.out_quote_robust_source        AS extracted_robustness_source,
                 u.validation_status,
                 v.validated_record_id,
                 v.study_r        AS val_study_r,
+                v.title_r        AS val_title_r,
                 v.doi_r          AS val_doi_r,
                 v.year_r         AS val_year_r,
                 v.abstract_r     AS val_abstract_r,
                 v.doi_o          AS val_doi_o,
                 v.study_o        AS val_study_o,
+                v.title_o        AS val_title_o,
                 v.year_o         AS val_year_o,
+                v.url_o          AS val_url_o,
+                v.oa_work_id_o   AS val_oa_work_id_o,
                 v.type           AS val_type,
                 v.outcome        AS val_outcome,
                 v.outcome_quote  AS val_outcome_quote,
+                v.outcome_computation            AS val_outcome_computation,
+                v.outcome_computational_quote    AS val_computational_quote,
+                v.out_quote_computational_source AS val_computational_source,
+                v.outcome_robustness             AS val_outcome_robustness,
+                v.outcome_robustness_quote       AS val_robustness_quote,
+                v.out_quote_robust_source        AS val_robustness_source,
                 v.admin_approved AS val_admin_approved,
                 v.validated_at   AS val_validated_at
             FROM validation_queue vq
@@ -574,12 +791,20 @@ def get_my_judgement_detail(queue_id: str, coder_id: int):
         "original_check":         row["original_check"],
         "outcome_check":          row["outcome_check"],
         "corrected_doi_o":        row["corrected_doi_o"],
-        "corrected_study_o":      row["corrected_study_o"],
+        "corrected_title_o":      row["corrected_title_o"],
+        "corrected_study_o":      row["corrected_title_o"],  # legacy response alias
         "corrected_outcome":      row["corrected_outcome"],
         "corrected_outcome_quote":row["corrected_outcome_quote"],
+        "corrected_outcome_computation": row["corrected_outcome_computation"],
+        "corrected_computational_quote": row["corrected_computational_quote"],
+        "corrected_computational_source": row["corrected_computational_source"],
+        "corrected_outcome_robustness": row["corrected_outcome_robustness"],
+        "corrected_robustness_quote": row["corrected_robustness_quote"],
+        "corrected_robustness_source": row["corrected_robustness_source"],
         "corrected_abstract":     row["corrected_abstract"],
         "corrected_type":         row["corrected_type"],
-        "corrected_study_r":      row["corrected_study_r"],
+        "corrected_title_r":      row["corrected_title_r"],
+        "corrected_study_r":      row["corrected_title_r"],  # legacy response alias
         "corrected_url_r":        row["corrected_url_r"],
         "additional_checks":      row["additional_checks"],
         "validator_notes":        row["validator_notes"],
@@ -590,27 +815,47 @@ def get_my_judgement_detail(queue_id: str, coder_id: int):
         "validation_status":      row["validation_status"],
         # Raw extracted values (always present)
         "study_r":                row["raw_study_r"],
+        "title_r":                row["raw_title_r"],
         "doi_r":                  row["raw_doi_r"],
         "year_r":                 row["raw_year_r"],
         "abstract_r":             row["raw_abstract_r"],
         "doi_o":                  row["raw_doi_o"],
         "study_o":                row["raw_study_o"],
+        "title_o":                row["raw_title_o"],
         "year_o":                 row["raw_year_o"],
+        "url_o":                  row["raw_url_o"],
+        "oa_work_id_o":           row["raw_oa_work_id_o"],
         "extracted_type":         row["extracted_type"],
         "extracted_outcome":      row["extracted_outcome"],
         "outcome_quote":          row["extracted_outcome_quote"],
+        "outcome_computation":    row["extracted_outcome_computation"],
+        "outcome_computational_quote": row["extracted_computational_quote"],
+        "out_quote_computational_source": row["extracted_computational_source"],
+        "outcome_robustness":     row["extracted_outcome_robustness"],
+        "outcome_robustness_quote": row["extracted_robustness_quote"],
+        "out_quote_robust_source": row["extracted_robustness_source"],
         # Final validated consensus (null if record not yet fully validated)
         "has_validated":          has_validated,
         "val_study_r":            row["val_study_r"],
+        "val_title_r":            row["val_title_r"],
         "val_doi_r":              row["val_doi_r"],
         "val_year_r":             row["val_year_r"],
         "val_abstract_r":         row["val_abstract_r"],
         "val_doi_o":              row["val_doi_o"],
         "val_study_o":            row["val_study_o"],
+        "val_title_o":            row["val_title_o"],
         "val_year_o":             row["val_year_o"],
+        "val_url_o":              row["val_url_o"],
+        "val_oa_work_id_o":       row["val_oa_work_id_o"],
         "val_type":               row["val_type"],
         "val_outcome":            row["val_outcome"],
         "val_outcome_quote":      row["val_outcome_quote"],
+        "val_outcome_computation": row["val_outcome_computation"],
+        "val_computational_quote": row["val_computational_quote"],
+        "val_computational_source": row["val_computational_source"],
+        "val_outcome_robustness": row["val_outcome_robustness"],
+        "val_robustness_quote": row["val_robustness_quote"],
+        "val_robustness_source": row["val_robustness_source"],
         "val_admin_approved":     bool(row["val_admin_approved"]) if row["val_admin_approved"] is not None else False,
         "val_validated_at":       row["val_validated_at"].isoformat() if row["val_validated_at"] else None,
         # Full message thread (outbound from team + validator replies)
@@ -625,9 +870,13 @@ def get_my_judgement_detail(queue_id: str, coder_id: int):
 # Columns selected for a servable pair (kept in one place for reuse).
 _PAIR_SELECT = """
     u.record_id, u.pair_id,
-    u.doi_r, u.study_r, u.year_r, u.url_r, u.ref_r, u.abstract_r,
-    u.doi_o, u.study_o, u.year_o, u.url_o, u.ref_o, u.oa_work_id_o,
+    u.doi_r, u.study_r, u.title_r, u.year_r, u.url_r, u.ref_r, u.abstract_r,
+    u.doi_o, u.study_o, u.title_o, u.year_o, u.url_o, u.ref_o, u.oa_work_id_o,
     u.type, u.outcome, u.outcome_quote, u.out_quote_source,
+    -- Reproductions are coded on two independent axes, each with its own evidence.
+    -- Served alongside the replication shape; `type` decides which the UI renders.
+    u.outcome_computation, u.outcome_computational_quote, u.out_quote_computational_source,
+    u.outcome_robustness, u.outcome_robustness_quote, u.out_quote_robust_source,
     rm.authors_r, rm.authors_o, rm.journal_r, rm.openalex_id_r,
     (SELECT COUNT(*) FROM validation_queue vq2
      WHERE vq2.record_id = u.record_id AND vq2.is_validated = TRUE) AS judge_count
@@ -946,7 +1195,7 @@ def my_assignments(coder_id: int):
         cur.execute(
             """
             SELECT a.record_id, a.assigned_at, a.assigned_by,
-                   u.study_r, u.doi_r, u.year_r, u.outcome
+                   u.study_r, u.title_r, u.doi_r, u.year_r, u.outcome
             FROM assignments a
             JOIN unvalidated u ON u.record_id = a.record_id
             WHERE a.validator_id = %s AND a.status = 'open'
@@ -985,11 +1234,15 @@ def get_assignment(record_id: str, coder_id: int):
 @app.post("/api/assignment-judge")
 def assignment_judge(req: JudgeRequest):
     """Submit an assignment validation. A single trusted validator with access
-    resolves the record directly to consensus_reached (awaiting admin approval),
-    earning double points. Clears the restricted flag and closes the assignment."""
+    resolves a definite record directly (awaiting admin approval), while any
+    explicit uncertainty goes to need_review. Assignments earn double points and
+    clear the restricted flag when closed."""
     for chk in (req.type_check, req.original_check, req.outcome_check):
         if chk not in VALID_CHECKS:
             raise HTTPException(400, "checks must be 'correct' or 'incorrect'")
+
+    corrected_title_r = _requested_title(req, "r")
+    corrected_title_o = _requested_title(req, "o")
 
     with db() as cur:
         cur.execute("SELECT * FROM unvalidated WHERE record_id = %s", (req.record_id,))
@@ -999,11 +1252,14 @@ def assignment_judge(req: JudgeRequest):
         rec = dict(row)
 
         cur.execute(
-            "SELECT id FROM assignments WHERE record_id = %s AND validator_id = %s AND status = 'open'",
+            "SELECT id FROM assignments WHERE record_id = %s AND validator_id = %s "
+            "AND status = 'open' FOR UPDATE",
             (req.record_id, req.coder_id),
         )
-        if not cur.fetchone():
+        assignment = cur.fetchone()
+        if not assignment:
             raise HTTPException(404, "No open assignment for you on this record")
+        assignment_id = assignment["id"]
 
         cur.execute(
             "SELECT id, handle, vote_score, total_points FROM validators WHERE id = %s",
@@ -1013,16 +1269,65 @@ def assignment_judge(req: JudgeRequest):
         if not validator:
             raise HTTPException(404, "Validator not found")
 
+        base_type = rec.get("final_type") or rec["type"]
+        base_outcome = rec.get("final_outcome") or rec.get("outcome")
+        base_computation = (
+            rec.get("final_outcome_computation")
+            if rec.get("final_outcome_computation") is not None
+            else rec.get("outcome_computation")
+        )
+        base_robustness = (
+            rec.get("final_outcome_robustness")
+            if rec.get("final_outcome_robustness") is not None
+            else rec.get("outcome_robustness")
+        )
+        final_type, final_outcome, final_computation, final_robustness = _validated_outcome_request(
+            req, base_type, base_outcome, base_computation, base_robustness
+        )
+        is_not_val = final_type == "not_validation"
         pts = _points_for(req, validator["vote_score"]) * 2   # assignments are double
-
-        is_not_val = req.corrected_type == "not_validation"
-        new_status = "rejected" if is_not_val else "consensus_reached"
+        new_status = (
+            "rejected" if is_not_val
+            else "need_review" if _request_is_unsure(req)
+            else "consensus_reached"
+        )
 
         # Final values: validator's corrections, then any prior correction (final_*),
         # then the raw extracted value — never revert past an existing correction.
-        final_type     = req.corrected_type          or rec.get("final_type")          or rec["type"]
-        final_outcome  = req.corrected_outcome        or rec.get("final_outcome")        or rec["outcome"]
-        final_study_r  = req.corrected_study_r        or rec.get("final_study_r")        or rec["study_r"]
+        final_computational_quote = (
+            req.corrected_computational_quote
+            if req.corrected_computational_quote is not None
+            else rec.get("final_computational_quote")
+            if rec.get("final_computational_quote") is not None
+            else rec.get("outcome_computational_quote")
+        )
+        final_computational_source = (
+            req.corrected_computational_source
+            if req.corrected_computational_source is not None
+            else rec.get("final_computational_source")
+            if rec.get("final_computational_source") is not None
+            else rec.get("out_quote_computational_source")
+        )
+        final_robustness_quote = (
+            req.corrected_robustness_quote
+            if req.corrected_robustness_quote is not None
+            else rec.get("final_robustness_quote")
+            if rec.get("final_robustness_quote") is not None
+            else rec.get("outcome_robustness_quote")
+        )
+        final_robustness_source = (
+            req.corrected_robustness_source
+            if req.corrected_robustness_source is not None
+            else rec.get("final_robustness_source")
+            if rec.get("final_robustness_source") is not None
+            else rec.get("out_quote_robust_source")
+        )
+        if final_type != "reproduction":
+            final_computational_quote = None
+            final_computational_source = None
+            final_robustness_quote = None
+            final_robustness_source = None
+        final_title_r  = corrected_title_r             or rec.get("final_title_r")        or rec["title_r"]
         final_url_r    = req.corrected_url_r          or rec.get("final_url_r")          or rec["url_r"]
         final_abstract = req.corrected_abstract       or rec.get("final_abstract_r")     or rec["abstract_r"]
         # doi_o has a legitimate blank state (see admin_resolve) — the assignment
@@ -1031,7 +1336,7 @@ def assignment_judge(req: JudgeRequest):
         # record must still survive here rather than reverting via `or`.
         final_doi_o    = req.corrected_doi_o if req.corrected_doi_o is not None else (
             rec["final_doi_o"] if rec.get("final_doi_o") is not None else rec["doi_o"])
-        final_study_o  = req.corrected_study_o        or rec.get("final_study_o")        or rec["study_o"]
+        final_title_o  = corrected_title_o             or rec.get("final_title_o")        or rec["title_o"]
         final_quote    = req.corrected_outcome_quote  or rec.get("final_outcome_quote")  or rec["outcome_quote"]
         final_doi_pub  = _normalize_doi(req.doi_r_published) or rec.get("doi_r_published")
 
@@ -1043,14 +1348,24 @@ def assignment_judge(req: JudgeRequest):
             "original_check": req.original_check,
             "outcome_check":  req.outcome_check,
             "corrected_doi_o": req.corrected_doi_o,
-            "corrected_study_o": req.corrected_study_o,
+            "corrected_title_o": corrected_title_o,
             "corrected_outcome": req.corrected_outcome,
-            "corrected_type": req.corrected_type,
+            "corrected_type": final_type if req.type_check == "incorrect" else None,
             "corrected_outcome_quote": req.corrected_outcome_quote,
             "corrected_abstract": req.corrected_abstract,
-            "corrected_study_r": req.corrected_study_r,
+            # Reproduction axes. Captured here so an assignment-resolved
+            # reproduction keeps its judgement; promoting them to final_* columns
+            # rides along with the consensus work.
+            "corrected_outcome_computation": final_computation,
+            "corrected_computational_quote": req.corrected_computational_quote,
+            "corrected_computational_source": req.corrected_computational_source,
+            "corrected_outcome_robustness": final_robustness,
+            "corrected_robustness_quote": req.corrected_robustness_quote,
+            "corrected_robustness_source": req.corrected_robustness_source,
+            "corrected_title_r": corrected_title_r,
             "corrected_url_r": req.corrected_url_r,
             "doi_r_published": _normalize_doi(req.doi_r_published),
+            "additional_checks": req.additional_checks,
             "validator_notes": req.validator_notes or "",
             "points": pts,
             "validated_at": datetime.now(timezone.utc).isoformat(),
@@ -1062,27 +1377,37 @@ def assignment_judge(req: JudgeRequest):
                 validation_status   = %s,
                 final_type          = %s,
                 final_outcome       = %s,
-                final_study_r       = %s,
+                final_title_r       = %s,
                 final_url_r         = %s,
                 final_abstract_r    = %s,
                 final_doi_o         = %s,
-                final_study_o       = %s,
+                final_title_o       = %s,
                 final_outcome_quote = %s,
+                final_outcome_computation  = %s,
+                final_computational_quote  = %s,
+                final_computational_source = %s,
+                final_outcome_robustness   = %s,
+                final_robustness_quote     = %s,
+                final_robustness_source    = %s,
                 doi_r_published     = %s,
                 validator_1         = %s,
                 restricted_access   = FALSE,
                 updated_at          = NOW()
             WHERE record_id = %s
             """,
-            (new_status, final_type, final_outcome, final_study_r, final_url_r,
-             final_abstract, final_doi_o, final_study_o, final_quote, final_doi_pub,
+            (new_status, final_type, final_outcome, final_title_r, final_url_r,
+             final_abstract, final_doi_o, final_title_o, final_quote,
+             final_computation, final_computational_quote, final_computational_source,
+             final_robustness, final_robustness_quote, final_robustness_source, final_doi_pub,
              json.dumps(summary), req.record_id),
         )
         cur.execute(
             "UPDATE assignments SET status = 'done', completed_at = NOW() "
-            "WHERE record_id = %s AND validator_id = %s",
-            (req.record_id, req.coder_id),
+            "WHERE id = %s AND status = 'open' RETURNING id",
+            (assignment_id,),
         )
+        if not cur.fetchone():
+            raise HTTPException(409, "This assignment was already submitted")
         cur.execute(
             "UPDATE validators SET total_points = total_points + %s, "
             "total_judgements = total_judgements + 1 WHERE id = %s RETURNING total_points",
@@ -1101,16 +1426,33 @@ def judge(req: JudgeRequest):
     if req.outcome_check not in VALID_CHECKS:
         raise HTTPException(400, "outcome_check must be 'correct' or 'incorrect'")
 
+    corrected_title_r = _requested_title(req, "r")
+    corrected_title_o = _requested_title(req, "o")
+
     with db() as cur:
         # Look up the record and the validator
         cur.execute(
-            "SELECT record_id FROM unvalidated WHERE record_id = %s",
+            "SELECT * FROM unvalidated WHERE record_id = %s",
             (req.record_id,),
         )
         rec = cur.fetchone()
         if not rec:
             raise HTTPException(404, f"record_id '{req.record_id}' not found")
         record_id = rec["record_id"]
+        rec = dict(rec)
+        target_type, target_outcome, target_computation, target_robustness = _validated_outcome_request(
+            req,
+            rec.get("type"),
+            rec.get("outcome"),
+            rec.get("outcome_computation"),
+            rec.get("outcome_robustness"),
+        )
+        corrected_outcome = (
+            target_outcome
+            if target_type == "replication"
+            and (req.corrected_outcome or target_type != rec.get("type") or req.outcome_check == "incorrect")
+            else None
+        )
 
         cur.execute(
             "SELECT id, handle, vote_score, total_points, total_judgements, validator_tier FROM validators WHERE id = %s",
@@ -1130,6 +1472,7 @@ def judge(req: JudgeRequest):
               AND validator_slot IN ('human_1', 'human_2')
               AND is_validated = FALSE
             LIMIT 1
+            FOR UPDATE
             """,
             (record_id, req.coder_id),
         )
@@ -1154,31 +1497,44 @@ def judge(req: JudgeRequest):
                     original_check = %s,
                     outcome_check = %s,
                     corrected_doi_o = %s,
-                    corrected_study_o = %s,
+                    corrected_title_o = %s,
                     corrected_outcome = %s,
                     corrected_type = %s,
                     corrected_outcome_quote = %s,
                     corrected_abstract = %s,
-                    corrected_study_r = %s,
+                    corrected_outcome_computation = %s,
+                    corrected_computational_quote = %s,
+                    corrected_computational_source = %s,
+                    corrected_outcome_robustness = %s,
+                    corrected_robustness_quote = %s,
+                    corrected_robustness_source = %s,
+                    corrected_title_r = %s,
                     corrected_url_r = %s,
                     doi_r_published = %s,
                     validator_notes = %s,
                     additional_checks = %s,
                     points = %s,
                     validated_at = NOW()
-                WHERE queue_id = %s
+                WHERE queue_id = %s AND is_validated = FALSE
+                RETURNING queue_id
                 """,
                 (
                     req.type_check,
                     req.original_check,
                     req.outcome_check,
                     req.corrected_doi_o,
-                    req.corrected_study_o,
-                    req.corrected_outcome,
-                    req.corrected_type,
+                    corrected_title_o,
+                    corrected_outcome,
+                    target_type if req.type_check == "incorrect" else None,
                     req.corrected_outcome_quote,
                     req.corrected_abstract,
-                    req.corrected_study_r,
+                    target_computation,
+                    req.corrected_computational_quote,
+                    req.corrected_computational_source,
+                    target_robustness,
+                    req.corrected_robustness_quote,
+                    req.corrected_robustness_source,
+                    corrected_title_r,
                     req.corrected_url_r,
                     _normalize_doi(req.doi_r_published),
                     req.validator_notes,
@@ -1187,6 +1543,8 @@ def judge(req: JudgeRequest):
                     queue_id,
                 ),
             )
+            if not cur.fetchone():
+                raise HTTPException(409, "This record was already submitted")
         except psycopg2.errors.UniqueViolation:
             raise HTTPException(400, "Already judged this record")
 
@@ -1200,12 +1558,18 @@ def judge(req: JudgeRequest):
             "original_check": req.original_check,
             "outcome_check": req.outcome_check,
             "corrected_doi_o": req.corrected_doi_o,
-            "corrected_study_o": req.corrected_study_o,
-            "corrected_outcome": req.corrected_outcome,
-            "corrected_type": req.corrected_type,
+            "corrected_title_o": corrected_title_o,
+            "corrected_outcome": corrected_outcome,
+            "corrected_type": target_type if req.type_check == "incorrect" else None,
             "corrected_outcome_quote": req.corrected_outcome_quote,
             "corrected_abstract": req.corrected_abstract,
-            "corrected_study_r": req.corrected_study_r,
+            "corrected_outcome_computation": target_computation,
+            "corrected_computational_quote": req.corrected_computational_quote,
+            "corrected_computational_source": req.corrected_computational_source,
+            "corrected_outcome_robustness": target_robustness,
+            "corrected_robustness_quote": req.corrected_robustness_quote,
+            "corrected_robustness_source": req.corrected_robustness_source,
+            "corrected_title_r": corrected_title_r,
             "corrected_url_r": req.corrected_url_r,
             "doi_r_published": _normalize_doi(req.doi_r_published),
             "additional_checks": req.additional_checks,
@@ -1721,7 +2085,7 @@ def admin_dashboard(x_admin_token: str = Header(...)):
             "failed":        outcomes_raw.get("failed", 0),
             "mixed":         outcomes_raw.get("mixed", 0),
             "uninformative": outcomes_raw.get("uninformative", 0),
-            "descriptive":   outcomes_raw.get("descriptive", 0),
+            "descriptive only": outcomes_raw.get("descriptive only", 0),
         }
 
         # Correction counts per field across all human-validated queue entries
@@ -1730,8 +2094,8 @@ def admin_dashboard(x_admin_token: str = Header(...)):
                 COUNT(*) FILTER (WHERE type_check     = 'incorrect')                AS type_corrections,
                 COUNT(*) FILTER (WHERE original_check = 'incorrect')                AS original_corrections,
                 COUNT(*) FILTER (WHERE outcome_check  = 'incorrect')                AS outcome_corrections,
-                COUNT(*) FILTER (WHERE corrected_study_r IS NOT NULL
-                                   AND corrected_study_r <> '')                     AS title_corrections
+                COUNT(*) FILTER (WHERE corrected_title_r IS NOT NULL
+                                   AND corrected_title_r <> '')                     AS title_corrections
             FROM validation_queue
             WHERE is_validated = TRUE
               AND validator_slot IN ('human_1', 'human_2')
@@ -1908,7 +2272,7 @@ def admin_restricted(x_admin_token: str = Header(...)):
     with db() as cur:
         cur.execute(
             """
-            SELECT u.record_id, u.study_r, u.doi_r, u.year_r, u.outcome,
+            SELECT u.record_id, u.study_r, u.title_r, u.doi_r, u.year_r, u.outcome,
                    u.restricted_reported_at,
                    rv.handle AS reporter_handle,
                    a.validator_id AS assignee_id,
@@ -1980,6 +2344,7 @@ def admin_validator_flagged(validator_id: int, x_admin_token: str = Header(...))
                 vq.flag_reason,
                 vq.validated_at,
                 u.study_r,
+                u.title_r,
                 u.doi_r,
                 u.year_r,
                 u.outcome,
@@ -2135,7 +2500,7 @@ _LLM_DISSENT_SQL = (
 
 # Whitelist of sortable columns → safe SQL expression (never interpolate raw input).
 _ENTRIES_SORT = {
-    "study":       "COALESCE(u.final_study_r, u.study_r)",
+    "study":       "COALESCE(u.final_title_r, u.title_r)",
     "type":        "COALESCE(u.final_type, u.type)",
     "outcome":     "COALESCE(u.final_outcome, u.outcome)",
     "status":      "u.validation_status",
@@ -2183,9 +2548,9 @@ def admin_entries(
     search = search.strip()
     if search:
         connector = "AND" if base_where else "WHERE"
-        where = f"{base_where} {connector} (u.study_r ILIKE %s OR u.doi_r ILIKE %s)"
+        where = f"{base_where} {connector} (u.title_r ILIKE %s OR u.study_r ILIKE %s OR u.doi_r ILIKE %s)"
         search_param = f"%{search}%"
-        search_args = (search_param, search_param)
+        search_args = (search_param, search_param, search_param)
     else:
         where = base_where
         search_args = ()
@@ -2202,7 +2567,8 @@ def admin_entries(
                 u.record_id::text,
                 u.pair_id,
                 u.study_r,
-                u.final_study_r,
+                u.title_r,
+                u.final_title_r,
                 u.year_r,
                 u.doi_r,
                 u.type,
@@ -2302,6 +2668,19 @@ def admin_entry_detail(record_id: str, x_admin_token: str = Header(...)):
             s["record_id"] = str(s["record_id"])
             queue_slots.append(s)
 
+        cur.execute(
+            """
+            SELECT duplicate_record_id::text AS duplicate_record_id,
+                   survivor_record_id::text AS survivor_record_id,
+                   merged_by, merged_at
+            FROM validated_record_merges
+            WHERE duplicate_record_id = %s
+            """,
+            (record_id,),
+        )
+        duplicate_merge = cur.fetchone()
+        duplicate_merge = dict(duplicate_merge) if duplicate_merge else None
+
         # Track record for the two human cards: lifetime judgement count (from
         # validators, so assignment work counts too) and how many of their
         # judgements an admin has flagged. Keyed by validator id (as a string —
@@ -2335,7 +2714,7 @@ def admin_entry_detail(record_id: str, x_admin_token: str = Header(...)):
     def _norm(t): return _re.sub(r'[^a-z0-9]', '', (t or "").lower())
 
     v1, v2 = record.get("validator_1") or {}, record.get("validator_2") or {}
-    correction_fields = ["corrected_doi_o", "corrected_study_o", "corrected_outcome", "corrected_type", "corrected_study_r", "corrected_url_r"]
+    correction_fields = ["corrected_doi_o", "corrected_title_o", "corrected_outcome", "corrected_type", "corrected_title_r", "corrected_url_r"]
     check_fields      = ["type_check", "original_check", "outcome_check"]
 
     checks_agree      = all(v1.get(f) == v2.get(f) for f in check_fields)
@@ -2357,7 +2736,8 @@ def admin_entry_detail(record_id: str, x_admin_token: str = Header(...)):
 
     return {"record": record, "queue_slots": queue_slots,
             "abstract_only_conflict": abstract_only_conflict,
-            "validator_stats": validator_stats}
+            "validator_stats": validator_stats,
+            "duplicate_merge": duplicate_merge}
 
 
 @app.post("/api/admin/queue/{queue_id}/flag")
@@ -2380,11 +2760,13 @@ def admin_flag_queue(queue_id: str, req: FlagQueueRequest | None = None, x_admin
             )
             if row["validator_id"] and reason:
                 paper_lines = ""
-                cur.execute("SELECT study_r, doi_r FROM unvalidated WHERE record_id = %s", (row["record_id"],))
+                cur.execute("SELECT title_r, study_r, doi_r FROM unvalidated WHERE record_id = %s", (row["record_id"],))
                 paper = cur.fetchone()
                 if paper:
+                    if paper["title_r"]:
+                        paper_lines += f"\nPaper: {paper['title_r']}"
                     if paper["study_r"]:
-                        paper_lines += f"\nStudy: {paper['study_r']}"
+                        paper_lines += f"\nStudy number: {paper['study_r']}"
                     if paper["doi_r"]:
                         paper_lines += f"\nDOI: {paper['doi_r']}"
                 body_text = f"One of your judgements was flagged by the review team.{paper_lines}\n\nReason: {reason}"
@@ -2490,7 +2872,7 @@ def list_admin_conversations(x_admin_token: str = Header(...)):
                 r.id                               AS thread_id,
                 r.validator_id,
                 v.handle                           AS validator_handle,
-                COALESCE(u.study_r, r.subject)     AS subject,
+                COALESCE(u.title_r, r.subject)     AS subject,
                 r.sent_by                          AS admin_name,
                 r.queue_id,
                 ts.last_activity,
@@ -2548,7 +2930,7 @@ def get_admin_thread(thread_id: int, mark_read: bool = False, x_admin_token: str
         cur.execute(
             """
             SELECT v.handle,
-                   COALESCE(u.study_r, vm.subject) AS subject,
+                   COALESCE(u.title_r, vm.subject) AS subject,
                    vm.sent_by AS admin_name
             FROM validator_messages vm
             JOIN validators v ON v.id = vm.validator_id
@@ -2688,24 +3070,73 @@ def admin_approve(record_id: str, x_admin_token: str = Header(...)):
         cur.execute("SELECT oa_work_id_o, oa_work_id_r FROM unvalidated WHERE record_id = %s", (record_id,))
         _wid = cur.fetchone() or {}
 
+        approved_type = rec.get("final_type") or rec["type"]
+        if approved_type == "reproduction":
+            try:
+                approved_computation = normalize_axis_value(
+                    "outcome_computation",
+                    rec.get("final_outcome_computation") or rec.get("outcome_computation"),
+                )
+                approved_robustness = normalize_axis_value(
+                    "outcome_robustness",
+                    rec.get("final_outcome_robustness") or rec.get("outcome_robustness"),
+                )
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            if not approved_computation or not approved_robustness:
+                raise HTTPException(400, "Resolve both reproduction axes before approval")
+            approved_outcome = derive_reproduction_outcome(
+                approved_computation, approved_robustness
+            )
+            approved_computational_quote = (
+                rec.get("final_computational_quote") or rec.get("outcome_computational_quote")
+            )
+            approved_computational_source = (
+                rec.get("final_computational_source") or rec.get("out_quote_computational_source")
+            )
+            approved_robustness_quote = (
+                rec.get("final_robustness_quote") or rec.get("outcome_robustness_quote")
+            )
+            approved_robustness_source = (
+                rec.get("final_robustness_source") or rec.get("out_quote_robust_source")
+            )
+        else:
+            approved_outcome = normalize_outcome(rec.get("final_outcome") or rec["outcome"])
+            if approved_type != "replication" or approved_outcome not in REPLICATION_OUTCOMES \
+                    or approved_outcome == "not_a_replication":
+                raise HTTPException(400, "Resolve a valid replication outcome before approval")
+            approved_computation = approved_robustness = None
+            approved_computational_quote = approved_computational_source = None
+            approved_robustness_quote = approved_robustness_source = None
+
         # Drop any prior row for this record (the natural key is mutable, so a
         # correction could otherwise leave a stale duplicate under the old key).
         cur.execute("DELETE FROM validated WHERE record_id = %s", (record_id,))
         cur.execute(
             """
             INSERT INTO validated (
-                record_id, doi_r, study_r, year_r, url_r, ref_r, abstract_r,
-                doi_o, study_o, year_o, url_o, ref_o,
+                record_id, doi_r, study_r, title_r, year_r, url_r, ref_r, abstract_r,
+                doi_o, study_o, title_o, year_o, url_o, ref_o,
                 oa_work_id_o, oa_work_id_r,
                 type, outcome, outcome_quote, out_quote_source,
+                outcome_computation, outcome_computational_quote, out_quote_computational_source,
+                outcome_robustness, outcome_robustness_quote, out_quote_robust_source,
                 doi_r_published, alt_identifier_r, admin_approved
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, TRUE)
-            ON CONFLICT (doi_r, study_r, doi_o, study_o) DO UPDATE SET
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                      %s,%s,%s,%s,%s,%s,%s,%s,
+                      %s,%s, TRUE)
+            ON CONFLICT (doi_r, study_r, title_r, original_key, study_o, title_o) DO UPDATE SET
+            -- original_key is doi_o, or oa_work_id_o when the original has no
+            -- registered DOI (books, chapters, pre-DOI papers). doi_o is '' for
+            -- ALL of those, so keying on it merged distinct originals that also
+            -- shared a title. See db_schema.sql.
                 record_id        = EXCLUDED.record_id,
+                title_r          = EXCLUDED.title_r,
                 year_r           = EXCLUDED.year_r,
                 url_r            = EXCLUDED.url_r,
                 ref_r            = EXCLUDED.ref_r,
                 abstract_r       = EXCLUDED.abstract_r,
+                title_o          = EXCLUDED.title_o,
                 year_o           = EXCLUDED.year_o,
                 url_o            = EXCLUDED.url_o,
                 ref_o            = EXCLUDED.ref_o,
@@ -2715,6 +3146,12 @@ def admin_approve(record_id: str, x_admin_token: str = Header(...)):
                 outcome          = EXCLUDED.outcome,
                 outcome_quote    = EXCLUDED.outcome_quote,
                 out_quote_source = EXCLUDED.out_quote_source,
+                outcome_computation            = EXCLUDED.outcome_computation,
+                outcome_computational_quote    = EXCLUDED.outcome_computational_quote,
+                out_quote_computational_source = EXCLUDED.out_quote_computational_source,
+                outcome_robustness             = EXCLUDED.outcome_robustness,
+                outcome_robustness_quote       = EXCLUDED.outcome_robustness_quote,
+                out_quote_robust_source        = EXCLUDED.out_quote_robust_source,
                 doi_r_published  = EXCLUDED.doi_r_published,
                 alt_identifier_r = EXCLUDED.alt_identifier_r,
                 admin_approved   = TRUE,
@@ -2722,17 +3159,25 @@ def admin_approve(record_id: str, x_admin_token: str = Header(...)):
             """,
             (
                 record_id,
-                rec["doi_r"], rec.get("final_study_r") or rec["study_r"], rec["year_r"], rec.get("final_url_r") or rec["url_r"], rec["ref_r"], rec.get("final_abstract_r") or rec["abstract_r"],
+                rec["doi_r"], rec["study_r"], rec.get("final_title_r") or rec["title_r"], rec["year_r"], rec.get("final_url_r") or rec["url_r"], rec["ref_r"], rec.get("final_abstract_r") or rec["abstract_r"],
                 # doi_o has a legitimate blank state (see admin_resolve) — a prior
                 # deliberate clear ('') must not fall through to the raw doi_o here.
                 rec["final_doi_o"] if rec.get("final_doi_o") is not None else rec["doi_o"],
-                rec.get("final_study_o") or rec["study_o"],
+                rec["study_o"], rec.get("final_title_o") or rec["title_o"],
                 rec["year_o"], rec["url_o"], rec["ref_o"],
                 _wid.get("oa_work_id_o"), _wid.get("oa_work_id_r"),
-                rec.get("final_type") or rec["type"],
-                rec.get("final_outcome") or rec["outcome"],
+                approved_type,
+                approved_outcome,
                 rec.get("final_outcome_quote") or rec["outcome_quote"],
                 rec.get("final_out_quote_source") or rec.get("out_quote_source"),
+                # Reproduction axes: consensus value if one was reached, else what the
+                # extractor coded. Approving must not blank a coded axis.
+                approved_computation,
+                approved_computational_quote,
+                approved_computational_source,
+                approved_robustness,
+                approved_robustness_quote,
+                approved_robustness_source,
                 rec.get("doi_r_published"), rec.get("alt_identifier_r"),
             ),
         )
@@ -2793,6 +3238,54 @@ def admin_save_note(record_id: str, req: AdminNoteRequest, x_admin_token: str = 
     return {"saved": True}
 
 
+def _validated_identity_conflict(
+    cur, record_id: str, *, doi_r, study_r, title_r,
+    doi_o, oa_work_id_o, study_o, title_o,
+):
+    """Lock and return the other validated row with this proposed identity."""
+    candidate_original_key = (doi_o if doi_o not in (None, "") else oa_work_id_o) or ""
+    cur.execute(
+        """
+        SELECT v.record_id::text AS record_id,
+               v.doi_r, v.study_r, v.title_r,
+               v.doi_o, v.original_key, v.study_o, v.title_o,
+               v.type, v.outcome
+        FROM validated v
+        WHERE v.record_id <> %s
+          AND v.doi_r IS NOT DISTINCT FROM %s
+          AND v.study_r IS NOT DISTINCT FROM %s
+          AND v.title_r IS NOT DISTINCT FROM %s
+          AND v.original_key IS NOT DISTINCT FROM %s
+          AND v.study_o IS NOT DISTINCT FROM %s
+          AND v.title_o IS NOT DISTINCT FROM %s
+        LIMIT 1
+        FOR UPDATE OF v
+        """,
+        (record_id, doi_r, study_r, title_r, candidate_original_key, study_o, title_o),
+    )
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def _validated_duplicate_detail(record_id: str, conflict: dict) -> dict:
+    """Structured 409 payload consumed by the admin duplicate-merge dialog."""
+    return {
+        "code": "validated_duplicate_conflict",
+        "message": (
+            "This resolution matches an existing validated record. "
+            "Confirm an explicit duplicate merge; no record has been overwritten."
+        ),
+        "duplicate_record_id": record_id,
+        "survivor_record_id": conflict["record_id"],
+        "survivor": {
+            key: conflict.get(key) for key in (
+                "doi_r", "study_r", "title_r", "doi_o", "original_key",
+                "study_o", "title_o", "type", "outcome",
+            )
+        },
+    }
+
+
 @app.post("/api/admin/entries/{record_id}/resolve")
 def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str = Header(...)):
     admin_handle = _require_admin(x_admin_token)
@@ -2804,12 +3297,53 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
     if req.outcome_check not in VALID_CHECKS:
         raise HTTPException(400, "outcome_check must be 'correct' or 'incorrect'")
 
+    corrected_title_r = _requested_title(req, "r")
+    corrected_title_o = _requested_title(req, "o")
+
     with db() as cur:
-        cur.execute("SELECT * FROM unvalidated WHERE record_id = %s", (record_id,))
+        cur.execute("SELECT * FROM unvalidated WHERE record_id = %s FOR UPDATE", (record_id,))
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "Record not found")
         rec = dict(row)
+
+        # A merged duplicate is retained in unvalidated for provenance. Prevent a
+        # later resolve request from accidentally reviving it as another validated
+        # record; repeating the confirmed request is harmless and idempotent.
+        cur.execute(
+            "SELECT survivor_record_id::text AS survivor_record_id "
+            "FROM validated_record_merges WHERE duplicate_record_id = %s",
+            (record_id,),
+        )
+        prior_merge = cur.fetchone()
+        if prior_merge:
+            survivor_id = prior_merge["survivor_record_id"]
+            if req.merge_into_record_id == survivor_id:
+                return {
+                    "resolved": True, "merged": True, "already_merged": True,
+                    "record_id": record_id, "survivor_record_id": survivor_id,
+                }
+            raise HTTPException(409, detail={
+                "code": "record_already_merged",
+                "message": "This record has already been merged into another validated record.",
+                "duplicate_record_id": record_id,
+                "survivor_record_id": survivor_id,
+            })
+        base_type = rec.get("final_type") or rec["type"]
+        base_outcome = rec.get("final_outcome") or rec.get("outcome")
+        base_computation = (
+            rec.get("final_outcome_computation")
+            if rec.get("final_outcome_computation") is not None
+            else rec.get("outcome_computation")
+        )
+        base_robustness = (
+            rec.get("final_outcome_robustness")
+            if rec.get("final_outcome_robustness") is not None
+            else rec.get("outcome_robustness")
+        )
+        final_type, final_outcome, final_computation, final_robustness = _validated_outcome_request(
+            req, base_type, base_outcome, base_computation, base_robustness
+        )
 
         # Only enforce 2-validator requirement for records still in progress
         if rec["validation_status"] not in ("need_review", "consensus_reached", "rejected"):
@@ -2822,7 +3356,6 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
 
         # When a field isn't re-corrected this pass, keep any prior admin/consensus
         # correction (final_*) — never silently revert to the raw extracted value.
-        final_type      = req.corrected_type      if req.type_check     == "incorrect" and req.corrected_type      else (rec.get("final_type")    or rec["type"])
         # Original DOI can be a legitimate blank (books, chapters, pre-DOI papers,
         # or an admin deliberately clearing a wrong DOI-less-original mismatch) —
         # '' is a real correction here, not "no correction submitted", so it can't
@@ -2836,10 +3369,42 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
             final_doi_o = rec.get("final_doi_o")
             if final_doi_o is None:
                 final_doi_o = rec["doi_o"]
-        final_study_o   = req.corrected_study_o   if req.original_check == "incorrect" and req.corrected_study_o   else (rec.get("final_study_o") or rec["study_o"])
-        final_outcome   = req.corrected_outcome   if req.outcome_check  == "incorrect" and req.corrected_outcome   else (rec.get("final_outcome") or rec["outcome"])
+        final_title_o   = corrected_title_o if req.original_check == "incorrect" and corrected_title_o else (rec.get("final_title_o") or rec["title_o"])
+        final_computational_quote = (
+            req.corrected_computational_quote
+            if req.corrected_computational_quote is not None
+            else rec.get("final_computational_quote")
+            if rec.get("final_computational_quote") is not None
+            else rec.get("outcome_computational_quote")
+        )
+        final_computational_source = (
+            req.corrected_computational_source
+            if req.corrected_computational_source is not None
+            else rec.get("final_computational_source")
+            if rec.get("final_computational_source") is not None
+            else rec.get("out_quote_computational_source")
+        )
+        final_robustness_quote = (
+            req.corrected_robustness_quote
+            if req.corrected_robustness_quote is not None
+            else rec.get("final_robustness_quote")
+            if rec.get("final_robustness_quote") is not None
+            else rec.get("outcome_robustness_quote")
+        )
+        final_robustness_source = (
+            req.corrected_robustness_source
+            if req.corrected_robustness_source is not None
+            else rec.get("final_robustness_source")
+            if rec.get("final_robustness_source") is not None
+            else rec.get("out_quote_robust_source")
+        )
+        if final_type != "reproduction":
+            final_computational_quote = None
+            final_computational_source = None
+            final_robustness_quote = None
+            final_robustness_source = None
         final_outcome_q = req.corrected_outcome_quote if req.corrected_outcome_quote else (rec.get("final_outcome_quote") or rec["outcome_quote"])
-        final_study_r    = req.corrected_study_r    if req.corrected_study_r    else rec.get("final_study_r")    or rec["study_r"]
+        final_title_r    = corrected_title_r if corrected_title_r else rec.get("final_title_r") or rec["title_r"]
         final_doi_r      = req.corrected_doi_r      if req.corrected_doi_r      else rec.get("final_doi_r")      or rec["doi_r"]
         final_url_r      = req.corrected_url_r      if req.corrected_url_r      else rec.get("final_url_r")      or rec["url_r"]
         final_abstract_r = req.corrected_abstract_r if req.corrected_abstract_r else rec.get("final_abstract_r") or rec["abstract_r"]
@@ -2850,8 +3415,15 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
         # Outcome-quote source: honour an explicit admin choice, otherwise (re)detect
         # from the final quote against the final abstract, falling back to any stored value.
         from consensus_engine import quote_source_for
-        if req.out_quote_source in ("abstract", "full_text"):
-            final_src, final_src_by = req.out_quote_source, admin_handle
+        from extractor_vocab import normalize_quote_source
+        # Any named source, not just abstract/full_text: the extractor names the
+        # section a quote came from (discussion, results, …) and pipe-joins several
+        # when it spans them. Restricting this to the two computed values meant a
+        # granular stored value matched no option in the admin form, so opening and
+        # saving a record silently replaced it with an auto-detected guess.
+        _explicit_src = normalize_quote_source(req.out_quote_source)
+        if _explicit_src:
+            final_src, final_src_by = _explicit_src, admin_handle
         else:
             final_src = (quote_source_for(final_outcome_q, final_abstract_r)
                          or rec.get("final_out_quote_source") or rec.get("out_quote_source"))
@@ -2885,10 +3457,10 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
                 validation_status   = 'validated',
                 final_type          = %s,
                 final_doi_o         = %s,
-                final_study_o       = %s,
+                final_title_o       = %s,
                 final_outcome       = %s,
                 final_outcome_quote = %s,
-                final_study_r       = %s,
+                final_title_r       = %s,
                 final_doi_r         = %s,
                 final_url_r         = %s,
                 final_abstract_r    = %s,
@@ -2897,17 +3469,114 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
                 doi_r_published     = %s,
                 alt_identifier_r    = %s,
                 admin_override      = %s,
+                -- Reproduction axes. The validated request has already filled a
+                -- complete reproduction pair or cleared the whole shape for a
+                -- replication, so the six final fields remain coherent with type.
+                final_outcome_computation  = %s,
+                final_computational_quote  = %s,
+                final_computational_source = %s,
+                final_outcome_robustness   = %s,
+                final_robustness_quote     = %s,
+                final_robustness_source    = %s,
                 updated_at          = NOW()
             WHERE record_id = %s
             """,
-            (admin_handle, req.admin_notes, final_type, final_doi_o, final_study_o, final_outcome, final_outcome_q, final_study_r, final_doi_r, final_url_r, final_abstract_r, final_src, final_src_by, final_doi_r_pub, final_alt_ids, was_rejected, record_id),
+            (admin_handle, req.admin_notes, final_type, final_doi_o, final_title_o, final_outcome, final_outcome_q, final_title_r, final_doi_r, final_url_r, final_abstract_r, final_src, final_src_by, final_doi_r_pub, final_alt_ids, was_rejected,
+             final_computation, final_computational_quote, final_computational_source,
+             final_robustness, final_robustness_quote, final_robustness_source,
+             record_id),
         )
 
         # The UPDATE above fires the DOI trigger, which NULLs a work id whose DOI just
         # changed. Re-read the post-trigger values so the validated row never carries a
         # work id that points at the old paper.
-        cur.execute("SELECT oa_work_id_o, oa_work_id_r FROM unvalidated WHERE record_id = %s", (record_id,))
+        #
+        # The reproduction axes come back in the same read: the UPDATE COALESCEd the
+        # form's values over the stored ones, so this is where the resolved pair is
+        # assembled. Recomputing it in Python would duplicate that precedence rule.
+        cur.execute(
+            "SELECT oa_work_id_o, oa_work_id_r, "
+            "final_outcome_computation, final_computational_quote, final_computational_source, "
+            "final_outcome_robustness, final_robustness_quote, final_robustness_source "
+            "FROM unvalidated WHERE record_id = %s", (record_id,))
         _wid = cur.fetchone() or {}
+
+        # Resolving A to B's natural key must never use an upsert: that would write
+        # A's data into B while keeping B's record_id. First report a structured
+        # conflict. The UI may then repeat this same request with B's id as an
+        # explicit merge target, at which point A is retired and linked to B.
+        conflict = _validated_identity_conflict(
+            cur, record_id,
+            doi_r=final_doi_r, study_r=rec["study_r"], title_r=final_title_r,
+            doi_o=final_doi_o, oa_work_id_o=_wid.get("oa_work_id_o"),
+            study_o=rec["study_o"], title_o=final_title_o,
+        )
+        if conflict:
+            conflict_id = conflict["record_id"]
+            if req.merge_into_record_id != conflict_id:
+                raise HTTPException(
+                    409, detail=_validated_duplicate_detail(record_id, conflict)
+                )
+
+            snapshot = {
+                "doi_r": final_doi_r,
+                "study_r": rec["study_r"],
+                "title_r": final_title_r,
+                "doi_o": final_doi_o,
+                "oa_work_id_o": _wid.get("oa_work_id_o"),
+                "study_o": rec["study_o"],
+                "title_o": final_title_o,
+                "type": final_type,
+                "outcome": final_outcome,
+                "admin_notes": req.admin_notes,
+            }
+            cur.execute(
+                """
+                INSERT INTO validated_record_merges (
+                    duplicate_record_id, survivor_record_id, merged_by,
+                    resolution_snapshot
+                ) VALUES (%s, %s, %s, %s::jsonb)
+                """,
+                (record_id, conflict_id, admin_handle, json.dumps(snapshot)),
+            )
+            # B remains the authoritative validated row. A and all of its source
+            # metadata/judgements remain available under unvalidated for audit.
+            cur.execute("DELETE FROM validated WHERE record_id = %s", (record_id,))
+            cur.execute(
+                """
+                UPDATE unvalidated
+                   SET validation_status = 'rejected',
+                       admin_checked = TRUE,
+                       admin_name = %s,
+                       admin_override = FALSE,
+                       updated_at = NOW()
+                 WHERE record_id = %s
+                """,
+                (admin_handle, record_id),
+            )
+            cur.execute(
+                """
+                UPDATE assignments
+                   SET status = 'done', completed_at = COALESCE(completed_at, NOW())
+                 WHERE record_id = %s AND status = 'open'
+                """,
+                (record_id,),
+            )
+            return {
+                "resolved": True, "merged": True,
+                "record_id": record_id, "survivor_record_id": conflict_id,
+            }
+
+        if req.merge_into_record_id:
+            raise HTTPException(409, detail={
+                "code": "duplicate_merge_target_changed",
+                "message": (
+                    "The proposed identity no longer matches the selected merge target. "
+                    "Nothing was merged."
+                ),
+                "duplicate_record_id": record_id,
+                "survivor_record_id": req.merge_into_record_id,
+            })
 
         # Drop any prior row for this record (the natural key is mutable, so a
         # correction could otherwise leave a stale duplicate under the old key).
@@ -2915,39 +3584,49 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, x_admin_token: str =
         cur.execute(
             """
             INSERT INTO validated (
-                record_id, doi_r, study_r, year_r, url_r, ref_r, abstract_r,
-                doi_o, study_o, year_o, url_o, ref_o,
+                record_id, doi_r, study_r, title_r, year_r, url_r, ref_r, abstract_r,
+                doi_o, study_o, title_o, year_o, url_o, ref_o,
                 oa_work_id_o, oa_work_id_r,
                 type, outcome, outcome_quote, out_quote_source, out_quote_source_by,
+                outcome_computation, outcome_computational_quote, out_quote_computational_source,
+                outcome_robustness, outcome_robustness_quote, out_quote_robust_source,
                 doi_r_published, alt_identifier_r, admin_approved
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, TRUE)
-            ON CONFLICT (doi_r, study_r, doi_o, study_o) DO UPDATE SET
-                doi_r         = EXCLUDED.doi_r,
-                study_r       = EXCLUDED.study_r,
-                abstract_r    = EXCLUDED.abstract_r,
-                doi_o         = EXCLUDED.doi_o,
-                study_o       = EXCLUDED.study_o,
-                oa_work_id_o  = EXCLUDED.oa_work_id_o,
-                oa_work_id_r  = EXCLUDED.oa_work_id_r,
-                type          = EXCLUDED.type,
-                outcome       = EXCLUDED.outcome,
-                outcome_quote = EXCLUDED.outcome_quote,
-                out_quote_source = EXCLUDED.out_quote_source,
-                out_quote_source_by = EXCLUDED.out_quote_source_by,
-                doi_r_published  = EXCLUDED.doi_r_published,
-                alt_identifier_r = EXCLUDED.alt_identifier_r,
-                admin_approved = TRUE,
-                validated_at  = NOW()
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                      %s,%s,%s,%s,%s,%s,%s,%s,
+                      %s,%s, TRUE)
+            -- A concurrent resolve may create the same identity after the locked
+            -- conflict check. Never overwrite it: leave this insert empty, detect
+            -- its row-count below, and return the same explicit-merge conflict.
+            ON CONFLICT (doi_r, study_r, title_r, original_key, study_o, title_o)
+            DO NOTHING
+            RETURNING record_id
             """,
             (
                 record_id,
-                final_doi_r, final_study_r, rec["year_r"], final_url_r, rec["ref_r"], final_abstract_r,
-                final_doi_o, final_study_o, rec["year_o"], rec["url_o"], rec["ref_o"],
+                final_doi_r, rec["study_r"], final_title_r, rec["year_r"], final_url_r, rec["ref_r"], final_abstract_r,
+                final_doi_o, rec["study_o"], final_title_o, rec["year_o"], rec["url_o"], rec["ref_o"],
                 _wid.get("oa_work_id_o"), _wid.get("oa_work_id_r"),
                 final_type, final_outcome, final_outcome_q, final_src, final_src_by,
+                _wid.get("final_outcome_computation"), _wid.get("final_computational_quote"),
+                _wid.get("final_computational_source"), _wid.get("final_outcome_robustness"),
+                _wid.get("final_robustness_quote"), _wid.get("final_robustness_source"),
                 final_doi_r_pub, final_alt_ids,
             ),
         )
+        if not cur.fetchone():
+            conflict = _validated_identity_conflict(
+                cur, record_id,
+                doi_r=final_doi_r, study_r=rec["study_r"], title_r=final_title_r,
+                doi_o=final_doi_o, oa_work_id_o=_wid.get("oa_work_id_o"),
+                study_o=rec["study_o"], title_o=final_title_o,
+            )
+            if conflict:
+                raise HTTPException(
+                    409, detail=_validated_duplicate_detail(record_id, conflict)
+                )
+            raise HTTPException(
+                409, "The validated identity changed concurrently; retry the resolution."
+            )
 
     return {"resolved": True, "rejected": False, "record_id": record_id}
 
