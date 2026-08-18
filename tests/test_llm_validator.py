@@ -138,20 +138,14 @@ def test_unmappable_outcome_is_dropped_and_check_downgraded():
     assert "sort of replicated with caveats" in result["notes"]
 
 
-def test_reproduction_type_validates_against_reproduction_vocabulary():
-    """A replication-only label ('successful') is not valid for a reproduction
-    record — the vocabulary check is conditioned on the record's type, so it is
-    dropped rather than accepted as-is."""
-    from llm_validator import run_llm_validation
-    repro_record = {**SAMPLE_RECORD, "type": "reproduction"}
-    mock_response_text = json.dumps({
-        "type_check": "correct", "original_check": "correct", "outcome_check": "incorrect",
-        "corrected_outcome": "successful", "corrected_doi_o": None, "corrected_type": None, "notes": "",
-    })
-    with patch("llm_validator._call_gemini", return_value=mock_response_text):
-        result = run_llm_validation(repro_record, context="sanity_check")
-    assert result["corrected_outcome"] is None
+def test_reproduction_axis_rejects_a_value_from_the_other_axis():
+    """The two axes have separate vocabularies. A robustness value offered for the
+    computational axis looks plausible and is nonsense, so it is dropped and the
+    check downgraded rather than stored."""
+    result = _repro_result(computation="robust")
+    assert result["corrected_outcome_computation"] is None
     assert result["outcome_check"] == "uncertain"
+    assert "not a valid axis value" in result["notes"]
 
 
 def test_dropped_outcome_note_survives_verbose_model_notes():
@@ -194,36 +188,55 @@ def test_blank_doi_o_gets_an_honest_sentinel_not_a_blank_line():
     assert "no registered DOI" in captured["prompt"]
 
 
-def _repro_result(label):
+def _repro_result(computation=None, robustness=None, notes=""):
+    """Run a reproduction record through the validator with the given axis
+    suggestions. Reproductions are judged on two independent axes — there is no
+    compound label to correct."""
     from llm_validator import run_llm_validation
     repro_record = {**SAMPLE_RECORD, "type": "reproduction"}
     mock_response_text = json.dumps({
         "type_check": "correct", "original_check": "correct", "outcome_check": "incorrect",
-        "corrected_outcome": label, "corrected_doi_o": None, "corrected_type": None, "notes": "",
+        "corrected_outcome_computation": computation,
+        "corrected_outcome_robustness": robustness,
+        "corrected_doi_o": None, "corrected_type": None, "notes": notes,
     })
     with patch("llm_validator._call_gemini", return_value=mock_response_text):
         return run_llm_validation(repro_record, context="sanity_check")
 
 
-def test_reproduction_type_accepts_valid_reproduction_label():
-    """The real reproduction vocabulary (compound labels) passes through unchanged."""
-    label = "computationally reproducible, robustness challenges"
-    assert _repro_result(label)["corrected_outcome"] == label
+def test_reproduction_axes_pass_through_independently():
+    """Both axes are carried, and neither is derived from the other."""
+    result = _repro_result(computation="computational issues", robustness="robust")
+    assert result["corrected_outcome_computation"] == "computational issues"
+    assert result["corrected_outcome_robustness"] == "robust"
 
 
-def test_reproduction_retired_spelling_is_translated_not_dropped():
-    """The model saw 'computationally successful, X' in the prompt until the
-    reproduction relabelling, and it reads as natural English either way. A real
-    judgement in outdated words is worth translating, not discarding."""
-    result = _repro_result("computationally successful, robustness challenges")
-    assert result["corrected_outcome"] == "computationally reproducible, robustness challenges"
+def test_reproduction_can_correct_one_axis_and_leave_the_other():
+    """The axes are independent: disagreeing about the computation says nothing
+    about robustness, so a null there means 'no correction', not 'unknown'."""
+    result = _repro_result(computation="technical failure")
+    assert result["corrected_outcome_computation"] == "technical failure"
+    assert result["corrected_outcome_robustness"] is None
 
 
-def test_reproduction_invented_label_is_still_dropped():
-    """Translation must not become a licence to accept anything."""
-    result = _repro_result("mostly reproducible-ish")
+def test_reproduction_never_returns_a_compound_label():
+    """The joined string is retired — the axes ARE the judgement."""
+    result = _repro_result(computation="computationally reproducible", robustness="robust")
     assert result["corrected_outcome"] is None
-    assert "not a valid category" in result["notes"]
+
+
+def test_reproduction_invented_axis_value_is_dropped():
+    """Validation must not become a licence to accept anything."""
+    result = _repro_result(computation="mostly reproducible-ish")
+    assert result["corrected_outcome_computation"] is None
+    assert "not a valid axis value" in result["notes"]
+
+
+def test_technical_failure_is_accepted_before_the_extractor_emits_it():
+    """It is in the codebook but never yet written to a CSV. The model may reach it
+    first, and dropping a correct judgement for that reason would be wrong."""
+    assert _repro_result(computation="technical failure")["corrected_outcome_computation"] \
+        == "technical failure"
 
 
 def test_run_llm_validation_retries_once_on_failure():

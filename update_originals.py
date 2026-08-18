@@ -7,7 +7,8 @@ DB — so corrected original references in a new CSV never reach existing rows.
 This script fills that gap.
 
 What it touches (extracted source values only):
-    unvalidated:      doi_o, study_o (CSV title_o), year_o, url_o, ref_o
+    unvalidated:      study_r, doi_o, study_o, title_o, year_o, url_o, ref_o
+    validated:        study_r, study_o (source identity only)
     record_metadata:  authors_o, doi_o_verification
 
 What it deliberately NEVER touches:
@@ -40,7 +41,15 @@ import pandas as pd
 from dotenv import load_dotenv
 from console_encoding import use_utf8_output
 
-from csv_to_db import _s, _url_o, _flag_ambiguous_doi_o_titles, _note_ambiguous_original
+from csv_to_db import (
+    _flag_ambiguous_doi_o_titles,
+    _note_ambiguous_original,
+    _s,
+    _url_o,
+    _validate_csv_schema,
+    _validate_pair_ids,
+)
+from extractor_vocab import check_csv_vocabulary
 
 load_dotenv()
 
@@ -50,10 +59,12 @@ use_utf8_output()
 
 _DEFAULT_CSV = Path(__file__).parent / "data" / "extracted_latest.csv"
 
-# unvalidated original-side columns ← CSV source
+# Extractor-owned columns refreshed on existing records.
 _UNVAL_FIELDS = {
+    "study_r": lambda r: _s(r.get("study_r")),
     "doi_o":   lambda r: _s(r.get("doi_o")),
-    "study_o": lambda r: _s(r.get("title_o")),
+    "study_o": lambda r: _s(r.get("study_o")),
+    "title_o": lambda r: _s(r.get("title_o")),
     "year_o":  lambda r: _s(r.get("year_o")),
     # CSV url_o preferred (DOI-less originals carry an OpenAlex link there),
     # else derived from doi_o — same rule as the import (csv_to_db._url_o).
@@ -62,7 +73,7 @@ _UNVAL_FIELDS = {
 }
 
 
-def run(csv_path: Path, apply: bool) -> None:
+def run(csv_path: Path, apply: bool, allow_legacy_schema: bool = False) -> None:
     database_url = os.environ.get("DATABASE_URL", "")
     if not database_url:
         raise EnvironmentError("DATABASE_URL must be set in environment or .env")
@@ -72,6 +83,10 @@ def run(csv_path: Path, apply: bool) -> None:
     if "pair_id" not in df.columns:
         raise ValueError("CSV has no pair_id column — cannot match rows.")
 
+    _validate_csv_schema(df, allow_legacy=allow_legacy_schema)
+    check_csv_vocabulary(df)
+    _validate_pair_ids(df)
+
     conn = psycopg2.connect(database_url)
     conn.autocommit = False
     try:
@@ -79,8 +94,8 @@ def run(csv_path: Path, apply: bool) -> None:
             cur.execute(
                 """
                 SELECT u.pair_id, u.record_id::text AS record_id,
-                       u.doi_r, u.study_r,
-                       u.doi_o, u.study_o, u.year_o, u.url_o, u.ref_o,
+                       u.doi_r, u.study_r, u.title_r,
+                       u.doi_o, u.study_o, u.title_o, u.year_o, u.url_o, u.ref_o,
                        m.authors_o, m.doi_o_verification
                 FROM unvalidated u
                 LEFT JOIN record_metadata m ON m.record_id = u.record_id
@@ -145,9 +160,11 @@ def run(csv_path: Path, apply: bool) -> None:
                     "key": pid,
                     "record_id": cur_row["record_id"],
                     "doi_r": cur_row["doi_r"],
-                    "study_r": cur_row["study_r"],
+                    "study_r": unval_set.get("study_r", _s(cur_row.get("study_r"))),
+                    "title_r": _s(cur_row.get("title_r")),
                     "doi_o": unval_set.get("doi_o", _s(cur_row.get("doi_o"))),
                     "study_o": unval_set.get("study_o", _s(cur_row.get("study_o"))),
+                    "title_o": unval_set.get("title_o", _s(cur_row.get("title_o"))),
                 }
                 if len(samples) < 12:
                     samples.append((pid, diffs))
@@ -159,6 +176,22 @@ def run(csv_path: Path, apply: bool) -> None:
                             f"UPDATE unvalidated SET {sets} WHERE pair_id = %s",
                             list(unval_set.values()) + [pid],
                         )
+                        # Study numbers are extractor-owned identity, so carry
+                        # them into rows that have already been validated too.
+                        # Titles remain controlled by validator consensus there.
+                        identity_set = {
+                            col: unval_set[col]
+                            for col in ("study_r", "study_o")
+                            if col in unval_set
+                        }
+                        if identity_set:
+                            identity_sets = ", ".join(
+                                f"{col} = %s" for col in identity_set
+                            )
+                            cur.execute(
+                                f"UPDATE validated SET {identity_sets} WHERE record_id = %s",
+                                list(identity_set.values()) + [cur_row["record_id"]],
+                            )
                     if meta_changed:
                         meta_sets, meta_params = [], []
                         if authors_changed:
@@ -179,7 +212,9 @@ def run(csv_path: Path, apply: bool) -> None:
                 post_state.get(pid, {
                     "key": pid, "record_id": r["record_id"],
                     "doi_r": r["doi_r"], "study_r": r["study_r"],
+                    "title_r": _s(r.get("title_r")),
                     "doi_o": _s(r.get("doi_o")), "study_o": _s(r.get("study_o")),
+                    "title_o": _s(r.get("title_o")),
                 })
                 for pid, r in current.items()
             ])
@@ -226,5 +261,13 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Refresh original-study references on existing DB rows from a CSV.")
     ap.add_argument("csv_path", nargs="?", default=str(_DEFAULT_CSV), help="Path to the extracted CSV")
     ap.add_argument("--apply", action="store_true", help="Write changes (default: dry-run)")
+    ap.add_argument(
+        "--allow-legacy-schema", action="store_true",
+        help="Allow an archived CSV that predates the current extractor contract",
+    )
     args = ap.parse_args()
-    run(Path(args.csv_path), apply=args.apply)
+    run(
+        Path(args.csv_path),
+        apply=args.apply,
+        allow_legacy_schema=args.allow_legacy_schema,
+    )

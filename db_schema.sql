@@ -26,17 +26,20 @@ CREATE TABLE IF NOT EXISTS unvalidated (
     record_id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     pair_id             TEXT        UNIQUE,        -- MD5 from extracted.csv, for API lookup
 
-    -- Replication paper display columns
+    -- Replication paper. study_r is the Stage-3 study number(s) within the
+    -- paper (for example '1' or '1, 2'); title_r is the paper title.
     doi_r               TEXT        NOT NULL,
     study_r             TEXT,
+    title_r             TEXT,
     year_r              TEXT,
     url_r               TEXT,
     ref_r               TEXT,
     abstract_r          TEXT,
 
-    -- Original study display columns
+    -- Original paper, with the same study-number/title split.
     doi_o               TEXT,
     study_o             TEXT,
+    title_o             TEXT,
     year_o              TEXT,
     url_o               TEXT,
     ref_o               TEXT,
@@ -45,12 +48,21 @@ CREATE TABLE IF NOT EXISTS unvalidated (
     type                TEXT        CHECK (type IN ('replication', 'reproduction')),
     outcome             TEXT        CHECK (outcome IN (
                                         'successful', 'failed', 'mixed',
-                                        'uninformative', 'descriptive', 'cannot_be_determined',
-                                        'computationally successful, robust',
-                                        'computationally successful, robustness challenges',
-                                        'computation not checked, robust',
-                                        'computation not checked, robustness challenges',
-                                        'computational issues, robustness challenges')),
+                                        'uninformative', 'descriptive only',
+                                        'statistically successful but flawed',
+                                        'cannot_be_determined', 'not_a_replication',
+                                        'computationally reproducible, robust',
+                                        'computationally reproducible, robustness challenges',
+                                        'computationally reproducible, not checked',
+                                        'computational issues, robust',
+                                        'computational issues, robustness challenges',
+                                        'computational issues, not checked',
+                                        'technical failure, robust',
+                                        'technical failure, robustness challenges',
+                                        'technical failure, not checked',
+                                        'not checked, robust',
+                                        'not checked, robustness challenges',
+                                        'not checked, not checked')),
     outcome_quote       TEXT,
     out_quote_source    TEXT,
 
@@ -74,7 +86,7 @@ CREATE TABLE IF NOT EXISTS unvalidated (
 
     -- Consensus-resolved final values (written at validation time)
     final_doi_o         TEXT,
-    final_study_o       TEXT,
+    final_title_o       TEXT,
     final_outcome       TEXT,
     final_type          TEXT,
 
@@ -101,7 +113,7 @@ CREATE TABLE IF NOT EXISTS validation_queue (
 
     -- Filled only when the corresponding check = 'incorrect'
     corrected_doi_o         TEXT,
-    corrected_study_o       TEXT,
+    corrected_title_o       TEXT,
     corrected_outcome       TEXT,
     corrected_type          TEXT,
     corrected_outcome_quote TEXT,
@@ -125,17 +137,19 @@ CREATE TABLE IF NOT EXISTS validated (
     validated_record_id UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     record_id           UUID        NOT NULL REFERENCES unvalidated(record_id),
 
-    -- Replication paper (never changes during validation)
+    -- Replication paper (study_r is the within-paper study number)
     doi_r               TEXT        NOT NULL,
     study_r             TEXT,
+    title_r             TEXT,
     year_r              TEXT,
     url_r               TEXT,
     ref_r               TEXT,
     abstract_r          TEXT,
 
-    -- Original study (final consensus value)
+    -- Original paper (study_o is the within-paper study number)
     doi_o               TEXT,
     study_o             TEXT,
+    title_o             TEXT,
     year_o              TEXT,
     url_o               TEXT,
     ref_o               TEXT,
@@ -148,8 +162,28 @@ CREATE TABLE IF NOT EXISTS validated (
 
     validated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    UNIQUE (doi_r, study_r, doi_o, study_o)
+    -- Bootstrap key only. Replaced further down by validated_pair_identity_key,
+    -- which swaps doi_o for a generated `original_key` (doi_o, or oa_work_id_o when
+    -- the original has no registered DOI) — doi_o is '' for every DOI-less original,
+    -- so on its own it merges distinct originals that also share a title. It stays
+    -- here because oa_work_id_o is added by a later ALTER and cannot be referenced yet.
+    UNIQUE (doi_r, study_r, title_r, doi_o, study_o, title_o)
 );
+
+-- Explicit duplicate-resolution audit trail. The duplicate row is deliberately
+-- retained in unvalidated (along with metadata and validator judgements), while
+-- survivor_record_id identifies the one authoritative row kept in validated.
+CREATE TABLE IF NOT EXISTS validated_record_merges (
+    merge_id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    duplicate_record_id   UUID        NOT NULL UNIQUE REFERENCES unvalidated(record_id),
+    survivor_record_id    UUID        NOT NULL REFERENCES unvalidated(record_id),
+    merged_by             TEXT        NOT NULL,
+    merged_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolution_snapshot   JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    CHECK (duplicate_record_id <> survivor_record_id)
+);
+CREATE INDEX IF NOT EXISTS idx_validated_record_merges_survivor
+    ON validated_record_merges (survivor_record_id);
 
 -- Supplementary extraction data from extracted.csv not shown in the main UI.
 CREATE TABLE IF NOT EXISTS record_metadata (
@@ -157,6 +191,8 @@ CREATE TABLE IF NOT EXISTS record_metadata (
     record_id               UUID    NOT NULL UNIQUE REFERENCES unvalidated(record_id),
 
     pair_id                 TEXT,   -- MD5 from extracted.csv (provenance)
+    work_id                 BIGINT, -- alias-resolved numeric OpenAlex replication id
+    release_id              TEXT,   -- filter-engine routing release for this import
 
     -- Stage 2 filter info
     filter_status           TEXT,
@@ -173,9 +209,12 @@ CREATE TABLE IF NOT EXISTS record_metadata (
     link_evidence           TEXT,
     link_confidence         TEXT,
     link_llm_model          TEXT,
+    screen_categories       TEXT,
 
     -- Outcome detail
     outcome_confidence      TEXT,
+    outcome_reasoning       TEXT,
+    outcome_llm_model       TEXT,
 
     -- Bibliographic info
     authors_r               TEXT,
@@ -183,6 +222,8 @@ CREATE TABLE IF NOT EXISTS record_metadata (
     journal_r               TEXT,
     openalex_id_r           TEXT,
     source                  TEXT,
+    bibtex_ref_o            TEXT,
+    bibtex_ref_r            TEXT,
 
     -- Multi-original bookkeeping
     original_rank           INTEGER,
@@ -217,6 +258,17 @@ UPDATE validated        SET outcome          = 'failed'     WHERE outcome       
 UPDATE validation_queue SET corrected_outcome = 'successful' WHERE corrected_outcome = 'success';
 UPDATE validation_queue SET corrected_outcome = 'failed'     WHERE corrected_outcome = 'failure';
 
+-- Keep the validation database on the extractor/FLoRA canonical labels. Older
+-- app releases stored shortened/underscored aliases.
+UPDATE unvalidated      SET outcome           = 'descriptive only' WHERE outcome           = 'descriptive';
+UPDATE unvalidated      SET final_outcome     = 'descriptive only' WHERE final_outcome     = 'descriptive';
+UPDATE validated        SET outcome           = 'descriptive only' WHERE outcome           = 'descriptive';
+UPDATE validation_queue SET corrected_outcome = 'descriptive only' WHERE corrected_outcome = 'descriptive';
+UPDATE unvalidated      SET outcome           = 'statistically successful but flawed' WHERE outcome           IN ('statistically_successful_but_flawed', 'statistically_successful_but_fundamentally_flawed');
+UPDATE unvalidated      SET final_outcome     = 'statistically successful but flawed' WHERE final_outcome     IN ('statistically_successful_but_flawed', 'statistically_successful_but_fundamentally_flawed');
+UPDATE validated        SET outcome           = 'statistically successful but flawed' WHERE outcome           IN ('statistically_successful_but_flawed', 'statistically_successful_but_fundamentally_flawed');
+UPDATE validation_queue SET corrected_outcome = 'statistically successful but flawed' WHERE corrected_outcome IN ('statistically_successful_but_flawed', 'statistically_successful_but_fundamentally_flawed');
+
 -- The same label is mirrored inside the validator/LLM JSONB summaries.
 UPDATE unvalidated SET validator_1 = jsonb_set(validator_1, '{corrected_outcome}', '"successful"')
     WHERE validator_1->>'corrected_outcome' = 'success';
@@ -230,6 +282,19 @@ UPDATE unvalidated SET llm_validator = jsonb_set(llm_validator, '{corrected_outc
     WHERE llm_validator->>'corrected_outcome' = 'success';
 UPDATE unvalidated SET llm_validator = jsonb_set(llm_validator, '{corrected_outcome}', '"failed"')
     WHERE llm_validator->>'corrected_outcome' = 'failure';
+
+UPDATE unvalidated SET validator_1 = jsonb_set(validator_1, '{corrected_outcome}', '"descriptive only"')
+    WHERE validator_1->>'corrected_outcome' = 'descriptive';
+UPDATE unvalidated SET validator_2 = jsonb_set(validator_2, '{corrected_outcome}', '"descriptive only"')
+    WHERE validator_2->>'corrected_outcome' = 'descriptive';
+UPDATE unvalidated SET llm_validator = jsonb_set(llm_validator, '{corrected_outcome}', '"descriptive only"')
+    WHERE llm_validator->>'corrected_outcome' = 'descriptive';
+UPDATE unvalidated SET validator_1 = jsonb_set(validator_1, '{corrected_outcome}', '"statistically successful but flawed"')
+    WHERE validator_1->>'corrected_outcome' IN ('statistically_successful_but_flawed', 'statistically_successful_but_fundamentally_flawed');
+UPDATE unvalidated SET validator_2 = jsonb_set(validator_2, '{corrected_outcome}', '"statistically successful but flawed"')
+    WHERE validator_2->>'corrected_outcome' IN ('statistically_successful_but_flawed', 'statistically_successful_but_fundamentally_flawed');
+UPDATE unvalidated SET llm_validator = jsonb_set(llm_validator, '{corrected_outcome}', '"statistically successful but flawed"')
+    WHERE llm_validator->>'corrected_outcome' IN ('statistically_successful_but_flawed', 'statistically_successful_but_fundamentally_flawed');
 
 -- The reproduction labels were relabelled upstream (flora-extractor §8.3):
 --   'computationally successful, X' -> 'computationally reproducible, X'
@@ -245,8 +310,11 @@ CREATE TEMP TABLE _outcome_relabel (old_value TEXT PRIMARY KEY, new_value TEXT N
 INSERT INTO _outcome_relabel (old_value, new_value) VALUES
     ('computationally successful, robust',                'computationally reproducible, robust'),
     ('computationally successful, robustness challenges', 'computationally reproducible, robustness challenges'),
+    ('computationally successful, robustness not checked','computationally reproducible, not checked'),
+    ('computational issues, robustness not checked',      'computational issues, not checked'),
     ('computation not checked, robust',                   'not checked, robust'),
-    ('computation not checked, robustness challenges',    'not checked, robustness challenges');
+    ('computation not checked, robustness challenges',    'not checked, robustness challenges'),
+    ('computation not checked, robustness not checked',   'not checked, not checked');
 
 UPDATE unvalidated      u SET outcome           = m.new_value FROM _outcome_relabel m WHERE u.outcome           = m.old_value;
 UPDATE unvalidated      u SET final_outcome     = m.new_value FROM _outcome_relabel m WHERE u.final_outcome     = m.old_value;
@@ -263,26 +331,124 @@ UPDATE unvalidated u SET llm_validator = jsonb_set(llm_validator, '{corrected_ou
 
 DROP TABLE _outcome_relabel;
 
+-- Backfill prerequisites. These target columns must exist before the dynamic
+-- joined-outcome migration below executes. The complete six-field schema (which
+-- also adds each axis's quote and source) is declared later with IF NOT EXISTS;
+-- repeating these four pairs there is intentional and idempotent.
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS outcome_computation TEXT;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS outcome_robustness  TEXT;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS final_outcome_computation TEXT;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS final_outcome_robustness  TEXT;
+ALTER TABLE validated ADD COLUMN IF NOT EXISTS outcome_computation TEXT;
+ALTER TABLE validated ADD COLUMN IF NOT EXISTS outcome_robustness  TEXT;
+ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS corrected_outcome_computation TEXT;
+ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS corrected_outcome_robustness  TEXT;
+
+-- ---------------------------------------------------------------------------
+-- Recover and canonicalise joined reproduction outcomes
+-- ---------------------------------------------------------------------------
+-- Reproductions are coded on two independent axes. Older databases may only have
+-- the joined "<computation>, <robustness>" value, so recover both axes before
+-- rebuilding the current canonical flat outcome.
+--
+-- Split rather than deleted — these are real judgements, and the two halves are
+-- exactly what the axis columns want. Only fills an axis that is still NULL, so
+-- re-running cannot overwrite a validator's coded value with the extractor's.
+-- Mirrors extractor_vocab.split_joined_outcome; the aliases translate the
+-- pre-relabelling spellings of each half independently, which covers pairings a
+-- whole-string lookup had no entry for.
+-- Every column that can hold a joined value, with the axis pair it recovers into.
+-- final_outcome and corrected_outcome matter as much as outcome: they have no
+-- CHECK constraint, so a stale joined value there would survive silently and reach
+-- the export through consensus rather than erroring at the boundary.
+DO $$
+DECLARE
+    t RECORD;
+BEGIN
+    FOR t IN SELECT * FROM (VALUES
+        ('unvalidated',      'outcome',           'outcome_computation',           'outcome_robustness'),
+        ('unvalidated',      'final_outcome',     'final_outcome_computation',     'final_outcome_robustness'),
+        ('validated',        'outcome',           'outcome_computation',           'outcome_robustness'),
+        ('validation_queue', 'corrected_outcome', 'corrected_outcome_computation', 'corrected_outcome_robustness')
+    ) AS v(tbl, src, comp_col, rob_col)
+    LOOP
+        EXECUTE format($f$
+            UPDATE %I SET
+                %I = COALESCE(%I, CASE split_part(%I, ', ', 1)
+                    WHEN 'computationally successful' THEN 'computationally reproducible'
+                    WHEN 'computation not checked'    THEN 'not checked'
+                    ELSE split_part(%I, ', ', 1) END),
+                %I = COALESCE(%I, CASE split_part(%I, ', ', 2)
+                    WHEN 'robustness not checked' THEN 'not checked'
+                    ELSE split_part(%I, ', ', 2) END)
+            WHERE %I LIKE '%%, %%'
+              AND split_part(%I, ', ', 2) <> ''
+        $f$, t.tbl,
+             t.comp_col, t.comp_col, t.src, t.src,
+             t.rob_col,  t.rob_col,  t.src, t.src,
+             t.src, t.src);
+    END LOOP;
+END $$;
+
+-- Rebuild the flat reproduction outcome from the authoritative axes. This also
+-- repairs deployments where an earlier migration cleared the flat value.
+UPDATE unvalidated
+   SET outcome = CASE
+       WHEN outcome_computation IN ('computationally reproducible', 'computational issues', 'technical failure', 'not checked')
+        AND outcome_robustness IN ('robust', 'robustness challenges', 'not checked')
+       THEN outcome_computation || ', ' || outcome_robustness
+       ELSE 'cannot_be_determined' END
+ WHERE type = 'reproduction'
+   AND (outcome_computation IS NOT NULL OR outcome_robustness IS NOT NULL);
+UPDATE unvalidated
+   SET final_outcome = CASE
+       WHEN final_outcome_computation IN ('computationally reproducible', 'computational issues', 'technical failure', 'not checked')
+        AND final_outcome_robustness IN ('robust', 'robustness challenges', 'not checked')
+       THEN final_outcome_computation || ', ' || final_outcome_robustness
+       ELSE 'cannot_be_determined' END
+ WHERE final_type = 'reproduction'
+   AND (final_outcome_computation IS NOT NULL OR final_outcome_robustness IS NOT NULL);
+UPDATE validated
+   SET outcome = CASE
+       WHEN outcome_computation IN ('computationally reproducible', 'computational issues', 'technical failure', 'not checked')
+        AND outcome_robustness IN ('robust', 'robustness challenges', 'not checked')
+       THEN outcome_computation || ', ' || outcome_robustness
+       ELSE 'cannot_be_determined' END
+ WHERE type = 'reproduction'
+   AND (outcome_computation IS NOT NULL OR outcome_robustness IS NOT NULL);
+UPDATE validation_queue
+   SET corrected_outcome = CASE
+       WHEN corrected_outcome_computation IN ('computationally reproducible', 'computational issues', 'technical failure', 'not checked')
+        AND corrected_outcome_robustness IN ('robust', 'robustness challenges', 'not checked')
+       THEN corrected_outcome_computation || ', ' || corrected_outcome_robustness
+       ELSE 'cannot_be_determined' END
+ WHERE corrected_outcome_computation IS NOT NULL
+    OR corrected_outcome_robustness IS NOT NULL;
+
 -- Must stay in step with extractor_vocab.STORED_OUTCOMES (Python side) and the
 -- vocabulary llm_validator.py shows the model. A value accepted by one and not
 -- the other fails the whole import transaction, not just its own row.
+--
+-- Reproductions retain a derived flat outcome alongside their authoritative
+-- independent axes, matching flora-extractor.shared.schema.
 ALTER TABLE unvalidated ADD CONSTRAINT unvalidated_outcome_check
     CHECK (outcome IN (
-        -- replications
         'successful', 'failed', 'mixed',
-        'uninformative', 'descriptive', 'cannot_be_determined',
-        -- statistically successful, but flagged by the authors as
-        -- methodologically compromised. Counted with the successes; kept
-        -- distinct so the caveat survives import.
-        'statistically_successful_but_flawed',
-        -- reproductions (computational axis, robustness axis)
+        'uninformative', 'descriptive only',
+        'statistically successful but flawed',
+        'cannot_be_determined', 'not_a_replication',
         'computationally reproducible, robust',
         'computationally reproducible, robustness challenges',
         'computationally reproducible, not checked',
         'computational issues, robust',
         'computational issues, robustness challenges',
+        'computational issues, not checked',
+        'technical failure, robust',
+        'technical failure, robustness challenges',
+        'technical failure, not checked',
         'not checked, robust',
-        'not checked, robustness challenges'));
+        'not checked, robustness challenges',
+        'not checked, not checked'));
 
 -- Admin approval column on validated table
 ALTER TABLE validated ADD COLUMN IF NOT EXISTS admin_approved BOOLEAN NOT NULL DEFAULT FALSE;
@@ -319,11 +485,54 @@ CREATE TABLE IF NOT EXISTS admins (
 -- Trusted admin flag (only trusted admins can add/remove admin accounts)
 ALTER TABLE admins ADD COLUMN IF NOT EXISTS trusted BOOLEAN NOT NULL DEFAULT FALSE;
 
--- Replication title/DOI correction (typographical errors)
+-- Stage 3 study identifiers and paper titles are distinct fields. Older
+-- deployments stored titles in study_r/study_o and named title corrections
+-- corrected_study_*. Add the correct columns, copy the legacy values once (the
+-- new title columns are NULL only before this migration), and leave study_* for
+-- the extractor's within-paper study numbers.
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS title_r TEXT;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS title_o TEXT;
+ALTER TABLE validated   ADD COLUMN IF NOT EXISTS title_r TEXT;
+ALTER TABLE validated   ADD COLUMN IF NOT EXISTS title_o TEXT;
+ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS corrected_title_r TEXT;
+ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS corrected_title_o TEXT;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS final_title_r TEXT;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS final_title_o TEXT;
+-- Legacy columns are retained only long enough to make upgrades from every
+-- previous release safe; current code never writes them.
 ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS corrected_study_r TEXT;
+ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS corrected_study_o TEXT;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS final_study_r TEXT;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS final_study_o TEXT;
+
+UPDATE unvalidated
+   SET title_r = COALESCE(study_r, ''), study_r = ''
+ WHERE title_r IS NULL;
+UPDATE unvalidated
+   SET title_o = COALESCE(study_o, ''), study_o = ''
+ WHERE title_o IS NULL;
+
+-- The equivalent validated-row conversion is deferred to the atomic identity
+-- constraint swap below. Keeping the conversion and constraint replacement in
+-- one DO statement means PostgreSQL restores both the old values and the old
+-- constraint if existing duplicates make the replacement constraint invalid.
+
+-- Existing corrections/final values are titles despite their old names.
+UPDATE validation_queue
+   SET corrected_title_r = corrected_study_r
+ WHERE corrected_title_r IS NULL AND corrected_study_r IS NOT NULL;
+UPDATE validation_queue
+   SET corrected_title_o = corrected_study_o
+ WHERE corrected_title_o IS NULL AND corrected_study_o IS NOT NULL;
+UPDATE unvalidated
+   SET final_title_r = final_study_r
+ WHERE final_title_r IS NULL AND final_study_r IS NOT NULL;
+UPDATE unvalidated
+   SET final_title_o = final_study_o
+ WHERE final_title_o IS NULL AND final_study_o IS NOT NULL;
+
 -- Validator-suggested replication URL (advisory; admin promotes to final_url_r)
 ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS corrected_url_r   TEXT;
-ALTER TABLE unvalidated      ADD COLUMN IF NOT EXISTS final_study_r     TEXT;
 ALTER TABLE unvalidated      ADD COLUMN IF NOT EXISTS final_doi_r       TEXT;
 ALTER TABLE unvalidated      ADD COLUMN IF NOT EXISTS final_abstract_r  TEXT;
 ALTER TABLE unvalidated      ADD COLUMN IF NOT EXISTS final_url_r       TEXT;
@@ -487,11 +696,161 @@ ALTER TABLE record_metadata ADD COLUMN IF NOT EXISTS doi_o_verification TEXT;
 ALTER TABLE record_metadata ADD COLUMN IF NOT EXISTS pdf_source   TEXT;
 ALTER TABLE record_metadata ADD COLUMN IF NOT EXISTS parse_method TEXT;
 
+-- Extractor provenance and filter-engine lineage. work_id is the numeric
+-- OpenAlex identity used to join a validated record back to routing and spend;
+-- release_id belongs to the import run and is supplied by csv_to_db --release-id.
+ALTER TABLE record_metadata ADD COLUMN IF NOT EXISTS work_id            BIGINT;
+ALTER TABLE record_metadata ADD COLUMN IF NOT EXISTS release_id         TEXT;
+ALTER TABLE record_metadata ADD COLUMN IF NOT EXISTS screen_categories  TEXT;
+ALTER TABLE record_metadata ADD COLUMN IF NOT EXISTS outcome_reasoning  TEXT;
+ALTER TABLE record_metadata ADD COLUMN IF NOT EXISTS outcome_llm_model  TEXT;
+ALTER TABLE record_metadata ADD COLUMN IF NOT EXISTS bibtex_ref_o       TEXT;
+ALTER TABLE record_metadata ADD COLUMN IF NOT EXISTS bibtex_ref_r       TEXT;
+
+-- Backfill lineage for rows imported before work_id was stored. Prefer the
+-- canonical bare id already on unvalidated, then the Stage-1 URL-form value.
+UPDATE record_metadata m
+   SET work_id = substring(COALESCE(u.oa_work_id_r, m.openalex_id_r, '') FROM 'W([0-9]+)')::BIGINT
+  FROM unvalidated u
+ WHERE u.record_id = m.record_id
+   AND m.work_id IS NULL
+   AND COALESCE(u.oa_work_id_r, m.openalex_id_r, '') ~ 'W[0-9]+';
+
+CREATE INDEX IF NOT EXISTS record_metadata_work_id_idx
+    ON record_metadata(work_id);
+CREATE INDEX IF NOT EXISTS record_metadata_release_work_idx
+    ON record_metadata(release_id, work_id);
+
+-- ---------------------------------------------------------------------------
+-- Reproduction outcomes: two independently coded axes, each with its own quote
+-- ---------------------------------------------------------------------------
+-- The FLoRA codebook settles the reproduction vocabulary as two independent coded
+-- fields. A reproduction can fail computationally and still find the conclusion
+-- robust, so each axis is validated separately and carries its own evidence. The
+-- flat outcome is derived from the resolved axis pair.
+--
+-- Replications keep `outcome` / `outcome_quote` / `out_quote_source` unchanged;
+-- `type` selects which shape applies.
+--
+-- Naming matches the codebook and the extractor CSV exactly: the field is
+-- `outcome_computation`, its evidence keeps the adjective. Deliberately not tidied.
+--
+-- These columns land ahead of the UI on purpose. flora-extractor's own writer
+-- pushes the six fields "once this side can accept them", and it goes through
+-- PostgREST, which rejects an entire insert naming a column the table lacks — so
+-- their arrival is gated on this statement, not on the validator interface.
+DO $$
+DECLARE
+    tbl TEXT;
+BEGIN
+    FOREACH tbl IN ARRAY ARRAY['unvalidated', 'validated'] LOOP
+        EXECUTE format('ALTER TABLE %I '
+            'ADD COLUMN IF NOT EXISTS outcome_computation            TEXT, '
+            'ADD COLUMN IF NOT EXISTS outcome_computational_quote    TEXT, '
+            'ADD COLUMN IF NOT EXISTS out_quote_computational_source TEXT, '
+            'ADD COLUMN IF NOT EXISTS outcome_robustness             TEXT, '
+            'ADD COLUMN IF NOT EXISTS outcome_robustness_quote       TEXT, '
+            'ADD COLUMN IF NOT EXISTS out_quote_robust_source        TEXT', tbl);
+    END LOOP;
+END $$;
+
+-- Consensus results, mirroring final_outcome / final_outcome_quote for the
+-- replication shape. Each axis resolves independently: two validators can agree
+-- on the computational verdict and disagree on robustness, and collapsing that
+-- into one decision would discard the half they agreed on.
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS final_outcome_computation  TEXT;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS final_computational_quote  TEXT;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS final_computational_source TEXT;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS final_outcome_robustness   TEXT;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS final_robustness_quote     TEXT;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS final_robustness_source    TEXT;
+
+-- A validator correction per axis. validation_queue already carries a single
+-- corrected_outcome_quote for the replication flow; reproductions need one pair
+-- per axis so a correction on one does not overwrite the other's evidence.
+ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS corrected_outcome_computation      TEXT;
+ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS corrected_computational_quote      TEXT;
+ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS corrected_computational_source     TEXT;
+ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS corrected_outcome_robustness       TEXT;
+ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS corrected_robustness_quote         TEXT;
+ALTER TABLE validation_queue ADD COLUMN IF NOT EXISTS corrected_robustness_source        TEXT;
+
+-- Vocabulary for the two axes. Kept in step with extractor_vocab.REPRODUCTION_*
+-- by test_extractor_vocab.py. 'technical failure' is new and has no equivalent in
+-- the old grid — the re-analysis was defeated by missing or unusable data/code,
+-- which is the most common real reproduction outcome in economics. It is declared
+-- here before the extractor emits it, so the first row carrying it imports rather
+-- than tripping the drift check.
+ALTER TABLE unvalidated DROP CONSTRAINT IF EXISTS unvalidated_outcome_computation_check;
+ALTER TABLE unvalidated ADD CONSTRAINT unvalidated_outcome_computation_check
+    CHECK (outcome_computation IS NULL OR outcome_computation IN (
+        'computationally reproducible', 'computational issues', 'technical failure',
+        'not checked', 'cannot_be_determined'));
+
+ALTER TABLE unvalidated DROP CONSTRAINT IF EXISTS unvalidated_outcome_robustness_check;
+ALTER TABLE unvalidated ADD CONSTRAINT unvalidated_outcome_robustness_check
+    CHECK (outcome_robustness IS NULL OR outcome_robustness IN (
+        'robust', 'robustness challenges', 'not checked', 'cannot_be_determined'));
+
 -- Normalise empty strings to NULL. The seed/backfill below (and the trigger) key on
 -- IS NULL, so a stray '' would be treated as 'already filled' and never get an id.
 UPDATE unvalidated SET oa_work_id_o = NULL WHERE oa_work_id_o = '';
 UPDATE unvalidated SET oa_work_id_r = NULL WHERE oa_work_id_r = '';
 UPDATE validated   SET oa_work_id_o = NULL WHERE oa_work_id_o = '';
+
+-- ---------------------------------------------------------------------------
+-- validated pair identity: study numbers and doi_o/OpenAlex identity
+-- ---------------------------------------------------------------------------
+-- The natural key includes both papers and their within-paper study numbers, so
+-- two pairs from the same papers no longer collapse when (for example) Study 1
+-- and Study 2 are validated separately. Titles remain in the key as a fallback
+-- for legacy rows that predate the study-number columns. doi_o is '' for EVERY
+-- DOI-less original — books, chapters, pre-DOI papers — so two distinct originals
+-- of one replication that also share a title produced an identical key, and the
+-- upsert silently overwrote one with the other. csv_to_db flags that case for
+-- review but cannot prevent it; the constraint is what has to change.
+--
+-- oa_work_id_o is the identity the extractor ships for these rows
+-- (doi_o = '', oa_work_id_o = 'W2003152982'), so it replaces doi_o in the key when
+-- there is no DOI. Expressed as a stored generated column rather than an
+-- expression index so the constraint and every ON CONFLICT clause can name it.
+--
+-- COALESCE ends in '' deliberately: rows imported before the extractor shipped
+-- oa_work_id_o have NULL there, and a NULL key column is never equal to itself in
+-- a unique constraint — ON CONFLICT would stop matching and duplicates would
+-- accumulate on every re-validation. Falling back to '' keeps those rows stable,
+-- with study_o/title_o distinguishing the target where possible.
+--
+-- Not an issue for DOI-bearing rows: their identity is doi_o, and
+-- clear_stale_oa_work_id() only nulls the work id when the effective DOI changes,
+-- which for a DOI-less original ('' forever) never happens.
+ALTER TABLE validated ADD COLUMN IF NOT EXISTS original_key TEXT
+    GENERATED ALWAYS AS (COALESCE(NULLIF(doi_o, ''), oa_work_id_o, '')) STORED;
+
+-- Swap the identity atomically. The old constraints, the title/study conversion,
+-- and the replacement constraint are one PostgreSQL statement. If duplicates
+-- make ADD CONSTRAINT fail, the whole DO statement rolls back: the old constraint
+-- remains in place and application startup fails visibly instead of committing a
+-- database with no conflict key. On the next start, the migration can be retried
+-- after the duplicate rows have been resolved.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'validated_pair_identity_key') THEN
+        ALTER TABLE validated DROP CONSTRAINT IF EXISTS validated_doi_r_study_r_doi_o_study_o_key;
+        ALTER TABLE validated DROP CONSTRAINT IF EXISTS validated_doi_r_study_r_title_r_doi_o_study_o_title_o_key;
+        ALTER TABLE validated DROP CONSTRAINT IF EXISTS validated_original_identity_key;
+
+        UPDATE validated
+           SET title_r = COALESCE(study_r, ''), study_r = ''
+         WHERE title_r IS NULL;
+        UPDATE validated
+           SET title_o = COALESCE(study_o, ''), study_o = ''
+         WHERE title_o IS NULL;
+
+        ALTER TABLE validated ADD CONSTRAINT validated_pair_identity_key
+            UNIQUE (doi_r, study_r, title_r, original_key, study_o, title_o);
+    END IF;
+END $$;
 UPDATE validated   SET oa_work_id_r = NULL WHERE oa_work_id_r = '';
 
 -- Seed the replication work ID from the extractor's record_metadata.openalex_id_r
@@ -597,10 +956,26 @@ CREATE TABLE IF NOT EXISTS source_records (
     -- reproductions only (NULL on replications). The two outcome dimensions are
     -- kept unmerged; the single FLoRA `outcome` label is derived downstream.
     study_o                         TEXT,
-    outcome_computational           TEXT,
+    -- The field is `outcome_computation`; its evidence columns keep the adjective
+    -- (`_computational_`). That mix is the FLoRA codebook's and the extractor CSV's,
+    -- so it is matched rather than tidied — one name repo-wide beats a neater one
+    -- that disagrees with both upstreams.
+    outcome_computation             TEXT
+        CONSTRAINT source_records_outcome_computation_check CHECK (
+            outcome_computation IS NULL OR outcome_computation IN (
+                'computationally reproducible', 'computational issues',
+                'technical failure', 'not checked', 'cannot_be_determined'
+            )
+        ),
     outcome_computational_quote     TEXT,
     out_quote_computational_source  TEXT,
-    outcome_robustness              TEXT,
+    outcome_robustness              TEXT
+        CONSTRAINT source_records_outcome_robustness_check CHECK (
+            outcome_robustness IS NULL OR outcome_robustness IN (
+                'robust', 'robustness challenges', 'not checked',
+                'cannot_be_determined'
+            )
+        ),
     outcome_robustness_quote        TEXT,
     out_quote_robust_source         TEXT,
 
@@ -635,6 +1010,71 @@ CREATE TABLE IF NOT EXISTS source_records (
 );
 
 CREATE INDEX IF NOT EXISTS idx_source_records_type       ON source_records (type);
+-- Renamed from outcome_computational to match the codebook and the extractor CSV,
+-- which both call the field `outcome_computation`. Guarded so the file stays
+-- re-runnable: RENAME COLUMN errors both when the old name is already gone and
+-- when the new one already exists.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'source_records' AND column_name = 'outcome_computational')
+       AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'source_records' AND column_name = 'outcome_computation')
+    THEN
+        ALTER TABLE source_records RENAME COLUMN outcome_computational TO outcome_computation;
+    END IF;
+END $$;
+
+-- Canonicalise values that pre-date the codebook rename. Unknown historical
+-- values are deliberately not erased: the NOT VALID constraints below block new
+-- bad writes, while transform_sources.py reports old rows for manual correction.
+UPDATE source_records
+SET outcome_computation = CASE btrim(outcome_computation)
+    WHEN '' THEN NULL
+    WHEN 'computationally successful' THEN 'computationally reproducible'
+    WHEN 'computation not checked' THEN 'not checked'
+    ELSE btrim(outcome_computation)
+END
+WHERE outcome_computation IS NOT NULL;
+
+UPDATE source_records
+SET outcome_robustness = CASE btrim(outcome_robustness)
+    WHEN '' THEN NULL
+    WHEN 'robustness not checked' THEN 'not checked'
+    ELSE btrim(outcome_robustness)
+END
+WHERE outcome_robustness IS NOT NULL;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'source_records_outcome_computation_check'
+          AND conrelid = 'source_records'::regclass
+    ) THEN
+        ALTER TABLE source_records
+        ADD CONSTRAINT source_records_outcome_computation_check CHECK (
+            outcome_computation IS NULL OR outcome_computation IN (
+                'computationally reproducible', 'computational issues',
+                'technical failure', 'not checked', 'cannot_be_determined'
+            )
+        ) NOT VALID;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'source_records_outcome_robustness_check'
+          AND conrelid = 'source_records'::regclass
+    ) THEN
+        ALTER TABLE source_records
+        ADD CONSTRAINT source_records_outcome_robustness_check CHECK (
+            outcome_robustness IS NULL OR outcome_robustness IN (
+                'robust', 'robustness challenges', 'not checked',
+                'cannot_be_determined'
+            )
+        ) NOT VALID;
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_source_records_status     ON source_records (validation_status);
 CREATE INDEX IF NOT EXISTS idx_source_records_reviewed   ON source_records (reviewed_at NULLS FIRST);
 CREATE INDEX IF NOT EXISTS idx_source_records_fingerprint
@@ -758,51 +1198,36 @@ INSERT INTO outcome_alias (raw_value, canonical_value) VALUES
     ('mixed',           'mixed'),
     ('uninformative',   'uninformative'),
     ('unclear',         'cannot_be_determined'),
-    ('descriptive only','descriptive'),
+    ('descriptive',     'descriptive only'),
+    ('descriptive only','descriptive only'),
     -- The flawed category: the result held statistically but the authors flag a
     -- methodological problem that undermines it. A category in its own right, not
     -- a flavour of 'successful' and not 'mixed'. It arrives under three spellings
     -- — the extractor writes the first, the entry sheets the other two — so all
     -- three normalise onto the extractor's, matching extractor_vocab.py.
-    ('statistically_successful_but_flawed',                'statistically_successful_but_flawed'),
-    ('statistically successful but flawed',                'statistically_successful_but_flawed'),
-    ('statistically_successful_but_fundamentally_flawed',  'statistically_successful_but_flawed')
-ON CONFLICT (raw_value) DO NOTHING;
+    ('statistically_successful_but_flawed',                'statistically successful but flawed'),
+    ('statistically successful but flawed',                'statistically successful but flawed'),
+    ('statistically_successful_but_fundamentally_flawed',  'statistically successful but flawed')
+ON CONFLICT (raw_value) DO UPDATE SET canonical_value = EXCLUDED.canonical_value;
 
 -- Rows seeded before the flawed category existed mapped these onto 'mixed'.
 -- ON CONFLICT above leaves an existing row alone, so correct them explicitly.
-UPDATE outcome_alias SET canonical_value = 'statistically_successful_but_flawed'
+UPDATE outcome_alias SET canonical_value = 'statistically successful but flawed'
  WHERE raw_value IN (
     'statistically_successful_but_flawed',
     'statistically successful but flawed',
     'statistically_successful_but_fundamentally_flawed');
 
--- Reproductions carry a 2-D outcome (computational x robustness). The single
--- FLoRA label is derived from this table, so an unseen combination is a row to
--- add rather than a stored value to migrate.
-CREATE TABLE IF NOT EXISTS reproduction_outcome_map (
-    computational TEXT NOT NULL,
-    robustness    TEXT NOT NULL,
-    canonical     TEXT NOT NULL,
-    PRIMARY KEY (computational, robustness)
-);
-
-INSERT INTO reproduction_outcome_map (computational, robustness, canonical) VALUES
-    ('computationally reproducible', 'robust',                'computationally successful, robust'),
-    ('computationally reproducible', 'robustness challenges', 'computationally successful, robustness challenges'),
-    ('computationally reproducible', 'not checked',           'computationally successful, robustness not checked'),
-    ('not checked',                  'robust',                'computation not checked, robust'),
-    ('not checked',                  'robustness challenges', 'computation not checked, robustness challenges'),
-    ('not checked',                  'not checked',           'cannot_be_determined'),
-    ('computational issues',         'robustness challenges', 'computational issues, robustness challenges'),
-    -- Two combinations present in the accepted rows that the original
-    -- unvalidated CHECK vocabulary never covered.
-    ('computational issues',         'robust',                'computational issues, robust'),
-    ('computational issues',         'not checked',           'computational issues, robustness not checked'),
-    ('failed',                       'not checked',           'failed'),
-    ('failed',                       'robust',                'failed'),
-    ('failed',                       'robustness challenges', 'failed')
-ON CONFLICT (computational, robustness) DO NOTHING;
+-- reproduction_outcome_map is GONE. It derived a single FLoRA label from
+-- (computational, robustness), and that derivation is what the codebook removed:
+-- the two axes are independent, so no single label can carry both. Its output was
+-- lossy in a way rows could not recover from — ('not checked', 'not checked')
+-- became a bare 'cannot_be_determined', and the three 'failed' rows discarded the
+-- robustness verdict entirely.
+--
+-- Both pipelines now export the axes as themselves: transform_sources adds them to
+-- FLORA_COLUMNS, and csv_to_db/consensus write them to unvalidated and validated.
+DROP TABLE IF EXISTS reproduction_outcome_map;
 
 -- ============================================================================
 -- Source records: correctness fixes found in review
