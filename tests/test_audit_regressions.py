@@ -13,6 +13,7 @@ from db_migrate import step_migrate_pairs
 ROOT = Path(__file__).resolve().parent.parent
 APP = (ROOT / "app.py").read_text(encoding="utf-8")
 JS = (ROOT / "docs" / "app.js").read_text(encoding="utf-8")
+HTML = (ROOT / "docs" / "index.html").read_text(encoding="utf-8")
 
 
 def test_bootstrap_explicitly_replays_legacy_seed_and_fails_loudly():
@@ -77,6 +78,14 @@ def test_admin_and_history_render_axis_values_with_paired_evidence():
         '"val_robustness_source": row["val_robustness_source"]',
     ):
         assert token in APP
+
+
+def test_admin_comment_filter_is_supported_end_to_end():
+    assert '"admin_comments":   "WHERE NULLIF(BTRIM(u.admin_notes), \'\') IS NOT NULL"' in APP
+    assert '"admin_comments": c_admin_comments' in APP
+    assert 'data-filter="admin_comments"' in HTML
+    assert 'id="fc-admin-comments"' in HTML
+    assert 'counts.admin_comments ?? 0' in JS
 
 
 class _RecordingCursor:
