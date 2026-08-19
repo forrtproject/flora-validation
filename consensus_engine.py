@@ -11,9 +11,34 @@ import re
 from datetime import datetime, timezone
 
 from llm_validator import run_llm_validation
+from extractor_vocab import (
+    REPLICATION_OUTCOMES,
+    derive_reproduction_outcome,
+    normalize_axis_value,
+    normalize_outcome,
+    split_joined_outcome,
+)
 
 _CHECK_FIELDS = ["type_check", "original_check", "outcome_check"]
-_CORRECTION_FIELDS = ["corrected_doi_o", "corrected_study_o", "corrected_outcome", "corrected_type", "corrected_study_r", "corrected_url_r"]
+_CORRECTION_FIELDS = [
+    "corrected_doi_o", "corrected_title_o", "corrected_outcome", "corrected_type",
+    "corrected_title_r", "corrected_url_r",
+    # Reproduction axes. The coded values are compared; their quotes are not, for
+    # the same reason corrected_outcome_quote isn't — a longer quote is extra
+    # context, not a disagreement, so the longest wins in _resolve_final instead
+    # of sending the record to review.
+    "corrected_outcome_computation", "corrected_outcome_robustness",
+]
+
+# (coded field, quote field, source field, final_* prefix) per reproduction axis.
+# Drives resolution, the UPDATE and the validated insert, so adding an axis is one
+# entry rather than three parallel edits that can fall out of step.
+_REPRO_AXES = (
+    ("corrected_outcome_computation", "corrected_computational_quote", "corrected_computational_source",
+     "outcome_computation", "outcome_computational_quote", "out_quote_computational_source"),
+    ("corrected_outcome_robustness", "corrected_robustness_quote", "corrected_robustness_source",
+     "outcome_robustness", "outcome_robustness_quote", "out_quote_robust_source"),
+)
 
 
 def _normalize(text: str | None) -> str:
@@ -45,7 +70,13 @@ def _is_unsure(h: dict) -> bool:
     """Did this validator answer 'Can't tell' on the original or outcome? The check
     columns store 'incorrect' for unsure, so the real signal lives in additional_checks."""
     ac = _additional_checks(h)
-    return bool(ac.get("was_unsure_original") or ac.get("was_unsure_outcome"))
+    axis_checks = ac.get("reproduction_axis_checks")
+    axis_unsure = isinstance(axis_checks, dict) and "unsure" in axis_checks.values()
+    return bool(
+        ac.get("was_unsure_original")
+        or ac.get("was_unsure_outcome")
+        or axis_unsure
+    )
 
 
 def _quote_flagged(h: dict) -> bool:
@@ -60,9 +91,24 @@ def _checks_agree(h1: dict, h2: dict) -> bool:
     return all(h1.get(f) == h2.get(f) for f in _CHECK_FIELDS)
 
 
+def _effective_corrected_type(human: dict) -> str | None:
+    """A type correction exists only when the validator rejected the stored type.
+
+    Older clients could send a stale ``corrected_type`` while also saying the type
+    was correct. Ignore that contradictory field here as a defence-in-depth measure
+    for rows already stored before the API boundary became strict.
+    """
+    if human.get("type_check") != "incorrect":
+        return None
+    return human.get("corrected_type")
+
+
 def _corrections_agree(h1: dict, h2: dict) -> bool:
-    if not all(h1.get(f) == h2.get(f) for f in _CORRECTION_FIELDS):
-        return False
+    for field in _CORRECTION_FIELDS:
+        left = _effective_corrected_type(h1) if field == "corrected_type" else h1.get(field)
+        right = _effective_corrected_type(h2) if field == "corrected_type" else h2.get(field)
+        if left != right:
+            return False
     # Published DOIs compare in bare, case-folded form (resolver-link paste ≠ conflict)
     if _norm_doi(h1.get("doi_r_published")) != _norm_doi(h2.get("doi_r_published")):
         return False
@@ -110,6 +156,48 @@ def _resolve_quote_source(record: dict, suggested_quotes: list, abstract: str | 
     return record.get("out_quote_source")
 
 
+def _resolve_axes(record: dict, winner: dict, other: dict | None) -> dict:
+    """Resolve each reproduction axis independently.
+
+    The axes are independent by definition — a reproduction can fail
+    computationally and still find the conclusion robust — so neither may be
+    derived from the other, and one axis being corrected says nothing about the
+    other. Each falls back to the extractor's value on its own.
+
+    Quotes follow the same longest-wins rule as the replication outcome quote:
+    extra context is not a disagreement. Each selected quote keeps the source from
+    that same submission because these quotes legitimately come from named full-text
+    sections (results, discussion, etc.).
+    """
+    resolved: dict = {}
+    for coded, quote_f, source_f, out_coded, out_quote, out_source in _REPRO_AXES:
+        judged = [h for h in (winner, other) if h]
+        evidence = [
+            (h.get(quote_f), h.get(source_f))
+            for h in judged if h.get(quote_f)
+        ]
+        try:
+            resolved[out_coded] = normalize_axis_value(
+                out_coded, winner.get(coded) or record.get(out_coded)
+            )
+        except ValueError:
+            # Historical malformed summaries must not make consensus write a value
+            # that the database rejects. The final resolver below turns a missing
+            # axis into an explicit cannot_be_determined judgement.
+            resolved[out_coded] = None
+        if evidence:
+            chosen_quote, chosen_source = max(evidence, key=lambda pair: len(pair[0]))
+            resolved[out_quote] = chosen_quote
+            # Quote and source are one evidence tuple. Combining the longest quote
+            # from one validator with another validator's source fabricates a claim
+            # neither person submitted.
+            resolved[out_source] = chosen_source
+        else:
+            resolved[out_quote] = record.get(out_quote)
+            resolved[out_source] = record.get(out_source)
+    return resolved
+
+
 def _resolve_final(record: dict, winner: dict, other: dict | None = None) -> dict:
     """Build final consensus values using winner's corrections, falling back to original record.
     outcome_quote: when validators edited it, the longest edit wins (most context)."""
@@ -118,13 +206,52 @@ def _resolve_final(record: dict, winner: dict, other: dict | None = None) -> dic
     # Keep the longest edited abstract (most complete) — deterministic and
     # reproducible, mirroring how the outcome quote is chosen below.
     final_abstract = max(abstracts, key=len) if abstracts else None
+    final_type = _effective_corrected_type(winner) or record.get("type")
+    resolved_axes = _resolve_axes(record, winner, other)
+    if final_type == "reproduction":
+        legacy_computation, legacy_robustness = split_joined_outcome(
+            winner.get("corrected_outcome")
+            or (other or {}).get("corrected_outcome")
+            or record.get("outcome")
+        )
+        resolved_axes["outcome_computation"] = (
+            resolved_axes.get("outcome_computation")
+            or legacy_computation
+            or "cannot_be_determined"
+        )
+        resolved_axes["outcome_robustness"] = (
+            resolved_axes.get("outcome_robustness")
+            or legacy_robustness
+            or "cannot_be_determined"
+        )
+        final_outcome = derive_reproduction_outcome(
+            resolved_axes.get("outcome_computation"),
+            resolved_axes.get("outcome_robustness"),
+        )
+    else:
+        # Replications never carry the reproduction grid. If this is a type change,
+        # only a genuine replication correction is eligible; the record's old joined
+        # reproduction label is deliberately not used as a fallback.
+        candidate = winner.get("corrected_outcome") or (other or {}).get("corrected_outcome")
+        if not candidate and record.get("type") == "replication":
+            candidate = record.get("outcome")
+        final_outcome = normalize_outcome(candidate)
+        if final_outcome not in REPLICATION_OUTCOMES or final_outcome == "not_a_replication":
+            final_outcome = "cannot_be_determined"
+        resolved_axes = {field: None for axis in _REPRO_AXES for field in axis[3:]}
     return {
-        "study_r": winner.get("corrected_study_r") or record.get("study_r"),
+        **resolved_axes,
+        # Study numbers are extractor identity, not title text and not a typo-
+        # correction target. Carry them unchanged while resolving titles in their
+        # own fields.
+        "study_r": record.get("study_r"),
+        "title_r": winner.get("corrected_title_r") or record.get("title_r"),
         "url_r":   winner.get("corrected_url_r")    or record.get("url_r"),
         "doi_o":   winner.get("corrected_doi_o")   or record.get("doi_o"),
-        "study_o": winner.get("corrected_study_o") or record.get("study_o"),
-        "outcome": winner.get("corrected_outcome") or record.get("outcome"),
-        "type":    winner.get("corrected_type")    or record.get("type"),
+        "study_o": record.get("study_o"),
+        "title_o": winner.get("corrected_title_o") or record.get("title_o"),
+        "outcome": final_outcome,
+        "type":    final_type,
         "outcome_quote": max(quotes, key=len) if quotes else record.get("outcome_quote"),
         # check the source against the same abstract we publish (corrected if present)
         "out_quote_source": _resolve_quote_source(record, quotes, final_abstract or record.get("abstract_r")),
@@ -140,15 +267,29 @@ def _update_status(cur, record_id: str, status: str, is_tiebreaker: bool,
 
     if final:
         set_clauses += [
-            "final_study_r = %s", "final_url_r = %s",
-            "final_doi_o = %s", "final_study_o = %s",
+            "final_title_r = %s", "final_url_r = %s",
+            "final_doi_o = %s", "final_title_o = %s",
             "final_outcome = %s", "final_type = %s",
             "final_outcome_quote = %s",
         ]
-        params += [final.get("study_r"), final.get("url_r"), final["doi_o"], final["study_o"],
+        params += [final.get("title_r"), final.get("url_r"), final["doi_o"], final["title_o"],
                    final["outcome"], final["type"], final.get("outcome_quote")]
         set_clauses.append("final_out_quote_source = %s")
         params.append(final.get("out_quote_source"))
+        # Reproduction axes. Written unconditionally, like the replication fields
+        # above: on a replication every value resolves to NULL, which is correct.
+        for _, _, _, out_coded, out_quote, out_source in _REPRO_AXES:
+            final_col = {
+                "outcome_computation": "final_outcome_computation",
+                "outcome_computational_quote": "final_computational_quote",
+                "out_quote_computational_source": "final_computational_source",
+                "outcome_robustness": "final_outcome_robustness",
+                "outcome_robustness_quote": "final_robustness_quote",
+                "out_quote_robust_source": "final_robustness_source",
+            }
+            for src in (out_coded, out_quote, out_source):
+                set_clauses.append(f"{final_col[src]} = %s")
+                params.append(final.get(src))
         if final.get("abstract_r"):
             set_clauses.append("abstract_r = %s")
             params.append(final["abstract_r"])
@@ -173,7 +314,7 @@ def _update_status(cur, record_id: str, status: str, is_tiebreaker: bool,
 
 def _insert_validated(cur, record: dict, final: dict) -> None:
     # Remove any prior row for this record first: the natural key
-    # (doi_r, study_r, doi_o, study_o) is mutable, so a correction to those
+    # (doi/title + within-paper study numbers) is mutable, so a correction to those
     # fields would otherwise leave a stale duplicate under the old key.
     cur.execute("DELETE FROM validated WHERE record_id = %s", (record.get("record_id"),))
     # A work id belongs to a specific DOI: if consensus resolves the original to a
@@ -190,18 +331,27 @@ def _insert_validated(cur, record: dict, final: dict) -> None:
     cur.execute(
         """
         INSERT INTO validated (
-            record_id, doi_r, study_r, year_r, url_r, ref_r, abstract_r,
-            doi_o, study_o, year_o, url_o, ref_o,
+            record_id, doi_r, study_r, title_r, year_r, url_r, ref_r, abstract_r,
+            doi_o, study_o, title_o, year_o, url_o, ref_o,
             oa_work_id_o, oa_work_id_r,
             type, outcome, outcome_quote, out_quote_source,
+            outcome_computation, outcome_computational_quote, out_quote_computational_source,
+            outcome_robustness, outcome_robustness_quote, out_quote_robust_source,
             doi_r_published, alt_identifier_r, validated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (doi_r, study_r, doi_o, study_o) DO UPDATE SET
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (doi_r, study_r, title_r, original_key, study_o, title_o) DO UPDATE SET
+            -- original_key is doi_o, or oa_work_id_o when the original has no
+            -- registered DOI (books, chapters, pre-DOI papers). doi_o is '' for
+            -- ALL of those, so keying on it merged distinct originals that also
+            -- shared a title. See db_schema.sql.
             record_id        = EXCLUDED.record_id,
+            title_r          = EXCLUDED.title_r,
             year_r           = EXCLUDED.year_r,
             url_r            = EXCLUDED.url_r,
             ref_r            = EXCLUDED.ref_r,
             abstract_r       = EXCLUDED.abstract_r,
+            title_o          = EXCLUDED.title_o,
             year_o           = EXCLUDED.year_o,
             url_o            = EXCLUDED.url_o,
             ref_o            = EXCLUDED.ref_o,
@@ -211,6 +361,12 @@ def _insert_validated(cur, record: dict, final: dict) -> None:
             outcome          = EXCLUDED.outcome,
             outcome_quote    = EXCLUDED.outcome_quote,
             out_quote_source = EXCLUDED.out_quote_source,
+            outcome_computation            = EXCLUDED.outcome_computation,
+            outcome_computational_quote    = EXCLUDED.outcome_computational_quote,
+            out_quote_computational_source = EXCLUDED.out_quote_computational_source,
+            outcome_robustness             = EXCLUDED.outcome_robustness,
+            outcome_robustness_quote       = EXCLUDED.outcome_robustness_quote,
+            out_quote_robust_source        = EXCLUDED.out_quote_robust_source,
             doi_r_published  = EXCLUDED.doi_r_published,
             alt_identifier_r = EXCLUDED.alt_identifier_r,
             validated_at     = NOW()
@@ -218,13 +374,15 @@ def _insert_validated(cur, record: dict, final: dict) -> None:
         (
             record.get("record_id"),
             record.get("doi_r"),
-            final.get("study_r") or record.get("study_r"),
+            record.get("study_r"),
+            final.get("title_r") or record.get("title_r"),
             record.get("year_r"),
             final.get("url_r") or record.get("url_r"),
             record.get("ref_r"),
             final.get("abstract_r") or record.get("abstract_r"),
             final["doi_o"],
-            final["study_o"],
+            record.get("study_o"),
+            final["title_o"],
             record.get("year_o"),
             record.get("url_o"),
             record.get("ref_o"),
@@ -234,6 +392,15 @@ def _insert_validated(cur, record: dict, final: dict) -> None:
             final["outcome"],
             final.get("outcome_quote") or record.get("outcome_quote"),
             final.get("out_quote_source") or record.get("out_quote_source"),
+            # Already resolved against the record in _resolve_axes, so no second
+            # fallback here — that would resurrect an extractor value the winning
+            # validator deliberately left blank.
+            final.get("outcome_computation"),
+            final.get("outcome_computational_quote"),
+            final.get("out_quote_computational_source"),
+            final.get("outcome_robustness"),
+            final.get("outcome_robustness_quote"),
+            final.get("out_quote_robust_source"),
             final.get("doi_r_published") or record.get("doi_r_published"),
             record.get("alt_identifier_r"),
             datetime.now(timezone.utc).isoformat(),
@@ -254,8 +421,11 @@ def evaluate_consensus(cur, record_id: str) -> None:
     cur.execute(
         """
         SELECT validator_slot, type_check, original_check, outcome_check,
-               corrected_doi_o, corrected_study_o, corrected_outcome, corrected_type,
-               corrected_study_r, corrected_url_r, corrected_abstract, corrected_outcome_quote,
+               corrected_doi_o, corrected_title_o, corrected_outcome, corrected_type,
+               corrected_title_r, corrected_url_r, corrected_abstract, corrected_outcome_quote,
+               corrected_outcome_computation, corrected_computational_quote,
+               corrected_computational_source, corrected_outcome_robustness,
+               corrected_robustness_quote, corrected_robustness_source,
                doi_r_published, additional_checks
         FROM validation_queue
         WHERE record_id = %s AND is_validated = TRUE
@@ -269,9 +439,13 @@ def evaluate_consensus(cur, record_id: str) -> None:
         return
 
     # Support dict rows (DictCursor / tests) and tuple rows (default cursor)
+    # MUST stay in the SELECT's column order — tuple rows are zipped against it.
     _human_cols = ["validator_slot", "type_check", "original_check", "outcome_check",
-                   "corrected_doi_o", "corrected_study_o", "corrected_outcome", "corrected_type",
-                   "corrected_study_r", "corrected_url_r", "corrected_abstract", "corrected_outcome_quote",
+                   "corrected_doi_o", "corrected_title_o", "corrected_outcome", "corrected_type",
+                   "corrected_title_r", "corrected_url_r", "corrected_abstract", "corrected_outcome_quote",
+                   "corrected_outcome_computation", "corrected_computational_quote",
+                   "corrected_computational_source", "corrected_outcome_robustness",
+                   "corrected_robustness_quote", "corrected_robustness_source",
                    "doi_r_published", "additional_checks"]
     if rows and isinstance(rows[0], dict):
         humans = [dict(row) for row in rows]
@@ -348,8 +522,8 @@ def evaluate_consensus(cur, record_id: str) -> None:
 
     if checks_ok and corrections_ok:
         # Both validators agree this is not a replication → LLM confirms or sends to admin
-        if (h1.get("corrected_type") == "not_validation" and
-                h2.get("corrected_type") == "not_validation"):
+        if (_effective_corrected_type(h1) == "not_validation" and
+                _effective_corrected_type(h2) == "not_validation"):
             llm = run_llm_validation(record, context="sanity_check")
             if not llm.get("error") and _llm_matches(llm, h1):
                 _update_status(cur, record_id, "rejected", False, None, llm)
@@ -384,14 +558,14 @@ def evaluate_consensus(cur, record_id: str) -> None:
         matches_h2 = _llm_matches(llm, h2)
 
         if matches_h1 and not matches_h2:
-            if h1.get("corrected_type") == "not_validation":
+            if _effective_corrected_type(h1) == "not_validation":
                 # LLM + h1 agree it's not a replication, but h2 disagrees → admin decides
                 _update_status(cur, record_id, "need_review", True, None, llm)
             else:
                 final = _resolve_final(record, h1, h2)
                 _update_status(cur, record_id, "consensus_reached", True, final, llm)
         elif matches_h2 and not matches_h1:
-            if h2.get("corrected_type") == "not_validation":
+            if _effective_corrected_type(h2) == "not_validation":
                 # LLM + h2 agree it's not a replication, but h1 disagrees → admin decides
                 _update_status(cur, record_id, "need_review", True, None, llm)
             else:

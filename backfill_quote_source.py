@@ -23,10 +23,15 @@ import os
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
+from console_encoding import use_utf8_output
 
 from consensus_engine import quote_source_for
 
 load_dotenv()
+
+# Progress output below uses non-ASCII glyphs; a cp1252 console cannot encode
+# them and print() would abort the run. See console_encoding.py.
+use_utf8_output()
 
 
 def run(apply: bool, recompute_all: bool) -> None:

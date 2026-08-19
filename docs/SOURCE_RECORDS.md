@@ -113,7 +113,7 @@ Seven columns are shared. The rest differ, which is why one table carries both w
 | `year_r` | ✅ *(sheet calls it `year`)* | — |
 | `alt_identifier_o` `alt_identifier_r` | ✅ | — |
 | `study_o` | — | ✅ |
-| `outcome_computational` + `_quote` + `out_quote_computational_source` | — | ✅ |
+| `outcome_computation` + `_quote` + `out_quote_computational_source` | — | ✅ |
 | `outcome_robustness` + `_quote` + `out_quote_robust_source` | — | ✅ |
 
 Two renames happen at ingest, and nothing else:
@@ -274,7 +274,7 @@ One row per accepted sheet row.
 | Identity | `record_id` (UUID PK) · `source` · `sheet_row_id` · `display_id` · `type` |
 | Shared | `ref_o` `doi_o` `url_o` `ref_r` `doi_r` `url_r` `abstract_r` |
 | Replication-only | `outcome` `outcome_quote` `out_quote_source` `year_r` `alt_identifier_o` `alt_identifier_r` |
-| Reproduction-only | `study_o` · `outcome_computational`(+`_quote`, +`out_quote_computational_source`) · `outcome_robustness`(+`_quote`, +`out_quote_robust_source`) |
+| Reproduction-only | `study_o` · `outcome_computation`(+`_quote`, +`out_quote_computational_source`) · `outcome_robustness`(+`_quote`, +`out_quote_robust_source`) |
 | Merged | `validation_status` |
 | Derived | `oa_work_id_o` `oa_work_id_r` · `content_fingerprint` |
 | Preserved | `raw` (JSONB — the complete sheet row, verbatim) |
@@ -633,7 +633,7 @@ And a DOI that *looks* clean in the grid is a DOI nobody will ever fix at the so
 Postgres, and 18 reproduction rows do not justify a second table, a second API, and a
 union view to put them back together.
 
-**Reproduction outcome dimensions are stored, not merged.** `outcome_computational` and
+**Reproduction outcome dimensions are stored, not merged.** `outcome_computation` and
 `outcome_robustness` are kept as-is; the single label is derived in the transform. So an
 unseen combination is a lookup-table row to add, not stored data to migrate — and the
 two-dimensional structure the coders actually recorded is never lost.

@@ -59,8 +59,8 @@ def _fetch_batch(dois: list[str]) -> dict[str, str]:
 
 
 SIDES = [
-    ("original",    "COALESCE(final_doi_o, doi_o)", "oa_work_id_o"),
-    ("replication", "COALESCE(final_doi_r, doi_r)", "oa_work_id_r"),
+    ("original",    "final_doi_o", "doi_o", "oa_work_id_o"),
+    ("replication", "final_doi_r", "doi_r", "oa_work_id_r"),
 ]
 
 
@@ -80,7 +80,8 @@ def _read_missing(database_url: str) -> list[dict]:
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         plan = []
-        for side, doi_expr, col in SIDES:
+        for side, final_doi_col, doi_col, col in SIDES:
+            doi_expr = f"COALESCE({final_doi_col}, {doi_col})"
             cur.execute(
                 f"""SELECT record_id, {doi_expr} AS doi FROM unvalidated
                     WHERE {col} IS NULL AND {doi_expr} IS NOT NULL AND {doi_expr} <> ''"""
@@ -94,6 +95,27 @@ def _read_missing(database_url: str) -> list[dict]:
         return plan
     finally:
         conn.close()
+
+
+def _sync_validated_ids(cur) -> int:
+    """Copy known IDs into DOI-matching validated rows; return rows changed."""
+    synced = 0
+    for side, final_doi_col, doi_col, col in SIDES:
+        cur.execute(
+            f"""
+            UPDATE validated v
+            SET {col} = u.{col}
+            FROM unvalidated u
+            WHERE u.record_id = v.record_id
+              AND NULLIF(v.{col}, '') IS NULL
+              AND NULLIF(u.{col}, '') IS NOT NULL
+              AND v.{doi_col} IS NOT DISTINCT FROM
+                  COALESCE(u.{final_doi_col}, u.{doi_col})
+            """
+        )
+        synced += cur.rowcount
+        print(f"[{side}] copied {cur.rowcount} work ID(s) into validated")
+    return synced
 
 
 def run(dry_run: bool = False) -> None:
@@ -129,7 +151,7 @@ def run(dry_run: bool = False) -> None:
     # side is written as ONE bulk UPDATE via a VALUES join instead of ~1500 round-trips,
     # which both is far faster and avoids the pooler dropping a long-running transaction.
     conn = _connect(database_url)
-    filled = missing = 0
+    filled = missing = export_synced = 0
     try:
         cur = conn.cursor()
         for entry in plan:
@@ -153,11 +175,16 @@ def run(dry_run: bool = False) -> None:
             missing += entry["n_rows"] - updates
             print(f"[{entry['side']}] matched {updates} / {entry['n_rows']}  "
                   f"(not found on OpenAlex: {entry['n_rows'] - updates})")
+
+        # Keep the authoritative export table current in this same transaction.
+        # This loop is independent of `pairs`, so it also repairs validated rows
+        # left blank by backfill runs from before this synchronization existed.
+        export_synced = _sync_validated_ids(cur)
         conn.commit()
         print("Committed.")
     finally:
         conn.close()
-    print(f"TOTAL filled: {filled}  |  still missing: {missing}")
+    print(f"TOTAL filled: {filled}  |  exported: {export_synced}  |  still missing: {missing}")
 
 
 if __name__ == "__main__":
