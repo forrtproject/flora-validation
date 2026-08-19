@@ -11,6 +11,8 @@ Cursors are expected to be psycopg2 RealDictCursor, as db() in app.py provides.
 """
 import re
 
+from extractor_vocab import normalize_axis_value
+
 # Grid columns. Kept lean — the heavy fields (abstract_r, quotes, raw) load only
 # when a single record is opened.
 LIST_COLUMNS = [
@@ -21,7 +23,7 @@ LIST_COLUMNS = [
     "ref_o", "doi_o",
     "ref_r", "doi_r", "url_r",
     "outcome",
-    "outcome_computational",
+    "outcome_computation",
     "outcome_robustness",
     "validation_status",
     "year_r",
@@ -60,7 +62,7 @@ EDITABLE_FIELDS = [
     "outcome", "outcome_quote", "out_quote_source",
     "year_r", "alt_identifier_o", "alt_identifier_r",
     "study_o",
-    "outcome_computational", "outcome_computational_quote", "out_quote_computational_source",
+    "outcome_computation", "outcome_computational_quote", "out_quote_computational_source",
     "outcome_robustness", "outcome_robustness_quote", "out_quote_robust_source",
     "validation_status",
 ]
@@ -127,7 +129,7 @@ def _build_where(filters: dict):
         # One control covers both vocabularies: replications carry `outcome`,
         # reproductions carry the two dimensions.
         clauses.append(
-            "(outcome = %s OR outcome_computational = %s OR outcome_robustness = %s)"
+            "(outcome = %s OR outcome_computation = %s OR outcome_robustness = %s)"
         )
         params.extend([filters["outcome"]] * 3)
 
@@ -275,7 +277,7 @@ def get_record(cur, record_id: str, filters: dict | None = None,
         cur.execute(
             """
             SELECT record_id::text AS record_id, display_id, source, outcome,
-                   outcome_computational, outcome_robustness
+                   outcome_computation, outcome_robustness
             FROM source_records
             WHERE content_fingerprint = %s AND record_id <> %s
             ORDER BY display_id
@@ -345,7 +347,7 @@ VOCABULARY_FIELDS = [
     "outcome",
     "out_quote_source",
     "validation_status",
-    "outcome_computational",
+    "outcome_computation",
     "outcome_robustness",
     "out_quote_computational_source",
     "out_quote_robust_source",
@@ -401,6 +403,13 @@ def update_record(cur, record_id: str, fields: dict, version: int,
     unknown = [k for k in fields if k not in EDITABLE_FIELDS]
     if unknown:
         raise ValueError(f"Not editable: {', '.join(sorted(unknown))}")
+
+    fields = dict(fields)
+    for axis in ("outcome_computation", "outcome_robustness"):
+        if axis in fields:
+            fields[axis] = normalize_axis_value(axis, fields[axis])
+            if current.get("type") != "reproduction" and fields[axis] is not None:
+                raise ValueError(f"{axis} is only valid on reproduction records")
 
     def _clean(v):
         # Empty string and None both mean "absent"; normalise so a cleared field
@@ -475,7 +484,7 @@ def duplicate_groups(cur, unresolved_only: bool = True) -> dict:
         """
         SELECT record_id::text AS record_id, content_fingerprint, display_id, source, type,
                doi_o, doi_r, url_r, ref_o, ref_r, outcome,
-               outcome_computational, outcome_robustness,
+               outcome_computation, outcome_robustness,
                validation_status, sheet_row_id,
                duplicate_status, duplicate_of::text AS duplicate_of,
                duplicate_reviewed_by, duplicate_reviewed_at
@@ -493,7 +502,7 @@ def duplicate_groups(cur, unresolved_only: bool = True) -> dict:
     for fp in fingerprints:
         members = grouped.get(fp, [])
         outcomes = {
-            m.get("outcome") or f"{m.get('outcome_computational')}/{m.get('outcome_robustness')}"
+            m.get("outcome") or f"{m.get('outcome_computation')}/{m.get('outcome_robustness')}"
             for m in members
         }
         groups.append({

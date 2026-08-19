@@ -19,26 +19,10 @@ import pandas as pd
 import psycopg2
 from dotenv import load_dotenv
 
+# Same "resolved" definition the importer uses — see extractor_vocab.py.
+from extractor_vocab import resolved_mask as _resolved_mask
+
 load_dotenv()
-
-# Same filter the importer uses to decide what counts as "resolved"
-_RESOLVED_METHODS = {
-    "author_year_match", "llm_abstract", "llm_fulltext",
-    "single_candidate_after_requery", "title_pattern_match",
-    "citation_context_match", "same_author_year_title_overlap",
-}
-_RESOLVED_STATUSES = {"replication", "reproduction"}
-# The extractor's paper-type column, newest name first (issue #93).
-_PAPER_TYPE_NAMES = ("paper_type", "filter_status")
-
-
-def _paper_type_column(df: pd.DataFrame) -> "pd.Series":
-    """The paper-type column of *df*, under whichever name the CSV carries."""
-    for name in _PAPER_TYPE_NAMES:
-        if name in df.columns:
-            return df[name]
-    raise KeyError("the CSV has no paper-type column "
-                   f"(looked for {', '.join(_PAPER_TYPE_NAMES)})")
 
 
 def main(csv_path: Path) -> None:
@@ -47,10 +31,7 @@ def main(csv_path: Path) -> None:
         raise EnvironmentError("DATABASE_URL must be set in environment or .env")
 
     df = pd.read_csv(csv_path, dtype=str, encoding="utf-8-sig").fillna("")
-    resolved = df[
-        _paper_type_column(df).isin(_RESOLVED_STATUSES)
-        & df["link_method"].isin(_RESOLVED_METHODS)
-    ]
+    resolved = df[_resolved_mask(df)]
     csv_pair_ids = {p.strip() for p in resolved["pair_id"] if p.strip()}
 
     conn = psycopg2.connect(database_url)

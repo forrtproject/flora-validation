@@ -8,7 +8,8 @@ touched yet (validation_status = 'unvalidated').
 Records already in progress, under review, validated, or rejected are never touched.
 
 Fields updated (when changed):
-  outcome, type, outcome_quote, out_quote_source
+  outcome, type, outcome_quote, out_quote_source, and all six reproduction-axis
+  value/evidence/source fields
 
 Fields never touched:
   doi_r, study_r, doi_o, study_o, abstract_r — structural/bibliographic fields
@@ -29,19 +30,38 @@ import psycopg2
 import psycopg2.extras
 import pandas as pd
 from dotenv import load_dotenv
+from console_encoding import use_utf8_output
+from csv_to_db import _validate_csv_schema
+from extractor_vocab import (
+    check_csv_vocabulary,
+    normalize_axis_value,
+    normalize_quote_source,
+    stored_outcome,
+)
 
 load_dotenv()
+
+# Progress output below uses non-ASCII glyphs; a cp1252 console cannot encode
+# them and print() would abort the run. See console_encoding.py.
+use_utf8_output()
 
 # Only update records still in this status — anything else is hands-off
 _SAFE_STATUS = "unvalidated"
 
 # Fields from the CSV that we allow updating, mapped csv_column → db_column
 _UPDATE_FIELDS = {
-    "outcome":          "outcome",
     "type":             "type",
     "outcome_phrase":   "outcome_quote",
     "out_quote_source": "out_quote_source",
+    "outcome_computation":             "outcome_computation",
+    "outcome_computational_quote":     "outcome_computational_quote",
+    "out_quote_computational_source":  "out_quote_computational_source",
+    "outcome_robustness":              "outcome_robustness",
+    "outcome_robustness_quote":        "outcome_robustness_quote",
+    "out_quote_robust_source":         "out_quote_robust_source",
 }
+
+_AXIS_FIELDS = frozenset({"outcome_computation", "outcome_robustness"})
 
 
 def _s(val) -> str:
@@ -50,13 +70,28 @@ def _s(val) -> str:
     return str(val).strip()
 
 
-def run_update(csv_path: Path, dry_run: bool = False) -> None:
+def _update_value(column: str, value):
+    """Canonical value bound to SQL for one refreshable CSV column."""
+    if column in _AXIS_FIELDS:
+        # Blank coded axes are absent, not an empty vocabulary member. Returning
+        # None binds SQL NULL and satisfies the axis CHECK constraints.
+        return normalize_axis_value(column, value)
+    cleaned = _s(value)
+    if column.startswith("out_quote_"):
+        return normalize_quote_source(cleaned)
+    return cleaned
+
+
+def run_update(csv_path: Path, dry_run: bool = False,
+               allow_legacy_schema: bool = False) -> None:
     database_url = os.environ.get("DATABASE_URL", "")
     if not database_url:
         raise EnvironmentError("DATABASE_URL must be set in environment or .env")
 
     print(f"Reading {csv_path} …")
     df = pd.read_csv(csv_path, dtype=str, encoding="utf-8-sig").fillna("")
+    _validate_csv_schema(df, allow_legacy=allow_legacy_schema)
+    check_csv_vocabulary(df)
 
     # Keep only rows that have a pair_id
     df = df[df["pair_id"].str.strip() != ""].copy()
@@ -79,7 +114,10 @@ def run_update(csv_path: Path, dry_run: bool = False) -> None:
             # (no human slot has been shown or submitted yet)
             cur.execute(
                 """
-                SELECT pair_id, outcome, type, outcome_quote, out_quote_source
+                SELECT pair_id, outcome, type, outcome_quote, out_quote_source,
+                       outcome_computation, outcome_computational_quote,
+                       out_quote_computational_source, outcome_robustness,
+                       outcome_robustness_quote, out_quote_robust_source
                 FROM unvalidated u
                 WHERE u.validation_status = %s
                   AND u.pair_id IS NOT NULL
@@ -114,9 +152,21 @@ def run_update(csv_path: Path, dry_run: bool = False) -> None:
                 db = db_rows[pair_id]
                 updates = {}
 
+                record_type = _s(row.get("type"))
+                new_outcome = stored_outcome(
+                    row.get("outcome"), record_type,
+                    axes_coded=bool(_s(row.get("outcome_computation")) or _s(row.get("outcome_robustness"))),
+                    computation=row.get("outcome_computation"),
+                    robustness=row.get("outcome_robustness"),
+                )
+                if new_outcome != db.get("outcome"):
+                    updates["outcome"] = new_outcome
+
                 for csv_col, db_col in _UPDATE_FIELDS.items():
-                    new_val = _s(row.get(csv_col))
-                    old_val = _s(db.get(db_col))
+                    if csv_col not in df.columns:
+                        continue
+                    new_val = _update_value(csv_col, row.get(csv_col))
+                    old_val = _update_value(csv_col, db.get(db_col))
                     if new_val != old_val:
                         updates[db_col] = new_val
 
@@ -189,9 +239,17 @@ if __name__ == "__main__":
         "--dry-run", action="store_true",
         help="Show what would change without writing to the database.",
     )
+    parser.add_argument(
+        "--allow-legacy-schema", action="store_true",
+        help="Allow archived CSV headers; absent fields are left unchanged.",
+    )
     args = parser.parse_args()
 
     if not args.input.exists():
         raise FileNotFoundError(f"Input file not found: {args.input}")
 
-    run_update(args.input, dry_run=args.dry_run)
+    run_update(
+        args.input,
+        dry_run=args.dry_run,
+        allow_legacy_schema=args.allow_legacy_schema,
+    )

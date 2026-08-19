@@ -5,9 +5,9 @@ from unittest.mock import MagicMock, patch
 
 BASE_RECORD = {
     "record_id": "rec-001",
-    "doi_r": "10.1000/rep", "study_r": "Rep Study", "year_r": "2022",
+    "doi_r": "10.1000/rep", "study_r": "1", "title_r": "Rep Study", "year_r": "2022",
     "url_r": "", "ref_r": "", "abstract_r": "We replicated X.",
-    "doi_o": "10.1000/orig", "study_o": "Orig Study", "year_o": "2018",
+    "doi_o": "10.1000/orig", "study_o": "2", "title_o": "Orig Study", "year_o": "2018",
     "url_o": "https://doi.org/10.1000/orig", "ref_o": "",
     "type": "replication", "outcome": "success",
     "outcome_quote": "We replicated.", "out_quote_source": "abstract",
@@ -17,25 +17,25 @@ BASE_RECORD = {
 H1_AGREE = {
     "validator_slot": "human_1", "type_check": "correct",
     "original_check": "correct", "outcome_check": "correct",
-    "corrected_doi_o": None, "corrected_study_o": None,
+    "corrected_doi_o": None, "corrected_title_o": None,
     "corrected_outcome": None, "corrected_type": None,
 }
 H2_AGREE = {
     "validator_slot": "human_2", "type_check": "correct",
     "original_check": "correct", "outcome_check": "correct",
-    "corrected_doi_o": None, "corrected_study_o": None,
+    "corrected_doi_o": None, "corrected_title_o": None,
     "corrected_outcome": None, "corrected_type": None,
 }
 H1_DISAGREE = {
     "validator_slot": "human_1", "type_check": "correct",
     "original_check": "correct", "outcome_check": "correct",
-    "corrected_doi_o": None, "corrected_study_o": None,
+    "corrected_doi_o": None, "corrected_title_o": None,
     "corrected_outcome": None, "corrected_type": None,
 }
 H2_DISAGREE = {
     "validator_slot": "human_2", "type_check": "correct",
     "original_check": "correct", "outcome_check": "incorrect",
-    "corrected_doi_o": None, "corrected_study_o": None,
+    "corrected_doi_o": None, "corrected_title_o": None,
     "corrected_outcome": "failure", "corrected_type": None,
 }
 

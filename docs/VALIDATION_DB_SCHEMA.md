@@ -1,19 +1,20 @@
 # FLoRA Validation Database Schema
 
-This document is the authoritative reference for the PostgreSQL database used by the
-FLoRA validation workflow. Any developer or agent building or maintaining the
-validation UI should read this file first.
+This document explains the PostgreSQL database used by the FLoRA validation
+workflow. `db_schema.sql` is the executable authority; SQL snippets here are
+abridged and may omit later idempotent migration columns.
 
 ---
 
 ## Overview
 
-After Stage 3 (`extract/run_extract.py`) produces `data/extracted.csv`, **resolved
-rows only** (i.e. rows where `filter_status` is `replication` or `reproduction` AND
-`link_method` is `author_year_match`, `llm_abstract`, or `llm_fulltext`) are loaded
-into the database by `csv_to_db.py`.
+After Stage 3 produces `data/extracted.csv`, `csv_to_db.py` loads only resolved
+replication/reproduction rows. The ten current methods and archived aliases are
+centralized in `extractor_vocab.py`; see `CSV_SCHEMA.md` for the full boundary
+contract.
 
-The database has five tables:
+The validation workflow is centered on these five tables (the repository also
+owns admin, assignment, source-record, messaging, and configuration tables):
 
 | Table | Purpose |
 | --- | --- |
@@ -47,26 +48,35 @@ CREATE TABLE validators (
     email               TEXT        UNIQUE,
     code                TEXT        UNIQUE,
     handle              TEXT        UNIQUE NOT NULL,
-    level               INTEGER     NOT NULL DEFAULT 1,   -- 1=community, 2=expert, 3=lead
     vote_score          INTEGER     NOT NULL DEFAULT 10,  -- points weight per vote
+    validator_tier      INTEGER     NOT NULL DEFAULT 0,   -- 0=regular, 1=trusted, 2=senior
     total_judgements    INTEGER     NOT NULL DEFAULT 0,
     total_points        INTEGER     NOT NULL DEFAULT 0,
     skipped_count       INTEGER     NOT NULL DEFAULT 0,
     accuracy_score      FLOAT,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    onboarded_at        TIMESTAMPTZ
+    onboarded_at        TIMESTAMPTZ,
+    last_login_at       TIMESTAMPTZ,
+    last_seen_update    INTEGER     NOT NULL DEFAULT 0
 );
 ```
 
-**Vote score by level:**
+**Current tiers:**
 
-| Level | Role | vote_score |
+| `validator_tier` | Role | Extra authority |
 | --- | --- | --- |
-| 1 | Community validator | 10 |
-| 2 | Expert validator (future) | 15 |
-| 3 | Core team / Lead | 30 |
+| 0 | Regular validator | Normal queue |
+| 1 | Trusted validator | Eligible for trusted assignment/consensus paths |
+| 2 | Senior validator | May use immediate senior rejection |
 
-The LLM validator has a fixed `vote_score` of 15 (configurable in `llm_validator.py`).
+`vote_score` controls points and is independent of `validator_tier`. The obsolete
+`level` column is dropped by the idempotent schema migration.
+
+> **Deferred authentication warning:** `code` is currently plaintext and private
+> validator routes trust a browser-supplied `coder_id`. The approved redesign adds
+> hashed credentials and server-side sessions; see
+> [PROJECT.md §19](PROJECT.md#19-deferred-security-work). Do not treat this table's
+> integer primary key as proof of identity.
 
 ---
 
@@ -80,17 +90,19 @@ CREATE TABLE unvalidated (
     record_id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     pair_id             TEXT        UNIQUE,        -- MD5 from extracted.csv
 
-    -- Replication paper display columns
+    -- Replication paper (`study_r` is the within-paper study number)
     doi_r               TEXT        NOT NULL,
     study_r             TEXT,
+    title_r             TEXT,
     year_r              TEXT,
     url_r               TEXT,
     ref_r               TEXT,
     abstract_r          TEXT,
 
-    -- Original study display columns
+    -- Original paper (`study_o` is the within-paper study number)
     doi_o               TEXT,
     study_o             TEXT,
+    title_o             TEXT,
     year_o              TEXT,
     url_o               TEXT,     -- derived: https://doi.org/{doi_o}
     ref_o               TEXT,
@@ -117,7 +129,7 @@ CREATE TABLE unvalidated (
 
     -- Consensus-resolved final values (written at validation time)
     final_doi_o         TEXT,
-    final_study_o       TEXT,
+    final_title_o       TEXT,
     final_outcome       TEXT,
     final_type          TEXT,
 
@@ -139,7 +151,7 @@ CREATE TABLE unvalidated (
   "original_check": "correct",
   "outcome_check": "incorrect",
   "corrected_doi_o": null,
-  "corrected_study_o": null,
+  "corrected_title_o": null,
   "corrected_outcome": "failure",
   "corrected_type": null,
   "validator_notes": "Abstract clearly states failure",
@@ -202,7 +214,7 @@ CREATE TABLE validation_queue (
     outcome_check       TEXT        CHECK (outcome_check  IN ('correct', 'incorrect')),
 
     corrected_doi_o     TEXT,
-    corrected_study_o   TEXT,
+    corrected_title_o   TEXT,
     corrected_outcome   TEXT,
     corrected_type      TEXT,
 
@@ -230,17 +242,19 @@ CREATE TABLE validated (
     validated_record_id UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     record_id           UUID        NOT NULL REFERENCES unvalidated(record_id),
 
-    -- Replication paper (never changes during validation)
+    -- Replication paper
     doi_r               TEXT        NOT NULL,
     study_r             TEXT,
+    title_r             TEXT,
     year_r              TEXT,
     url_r               TEXT,
     ref_r               TEXT,
     abstract_r          TEXT,
 
-    -- Original study (final consensus value)
+    -- Original paper (final consensus value)
     doi_o               TEXT,
     study_o             TEXT,
+    title_o             TEXT,
     year_o              TEXT,
     url_o               TEXT,
     ref_o               TEXT,
@@ -253,12 +267,50 @@ CREATE TABLE validated (
 
     validated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    UNIQUE (doi_r, study_r, doi_o, study_o)
+    UNIQUE (doi_r, study_r, title_r, original_key, study_o, title_o)
 );
 ```
 
 > **Audit trail**: to see what changed during validation, compare `unvalidated.doi_o`
 > with `validated.doi_o` for the same `record_id`.
+
+---
+
+### `validated_record_merges`
+
+An admin resolution that would collide with another row's validated natural key does
+not overwrite that row. The server first returns a conflict and requires a second,
+explicit **Merge A into B** request. B remains the authoritative validated row; A is
+retained in `unvalidated` with its metadata and judgements but removed from validated
+output.
+
+```sql
+CREATE TABLE validated_record_merges (
+    merge_id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    duplicate_record_id   UUID        NOT NULL UNIQUE REFERENCES unvalidated(record_id),
+    survivor_record_id    UUID        NOT NULL REFERENCES unvalidated(record_id),
+    merged_by             TEXT        NOT NULL,
+    merged_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolution_snapshot   JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    CHECK (duplicate_record_id <> survivor_record_id)
+);
+```
+
+The unique duplicate id makes the operation idempotent. `resolution_snapshot` records
+the identity/classification the admin was attempting to publish; it does not replace
+the complete A-side source and judgement history still attached to
+`duplicate_record_id`.
+
+---
+
+### `admins` and authentication state
+
+`admins` currently stores `password TEXT` and `trusted BOOLEAN`. Admin bearer tokens
+are deterministic hashes of the plaintext password rather than independent session
+rows. A known password fallback may seed a fresh database when `ADMIN_PASSWORD` is
+missing. This section documents current behavior, not an acceptable target design.
+The credential-hash, bootstrap, revocable-session, and CSRF migration is tracked in
+[PROJECT.md §19](PROJECT.md#19-deferred-security-work).
 
 ---
 
@@ -271,6 +323,8 @@ CREATE TABLE record_metadata (
     metadata_id             UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
     record_id               UUID    NOT NULL UNIQUE REFERENCES unvalidated(record_id),
     pair_id                 TEXT,
+    work_id                 BIGINT,
+    release_id              TEXT,
 
     filter_status           TEXT,
     filter_method           TEXT,
@@ -284,14 +338,22 @@ CREATE TABLE record_metadata (
     link_evidence           TEXT,
     link_confidence         TEXT,
     link_llm_model          TEXT,
+    screen_categories       TEXT,
 
     outcome_confidence      TEXT,
+    outcome_reasoning       TEXT,
+    outcome_llm_model       TEXT,
+    doi_o_verification      TEXT,
+    pdf_source              TEXT,
+    parse_method            TEXT,
 
     authors_r               TEXT,
     authors_o               TEXT,
     journal_r               TEXT,
     openalex_id_r           TEXT,
     source                  TEXT,
+    bibtex_ref_o            TEXT,
+    bibtex_ref_r            TEXT,
 
     original_rank           INTEGER,
     n_originals             INTEGER,
@@ -343,7 +405,8 @@ Both humans complete
 1. Fetches from `https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/data/extracted.csv`
 2. Archives to `data/extracted_DD.MM.YYYY.csv`
 3. Overwrites `data/extracted_latest.csv`
-4. Calls `csv_to_db.run_import()` to upsert new rows (existing `pair_id`s skipped)
+4. Calls `csv_to_db.run_import()` to insert new rows, refresh metadata for existing
+   `pair_id`s, and safely re-key a corrected pair by `(work_id, original_rank)`
 
 APScheduler starts the job when `app.py` loads.
 
@@ -352,10 +415,12 @@ APScheduler starts the job when `app.py` loads.
 ## Import Script
 
 ```bash
-python csv_to_db.py --input data/extracted.csv
+python csv_to_db.py --input data/extracted.csv --release-id <routing-release>
 ```
 
-Safe to re-run — rows already in the database (matched by `pair_id`) are skipped.
+Safe to re-run: existing records are metadata-refreshed. If an upstream correction
+changes `pair_id`, the stable source slot is re-keyed; validator-touched rows are
+routed to `need_review`. Duplicate input IDs and ambiguous slots fail the import.
 
 Required environment variables:
 
@@ -379,13 +444,15 @@ This copies all data into the new tables. The script is idempotent and safe to r
 
 ## API Field Mapping (Frontend Compatibility)
 
-The frontend was built against the old schema which used `title_r`, `title_o`, and
-`outcome_phrase`. The `GET /api/next-pair` response includes both old and new names:
+The `GET /api/next-pair` response exposes the study number and paper title as
+separate fields. Only `outcome_phrase` remains a frontend alias:
 
 | Old frontend field | New DB column | Note |
 | --- | --- | --- |
-| `title_r` | `study_r` | Both returned in next-pair response |
-| `title_o` | `study_o` | Both returned in next-pair response |
+| `study_r` | `study_r` | Within-paper replication study number(s) |
+| `title_r` | `title_r` | Replication paper title |
+| `study_o` | `study_o` | Within-paper original study number(s) |
+| `title_o` | `title_o` | Original paper title |
 | `outcome_phrase` | `outcome_quote` | Both returned in next-pair response |
 | `coder_id` | `validators.id` | API still uses `coder_id` key name |
 | `pair_id` | `unvalidated.pair_id` | Same MD5, same field name |

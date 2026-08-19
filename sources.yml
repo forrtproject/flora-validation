@@ -70,12 +70,16 @@ sources:
 
     column_map:
       validation: validation_status
+      # The sheet's header keeps the adjective; the column is named for the field
+      # as the FLoRA codebook and the extractor CSV spell it. expected_columns
+      # above must keep matching the sheet, not the table.
+      outcome_computational: outcome_computation
 
     # The two outcome dimensions stay unmerged. The single FLoRA `outcome` label is
     # derived downstream in the transform, so extending the vocabulary is a lookup
     # change rather than a migration over stored rows.
     promoted:
       [ref_o, doi_o, url_o, study_o, ref_r, doi_r, url_r, abstract_r,
-       outcome_computational, outcome_computational_quote,
+       outcome_computation, outcome_computational_quote,
        out_quote_computational_source, outcome_robustness,
        outcome_robustness_quote, out_quote_robust_source, validation_status]

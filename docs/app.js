@@ -15,8 +15,16 @@ function blankJudgement() {
     original: null,
     outcome: null,
     corrected_outcome: null,
-    repro_computation: null,   // reproduction outcome axis 1
-    repro_robustness: null,    // reproduction outcome axis 2
+    // Reproductions are reviewed on two independent axes, each with its own
+    // evidence. The backend derives the flat summary only after both are resolved.
+    repro_computation: null,
+    repro_robustness: null,
+    repro_computation_check: null,
+    repro_robustness_check: null,
+    edited_computational_quote: null,
+    edited_computational_source: null,
+    edited_robustness_quote: null,
+    edited_robustness_source: null,
     corrected_doi_o: null,
     corrected_study_o: null,
     corrected_study_r: null,
@@ -187,7 +195,12 @@ async function staticApi(path, method, body) {
       throw new Error("Already judged this pair");
     }
     const points = pointsForStatic(body);
-    judgements.push({ ...body, points, created_at: new Date().toISOString() });
+    judgements.push({
+      ...(state.currentPair || {}),
+      ...body,
+      points,
+      created_at: new Date().toISOString(),
+    });
     writeJSON(STORAGE.JUDGEMENTS, judgements);
     const totalPts = judgements
       .filter((j) => j.coder_id === body.coder_id && j.type_judgement !== "skip")
@@ -236,18 +249,25 @@ async function staticApi(path, method, body) {
         original_check: j.original_check || null,
         outcome_check: j.outcome_check || null,
         corrected_doi_o: j.corrected_doi_o || null,
+        corrected_title_o: j.corrected_title_o || j.corrected_study_o || null,
         corrected_study_o: j.corrected_study_o || null,
         corrected_outcome: j.corrected_outcome || null,
+        corrected_outcome_computation: j.corrected_outcome_computation || null,
+        corrected_outcome_robustness: j.corrected_outcome_robustness || null,
         corrected_type: j.corrected_type || null,
+        corrected_title_r: j.corrected_title_r || j.corrected_study_r || null,
         corrected_study_r: j.corrected_study_r || null,
         points: j.points || 0,
         validated_at: j.created_at || null,
         flagged: false,
         flag_reason: null,
-        title_r: j.study_r || j.pair_id,
+        title_r: j.title_r || j.pair_id,
+        study_r: j.study_r || null,
         doi_r: j.doi_r || null,
         year_r: j.year_r || null,
         extracted_outcome: j.outcome || null,
+        extracted_outcome_computation: j.outcome_computation || null,
+        extracted_outcome_robustness: j.outcome_robustness || null,
         msg_id: null,
         msg_body: null,
         msg_sent_at: null,
@@ -270,11 +290,19 @@ async function staticApi(path, method, body) {
       original_check: j.original_check || null,
       outcome_check: j.outcome_check || null,
       corrected_doi_o: j.corrected_doi_o || null,
+      corrected_title_o: j.corrected_title_o || j.corrected_study_o || null,
       corrected_study_o: j.corrected_study_o || null,
       corrected_outcome: j.corrected_outcome || null,
+      corrected_outcome_computation: j.corrected_outcome_computation || null,
+      corrected_computational_quote: j.corrected_computational_quote || null,
+      corrected_computational_source: j.corrected_computational_source || null,
+      corrected_outcome_robustness: j.corrected_outcome_robustness || null,
+      corrected_robustness_quote: j.corrected_robustness_quote || null,
+      corrected_robustness_source: j.corrected_robustness_source || null,
       corrected_outcome_quote: j.corrected_outcome_quote || null,
       corrected_abstract: j.corrected_abstract || null,
       corrected_type: j.corrected_type || null,
+      corrected_title_r: j.corrected_title_r || j.corrected_study_r || null,
       corrected_study_r: j.corrected_study_r || null,
       additional_checks: j.additional_checks || null,
       validator_notes: j.validator_notes || null,
@@ -282,19 +310,30 @@ async function staticApi(path, method, body) {
       validated_at: j.created_at || null,
       flagged: false,
       flag_reason: null,
-      study_r: j.study_r || j.pair_id,
+      study_r: j.study_r || null,
+      title_r: j.title_r || j.pair_id,
       doi_r: j.doi_r || null,
       year_r: j.year_r || null,
       abstract_r: j.abstract_r || null,
       doi_o: j.doi_o || null,
       study_o: j.study_o || null,
+      title_o: j.title_o || null,
       year_o: j.year_o || null,
+      url_o: j.url_o || null,
+      oa_work_id_o: j.oa_work_id_o || null,
       extracted_type: j.type || null,
       extracted_outcome: j.outcome || null,
       outcome_quote: j.outcome_quote || null,
+      outcome_computation: j.outcome_computation || null,
+      outcome_computational_quote: j.outcome_computational_quote || null,
+      out_quote_computational_source: j.out_quote_computational_source || null,
+      outcome_robustness: j.outcome_robustness || null,
+      outcome_robustness_quote: j.outcome_robustness_quote || null,
+      out_quote_robust_source: j.out_quote_robust_source || null,
       has_validated: false,
-      val_study_r: null, val_doi_r: null, val_year_r: null, val_abstract_r: null,
-      val_doi_o: null, val_study_o: null, val_year_o: null,
+      val_study_r: null, val_title_r: null, val_doi_r: null, val_year_r: null, val_abstract_r: null,
+      val_doi_o: null, val_study_o: null, val_title_o: null, val_year_o: null,
+      val_url_o: null, val_oa_work_id_o: null,
       val_type: null, val_outcome: null, val_outcome_quote: null,
       val_admin_approved: false, val_validated_at: null,
       messages: [],
@@ -331,7 +370,16 @@ function fmtYear(y) {
 // (e.g. reproduction combined labels) pass through unchanged.
 function fmtOutcome(v) {
   if (!v) return v;
-  return { cannot_be_determined: "Cannot be determined" }[String(v).toLowerCase()] || v;
+  return {
+    cannot_be_determined: "Cannot be determined",
+    "statistically successful but flawed": "Successful but flawed",
+    "computationally reproducible": "Computationally reproducible",
+    "computational issues": "Computational issues",
+    "technical failure": "Technical failure",
+    "not checked": "Not checked",
+    robust: "Robust",
+    "robustness challenges": "Robustness challenges",
+  }[String(v).toLowerCase()] || v;
 }
 
 // "Hamid", "Hamid and Luke", "Hamid, Luke, and the LLM"
@@ -401,7 +449,7 @@ function buildConsensusSummary(v1, v2, llm) {
   let e;
   if ((e = editors("corrected_outcome_quote")).length) lines.push(`${_nameList(e)} changed the outcome quote.`);
   if ((e = editors("corrected_abstract")).length)      lines.push(`${_nameList(e)} edited the abstract.`);
-  if ((e = editors("corrected_study_r")).length)        lines.push(`${_nameList(e)} fixed the replication title.`);
+  if ((e = editors("corrected_title_r")).length)        lines.push(`${_nameList(e)} fixed the replication title.`);
   if ((e = editors("corrected_url_r")).length)          lines.push(`${_nameList(e)} suggested a replication link.`);
   if ((e = editors("doi_r_published")).length)          lines.push(`${_nameList(e)} added a published-article DOI.`);
 
@@ -924,7 +972,7 @@ function _renderAssignmentsList() {
   body.innerHTML = _assignments.map(a => `
     <div class="assign-item" data-record="${escapeHtml(a.record_id)}" role="button" tabindex="0">
       <div class="assign-item-main">
-        <div class="assign-item-title">${escapeHtml((a.study_r || a.doi_r || a.record_id).slice(0, 80))}</div>
+        <div class="assign-item-title">${escapeHtml((a.title_r || a.doi_r || a.record_id).slice(0, 80))}</div>
         <div class="assign-item-sub">${a.doi_r ? escapeHtml(a.doi_r) : "—"}${a.year_r ? " · " + fmtYear(a.year_r) : ""} · ${escapeHtml(fmtOutcome(a.outcome) || "—")}</div>
       </div>
       <span class="assign-item-open">Open →</span>
@@ -1341,10 +1389,10 @@ function renderHistory() {
     ].join("");
 
     const corrections = [];
-    if (j.corrected_study_r) corrections.push(`Title correction: <em>${escapeHtml(j.corrected_study_r)}</em>`);
+    if (j.corrected_title_r || j.corrected_study_r) corrections.push(`Title correction: <em>${escapeHtml(j.corrected_title_r || j.corrected_study_r)}</em>`);
     if (j.corrected_type)    corrections.push(`Type → <em>${escapeHtml(j.corrected_type)}</em>`);
     if (j.corrected_outcome) corrections.push(`Outcome → <em>${escapeHtml(fmtOutcome(j.corrected_outcome))}</em>`);
-    if (j.corrected_study_o) corrections.push(`Original title → <em>${escapeHtml(j.corrected_study_o)}</em>`);
+    if (j.corrected_title_o || j.corrected_study_o) corrections.push(`Original title → <em>${escapeHtml(j.corrected_title_o || j.corrected_study_o)}</em>`);
     if (j.corrected_doi_o)   corrections.push(`Original DOI → <em>${escapeHtml(j.corrected_doi_o)}</em>`);
     const corrHtml = corrections.length
       ? `<div class="hist-corrections">${corrections.join(" · ")}</div>`
@@ -1471,16 +1519,39 @@ function renderHistDetail(d) {
   // must display as-is, not fall through to the raw (possibly wrong) d.doi_o.
   const rec = {
     study_r:  d.val_study_r  || d.study_r,
+    title_r:  d.val_title_r  || d.title_r,
     doi_r:    d.val_doi_r    || d.doi_r,
     year_r:   d.val_year_r   || d.year_r,
     abstract_r: d.val_abstract_r || d.abstract_r,
     doi_o:    d.val_doi_o != null ? d.val_doi_o : d.doi_o,
     study_o:  d.val_study_o  || d.study_o,
+    title_o:  d.val_title_o  || d.title_o,
     year_o:   d.val_year_o   || d.year_o,
+    url_o:    d.val_url_o != null ? d.val_url_o : d.url_o,
+    oa_work_id_o: d.val_oa_work_id_o || d.oa_work_id_o,
     type:     d.val_type     || d.extracted_type,
     outcome:  d.val_outcome  || d.extracted_outcome,
     outcome_quote: d.val_outcome_quote || d.outcome_quote,
+    outcome_computation: d.val_outcome_computation ?? d.outcome_computation,
+    computational_quote: d.val_computational_quote ?? d.outcome_computational_quote,
+    computational_source: d.val_computational_source ?? d.out_quote_computational_source,
+    outcome_robustness: d.val_outcome_robustness ?? d.outcome_robustness,
+    robustness_quote: d.val_robustness_quote ?? d.outcome_robustness_quote,
+    robustness_source: d.val_robustness_source ?? d.out_quote_robust_source,
   };
+
+  const _historyAxisCard = (label, value, quote, source, verdict = "") => `
+    <div class="hd-axis-card">
+      <div class="hd-axis-head"><span>${escapeHtml(label)}</span>${verdict}</div>
+      <span class="hd-val-pill">${escapeHtml(fmtOutcome(value) || "Not coded")}</span>
+      ${quote ? `<p class="hd-axis-quote">“${escapeHtml(quote)}”</p>` : `<p class="hd-axis-empty">No quote</p>`}
+      ${source ? `<span class="hd-axis-source">${escapeHtml(fmtOutcome(source))}</span>` : ""}
+    </div>`;
+  const savedAxesHtml = rec.type === "reproduction" ? `
+    <div class="hd-axis-grid">
+      ${_historyAxisCard("Computation", rec.outcome_computation, rec.computational_quote, rec.computational_source)}
+      ${_historyAxisCard("Robustness", rec.outcome_robustness, rec.robustness_quote, rec.robustness_source)}
+    </div>` : "";
 
   // ---- LEFT COLUMN: saved record ----
   // Prefer the record's real lifecycle status (covers under-review / rejected);
@@ -1504,26 +1575,47 @@ function renderHistDetail(d) {
     ? `<div class="hd-lsection">
          <div class="hd-section-label">Classification</div>
          ${rec.type    ? `<div class="hd-field"><span class="hd-field-label">Type</span><span class="hd-val-pill">${escapeHtml(rec.type)}</span></div>` : ""}
-         ${rec.outcome ? `<div class="hd-field"><span class="hd-field-label">Outcome</span><span class="hd-val-pill hd-val-pill-${escapeHtml(rec.outcome)}">${escapeHtml(fmtOutcome(rec.outcome))}</span></div>` : ""}
-         ${rec.outcome_quote ? `<div class="hd-field hd-field-block"><span class="hd-field-label">Quote</span><span class="hd-field-quote">${escapeHtml(rec.outcome_quote)}</span></div>` : ""}
-       </div>`
+          ${rec.outcome ? `<div class="hd-field"><span class="hd-field-label">Outcome</span><span class="hd-val-pill hd-val-pill-${escapeHtml(rec.outcome)}">${escapeHtml(fmtOutcome(rec.outcome))}</span></div>` : ""}
+          ${rec.outcome_quote ? `<div class="hd-field hd-field-block"><span class="hd-field-label">Quote</span><span class="hd-field-quote">${escapeHtml(rec.outcome_quote)}</span></div>` : ""}
+          ${savedAxesHtml}
+        </div>`
     : "";
 
-  const origHtml = (rec.study_o || rec.doi_o)
+  const originalIdentifierHtml = (() => {
+    if (rec.doi_o) return doiLink(rec.doi_o);
+
+    // If a previously populated DOI was corrected away, its derived URL and
+    // OpenAlex id may still point to that rejected DOI. Do not present either as
+    // the replacement identity. This fallback is only safe for records that
+    // arrived from the extractor without a DOI in the first place.
+    if (d.doi_o) {
+      return `<span class="hd-na">DOI removed — no verified replacement link</span>`;
+    }
+
+    const fallback = rec.url_o || (rec.oa_work_id_o
+      ? `https://openalex.org/${rec.oa_work_id_o}`
+      : null);
+    return fallback
+      ? `<a class="hd-doi-link" href="${escapeHtml(fallback)}" target="_blank" rel="noopener">OpenAlex ↗</a> <span class="hd-na">no registered DOI</span>`
+      : `<span class="hd-na">No registered DOI or OpenAlex link</span>`;
+  })();
+
+  const origHtml = (rec.title_o || rec.study_o || rec.doi_o || rec.year_o || rec.url_o || rec.oa_work_id_o)
     ? `<div class="hd-lsection">
          <div class="hd-section-label">Original study</div>
-         ${rec.study_o ? `<div class="hd-field"><span class="hd-field-label">Title</span><span>${escapeHtml(rec.study_o)}</span></div>` : ""}
-         <div class="hd-field"><span class="hd-field-label">DOI</span>${doiLink(rec.doi_o)}</div>
+         ${rec.title_o ? `<div class="hd-field"><span class="hd-field-label">Title</span><span>${escapeHtml(rec.title_o)}</span></div>` : ""}
+         ${rec.study_o ? `<div class="hd-field"><span class="hd-field-label">Study number(s)</span><span>${escapeHtml(rec.study_o)}</span></div>` : ""}
+         <div class="hd-field"><span class="hd-field-label">Identifier</span>${originalIdentifierHtml}</div>
          ${rec.year_o  ? `<div class="hd-field"><span class="hd-field-label">Year</span><span>${fmtYear(rec.year_o)}</span></div>` : ""}
        </div>`
     : "";
 
   // ---- RIGHT COLUMN: this validator's judgement ----
-  const titleCorrHtml = d.corrected_study_r
+  const titleCorrHtml = (d.corrected_title_r || d.corrected_study_r)
     ? `<div class="hd-check-row">
          <div class="hd-check-head"><span class="hd-check-label">Title fix</span><span class="hd-chk hd-chk-edit">✎ Corrected</span></div>
-         <div class="hd-row-val"><span class="hd-row-tag">Was</span><span>${escapeHtml(d.study_r || "—")}</span></div>
-         <div class="hd-row-val hd-row-val-corr"><span class="hd-row-tag">Corrected to</span><span>${escapeHtml(d.corrected_study_r)}</span></div>
+         <div class="hd-row-val"><span class="hd-row-tag">Was</span><span>${escapeHtml(d.title_r || "—")}</span></div>
+         <div class="hd-row-val hd-row-val-corr"><span class="hd-row-tag">Corrected to</span><span>${escapeHtml(d.corrected_title_r || d.corrected_study_r)}</span></div>
        </div>`
     : "";
 
@@ -1537,6 +1629,39 @@ function renderHistDetail(d) {
          ${d.corrected_outcome_quote ? `<div class="hd-row-val hd-row-val-corr"><span class="hd-row-tag">Your edit</span><span>${escapeHtml(d.corrected_outcome_quote)}</span></div>` : ""}
        </div>`
     : "";
+
+  const judgementType = d.corrected_type || d.extracted_type;
+  const axisChecks = d.additional_checks?.reproduction_axis_checks || {};
+  const unsureAxes = d.additional_checks?.unsure_reproduction_axes || [];
+  const _axisVerdict = (key, selected, extracted) => {
+    const action = axisChecks[key] || (unsureAxes.includes(key)
+      ? "unsure" : selected === extracted ? "correct" : "wrong");
+    return action === "correct"
+      ? `<span class="hd-chk hd-chk-ok">✓ Looks right</span>`
+      : action === "unsure"
+      ? `<span class="hd-chk hd-chk-warn">? Couldn't tell</span>`
+      : `<span class="hd-chk hd-chk-bad">✕ Mischaracterised</span>`;
+  };
+  const judgementAxesHtml = judgementType === "reproduction" ? `
+    <div class="hd-check-row hd-repro-judgement">
+      <div class="hd-check-head"><span class="hd-check-label">Reproduction axes</span></div>
+      <div class="hd-axis-grid">
+        ${_historyAxisCard(
+          "Computation",
+          d.corrected_outcome_computation || d.outcome_computation,
+          d.corrected_computational_quote || d.outcome_computational_quote,
+          d.corrected_computational_source || d.out_quote_computational_source,
+          _axisVerdict("computation", d.corrected_outcome_computation, d.outcome_computation),
+        )}
+        ${_historyAxisCard(
+          "Robustness",
+          d.corrected_outcome_robustness || d.outcome_robustness,
+          d.corrected_robustness_quote || d.outcome_robustness_quote,
+          d.corrected_robustness_source || d.out_quote_robust_source,
+          _axisVerdict("robustness", d.corrected_outcome_robustness, d.outcome_robustness),
+        )}
+      </div>
+    </div>` : "";
 
   const notesHtml = d.validator_notes
     ? `<div class="hd-notes-block">
@@ -1598,7 +1723,8 @@ function renderHistDetail(d) {
     <div class="hd-cols">
       <div class="hd-col-left">
         <div class="hd-col-label">${d.has_validated ? "Saved record" : "Record"}</div>
-        <h3 class="hd-record-title">${escapeHtml(rec.study_r || rec.doi_r || "Unknown record")}</h3>
+        <h3 class="hd-record-title">${escapeHtml(rec.title_r || rec.doi_r || "Unknown record")}</h3>
+        ${rec.study_r ? `<div class="hd-record-year">Replication study number(s): ${escapeHtml(rec.study_r)}</div>` : ""}
         ${classificationHtml}
         ${abstractHtml}
         ${origHtml}
@@ -1608,8 +1734,9 @@ function renderHistDetail(d) {
         <div class="hd-col-label">Your judgement</div>
         ${titleCorrHtml}
         ${_detailCheckRow("Study type", d.extracted_type, d.type_check, typeCorrDisplay)}
-        ${_detailCheckRow("Original study", d.study_o || d.doi_o || null, d.original_check, d.corrected_study_o || d.corrected_doi_o)}
+        ${_detailCheckRow("Original study", d.title_o || d.doi_o || null, d.original_check, d.corrected_title_o || d.corrected_study_o || d.corrected_doi_o)}
         ${_detailCheckRow("Outcome", d.extracted_outcome, d.outcome_check, d.corrected_outcome)}
+        ${judgementAxesHtml}
         ${quoteHtml}
         ${notesHtml}
         ${msgHtml}
@@ -1617,7 +1744,7 @@ function renderHistDetail(d) {
     </div>
   `;
 
-  $("#hist-detail-title").textContent = (rec.study_r || rec.doi_r || "Judgement Detail").substring(0, 70);
+  $("#hist-detail-title").textContent = (rec.title_r || rec.doi_r || "Judgement Detail").substring(0, 70);
 
   // Wire reply button
   const replyWrap = body.querySelector(".hd-chat-input-row");
@@ -1944,6 +2071,14 @@ function _replayGates(card, draft) {
     corrected_outcome: draft.corrected_outcome,
     corrected_doi_o: draft.corrected_doi_o, corrected_study_o: draft.corrected_study_o,
     repro_computation: draft.repro_computation, repro_robustness: draft.repro_robustness,
+    repro_computation_check: draft.repro_computation_check,
+    repro_robustness_check: draft.repro_robustness_check,
+    // Per-axis quote edits live in inputs, not choice buttons, so they are
+    // restored directly rather than replayed through onChoice.
+    edited_computational_quote: draft.edited_computational_quote,
+    edited_computational_source: draft.edited_computational_source,
+    edited_robustness_quote: draft.edited_robustness_quote,
+    edited_robustness_source: draft.edited_robustness_source,
   };
   const body = card.querySelector(".pair-body");
   const click = (sel) => { const b = card.querySelector(sel); if (b) onChoice(b); return b; };
@@ -1977,8 +2112,43 @@ function _replayGates(card, draft) {
   // 3. Outcome — reproduction has two axes; replication is one pick (+ correction
   //    when "Mischaracterised").
   if (a.type === "reproduction") {
-    if (a.repro_computation) click(`[data-repro-comp="${a.repro_computation}"]`);
-    if (a.repro_robustness)  click(`[data-repro-robust="${a.repro_robustness}"]`);
+    for (const [key, field, checkField, extracted] of [
+      ["comp", "repro_computation", "repro_computation_check", state.currentPair?.outcome_computation],
+      ["robust", "repro_robustness", "repro_robustness_check", state.currentPair?.outcome_robustness],
+    ]) {
+      const value = a[field];
+      const inferred = value && value === extracted ? "correct"
+        : value === "cannot_be_determined" ? "unsure"
+        : value ? "wrong" : null;
+      const check = a[checkField] || inferred;
+      if (!check) continue;
+      click(`[data-repro-axis="${key}"][data-repro-action="${check}"]`);
+      if (check === "wrong" && value) {
+        const attr = key === "comp" ? "data-repro-comp" : "data-repro-robust";
+        click(`[${attr}="${value}"]`);
+      }
+    }
+    // Per-axis evidence: restore into the inputs and back onto the live draft,
+    // which the axis clicks above do not carry.
+    for (const [key, qField, sField] of [
+      ["comp",   "edited_computational_quote", "edited_computational_source"],
+      ["robust", "edited_robustness_quote",    "edited_robustness_source"],
+    ]) {
+      if (a[qField]) {
+        state.judgement[qField] = a[qField];
+        const display = card.querySelector(`#repro-quote-${key}`);
+        const edit    = card.querySelector(`#repro-quote-edit-${key}`);
+        const btn     = card.querySelector(`[data-repro-quote-edit="${key}"]`);
+        if (edit)    edit.value = a[qField];
+        if (display) { display.textContent = `"${a[qField]}"`; display.classList.remove("hidden"); }
+        if (btn)     btn.textContent = "edit quote (✓ edited)";
+      }
+      if (a[sField]) {
+        state.judgement[sField] = a[sField];
+        const sel = card.querySelector(`#repro-quote-source-${key}`);
+        if (sel) sel.value = a[sField];
+      }
+    }
   } else if (a.outcome) {
     click(`[data-outcome="${a.outcome}"]`);
     if (a.outcome === "wrong" && a.corrected_outcome) {
@@ -2365,7 +2535,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
           <button class="link-btn" id="fix-title-btn" title="Fix a typographical error in this title">fix typo</button>
         </div>
         <input type="text" class="title-edit hidden" id="title-edit" placeholder="Corrected title…">
-        <div class="authors">${escapeHtml(p.authors_r || "?")} · ${fmtYear(p.year_r)}${p.journal_r ? " · " + escapeHtml(p.journal_r) : ""}${doiUrl ? ` · <a href="${escapeHtml(oaUrl || doiUrl)}" target="_blank" rel="noopener" title="${oaUrl ? "Open access PDF" : "Publisher page (likely paywalled)"}">${lockIcon(!!oaUrl)} ${escapeHtml(p.doi_r)}</a>` : ""}</div>
+        <div class="authors">${escapeHtml(p.authors_r || "?")} · ${fmtYear(p.year_r)}${p.study_r ? " · Study " + escapeHtml(p.study_r) : ""}${p.journal_r ? " · " + escapeHtml(p.journal_r) : ""}${doiUrl ? ` · <a href="${escapeHtml(oaUrl || doiUrl)}" target="_blank" rel="noopener" title="${oaUrl ? "Open access PDF" : "Publisher page (likely paywalled)"}">${lockIcon(!!oaUrl)} ${escapeHtml(p.doi_r)}</a>` : ""}</div>
         <div class="abstract expanded" id="abstract-text">${escapeHtml(p.abstract_r || "(no abstract available)")}</div>
         <textarea class="abstract-edit hidden" id="abstract-edit"></textarea>
         <div class="abstract-tools">
@@ -2416,7 +2586,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
           <div class="original-info">
             <div class="title">${escapeHtml(p.title_o || "(no title)")}</div>
             <div class="meta">
-              ${escapeHtml(p.authors_o || "?")} · ${fmtYear(p.year_o)}${oJournal ? " · " + escapeHtml(oJournal) : ""}
+              ${escapeHtml(p.authors_o || "?")} · ${fmtYear(p.year_o)}${p.study_o ? " · Study " + escapeHtml(p.study_o) : ""}${oJournal ? " · " + escapeHtml(oJournal) : ""}
               ${oOaUrl ? ` · <a href="${escapeHtml(oOaUrl)}" target="_blank" rel="noopener" title="Open access PDF">${lockIcon(true)} OA</a>` : ""}
               ${oUrl
                 ? ` · <a href="${escapeHtml(oUrl)}" target="_blank" rel="noopener" title="${oOaUrl ? "DOI page" : "Publisher page (likely paywalled)"}">${oOaUrl ? "" : lockIcon(false) + " "}${escapeHtml(p.doi_o)}</a>`
@@ -2480,32 +2650,23 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
               <button class="choice warn" data-outcome="unsure">Can't tell</button>
             </div>
             <div class="outcome-correction hidden" id="outcome-correction">
-              <p id="outcome-correction-label" style="margin:12px 0 6px;font-size:13px;color:var(--muted);">What is the correct outcome?</p>
-              <div class="choices">
-                <button class="choice success" data-correct-outcome="successful">Success</button>
-                <button class="choice danger" data-correct-outcome="failed">Failed</button>
-                <button class="choice warn" data-correct-outcome="mixed">Mixed</button>
-                <button class="choice" data-correct-outcome="uninformative">Uninformative</button>
-              </div>
+              <p id="outcome-correction-label" class="outcome-correction-label">What is the correct outcome?</p>
+              ${_replicationCorrectionChoices()}
             </div>
           </div>
           <div class="repro-outcome hidden" id="repro-outcome">
-            <div class="repro-axis">
-              <span class="repro-axis-label">Computational reproduction</span>
-              <div class="choices">
-                <button class="choice success" data-repro-comp="successful">Successful</button>
-                <button class="choice danger" data-repro-comp="issues">Issues</button>
-                <button class="choice warn" data-repro-comp="not_checked">Not checked</button>
-              </div>
-            </div>
-            <div class="repro-axis">
-              <span class="repro-axis-label">Robustness</span>
-              <div class="choices">
-                <button class="choice success" data-repro-robust="robust">Robust</button>
-                <button class="choice danger" data-repro-robust="challenges">Challenges</button>
-                <button class="choice warn" data-repro-robust="not_checked">Not checked</button>
-              </div>
-            </div>
+            ${_reproAxisBlock({
+              key: "comp", attr: "data-repro-comp", values: _REPRO_COMPUTATION,
+              eyebrow: "Computation", label: "Did the analysis run and reproduce?",
+              extracted: p.outcome_computation,
+              quote: p.outcome_computational_quote, source: p.out_quote_computational_source,
+            })}
+            ${_reproAxisBlock({
+              key: "robust", attr: "data-repro-robust", values: _REPRO_ROBUSTNESS,
+              eyebrow: "Robustness", label: "Did the substantive conclusion hold up?",
+              extracted: p.outcome_robustness,
+              quote: p.outcome_robustness_quote, source: p.out_quote_robust_source,
+            })}
           </div>
           ${isHard ? `
           <label class="no-access-row">
@@ -2619,6 +2780,10 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
       }
       state.judgement.outcome = null;
       state.judgement.corrected_outcome = null;
+      state.judgement.repro_computation = null;
+      state.judgement.repro_robustness = null;
+      state.judgement.repro_computation_check = null;
+      state.judgement.repro_robustness_check = null;
       const cr = container.querySelector("#outcome-correction");
       if (cr) cr.classList.add("hidden");
       updateSubmitState(container.querySelector(".pair-body"));
@@ -2893,6 +3058,66 @@ function wireEditButtons(container, p) {
       _saveQuote();
     });
   }
+
+  // Reproduction axes: one quote + source per axis, edited independently. Simpler
+  // than the replication editor above — these sit outside #gate-3 .choices, so the
+  // choice-locking that editor needs does not apply, and each axis's evidence is
+  // its own field rather than a correction to a shared one.
+  const _AXIS_STATE = {
+    comp:   { quote: "edited_computational_quote", source: "edited_computational_source",
+              extracted: "outcome_computational_quote" },
+    robust: { quote: "edited_robustness_quote",    source: "edited_robustness_source",
+              extracted: "outcome_robustness_quote" },
+  };
+
+  container.querySelectorAll("[data-repro-quote-edit]").forEach((btn) => {
+    const key = btn.dataset.reproQuoteEdit;
+    const keys = _AXIS_STATE[key];
+    if (!keys) return;
+    const display = container.querySelector(`#repro-quote-${key}`);
+    const edit    = container.querySelector(`#repro-quote-edit-${key}`);
+    if (!display || !edit) return;
+
+    const _save = () => {
+      if (edit.classList.contains("hidden")) return;
+      const v = edit.value.trim();
+      const original = (p[keys.extracted] || "").trim();
+      // Null means "unchanged", so an edit matching the extractor's is not a
+      // correction. An emptied box IS a change, but we do not send '' — clearing
+      // an axis quote is an admin action, not a validator one.
+      state.judgement[keys.quote] = v && v !== original ? v : null;
+      display.textContent = v ? `"${v}"` : "";
+      display.classList.toggle("hidden", !v);
+      edit.classList.add("hidden");
+      btn.textContent = state.judgement[keys.quote]
+        ? "edit quote (✓ edited)" : (v ? "edit / extend quote" : "add a quote");
+      updateSubmitState(container.querySelector(".pair-body"));
+    };
+
+    btn.onclick = () => {
+      if (edit.classList.contains("hidden")) {
+        edit.value = state.judgement[keys.quote] || p[keys.extracted] || "";
+        display.classList.add("hidden");
+        edit.classList.remove("hidden");
+        btn.textContent = "save edited quote";
+        edit.focus();
+      } else {
+        _save();
+      }
+    };
+    edit.addEventListener("blur", (e) => {
+      if (e.relatedTarget === btn) return;
+      _save();
+    });
+  });
+
+  container.querySelectorAll("[data-repro-source]").forEach((sel) => {
+    const keys = _AXIS_STATE[sel.dataset.reproSource];
+    if (!keys) return;
+    sel.addEventListener("change", () => {
+      state.judgement[keys.source] = sel.value || null;
+    });
+  });
 }
 
 function onChoice(btn) {
@@ -2919,6 +3144,8 @@ function onChoice(btn) {
       state.judgement.corrected_outcome = null;
       state.judgement.repro_computation = null;
       state.judgement.repro_robustness = null;
+      state.judgement.repro_computation_check = null;
+      state.judgement.repro_robustness_check = null;
     } else {
       if (wasAnswered) {
         unanswerGate(pairBody.querySelector("#gate-2"));
@@ -2933,6 +3160,8 @@ function onChoice(btn) {
       state.judgement.corrected_outcome = null;
       state.judgement.repro_computation = null;
       state.judgement.repro_robustness = null;
+      state.judgement.repro_computation_check = null;
+      state.judgement.repro_robustness_check = null;
       pairBody.querySelectorAll("#gate-3 .choice.selected").forEach(b => b.classList.remove("selected"));
       _applyOutcomeMode(pairBody);
       pairBody.querySelector("#gate-2").classList.remove("hidden");
@@ -2946,6 +3175,8 @@ function onChoice(btn) {
       state.judgement.corrected_outcome = null;
       state.judgement.repro_computation = null;
       state.judgement.repro_robustness = null;
+      state.judgement.repro_computation_check = null;
+      state.judgement.repro_robustness_check = null;
       const cr = pairBody.querySelector("#outcome-correction");
       if (cr) cr.classList.add("hidden");
     }
@@ -3001,25 +3232,71 @@ function onChoice(btn) {
     btn.classList.add("selected");
     updateSubmitState(pairBody);
     // Now that the correct outcome is chosen, collapse gate-3.
-    const correctMap = { successful: "Success", failed: "Failed", mixed: "Mixed", uninformative: "Uninformative" };
+    const correctMap = { successful: "Success", failed: "Failed", mixed: "Mixed",
+                         [_FLAWED_OUTCOME]: "Successful but flawed", uninformative: "Uninformative",
+                         "descriptive only": "Descriptive only",
+                         cannot_be_determined: "Cannot be determined" };
     const label = `Mischaracterised → ${correctMap[btn.dataset.correctOutcome] || btn.dataset.correctOutcome}`;
     clearTimeout(_chipTimer);
     _chipTimer = setTimeout(() => answerGate(gate, label, "danger"), 300);
     return;
-  } else if (btn.dataset.reproComp || btn.dataset.reproRobust) {
-    // Reproduction outcome: two axes → combined string in corrected_outcome.
-    // (Sibling de-select within each axis is handled at the top of onChoice.)
-    if (btn.dataset.reproComp)   state.judgement.repro_computation = btn.dataset.reproComp;
-    if (btn.dataset.reproRobust) state.judgement.repro_robustness  = btn.dataset.reproRobust;
-    const comp = state.judgement.repro_computation, rob = state.judgement.repro_robustness;
-    if (comp && rob) {
-      state.judgement.corrected_outcome = _reproLabel(comp, rob);
-      updateSubmitState(pairBody);
-      clearTimeout(_chipTimer);
-      _chipTimer = setTimeout(() => answerGate(gate, state.judgement.corrected_outcome, "success"), 300);
+  } else if (btn.dataset.reproAxis) {
+    const key = btn.dataset.reproAxis;
+    const action = btn.dataset.reproAction;
+    const isComp = key === "comp";
+    const valueField = isComp ? "repro_computation" : "repro_robustness";
+    const checkField = isComp ? "repro_computation_check" : "repro_robustness_check";
+    const correction = pairBody.querySelector(`#repro-correction-${key}`);
+    state.judgement[checkField] = action;
+    state.judgement.corrected_outcome = null;
+
+    if (action === "correct") {
+      state.judgement[valueField] = btn.dataset.reproExtracted || null;
+      correction?.classList.add("hidden");
+    } else if (action === "unsure") {
+      state.judgement[valueField] = "cannot_be_determined";
+      correction?.classList.add("hidden");
     } else {
-      state.judgement.corrected_outcome = null;   // need both axes before it counts
+      state.judgement[valueField] = null;
+      correction?.classList.remove("hidden");
+      correction?.querySelectorAll(".choice.selected").forEach(b => b.classList.remove("selected"));
       updateSubmitState(pairBody);
+      return;
+    }
+
+    updateSubmitState(pairBody);
+    const comp = state.judgement.repro_computation;
+    const rob = state.judgement.repro_robustness;
+    if (comp && rob) {
+      const checks = [state.judgement.repro_computation_check, state.judgement.repro_robustness_check];
+      const chipClass = checks.includes("unsure") ? "warn" : checks.includes("wrong") ? "danger" : "success";
+      clearTimeout(_chipTimer);
+      _chipTimer = setTimeout(
+        () => answerGate(gate, `${fmtOutcome(comp)} · ${fmtOutcome(rob)}`, chipClass), 300);
+    }
+    return;
+  } else if (btn.dataset.reproComp || btn.dataset.reproRobust) {
+    // A correction option within one axis. Keep the two judgements independent
+    // and mark the corresponding review control as "Mischaracterised".
+    const isComp = !!btn.dataset.reproComp;
+    const key = isComp ? "comp" : "robust";
+    if (isComp) {
+      state.judgement.repro_computation = btn.dataset.reproComp;
+      state.judgement.repro_computation_check = "wrong";
+    } else {
+      state.judgement.repro_robustness = btn.dataset.reproRobust;
+      state.judgement.repro_robustness_check = "wrong";
+    }
+    state.judgement.corrected_outcome = null;
+    pairBody.querySelector(`[data-repro-axis="${key}"][data-repro-action="wrong"]`)?.classList.add("selected");
+    const comp = state.judgement.repro_computation, rob = state.judgement.repro_robustness;
+    updateSubmitState(pairBody);
+    if (comp && rob) {
+      const checks = [state.judgement.repro_computation_check, state.judgement.repro_robustness_check];
+      const chipClass = checks.includes("unsure") ? "warn" : checks.includes("wrong") ? "danger" : "success";
+      clearTimeout(_chipTimer);
+      _chipTimer = setTimeout(
+        () => answerGate(gate, `${fmtOutcome(comp)} · ${fmtOutcome(rob)}`, chipClass), 300);
     }
     return;
   }
@@ -3082,21 +3359,178 @@ function getAnswerClass(btn) {
   return "";
 }
 
-// Reproduction outcome taxonomy (combined-string labels match the extractor).
-const _REPRO_COMP   = { successful: "computationally successful", issues: "computational issues", not_checked: "computation not checked" };
-const _REPRO_ROBUST = { robust: "robust", challenges: "robustness challenges", not_checked: "robustness not checked" };
-const _reproLabel = (comp, rob) => `${_REPRO_COMP[comp]}, ${_REPRO_ROBUST[rob]}`;
+// Reproduction outcome axes, per the FLoRA codebook. These are the stored values,
+// not display labels — they must match extractor_vocab.OUTCOME_AXES and the CHECK
+// constraints in db_schema.sql exactly.
+// The backend derives the flat outcome from the independently reviewed pair.
+const _REPRO_COMPUTATION = [
+  ["computationally reproducible", "Reproducible",   "success"],
+  ["computational issues",         "Issues",         "danger"],
+  ["technical failure",            "Technical failure", "danger"],
+  ["not checked",                  "Not checked",    "warn"],
+  ["cannot_be_determined",         "Can't tell",     "warn"],
+];
+const _REPRO_ROBUSTNESS = [
+  ["robust",                "Robust",     "success"],
+  ["robustness challenges", "Challenges", "danger"],
+  ["not checked",           "Not checked", "warn"],
+  ["cannot_be_determined",  "Can't tell", "warn"],
+];
 
-// All 9 reproduction outcome combinations — must match the validator selector's strings.
-const _REPRO_OUTCOMES = Object.keys(_REPRO_COMP)
-  .flatMap(c => Object.keys(_REPRO_ROBUST).map(r => _reproLabel(c, r)));
+const _OUTCOME_HELP = {
+  successful: "The study supports the original finding.",
+  failed: "The study does not support the original finding.",
+  mixed: "Results differ across tests, samples, or outcomes.",
+  "statistically successful but flawed": "The result held statistically, but the authors identify a methodological flaw that undermines it.",
+  uninformative: "The study ran, but its result cannot answer whether the finding replicated.",
+  "descriptive only": "The study repeats a setting or method without testing the original claim.",
+  cannot_be_determined: "The available paper text is insufficient to classify the outcome.",
+  "computationally reproducible": "The original analysis can be run and produces the reported result.",
+  "computational issues": "The analysis runs only with substantive fixes or produces materially different results.",
+  "technical failure": "Missing or unusable data, code, or software prevents the analysis from running.",
+  "not checked": "This dimension was outside the reproduction's scope.",
+  robust: "The substantive conclusion holds under the reproduction or additional checks.",
+  "robustness challenges": "The conclusion weakens or changes under the reproduction or additional checks.",
+};
+
+function _outcomeChoice(value, label, cls = "", attr = "data-correct-outcome") {
+  const help = _OUTCOME_HELP[value] || "";
+  return `<button class="choice outcome-option ${cls}" ${attr}="${escapeHtml(value)}"
+                  data-tooltip="${escapeHtml(help)}" title="${escapeHtml(help)}"
+                  aria-label="${escapeHtml(label)}. ${escapeHtml(help)}">
+            <span>${escapeHtml(label)}</span><span class="choice-help" aria-hidden="true">?</span>
+          </button>`;
+}
+
+function _replicationCorrectionChoices() {
+  const primary = [
+    ["successful", "Successful", "success"],
+    ["failed", "Failed", "danger"],
+    ["mixed", "Mixed", "warn"],
+  ].map(([value, label, cls]) => _outcomeChoice(value, label, cls)).join("");
+  const niche = [
+    ["statistically successful but flawed", "Successful but flawed", "warn"],
+    ["uninformative", "Uninformative", ""],
+    ["descriptive only", "Descriptive only", ""],
+    ["cannot_be_determined", "Cannot determine", ""],
+  ].map(([value, label, cls]) => _outcomeChoice(value, label, cls)).join("");
+  return `
+    <div class="outcome-choice-tier outcome-choice-primary" aria-label="Main outcomes">
+      <span class="outcome-tier-label">Main outcomes</span>
+      <div class="choices">${primary}</div>
+    </div>
+    <div class="outcome-choice-tier outcome-choice-niche" aria-label="Less common outcomes">
+      <span class="outcome-tier-label">Less common</span>
+      <div class="choices">${niche}</div>
+    </div>`;
+}
+
+// Where a quote was found. Compound values (e.g. "abstract | discussion") occur
+// upstream; they are offered as-is when already set rather than forced onto one.
+const _QUOTE_SOURCES = ["abstract", "introduction", "results", "discussion", "conclusions", "fulltext", "title"];
+
+function _quoteSourceOptions(selected) {
+  const opts = _QUOTE_SOURCES.includes(selected) || !selected
+    ? _QUOTE_SOURCES : [selected, ..._QUOTE_SOURCES];
+  return [`<option value="">— where is it from? —</option>`]
+    .concat(opts.map(s =>
+      `<option value="${escapeHtml(s)}" ${selected === s ? "selected" : ""}>${escapeHtml(s)}</option>`))
+    .join("");
+}
+
+// Admin resolve panel. Offers the same named sources plus 'full_text' (the value
+// auto-detection produces), and ALWAYS keeps the stored value as an option —
+// including pipe-joined ones like "abstract|discussion". Without that, a granular
+// value matched nothing, the select fell back to "Auto-detect", and merely opening
+// and saving a record replaced a known source with a guess.
+// <option>s for one reproduction axis, from the [value, label, class] triples the
+// validator UI uses — one vocabulary, so the two forms cannot drift.
+function _axisOptions(values, selected) {
+  return [`<option value="">— not coded —</option>`]
+    .concat(values.map(([value, text]) =>
+      `<option value="${escapeHtml(value)}" ${selected === value ? "selected" : ""}>${escapeHtml(text)}</option>`))
+    .join("");
+}
+
+
+function _adminQuoteSourceOptions(selected) {
+  const LABELS = {
+    "": "Auto-detect (is the quote in the abstract?)",
+    abstract: "Abstract — quote appears in the abstract",
+    full_text: "Full text — quote is from the paper body",
+  };
+  const known = ["", "abstract", "full_text", ..._QUOTE_SOURCES.filter(s => s !== "abstract")];
+  const opts = selected && !known.includes(selected) ? [...known, selected] : known;
+  return opts.map(s =>
+    `<option value="${escapeHtml(s)}" ${(selected || "") === s ? "selected" : ""}>${
+      escapeHtml(LABELS[s] || s)}</option>`).join("");
+}
+
+// One axis of the reproduction judgement: the choices, plus its OWN quote and
+// source. Each axis carries separate evidence on purpose — a validator must not
+// be shown one quote and asked to justify two independent judgements.
+//
+// A missing quote is a legal state, not a gap: the extractor supplies neither
+// quote on some reproductions. Say so plainly and let the validator add one,
+// rather than blocking submission on evidence that may not exist.
+function _reproAxisBlock({ key, attr, values, eyebrow, label, extracted, quote, source }) {
+  const hasQuote = !!(quote && String(quote).trim());
+  // `cannot_be_determined` is expressed by the separate "Can't tell" review
+  // action. The correction grid therefore contains exactly the codebook's four
+  // computation choices or three robustness choices.
+  const correctionValues = values.filter(([value]) => value !== "cannot_be_determined");
+  const buttons = correctionValues.map(([value, text, cls]) =>
+    _outcomeChoice(value, text, cls, attr)).join("");
+  const extractedLabel = extracted ? fmtOutcome(extracted) : "Not coded";
+  const correctDisabled = extracted ? "" : " disabled";
+  return `
+            <div class="repro-axis" data-axis="${key}">
+              <div class="repro-axis-heading">
+                <span class="repro-axis-eyebrow">${escapeHtml(eyebrow)}</span>
+                <span class="repro-axis-label">${escapeHtml(label)}</span>
+              </div>
+              <div class="repro-extracted">
+                <span class="repro-extracted-caption">Extracted outcome</span>
+                <span class="outcome-label repro-extracted-value">${escapeHtml(extractedLabel)}</span>
+              </div>
+              <div class="repro-axis-evidence">
+                ${hasQuote
+                  ? `<div class="outcome-quote" id="repro-quote-${key}">"${escapeHtml(quote)}"</div>`
+                  : `<p class="repro-quote-empty" id="repro-quote-${key}"><em>No quote was extracted for this axis.</em></p>`}
+                <textarea class="outcome-quote-edit hidden" id="repro-quote-edit-${key}" rows="3"
+                          placeholder="Quote supporting this judgement…">${escapeHtml(quote || "")}</textarea>
+                <button class="link-btn small" data-repro-quote-edit="${key}">${hasQuote ? "edit / extend quote" : "add a quote"}</button>
+                <select class="admin-select repro-quote-source" id="repro-quote-source-${key}" data-repro-source="${key}">
+                  ${_quoteSourceOptions(source || "")}
+                </select>
+              </div>
+              <p class="repro-axis-prompt">Does this outcome match the evidence?</p>
+              <div class="choices repro-axis-checks">
+                <button class="choice success" data-repro-axis="${key}" data-repro-action="correct"
+                        data-repro-extracted="${escapeHtml(extracted || "")}"${correctDisabled}>Looks right</button>
+                <button class="choice danger" data-repro-axis="${key}" data-repro-action="wrong">Mischaracterised</button>
+                <button class="choice warn" data-repro-axis="${key}" data-repro-action="unsure">Can't tell</button>
+              </div>
+              <div class="repro-axis-correction hidden" id="repro-correction-${key}">
+                <span class="outcome-tier-label">Choose the corrected ${escapeHtml(eyebrow.toLowerCase())} outcome</span>
+                <div class="choices repro-correction-choices">${buttons}</div>
+              </div>
+            </div>`;
+}
+
+// The result held statistically, but the authors flag a methodological problem that
+// undermines it. A replication category in its own right — not a flavour of
+// "successful" and not "mixed". Mirrors extractor_vocab.FLAWED_OUTCOME.
+const _FLAWED_OUTCOME = "statistically successful but flawed";
 
 // Build <option>s for the admin outcome <select> by type. Keeps the current value even
 // if it isn't in the canonical list (e.g. legacy / cannot_be_determined) so nothing is lost.
+// A reproduction's flat outcome is derived from outcome_computation and
+// outcome_robustness; the admin edits those authoritative axes separately.
 function _outcomeOptionsFor(type, selected) {
   const base = type === "reproduction"
-    ? _REPRO_OUTCOMES.slice()
-    : ["successful", "failed", "mixed", "uninformative", "descriptive"];
+    ? ["", "cannot_be_determined", "not_a_replication"]
+    : ["successful", "failed", "mixed", _FLAWED_OUTCOME, "uninformative", "descriptive only", "cannot_be_determined"];
   if (selected && !base.includes(selected)) base.unshift(selected);
   return base.map(o =>
     `<option value="${escapeHtml(o)}" ${selected === o ? "selected" : ""}>${escapeHtml(fmtOutcome(o))}</option>`
@@ -3107,17 +3541,37 @@ function _outcomeOptionsFor(type, selected) {
 // 2-axis selector based on the chosen type.
 function _applyOutcomeMode(pairBody) {
   const isRepro = state.judgement.type === "reproduction";
+  const reclassifiedToReplication = !isRepro &&
+    (state.currentPair?.type || "").toLowerCase() === "reproduction";
   const repl  = pairBody.querySelector("#replication-outcome");
   const repro = pairBody.querySelector("#repro-outcome");
+  const replInfo = pairBody.querySelector("#gate-3 .outcome-info");
   const label = pairBody.querySelector("#gate-3 .outcome-label");
   const q     = pairBody.querySelector("#gate-3 .question");
+  const replQuote = pairBody.querySelector("#gate-3 .outcome-quote-wrap");
   if (repl)  repl.classList.toggle("hidden", isRepro);
   if (repro) repro.classList.toggle("hidden", !isRepro);
+  if (replInfo) replInfo.classList.toggle("hidden", isRepro);
   if (label) label.classList.toggle("hidden", isRepro);   // extracted (replication) outcome label is N/A for reproductions
+  // The shared outcome quote is the replication shape. Reproductions carry one
+  // quote PER AXIS, shown inside each axis block — outcome_phrase is empty on
+  // every reproduction the extractor produces, so showing it here would offer a
+  // permanently blank box and invite a validator to justify two judgements with
+  // one quote.
+  if (replQuote) replQuote.classList.toggle("hidden", isRepro);
+  const looksRight = pairBody.querySelector('[data-outcome="correct"]');
+  if (looksRight) {
+    looksRight.disabled = reclassifiedToReplication;
+    looksRight.title = reclassifiedToReplication
+      ? "The extracted outcome belongs to the reproduction grid. Choose a replication outcome."
+      : "";
+  }
   if (q) {
     if (!q.dataset.replQuestion) q.dataset.replQuestion = q.textContent;
     q.textContent = isRepro
-      ? "How did the reproduction turn out? Use the quote below for context."
+      ? "How did the reproduction turn out? Judge each axis separately — they are independent."
+      : reclassifiedToReplication
+      ? "Choose the replication outcome. The previous reproduction-grid label cannot carry across the type change."
       : q.dataset.replQuestion;
   }
 }
@@ -3129,8 +3583,16 @@ function updateSubmitState(pairBody) {
     if (btnEl) btnEl.disabled = false;
     return;
   }
+  // Reproductions need BOTH independently reviewed axes.
+  // Quotes are not required — the extractor supplies none on some rows, and a
+  // judgement the validator is confident about should not be blocked on evidence
+  // that may not exist.
+  const reclassifiedToReplication = j.type === "replication" &&
+    (state.currentPair?.type || "").toLowerCase() === "reproduction";
   const outcomeReady = j.type === "reproduction"
-    ? !!j.corrected_outcome                                          // both axes chosen
+    ? (j.repro_computation && j.repro_robustness)
+    : reclassifiedToReplication
+    ? (j.outcome === "wrong" && j.corrected_outcome)
     : (j.outcome && (j.outcome !== "wrong" || j.corrected_outcome)); // replication flow
   const ready = j.type === "not_validation" || (j.type && j.original && outcomeReady);
   const btn = (pairBody || document).querySelector("#submit-btn");
@@ -3198,6 +3660,23 @@ async function submitJudgement() {
   const addl = {};
   if (!isNotValidation && j.original === "unsure") addl.was_unsure_original = true;
   if (!isNotValidation && j.outcome  === "unsure") addl.was_unsure_outcome  = true;
+  if (!isNotValidation && j.type === "reproduction" &&
+      (j.repro_computation_check === "unsure" || j.repro_robustness_check === "unsure")) {
+    addl.was_unsure_outcome = true;
+    addl.unsure_reproduction_axes = [
+      j.repro_computation_check === "unsure" ? "computation" : null,
+      j.repro_robustness_check === "unsure" ? "robustness" : null,
+    ].filter(Boolean);
+  }
+  if (!isNotValidation && j.type === "reproduction") {
+    // Preserve the explicit buttons that were clicked. Equal values do not imply
+    // "Looks right": a same-value correction and "Can't tell" are still not an
+    // affirmative agreement and must not earn the agreement bonus.
+    addl.reproduction_axis_checks = {
+      computation: j.repro_computation_check,
+      robustness: j.repro_robustness_check,
+    };
+  }
 
   // Quote gate (silent): if the outcome quote (validator's edit, else extracted)
   // isn't fuzzily in the abstract, don't bother the validator — flag it, so the
@@ -3214,21 +3693,41 @@ async function submitJudgement() {
     }
   }
 
+  // Each reproduction axis has its own review, but the API keeps one aggregate
+  // outcome_check. It is correct only when both explicit actions were affirmative.
+  const reproOutcomeCheck = () => {
+    return j.repro_computation_check === "correct" &&
+           j.repro_robustness_check === "correct"
+      ? "correct"
+      : "incorrect";
+  };
+
   const payload = {
     coder_id:  state.coder.coder_id,
     record_id: String(p.record_id),
     pair_id:   p.pair_id || null,
     type_check:     isNotValidation ? "incorrect" : typeCheck,
     original_check: isNotValidation ? "incorrect" : (j.original === "correct" ? "correct" : "incorrect"),
-    outcome_check:  isNotValidation ? "incorrect" : (j.outcome  === "correct" ? "correct" : "incorrect"),
+    outcome_check:  isNotValidation ? "incorrect"
+                  : j.type === "reproduction" ? reproOutcomeCheck()
+                  : (j.outcome === "correct" ? "correct" : "incorrect"),
     additional_checks:       Object.keys(addl).length ? addl : null,
     corrected_type:          correctedType || null,
     corrected_doi_o:         j.corrected_doi_o   || null,
-    corrected_study_o:       j.corrected_study_o || null,
+    corrected_title_o:       j.corrected_study_o || null,
     corrected_outcome:       j.corrected_outcome || null,
     corrected_outcome_quote: j.edited_outcome_quote || null,
+    // Reproduction axes, sent unjoined. Null on replications, and null on the
+    // axis the validator did not re-evidence — a blank quote means "no change",
+    // not "clear the extractor's".
+    corrected_outcome_computation:  j.repro_computation || null,
+    corrected_computational_quote:  j.edited_computational_quote || null,
+    corrected_computational_source: j.edited_computational_source || null,
+    corrected_outcome_robustness:   j.repro_robustness || null,
+    corrected_robustness_quote:     j.edited_robustness_quote || null,
+    corrected_robustness_source:    j.edited_robustness_source || null,
     corrected_abstract:      j.edited_abstract || null,
-    corrected_study_r:       j.corrected_study_r || null,
+    corrected_title_r:       j.corrected_study_r || null,
     corrected_url_r:         j.corrected_url_r || null,
     doi_r_published:         j.doi_r_published || null,
     validator_notes:         j.comment || null,
@@ -3271,16 +3770,17 @@ async function submitJudgement() {
   // draft, and jump straight to the next buffered pair. Points land deferred-
   // but-accurate when the server confirms (see _processSubmitQueue).
   _clearDraft(p.pair_id);
-  _enqueueSubmit(payload, p.study_r || p.title_r || p.doi_r || "this pair");
+  _enqueueSubmit(payload, p.title_r || p.doi_r || "this pair");
   await loadNextPair(false);   // don't resume the pair we just submitted
 }
 
 function submitOnboarding() {
   const j = state.judgement;
   const pair = state.currentPair;
-  // Reproductions provide the outcome via the 2-axis selector (corrected_outcome),
-  // not j.outcome — mirror updateSubmitState so they can submit.
-  const outcomeReady = j.type === "reproduction" ? !!j.corrected_outcome : j.outcome;
+  // Reproductions provide the outcome through two independent axis reviews.
+  const outcomeReady = j.type === "reproduction"
+    ? (j.repro_computation && j.repro_robustness)
+    : j.outcome;
   const ready = j.type === "not_validation" || (j.type && j.original && outcomeReady);
   if (!ready) return;
   const errors = evaluateOnboarding(pair, j);
@@ -3779,6 +4279,7 @@ async function adminApi(path, method = "GET", body = null) {
     const error = new Error(detail || res.statusText || `Server error (HTTP ${res.status})`);
     error.status = res.status;          // callers branch on this, never on the text
     error.headers = res.headers;
+    error.detail = err.detail;          // preserve structured conflict metadata
     throw error;
   }
   return res.json();
@@ -3913,7 +4414,7 @@ function renderAdminTable(entries, total) {
       e.has_v2  ? `<span class="val-badge" title="${escapeHtml(e.v2_handle || "Validator 2")}">V2</span>` : `<span class="val-badge val-badge-empty">—</span>`,
       e.has_llm ? `<span class="val-badge val-badge-llm" title="LLM validator">LLM</span>` : `<span class="val-badge val-badge-empty">—</span>`,
     ].join("");
-    const study = (e.final_study_r || e.study_r || e.doi_r || "—").substring(0, 60);
+    const study = (e.final_title_r || e.title_r || e.doi_r || "—").substring(0, 60);
     const tc = e.trusted_validator_count || 0;
     const trustBadge = tc === 2
       ? '<span class="admin-trust-badge trust-double" title="Both validators are trusted">⭐⭐</span>'
@@ -3942,7 +4443,7 @@ function renderAdminTable(entries, total) {
       : "—";
     return `<tr>
       <td class="admin-cell-num">${offset + i + 1}</td>
-      <td class="admin-cell-study" title="${(e.final_study_r || e.study_r || "").replace(/"/g, "&quot;")}">${escapeHtml(study)}${flags}${trustBadge}${needsAttentionFlag}${noteFlag}</td>
+      <td class="admin-cell-study" title="${(e.final_title_r || e.title_r || "").replace(/"/g, "&quot;")}">${escapeHtml(study)}${e.study_r ? ` <span class="chk-na-note">Study ${escapeHtml(e.study_r)}</span>` : ""}${flags}${trustBadge}${needsAttentionFlag}${noteFlag}</td>
       <td>${escapeHtml(e.final_type || e.type || "—")}</td>
       <td>${escapeHtml(fmtOutcome(e.final_outcome || e.outcome) || "—")}</td>
       <td><span class="admin-status ${s.cls}">${s.text}</span></td>
@@ -4040,9 +4541,25 @@ function renderAdminDetail(data) {
          <strong>Admin override</strong> — this record was previously rejected by validators but was validated by ${escapeHtml(rec.admin_name || "an admin")}. Validator cards below reflect the original (rejected) submissions.
        </div>`
     : "";
+  const duplicateMerge = data.duplicate_merge;
+  const duplicateMergeBanner = duplicateMerge
+    ? `<div class="admin-override-banner">
+         <strong>Merged duplicate</strong> — this record was explicitly merged into authoritative record
+         <code style="word-break:break-all">${escapeHtml(duplicateMerge.survivor_record_id)}</code>
+         by ${escapeHtml(duplicateMerge.merged_by || "an admin")}. Its extraction data and judgements are retained here for audit.
+       </div>`
+    : "";
   const v1  = rec.validator_1;
   const v2  = rec.validator_2;
   const llm = rec.llm_validator;
+
+  // Upgrade summaries written before title_* became first-class fields. The
+  // legacy corrected_study_* keys always contained title text, never study IDs.
+  for (const v of [v1, v2]) {
+    if (!v) continue;
+    v.corrected_title_r = v.corrected_title_r || v.corrected_study_r || null;
+    v.corrected_title_o = v.corrected_title_o || v.corrected_study_o || null;
+  }
 
   const _quoteFlagWho = [v1, v2]
     .filter((v) => v && v.additional_checks && v.additional_checks.quote_not_in_abstract)
@@ -4188,6 +4705,42 @@ function renderAdminDetail(data) {
         <div class="chk-long-group chk-long-group-diff"><span class="chk-long-tag">→ Suggests</span><span class="chk-long-val">${doiLink(v.doi_r_published)}</span></div>
       </div>` : "";
 
+    const reproAxisRow = (label, key, extracted, selected, quote, source) => {
+      const explicit = v.additional_checks?.reproduction_axis_checks?.[key];
+      const unsure = (v.additional_checks?.unsure_reproduction_axes || []).includes(key);
+      const action = explicit || (unsure ? "unsure" : selected === extracted ? "correct" : "wrong");
+      const verdict = action === "correct"
+        ? `<span class="chk-ok">✓ ${who} agreed</span>`
+        : action === "unsure"
+        ? `<span class="chk-uncertain">? ${who} couldn't tell</span>`
+        : `<span class="chk-fail">✕ ${who} corrected</span>`;
+      const evidence = quote || source
+        ? `<div class="chk-long-group chk-axis-evidence">
+             <span class="chk-long-tag">Evidence</span>
+             ${quote ? `<span class="chk-long-val">“${escapeHtml(quote)}”</span>` : `<span class="chk-na-note">No quote</span>`}
+             ${source ? `<span class="chk-source-chip">${escapeHtml(fmtOutcome(source))}</span>` : ""}
+           </div>`
+        : `<div class="chk-long-group"><span class="chk-na-note">No axis evidence submitted</span></div>`;
+      return `<div class="chk-row-long admin-axis-review">
+        <div class="chk-row-long-head"><span class="chk-label">${label}</span>${verdict}</div>
+        <div class="chk-long-group"><span class="chk-long-tag">Extracted</span><span class="chk-long-val">${escapeHtml(fmtOutcome(extracted) || "Not coded")}</span></div>
+        <div class="chk-long-group chk-long-group-diff"><span class="chk-long-tag">Submitted</span><span class="chk-long-val">${escapeHtml(fmtOutcome(selected) || "Not coded")}</span></div>
+        ${evidence}
+      </div>`;
+    };
+    const validatorType = v.corrected_type || rec.type;
+    const reproductionRows = validatorType === "reproduction" ||
+      v.corrected_outcome_computation || v.corrected_outcome_robustness
+      ? `<div class="admin-axis-pair">
+           ${reproAxisRow("Computation", "computation", rec.outcome_computation,
+             v.corrected_outcome_computation, v.corrected_computational_quote,
+             v.corrected_computational_source)}
+           ${reproAxisRow("Robustness", "robustness", rec.outcome_robustness,
+             v.corrected_outcome_robustness, v.corrected_robustness_quote,
+             v.corrected_robustness_source)}
+         </div>`
+      : "";
+
     return `<div class="admin-val-card${isSeniorReject ? " admin-val-senior-reject" : ""}">
       <div class="admin-val-label">
         <span class="admin-val-label-text">
@@ -4207,10 +4760,11 @@ function renderAdminDetail(data) {
       <div class="admin-val-meta">${fmtDate(v.validated_at)}${v.points != null ? ` · +${v.points} pts` : ""}</div>
       <div class="admin-val-checks">
         ${shortRow("Type",    rec.type,    v.type_check,    typeCorr)}
-        ${longRow("Orig. Title", rec.study_o, v.original_check, v.corrected_study_o || null)}
+        ${longRow("Orig. Title", rec.title_o, v.original_check, v.corrected_title_o || null)}
         ${doiCorrRow}
         ${shortRow("Outcome", fmtOutcome(rec.outcome), v.outcome_check, v.corrected_outcome ? escapeHtml(fmtOutcome(v.corrected_outcome)) : null)}
-        ${editRow("Title fix",  rec.study_r,      v.corrected_study_r)}
+        ${reproductionRows}
+        ${editRow("Title fix",  rec.title_r,      v.corrected_title_r)}
         ${repDoiCorrRow}
         ${repUrlCorrRow}
         ${pubDoiRow}
@@ -4249,10 +4803,10 @@ function renderAdminDetail(data) {
     // Uses outer final* variables computed above
 
     const changes = [
-      finalStudyR    && finalStudyR    !== rec.study_r        ? ["Replication title", rec.study_r,        finalStudyR]    : null,
+      finalStudyR    && finalStudyR    !== rec.title_r        ? ["Replication title", rec.title_r,        finalStudyR]    : null,
       finalDoiR      && finalDoiR      !== rec.doi_r          ? ["Replication DOI",   rec.doi_r,          finalDoiR]      : null,
       finalUrlR      && finalUrlR      !== rec.url_r          ? ["Replication URL",   rec.url_r,          finalUrlR]      : null,
-      finalStudyO    && finalStudyO    !== rec.study_o        ? ["Original title",    rec.study_o,        finalStudyO]    : null,
+      finalStudyO    && finalStudyO    !== rec.title_o        ? ["Original title",    rec.title_o,        finalStudyO]    : null,
       finalDoiO      !== rec.doi_o                            ? ["Original DOI",      rec.doi_o,          finalDoiO]      : null,
       finalType      && finalType      !== rec.type           ? ["Type",              rec.type,           finalType]      : null,
       finalOutcome   && finalOutcome   !== rec.outcome        ? ["Outcome",           fmtOutcome(rec.outcome), fmtOutcome(finalOutcome)] : null,
@@ -4283,16 +4837,21 @@ function renderAdminDetail(data) {
       </div>
       <div class="fp-fields">
         <div class="fp-row"><span class="fp-label">Replication</span><span class="fp-value">${escapeHtml(finalStudyR || "—")}</span></div>
+        ${rec.study_r ? `<div class="fp-row"><span class="fp-label">Replication study number(s)</span><span class="fp-value">${escapeHtml(rec.study_r)}</span></div>` : ""}
         <div class="fp-row"><span class="fp-label">DOI</span><span class="fp-value">${doiLink(finalDoiR)} · ${fmtYear(rec.year_r)}</span></div>
         ${finalUrlR ? `<div class="fp-row"><span class="fp-label">URL</span><span class="fp-value"><a href="${escapeHtml(finalUrlR)}" target="_blank" rel="noopener" class="doi-link">${escapeHtml(finalUrlR.length > 50 ? finalUrlR.substring(0, 50) + "…" : finalUrlR)}</a></span></div>` : ""}
         ${finalPubDoiR ? `<div class="fp-row"><span class="fp-label">Published DOI</span><span class="fp-value">${doiLink(finalPubDoiR)}</span></div>` : ""}
         ${finalAltIds ? `<div class="fp-row"><span class="fp-label">Alt. identifiers</span><span class="fp-value">${escapeHtml(finalAltIds)}</span></div>` : ""}
         <div class="fp-row fp-divider"></div>
         <div class="fp-row"><span class="fp-label">Original</span><span class="fp-value">${escapeHtml(finalStudyO || "—")}</span></div>
+        ${rec.study_o ? `<div class="fp-row"><span class="fp-label">Original study number(s)</span><span class="fp-value">${escapeHtml(rec.study_o)}</span></div>` : ""}
         <div class="fp-row"><span class="fp-label">DOI</span><span class="fp-value">${origIdLink(finalDoiO)}</span></div>
         <div class="fp-row fp-divider"></div>
         <div class="fp-row"><span class="fp-label">Type</span><span class="fp-value">${escapeHtml(finalType || "—")}</span></div>
         <div class="fp-row"><span class="fp-label">Outcome</span><span class="fp-value">${escapeHtml(fmtOutcome(finalOutcome) || "—")}</span></div>
+        ${finalType === "reproduction" ? `
+          <div class="fp-row"><span class="fp-label">Computation</span><span class="fp-value">${escapeHtml(fmtOutcome(finalComputation) || "Not coded")}</span></div>
+          <div class="fp-row"><span class="fp-label">Robustness</span><span class="fp-value">${escapeHtml(fmtOutcome(finalRobustness) || "Not coded")}</span></div>` : ""}
         ${finalQuote ? `<div class="fp-row fp-quote-row"><span class="fp-label">Quote</span><span class="fp-value fp-quote">"${escapeHtml(finalQuote)}"</span></div>` : ""}
         ${finalQuote ? `<div class="fp-row"><span class="fp-label">Quote source</span><span class="fp-value">${finalSource === "abstract" ? "Abstract" : finalSource === "full_text" ? "Full text" : "<em>auto-detect on save</em>"}${rec.out_quote_source_by ? ` <span class="fp-src-by">· set by ${escapeHtml(rec.out_quote_source_by)}</span>` : ""}</span></div>` : ""}
       </div>
@@ -4331,8 +4890,8 @@ function renderAdminDetail(data) {
 
   // Final values for the unified edit form: stored final → validators' agreed
   // correction → raw extracted. stored* is what the DB holds (change-detection base).
-  const storedStudyR   = rec.final_study_r       || rec.study_r;
-  const storedStudyO   = rec.final_study_o       || rec.study_o;
+  const storedStudyR   = rec.final_title_r       || rec.title_r;
+  const storedStudyO   = rec.final_title_o       || rec.title_o;
   // final_doi_o has a legitimate blank state — a deliberately-cleared "" (books,
   // chapters, pre-DOI originals, or an admin correcting a wrong DOI-less-original
   // match) must not fall through to the raw doi_o like the truthy-`||` fields
@@ -4342,9 +4901,9 @@ function renderAdminDetail(data) {
   const storedOutcome  = rec.final_outcome       || rec.outcome;
   const storedUrlR     = rec.final_url_r         || rec.url_r;
   const storedQuote    = rec.final_outcome_quote || rec.outcome_quote;
-  const finalStudyR    = rec.final_study_r       || _agreed("corrected_study_r") || rec.study_r;
+  const finalStudyR    = rec.final_title_r       || _agreed("corrected_title_r") || rec.title_r;
   const finalDoiR      = rec.final_doi_r         || rec.doi_r;
-  const finalStudyO    = rec.final_study_o       || _agreed("corrected_study_o") || rec.study_o;
+  const finalStudyO    = rec.final_title_o       || _agreed("corrected_title_o") || rec.title_o;
   const finalDoiO      = rec.final_doi_o != null ? rec.final_doi_o : (_agreed("corrected_doi_o") || rec.doi_o);
   const finalType      = rec.final_type          || _agreedType                  || rec.type;
   const finalOutcome   = rec.final_outcome       || _agreed("corrected_outcome") || rec.outcome;
@@ -4361,7 +4920,7 @@ function renderAdminDetail(data) {
   const finalAltIds    = rec.alt_identifier_r || "";
 
   // Any pre-filled proposal not yet stored? Drives the hint above the form.
-  const hasProposals =
+  let hasProposals =
     finalStudyR !== storedStudyR || finalStudyO !== storedStudyO ||
     finalDoiO !== storedDoiO || finalType !== storedType ||
     finalOutcome !== storedOutcome || finalUrlR !== storedUrlR ||
@@ -4370,6 +4929,36 @@ function renderAdminDetail(data) {
 
 
   const outcomeOpts = _outcomeOptionsFor(finalType, finalOutcome);
+
+  // Reproduction axes: stored final -> validators' agreed correction -> extractor.
+  // Evidence stays paired with the validator quote it describes.
+  const _axisEvidence = (quoteKey, sourceKey, fallbackQuote, fallbackSource) => {
+    const candidates = [v1, v2]
+      .filter(Boolean)
+      .map((v) => ({ quote: (v[quoteKey] || "").trim(), source: v[sourceKey] || "" }))
+      .filter((item) => item.quote);
+    if (!candidates.length) return { quote: fallbackQuote, source: fallbackSource };
+    return candidates.reduce((a, b) => (b.quote.length > a.quote.length ? b : a));
+  };
+  const finalComputation = rec.final_outcome_computation
+    ?? _agreed("corrected_outcome_computation")
+    ?? rec.outcome_computation;
+  const finalRobustness = rec.final_outcome_robustness
+    ?? _agreed("corrected_outcome_robustness")
+    ?? rec.outcome_robustness;
+  const computationEvidence = _axisEvidence(
+    "corrected_computational_quote", "corrected_computational_source",
+    rec.outcome_computational_quote, rec.out_quote_computational_source);
+  const robustnessEvidence = _axisEvidence(
+    "corrected_robustness_quote", "corrected_robustness_source",
+    rec.outcome_robustness_quote, rec.out_quote_robust_source);
+  const finalComputationQuote  = rec.final_computational_quote  ?? computationEvidence.quote;
+  const finalComputationSource = rec.final_computational_source ?? computationEvidence.source;
+  const finalRobustnessQuote   = rec.final_robustness_quote     ?? robustnessEvidence.quote;
+  const finalRobustnessSource  = rec.final_robustness_source    ?? robustnessEvidence.source;
+  hasProposals = hasProposals ||
+    finalComputation !== (rec.final_outcome_computation ?? rec.outcome_computation) ||
+    finalRobustness !== (rec.final_outcome_robustness ?? rec.outcome_robustness);
   const typeOpts = ["replication","reproduction"]
     .map((t) => `<option value="${t}" ${finalType === t ? "selected" : ""}>${t}</option>`).join("");
 
@@ -4380,10 +4969,11 @@ function renderAdminDetail(data) {
                      v2 && v2.corrected_type === "not_validation" ? v2.validator_name || "Validator 2" : ""]
     .filter(Boolean).join(" and ");
 
-  $("#admin-detail-title").textContent = (rec.study_r || rec.doi_r || "Entry Review").substring(0, 80);
+  $("#admin-detail-title").textContent = (rec.title_r || rec.doi_r || "Entry Review").substring(0, 80);
   $("#admin-detail-body").innerHTML = `
     ${abstractBanner}
     ${quoteBanner}
+    ${duplicateMergeBanner}
     ${overrideBanner}
     <div class="admin-detail-cols">
       <!-- Left: final preview + validator cards -->
@@ -4434,8 +5024,10 @@ function renderAdminDetail(data) {
              data-orig-doi-r="${escapeHtml(finalDoiR || "")}"
              data-orig-study-o="${escapeHtml(storedStudyO || "")}"
              data-orig-doi-o="${escapeHtml(storedDoiO || "")}"
-             data-orig-type="${escapeHtml(storedType || "")}"
-             data-orig-outcome="${escapeHtml(storedOutcome || "")}"
+          data-orig-type="${escapeHtml(storedType || "")}"
+          data-orig-outcome="${escapeHtml(storedOutcome || "")}"
+          data-orig-outcome-computation="${escapeHtml(finalComputation || "")}"
+          data-orig-outcome-robustness="${escapeHtml(finalRobustness || "")}"
              data-orig-abstract-r="${escapeHtml(storedAbstractR || "")}"
              data-orig-url-r="${escapeHtml(storedUrlR || "")}"
              data-orig-doi-r-published="${escapeHtml(storedPubDoi)}"
@@ -4470,18 +5062,33 @@ function renderAdminDetail(data) {
           <label class="admin-form-label">Type</label>
           <select id="ar-type-sel" class="admin-select">${typeOpts}</select>
 
-          <label class="admin-form-label">Outcome</label>
+          <label class="admin-form-label">Outcome${finalType === "reproduction" ? `<span class="admin-label-note">reproductions are coded on the two axes below; this is only for the values that are not a point on that grid</span>` : ""}</label>
           <select id="ar-outcome-sel" class="admin-select">${outcomeOpts}</select>
 
           <label class="admin-form-label">Outcome Quote</label>
           <textarea id="ar-quote" class="admin-textarea" placeholder="Outcome quote…">${escapeHtml(finalQuote || "")}</textarea>
 
           <label class="admin-form-label">Outcome Quote Source</label>
-          <select id="ar-quote-source" class="admin-select">
-            <option value="" ${!finalSource ? "selected" : ""}>Auto-detect (is the quote in the abstract?)</option>
-            <option value="abstract" ${finalSource === "abstract" ? "selected" : ""}>Abstract — quote appears in the abstract</option>
-            <option value="full_text" ${finalSource === "full_text" ? "selected" : ""}>Full text — quote is from the paper body</option>
-          </select>
+          <select id="ar-quote-source" class="admin-select">${_adminQuoteSourceOptions(finalSource)}</select>
+
+          <!-- Two independently coded axes, each with its own evidence. A reproduction
+               can fail computationally and still find the conclusion robust, so these
+               are edited separately rather than as one compound verdict. -->
+          <div id="ar-repro-axes" class="admin-repro-axes${finalType === "reproduction" ? "" : " hidden"}">
+            <label class="admin-form-label">Computational reproduction</label>
+            <select id="ar-outcome-computation" class="admin-select">${
+              _axisOptions(_REPRO_COMPUTATION, finalComputation)}</select>
+            <textarea id="ar-computational-quote" class="admin-textarea" placeholder="Quote supporting the computational verdict…">${escapeHtml(finalComputationQuote || "")}</textarea>
+            <select id="ar-computational-source" class="admin-select">${
+              _adminQuoteSourceOptions(finalComputationSource)}</select>
+
+            <label class="admin-form-label">Robustness</label>
+            <select id="ar-outcome-robustness" class="admin-select">${
+              _axisOptions(_REPRO_ROBUSTNESS, finalRobustness)}</select>
+            <textarea id="ar-robustness-quote" class="admin-textarea" placeholder="Quote supporting the robustness verdict…">${escapeHtml(finalRobustnessQuote || "")}</textarea>
+            <select id="ar-robustness-source" class="admin-select">${
+              _adminQuoteSourceOptions(finalRobustnessSource)}</select>
+          </div>
 
           <label class="admin-form-label">Abstract${finalAbstractR !== storedAbstractR ? `<span class="admin-label-note">✎ pre-filled with validator's edit — saved on resolve</span>` : ""}</label>
           <textarea id="ar-abstract-r" class="admin-textarea" style="min-height:120px" placeholder="Abstract…">${escapeHtml(finalAbstractR || "")}</textarea>
@@ -4529,6 +5136,7 @@ function renderAdminDetail(data) {
   $("#ar-type-sel")?.addEventListener("change", (ev) => {
     const sel = $("#ar-outcome-sel");
     if (sel) sel.innerHTML = _outcomeOptionsFor(ev.target.value, "");
+    $("#ar-repro-axes")?.classList.toggle("hidden", ev.target.value !== "reproduction");
   });
   $("#admin-resolve-btn")?.addEventListener("click", () => submitAdminResolve(rec.record_id));
   $("#admin-reject-btn")?.addEventListener("click", async () => {
@@ -4634,6 +5242,43 @@ function renderAdminDetail(data) {
   }
 }
 
+async function confirmValidatedDuplicateMerge(detail) {
+  const survivor = detail?.survivor || {};
+  const value = (v, fallback = "—") => escapeHtml(v || fallback);
+  const duplicateId = value(detail?.duplicate_record_id);
+  const survivorId = value(detail?.survivor_record_id);
+  const message = `
+    <div style="text-align:left;font-size:0.9rem;line-height:1.45">
+      <p>This resolution gives the current record the same identity as an existing
+      validated record. Confirming will <strong>merge A into B</strong>.</p>
+      <div style="padding:0.7rem;margin:0.7rem 0;background:var(--paper-alt,#f6f7f8);border:1px solid var(--border);border-radius:7px">
+        <div style="margin-bottom:0.45rem"><strong>A — duplicate</strong><br><code style="word-break:break-all">${duplicateId}</code></div>
+        <div><strong>B — authoritative survivor</strong><br><code style="word-break:break-all">${survivorId}</code></div>
+      </div>
+      <p style="margin-bottom:0.35rem"><strong>B’s stored identity</strong></p>
+      <div style="font-size:0.84rem;color:var(--ink-soft)">
+        Replication: ${value(survivor.title_r, "(untitled)")} · ${value(survivor.doi_r, "no DOI")}<br>
+        Original: ${value(survivor.title_o, "(untitled)")} · ${value(survivor.doi_o || survivor.original_key, "no identifier")}<br>
+        Classification: ${value(survivor.type)} · ${value(survivor.outcome)}
+      </div>
+      <p style="margin-top:0.7rem;margin-bottom:0;color:var(--muted)">
+        B stays unchanged and remains in validated exports. A leaves validated output,
+        while its extraction data and validator judgements remain linked in the audit trail.
+      </p>
+    </div>`;
+  return showDialog({
+    icon: "⇢",
+    title: "Resolve duplicate records",
+    message,
+    rawHtml: true,
+    buttons: [
+      { label: "Cancel", value: false },
+      { label: "Merge A into B", value: true, primary: true },
+    ],
+    layout: "row",
+  });
+}
+
 async function submitAdminResolve(recordId) {
   const btn = $("#admin-resolve-btn");
   btn.disabled = true;
@@ -4647,6 +5292,8 @@ async function submitAdminResolve(recordId) {
   const newDoiO      = $("#ar-doi-o").value.trim();
   const newType      = $("#ar-type-sel").value;
   const newOutcome   = $("#ar-outcome-sel").value;
+  const newComputation = $("#ar-outcome-computation")?.value || "";
+  const newRobustness  = $("#ar-outcome-robustness")?.value || "";
   const newQuote     = $("#ar-quote").value.trim();
   const newAbstractR = $("#ar-abstract-r").value.trim();
   const newPubDoi    = $("#ar-doi-r-published").value.trim();
@@ -4659,6 +5306,8 @@ async function submitAdminResolve(recordId) {
   const origDoiO      = form.dataset.origDoiO;
   const origType      = form.dataset.origType;
   const origOutcome   = form.dataset.origOutcome;
+  const origComputation = form.dataset.origOutcomeComputation || "";
+  const origRobustness  = form.dataset.origOutcomeRobustness || "";
   const origAbstractR = form.dataset.origAbstractR;
   const origPubDoi    = form.dataset.origDoiRPublished;
   const origAltIds    = form.dataset.origAltIdentifierR;
@@ -4668,25 +5317,40 @@ async function submitAdminResolve(recordId) {
   const doiOChanged     = newDoiO      !== origDoiO;
   const origChanged     = studyOChanged || doiOChanged;
   const outcomeChanged  = newOutcome   !== origOutcome;
+  const axesChanged      = newType === "reproduction" &&
+    (newComputation !== origComputation || newRobustness !== origRobustness);
   const studyRChanged   = newStudyR    !== origStudyR;
   const doiRChanged     = newDoiR      !== origDoiR;
   const urlRChanged     = newUrlR      !== origUrlR;
   const abstractChanged = newAbstractR !== origAbstractR;
 
+  if (newType === "reproduction" && (!newComputation || !newRobustness)) {
+    btn.disabled = false;
+    btn.textContent = "Mark as Resolved →";
+    await showAlert("Choose both reproduction axes before resolving this record.");
+    return;
+  }
+  if (newType === "replication" && !newOutcome) {
+    btn.disabled = false;
+    btn.textContent = "Mark as Resolved →";
+    await showAlert("Choose a replication outcome before resolving this record.");
+    return;
+  }
+
   const body = {
     admin_name:              _adminHandle || "admin",
     type_check:              typeChanged    ? "incorrect" : "correct",
     original_check:          origChanged    ? "incorrect" : "correct",
-    outcome_check:           outcomeChanged ? "incorrect" : "correct",
+    outcome_check:           outcomeChanged || axesChanged ? "incorrect" : "correct",
     corrected_type:          typeChanged     ? newType                  : null,
     // '' is meaningful for the Original DOI (deliberately clears a wrong or
     // no-DOI original); null means untouched. Title has no legitimate blank
     // state, so it keeps the "empty means no correction" rule.
     corrected_doi_o:         doiOChanged     ? newDoiO                  : null,
-    corrected_study_o:       studyOChanged   ? (newStudyO    || null)   : null,
-    corrected_outcome:       outcomeChanged  ? newOutcome               : null,
+    corrected_title_o:       studyOChanged   ? (newStudyO    || null)   : null,
+    corrected_outcome:       newType === "replication" && outcomeChanged ? newOutcome : null,
     corrected_outcome_quote: newQuote        || null,
-    corrected_study_r:       studyRChanged   ? (newStudyR    || null)   : null,
+    corrected_title_r:       studyRChanged   ? (newStudyR    || null)   : null,
     corrected_doi_r:         doiRChanged     ? (newDoiR      || null)   : null,
     corrected_url_r:         urlRChanged     ? (newUrlR      || null)   : null,
     corrected_abstract_r:    abstractChanged ? (newAbstractR || null)   : null,
@@ -4694,6 +5358,14 @@ async function submitAdminResolve(recordId) {
     doi_r_published:         newPubDoi !== origPubDoi ? newPubDoi : null,
     alt_identifier_r:        newAltIds !== origAltIds ? newAltIds : null,
     out_quote_source:        $("#ar-quote-source")?.value || null,
+    // Reproduction axes. Absent from the form on a replication, so these send null
+    // and the resolve handler leaves the stored values alone.
+    corrected_outcome_computation:  newType === "reproduction" ? newComputation : null,
+    corrected_computational_quote:  newType === "reproduction" ? ($("#ar-computational-quote")?.value.trim() || null) : null,
+    corrected_computational_source: newType === "reproduction" ? ($("#ar-computational-source")?.value || null) : null,
+    corrected_outcome_robustness:   newType === "reproduction" ? newRobustness : null,
+    corrected_robustness_quote:     newType === "reproduction" ? ($("#ar-robustness-quote")?.value.trim() || null) : null,
+    corrected_robustness_source:    newType === "reproduction" ? ($("#ar-robustness-source")?.value || null) : null,
     admin_notes:             $("#admin-note-text")?.value.trim() || null,
   };
 
@@ -4702,6 +5374,24 @@ async function submitAdminResolve(recordId) {
     showToast("Entry resolved.");
     await advanceToNextAdminEntry();
   } catch (e) {
+    if (e.status === 409 && e.detail?.code === "validated_duplicate_conflict") {
+      const confirmed = await confirmValidatedDuplicateMerge(e.detail);
+      if (confirmed) {
+        btn.textContent = "Merging…";
+        body.merge_into_record_id = e.detail.survivor_record_id;
+        try {
+          await adminApi(`/entries/${recordId}/resolve`, "POST", body);
+          showToast("Duplicate merged; existing validated record kept.");
+          await advanceToNextAdminEntry();
+          return;
+        } catch (mergeError) {
+          await showAlert("Merge failed: " + mergeError.message);
+        }
+      }
+      btn.disabled = false;
+      btn.textContent = "Mark as Resolved →";
+      return;
+    }
     btn.disabled = false;
     btn.textContent = "Mark as Resolved →";
     await showAlert("Error: " + e.message);
@@ -4797,7 +5487,7 @@ function renderRestricted(records) {
           ${records.map(r => `
             <tr>
               <td>
-                <div class="restr-title" title="${escapeHtml(r.study_r || "")}">${escapeHtml((r.study_r || r.record_id).slice(0, 70))}</div>
+                <div class="restr-title" title="${escapeHtml(r.title_r || "")}">${escapeHtml((r.title_r || r.record_id).slice(0, 70))}</div>
                 <div class="restr-sub">${r.doi_r ? escapeHtml(r.doi_r) : "—"}${r.year_r ? " · " + fmtYear(r.year_r) : ""} · ${escapeHtml(fmtOutcome(r.outcome) || "—")}</div>
               </td>
               <td>${escapeHtml(r.reporter_handle || "—")}</td>
@@ -5117,7 +5807,7 @@ function renderAdminDashboard(d) {
     failed:        "#a83232",
     mixed:         "#b88019",
     uninformative: "#7a6e5f",
-    descriptive:   "#4a6a8a",
+    "descriptive only": "#4a6a8a",
   };
   const outcomeLabels = Object.keys(o).map((k) => k.charAt(0).toUpperCase() + k.slice(1));
   const outcomeData   = Object.values(o);
@@ -5301,8 +5991,8 @@ async function openValidatorFlagsModal(validatorId, handle) {
           ${items.map((item, i) => `
             <tr class="vflags-row" data-record-id="${escapeHtml(item.record_id)}">
               <td class="admin-cell-num">${i + 1}</td>
-              <td class="vflags-title" title="${escapeHtml(item.study_r || "")}">
-                ${escapeHtml((item.study_r || item.record_id).slice(0, 60))}${(item.study_r || "").length > 60 ? "…" : ""}
+              <td class="vflags-title" title="${escapeHtml(item.title_r || "")}">
+                ${escapeHtml((item.title_r || item.record_id).slice(0, 60))}${(item.title_r || "").length > 60 ? "…" : ""}
               </td>
               <td style="font-size:0.8rem;color:var(--muted)">${item.year_r || "—"}</td>
               <td style="font-size:0.8rem">${escapeHtml(fmtOutcome(item.outcome) || "—")}</td>
@@ -5983,7 +6673,7 @@ function srcQueryString(extra) {
  *  renders both, so 18 reproduction rows never need their own grid. */
 function srcOutcomeCell(r) {
   if (r.type === "reproduction") {
-    const c = r.outcome_computational || "—";
+    const c = r.outcome_computation || "—";
     const b = r.outcome_robustness    || "—";
     return '<span class="src-outcome-dim" title="computational / robustness">' +
            escapeHtml(c) + '<br><span class="src-dim2">' + escapeHtml(b) + "</span></span>";
@@ -6117,7 +6807,7 @@ const SRC_FIELD_GROUPS = {
   reproduction: [
     ["Original",      ["ref_o", "doi_o", "url_o", "study_o", "oa_work_id_o"]],
     ["Reproduction",  ["ref_r", "doi_r", "url_r", "oa_work_id_r", "abstract_r"]],
-    ["Computational", ["outcome_computational", "outcome_computational_quote", "out_quote_computational_source"]],
+    ["Computational", ["outcome_computation", "outcome_computational_quote", "out_quote_computational_source"]],
     ["Robustness",    ["outcome_robustness", "outcome_robustness_quote", "out_quote_robust_source"]],
     ["Status",        ["validation_status"]]
   ]
@@ -6418,7 +7108,7 @@ function renderSourceDuplicates(data) {
 
     const cards = g.members.map((m) => {
       const outcome = m.type === "reproduction"
-        ? escapeHtml((m.outcome_computational || "—") + " / " + (m.outcome_robustness || "—"))
+        ? escapeHtml((m.outcome_computation || "—") + " / " + (m.outcome_robustness || "—"))
         : escapeHtml(m.outcome || "—");
       const state = m.duplicate_status
         ? '<div class="src-dup-state">' +
