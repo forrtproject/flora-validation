@@ -27,33 +27,21 @@ import pandas as pd
 import psycopg2
 from dotenv import load_dotenv
 
+# Same "resolved" definition the importer uses — see extractor_vocab.py. Sharing
+# it matters most here: this script DELETES on the strength of that definition,
+# so a stale copy would classify live records as orphans.
+from extractor_vocab import check_csv_vocabulary, resolved_mask as _resolved_mask
+
 load_dotenv()
-
-_RESOLVED_METHODS = {
-    "author_year_match", "llm_abstract", "llm_fulltext",
-    "single_candidate_after_requery", "title_pattern_match",
-    "citation_context_match", "same_author_year_title_overlap",
-}
-_RESOLVED_STATUSES = {"replication", "reproduction"}
-# The extractor's paper-type column, newest name first (issue #93).
-_PAPER_TYPE_NAMES = ("paper_type", "filter_status")
-
-
-def _paper_type_column(df: pd.DataFrame) -> "pd.Series":
-    """The paper-type column of *df*, under whichever name the CSV carries."""
-    for name in _PAPER_TYPE_NAMES:
-        if name in df.columns:
-            return df[name]
-    raise KeyError("the CSV has no paper-type column "
-                   f"(looked for {', '.join(_PAPER_TYPE_NAMES)})")
 
 
 def _current_resolved_pair_ids(csv_path: Path) -> set:
     df = pd.read_csv(csv_path, dtype=str, encoding="utf-8-sig").fillna("")
-    resolved = df[
-        _paper_type_column(df).isin(_RESOLVED_STATUSES)
-        & df["link_method"].isin(_RESOLVED_METHODS)
-    ]
+    # Refuse to compute a delete list from a CSV we can't fully read: an
+    # unrecognised link_method would shrink the "still current" set and turn
+    # live records into apparent orphans.
+    check_csv_vocabulary(df)
+    resolved = df[_resolved_mask(df)]
     return {p.strip() for p in resolved["pair_id"] if p.strip()}
 
 

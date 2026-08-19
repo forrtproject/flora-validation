@@ -40,16 +40,15 @@ import psycopg2
 import psycopg2.errors
 import yaml
 from dotenv import load_dotenv
+from console_encoding import use_utf8_output
+from extractor_vocab import normalize_axis_value
 from psycopg2.extras import Json
 
 load_dotenv()
 
-# Progress output uses ✓ ⚠ →. On a Windows cp1252 console those raise
-# UnicodeEncodeError and abort the run after work is already done.
-try:
-    sys.stdout.reconfigure(encoding="utf-8")
-except Exception:
-    pass
+# Progress output below uses non-ASCII glyphs; a cp1252 console cannot encode
+# them and print() would abort the run. See console_encoding.py.
+use_utf8_output()
 
 ROOT = Path(__file__).parent
 REGISTRY_PATH = ROOT / "sources.yml"
@@ -70,7 +69,7 @@ DATA_COLUMNS = [
     "outcome", "outcome_quote", "out_quote_source", "year_r",
     "alt_identifier_o", "alt_identifier_r",
     "study_o",
-    "outcome_computational", "outcome_computational_quote", "out_quote_computational_source",
+    "outcome_computation", "outcome_computational_quote", "out_quote_computational_source",
     "outcome_robustness", "outcome_robustness_quote", "out_quote_robust_source",
     "validation_status",
 ]
@@ -217,6 +216,14 @@ def _build_row(raw_row: dict, cfg: dict, source_key: str) -> dict:
     row["source"] = source_key
     row["sheet_row_id"] = _s(raw_row.get(cfg["id_column"]))
     row["type"] = cfg["type_label"]
+    if row["type"] == "reproduction":
+        for axis in ("outcome_computation", "outcome_robustness"):
+            row[axis] = normalize_axis_value(axis, row.get(axis))
+    else:
+        # Replications use the single outcome vocabulary and must not retain stale
+        # reproduction fields copied into the sheet by accident.
+        row["outcome_computation"] = None
+        row["outcome_robustness"] = None
     row["raw"] = Json({k: _s(v) for k, v in raw_row.items()})
     # content_fingerprint is computed by a database trigger, not here: a reviewer
     # editing a DOI must move the fingerprint with it, and only the trigger sees
@@ -336,6 +343,23 @@ def sync_source(cur, cfg: dict, registry: dict, dry_run: bool) -> dict:
     accepted = df[df[cfg["validation_column"]].isin(registry["accepted_values"])]
     print(f"  accepted: {len(accepted)}")
 
+    # Validate and canonicalise every accepted row before the first insert. A bad
+    # value late in the sheet must not commit the valid prefix as a partial sync.
+    try:
+        built_rows = [
+            _build_row(raw_row.to_dict(), cfg, key)
+            for _, raw_row in accepted.iterrows()
+        ]
+    except ValueError as exc:
+        reason = f"invalid promoted value: {exc}"
+        print(f"  FAILED - {reason}")
+        print("    existing rows left untouched")
+        if not dry_run:
+            _record_run(cur, key, "failed", rows_fetched=len(df),
+                        rows_accepted=len(accepted), failure_reason=reason,
+                        payload_sha256=hashlib.sha256(payload).hexdigest())
+        return {"status": "failed", "inserted": 0, "reason": reason}
+
     # Copy-pasting a row duplicates its UUID in the sheet. onEdit() won't fix it
     # (the cell isn't empty), and ON CONFLICT DO NOTHING would silently discard the
     # second row — data loss, not duplication. So detect it before the database.
@@ -354,8 +378,7 @@ def sync_source(cur, cfg: dict, registry: dict, dry_run: bool) -> dict:
     inserted = existing = skipped = 0
     fingerprints = {}
 
-    for _, raw_row in accepted.iterrows():
-        row = _build_row(raw_row.to_dict(), cfg, key)
+    for row in built_rows:
 
         sid = row["sheet_row_id"]
         if not sid:
