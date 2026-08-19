@@ -29,13 +29,14 @@ def test_fetch_csv_raises_on_non_200():
             _fetch_csv("https://example.com/file.csv")
 
 
-def test_save_csv_writes_dated_and_latest(tmp_path):
-    """_save_csv writes extracted_DD.MM.YYYY.csv and extracted_latest.csv."""
+def test_save_csv_writes_dated_archive_and_staged_candidate(tmp_path):
+    """_save_csv does not promote a candidate before it has imported."""
     from sync_csv import _save_csv
-    _save_csv(FAKE_CSV_CONTENT, tmp_path)
+    candidate = _save_csv(FAKE_CSV_CONTENT, tmp_path)
     latest = tmp_path / "extracted_latest.csv"
-    assert latest.exists()
-    assert latest.read_bytes() == FAKE_CSV_CONTENT
+    assert not latest.exists()
+    assert candidate.exists()
+    assert candidate.read_bytes() == FAKE_CSV_CONTENT
     # At least one dated file should exist
     dated = [f for f in tmp_path.iterdir() if f.name.startswith("extracted_") and f.name != "extracted_latest.csv"]
     assert len(dated) == 1
@@ -47,13 +48,13 @@ def test_save_csv_dated_filename_format(tmp_path):
     import re
     from sync_csv import _save_csv
     _save_csv(FAKE_CSV_CONTENT, tmp_path)
-    dated = [f.name for f in tmp_path.iterdir() if f.name != "extracted_latest.csv"]
+    dated = [f.name for f in tmp_path.iterdir() if f.name.startswith("extracted_")]
     assert len(dated) == 1
     assert re.match(r"extracted_\d{2}\.\d{2}\.\d{4}\.csv", dated[0])
 
 
-def test_sync_runs_import_after_save(tmp_path):
-    """sync_csv calls run_import after saving the CSV."""
+def test_sync_imports_candidate_then_promotes_latest(tmp_path):
+    """A successful importer atomically promotes the staged candidate."""
     from sync_csv import sync_once
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -63,7 +64,29 @@ def test_sync_runs_import_after_save(tmp_path):
         sync_once(data_dir=tmp_path)
     mock_import.assert_called_once()
     call_path = mock_import.call_args[0][0]
-    assert call_path == tmp_path / "extracted_latest.csv"
+    assert call_path.parent == tmp_path
+    assert call_path.name.startswith(".extracted_candidate_")
+    assert (tmp_path / "extracted_latest.csv").read_bytes() == FAKE_CSV_CONTENT
+    assert not call_path.exists()
+
+
+def test_failed_import_preserves_previous_latest(tmp_path):
+    """Schema drift may be archived, but it must never become latest."""
+    from sync_csv import sync_once
+    previous = b"known-good\n"
+    latest = tmp_path / "extracted_latest.csv"
+    latest.write_bytes(previous)
+    mock_resp = MagicMock(status_code=200, content=FAKE_CSV_CONTENT)
+
+    with patch("sync_csv.requests.get", return_value=mock_resp), \
+         patch("sync_csv.run_import", side_effect=ValueError("schema drift")):
+        sync_once(data_dir=tmp_path)
+
+    assert latest.read_bytes() == previous
+    assert not list(tmp_path.glob(".extracted_candidate_*.csv"))
+    archives = list(tmp_path.glob("extracted_*.csv"))
+    assert any(path.name != "extracted_latest.csv" and path.read_bytes() == FAKE_CSV_CONTENT
+               for path in archives)
 
 
 def test_sync_logs_error_on_fetch_failure(tmp_path, capsys):
@@ -72,4 +95,4 @@ def test_sync_logs_error_on_fetch_failure(tmp_path, capsys):
     with patch("sync_csv.requests.get", side_effect=Exception("network down")):
         sync_once(data_dir=tmp_path)  # should not raise
     captured = capsys.readouterr()
-    assert "network down" in captured.out or "network down" in captured.err or True
+    assert "network down" in captured.out or "network down" in captured.err

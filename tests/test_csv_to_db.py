@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 
 def test_url_o_prefers_csv_value():
@@ -17,6 +18,14 @@ def test_url_o_falls_back_to_derived_doi_link():
     assert _url_o(row) == "https://doi.org/10.1000/xyz"
 
 
+def test_url_o_falls_back_to_openalex_for_current_doi_less_rows():
+    from csv_to_db import _url_o
+
+    # Current EXTRACTED_COLS has oa_work_id_o but no url_o column.
+    row = {"doi_o": "", "oa_work_id_o": "W2003152982"}
+    assert _url_o(row) == "https://openalex.org/W2003152982"
+
+
 def test_url_o_blank_when_neither_present():
     from csv_to_db import _url_o
     row = pd.Series({"doi_o": "", "url_o": ""})
@@ -33,18 +42,18 @@ def test_url_o_csv_value_wins_even_with_a_doi_present():
 
 # ---------------------------------------------------------------------------
 # Ambiguous DOI-less originals — see docs/PROJECT.md "DOI-less originals".
-# doi_o is '' for ALL of them, so study_o is the only thing keeping two
-# originals of the same replication apart under validated's natural key.
+# doi_o is '' for ALL of them, so the title/study identity is the fallback for
+# legacy rows without an OpenAlex work id.
 # ---------------------------------------------------------------------------
 
-def _row(key, doi_r, study_r, study_o, doi_o=""):
-    return {"key": key, "doi_r": doi_r, "study_r": study_r,
-            "study_o": study_o, "doi_o": doi_o}
+def _row(key, doi_r, title_r, title_o, doi_o="", study_r="", study_o=""):
+    return {"key": key, "doi_r": doi_r, "study_r": study_r, "title_r": title_r,
+            "study_o": study_o, "title_o": title_o, "doi_o": doi_o}
 
 
 def test_duplicate_titles_same_replication_are_flagged():
     """Two DOI-less originals of the SAME replication sharing a title would
-    collide on (doi_r, study_r, doi_o='', study_o) and silently merge."""
+    collide on the validated pair identity and silently merge."""
     from csv_to_db import _flag_ambiguous_doi_o_titles
     flagged = _flag_ambiguous_doi_o_titles([
         _row("p1", "10.1/rep", "Rep Study", "Gender Advertisements"),
@@ -91,6 +100,15 @@ def test_distinct_titles_are_not_flagged():
     assert flagged == {}
 
 
+def test_same_titles_with_different_original_study_numbers_are_distinct():
+    from csv_to_db import _flag_ambiguous_doi_o_titles
+    flagged = _flag_ambiguous_doi_o_titles([
+        _row("p1", "10.1/rep", "Rep", "Shared", study_r="1", study_o="1"),
+        _row("p2", "10.1/rep", "Rep", "Shared", study_r="1", study_o="2"),
+    ])
+    assert flagged == {}
+
+
 def test_originals_with_real_dois_are_ignored():
     """Records WITH a doi_o are never at risk — the DOI keeps them apart, so
     duplicate titles there are none of this check's business."""
@@ -100,6 +118,22 @@ def test_originals_with_real_dois_are_ignored():
         _row("p2", "10.1/rep", "Rep", "Same Title", doi_o="10.1/origB"),
     ])
     assert flagged == {}
+
+
+def test_duplicate_pair_ids_are_rejected_before_import():
+    from csv_to_db import InputIdentityError, _validate_pair_ids
+
+    rows = pd.DataFrame({"pair_id": ["same", "same", "other"]})
+    with pytest.raises(InputIdentityError, match="duplicate pair_id"):
+        _validate_pair_ids(rows)
+
+
+def test_blank_pair_ids_are_rejected_before_import():
+    from csv_to_db import InputIdentityError, _validate_pair_ids
+
+    rows = pd.DataFrame({"pair_id": ["", "ok"]})
+    with pytest.raises(InputIdentityError, match="blank pair_id"):
+        _validate_pair_ids(rows)
 
 
 def test_mixed_group_flags_only_the_doi_less_pair():

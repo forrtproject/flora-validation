@@ -36,16 +36,15 @@ from urllib.request import Request, urlopen
 import pandas as pd
 import psycopg2
 from dotenv import load_dotenv
+from console_encoding import use_utf8_output
 
 load_dotenv()
 
 # Progress output uses a few non-ASCII glyphs (⚠ → ✓). On a Windows cp1252 console
 # those raise UnicodeEncodeError and abort the script AFTER the CSVs are written, which
-# looks like a failure. Force UTF-8 on stdout so the run finishes cleanly everywhere.
-try:
-    sys.stdout.reconfigure(encoding="utf-8")
-except Exception:
-    pass
+# looks like a failure. See console_encoding.py — this covers stderr too, so a traceback
+# carrying one of those glyphs still reaches the log.
+use_utf8_output()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
@@ -133,124 +132,157 @@ QUERY = """
         COALESCE(m.source, 'validated_db') AS source,
         -- New columns go LAST so positional readers of the daily CSV keep working
         v.doi_r_published,
-        v.alt_identifier_r
+        v.alt_identifier_r,
+        -- Reproductions are coded on two independent axes, each with its own
+        -- evidence. `outcome` is derived from them; these remain authoritative.
+        -- Axis fields are NULL on replications.
+        v.outcome_computation,
+        v.outcome_computational_quote,
+        v.out_quote_computational_source,
+        v.outcome_robustness,
+        v.outcome_robustness_quote,
+        v.out_quote_robust_source,
+        -- Stage-3 pair identity. Kept separate from paper titles so several
+        -- within-paper study pairs do not collapse in downstream exports.
+        v.study_r,
+        v.title_r,
+        v.study_o,
+        v.title_o,
+        -- Extractor lineage/provenance retained in record_metadata.
+        m.work_id,
+        m.release_id,
+        m.screen_categories,
+        m.pdf_source,
+        m.parse_method,
+        m.outcome_reasoning,
+        m.outcome_llm_model,
+        m.bibtex_ref_o,
+        m.bibtex_ref_r
     FROM  validated v
     LEFT JOIN LATERAL (
-        SELECT source FROM record_metadata
+        SELECT source, work_id, release_id, screen_categories, pdf_source,
+               parse_method, outcome_reasoning, outcome_llm_model,
+               bibtex_ref_o, bibtex_ref_r
+        FROM record_metadata
         WHERE record_id = v.record_id
         LIMIT 1
     ) m ON true
     ORDER BY v.validated_at;
 """
 
-print("Connecting to database...")
-try:
-    conn = psycopg2.connect(DATABASE_URL)
-    df   = pd.read_sql(QUERY, conn)
-    conn.close()
-except Exception as e:
-    sys.exit(f"ERROR: Could not connect or query: {e}")
-
-print(f"  Rows fetched : {len(df)}")
-print(f"  Unique doi_r : {df['doi_r'].nunique()}")
-dup_doi_r = df[df.duplicated('doi_r', keep=False)].groupby('doi_r').size()
-if len(dup_doi_r):
-    print(f"  doi_r with multiple doi_o (legitimate multi-original replications): {len(dup_doi_r)}")
-
-# ── Replace references with OpenAlex data (both sides) ────────────────────────
-# Every row is looked up on OpenAlex; when OpenAlex has a reference it REPLACES the
-# DB ref_r / ref_o. If OpenAlex has nothing for that DOI, the original DB reference is
-# kept as a fallback so a row is never blanked out. Cached in oa_ref_cache.json.
-print("Replacing references with OpenAlex data...")
-ref_cache = {}
-if OA_REF_CACHE_PATH.exists():
+# Guarded so that IMPORTING this module does not run a live export. Without it,
+# `import export_validated` connects to the database and rewrites the CSVs — which
+# is easy to trigger by accident from a test or a REPL. The helper defs above stay
+# module-level and remain importable; only the procedural run is gated.
+if __name__ == "__main__":
+    print("Connecting to database...")
     try:
-        ref_cache = json.loads(OA_REF_CACHE_PATH.read_text())
-    except Exception:
-        ref_cache = {}
+        conn = psycopg2.connect(DATABASE_URL)
+        df   = pd.read_sql(QUERY, conn)
+        conn.close()
+    except Exception as e:
+        sys.exit(f"ERROR: Could not connect or query: {e}")
+
+    print(f"  Rows fetched : {len(df)}")
+    print(f"  Unique doi_r : {df['doi_r'].nunique()}")
+    dup_doi_r = df[df.duplicated('doi_r', keep=False)].groupby('doi_r').size()
+    if len(dup_doi_r):
+        print(f"  doi_r with multiple doi_o (legitimate multi-original replications): {len(dup_doi_r)}")
+
+    # ── Replace references with OpenAlex data (both sides) ────────────────────────
+    # Every row is looked up on OpenAlex; when OpenAlex has a reference it REPLACES the
+    # DB ref_r / ref_o. If OpenAlex has nothing for that DOI, the original DB reference is
+    # kept as a fallback so a row is never blanked out. Cached in oa_ref_cache.json.
+    print("Replacing references with OpenAlex data...")
+    ref_cache = {}
+    if OA_REF_CACHE_PATH.exists():
+        try:
+            ref_cache = json.loads(OA_REF_CACHE_PATH.read_text())
+        except Exception:
+            ref_cache = {}
 
 
-def _is_blank(v) -> bool:
-    return v is None or (isinstance(v, float) and pd.isna(v)) or str(v).strip() == ""
+    def _is_blank(v) -> bool:
+        return v is None or (isinstance(v, float) and pd.isna(v)) or str(v).strip() == ""
 
 
-oa_r = df["doi_r"].apply(lambda d: openalex_reference(d, ref_cache))
-oa_o = df["doi_o"].apply(lambda d: openalex_reference(d, ref_cache))
-OA_REF_CACHE_PATH.write_text(json.dumps(ref_cache, indent=2, sort_keys=True))
+    oa_r = df["doi_r"].apply(lambda d: openalex_reference(d, ref_cache))
+    oa_o = df["doi_o"].apply(lambda d: openalex_reference(d, ref_cache))
+    OA_REF_CACHE_PATH.write_text(json.dumps(ref_cache, indent=2, sort_keys=True))
 
-# OpenAlex wins when present; otherwise keep the existing DB reference.
-df["ref_r"] = [oa if str(oa).strip() else ("" if _is_blank(old) else old) for oa, old in zip(oa_r, df["ref_r"])]
-df["ref_o"] = [oa if str(oa).strip() else ("" if _is_blank(old) else old) for oa, old in zip(oa_o, df["ref_o"])]
+    # OpenAlex wins when present; otherwise keep the existing DB reference.
+    df["ref_r"] = [oa if str(oa).strip() else ("" if _is_blank(old) else old) for oa, old in zip(oa_r, df["ref_r"])]
+    df["ref_o"] = [oa if str(oa).strip() else ("" if _is_blank(old) else old) for oa, old in zip(oa_o, df["ref_o"])]
 
-print(f"  Replaced with OpenAlex: {int((oa_r.str.strip() != '').sum())}/{len(df)} replication, "
-      f"{int((oa_o.str.strip() != '').sum())}/{len(df)} original "
-      f"(rest kept original; cache: {len(ref_cache)} DOIs)")
+    print(f"  Replaced with OpenAlex: {int((oa_r.str.strip() != '').sum())}/{len(df)} replication, "
+          f"{int((oa_o.str.strip() != '').sum())}/{len(df)} original "
+          f"(rest kept original; cache: {len(ref_cache)} DOIs)")
 
-# ── 1. Write main export ──────────────────────────────────────────────────────
-df.to_csv(EXPORT_PATH, index=False)
-print(f"  Saved export : {EXPORT_PATH}")
-
-
-# ── 2. Identify entries that need manual references ───────────────────────────
-
-def is_real_doi(value: str | None) -> bool:
-    """Return True if value is a DOI starting with '10.' (after basic cleaning)."""
-    if not value or pd.isna(value):
-        return False
-    v = str(value).strip().lower()
-    v = re.sub(r"^https?://(dx\.)?doi\.org/", "", v)
-    v = re.sub(r"^doi:\s*", "", v)
-    v = re.sub(r"\s.*$", "", v)   # drop anything after first whitespace
-    return v.startswith("10.")
+    # ── 1. Write main export ──────────────────────────────────────────────────────
+    df.to_csv(EXPORT_PATH, index=False)
+    print(f"  Saved export : {EXPORT_PATH}")
 
 
-r_unresolvable = ~df["doi_r"].apply(is_real_doi) & df["url_r"].isna().where(df["url_r"] != "", other=True)
-o_unresolvable = ~df["doi_o"].apply(is_real_doi) & df["url_o"].isna().where(df["url_o"] != "", other=True)
+    # ── 2. Identify entries that need manual references ───────────────────────────
 
-# Treat non-doi.org URLs in doi_r/doi_o as unresolvable too
-def in_doi_r_is_url(val):
-    """doi_r field contains a non-DOI URL (e.g. https://aisel.aisnet.org/...)."""
-    if not val or pd.isna(val):
-        return False
-    v = str(val).strip().lower()
-    return v.startswith("http") and "doi.org" not in v
+    def is_real_doi(value: str | None) -> bool:
+        """Return True if value is a DOI starting with '10.' (after basic cleaning)."""
+        if not value or pd.isna(value):
+            return False
+        v = str(value).strip().lower()
+        v = re.sub(r"^https?://(dx\.)?doi\.org/", "", v)
+        v = re.sub(r"^doi:\s*", "", v)
+        v = re.sub(r"\s.*$", "", v)   # drop anything after first whitespace
+        return v.startswith("10.")
 
-r_url_as_doi = df["doi_r"].apply(in_doi_r_is_url)
-o_url_as_doi = df["doi_o"].apply(in_doi_r_is_url)
 
-needs_r = r_unresolvable | r_url_as_doi
-needs_o = o_unresolvable | o_url_as_doi
-needs_any = needs_r | needs_o
+    r_unresolvable = ~df["doi_r"].apply(is_real_doi) & df["url_r"].isna().where(df["url_r"] != "", other=True)
+    o_unresolvable = ~df["doi_o"].apply(is_real_doi) & df["url_o"].isna().where(df["url_o"] != "", other=True)
 
-if needs_any.sum() == 0:
-    print("  All entries have resolvable DOIs — no manual references needed.")
-    NEEDS_MANUAL_PATH.write_text(
-        "side,doi_r,url_r,doi_o,url_o,ref_r,ref_o,title_r,author_r,year_r,journal_r\n"
-    )
-    print(f"  Saved (empty): {NEEDS_MANUAL_PATH}")
-else:
-    flagged = df[needs_any].copy()
-    flagged["side"] = "both"
-    flagged.loc[needs_r & ~needs_o, "side"] = "r"
-    flagged.loc[needs_o & ~needs_r, "side"] = "o"
+    # Treat non-doi.org URLs in doi_r/doi_o as unresolvable too
+    def in_doi_r_is_url(val):
+        """doi_r field contains a non-DOI URL (e.g. https://aisel.aisnet.org/...)."""
+        if not val or pd.isna(val):
+            return False
+        v = str(val).strip().lower()
+        return v.startswith("http") and "doi.org" not in v
 
-    # Blank columns for the person filling in manual_references.xlsx
-    for col in ("title_r", "author_r", "year_r", "journal_r"):
-        flagged[col] = ""
+    r_url_as_doi = df["doi_r"].apply(in_doi_r_is_url)
+    o_url_as_doi = df["doi_o"].apply(in_doi_r_is_url)
 
-    output_cols = [
-        "side",
-        "doi_r", "url_r", "doi_o", "url_o",
-        "ref_r", "ref_o",
-        "title_r", "author_r", "year_r", "journal_r",
-    ]
-    flagged[output_cols].to_csv(NEEDS_MANUAL_PATH, index=False)
+    needs_r = r_unresolvable | r_url_as_doi
+    needs_o = o_unresolvable | o_url_as_doi
+    needs_any = needs_r | needs_o
 
-    print(f"\n  ⚠  {needs_any.sum()} entries need manual references:")
-    print(f"       replication side (r) : {needs_r.sum()}")
-    print(f"       original side (o)    : {needs_o.sum()}")
-    print(f"       both sides           : {(needs_r & needs_o).sum()}")
-    print(f"  Saved: {NEEDS_MANUAL_PATH}")
-    print("  → Fill in title_r/author_r/year_r/journal_r and add to manual_references.xlsx")
+    if needs_any.sum() == 0:
+        print("  All entries have resolvable DOIs — no manual references needed.")
+        NEEDS_MANUAL_PATH.write_text(
+            "side,doi_r,url_r,doi_o,url_o,ref_r,ref_o,title_r,author_r,year_r,journal_r\n"
+        )
+        print(f"  Saved (empty): {NEEDS_MANUAL_PATH}")
+    else:
+        flagged = df[needs_any].copy()
+        flagged["side"] = "both"
+        flagged.loc[needs_r & ~needs_o, "side"] = "r"
+        flagged.loc[needs_o & ~needs_r, "side"] = "o"
 
-print("Done.")
+        # Blank columns for the person filling in manual_references.xlsx
+        for col in ("title_r", "author_r", "year_r", "journal_r"):
+            flagged[col] = ""
+
+        output_cols = [
+            "side",
+            "doi_r", "url_r", "doi_o", "url_o",
+            "ref_r", "ref_o",
+            "title_r", "author_r", "year_r", "journal_r",
+        ]
+        flagged[output_cols].to_csv(NEEDS_MANUAL_PATH, index=False)
+
+        print(f"\n  ⚠  {needs_any.sum()} entries need manual references:")
+        print(f"       replication side (r) : {needs_r.sum()}")
+        print(f"       original side (o)    : {needs_o.sum()}")
+        print(f"       both sides           : {(needs_r & needs_o).sum()}")
+        print(f"  Saved: {NEEDS_MANUAL_PATH}")
+        print("  → Fill in title_r/author_r/year_r/journal_r and add to manual_references.xlsx")
+
+    print("Done.")
