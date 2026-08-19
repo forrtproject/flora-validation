@@ -4376,6 +4376,7 @@ function renderAdminCounts(counts) {
   $("#fc-all").textContent              = counts.all;
   $("#fc-pending-approval").textContent = counts.pending_approval;
   $("#fc-needs-review").textContent     = counts.needs_review;
+  $("#fc-admin-comments").textContent   = counts.admin_comments ?? 0;
   $("#fc-validated").textContent        = counts.validated;
   $("#fc-rejected").textContent         = counts.rejected ?? 0;
   const _fcAdminChecked = $("#fc-admin-checked");

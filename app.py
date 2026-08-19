@@ -2539,6 +2539,7 @@ def admin_entries(
         "all":              "",
         "pending_approval": "WHERE u.validation_status = 'consensus_reached'",
         "needs_review":     "WHERE u.validation_status = 'need_review'",
+        "admin_comments":   "WHERE NULLIF(BTRIM(u.admin_notes), '') IS NOT NULL",
         "llm_errors":       "WHERE u.llm_validator IS NOT NULL AND (u.llm_validator)::jsonb ? 'error'",
         "validated":        "WHERE u.validation_status = 'validated'",
         "rejected":         "WHERE u.validation_status = 'rejected'",
@@ -2612,6 +2613,8 @@ def admin_entries(
         c_pending = cur.fetchone()["n"]
         cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE validation_status = 'need_review'")
         c_review = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE NULLIF(BTRIM(admin_notes), '') IS NOT NULL")
+        c_admin_comments = cur.fetchone()["n"]
         cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE llm_validator IS NOT NULL AND (llm_validator)::jsonb ? 'error'")
         c_llm = cur.fetchone()["n"]
         cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE validation_status = 'validated'")
@@ -2630,6 +2633,7 @@ def admin_entries(
             "all": c_all,
             "pending_approval": c_pending,
             "needs_review": c_review,
+            "admin_comments": c_admin_comments,
             "llm_errors": c_llm,
             "validated": c_validated,
             "rejected": c_rejected,
