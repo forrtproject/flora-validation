@@ -6,6 +6,9 @@ silent-drift failure that cost five weeks on the extractor side — a vocabulary
 change reaches published data and nothing reports it. Unknown values are now
 collected and the transform refuses to produce an export.
 """
+from pathlib import Path
+
+import pandas as pd
 import pytest
 
 from extractor_vocab import FLAWED_OUTCOME, FLAWED_OUTCOME_ALIASES, REPLICATION_OUTCOMES
@@ -46,10 +49,11 @@ def test_known_spelling_is_normalised():
     assert p["unknown_alias"] == []
 
 
-def test_blank_outcome_stays_blank_and_is_not_an_error():
-    """An empty source cell is a known state, not drift."""
+@pytest.mark.parametrize("blank", [None, "", "   ", float("nan"), pd.NA])
+def test_blank_outcome_stays_blank_and_is_not_an_error(blank):
+    """SQL NULL, pandas NA/NaN, and empty cells are known states, not drift."""
     p = _problems()
-    assert derive_outcome(_replication(""), _ALIASES, p) is None
+    assert derive_outcome(_replication(blank), _ALIASES, p) is None
     assert p["unknown_alias"] == []
 
 
@@ -150,6 +154,23 @@ def test_the_new_columns_go_last():
     assert FLORA_COLUMNS[-6:] == [
         "outcome_computation", "outcome_computational_quote", "out_quote_computational_source",
         "outcome_robustness", "outcome_robustness_quote", "out_quote_robust_source"]
+
+
+def test_sync_workflow_cannot_upload_a_stale_dataset_after_build_failure():
+    workflow = (Path(__file__).resolve().parent.parent / ".github" / "workflows" /
+                "sync-sources.yml").read_text(encoding="utf-8")
+    assert "id: build_dataset" in workflow
+    assert "rm -f output/flora_entry_sheets.csv" in workflow
+    assert "if: steps.build_dataset.outcome == 'success'" in workflow
+    assert "if-no-files-found: error" in workflow
+
+
+def test_sync_workflow_actions_use_the_node24_generation():
+    workflow = (Path(__file__).resolve().parent.parent / ".github" / "workflows" /
+                "sync-sources.yml").read_text(encoding="utf-8")
+    assert "actions/checkout@v7" in workflow
+    assert "actions/setup-python@v7" in workflow
+    assert workflow.count("actions/upload-artifact@v7") == 2
 
 
 # ---------------------------------------------------------------------------

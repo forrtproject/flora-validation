@@ -13,10 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -32,32 +32,37 @@ jobs:
       # Runs after the sync so the output reflects the night's new rows. Pure
       # function of the database — writes nothing back, so it is safe to re-run.
       - name: Build FLoRA dataset
+        id: build_dataset
         # Runs even when a source failed a gate: the transform reads only the
         # database, so a temporarily unshared sheet should not also cost us the
         # nightly dataset built from the rows already stored.
         if: always()
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python transform_sources.py
+        # The repository contains a historical export. Remove it first so a
+        # failed transform can never leave a stale file available for upload.
+        run: |
+          rm -f output/flora_entry_sheets.csv
+          python transform_sources.py
 
       # Uploaded rather than committed: whether the R pipeline should read this
       # from a raw.githubusercontent URL (as it does for validated_export.csv) is
       # still an open decision. Committing it is a `git add` step away.
       - name: Upload FLoRA dataset
-        if: always()
-        uses: actions/upload-artifact@v4
+        if: steps.build_dataset.outcome == 'success'
+        uses: actions/upload-artifact@v7
         with:
           name: flora-entry-sheets-${{ github.run_id }}
           path: output/flora_entry_sheets.csv
           retention-days: 90
-          if-no-files-found: warn
+          if-no-files-found: error
 
       # Snapshots go to artifacts rather than the repo: the payloads are several MB
       # a night and would bloat git permanently. The hash and row count live in
       # source_sync_runs, so the audit trail outlives the 90-day retention.
       - name: Upload sheet snapshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: entry-sheet-snapshots-${{ github.run_id }}
           path: snapshots/

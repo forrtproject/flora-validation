@@ -183,6 +183,13 @@ def derive_outcome(row, aliases, problems):
             computation, robustness
         )
     raw = row.get("outcome")
+    # RealDictCursor returns SQL NULL as None, but once the records enter a
+    # DataFrame pandas promotes missing values in this column to float NaN.
+    # NaN is truthy, so `if not raw` misclassified an ordinary blank as an
+    # unknown literal outcome and stopped the nightly export.
+    if raw is None or (not isinstance(raw, str) and pd.isna(raw)):
+        return None
+    raw = str(raw).strip()
     if not raw:
         return None
     if raw not in aliases:
