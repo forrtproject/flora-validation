@@ -219,6 +219,9 @@
   "10.1016/j.jbtep.2018.07.002": {
     "ref": "Benjamin W. Bellet, Payton J. Jones, Richard J. McNally (2018) Trigger warning: Empirical evidence ahead. Journal of Behavior Therapy and Experimental Psychiatry."
   },
+  "10.1016/j.jbusvent.2007.11.001": {
+    "ref": "Hana Milanov, Stephanie A. Fernhaber (2008) The impact of early imprinting on the evolution of new venture networks. Journal of Business Venturing."
+  },
   "10.1016/j.jecp.2015.11.007": {
     "ref": "Irene Symeonidou, Iroise Dumontheil, Wing-Yee Chow, Richard Breheny (2015) Development of online use of theory of mind during adolescence: An eye-tracking study. Journal of Experimental Child Psychology."
   },
@@ -364,6 +367,12 @@
   "10.1017/s1930297500008470": {
     "ref": "Subramanya Prasad Chandrashekar, Siu Kit Yeung, Ka Chai Yau, Chung Yee Cheung, Tanay Kulbhushan Agarwal, Cho Yan Joan Wong, Tanishka Pillai, Thea Natasha Thirlwell, Wing Nam Leung, Colman Tse, Yan Tung Li, Bo Ley Cheng, Hill Yan Cedar Chan, Gilad Feldman (2021) Agency and self-other asymmetries in perceived bias and shortcomings: Replications of the Bias Blind Spot and link to free will beliefs. Judgment and Decision Making."
   },
+  "10.1027/0227-5910.16.1.39": {
+    "ref": "Antoon A. Leenaars, David Lester (1995) Impact of Suicide Prevention Centers on Suicide in Canada. Crisis."
+  },
+  "10.1027/0227-5910.25.2.65": {
+    "ref": "Antoon A. Leenaars, David Lester (2004) The Impact of Suicide Prevention Centers on the Suicide Rate in the Canadian Provinces. Crisis."
+  },
   "10.1027/1015-5759/a000263": {
     "ref": "Samuel Greiff, Katarina Krkovic, Jarkko Hautam\u00e4ki (2015) The Prediction of Problem-Solving Assessed Via Microworlds. European Journal of Psychological Assessment."
   },
@@ -385,8 +394,17 @@
   "10.1037//0096-1523.18.3.849": {
     "ref": "Jane E. Raymond, Kimron L. Shapiro, Karen M. Arnell (1992) Temporary suppression of visual processing in an RSVP task: An attentional blink?. Journal of Experimental Psychology Human Perception & Performance."
   },
+  "10.1037/0012-1649.37.6.739": {
+    "ref": "Jane B. Childers, Michael Tomasello (2001) The role of pronouns in young children's acquisition of the English transitive construction. Developmental Psychology."
+  },
   "10.1037/0021-9010.81.2.161": {
     "ref": "Daniel P. Skarlicki, Gary P. Latham (1996) Increasing citizenship behavior within a labor union: A test of organizational justice theory. Journal of Applied Psychology."
+  },
+  "10.1037/0021-9010.82.1.44": {
+    "ref": "Charlie O. Trevor, Barry Gerhart, John W. Boudreau (1997) Voluntary turnover and job performance: Curvilinearity and the moderating influences of salary growth and promotions. Journal of Applied Psychology."
+  },
+  "10.1037/0021-9010.90.6.1204": {
+    "ref": "Alain Salamin, Peter W. Hom (2005) In Search of the Elusive U-Shaped Performance-Turnover Relationship: Are High Performing Swiss Bankers More Liable to Quit?. Journal of Applied Psychology."
   },
   "10.1037/0022-006X.50.5.624": {
     "ref": "Laura L. Humphrey (1982) Children's and teachers' perspectives on children's self-control: The development of two rating scales. Journal of Consulting and Clinical Psychology."
@@ -555,6 +573,12 @@
   },
   "10.1075/lab.23071.bra": {
     "ref": "Adam A. Bramlett, Seth Wiener (2024) The art of wrangling. Linguistic Approaches to Bilingualism."
+  },
+  "10.1080/00207146508412939": {
+    "ref": "Peter Field, Frederick J. Evans, Martin T. Orne (1965) Order of difficulty of suggestions during hypnosis. International Journal of Clinical and Experimental Hypnosis."
+  },
+  "10.1080/00207149008414504": {
+    "ref": "John R. Weekes, Steven Jay Lynn (1990) Hypnosis, Suggestion Type, and Subjective Experience \u2014 The Order-Effects Hypothesis Revisited:<i>A Brief Communication</i>. International Journal of Clinical and Experimental Hypnosis."
   },
   "10.1080/00223891.1973.10119882": {
     "ref": "Charles S. Newmark, Ramon Flouranzano (1973) Replication of an Empirically Derived TAT Set with Hospitalized Psychiatric Patients. Journal of Personality Assessment."
@@ -797,11 +821,17 @@
   "10.1111/ejn.14347": {
     "ref": "Nya Mehnwolo Boayue, G\u00e1bor Csifcs\u00e1k, Per M. Aslaksen, Zsolt Turi, Andrea Antal, Josephine Maria Groot, Guy E. Hawkins, Birte U. Forstmann, Alexander Opitz, Axel Thielscher, Matthias Mittner (2019) Increasing propensity to mind\u2010wander by transcranial direct current stimulation? A registered report. European Journal of Neuroscience."
   },
+  "10.1111/j.0956-7976.2005.00810.x": {
+    "ref": "Aaron C. Kay, John T. Jost, Sean D. Young (2005) Victim Derogation and Victim Enhancement as Alternate Routes to System Justification. Psychological Science."
+  },
   "10.1111/j.0956-7976.2005.01556.x": {
     "ref": "Luca L. Bonatti, Marcela Pe\u00f1a, Marina Nespor, Jacques Mehler (2005) Linguistic Constraints on Statistical Computations. Psychological Science."
   },
   "10.1111/j.1467-6494.1949.tb01241.x": {
     "ref": "Jerome S. Bruner, Leo Postman (1949) ON THE PERCEPTION OF INCONGRUITY: A PARADIGM. Journal of Personality."
+  },
+  "10.1111/j.1467-7687.2004.00322.x": {
+    "ref": "Kirsten Abbot\u2010Smith, Elena Lieven, Michael Tomasello (2004) Training 2;6\u2010year\u2010olds to produce the transitive construction: the role of frequency, semantic similarity and shared syntactic distribution. Developmental Science."
   },
   "10.1111/j.1467-7687.2009.00881.x": {
     "ref": "Trix Cacchione, Josep Call (2009) Intuitions about gravity and solidity in great apes: the tubes task. Developmental Science."
@@ -850,6 +880,9 @@
   },
   "10.1111/jpr.12507": {
     "ref": "Yuta Kawamura, Kanatsu Totake (2024) Pluralistic Ignorance did not Prevent Paternity Leave in Japan in December 2021: A Replication Study. Japanese Psychological Research."
+  },
+  "10.1111/jpr.70034": {
+    "ref": "Koya Kakimoto, Yuki Tsukamura, Taisei Wakai, Hideya Kitamura (2026) A Replication of System\u2010Threat Paradigm in Japan: Preregistered Experiments Using Bayes Factor. Japanese Psychological Research."
   },
   "10.1111/jsbm.12233": {
     "ref": "Richard J. Arend, Xian Cao, Anne C. Grego-Nagel, Junyon Im, Xiaoming Yang, Sergio Canavati (2016) Looking Upstream and Downstream in Entrepreneurial Cognition: Replicating and Extending the Busenitz and Barney (1997) Study. Journal of Small Business Management."
@@ -1258,6 +1291,9 @@
   "10.2224/sbp.2008.36.6.753": {
     "ref": "Eun Hee Seo (2008) SELF-EFFICACY AS A MEDIATOR IN THE RELATIONSHIP BETWEEN SELF-ORIENTED PERFECTIONISM AND ACADEMIC PROCRASTINATION. Social Behavior and Personality An International Journal."
   },
+  "10.2307/1128199": {
+    "ref": "John Condry, Sandra Condry (1976) Sex Differences: A Study of the Eye of the Beholder. Child Development."
+  },
   "10.2307/1388548": {
     "ref": "Rand D. Conger, Peter R. Killeen (1974) Use of Concurrent Operants in Small Group Research: A Demonstration. The Pacific Sociological Review."
   },
@@ -1404,6 +1440,9 @@
   "10.31542/r.gm:2129": {
     "ref": "Mykaela Holt (2020) The influence of interpersonal synchrony on helping behavior, social bonding, and empathy in children."
   },
+  "10.31979/etd.eh36-m2wx": {
+    "ref": "Jennifer Miller (2015) Sex Role Type as a Predictor of Gender Stereotype Use in the Evaluation of Others: Does Being Atypical Preclude Sex Typing of Others?. San Jose State University Scholar Works (San Jose State University)."
+  },
   "10.31979/mrj.2020.1607": {
     "ref": "Hifsa Khan (2020) Behavioral Economic Analysis of Demand for Hypothetical Work Performance: A Partial Replication."
   },
@@ -1499,6 +1538,9 @@
   },
   "10.5334/joc.432": {
     "ref": "Tarini Singh, Lars-Michael Sch\u00f6pper, Christian Frings (2025) I am Once Again Asking for Your Attention: A Replication of Feature-Based Attention Modulations of Binding Effects with Picture Stimuli. Journal of Cognition."
+  },
+  "10.5465/ambpp.2018.15544abstract": {
+    "ref": "Forough Zarea Fazlelahi, Henri Burgers, Per Davidsson (2018) Meet the Parents: An Empirical Study of Spin-off Network Development. Academy of Management Proceedings."
   },
   "10.5465/amj.2010.0608": {
     "ref": "Anastasiya Zavyalova, Michael D. Pfarrer, Rhonda K. Reger, Debra L. Shapiro (2012) Managing the Message: The Effects of Firm Actions and Industry Spillovers on Media Coverage Following Wrongdoing. Academy of Management Journal."
