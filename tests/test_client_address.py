@@ -7,11 +7,34 @@ worth anything if the address cannot be chosen by the caller.
 """
 import importlib
 import os
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-import app as flora
+
+def _import_app():
+    """Import app.py with the database and scheduler stubbed out.
+
+    Importing app.py runs init_db() at module scope (app.py:486), which executes
+    the whole of db_schema.sql against DATABASE_URL — the production database
+    whenever .env is present. A bare import therefore applies live schema DDL from
+    a test run. Mirrors tests/test_submission_failure_stamps.py.
+    """
+    os.environ.setdefault("DATABASE_URL", "postgresql://stub/stub")
+    os.environ.setdefault("ADMIN_PASSWORD", "bootstrap-password-for-import")
+    cursor = MagicMock()
+    cursor.fetchone.return_value = {"n": 1}
+    cursor.fetchall.return_value = []
+    connection = MagicMock()
+    connection.cursor.return_value = cursor
+    with patch("psycopg2.connect", return_value=connection), patch(
+        "apscheduler.schedulers.background.BackgroundScheduler.start"
+    ):
+        import app
+    return app
+
+
+flora = _import_app()
 
 
 def _request(forwarded=None, peer="203.0.113.7"):

@@ -818,6 +818,18 @@ CREATE TABLE IF NOT EXISTS assignments (
 );
 CREATE INDEX IF NOT EXISTS idx_assignments_validator ON assignments (validator_id, status);
 
+-- Gate II shows every original coded for the replication under judgement (see
+-- _coded_originals in app.py), so each served pair looks up its siblings by doi_r.
+-- Serving prefetches a batch of pairs per request; without this index each one of
+-- them is a sequential scan of unvalidated.
+--
+-- Functional index on lower(doi_r): the lookup matches case-insensitively because
+-- DOI names are case-insensitive by spec, and the index expression has to match the
+-- predicate for the planner to use it. Supersedes a plain (doi_r) index from an
+-- earlier revision of this change, dropped here so it is not left behind unused.
+DROP INDEX IF EXISTS idx_unvalidated_doi_r;
+CREATE INDEX IF NOT EXISTS idx_unvalidated_doi_r_lower ON unvalidated (lower(doi_r));
+
 -- Prefetch buffer + tiered locking.
 --   started_at IS NULL  → buffered (prefetched, not opened): short lock
 --   started_at IS NOT NULL → started (active pair): 5-day lock

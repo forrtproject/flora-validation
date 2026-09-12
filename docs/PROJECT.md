@@ -241,6 +241,48 @@ A validator answers three questions in one progressive form:
 2. **Original matching** — does the linked original study match? (correct / wrong / can't tell)
 3. **Outcome coding** — is the outcome judgement right? (correct / mischaracterised / can't tell)
 
+#### Multi-original replications
+
+A replication paper may target several originals, and the extractor codes one row
+per `(replication, original)` pair — so Gate II serves a validator exactly one of
+them. That single row is not enough to answer the question: a paper replicating a
+dominant original alongside secondary ones is legitimately coded against just the
+dominant one, or against all of them, while a paper it never replicated is wrong.
+All three look identical from one row.
+
+Gate II therefore renders the **coded set**: every original coded for the same
+`doi_r`, with the row under judgement marked (`_coded_originals` in `app.py`,
+`_codedOriginalsBlock` in `docs/app.js`). The validator judges only the marked row
+— correct if it is *among* the studies the paper set out to replicate.
+
+The set is extractor output only. It deliberately carries no `validation_status`
+and no judgement fields: a sibling's verdict would anchor the second validator,
+which the two-human consensus design exists to prevent. Replications with a blank
+`doi_r` are never grouped (`''` is not an identity) and simply show no set.
+
+The match is case-insensitive (`lower(u.doi_r) = lower(%s)`, backed by a functional
+index on `lower(doi_r)`). DOI names are case-insensitive by spec and `doi_r` is only
+whitespace-stripped on import, so an exact match could split one paper's coded set
+and hide originals — the failure this feature exists to prevent. This is scoped to
+the lookup: the `UNIQUE (doi_r, study_r, title_r, …)` pair identity is still exact.
+
+Rejected rows are excluded from the set. A duplicate resolved by an admin is
+deliberately retained in `unvalidated` as `rejected` (see `validated_record_merges`)
+and carries the *same* original as its survivor, so including it listed one original
+twice and inflated the count; not-a-validation and wrong-original rejections are
+dead pairs for the same reason. Filtering is not anchoring — the status gates the
+`WHERE` clause and never reaches the payload.
+
+The list is capped (`_CODED_ORIGINALS_LIMIT`) as a runaway guard rather than an
+expected ceiling. The row under judgement is pinned into that window before any
+other ordering, so truncation can never drop it and leave Gate II instructing the
+validator to judge a highlight that isn't there; natural order is restored in
+Python afterwards. `COUNT(*) OVER ()` runs before `LIMIT`, so a truncated list
+still reports the true size of the set.
+
+Known gap: there is still no way to report an original the extractor *missed*. Use
+"Can't tell" plus a comment until one exists.
+
 Any answer can carry a correction: `corrected_doi_o`, `corrected_title_o`,
 `corrected_outcome`, `corrected_type`, `corrected_title_r`, `corrected_url_r`,
 `corrected_outcome_quote`, `corrected_abstract`. A validator can additionally supply

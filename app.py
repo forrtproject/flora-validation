@@ -507,8 +507,116 @@ def oa_url_for(doi: str | None) -> str | None:
     return (_OA_CACHE.get(doi.strip()) or {}).get("oa_url")
 
 
-def _enrich_pair(pair: dict) -> dict:
-    """Add OA URLs and the one remaining legacy frontend alias."""
+# A replication paper may target several originals. The extractor codes one row
+# per (replication, original) pair, so Gate II serves a validator exactly one of
+# them — and a paper that replicates a dominant original alongside secondary ones
+# is legitimately coded as any subset of that set. That makes "is this the right
+# original?" unanswerable from a single row: coding the dominant original alone,
+# or all three, is correct, while a fourth paper that was never replicated is not,
+# and the three cases are indistinguishable until the validator sees the set.
+
+# A runaway guard, not an expected ceiling: comfortably past any real paper, so a
+# truncated set means the data is wrong rather than the paper being large.
+_CODED_ORIGINALS_LIMIT = 100
+
+# Two predicates, for two different reasons.
+#
+# Rejected rows are not part of the coded set. A duplicate resolved by an admin is
+# deliberately retained in unvalidated as 'rejected' (see validated_record_merges)
+# carrying the SAME original as its survivor, so listing both showed one original
+# twice and inflated the count; not-a-validation and wrong-original rejections are
+# dead pairs for the same reason. Filtering is not anchoring — the status gates the
+# WHERE clause and never reaches the payload, which carries no validation_status
+# and no judgement fields at all: a sibling's verdict would anchor the second
+# validator against the two-human consensus design.
+#
+# The DOI is matched case-insensitively. DOI names are case-insensitive by spec and
+# doi_r is only whitespace-stripped on import (csv_to_db._s), so an exact match
+# could split one paper's coded set and hide originals — the failure this feature
+# exists to prevent. Scoped deliberately to this lookup: the UNIQUE (doi_r, …) pair
+# identity is still exact, and widening that is a separate decision. lower() on both
+# sides rather than str.lower() in Python so the predicate and the functional index
+# agree on collation; the index expression must match or the planner ignores it.
+_CODED_ORIGINALS_WHERE = (
+    "lower(u.doi_r) = lower(%s) AND u.validation_status <> 'rejected'")
+
+
+def _coded_originals_sort_key(r):
+    """Mirror of the SQL ordering, for restoring natural order in Python after the
+    row under judgement has been pinned into the result window."""
+    rank, year, title = r["original_rank"], r["year_o"], r["title_o"]
+    return (
+        rank is None, rank if rank is not None else 0,
+        year is None, year if year is not None else "",
+        title is None, title if title is not None else "",
+        str(r["record_id"]),
+    )
+
+
+def _coded_originals(cur, doi_r, record_id) -> tuple[list[dict], int]:
+    """Every original coded for the same replication paper, this one included.
+
+    Returns (originals, total). `total` counts the whole coded set even when the
+    list was truncated, so the UI never reports a smaller set than exists.
+
+    Returns ([], 0) for a replication with no DOI: '' is not an identity, and
+    grouping on it would pull every DOI-less replication into one set. Such a
+    record simply shows no coded set, exactly as it did before.
+    """
+    doi = (doi_r or "").strip()
+    if not doi:
+        return [], 0
+    here = str(record_id or "")
+    cur.execute(
+        f"""
+        SELECT u.record_id, u.doi_o, u.study_o, u.title_o, u.year_o,
+               u.url_o, u.oa_work_id_o, u.study_r, rm.authors_o,
+               rm.original_rank,
+               -- Window functions run before LIMIT, so this is the true size of
+               -- the coded set rather than the size of the truncated window.
+               COUNT(*) OVER () AS coded_total
+        FROM unvalidated u
+        LEFT JOIN record_metadata rm ON rm.record_id = u.record_id
+        WHERE {_CODED_ORIGINALS_WHERE}
+        -- The row under judgement is pinned into the window first: truncation must
+        -- never drop it, or Gate II highlights nothing while instructing the
+        -- validator to judge the highlighted original. Compared as text so a
+        -- str or UUID record_id both work and a malformed one cannot raise.
+        -- Natural order is restored in Python immediately below.
+        ORDER BY (u.record_id::text = %s) DESC,
+                 rm.original_rank NULLS LAST, u.year_o NULLS LAST,
+                 u.title_o, u.record_id
+        LIMIT %s
+        """,
+        (doi, here, _CODED_ORIGINALS_LIMIT),
+    )
+    rows = cur.fetchall()
+    total = rows[0]["coded_total"] if rows else 0
+    out = []
+    for r in sorted(rows, key=_coded_originals_sort_key):
+        out.append({
+            "record_id":    str(r["record_id"]),
+            "doi_o":        r["doi_o"],
+            "study_o":      r["study_o"],
+            "study_r":      r["study_r"],
+            "title_o":      r["title_o"],
+            "year_o":       r["year_o"],
+            "url_o":        r["url_o"],
+            "oa_work_id_o": r["oa_work_id_o"],
+            "authors_o":    r["authors_o"],
+            "oa_url_o":     oa_url_for(r["doi_o"]),
+            "is_current":   str(r["record_id"]) == here,
+        })
+    return out, total
+
+
+def _enrich_pair(pair: dict, cur=None) -> dict:
+    """Add OA URLs and the one remaining legacy frontend alias.
+
+    With a cursor, also attaches `coded_originals` — every original coded for this
+    replication paper (see _coded_originals). Callers without one keep the old
+    payload shape; the frontend renders the set only when it has more than one.
+    """
     pair = dict(pair)
     pair["oa_url_r"] = oa_url_for(pair.get("doi_r"))
     pair["oa_url_o"] = oa_url_for(pair.get("doi_o"))
@@ -517,6 +625,9 @@ def _enrich_pair(pair: dict) -> dict:
     pair.setdefault("title_r", "")
     pair.setdefault("title_o", "")
     pair.setdefault("outcome_phrase", pair.get("outcome_quote", ""))
+    if cur is not None:
+        pair["coded_originals"], pair["coded_originals_total"] = _coded_originals(
+            cur, pair.get("doi_r"), pair.get("record_id"))
     return pair
 
 
@@ -1557,7 +1668,7 @@ def _claim_one_pair(cur, coder_id: int, started: bool, mode: str = "normal"):
         "WHERE record_id = %s AND validation_status = 'unvalidated'",
         (record_id,),
     )
-    pair = _enrich_pair(dict(row))
+    pair = _enrich_pair(dict(row), cur)
     pair["queue_id"]    = str(claimed["queue_id"])
     pair["judge_count"] = row["judge_count"]
     return pair
@@ -1605,7 +1716,7 @@ def next_pairs(count: int = 3, buffered_only: bool = False,
                 )
                 row = _fetch_pair_row(cur, resume["record_id"])
                 if row:
-                    pair = _enrich_pair(dict(row))
+                    pair = _enrich_pair(dict(row), cur)
                     pair["queue_id"]    = str(resume["queue_id"])
                     pair["judge_count"] = row["judge_count"]
                     pair["started"]     = True
@@ -2116,7 +2227,7 @@ def get_assignment(record_id: str,
         row = _fetch_pair_row(cur, record_id)
         if not row:
             raise HTTPException(404, "Record not found")
-        pair = _enrich_pair(dict(row))
+        pair = _enrich_pair(dict(row), cur)
         pair["judge_count"] = row["judge_count"]
     return {"pair": pair}
 
@@ -4087,6 +4198,9 @@ def admin_entry_detail(record_id: str, admin: dict = Depends(current_admin)):
         if not row:
             raise HTTPException(404, "Record not found")
 
+        # No cursor: renderAdminDetail() does not show the coded set, and
+        # preloadAdminDetails() fetches 15 entries at a time — passing one here
+        # buys 15 sibling lookups and 15 payloads per preload that nobody reads.
         record = _enrich_pair(dict(row))
         record["record_id"] = str(record["record_id"])
 

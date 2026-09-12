@@ -3124,6 +3124,55 @@ function showDialog({ icon, title, message, buttons, layout = "column", rawHtml 
   });
 }
 
+/* ---------- Coded original set (Gate II) ---------- */
+
+// A replication can target several originals, and the extractor codes one row per
+// (replication, original) pair — so Gate II serves exactly one of them. When a paper
+// replicates a dominant original alongside secondary ones, coding the dominant one
+// alone and coding all three are both defensible; coding a paper that was never
+// replicated is not. Those cases are indistinguishable from a single row, so the
+// whole coded set is shown and the row under judgement is marked.
+//
+// Sibling rows deliberately carry no validation status: this is extractor output,
+// not other validators' verdicts, which would anchor the judgement.
+function _codedOriginalsBlock(p) {
+  const set = Array.isArray(p.coded_originals) ? p.coded_originals : [];
+  if (set.length < 2) return "";   // a single coded original disambiguates nothing
+  // The server counts the whole coded set even when it caps the list, so a
+  // truncated set reports its real size instead of the size of the window.
+  const total = Number(p.coded_originals_total) || set.length;
+  const idx = set.findIndex((o) => o.is_current);
+  const rows = set.map((o, i) => {
+    const link = o.doi_o
+      ? `<a href="https://doi.org/${escapeHtml(o.doi_o)}" target="_blank" rel="noopener">${escapeHtml(o.doi_o)}</a>`
+      : o.oa_work_id_o
+      ? `<a href="https://openalex.org/${escapeHtml(o.oa_work_id_o)}" target="_blank" rel="noopener">OpenAlex ↗</a>`
+      : `<span class="cs-nodoi">no registered DOI</span>`;
+    const meta = [
+      o.authors_o ? escapeHtml(o.authors_o) : null,
+      o.year_o ? fmtYear(o.year_o) : null,
+      o.study_o ? "Study " + escapeHtml(o.study_o) : null,
+    ].filter(Boolean).join(" · ");
+    return `
+      <li class="cs-item${o.is_current ? " cs-current" : ""}">
+        <span class="cs-num">${i + 1}</span>
+        <span class="cs-body">
+          <span class="cs-title">${escapeHtml(o.title_o || "(no title)")}</span>
+          <span class="cs-meta">${meta}${meta ? " · " : ""}${link}</span>
+        </span>
+        ${o.is_current ? `<span class="cs-badge">judging now</span>` : ""}
+      </li>`;
+  }).join("");
+  return `
+    <div class="coded-set">
+      <div class="cs-head">This replication was coded against ${total} originals${
+        total > set.length ? ` — showing ${set.length}` : ""
+      }${idx >= 0 ? ` · you are judging #${idx + 1}` : ""}</div>
+      <ul class="cs-list">${rows}</ul>
+      <div class="cs-hint">Judge only the highlighted original. It is a <strong>correct match</strong> if it is one of the studies this paper set out to replicate — a paper may legitimately be coded against one of its originals or all of them. Choose <strong>Wrong paper</strong> only if this original is not among them.</div>
+    </div>`;
+}
+
 /* ---------- Pair rendering (normal + onboarding) ---------- */
 let _pairShownAt = null;
 
@@ -3249,6 +3298,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
             ${!p.doi_o ? `<div class="evidence">No registered DOI for the original — verify using title, author, and year.</div>` : ""}
             ${p.link_evidence ? `<div class="evidence">Evidence: ${escapeHtml(p.link_evidence)}</div>` : ""}
           </div>
+          ${_codedOriginalsBlock(p)}
           <div class="choices">
             <button class="choice success" data-original="correct">Correct match</button>
             <button class="choice danger" data-original="wrong">Wrong paper</button>
