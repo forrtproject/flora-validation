@@ -9,6 +9,7 @@ from csv_to_db import (
     InputIdentityError,
     InputSchemaError,
     _CURRENT_EXTRACTED_COLUMNS,
+    _IGNORED_EXTRACTOR_COLUMNS,
     _build_metadata_row,
     _insert_metadata,
     _source_slot_key,
@@ -99,6 +100,30 @@ def test_current_header_contract_rejects_missing_columns():
     _validate_csv_schema(frame)
     with pytest.raises(InputSchemaError, match="study_o"):
         _validate_csv_schema(frame.drop(columns=["study_o"]))
+
+
+def test_new_extractor_only_columns_are_accepted_without_becoming_required():
+    expected = {
+        "pdf_url",
+        "pdf_name",
+        "study_status",
+        "study_status_reasoning",
+        "study_status_model",
+        "osf_type",
+    }
+    assert _IGNORED_EXTRACTOR_COLUMNS == expected
+
+    required = sorted(_CURRENT_EXTRACTED_COLUMNS | {"paper_type"})
+    current = pd.DataFrame(columns=required + sorted(expected))
+    _validate_csv_schema(current)
+
+    # The six fields are extractor diagnostics, not a new import dependency.
+    _validate_csv_schema(pd.DataFrame(columns=required))
+
+
+def test_unknown_future_extra_columns_are_also_ignored():
+    required = sorted(_CURRENT_EXTRACTED_COLUMNS | {"paper_type"})
+    _validate_csv_schema(pd.DataFrame(columns=required + ["future_diagnostic"]))
 
 
 def test_archived_header_requires_explicit_opt_in():

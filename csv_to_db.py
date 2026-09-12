@@ -67,10 +67,12 @@ class InputSchemaError(ValueError):
     """The input is not the current Stage-3 extracted.csv contract."""
 
 
-# Current flora-extractor.shared.schema.EXTRACTED_COLS, except paper_type which
-# is accepted under its historical filter_status header too. Strict by default:
-# silently turning a missing identity/evidence column into an empty string is
-# data loss. Archived snapshots can be replayed explicitly with
+# Columns this application actually consumes from flora-extractor's Stage-3
+# export, except paper_type which is accepted under its historical filter_status
+# header too. This is deliberately a REQUIRED SUBSET, not an exact-header list:
+# unrelated upstream additions must not break Supabase ingestion. Missing fields
+# we consume remain fatal because silently replacing identity/evidence with blank
+# strings is data loss. Archived snapshots can be replayed explicitly with
 # --allow-legacy-schema.
 _CURRENT_EXTRACTED_COLUMNS = frozenset({
     "pair_id", "doi_r", "title_r", "abstract_r", "year_r", "authors_r",
@@ -88,8 +90,22 @@ _CURRENT_EXTRACTED_COLUMNS = frozenset({
     "type", "original_rank", "n_originals",
 })
 
+# Added upstream in September 2026. They are useful extractor diagnostics but no
+# validation table consumes them yet, so the importer accepts and intentionally
+# ignores them. Unknown future extra columns are also accepted; this named set
+# makes the current hand-off visible in logs, tests, and documentation.
+_IGNORED_EXTRACTOR_COLUMNS = frozenset({
+    "pdf_url",
+    "pdf_name",
+    "study_status",
+    "study_status_reasoning",
+    "study_status_model",
+    "osf_type",
+})
+
 
 def _validate_csv_schema(df: pd.DataFrame, allow_legacy: bool = False) -> None:
+    """Require every consumed field while allowing any additional columns."""
     if allow_legacy:
         return
     missing = sorted(_CURRENT_EXTRACTED_COLUMNS - set(df.columns))
@@ -716,6 +732,15 @@ def run_import(csv_path: Path, dry_run: bool = False, release_id: str = "",
     df = pd.read_csv(csv_path, dtype=str, encoding="utf-8-sig").fillna("")
 
     _validate_csv_schema(df, allow_legacy=allow_legacy_schema)
+
+    ignored_extractor_columns = sorted(
+        _IGNORED_EXTRACTOR_COLUMNS.intersection(df.columns)
+    )
+    if ignored_extractor_columns:
+        print(
+            "  Extractor-only columns accepted and ignored: "
+            + ", ".join(ignored_extractor_columns)
+        )
 
     # Before anything else: refuse a CSV whose vocabulary we don't recognise.
     # An unknown link_method used to be indistinguishable from "not yet

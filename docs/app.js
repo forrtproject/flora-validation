@@ -45,6 +45,11 @@ const STORAGE = {
 };
 
 let API_MODE = "online"; // "online" | "static"
+// Declared here, not beside the admin code far below: startup() restores an
+// admin session and would otherwise touch these before their `let` is
+// evaluated, which is a temporal-dead-zone error waiting to happen.
+let _adminHandle  = null;
+let _adminTrusted = false;
 let STATIC_DATA = null;  // {normal: [...], hard: [...], onboarding: [...]}
 let _chipTimer = null;
 
@@ -77,12 +82,15 @@ async function api(path, method = "GET", body = null) {
     if (err.detail) {
       if (Array.isArray(err.detail)) {
         msg = err.detail.map((e) => e.msg || JSON.stringify(e)).join("; ");
+      } else if (typeof err.detail === "object") {
+        msg = err.detail.message || err.detail.detail || JSON.stringify(err.detail);
       } else {
         msg = String(err.detail);
       }
     }
     const httpErr = new Error(msg);
     httpErr.status = res.status;
+    httpErr.detail = err.detail;
     throw httpErr;
   }
   return res.json();
@@ -126,6 +134,9 @@ function staticRank(points) {
   return 1 + Object.values(totals).filter((p) => p > points).length;
 }
 
+// Who the demo is signed in as. The real app gets this from the session cookie.
+let _staticCoderId = Number(localStorage.getItem("flora.staticCoder")) || null;
+
 async function staticApi(path, method, body) {
   const url = new URL("http://x" + path);
   const route = url.pathname;
@@ -133,10 +144,9 @@ async function staticApi(path, method, body) {
   const coders = readJSON(STORAGE.CODERS, {});
 
   if (route === "/login") {
-    const code = (body.code || "").trim();
     const email = (body.email || "").trim().toLowerCase();
     const handle = (body.handle || "").trim();
-    const key = email || code;
+    const key = email;
     if (!key || !handle) throw new Error("Handle and email or code required");
     if (coders[key] && coders[key].handle !== handle) {
       const method = email ? "email" : "code";
@@ -144,9 +154,14 @@ async function staticApi(path, method, body) {
     }
     if (!coders[key]) {
       const id = Date.now() + Math.floor(Math.random() * 1000);
-      coders[key] = { coder_id: id, code: code || null, email: email || null, handle, onboarded: false, last_seen_update: 0 };
+      coders[key] = { coder_id: id, code: null, email: email || null, handle, onboarded: false, last_seen_update: 0 };
       writeJSON(STORAGE.CODERS, coders);
     }
+    // The live app derives identity from a session cookie and no longer sends
+    // coder_id. The demo has no server, so it remembers who signed in here and
+    // answers from that instead of from the request.
+    _staticCoderId = coders[key].coder_id;
+    localStorage.setItem("flora.staticCoder", String(_staticCoderId));
     return { ...coders[key], update_version: 1, last_seen_update: coders[key].last_seen_update ?? 0 };
   }
 
@@ -155,7 +170,7 @@ async function staticApi(path, method, body) {
   }
 
   if (route === "/onboarding/complete") {
-    const cid = body.coder_id;
+    const cid = _staticCoderId;
     for (const k of Object.keys(coders)) {
       if (coders[k].coder_id === cid) {
         coders[k].onboarded = true;
@@ -167,7 +182,7 @@ async function staticApi(path, method, body) {
   }
 
   if (route === "/update-seen") {
-    const cid = body.coder_id;
+    const cid = _staticCoderId;
     for (const k of Object.keys(coders)) {
       if (coders[k].coder_id === cid) coders[k].last_seen_update = 1;
     }
@@ -176,7 +191,7 @@ async function staticApi(path, method, body) {
   }
 
   if (route === "/next-pair") {
-    const cid = +params.get("coder_id");
+    const cid = _staticCoderId;
     const mode = params.get("mode") || "normal";
     const pool = mode === "hard" ? STATIC_DATA.hard : STATIC_DATA.normal;
     const judgements = readJSON(STORAGE.JUDGEMENTS, []);
@@ -191,7 +206,7 @@ async function staticApi(path, method, body) {
 
   if (route === "/judge") {
     const judgements = readJSON(STORAGE.JUDGEMENTS, []);
-    if (judgements.find((j) => j.coder_id === body.coder_id && j.pair_id === body.pair_id)) {
+    if (judgements.find((j) => j.coder_id === _staticCoderId && j.pair_id === body.pair_id)) {
       throw new Error("Already judged this pair");
     }
     const points = pointsForStatic(body);
@@ -203,22 +218,36 @@ async function staticApi(path, method, body) {
     });
     writeJSON(STORAGE.JUDGEMENTS, judgements);
     const totalPts = judgements
-      .filter((j) => j.coder_id === body.coder_id && j.type_judgement !== "skip")
+      .filter((j) => j.coder_id === _staticCoderId && j.type_judgement !== "skip")
       .reduce((a, b) => a + b.points, 0);
     return { points_earned: points, total_points: totalPts, rank: staticRank(totalPts) };
   }
 
   if (route === "/skip") {
+    if (body.reason_code === "submission_failed") {
+      throw new Error("submission_failed is not a public skip reason");
+    }
+    const pairId = body.pair_id || (
+      body.record_id && body.record_id !== "undefined" ? body.record_id : null
+    );
+    if (!pairId) throw new Error("Static skip requires a pair_id");
     const judgements = readJSON(STORAGE.JUDGEMENTS, []);
     judgements.push({
-      coder_id: body.coder_id,
-      pair_id: body.pair_id,
+      coder_id: _staticCoderId,
+      pair_id: pairId,
       type_judgement: "skip",
+      reason_code: body.reason_code || "prefer_another",
+      comment: body.comment || null,
       points: 0,
       created_at: new Date().toISOString(),
     });
     writeJSON(STORAGE.JUDGEMENTS, judgements);
-    return { skipped: true };
+    return { skipped: true, reason_recorded: true };
+  }
+
+  if (route === "/submission-failures/release") {
+    // The static demo has no server transaction that can mint a failure stamp.
+    throw new Error("Automatic submission release is unavailable in static mode");
   }
 
   if (route === "/leaderboard") {
@@ -237,7 +266,7 @@ async function staticApi(path, method, body) {
   }
 
   if (route === "/my-judgements") {
-    const cid = +params.get("coder_id");
+    const cid = _staticCoderId;
     const judgements = readJSON(STORAGE.JUDGEMENTS, [])
       .filter(j => j.coder_id === cid && j.type_judgement !== "skip")
       .reverse()
@@ -279,7 +308,7 @@ async function staticApi(path, method, body) {
   // Detail: /my-judgements/<queue_id>
   if (route.startsWith("/my-judgements/")) {
     const queueId = route.split("/my-judgements/")[1];
-    const cid = +params.get("coder_id");
+    const cid = _staticCoderId;
     const j = readJSON(STORAGE.JUDGEMENTS, []).find(x => x.pair_id === queueId && x.coder_id === cid);
     if (!j) throw new Error("Judgement not found");
     return {
@@ -341,7 +370,7 @@ async function staticApi(path, method, body) {
   }
 
   if (route === "/stats") {
-    const cid = +params.get("coder_id");
+    const cid = _staticCoderId;
     const judgements = readJSON(STORAGE.JUDGEMENTS, []).filter((j) => j.coder_id === cid);
     const scoring = judgements.filter((j) => j.type_judgement !== "skip");
     const points = scoring.reduce((a, b) => a + b.points, 0);
@@ -475,94 +504,170 @@ function showToast(numOrMsg, label) {
 }
 
 /* ---------- Auth ---------- */
-let loginMode = "email";
 document.addEventListener("DOMContentLoaded", () => {
-  $("#toggle-label-email").classList.add("toggle-active");
   if (sessionStorage.getItem("flora.idleNotice")) {
     sessionStorage.removeItem("flora.idleNotice");
     setTimeout(() => showToast("Signed out after 30 minutes of inactivity."), 400);
   }
 });
 
-function getCode() {
-  return ["#cp1", "#cp2", "#cp3", "#cp4"].map((id) => $(id).value.trim()).join("");
+/* ---------- Administrator sign-in (deliberately out of the way) ---------- */
+
+function openAdminSignIn() {
+  $("#admin-signin-error").textContent = "";
+  $("#admin-signin-screen").classList.remove("hidden");
+  // The handle is remembered; the password never is, and cannot safely be.
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAST_LOGIN_KEY) || "null");
+    if (saved?.handle) $("#admin-signin-handle").value = saved.handle;
+  } catch {}
+  restoreRememberChoice("admin", "#admin-remember-me");
+  const field = $("#admin-signin-handle").value
+    ? $("#admin-signin-password") : $("#admin-signin-handle");
+  field.focus();
 }
 
-document.querySelectorAll(".code-part").forEach((input, i, arr) => {
+function closeAdminSignIn() {
+  $("#admin-signin-screen").classList.add("hidden");
+  $("#admin-signin-password").value = "";
+}
+
+// Triple-click (or triple-tap) the wordmark. The counter resets after a pause so
+// ordinary clicking never stumbles into it.
+(() => {
+  const trigger = document.querySelector(".login-left") || document.body;
+  let clicks = 0, timer = null;
+  trigger.addEventListener("click", () => {
+    if (!$("#login-screen") || $("#login-screen").classList.contains("hidden")) return;
+    clicks += 1;
+    clearTimeout(timer);
+    timer = setTimeout(() => { clicks = 0; }, 700);
+    if (clicks >= 3) { clicks = 0; openAdminSignIn(); }
+  });
+})();
+
+async function submitAdminSignIn(event) {
+  if (event) event.preventDefault();
+  const handle   = $("#admin-signin-handle").value.trim();
+  const password = $("#admin-signin-password").value;
+  const error    = $("#admin-signin-error");
+  error.textContent = "";
+  if (!handle || !password) { error.textContent = "Enter your username and password."; return; }
+  const btn = $("#admin-signin-submit");
+  btn.disabled = true;
+  try {
+    const remember = !!$("#admin-remember-me")?.checked;
+    saveRememberChoice("admin", remember);
+    await adminLogin(handle, password, remember);
+    // Only the handle is remembered. The password never touches localStorage.
+    rememberLogin(handle, "");
+    closeAdminSignIn();
+  } catch (e) {
+    error.textContent = e.message;
+  }
+  btn.disabled = false;
+}
+
+$("#admin-signin-form").addEventListener("submit", submitAdminSignIn);
+$("#admin-signin-cancel").onclick = closeAdminSignIn;
+$("#not-you-btn")?.addEventListener("click", forgetLogin);
+
+/* ---------- One-time: swap a personal code for an email ---------- */
+
+function claimCode() {
+  return ["#ccp1", "#ccp2", "#ccp3", "#ccp4"]
+    .map((id) => $(id).value.trim()).join("");
+}
+
+function openClaimCode() {
+  $("#claim-handle").value = $("#handle-input").value.trim();
+  $("#claim-error").textContent = "";
+  $("#claim-code-screen").classList.remove("hidden");
+  $("#claim-handle").focus();
+}
+
+function closeClaimCode() {
+  $("#claim-code-screen").classList.add("hidden");
+}
+
+document.querySelectorAll(".claim-part").forEach((input, i, arr) => {
   input.addEventListener("input", () => {
-    const code = getCode();
-    $("#code-preview").textContent = code || "——";
     if (input.value.length === 2 && i + 1 < arr.length) arr[i + 1].focus();
   });
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      if (i + 1 < arr.length) arr[i + 1].focus();
-      else doLogin();
-    }
-  });
+});
+
+async function submitClaimCode() {
+  const handle = $("#claim-handle").value.trim();
+  const code   = claimCode();
+  const email  = $("#claim-email").value.trim();
+  const error  = $("#claim-error");
+  error.textContent = "";
+  if (!handle) { error.textContent = "Enter your username."; return; }
+  if (code.length < 8) { error.textContent = "Fill in all four parts of your code."; return; }
+  if (!email.includes("@")) { error.textContent = "Enter a valid email address."; return; }
+
+  const btn = $("#claim-submit");
+  btn.disabled = true;
+  try {
+    const resp = await api("/login/claim-code", "POST", { handle, code, email });
+    closeClaimCode();
+    rememberLogin(handle, email);
+    state.coder = resp;
+    localStorage.setItem(STORAGE.CODER, JSON.stringify(resp));
+    await showAlert(
+      `Done. From now on sign in with your username and ${email}. ` +
+      `Your personal code is no longer needed.`
+    );
+    routeAfterLogin();
+  } catch (e) {
+    error.textContent = e.message;
+    btn.disabled = false;
+  }
+}
+
+$("#claim-code-btn").onclick = openClaimCode;
+$("#claim-cancel").onclick = closeClaimCode;
+$("#claim-submit").onclick = submitClaimCode;
+$("#claim-email").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") submitClaimCode();
 });
 
 $("#email-input").addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
 $("#login-btn").onclick = doLogin;
 $("#handle-input").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    if (loginMode === "email") $("#email-input").focus();
-    else $("#cp1").focus();
-  }
+  if (e.key === "Enter") $("#email-input").focus();
 });
 
-$("#login-mode-toggle").addEventListener("change", (e) => {
-  loginMode = e.target.checked ? "code" : "email";
-  const isEmail = loginMode === "email";
-  $("#email-section").classList.toggle("hidden", !isEmail);
-  $("#code-section").classList.toggle("hidden", isEmail);
-  $("#code-preview-wrap").classList.toggle("hidden", isEmail);
-  $("#auth-sep-label").textContent = isEmail
-    ? "// sign in with email"
-    : "// personal code · stays constant";
-  $("#toggle-label-email").classList.toggle("toggle-active", isEmail);
-  $("#toggle-label-code").classList.toggle("toggle-active", !isEmail);
-  setTimeout(() => (isEmail ? $("#email-input") : $("#cp1")).focus(), 50);
-});
+
+let _loginInFlight = false;
 
 async function doLogin() {
+  // A second click while the first request is open raced the first one into a
+  // unique-constraint collision on the server.
+  if (_loginInFlight) return;
   const handle = $("#handle-input").value.trim();
   if (!handle) { await showAlert("Please enter a handle."); return; }
 
-  // Admin path: if the email field has no "@" treat it as a password and attempt admin login
-  if (loginMode === "email") {
-    const fieldVal = $("#email-input").value.trim();
-    if (fieldVal && !fieldVal.includes("@")) {
-      try {
-        await adminLogin(handle, fieldVal);
-        rememberLogin(handle, fieldVal);   // remember username + password (stored in plaintext)
-        return; // success — entered admin screen
-      } catch (e) {
-        await showAlert("Admin login failed: " + e.message);
-        return; // stop here — don't fall through to validator login
-      }
-    }
-  }
+  // Admins sign in through their own form (triple-click the wordmark, or
+  // ?admin=1). This field is an email address and nothing else: it used to
+  // double as an admin password box whenever the value had no "@", which meant
+  // a password containing one was posted to the validator endpoint and stored
+  // in validators.email in plaintext.
 
-  let body;
-  if (loginMode === "email") {
-    const email = $("#email-input").value.trim();
-    if (!email || !email.includes("@")) {
-      await showAlert("Please enter a valid email address.");
-      return;
-    }
-    body = { handle, email };
-  } else {
-    const code = getCode();
-    if (code.length < 8) {
-      await showAlert("Please fill in all four parts of your code.");
-      return;
-    }
-    body = { handle, code };
+  const email = $("#email-input").value.trim();
+  if (!email || !email.includes("@")) {
+    await showAlert("Please enter a valid email address.");
+    return;
   }
+  const remember = !!$("#remember-me")?.checked;
+  saveRememberChoice("validator", remember);
+  const body = { handle, email, remember };
+  _loginInFlight = true;
+  const loginBtn = $("#login-btn");
+  if (loginBtn) loginBtn.disabled = true;
   try {
     const resp = await api("/login", "POST", body);
-    rememberLogin(handle, body.email || "");   // pre-fill next time (never the code)
+    rememberLogin(handle, body.email);   // pre-fill the address next time
     state.coder = resp;
     localStorage.setItem(STORAGE.CODER, JSON.stringify(resp));
     routeAfterLogin();
@@ -581,36 +686,188 @@ async function doLogin() {
     } else {
       await showAlert(e.message);
     }
+  } finally {
+    // Always release the guard: a failed sign-in must leave the form usable.
+    _loginInFlight = false;
+    if (loginBtn) loginBtn.disabled = false;
   }
 }
 
 // Remember the last username/email on this device so the login fields can be
-// pre-filled next time (Option B). The secret code and admin password are never stored.
+// pre-filled next time (Option B). The secret code and admin password are never stored,
+// and any password written by an older build is discarded on the next load.
 const LAST_LOGIN_KEY = "flora.lastLogin";
 function rememberLogin(handle, email) {
   try {
     localStorage.setItem(LAST_LOGIN_KEY, JSON.stringify({ handle: handle || "", email: email || "" }));
   } catch {}
 }
+// Whether "stay signed in" was ticked last time, per role. A preference, not a
+// credential. It has to persist: somebody who unticks it on a shared machine
+// has made a deliberate safety choice, and silently re-ticking it next visit
+// would quietly undo that.
+const REMEMBER_KEY = "flora.staySignedIn";
+
+function saveRememberChoice(which, value) {
+  try {
+    const all = JSON.parse(localStorage.getItem(REMEMBER_KEY) || "{}");
+    all[which] = !!value;
+    localStorage.setItem(REMEMBER_KEY, JSON.stringify(all));
+  } catch {}
+}
+
+function restoreRememberChoice(which, selector) {
+  try {
+    const all = JSON.parse(localStorage.getItem(REMEMBER_KEY) || "null");
+    const box = $(selector);
+    if (all && box && typeof all[which] === "boolean") box.checked = all[which];
+  } catch {}
+}
+
+function forgetLogin() {
+  try {
+    localStorage.removeItem(LAST_LOGIN_KEY);
+    localStorage.removeItem(REMEMBER_KEY);
+  } catch {}
+  const box = $("#remember-me");
+  if (box) box.checked = false;
+  const h = $("#handle-input"), e = $("#email-input");
+  if (h) h.value = "";
+  if (e) e.value = "";
+  $("#not-you-row")?.classList.add("hidden");
+}
+
 function prefillLogin() {
   try {
     const saved = JSON.parse(localStorage.getItem(LAST_LOGIN_KEY) || "null");
     if (!saved) return;
+    // An older build stored the admin password in this slot. Anything without
+    // an "@" is not an email address, so drop it rather than pre-filling it.
+    if (saved.email && !saved.email.includes("@")) {
+      saved.email = "";
+      rememberLogin(saved.handle, "");
+    }
     const h = $("#handle-input"), e = $("#email-input");
     if (h && saved.handle) h.value = saved.handle;
     if (e && saved.email)  e.value = saved.email;
+    restoreRememberChoice("validator", "#remember-me");
+    if (saved.handle || saved.email) {
+      // Signing in needs only these two values, so a filled form on a shared
+      // machine is a working credential. Always offer a one-click way out.
+      $("#not-you-row")?.classList.remove("hidden");
+    }
   } catch {}
+}
+
+/* ---------- Invitation / recovery links ---------- */
+
+// Returns the raw token when the page was opened from a link, else null.
+function _authLinkToken() {
+  const params = new URLSearchParams(location.search);
+  return params.get("invite") || params.get("reset") || null;
+}
+
+
+// Drop the token from the address bar so it does not linger in history, in a
+// screenshot, or in a Referer header on the next navigation.
+function _stripAuthLinkFromUrl() {
+  const url = new URL(location.href);
+  url.searchParams.delete("invite");
+  url.searchParams.delete("reset");
+  history.replaceState(null, "", url.pathname + url.search + url.hash);
+}
+
+async function showAuthLinkScreen(token) {
+  const screen = $("#auth-link-screen");
+  const error  = $("#auth-link-error");
+  let info;
+  try {
+    info = await api(`/admin/auth-link/${encodeURIComponent(token)}`, "GET");
+  } catch {
+    // Expired, already used, or never valid — all the same to the visitor, and
+    // saying which would confirm whether a token ever existed.
+    screen.classList.remove("hidden");
+    $("#auth-link-title").textContent = "This link is no longer valid";
+    $("#auth-link-intro").textContent =
+      "Invitation and recovery links can be used once and expire. Ask an administrator to send a new one.";
+    $("#auth-link-form").classList.add("hidden");
+    return;
+  }
+
+  screen.classList.remove("hidden");
+  $("#auth-link-title").textContent =
+    info.purpose === "admin_invite" ? "Choose your password" : "Set a new password";
+  $("#auth-link-intro").textContent =
+    `You are setting the administrator password for ${info.handle}. ` +
+    `It must be at least ${info.min_password_length} characters, and nobody else can see it.`;
+
+  $("#auth-link-submit").onclick = async () => {
+    const password = $("#auth-link-password").value;
+    const confirm  = $("#auth-link-confirm").value;
+    error.textContent = "";
+    if (password !== confirm) { error.textContent = "The two passwords do not match."; return; }
+    if (password.length < info.min_password_length) {
+      error.textContent = `Password must be at least ${info.min_password_length} characters.`;
+      return;
+    }
+    $("#auth-link-submit").disabled = true;
+    try {
+      await api("/admin/auth-link/redeem", "POST", { token, password });
+    } catch (e) {
+      error.textContent = e.message;
+      $("#auth-link-submit").disabled = false;
+      return;
+    }
+    _stripAuthLinkFromUrl();
+    screen.classList.add("hidden");
+    await showAlert(
+      `Password set for ${info.handle}. Sign in with that username and your new password.`
+    );
+    $("#handle-input").value = info.handle;
+  };
 }
 
 async function startup() {
   await detectMode();
   prefillLogin();
-  const stored = localStorage.getItem(STORAGE.CODER);
-  if (stored) {
-    try {
-      state.coder = JSON.parse(stored);
-      routeAfterLogin();
-    } catch {}
+  if (new URLSearchParams(location.search).get("admin")) {
+    // A keyboard- and screen-reader-reachable way to the same form: a
+    // triple-click gesture cannot be the only route in.
+    openAdminSignIn();
+  }
+  const linkToken = _authLinkToken();
+  if (linkToken) {
+    // Handled before any stored session: someone redeeming a link on a shared
+    // machine must not land in whoever used it last.
+    await showAuthLinkScreen(linkToken);
+    return;
+  }
+  if (API_MODE === "static") {
+    const stored = localStorage.getItem(STORAGE.CODER);
+    if (stored) {
+      try { state.coder = JSON.parse(stored); routeAfterLogin(); } catch {}
+    }
+    return;
+  }
+  // The server decides whether we are signed in. localStorage only ever held a
+  // claim about identity, and a claim is not a session.
+  let me;
+  try {
+    me = await api("/me", "GET");
+  } catch {
+    return;
+  }
+  if (me.kind === "validator") {
+    state.coder = me.validator;
+    localStorage.setItem(STORAGE.CODER, JSON.stringify(me.validator));
+    routeAfterLogin();
+  } else if (me.kind === "admin") {
+    _adminHandle  = me.admin.handle;
+    _adminTrusted = !!me.admin.trusted;
+    enterAdminScreen();
+  } else {
+    // No session: clear any stale profile a previous version left behind.
+    localStorage.removeItem(STORAGE.CODER);
   }
 }
 startup();
@@ -632,8 +889,17 @@ function clearSession() {
   state.coder = null;
 }
 
-const logout = () => {
+const logout = async () => {
+  // Revoke the session on the server first. Clearing local state alone would
+  // leave the cookie live, so "log out" on a shared machine would be a lie.
+  try { await api("/logout", "POST"); } catch {}
   clearSession();
+  // Deliberately signing out is the moment to stop holding the email half of
+  // the credential. An expired session keeps it, since nobody chose to leave.
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAST_LOGIN_KEY) || "null");
+    if (saved) rememberLogin(saved.handle, "");
+  } catch {}
   location.reload();
 };
 $("#logout-btn").onclick = logout;
@@ -726,8 +992,17 @@ function _idleLogout() {
   } catch (_) {}
   _idleRedirect();
 }
-function _idleRedirect() {
-  clearSession();      // validator session; admin token is in-memory and dies on reload
+async function _idleRedirect() {
+  // The session is an HttpOnly cookie now, not a localStorage claim, so
+  // clearSession() alone does not end it: the reload calls GET /api/me, the
+  // server resolves the still-live cookie and signs the same person straight
+  // back in — validator or admin alike. Revoking server-side first is the
+  // entire point of this control on a shared machine, so the toast that says
+  // "signed out" is telling the truth. Bounded, because a hung request must
+  // never leave signed-in content on screen; if the network is down the
+  // reload's own /api/me call fails too and lands on the login screen.
+  try { await Promise.race([api("/logout", "POST"), _sleep(5000)]); } catch (_) {}
+  clearSession();
   location.reload();   // → login / home
 }
 $("#idle-stay-btn")?.addEventListener("click", _idleStay);
@@ -776,7 +1051,7 @@ function enterUpdateScreen() {
 
 $("#update-continue-btn").onclick = async () => {
   try {
-    await api("/update-seen", "POST", { coder_id: state.coder.coder_id });
+    await api("/update-seen", "POST");
   } catch {}
   state.coder.last_seen_update = state.coder.update_version ?? 0;
   localStorage.setItem(STORAGE.CODER, JSON.stringify(state.coder));
@@ -896,7 +1171,7 @@ function showOnboardingFeedback(pair, errors) {
       $("#onb-feedback").classList.add("hidden");
       $("#onb-progress-fill").style.width = "100%";
       $("#onb-counter").textContent = `${state.onboardingPairs.length} / ${state.onboardingPairs.length}`;
-      await api("/onboarding/complete", "POST", { coder_id: state.coder.coder_id });
+      await api("/onboarding/complete", "POST");
       state.coder.onboarded = true;
       localStorage.setItem(STORAGE.CODER, JSON.stringify(state.coder));
       $("#onboarding-screen").classList.add("hidden");
@@ -936,7 +1211,7 @@ let _lastAssignmentCount = 0;
 async function refreshAssignments() {
   if (API_MODE === "static" || !state.coder) return;
   try {
-    const data = await api(`/my-assignments?coder_id=${state.coder.coder_id}`);
+    const data = await api("/my-assignments");
     _assignments = data.assignments || [];
   } catch (_) { return; }   // keep prior state on a transient failure
   const btn = $("#assignments-btn");
@@ -999,7 +1274,7 @@ function closeAssignmentsPanel() {
 
 async function openAssignment(recordId) {
   try {
-    const resp = await api(`/assignment/${recordId}?coder_id=${state.coder.coder_id}`);
+    const resp = await api(`/assignment/${recordId}`);
     if (!resp.pair) throw new Error("Could not load assignment.");
     closeAssignmentsPanel();
     state.assignment = recordId;
@@ -1058,7 +1333,7 @@ function initInbox() {
 async function fetchMessages() {
   if (!state.coder) return;
   try {
-    const resp = await api(`/messages?coder_id=${state.coder.coder_id}`);
+    const resp = await api("/messages");
     _inboxMessages = resp.messages || [];
     _updateInboxBadge();
     const unread = _inboxMessages.filter(m => m.direction !== "inbound" && !m.is_read).length;
@@ -1102,7 +1377,7 @@ function openInbox() {
   _inboxPollTimer = setInterval(async () => {
     if ($("#inbox-modal")?.classList.contains("hidden")) return;
     try {
-      const r = await api(`/messages?coder_id=${state.coder.coder_id}`);
+      const r = await api("/messages");
       const prev = _inboxMessages.length;
       _inboxMessages = r.messages || [];
       _updateInboxBadge();
@@ -1184,7 +1459,7 @@ function renderInbox() {
       // Mark this conversation's unread messages as read
       conv.messages.forEach(m => {
         if (!m.is_read && m.direction !== "inbound") {
-          api(`/messages/${m.id}/read?coder_id=${state.coder.coder_id}`, "POST").catch(() => {});
+          api(`/messages/${m.id}/read`, "POST").catch(() => {});
           m.is_read = true;
         }
       });
@@ -1241,7 +1516,7 @@ function _renderInboxThread(body, conv, num) {
   // Back button — refresh messages then re-render list
   body.querySelector(".inbox-back-btn").addEventListener("click", async () => {
     try {
-      const r = await api(`/messages?coder_id=${state.coder.coder_id}`);
+      const r = await api("/messages");
       _inboxMessages = r.messages || [];
       _updateInboxBadge();
     } catch (_) {}
@@ -1271,7 +1546,7 @@ function _renderInboxThread(body, conv, num) {
     if (!text) return;
     sendBtn.disabled = true;
     try {
-      await api(`/messages/${rootMsgId}/reply`, "POST", { coder_id: state.coder.coder_id, body: text });
+      await api(`/messages/${rootMsgId}/reply`, "POST", { body: text });
       textarea.value = "";
       textarea.style.height = "auto";
       const bubble = document.createElement("div");
@@ -1324,7 +1599,7 @@ async function openHistory() {
   const body = $("#history-body");
   body.innerHTML = `<p class="faq-loading">Loading…</p>`;
   try {
-    const resp = await api(`/my-judgements?coder_id=${state.coder.coder_id}`);
+    const resp = await api("/my-judgements");
     _histJudgements = resp.judgements || [];
     renderHistory();
   } catch (e) {
@@ -1459,7 +1734,7 @@ async function openHistDetail(queueId) {
     return;
   }
   try {
-    const data = await api(`/my-judgements/${queueId}?coder_id=${state.coder.coder_id}`);
+    const data = await api(`/my-judgements/${queueId}`);
     _histDetailCache[queueId] = data;
     renderHistDetail(data);
   } catch (e) {
@@ -1765,7 +2040,7 @@ function renderHistDetail(d) {
       if (!text) return;
       btn.disabled = true;
       try {
-        await api(`/messages/${parentId}/reply`, "POST", { coder_id: state.coder.coder_id, body: text });
+        await api(`/messages/${parentId}/reply`, "POST", { body: text });
         textarea.value = "";
         textarea.style.height = "auto";
         // Remove "no messages yet" placeholder if present
@@ -1802,14 +2077,14 @@ function renderHistDetail(d) {
    Maintenance banner system
    - Handles three layers of messages (priority high→low):
        1. Admin broadcast  – set from admin panel, polled every 60s
-       2. Time-based active  – 00:00–01:00 CET, non-dismissible
-       3. Time-based warning – 23:40–23:59 CET, dismissible
+       2. Time-based active  – 02:00–03:00 UTC, non-dismissible
+       3. Time-based warning – 01:40–01:59 UTC, dismissible
        4. Login reminder – shown for 30s after login, dismissible
    ============================================================ */
 
-const _MAINT_WARN_MSG   = "Scheduled maintenance starts in less than 20 minutes (at 00:00 CET). Please save your work and plan to return after 01:00 CET.";
-const _MAINT_ACTIVE_MSG = "Nightly maintenance is now underway. Please save your work and return after 01:00 CET.";
-const _MAINT_LOGIN_MSG  = "A reminder: nightly maintenance runs 00:00–01:00 CET. The app will be briefly unavailable during this window.";
+const _MAINT_WARN_MSG   = "Scheduled maintenance starts in less than 20 minutes (at 02:00 UTC). Please save your work and plan to return after 03:00 UTC.";
+const _MAINT_ACTIVE_MSG = "Nightly maintenance is now underway. Please save your work and return after 03:00 UTC.";
+const _MAINT_LOGIN_MSG  = "A reminder: nightly maintenance runs 02:00–03:00 UTC. The app may be briefly unavailable during this window.";
 
 const _bann = {
   phase:          "normal",   // "normal" | "warning" | "active"
@@ -1821,21 +2096,15 @@ const _bann = {
   _pollInterval:  null,
 };
 
-function _getCETHourMin() {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Berlin",
-    hour: "2-digit", minute: "2-digit", hour12: false,
-  }).formatToParts(new Date());
-  return {
-    h: parseInt(parts.find(p => p.type === "hour").value,   10) % 24,  // guard against "24" at midnight
-    m: parseInt(parts.find(p => p.type === "minute").value, 10),
-  };
+function _getUTCHourMin() {
+  const now = new Date();
+  return { h: now.getUTCHours(), m: now.getUTCMinutes() };
 }
 
 function _getTimePhase() {
-  const {h, m} = _getCETHourMin();
-  if (h === 0)               return "active";   // 00:00–00:59 CET
-  if (h === 23 && m >= 40)   return "warning";  // 23:40–23:59 CET
+  const {h, m} = _getUTCHourMin();
+  if (h === 2)              return "active";   // 02:00–02:59 UTC
+  if (h === 1 && m >= 40)   return "warning";  // 01:40–01:59 UTC
   return "normal";
 }
 
@@ -1947,14 +2216,10 @@ $("#mode-toggle").onclick = async () => {
   await refreshStats();
 };
 
-$("#pending-saves-btn")?.addEventListener("click", () => {
-  const lines = _submitQueue.map(it =>
-    `• ${(it.paper || "a pair").slice(0, 50)} — ${it.attempts > 0 ? `retrying (try ${it.attempts})` : "saving…"}`);
-  showDialog({
-    title: "Background saves",
-    message: lines.length ? lines.join("\n") : "All judgements saved.",
-    buttons: [{ label: "OK", value: true, primary: true }],
-  });
+$("#pending-saves-btn")?.addEventListener("click", openPendingSubmissions);
+$("#pending-submissions-close")?.addEventListener("click", closePendingSubmissions);
+$("#pending-submissions-modal")?.addEventListener("click", (event) => {
+  if (event.target === event.currentTarget) closePendingSubmissions();
 });
 
 /* ---------- Split-layout toggle ---------- */
@@ -1986,7 +2251,7 @@ async function refreshAll() {
 }
 
 async function refreshStats() {
-  const s = await api(`/stats?coder_id=${state.coder.coder_id}`);
+  const s = await api("/stats");
   $("#stat-points").textContent = s.points;
   $("#stat-rank").textContent = "#" + s.rank;
 }
@@ -2181,7 +2446,7 @@ async function _fillBuffer() {
   _bufferFilling = true;
   try {
     const need = BUFFER_TARGET - _pairBuffer.length;
-    const resp = await api(`/next-pairs?coder_id=${state.coder.coder_id}&count=${need}&buffered_only=true&mode=${state.mode}`);
+    const resp = await api(`/next-pairs?count=${need}&buffered_only=true&mode=${state.mode}`, "POST");
     for (const p of (resp.pairs || [])) {
       if (!_pairBuffer.some(b => b.queue_id === p.queue_id)) _pairBuffer.push(p);
     }
@@ -2190,8 +2455,10 @@ async function _fillBuffer() {
 }
 
 // record_ids whose judgement is still in flight (optimistically submitted) —
-// must never be re-served, even if the server resume would return them.
-const _pendingRecordIds = () => new Set(_submitQueue.map(it => String(it.record_id)));
+// must never be re-served, even if the server resume would return them. Scoped
+// to this validator: a record another sign-in left queued on this device is not
+// in flight for them and must not be withheld.
+const _pendingRecordIds = () => new Set(_myQueue().map(it => String(it.record_id)));
 
 // Returns the next active (started) pair, or null when the pool is empty.
 // allowResume=true lets the first fetch return a previous-session started pair;
@@ -2207,7 +2474,7 @@ async function _takeActivePair(allowResume = true) {
     if (_pairBuffer.length) {
       cand = _pairBuffer.shift();
     } else {
-      const resp = await api(`/next-pairs?coder_id=${state.coder.coder_id}&count=${BUFFER_TARGET}&buffered_only=${!allowResume}&mode=${state.mode}`);
+      const resp = await api(`/next-pairs?count=${BUFFER_TARGET}&buffered_only=${!allowResume}&mode=${state.mode}`, "POST");
       const pairs = resp.pairs || [];
       if (!pairs.length) return null;
       _pairBuffer.push(...pairs);
@@ -2217,7 +2484,7 @@ async function _takeActivePair(allowResume = true) {
     if (pending.has(String(cand.record_id))) continue;   // already submitted optimistically
     try {
       // Promote to the active 5-day lock. Harmless on an already-started resume.
-      await api(`/pairs/${cand.queue_id}/start`, "POST", { coder_id: state.coder.coder_id });
+      await api(`/pairs/${cand.queue_id}/start`, "POST");
       return cand;
     } catch (_) {
       // Slot reaped/reassigned (or transient) — discard and try the next.
@@ -2294,7 +2561,7 @@ function _showActivePair(pair) {
 
 // Single-fetch path for hard mode (no buffering / no optimistic submit).
 async function _loadSinglePair() {
-  const resp = await api(`/next-pair?coder_id=${state.coder.coder_id}&mode=${state.mode}`);
+  const resp = await api(`/next-pair?mode=${state.mode}`);
   if (!resp.pair) {
     $("#pair-card").classList.add("hidden");
     $("#done-screen").classList.remove("hidden");
@@ -2323,9 +2590,32 @@ const _FAILED_KEY = "flora.failedSubmits";
 let _submitQueue  = (() => { try { return JSON.parse(localStorage.getItem(_SUBMIT_KEY)) || []; } catch { return []; } })();
 let _failedSubmits = (() => { try { return JSON.parse(localStorage.getItem(_FAILED_KEY)) || []; } catch { return []; } })();
 let _submitProcessing = false;
+let _pendingModalReturnFocus = null;
+let _pendingModalDialogOpen = false;
 
 const _persistSubmits = () => localStorage.setItem(_SUBMIT_KEY, JSON.stringify(_submitQueue));
 const _persistFailed  = () => localStorage.setItem(_FAILED_KEY, JSON.stringify(_failedSubmits));
+
+/* Queued judgements belong to the validator who wrote them, not to the browser.
+   Identity used to travel inside the payload as coder_id; the server now takes
+   it from the session cookie at flush time, so an item left behind by one
+   sign-in would be sent under — and could commit as — whoever signs in next on
+   a shared machine. The queue is deliberately NOT cleared on logout: the work
+   is theirs and it survives until they come back for it. It is simply invisible
+   and unsendable to anyone else. `payload.coder_id` is read as a fallback so
+   items queued by the previously deployed build keep their author; an item with
+   no owner at all matches nobody and is never sent. */
+const _queueOwner = (item) => item?.owner_id ?? item?.payload?.coder_id ?? null;
+
+function _isMyQueueItem(item) {
+  const me = state.coder?.coder_id;
+  if (me == null) return false;
+  const owner = _queueOwner(item);
+  return owner != null && String(owner) === String(me);
+}
+
+const _myQueue  = () => _submitQueue.filter(_isMyQueueItem);
+const _myFailed = () => _failedSubmits.filter(_isMyQueueItem);
 
 // Terminal = won't succeed on retry (slot gone / validation error). Network
 // errors and 5xx (server waking) are retryable.
@@ -2335,8 +2625,35 @@ function _isTerminalErr(e) {
   return /No open slot|Already judged|no longer assigned/i.test(m);
 }
 
+function _slotNoLongerOwned(e) {
+  const m = (e && e.message) || "";
+  return /No open slot|Already judged|already submitted|no longer assigned/i.test(m);
+}
+
+function _newSubmissionId() {
+  if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  // Valid UUID-v4 fallback for older browsers. This is an idempotency identity,
+  // not the release secret; the server creates that with a CSPRNG.
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (ch) => {
+    const n = Math.floor(Math.random() * 16);
+    return (ch === "x" ? n : (n & 0x3) | 0x8).toString(16);
+  });
+}
+
 function _enqueueSubmit(payload, paper) {
-  _submitQueue.push({ key: `${payload.record_id}:${Date.now()}`, payload, record_id: payload.record_id, paper, attempts: 0 });
+  const submissionId = payload.submission_id || _newSubmissionId();
+  const queuedPayload = { ...payload, submission_id: submissionId };
+  _submitQueue.push({
+    key: submissionId,
+    payload: queuedPayload,
+    record_id: payload.record_id,
+    paper,
+    attempts: 0,
+    queued_at: Date.now(),
+    owner_id: state.coder?.coder_id ?? null,
+  });
   _persistSubmits();
   _updatePendingIndicator();
   _processSubmitQueue();
@@ -2345,25 +2662,104 @@ function _enqueueSubmit(payload, paper) {
 async function _processSubmitQueue() {
   if (_submitProcessing) return;
   _submitProcessing = true;
-  while (_submitQueue.length) {
-    const item = _submitQueue[0];
+  // Walk past items that cannot currently proceed rather than stopping at the
+  // head of the queue. This used to `return` with the stuck item still first,
+  // so every later call re-hit it and nothing behind it was ever sent — and a
+  // server-rejected item can never succeed, which blocked the queue for good.
+  try {
+  while (true) {
+    // Ownership is part of "can this proceed": another validator's queued item
+    // would be committed under the current session's identity.
+    const idx = _submitQueue.findIndex((it) => !it.blocked && _isMyQueueItem(it));
+    if (idx === -1) break;
+    const item = _submitQueue[idx];
+    // Upgrade submissions persisted by an older frontend before idempotency IDs
+    // were introduced. Persist before sending so a reload reuses the same ID.
+    if (!item.payload.submission_id) {
+      item.payload.submission_id = _newSubmissionId();
+      item.key = item.payload.submission_id;
+      _persistSubmits();
+    }
     try {
       const resp = await api("/judge", "POST", item.payload);
-      _submitQueue.shift(); _persistSubmits();
+      _submitQueue.splice(idx, 1); _persistSubmits();
       _celebratePoints(resp.points_earned);
       refreshStats().catch(() => {});
       refreshLeaderboard().catch(() => {});
     } catch (e) {
       item.attempts++;
+      if (e?.detail?.code === "judgement_save_failed" && e.detail.failure_stamp) {
+        // This opaque, short-lived capability is the only authority accepted by
+        // the automatic release endpoint. Keep the newest rotated stamp durable.
+        item.failure_stamp = e.detail.failure_stamp;
+        item.failure_id = e.detail.failure_id || null;
+        item.failure_expires_at = e.detail.expires_at || null;
+        item.release_error = null;
+        item.rejected = false;
+        item.blocked = false;
+      }
       const giveUp = _isTerminalErr(e) || item.attempts >= SUBMIT_MAX_ATTEMPTS;
       if (giveUp) {
-        // Release the slot so another validator can pick this record up.
-        await api("/skip", "POST", { coder_id: state.coder.coder_id, record_id: String(item.record_id) }).catch(() => {});
-        _submitQueue.shift(); _persistSubmits();
-        _failedSubmits.push({ paper: item.paper, at: Date.now() });
+        // A slot-gone response means the server has already closed this pending
+        // item. Every other release requires a capability minted by /judge after
+        // a server-observed rollback. Network-only failures never mint one, so
+        // their pending judgement remains available for retry.
+        let slotGone = _slotNoLongerOwned(e);
+        if (!slotGone) {
+          if (!item.failure_stamp) {
+            // The server declined this submission (4xx) or the request never
+            // reached it. Either way nothing was persisted and no release
+            // capability exists, so the judgement stays here rather than being
+            // discarded. A rejection is reported as such: it will not clear by
+            // waiting, and "release pending" would describe a release that is
+            // never going to happen.
+            item.rejected = _isTerminalErr(e);
+            item.release_error = item.rejected
+              ? ((e && e.message) || "The server rejected this submission")
+              : "No server-authorized automatic release; pending data kept";
+            // Park it and carry on with the rest of the queue. The pending
+            // recovery views offer Retry, Export JSON and Discard for anything
+            // parked here.
+            item.blocked = true;
+            _persistSubmits();
+            _updatePendingIndicator();
+            showToast(item.rejected
+              ? `Couldn't save "${(item.paper || "a pair").slice(0, 40)}" — the server rejected it; your work is kept.`
+              : `Couldn't save "${(item.paper || "a pair").slice(0, 40)}" — pending data kept for retry.`);
+            continue;
+          }
+          try {
+            const release = await api("/submission-failures/release", "POST", {
+              failure_stamp: item.failure_stamp,
+            });
+            if (!["released", "slot_closed"].includes(release.status)) {
+              throw new Error(`Automatic release returned ${release.status || "an unknown state"}`);
+            }
+            slotGone = release.status === "slot_closed";
+          } catch (releaseError) {
+            // Expired, replaced, unknown, and network-failed stamps are not
+            // authoritative. Preserve the full judgement until /judge can mint
+            // a fresh stamp or confirms that the slot has already closed.
+            item.release_error = (releaseError && releaseError.message) || "Release failed";
+            item.blocked = true;
+            _persistSubmits();
+            _updatePendingIndicator();
+            showToast(`Couldn't save or release "${(item.paper || "a pair").slice(0, 40)}" — pending data kept.`);
+            continue;
+          }
+        }
+        _submitQueue.splice(idx, 1); _persistSubmits();
+        _failedSubmits.push({
+          paper: item.paper,
+          at: Date.now(),
+          status: slotGone ? "already closed" : "automatically released",
+          owner_id: _queueOwner(item),
+        });
         if (_failedSubmits.length > 10) _failedSubmits = _failedSubmits.slice(-10);
         _persistFailed();
-        showToast(`Couldn't save "${(item.paper || "a pair").slice(0, 40)}" — released to another validator.`);
+        showToast(slotGone
+          ? `Couldn't save "${(item.paper || "a pair").slice(0, 40)}" — the record was already closed.`
+          : `Couldn't save "${(item.paper || "a pair").slice(0, 40)}" — released to another validator.`);
       } else {
         _persistSubmits();
         await _sleep(Math.min(30000, 1000 * 2 ** item.attempts));  // backoff; slot is locked 5d so it's safe to wait
@@ -2372,8 +2768,12 @@ async function _processSubmitQueue() {
     }
     _updatePendingIndicator();
   }
-  _submitProcessing = false;
-  _updatePendingIndicator();
+  } finally {
+    // Guaranteed, not incidental: anything thrown in here would otherwise leave
+    // the flag set and the queue permanently unprocessable.
+    _submitProcessing = false;
+    _updatePendingIndicator();
+  }
 }
 
 function _celebratePoints(points) {
@@ -2385,29 +2785,281 @@ function _celebratePoints(points) {
   }
 }
 
+// One description of a queued item, shared by every recovery view.
+function _pendingLabel(item) {
+  if (item.rejected) return "rejected by server; kept";
+  if (item.blocked) return "paused; needs attention";
+  if (item.release_error) return "save failed; release pending";
+  return item.attempts > 0 ? `retrying (try ${item.attempts})` : "saving…";
+}
+
+function _pendingModalIsOpen() {
+  const modal = $("#pending-submissions-modal");
+  return !!modal && !modal.classList.contains("hidden");
+}
+
+function _pendingModalFocusable() {
+  const panel = $("#pending-submissions-modal .pending-recovery-panel");
+  if (!panel) return [];
+  return [...panel.querySelectorAll(
+    'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), ' +
+    'select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )].filter((element) => !element.closest(".hidden"));
+}
+
+function _focusPendingModalDefault() {
+  const modal = $("#pending-submissions-modal");
+  if (!modal || modal.classList.contains("hidden")) return;
+  const firstRecoveryAction = modal.querySelector(".pending-act");
+  (firstRecoveryAction || $("#pending-submissions-close") || modal.querySelector(".pending-recovery-panel"))?.focus();
+}
+
+function _onPendingModalKeydown(event) {
+  if (_pendingModalDialogOpen) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    closePendingSubmissions();
+    return;
+  }
+  if (event.key !== "Tab") return;
+
+  const focusable = _pendingModalFocusable();
+  if (!focusable.length) {
+    event.preventDefault();
+    $("#pending-submissions-modal .pending-recovery-panel")?.focus();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const panel = $("#pending-submissions-modal .pending-recovery-panel");
+  const focusIsOutside = !panel?.contains(document.activeElement);
+  if (event.shiftKey && (document.activeElement === first || focusIsOutside)) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && (document.activeElement === last || focusIsOutside)) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function openPendingSubmissions() {
+  const modal = $("#pending-submissions-modal");
+  if (!modal || !modal.classList.contains("hidden")) return;
+  _pendingModalReturnFocus = document.activeElement;
+  modal.dataset.previousOverflow = document.body.style.overflow || "";
+  _renderPendingPanel();
+  modal.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+  document.addEventListener("keydown", _onPendingModalKeydown);
+  requestAnimationFrame(_focusPendingModalDefault);
+}
+
+function closePendingSubmissions() {
+  const modal = $("#pending-submissions-modal");
+  if (!modal || modal.classList.contains("hidden") || _pendingModalDialogOpen) return;
+  modal.classList.add("hidden");
+  document.body.style.overflow = modal.dataset.previousOverflow || "";
+  delete modal.dataset.previousOverflow;
+  document.removeEventListener("keydown", _onPendingModalKeydown);
+  const returnFocus = _pendingModalReturnFocus;
+  _pendingModalReturnFocus = null;
+  if (returnFocus?.isConnected && typeof returnFocus.focus === "function") returnFocus.focus();
+}
+
 function _updatePendingIndicator() {
-  const n = _submitQueue.length;
+  // Someone else's parked judgement is not this validator's problem, and its
+  // paper title is not theirs to read.
+  const mine = _myQueue();
+  const n = mine.length;
+  const blocked = mine.filter((item) => item.blocked).length;
   const btn = $("#pending-saves-btn");
   const cnt = $("#pending-saves-count");
+  const label = $("#pending-saves-label");
   if (cnt) cnt.textContent = n;
-  if (btn) btn.classList.toggle("hidden", n === 0);
-  if (!$("#done-screen")?.classList.contains("hidden")) _renderPendingPanel();
+  if (label) {
+    label.textContent = blocked
+      ? `pending · ${blocked} need${blocked === 1 ? "s" : ""} attention`
+      : "saving";
+  }
+  if (btn) {
+    btn.classList.toggle("hidden", n === 0);
+    btn.classList.toggle("has-attention", blocked > 0);
+    btn.setAttribute("aria-label", blocked
+      ? `${n} pending judgement${n === 1 ? "" : "s"}; ${blocked} need${blocked === 1 ? "s" : ""} attention`
+      : `${n} judgement${n === 1 ? "" : "s"} saving in the background`);
+  }
+  if (_pendingModalIsOpen() || !$("#done-screen")?.classList.contains("hidden")) {
+    _renderPendingPanel();
+  }
+}
+
+// A parked submission needs a way out that is not "reload and hope". Retry
+// re-queues it, Export JSON creates a local backup, and Discard is the only
+// manual action that removes the stored judgement.
+function _pendingActions(key, labelId) {
+  const k = escapeHtml(key);
+  const labelledBy = escapeHtml(labelId);
+  return `<div class="pending-actions" role="group" aria-labelledby="${labelledBy}">` +
+    `<button type="button" class="ghost-btn pending-act pending-retry" data-act="retry" data-key="${k}">Retry</button>` +
+    `<button type="button" class="ghost-btn pending-act pending-export" data-act="export" data-key="${k}">Export JSON</button>` +
+    `<button type="button" class="link-btn pending-act pending-discard" data-act="discard" data-key="${k}">Discard</button>` +
+    `</div>`;
+}
+
+function _exportPendingSubmission(item) {
+  // Deliberately omit failure_stamp: it is a short-lived release capability,
+  // not part of the validator's judgement and should not enter a backup file.
+  const backup = {
+    format: "flora-pending-judgement",
+    version: 1,
+    exported_at: new Date().toISOString(),
+    queued_at: item.queued_at ? new Date(item.queued_at).toISOString() : null,
+    status: _pendingLabel(item),
+    paper: item.paper || null,
+    record_id: item.record_id || item.payload?.record_id || null,
+    submission_id: item.payload?.submission_id || item.key || null,
+    judgement: item.payload,
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2) + "\n"], {
+    type: "application/json;charset=utf-8",
+  });
+  const objectUrl = URL.createObjectURL(blob);
+  const identity = String(backup.record_id || backup.submission_id || "judgement")
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64) || "judgement";
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = `flora-pending-judgement-${identity}.json`;
+  link.hidden = true;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+  showToast("Pending judgement exported as JSON.");
+}
+
+async function _pendingAction(action, key) {
+  const idx = _submitQueue.findIndex((it) => it.key === key);
+  // Defence in depth: these rows are never rendered for another validator's
+  // item, so reaching one means the key came from somewhere it should not have.
+  if (idx === -1 || !_isMyQueueItem(_submitQueue[idx])) return;
+  const item = _submitQueue[idx];
+
+  if (action === "retry") {
+    // A previous capability may be expired or superseded. Explicit retry starts
+    // clean; only a new /judge rollback may mint authority for auto-release.
+    item.blocked = false;
+    item.rejected = false;
+    item.release_error = null;
+    item.attempts = 0;
+    delete item.failure_stamp;
+    delete item.failure_id;
+    delete item.failure_expires_at;
+    _persistSubmits();
+    _updatePendingIndicator();
+    _processSubmitQueue();
+    requestAnimationFrame(_focusPendingModalDefault);
+    return;
+  }
+
+  if (action === "export") {
+    _exportPendingSubmission(item);
+    return;
+  }
+
+  if (action === "discard") {
+    let ok = false;
+    _pendingModalDialogOpen = true;
+    try {
+      ok = await showDialog({
+        title: "Discard this pending judgement?",
+        message: `"${item.paper || "This pair"}" will be removed from this device and ` +
+          `cannot be recovered. Export the JSON first if you want a local backup.`,
+        layout: "row",
+        buttons: [
+          { label: "Keep it", value: false },
+          { label: "Discard", value: true, primary: true },
+        ],
+      });
+    } finally {
+      _pendingModalDialogOpen = false;
+      if (_pendingModalIsOpen()) {
+        document.body.style.overflow = "hidden";
+        requestAnimationFrame(_focusPendingModalDefault);
+      }
+    }
+    if (!ok) return;
+    _submitQueue.splice(idx, 1);
+    _persistSubmits();
+    _updatePendingIndicator();
+    showToast("Pending judgement discarded.");
+  }
 }
 
 function _renderPendingPanel() {
+  const mine = _myQueue();
+  const attentionCount = mine.filter((item) => item.blocked).length;
+  const queueRows = (surface) => mine.map((it, index) => {
+    const label = _pendingLabel(it);
+    const labelId = `pending-${surface}-${index}-title`;
+    const detail = it.blocked
+      ? (it.release_error || "Automatic saving is paused. Your complete judgement is still stored locally.")
+      : "Stored locally while the browser completes this save.";
+    const actions = it.blocked ? _pendingActions(it.key, labelId) : "";
+    return `<li class="pending-row pending-row-active${it.blocked ? " is-blocked" : ""}">` +
+      `<div class="pending-row-head"><div class="pending-row-copy">` +
+      `<span id="${labelId}" class="pending-row-title">${escapeHtml((it.paper || "a pair").slice(0, 100))}</span>` +
+      `<span class="pending-row-detail">${escapeHtml(String(detail).slice(0, 240))}</span>` +
+      `</div><span class="pending-tag">${escapeHtml(label)}</span></div>${actions}</li>`;
+  }).join("");
+  const recentRows = (surface) => _myFailed().map((it, index) =>
+    `<li class="pending-row pending-row-failed"><div class="pending-row-head">` +
+    `<span id="pending-${surface}-recent-${index}" class="pending-row-title">${escapeHtml((it.paper || "a pair").slice(0, 100))}</span>` +
+    `<span class="pending-tag">${escapeHtml(it.status || "reassigned")}</span>` +
+    `</div></li>`
+  ).join("");
+
   const panel = $("#pending-panel");
-  if (!panel) return;
-  const rows = [];
-  for (const it of _submitQueue) {
-    const label = it.attempts > 0 ? `retrying (try ${it.attempts})` : "saving…";
-    rows.push(`<li class="pending-row pending-row-active"><span>${escapeHtml((it.paper || "a pair").slice(0, 60))}</span><span class="pending-tag">${label}</span></li>`);
+  if (panel) {
+    const doneRows = queueRows("done") + recentRows("done");
+    if (!doneRows) {
+      panel.classList.add("hidden");
+      panel.innerHTML = "";
+    } else {
+      panel.classList.remove("hidden");
+      panel.innerHTML = `<h3 class="pending-title">Background saves</h3>` +
+        `<ul class="pending-list">${doneRows}</ul>`;
+    }
   }
-  for (const it of _failedSubmits) {
-    rows.push(`<li class="pending-row pending-row-failed"><span>${escapeHtml((it.paper || "a pair").slice(0, 60))}</span><span class="pending-tag">reassigned</span></li>`);
+
+  const modalPanel = $("#pending-modal-panel");
+  if (modalPanel) {
+    const activeMarkup = queueRows("modal");
+    const recentMarkup = recentRows("modal");
+    modalPanel.innerHTML = activeMarkup
+      ? `<ul class="pending-list pending-modal-list" aria-label="Pending judgements">${activeMarkup}</ul>`
+      : `<div class="pending-empty-state" role="status"><span aria-hidden="true">✓</span>` +
+        `<div><strong>Everything is saved.</strong><p>There are no judgements waiting on this device.</p></div></div>`;
+    if (recentMarkup) {
+      modalPanel.insertAdjacentHTML("beforeend",
+        `<details class="pending-recent"><summary>Recent background-save outcomes</summary>` +
+        `<ul class="pending-list">${recentMarkup}</ul></details>`);
+    }
   }
-  if (!rows.length) { panel.classList.add("hidden"); panel.innerHTML = ""; return; }
-  panel.classList.remove("hidden");
-  panel.innerHTML = `<h3 class="pending-title">Background saves</h3><ul class="pending-list">${rows.join("")}</ul>`;
+
+  const modalCount = $("#pending-modal-count");
+  if (modalCount) {
+    modalCount.textContent = `${mine.length} pending` +
+      (attentionCount ? ` · ${attentionCount} need${attentionCount === 1 ? "s" : ""} attention` : "");
+  }
+
+  [panel, modalPanel].filter(Boolean).forEach((container) => {
+    container.querySelectorAll(".pending-act").forEach((btn) => {
+      btn.onclick = () => _pendingAction(btn.dataset.act, btn.dataset.key);
+    });
+  });
 }
 
 /* ---------- Pair timer cleanup ----------
@@ -2526,7 +3178,7 @@ function renderPairInto(container, p, { onboarding, judgeCount }) {
     <div class="pair-header">
       <div class="pair-meta">
 ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
-        ${onboarding ? "" : `<button class="skip-btn" id="skip-btn">Skip — broken / unclear</button>`}
+        ${onboarding ? "" : `<button class="skip-btn" id="skip-btn">Skip / report issue</button>`}
       </div>
 
       <div class="abstract-block">
@@ -2954,7 +3606,6 @@ function wireEditButtons(container, p) {
       seniorRejectBtn.textContent = "Rejecting…";
       try {
         const resp = await api("/senior-reject", "POST", {
-          coder_id:        state.coder.coder_id,
           record_id:       String(p.record_id),
           validator_notes: notes,
         });
@@ -3599,28 +4250,125 @@ function updateSubmitState(pairBody) {
   if (btn) btn.disabled = !ready;
 }
 
-async function onSkip() {
-  const ok = await showDialog({
-    title: "Skip this pair?",
-    message: "You won't get points and it'll be re-served to others. If you resumed this study and would prefer a fresh one, skipping is the right choice.",
-    buttons: [
-      { label: "Skip →", value: true, primary: true },
-      { label: "Cancel", value: false },
-    ],
-  });
-  if (!ok) return;
-  clearPairTimer();
-  _clearDraft(state.currentPair?.pair_id);
-  try {
-    await api("/skip", "POST", {
-      coder_id:  state.coder.coder_id,
-      record_id: String(state.currentPair.record_id),
-      pair_id:   state.currentPair.pair_id || null,
+const SKIP_REASONS_REQUIRING_COMMENT = new Set([
+  "eligibility_unclear", "data_quality", "other",
+]);
+
+function showSkipReasonDialog() {
+  return new Promise((resolve) => {
+    const modal = $("#skip-reason-modal");
+    const form = $("#skip-reason-form");
+    const comment = $("#skip-reason-comment");
+    const requirement = $("#skip-comment-requirement");
+    const count = $("#skip-comment-count");
+    const error = $("#skip-reason-error");
+    const submit = $("#skip-reason-submit");
+    const previousOverflow = document.body.style.overflow;
+
+    const selectedReason = () => form.querySelector('input[name="skip-reason"]:checked')?.value || "";
+    const isCommentRequired = () => SKIP_REASONS_REQUIRING_COMMENT.has(selectedReason());
+
+    const sync = () => {
+      const reason = selectedReason();
+      const required = isCommentRequired();
+      const text = comment.value.trim();
+      requirement.textContent = required ? "required" : "optional";
+      requirement.classList.toggle("required", required);
+      count.textContent = `${comment.value.length} / 1000`;
+      submit.disabled = !reason || (required && !text);
+      if (text || !required) error.textContent = "";
+
+      const placeholders = {
+        eligibility_unclear: "What makes eligibility unclear? For example: extended conference abstract, unclear replication claim…",
+        data_quality: "What appears incorrect or missing in the extracted record?",
+        interpretation_unclear: "What part of the study or outcome is difficult to interpret?",
+        other: "Briefly explain why you are skipping this record…",
+      };
+      comment.placeholder = placeholders[reason] || "Add useful context for the review team…";
+    };
+
+    const finish = (value) => {
+      modal.classList.add("hidden");
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeydown);
+      resolve(value);
+    };
+    const onKeydown = (event) => {
+      if (event.key === "Escape") finish(null);
+    };
+
+    form.reset();
+    error.textContent = "";
+    sync();
+    form.querySelectorAll('input[name="skip-reason"]').forEach((radio) => {
+      radio.onchange = sync;
     });
-    showToast(0, "skipped");
-    await refreshAll();
+    comment.oninput = sync;
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      const reason = selectedReason();
+      const text = comment.value.trim();
+      if (!reason) {
+        error.textContent = "Choose a reason before continuing.";
+        return;
+      }
+      if (isCommentRequired() && !text) {
+        error.textContent = "Please add a short explanation for this reason.";
+        comment.focus();
+        return;
+      }
+      finish({ reason_code: reason, comment: text || null });
+    };
+    $("#skip-reason-close").onclick = () => finish(null);
+    $("#skip-reason-cancel").onclick = () => finish(null);
+    modal.onclick = (event) => {
+      if (event.target === modal) finish(null);
+    };
+
+    modal.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", onKeydown);
+    requestAnimationFrame(() => form.querySelector('input[name="skip-reason"]')?.focus());
+  });
+}
+
+async function onSkip() {
+  const details = await showSkipReasonDialog();
+  if (!details) return;
+  const pair = state.currentPair;
+  if (!pair) return;
+  let result;
+  try {
+    result = await api("/skip", "POST", {
+      record_id: String(pair.record_id),
+      pair_id: pair.pair_id,
+      reason_code: details.reason_code,
+      comment: details.comment,
+    });
   } catch (e) {
     await showAlert(e.message);
+    return;
+  }
+
+  // The assignment is now authoritatively released. Until that confirmation,
+  // keep both the in-memory judgement and its localStorage draft so a network
+  // or server failure never destroys the validator's unsent work.
+  clearPairTimer();
+  _clearDraft(pair.pair_id);
+  // During a rolling deployment this page can reach a pod still running the
+  // previous backend, which released the record but silently discarded the
+  // reason, comment, and restricted-access routing. Only claim what the
+  // responding pod confirms it stored.
+  const reasonRecorded = !!(result && result.reason_recorded);
+  showToast(!reasonRecorded
+    ? "Record skipped."
+    : details.reason_code === "inaccessible"
+    ? "Sent to Restricted access."
+    : "Record skipped — context saved.");
+  try {
+    await refreshAll();
+  } catch (e) {
+    await showAlert(`The record was released, but the next record could not load: ${e.message}`);
   }
 }
 
@@ -3638,7 +4386,7 @@ async function submitJudgement() {
   if (j.no_access) {
     _clearDraft(p.pair_id);
     try {
-      await api("/restricted", "POST", { coder_id: state.coder.coder_id, record_id: String(p.record_id) });
+      await api("/restricted", "POST", { record_id: String(p.record_id) });
       showToast("Sent to the review team.");
     } catch (e) {
       await showAlert(e.message);
@@ -3703,7 +4451,6 @@ async function submitJudgement() {
   };
 
   const payload = {
-    coder_id:  state.coder.coder_id,
     record_id: String(p.record_id),
     pair_id:   p.pair_id || null,
     type_check:     isNotValidation ? "incorrect" : typeCheck,
@@ -3997,6 +4744,7 @@ document.addEventListener("keydown", (e) => {
   const onb = !$("#onboarding-screen").classList.contains("hidden");
   const game = !$("#game-screen").classList.contains("hidden");
   if (e.key === "Escape") { closeFaq(); return; }
+  if (document.querySelector('[role="dialog"]:not(.hidden)')) return;
   if (!onb && !game) return;
   if (e.key === "Enter") {
     if (e.target.tagName === "TEXTAREA" && !(e.metaKey || e.ctrlKey)) return;
@@ -4245,9 +4993,6 @@ $("#faq-modal").addEventListener("click", (e) => { if (e.target === e.currentTar
    ADMIN PANEL
    ============================================================ */
 
-let _adminToken   = null;
-let _adminHandle  = null;
-let _adminTrusted = false;
 let _adminFilter    = "all";
 let _adminSearch    = "";
 let _adminPage      = 1;
@@ -4259,13 +5004,9 @@ let _adminDetailCache = {};  // record_id → preloaded detail data
 const ADMIN_PER_PAGE = 50;
 
 async function adminApi(path, method = "GET", body = null) {
-  const opts = {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      "X-Admin-Token": _adminToken,
-    },
-  };
+  // No bearer header: the session cookie is sent automatically and the page
+  // cannot read it, so an injected script cannot lift the credential.
+  const opts = { method, headers: { "Content-Type": "application/json" } };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch("/api/admin" + path, opts);
   if (!res.ok) {
@@ -4285,11 +5026,11 @@ async function adminApi(path, method = "GET", body = null) {
   return res.json();
 }
 
-async function adminLogin(handle, password) {
+async function adminLogin(handle, password, remember = false) {
   const resp = await fetch("/api/admin/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ handle, password }),
+    body: JSON.stringify({ handle, password, remember }),
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
@@ -4302,7 +5043,6 @@ async function adminLogin(handle, password) {
     throw new Error(msg);
   }
   const data = await resp.json();
-  _adminToken   = data.token;
   _adminHandle  = data.handle;
   _adminTrusted = !!data.trusted;
   enterAdminScreen();
@@ -4321,10 +5061,16 @@ function enterAdminScreen() {
   fetchAdminEntries();
   // Populate the Restricted-access badge proactively so admins see the count.
   adminApi("/restricted").then(d => _updateRestrictedBadge(d.records || [])).catch(() => {});
+  // Pipeline failures and safety warnings should be visible before opening the tab.
+  adminApi("/maintenance/runs?days=7&limit=100")
+    .then(updateMaintenanceBadge)
+    .catch(() => {});
 }
 
-function signOutAdmin() {
-  _adminToken   = null;
+async function signOutAdmin() {
+  // Revoke server-side, not just locally: the whole point of a session store is
+  // that signing out ends it everywhere immediately.
+  try { await api("/logout", "POST"); } catch {}
   _adminHandle  = null;
   _adminTrusted = false;
   location.reload();
@@ -4333,7 +5079,7 @@ function signOutAdmin() {
 async function fetchAdminEntries(resetState = true) {
   const body = $("#admin-table-body");
   if (resetState) {
-    body.innerHTML = '<tr><td colspan="10" class="admin-loading">Loading…</td></tr>';
+    body.innerHTML = '<tr><td colspan="11" class="admin-loading">Loading…</td></tr>';
     $("#admin-empty").classList.add("hidden");
   }
 
@@ -4363,7 +5109,7 @@ async function fetchAdminEntries(resetState = true) {
     }
   } catch (e) {
     if (resetState) {
-      body.innerHTML = `<tr><td colspan="10" class="admin-loading">
+      body.innerHTML = `<tr><td colspan="11" class="admin-loading">
         Error: ${escapeHtml(e.message)}
         <button id="admin-retry-btn" style="margin-left:0.75rem;font-size:0.78rem;padding:0.3rem 0.8rem;border-radius:999px;border:1px solid var(--ink);background:transparent;cursor:pointer;">↺ Retry</button>
       </td></tr>`;
@@ -4376,6 +5122,7 @@ function renderAdminCounts(counts) {
   $("#fc-all").textContent              = counts.all;
   $("#fc-pending-approval").textContent = counts.pending_approval;
   $("#fc-needs-review").textContent     = counts.needs_review;
+  $("#fc-skipped").textContent          = counts.skipped ?? 0;
   $("#fc-admin-comments").textContent   = counts.admin_comments ?? 0;
   $("#fc-validated").textContent        = counts.validated;
   $("#fc-rejected").textContent         = counts.rejected ?? 0;
@@ -4428,6 +5175,14 @@ function renderAdminTable(entries, total) {
     const noteFlag = e.admin_notes
       ? `<span class="admin-note-flag" title="${escapeHtml((e.note_saved_by ? e.note_saved_by + ": " : "") + e.admin_notes)}">📝</span>`
       : "";
+    const skipEvents = Number(e.skip_event_count || 0);
+    const skipValidators = Number(e.skip_validator_count || 0);
+    const issueValidators = Number(e.skip_issue_validator_count || 0);
+    const skipEscalated = !!e.skip_review_required;
+    const skipCell = skipEvents
+      ? `<span class="admin-skip-metric${skipEscalated ? " escalated" : ""}" title="${skipEvents} skip event${skipEvents === 1 ? "" : "s"} from ${skipValidators} distinct validator${skipValidators === 1 ? "" : "s"}"><strong>${skipValidators}</strong> validator${skipValidators === 1 ? "" : "s"}</span>
+         ${issueValidators ? `<span class="admin-skip-issue">${issueValidators} issue report${issueValidators === 1 ? "" : "s"}</span>` : ""}`
+      : '<span class="agree-na">—</span>';
     const ap = e.agreement_pct;
     const llmMark = e.llm_dissent
       ? `<span class="agree-llm-dissent" title="LLM disagrees with the validators on: ${escapeHtml(e.llm_dissent)}">🤖✗</span>`
@@ -4449,6 +5204,7 @@ function renderAdminTable(entries, total) {
       <td>${escapeHtml(fmtOutcome(e.final_outcome || e.outcome) || "—")}</td>
       <td><span class="admin-status ${s.cls}">${s.text}</span></td>
       <td class="admin-cell-validators">${validators}</td>
+      <td class="admin-skip-cell">${skipCell}</td>
       <td class="admin-cell-agree">${agreeCell}</td>
       <td>${approvedBy}</td>
       <td class="admin-cell-approve">${approveCell}</td>
@@ -4550,6 +5306,100 @@ function renderAdminDetail(data) {
          by ${escapeHtml(duplicateMerge.merged_by || "an admin")}. Its extraction data and judgements are retained here for audit.
        </div>`
     : "";
+  const skipHistory = data.skip_history || [];
+  const skipSummary = data.skip_summary || {};
+  const skipReasonLabels = {
+    prefer_another: "Needs more time / another record",
+    inaccessible: "Cannot access enough of the paper",
+    eligibility_unclear: "Eligibility unclear",
+    data_quality: "Data-quality problem",
+    interpretation_unclear: "Difficult to interpret",
+    other: "Other",
+    submission_failed: "Judgement submission failed",
+  };
+  const skipHistoryCard = skipHistory.length ? (() => {
+    const eventCount = Number(skipSummary.event_count ?? skipHistory.length);
+    const validatorCount = Number(skipSummary.validator_count || 0);
+    const issueCount = Number(skipSummary.issue_validator_count || 0);
+    const formatSkipDate = (iso) => {
+      if (!iso) return "—";
+      const date = new Date(iso);
+      if (Number.isNaN(date.getTime())) return String(iso);
+      return date.toLocaleString("en-GB", {
+        day: "numeric", month: "short", year: "numeric",
+        hour: "2-digit", minute: "2-digit",
+      });
+    };
+    const triggerBadges = [
+      skipSummary.high_frequency
+        ? `<span class="skip-trigger-badge">More than 5 validators</span>` : "",
+      skipSummary.issue_reports
+        ? `<span class="skip-trigger-badge issue">${issueCount} issue reporters</span>` : "",
+    ].join("");
+    const rows = skipHistory.map((item) => `
+      <tr>
+        <td class="skip-history-date">${escapeHtml(formatSkipDate(item.skipped_at))}</td>
+        <td class="skip-history-validator">${escapeHtml(item.validator_name || `Validator ${item.validator_id}`)}</td>
+        <td class="skip-history-reason">${escapeHtml(skipReasonLabels[item.reason_code] || fmtOutcome(item.reason_code))}</td>
+        <td class="skip-history-comment">${item.comment
+          ? escapeHtml(item.comment)
+          : '<span class="skip-history-no-comment">No comment</span>'}</td>
+      </tr>`).join("");
+    return `<details class="admin-skip-history">
+      <summary>
+        <span class="skip-history-title">Skip history</span>
+        <span class="skip-history-summary">${eventCount} event${eventCount === 1 ? "" : "s"} from ${validatorCount} distinct validator${validatorCount === 1 ? "" : "s"}</span>
+        ${triggerBadges ? `<span class="skip-trigger-badges">${triggerBadges}</span>` : ""}
+      </summary>
+      <div class="skip-history-body">
+        <table class="skip-history-table">
+          <thead><tr><th>Date</th><th>Validator</th><th>Reason</th><th>Comment</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </details>`;
+  })() : "";
+  const submissionFailureHistory = data.submission_failure_history || [];
+  const submissionFailureCard = submissionFailureHistory.length ? (() => {
+    const statusLabels = {
+      save_failed: "Awaiting recovery",
+      released: "Automatically released",
+      slot_closed: "Slot was already closed",
+      expired: "Release stamp expired",
+      // The ordinary happy ending: the queued judgement was resent and saved,
+      // so the release capability was never needed. Previously these rows aged
+      // into "Release stamp expired", which reads as lost work.
+      saved_after_retry: "Saved on retry",
+    };
+    const formatDate = (iso) => {
+      if (!iso) return "—";
+      const date = new Date(iso);
+      if (Number.isNaN(date.getTime())) return String(iso);
+      return date.toLocaleString("en-GB", {
+        day: "numeric", month: "short", year: "numeric",
+        hour: "2-digit", minute: "2-digit",
+      });
+    };
+    const rows = submissionFailureHistory.map((item) => `
+      <tr>
+        <td class="skip-history-date">${escapeHtml(formatDate(item.failed_at))}</td>
+        <td class="skip-history-validator">${escapeHtml(item.validator_name || `Validator ${item.validator_id}`)}</td>
+        <td class="skip-history-reason">${escapeHtml(statusLabels[item.status] || fmtOutcome(item.status))}</td>
+        <td class="skip-history-comment">${escapeHtml(item.failure_message || item.failure_code || "Save failed")}</td>
+      </tr>`).join("");
+    return `<details class="admin-skip-history">
+      <summary>
+        <span class="skip-history-title">Automatic save recovery</span>
+        <span class="skip-history-summary">${submissionFailureHistory.length} server-confirmed failure${submissionFailureHistory.length === 1 ? "" : "s"}; not counted as skips</span>
+      </summary>
+      <div class="skip-history-body">
+        <table class="skip-history-table">
+          <thead><tr><th>Failed at</th><th>Validator</th><th>State</th><th>Server message</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </details>`;
+  })() : "";
   const v1  = rec.validator_1;
   const v2  = rec.validator_2;
   const llm = rec.llm_validator;
@@ -4976,6 +5826,8 @@ function renderAdminDetail(data) {
     ${quoteBanner}
     ${duplicateMergeBanner}
     ${overrideBanner}
+    ${skipHistoryCard}
+    ${submissionFailureCard}
     <div class="admin-detail-cols">
       <!-- Left: final preview + validator cards -->
       <div class="admin-detail-pair">
@@ -5435,6 +6287,7 @@ function switchAdminTab(tab) {
   $("#admin-tab-admins").classList.toggle("hidden",     tab !== "admins");
   $("#admin-tab-dashboard").classList.toggle("hidden",  tab !== "dashboard");
   $("#admin-tab-priority").classList.toggle("hidden",   tab !== "priority");
+  $("#admin-tab-maintenance").classList.toggle("hidden", tab !== "maintenance");
   $("#admin-tab-restricted").classList.toggle("hidden", tab !== "restricted");
   $("#admin-tab-messages").classList.toggle("hidden",   tab !== "messages");
   $("#admin-tabs").querySelectorAll(".admin-tab-btn").forEach((b) => {
@@ -5445,9 +6298,213 @@ function switchAdminTab(tab) {
   if (tab === "admins")     { fetchAdminAdmins(); fetchAdminBannerStatus(); }
   if (tab === "dashboard")  fetchAdminDashboard();
   if (tab === "priority")   fetchServingConfig();
+  if (tab === "maintenance") fetchMaintenanceRuns();
   if (tab === "restricted") fetchAdminRestricted();
   if (tab === "messages")   fetchAdminMessages();
 }
+
+/* ---------- Admin: Extractor maintenance ---------- */
+let _maintenancePollTimer = null;
+
+function updateMaintenanceBadge(data) {
+  const badge = $("#admin-maintenance-badge");
+  if (!badge) return;
+  const count = Number(data.attention_count || 0);
+  badge.textContent = count;
+  badge.classList.toggle("hidden", count === 0);
+}
+
+function maintenanceDate(value) {
+  if (!value) return "Not started";
+  return new Date(value).toLocaleString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+}
+
+function maintenanceDuration(run) {
+  if (!run.started_at) return "";
+  const end = run.finished_at ? new Date(run.finished_at) : new Date();
+  const seconds = Math.max(0, Math.round((end - new Date(run.started_at)) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+function maintenanceNotice(run) {
+  const report = run.safety_report || {};
+  if (report.error_code === "empty_resolved_snapshot") {
+    return `<div class="pipeline-alert pipeline-alert-blocked"><b>Extractor pipeline error:</b> the candidate contained zero resolved pair IDs. The previous CSV remains active; orphan reporting did not run and this attempt cannot authorize cleanup.</div>`;
+  }
+  if (report.error_code === "excessive_resolved_removal") {
+    return `<div class="pipeline-alert pipeline-alert-blocked"><b>Deletion guard stopped this run:</b> ${Number(report.removed_count || 0).toLocaleString()} of ${Number(report.previous_resolved_count || 0).toLocaleString()} resolved IDs disappeared (${Number(report.removed_percent || 0).toFixed(2)}%). The candidate was not promoted.</div>`;
+  }
+  if (report.error_code === "invalid_removal_percent_configuration") {
+    return `<div class="pipeline-alert pipeline-alert-blocked"><b>Invalid removal guard configuration:</b> ${escapeHtml(report.message || "EXTRACTOR_MAX_REMOVAL_PERCENT must be a finite value from 0 through 100.")} Nothing was downloaded, imported, promoted, or deleted.</div>`;
+  }
+  if (report.error_code === "part1_completion_unverified") {
+    return `<div class="pipeline-alert pipeline-alert-blocked"><b>Part 1 was not verified:</b> the database import, CSV promotion, and post-promotion check did not all complete for this run. Orphan reporting was not allowed to start, and this attempt cannot authorize cleanup.</div>`;
+  }
+  if (report.error_code === "prerequisite_stage_incomplete") {
+    return `<div class="pipeline-alert pipeline-alert-blocked"><b>Prerequisite gate stopped this operation:</b> ${escapeHtml(report.message || "Run the required earlier pipeline stage successfully, then retry.")}</div>`;
+  }
+  if (report.error_code === "missing_local_baseline" || report.error_code === "baseline_snapshot_unavailable") {
+    return `<div class="pipeline-alert pipeline-alert-blocked"><b>No trustworthy comparison baseline:</b> the snapshot this run had to compare against is missing or has been altered on this host, so the deletion guard could not be applied. Nothing was imported or deleted. Check that the extractor data directory is on shared, durable storage.</div>`;
+  }
+  if (report.error_code === "snapshot_archive_unavailable" || report.error_code === "snapshot_archive_mismatch" || report.error_code === "snapshot_archive_unrecorded" || report.error_code === "snapshot_digest_missing") {
+    return `<div class="pipeline-alert pipeline-alert-blocked"><b>Snapshot could not be verified:</b> the archived CSV that Part 1 imported is not readable on this host, so orphan reporting was stopped and manual cleanup remains unavailable. Check that the extractor data directory is on shared, durable storage, then re-run Sync + Report.</div>`;
+  }
+  if ((report.warning_codes || []).includes("new_resolved_pair_ids")) {
+    const sample = (report.added_pair_ids || []).slice(0, 8).map(escapeHtml).join(", ");
+    return `<div class="pipeline-alert pipeline-alert-warning"><b>New resolved identifiers:</b> ${Number(report.added_count || 0).toLocaleString()} pair ID(s) were added.${sample ? `<span class="pipeline-id-sample">${sample}${report.added_ids_truncated ? ", ..." : ""}</span>` : ""}</div>`;
+  }
+  if (run.status === "failed") {
+    return `<div class="pipeline-alert pipeline-alert-failed"><b>Pipeline failure:</b> inspect the retained log below for the first failed stage.</div>`;
+  }
+  if (run.status === "blocked") {
+    // A safety block always has a reason; never leave one unexplained here.
+    return `<div class="pipeline-alert pipeline-alert-blocked"><b>Safety guard stopped this run:</b> ${escapeHtml(report.message || "Inspect the retained log below.")}</div>`;
+  }
+  return "";
+}
+
+function renderMaintenanceRuns(data) {
+  const body = $("#pipeline-history");
+  if (!body) return;
+  const runs = data.runs || [];
+  updateMaintenanceBadge(data);
+  const configAlert = $("#pipeline-config-alert");
+  if (data.removal_config_error) {
+    $("#pipeline-removal-limit").textContent = "an invalid threshold";
+    if (configAlert) {
+      configAlert.textContent = data.removal_config_error + " Sync is blocked until this setting is corrected.";
+      configAlert.classList.remove("hidden");
+    }
+  } else {
+    $("#pipeline-removal-limit").textContent = `${Number(data.max_removal_percent).toLocaleString()}%`;
+    if (configAlert) {
+      configAlert.textContent = "";
+      configAlert.classList.add("hidden");
+    }
+  }
+  $("#pipeline-history-count").textContent = `${runs.length} run${runs.length === 1 ? "" : "s"} retained`;
+
+  const active = runs.some(run => run.status === "queued" || run.status === "running");
+  document.querySelectorAll(".pipeline-run-btn").forEach(btn => { btn.disabled = active; });
+  const live = $("#pipeline-live-status");
+  if (active) {
+    const run = runs.find(item => item.status === "running") || runs.find(item => item.status === "queued");
+    live.className = "pipeline-live-status";
+    live.innerHTML = `<span class="pipeline-live-dot"></span><b>${escapeHtml(run.status === "queued" ? "Queued" : "Running")}</b> ${escapeHtml(run.requested_stage)} operation requested by ${escapeHtml(run.requested_by || run.trigger)}. This page refreshes automatically.`;
+  } else {
+    live.classList.add("hidden");
+  }
+
+  if (!runs.length) {
+    body.innerHTML = `<div class="pipeline-empty"><b>No retained runs yet.</b><span>The first scheduled or manual operation will appear here with its complete log.</span></div>`;
+    return active;
+  }
+
+  body.innerHTML = runs.map((run) => {
+    const stages = Object.entries(run.stage_status || {}).map(([name, status]) =>
+      `<span class="pipeline-stage-state pipeline-stage-${String(status).toLowerCase()}">${escapeHtml(name.replaceAll("_", " "))}: ${escapeHtml(status)}</span>`
+    ).join("");
+    const report = run.safety_report || {};
+    const receipt = report.cleanup_receipt || null;
+    const comparison = report.candidate_resolved_count !== undefined
+      ? `<div class="pipeline-count-strip">
+           <span><b>${Number(report.previous_resolved_count || 0).toLocaleString()}</b> previous</span>
+           <span><b>${Number(report.candidate_resolved_count || 0).toLocaleString()}</b> candidate</span>
+           <span class="count-added"><b>+${Number(report.added_count || 0).toLocaleString()}</b> added</span>
+           <span class="count-removed"><b>-${Number(report.removed_count || 0).toLocaleString()}</b> removed</span>
+         </div>`
+      : "";
+    const cleanupReceipt = receipt?.committed
+      ? `<div class="pipeline-count-strip pipeline-cleanup-receipt">
+           <span><b>${Number(receipt.deleted_counts?.unvalidated || 0).toLocaleString()}</b> records deleted</span>
+           <span><b>${Number(receipt.kept_count || 0).toLocaleString()}</b> protected orphans kept</span>
+           <span><b>Atomic</b> cleanup receipt</span>
+         </div>`
+      : "";
+    return `<article class="pipeline-run-card pipeline-run-${escapeHtml(run.status)}">
+      <div class="pipeline-run-topline">
+        <span class="pipeline-status pipeline-status-${escapeHtml(run.status)}">${escapeHtml(run.status)}</span>
+        <span class="pipeline-run-stage">${escapeHtml(run.requested_stage)}</span>
+        <time>${escapeHtml(maintenanceDate(run.created_at))}</time>
+        <span>${escapeHtml(maintenanceDuration(run))}</span>
+      </div>
+      <div class="pipeline-run-title">
+        <div><b>${escapeHtml(run.trigger === "scheduled" ? "Scheduled maintenance" : "Manual maintenance")}</b><small>Requested by ${escapeHtml(run.requested_by || run.trigger)}</small></div>
+        <code>${escapeHtml(run.run_id.slice(0, 8))}</code>
+      </div>
+      ${maintenanceNotice(run)}
+      ${comparison}
+      ${cleanupReceipt}
+      <div class="pipeline-stage-states">${stages || '<span class="pipeline-stage-state">Waiting for stage output</span>'}</div>
+      <details class="pipeline-log-details" data-run-id="${escapeHtml(run.run_id)}">
+        <summary>Read run log</summary>
+        <pre>${escapeHtml(run.log_tail || "Log output will appear when the run starts.")}</pre>
+        <button class="ghost-btn pipeline-full-log-btn" type="button" data-run-id="${escapeHtml(run.run_id)}">Load complete log</button>
+      </details>
+    </article>`;
+  }).join("");
+  return active;
+}
+
+async function fetchMaintenanceRuns() {
+  const body = $("#pipeline-history");
+  if (!body) return;
+  try {
+    const data = await adminApi("/maintenance/runs?days=7&limit=100");
+    const active = renderMaintenanceRuns(data);
+    clearTimeout(_maintenancePollTimer);
+    _maintenancePollTimer = active ? setTimeout(fetchMaintenanceRuns, 3000) : null;
+  } catch (e) {
+    body.innerHTML = `<p class="faq-error">Could not load pipeline history (${escapeHtml(e.message)}).</p>`;
+  }
+}
+
+async function startMaintenanceRun(stage) {
+  const includesCleanup = stage === "cleanup";
+  if (includesCleanup) {
+    const message = "Permanently delete eligible orphan records now? Excluded, fully validated, and once-judged records are retained. Review the latest orphan report before continuing.";
+    if (!window.confirm(message)) return;
+  }
+  document.querySelectorAll(".pipeline-run-btn").forEach(btn => { btn.disabled = true; });
+  try {
+    const result = await adminApi("/maintenance/run", "POST", {
+      stage,
+      confirm_cleanup: includesCleanup,
+    });
+    showToast(`${stage === "full" ? "Sync + report" : stage} queued (${result.run_id.slice(0, 8)}).`);
+    await fetchMaintenanceRuns();
+  } catch (e) {
+    showToast("Could not start maintenance: " + e.message);
+    await fetchMaintenanceRuns();
+  }
+}
+
+$("#pipeline-actions")?.addEventListener("click", (e) => {
+  const button = e.target.closest(".pipeline-run-btn");
+  if (button) startMaintenanceRun(button.dataset.stage);
+});
+
+$("#pipeline-refresh-btn")?.addEventListener("click", fetchMaintenanceRuns);
+
+$("#pipeline-history")?.addEventListener("click", async (e) => {
+  const button = e.target.closest(".pipeline-full-log-btn");
+  if (!button) return;
+  button.disabled = true;
+  button.textContent = "Loading...";
+  try {
+    const run = await adminApi(`/maintenance/runs/${button.dataset.runId}`);
+    button.closest("details").querySelector("pre").textContent = run.log_text || "No log output.";
+    button.remove();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Retry complete log";
+    showToast("Could not load complete log: " + error.message);
+  }
+});
 
 /* ---------- Admin: Restricted-access queue ---------- */
 async function fetchAdminRestricted() {
@@ -6359,18 +7416,29 @@ async function saveAdminBanner(active) {
 }
 
 async function addAdminAccount() {
-  const handle   = $("#new-admin-handle").value.trim();
-  const password = $("#new-admin-password").value.trim();
-  if (!handle)   { await showAlert("Enter a handle for the new admin."); return; }
-  if (!password) { await showAlert("Enter a password for the new admin."); return; }
+  const handle = $("#new-admin-handle").value.trim();
+  const email  = $("#new-admin-email").value.trim();
+  if (!handle) { await showAlert("Enter a handle for the new admin."); return; }
+  if (!email)  { await showAlert("Enter an email address for the invitation."); return; }
   const btn = $("#add-admin-btn");
   btn.disabled = true;
   try {
-    await adminApi("/admins", "POST", { handle, password });
-    $("#new-admin-handle").value   = "";
-    $("#new-admin-password").value = "";
+    const result = await adminApi("/admins", "POST", { handle, email });
+    $("#new-admin-handle").value = "";
+    $("#new-admin-email").value  = "";
     fetchAdminAdmins();
-    showToast("Admin account created.");
+    if (result.invite_emailed) {
+      showToast(`Invitation sent to ${email}. It expires in ${result.expires_in_hours} hours.`);
+    } else {
+      // The server could not send the mail, so it handed the link back once.
+      // Show it rather than leaving the new admin with no way in.
+      await showDialog({
+        title: "Invitation could not be emailed",
+        message: `${result.warning}\n\n${result.invite_url}`,
+        buttons: [{ label: "Copy and close", value: true, primary: true }],
+      });
+      try { await navigator.clipboard.writeText(result.invite_url); } catch {}
+    }
   } catch (e) {
     await showAlert("Error: " + e.message);
   }
@@ -7025,8 +8093,8 @@ $("#admin-tab-sources").addEventListener("click", (e) => {
 
 // Export streams a file, so it bypasses adminApi's JSON path.
 $("#src-export-btn").onclick = async () => {
-  const res = await fetch("/api/admin/source-records/export.csv?" + srcQueryString(),
-                          { headers: { "X-Admin-Token": _adminToken } });
+  // The session cookie rides along automatically on a same-origin fetch.
+  const res = await fetch("/api/admin/source-records/export.csv?" + srcQueryString());
   if (!res.ok) { await showAlert("Export failed."); return; }
   const url = URL.createObjectURL(await res.blob());
   const a = document.createElement("a");

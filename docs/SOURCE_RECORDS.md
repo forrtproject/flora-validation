@@ -401,7 +401,8 @@ rows are exempt from automatic dedup.
 
 ### API
 
-All endpoints require the `X-Admin-Token` header.
+All endpoints require an administrator session (the `flora_session` cookie set
+by `POST /api/admin/login`).
 
 ```
 GET   /api/admin/source-records                    list + counts (filters, sort, paging)

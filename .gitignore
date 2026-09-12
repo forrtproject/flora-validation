@@ -5,3 +5,6 @@ __pycache__/
 .env
 /.claude
 snapshots/
+/logs/
+# Per-run snapshot archives written by sync_csv.py
+/data/extracted_????????T??????Z_*.csv

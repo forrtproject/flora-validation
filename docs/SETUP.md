@@ -120,17 +120,21 @@ GITHUB_TOKEN=github_pat_...
 
 # Source repo for nightly CSV sync (leave as-is unless you've forked it)
 GITHUB_REPO=forrtproject/flora-extractor
-GITHUB_BRANCH=feature/extract
+GITHUB_BRANCH=main
+
+# Optional; one-time automatic-release stamps expire after this many minutes
+SUBMISSION_FAILURE_STAMP_TTL_MINUTES=30
 ```
 
-> **Current authentication warning:** if `ADMIN_PASSWORD` is omitted while the
-> `admins` table is empty, the application currently uses a known fallback password.
-> The value only seeds the first administrator; changing the environment variable
-> later does not rotate an existing database row. Validator endpoints also currently
-> trust client-supplied `coder_id`. These are acknowledged, deferred issues with a
-> migration plan in [PROJECT.md §19](PROJECT.md#19-deferred-security-work). Until that
-> work lands, never deploy with the fallback and restrict administrator access at the
-> hosting layer where possible.
+> **Authentication notes:** `ADMIN_PASSWORD` is required while the `admins` table
+> is empty — there is no fallback, and startup fails without it. The value only
+> seeds the first administrator; changing it later does not rotate an existing row
+> (use the admin panel, or `admin_password.py`). Validator endpoints no longer
+> accept a client-supplied `coder_id`, but validator **sign-in** still does not
+> prove mailbox ownership: a handle plus the account's email is enough. That
+> remaining gap is described in
+> [PROJECT.md §19](PROJECT.md#19-deferred-security-work); restrict access at the
+> hosting layer if your deployment cannot tolerate it.
 
 ---
 
@@ -185,7 +189,8 @@ If you don't have a local CSV, run the nightly sync manually to pull from GitHub
 python sync_csv.py
 ```
 
-This downloads the latest CSV to `data/extracted_latest.csv` and imports it.
+This runs the audited synchronization stage: it imports the candidate, promotes
+`data/extracted_latest.csv`, verifies promotion, and records Part 1 completion.
 
 ---
 
@@ -214,9 +219,9 @@ uvicorn app:app --host 0.0.0.0 --port 8000 --workers 2
 ## Nightly CSV Sync
 
 The server automatically pulls the latest `extracted.csv` from GitHub at 2:00 AM UTC
-every night. It saves:
+every night. A successful Part 1 saves:
 
-- `data/extracted_DD.MM.YYYY.csv` — dated archive
+- `data/extracted_YYYYMMDDTHHMMSSZ_<run-id>.csv` — immutable synchronization archive
 - `data/extracted_latest.csv` — always the latest
 
 New rows are imported automatically. Rows already in the database (matched by
@@ -227,6 +232,11 @@ To trigger a manual sync at any time:
 ```bash
 python sync_csv.py
 ```
+
+That command is routed through the same locked, audited maintenance runner used by
+the scheduler. Run orphan reporting and cleanup through the admin Extractor
+Pipeline tab or `extractor_maintenance.py`; later stages are blocked unless their
+newest prerequisite stage completed successfully.
 
 ---
 
