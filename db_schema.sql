@@ -131,6 +131,113 @@ CREATE TABLE IF NOT EXISTS validation_queue (
     UNIQUE (record_id, validator_slot)
 );
 
+-- Application-append-only audit trail for records released with the validator
+-- Skip action. The validation_queue slot is cleared and may be claimed again, so
+-- skip context must live independently of that mutable slot. Admin escalation is
+-- derived from distinct validators: >5 for any reason, or >=2 for
+-- eligibility/data-quality. Guarded orphan cleanup removes these dependent events
+-- only when it removes an unvalidated source record with no submitted judgement.
+CREATE TABLE IF NOT EXISTS validation_skips (
+    skip_id       UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    record_id     UUID        NOT NULL REFERENCES unvalidated(record_id),
+    validator_id  INTEGER     NOT NULL REFERENCES validators(id),
+    queue_id      UUID        REFERENCES validation_queue(queue_id),
+    reason_code   TEXT        NOT NULL,
+    comment       TEXT        CHECK (comment IS NULL OR char_length(comment) <= 1000),
+    skipped_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Keep the historical value readable on databases that used the old browser
+-- recovery path. The public /api/skip model no longer accepts submission_failed;
+-- new automatic releases use submission_failure_releases below instead.
+DO $validation_skips$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'validation_skips_reason_code_check'
+          AND conrelid = 'validation_skips'::regclass
+          AND pg_get_constraintdef(oid) LIKE '%submission_failed%'
+    ) THEN
+        ALTER TABLE validation_skips
+            DROP CONSTRAINT IF EXISTS validation_skips_reason_code_check;
+        ALTER TABLE validation_skips
+            ADD CONSTRAINT validation_skips_reason_code_check
+            CHECK (reason_code IN (
+                'prefer_another', 'inaccessible',
+                'eligibility_unclear', 'data_quality',
+                'interpretation_unclear', 'other', 'submission_failed'
+            ));
+    END IF;
+END $validation_skips$;
+
+CREATE INDEX IF NOT EXISTS idx_validation_skips_record_time
+    ON validation_skips (record_id, skipped_at DESC);
+CREATE INDEX IF NOT EXISTS idx_validation_skips_escalation
+    ON validation_skips (record_id, reason_code, validator_id);
+
+-- Server-controlled audit and one-time capability for a judgement that failed
+-- before commit. This is deliberately separate from validation_skips: automatic
+-- recovery is not a validator choice and must not affect skip statistics or the
+-- admin Skipped thresholds. Raw stamps are never persisted, only SHA-256 digests.
+CREATE TABLE IF NOT EXISTS submission_failure_releases (
+    failure_id      UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    submission_id   UUID        NOT NULL UNIQUE,
+    queue_id        UUID        NOT NULL REFERENCES validation_queue(queue_id)
+                                ON DELETE CASCADE,
+    record_id       UUID        NOT NULL REFERENCES unvalidated(record_id)
+                                ON DELETE CASCADE,
+    validator_id    INTEGER     NOT NULL REFERENCES validators(id),
+    status          TEXT        NOT NULL DEFAULT 'save_failed'
+                                CHECK (status IN (
+                                    'save_failed', 'released',
+                                    'slot_closed', 'expired',
+                                    'saved_after_retry'
+                                )),
+    stamp_hash      TEXT        NOT NULL UNIQUE
+                                CHECK (char_length(stamp_hash) = 64),
+    failure_code    TEXT        NOT NULL
+                                CHECK (char_length(failure_code) <= 100),
+    failure_message TEXT        CHECK (
+                                    failure_message IS NULL
+                                    OR char_length(failure_message) <= 1000
+                                ),
+    failed_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at      TIMESTAMPTZ NOT NULL,
+    released_at     TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_submission_failure_record_time
+    ON submission_failure_releases (record_id, failed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_submission_failure_open_expiry
+    ON submission_failure_releases (expires_at)
+    WHERE status = 'save_failed';
+
+-- 'saved_after_retry' records the common, happy outcome: the browser resent the
+-- queued judgement with the same submission_id and it committed, so the release
+-- capability was never needed. Without this state such a row stayed
+-- 'save_failed' until the reaper marked it 'expired', and the audit trail then
+-- claimed a validator had lost work they had in fact saved.
+DO $submission_failure_status$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'submission_failure_releases_status_check'
+          AND conrelid = 'submission_failure_releases'::regclass
+          AND pg_get_constraintdef(oid) LIKE '%saved_after_retry%'
+    ) THEN
+        ALTER TABLE submission_failure_releases
+            DROP CONSTRAINT IF EXISTS submission_failure_releases_status_check;
+        ALTER TABLE submission_failure_releases
+            ADD CONSTRAINT submission_failure_releases_status_check
+            CHECK (status IN (
+                'save_failed', 'released', 'slot_closed', 'expired',
+                'saved_after_retry'
+            ));
+    END IF;
+END $submission_failure_status$;
+
 -- Final consensus records — contains only authoritative validated values.
 -- If validators agreed with extraction, values match unvalidated; if corrected, stores corrections.
 CREATE TABLE IF NOT EXISTS validated (
@@ -474,16 +581,172 @@ END $$;
 ALTER TABLE validators DROP COLUMN IF EXISTS trusted;
 ALTER TABLE validators DROP COLUMN IF EXISTS senior;
 
--- Named admin accounts (multiple admins with individual handles)
+-- Named admin accounts (multiple admins with individual handles).
+-- password_hash holds an Argon2id hash, never the password itself. It is
+-- nullable on purpose: an account with no usable credential must exist as a
+-- state (see admin_auth.verify_password, which fails closed on NULL) so that
+-- seeding and future invite flows never have to write a placeholder secret.
 CREATE TABLE IF NOT EXISTS admins (
-    id         SERIAL PRIMARY KEY,
-    handle     TEXT NOT NULL UNIQUE,
-    password   TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id            SERIAL PRIMARY KEY,
+    handle        TEXT NOT NULL UNIQUE,
+    password_hash TEXT,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Trusted admin flag (only trusted admins can add/remove admin accounts)
 ALTER TABLE admins ADD COLUMN IF NOT EXISTS trusted BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Databases created before passwords were hashed still have the plaintext
+-- `password` column. Add the new one here; app.py then hashes each existing
+-- value in place and drops `password` only once every row carries a hash.
+-- Admins keep the password they already use — nothing is reset.
+ALTER TABLE admins ADD COLUMN IF NOT EXISTS password_hash TEXT;
+
+-- Relax the legacy NOT NULL so the hash can be written before the plaintext
+-- column goes away. ALTER COLUMN has no IF EXISTS, so a fresh database — which
+-- never had `password` — needs the guard.
+DO $admins_password$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'admins' AND column_name = 'password') THEN
+        ALTER TABLE admins ALTER COLUMN password DROP NOT NULL;
+    END IF;
+END $admins_password$;
+
+-- An administrator is reachable by email so an invitation or recovery link can
+-- be sent. Nullable: accounts that predate invitations have no address yet.
+ALTER TABLE admins ADD COLUMN IF NOT EXISTS email TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS admins_email_key
+    ON admins(email) WHERE email IS NOT NULL;
+
+-- ============================================================================
+-- One-time authentication links
+-- ============================================================================
+
+-- Single-use, expiring links: an administrator invitation today, password
+-- recovery and validator sign-in links as the session work lands. One table
+-- because they are one mechanism -- a random secret mailed to a proven address,
+-- spendable exactly once.
+--
+-- Only the SHA-256 digest of the token is stored, the same discipline used by
+-- submission_failure_releases: a database dump must not yield a working link.
+-- The raw token exists only in the email and in the URL the recipient opens.
+CREATE TABLE IF NOT EXISTS auth_links (
+    link_id      UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    purpose      TEXT        NOT NULL
+                             CHECK (purpose IN ('admin_invite', 'admin_reset')),
+    subject_kind TEXT        NOT NULL CHECK (subject_kind IN ('admin')),
+    subject_id   INTEGER     NOT NULL,
+    email        TEXT        NOT NULL,
+    token_hash   TEXT        NOT NULL UNIQUE,
+    status       TEXT        NOT NULL
+                             CHECK (status IN ('pending', 'used', 'expired', 'revoked')),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at   TIMESTAMPTZ NOT NULL,
+    used_at      TIMESTAMPTZ,
+    issued_by    TEXT,
+    CONSTRAINT auth_links_used_at_matches_status
+        CHECK ((status = 'used') = (used_at IS NOT NULL))
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_links_subject
+    ON auth_links (subject_kind, subject_id, status);
+
+-- At most one live invitation or reset per subject and purpose. Issuing a new
+-- one revokes the previous, so a superseded link cannot still be spent.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_auth_links_one_pending
+    ON auth_links (subject_kind, subject_id, purpose)
+    WHERE status = 'pending';
+
+-- ============================================================================
+-- Server-side sessions
+-- ============================================================================
+
+-- Identity is what the server issued, not what the caller claimed. Each login
+-- mints an independent random token; only its digest is stored, so a database
+-- dump yields no usable session. Expiry and revocation are columns rather than
+-- properties of the token, which is what makes logout and password changes take
+-- effect immediately instead of waiting a token out.
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id     UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    principal_kind TEXT        NOT NULL
+                               CHECK (principal_kind IN ('validator', 'admin')),
+    principal_id   INTEGER     NOT NULL,
+    token_hash     TEXT        NOT NULL UNIQUE,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at     TIMESTAMPTZ NOT NULL,
+    last_used_at   TIMESTAMPTZ,
+    revoked_at     TIMESTAMPTZ,
+    user_agent     TEXT
+);
+
+-- Every request looks a session up by digest, so that index carries the load;
+-- the second supports revoking every session a principal owns.
+CREATE INDEX IF NOT EXISTS idx_sessions_principal
+    ON sessions (principal_kind, principal_id)
+    WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_sessions_expiry
+    ON sessions (expires_at);
+
+-- Failed sign-in attempts, so a password or a sign-in link cannot be guessed at
+-- machine speed. Recorded per identifier AND per client address: throttling only
+-- one of them either lets a botnet through or lets one attacker lock out a whole
+-- shared network.
+CREATE TABLE IF NOT EXISTS login_attempts (
+    attempt_id  BIGSERIAL   PRIMARY KEY,
+    identifier  TEXT        NOT NULL,
+    client_ip   TEXT,
+    succeeded   BOOLEAN     NOT NULL,
+    attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_login_attempts_recent
+    ON login_attempts (identifier, attempted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_login_attempts_ip
+    ON login_attempts (client_ip, attempted_at DESC);
+
+-- ============================================================================
+-- Security event audit trail
+-- ============================================================================
+
+-- Privileged actions, kept where they can be queried a year later. The
+-- application log narrates some of this, but it dies with the pod and cannot
+-- answer "who removed that administrator, and when?".
+--
+-- Append-only by intention: nothing in the application updates or deletes a row
+-- except the retention prune. The actor is the server's view of the caller, so
+-- a row cannot be attributed to somebody the request merely claimed to be.
+CREATE TABLE IF NOT EXISTS security_events (
+    event_id     BIGSERIAL   PRIMARY KEY,
+    occurred_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    action       TEXT        NOT NULL,
+    actor_kind   TEXT        CHECK (actor_kind IN ('admin', 'validator', 'system')),
+    actor_id     INTEGER,
+    actor_handle TEXT,
+    target_kind  TEXT,
+    target_id    TEXT,
+    target_label TEXT,
+    client_ip    TEXT,
+    user_agent   TEXT,
+    detail       JSONB       NOT NULL DEFAULT '{}'::jsonb
+);
+
+-- The admin view reads newest-first, usually filtered by action or by actor.
+CREATE INDEX IF NOT EXISTS idx_security_events_recent
+    ON security_events (occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_security_events_action
+    ON security_events (action, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_security_events_actor
+    ON security_events (actor_kind, actor_id, occurred_at DESC);
+
+-- Validators sign in through an emailed link, the same single-use mechanism as
+-- administrator invitations.
+ALTER TABLE auth_links DROP CONSTRAINT IF EXISTS auth_links_purpose_check;
+ALTER TABLE auth_links ADD CONSTRAINT auth_links_purpose_check
+    CHECK (purpose IN ('admin_invite', 'admin_reset', 'validator_login'));
+ALTER TABLE auth_links DROP CONSTRAINT IF EXISTS auth_links_subject_kind_check;
+ALTER TABLE auth_links ADD CONSTRAINT auth_links_subject_kind_check
+    CHECK (subject_kind IN ('admin', 'validator'));
 
 -- Stage 3 study identifiers and paper titles are distinct fields. Older
 -- deployments stored titles in study_r/study_o and named title corrections
@@ -1322,3 +1585,50 @@ UPDATE source_record_edits e
    SET display_id = s.display_id
   FROM source_records s
  WHERE s.record_id = e.record_id AND e.display_id IS NULL;
+
+-- ============================================================================
+-- Extractor maintenance: durable run history and reservation exclusion
+-- ============================================================================
+
+-- The web app exposes nightly sync/report and separate manual cleanup to admins. Keep
+-- complete run logs in PostgreSQL so at least the previous week remains visible
+-- after a pod replacement. Admin requests remain queued here until a polling
+-- worker claims them, and a replacement pod can resume abandoned work. The
+-- cleanup child stores its exact deletion receipt in safety_report in the same
+-- transaction as the DELETEs, before the parent process reports stage success.
+CREATE TABLE IF NOT EXISTS extractor_maintenance_runs (
+    run_id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    trigger         TEXT        NOT NULL
+                                CHECK (trigger IN ('scheduled', 'admin', 'cli')),
+    requested_stage TEXT        NOT NULL
+                                CHECK (requested_stage IN ('full', 'sync', 'find', 'cleanup')),
+    requested_by    TEXT,
+    status          TEXT        NOT NULL
+                                CHECK (status IN (
+                                    'queued', 'running', 'success',
+                                    'warning', 'blocked', 'failed'
+                                )),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    started_at      TIMESTAMPTZ,
+    finished_at     TIMESTAMPTZ,
+    -- Written after every stage, not only at finalization. PENDING/FAILED newest
+    -- attempts therefore block downstream manual stages after a process restart.
+    stage_status    JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    -- Also carries run-scoped Part 1/2 completion flags, source_sync/find_run_id
+    -- links, the atomic cleanup_receipt, and archive_file/archive_sha256 of Part 1
+    -- imported. Cleanup deletes only when the file it just read hashes to that
+    -- recorded digest: a run ID alone would let a replacement pod holding an
+    -- older CSV pass the gate and delete rows imported from a newer snapshot.
+    safety_report   JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    log_text        TEXT        NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_extractor_maintenance_runs_recent
+    ON extractor_maintenance_runs (created_at DESC);
+
+-- Prevent two queued/running history reservations. The authoritative live-
+-- process mutex is the session-level PostgreSQL advisory lock held by
+-- extractor_maintenance.py for the complete pipeline lifetime.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_extractor_maintenance_one_active
+    ON extractor_maintenance_runs ((1))
+    WHERE status IN ('queued', 'running');

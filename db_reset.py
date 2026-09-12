@@ -6,6 +6,8 @@ import os, psycopg2
 
 TABLES_TO_CLEAR = [
     "validated",
+    "submission_failure_releases",
+    "validation_skips",
     "validation_queue",
     "record_metadata",
     "unvalidated",

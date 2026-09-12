@@ -6,14 +6,17 @@ This repository consumes Stage 3 `extracted.csv` files from
 `csv_to_db._CURRENT_EXTRACTED_COLUMNS`, with categorical vocabularies in
 `extractor_vocab.py`.
 
-The importer is strict by default. Missing current columns, unknown categorical
-values, duplicate `pair_id` values, ambiguous source identities, or unusable
-resolved links stop the whole import instead of silently inserting partial rows.
+The importer is strict about the columns and categories it consumes, but it does
+not require an exact header match. Missing consumed columns, unknown consumed
+categorical values, duplicate `pair_id` values, ambiguous source identities, or
+unusable resolved links stop the whole import. Additional extractor-only columns
+are accepted and ignored so upstream diagnostics do not break Supabase ingestion.
 `--allow-legacy-schema` exists only for intentional archived-snapshot replay.
 
 ## Current extracted row
 
-The current file contains these 52 columns, in any order:
+The September 2026 upstream file contains 58 columns, in any order. This
+application consumes the original 52-column validation contract:
 
 | Group | Columns |
 | --- | --- |
@@ -26,6 +29,43 @@ The current file contains these 52 columns, in any order:
 | Full-text provenance | `pdf_source`, `parse_method` |
 | Flat outcome | `outcome`, `outcome_phrase`, `outcome_confidence`, `out_quote_source`, `outcome_reasoning`, `outcome_llm_model` |
 | Reproduction axes | `outcome_computation`, `outcome_computational_quote`, `out_quote_computational_source`, `outcome_robustness`, `outcome_robustness_quote`, `out_quote_robust_source` |
+
+The following six newer columns are intentionally accepted but not written to
+Supabase:
+
+| Extractor-only field | Upstream meaning |
+| --- | --- |
+| `pdf_url`, `pdf_name` | URL and filename of the full-text document used by extraction |
+| `study_status` | `completed` or `prospective`; prospective plans are normally set aside upstream |
+| `study_status_reasoning`, `study_status_model` | Evidence/model provenance for `study_status` |
+| `osf_type` | `preprint`, `project_or_registration`, or blank for a non-OSF record |
+
+These six fields are not required, and unknown future extra columns are also
+ignored. Adding a column upstream therefore does not stop ingestion; changing a
+field this application consumes still fails closed.
+
+## Compatibility audit — 12 September 2026
+
+The extractor `main` snapshot at commit
+[`b30c5bf6f7ae0c40798d966e12166c1737e0e3a3`](https://github.com/forrtproject/flora-extractor/commit/b30c5bf6f7ae0c40798d966e12166c1737e0e3a3)
+was checked with this repository's schema, vocabulary, pair-ID, source-slot, and
+resolved-identity validators. All checks passed. The delivered file contains
+3,040 rows and 58 columns; 2,999 rows are importable (2,874 replications and 125
+reproductions), while 41 remain upstream `needs_review` rows.
+
+Compared with this repository's current 52-column `data/extracted_latest.csv`,
+the remote file adds exactly the six extractor-only columns above and removes no
+columns. Among resolved identities it adds 17 `pair_id`s and omits 123 of the
+previous 3,105 (3.96%). That is below the default 10% synchronization block, so a
+sync may import and promote it, but the resulting orphan report can never delete
+those omissions automatically: cleanup remains a separate manual decision.
+
+The extractor schema also knows the internal quarantine labels `no_evidence`
+and `prospective_registration`. Neither occurs in this delivered `extracted.csv`:
+the extractor routes those records to separate set-aside files. They therefore do
+not become validation-app link methods or user-selectable outcomes. Their
+unexpected appearance in a future validation input remains a fail-closed contract
+change rather than silently admitting records the extractor meant to quarantine.
 
 Legacy files may use `filter_status` instead of `paper_type`; that one rename is
 accepted without enabling legacy mode.
@@ -131,8 +171,10 @@ Other known verification values are `verified`, `corrected`, `mismatch`,
 
 `record_metadata` preserves the extractor fields that are not part of the main
 validation form, including screening/link confidence and evidence, OpenAlex IDs,
-DOI verification, full-text provenance, model/reasoning fields, BibTeX references,
-and `screen_categories`.
+DOI verification, the consumed `pdf_source` / `parse_method` provenance,
+model/reasoning fields, BibTeX references, and `screen_categories`. The six
+extractor-only fields listed above are currently ignored rather than promoted to
+database columns.
 
 The importer requires and derives numeric `work_id` from `oa_work_id_r` /
 `openalex_id_r`. It accepts a routing release through `--release-id`, falls back
@@ -163,4 +205,5 @@ and should be treated as unverified.
 confidence, original-match type, link method, DOI verification, flat outcome, and
 both reproduction axes. Add an upstream rename to this centralized contract and
 the matching database constraint/migration together. Unknown values must never be
-treated as ordinary unresolved rows.
+treated as ordinary unresolved rows. Categories inside explicitly ignored
+extractor-only columns do not participate in validation-side vocabulary checks.

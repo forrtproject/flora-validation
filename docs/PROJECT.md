@@ -126,7 +126,7 @@ docs/index.html                687   — all five screens
 docs/app.js                  7,177   — the whole frontend
 docs/style.css               5,144
 
-tests/                       275 tests, all passing
+tests/                       509 tests, all passing
 .github/workflows/           daily-export.yml · sync-sources.yml
 ```
 
@@ -212,8 +212,9 @@ No passwords, no JWT, no OAuth. A validator supplies a **handle** plus either an
 use and looked up thereafter. Handles are `2–32` chars, `[A-Za-z0-9._-]`.
 
 > **Known security debt:** this is currently identity lookup, not durable
-> authentication. Successful login returns a `coder_id`, and private validator
-> endpoints trust a client-supplied `coder_id` instead of a server-side session.
+> authentication of the mailbox. Login opens a server-side session and private
+> endpoints read identity from it, but a handle plus the account email is all it
+> takes to sign in.
 > Email login proves knowledge of an address and handle, not control of the mailbox;
 > personal codes are stored in plaintext and can be returned into browser storage.
 > A caller who learns another validator's id can therefore act as that validator.
@@ -319,7 +320,17 @@ points = validator.vote_score
 ```
 
 Assignment submissions are worth **double**. Skips score zero and increment
-`skipped_count`.
+`skipped_count`. The validator must select a reason; eligibility, data-quality, and
+"other" skips also require a short comment. Every successful slot release appends a
+row to `validation_skips`. A retried request after the slot has already been released
+returns HTTP 409 and cannot inflate the history or validator total.
+
+Automatic recovery after a failed background save is not a Skip. The server can
+mint a short-lived, one-time capability only after `/api/judge` fails before
+commit and confirms that the validator still owns the queue slot. The browser
+uses that stamp at `/api/submission-failures/release`; network-only failures have
+no stamp and stay pending. Automatic releases add neither `validation_skips` rows
+nor `skipped_count` and are visible to admins in a separate collapsed audit card.
 
 `vote_score` is per-validator and stored on the row. The LLM's notional weight is 15
 (`_LLM_VOTE_SCORE` in `llm_validator.py`).
@@ -447,21 +458,22 @@ job retries records whose LLM call genuinely errored.
 ## 9. The admin panel
 
 Sign in at the same URL with a handle and password from `admins`. Auth is an
-`X-Admin-Token` header — `sha256(password + ":flora-admin-v1")` — validated by
+session cookie — an opaque token stored only as a digest — validated by
 `_require_admin()`, which returns the admin's handle for stamping. Some operations
 (creating/deleting admins) additionally require `trusted = TRUE`.
 
-> **Known security debt:** `admins.password` is plaintext, the token is deterministic
-> and has no independent expiry/revocation record, and the application currently falls
-> back to the known first-run password `flora-admin-2025` when `ADMIN_PASSWORD` is
-> absent. Admins sharing a password share a token. The frontend can also persist the
-> password through the login-prefill path. See [§19](#19-deferred-security-work).
+> **Partly remediated:** `admins.password_hash` holds an Argon2id hash, the plaintext
+> column is gone, and there is no fallback password — startup fails when `admins` is
+> empty and `ADMIN_PASSWORD` is unset. The frontend no longer persists the password
+> through the login-prefill path. The token is still a deterministic function of the
+> stored hash, with no independent expiry or revocation record, so it is not yet a
+> session. See [§19](#19-deferred-security-work).
 
 Eight tabs:
 
 | Tab | What it does |
 |---|---|
-| **Entries** | Every record, filterable by All / Pending Approval / Needs Review / Validated / Excluded. Shows validator handles, human agreement % (with an LLM-dissent marker — see below), LLM errors. Approve, flag for review, add notes, resolve conflicts. |
+| **Entries** | Every record, filterable by All / Pending Approval / Needs Review / Skipped / Admin comments / Validated / Excluded. Shows validator handles, distinct skip counts, human agreement % (with an LLM-dissent marker — see below), and LLM errors. Approve, flag for review, add notes, resolve conflicts. |
 | **Source Records** | The entry-sheet table — see [SOURCE_RECORDS.md](SOURCE_RECORDS.md) |
 | **Validator Stats** | Per-validator throughput, accuracy, flagged judgements; set tier |
 | **Admins** | Add/remove admins, toggle trusted, set the site banner |
@@ -469,6 +481,14 @@ Eight tabs:
 | **Pool Priority** | Edit `serving_config` with a live preview of how many records match |
 | **Restricted access** | Records reported as inaccessible; assign them to specific validators |
 | **Messages** | Threaded inbox with validators |
+
+The **Skipped** filter is an automatically derived review panel. A record appears
+when either (a) more than five distinct validators have skipped it for any reason, or
+(b) at least two distinct validators selected `eligibility_unclear` or
+`data_quality`. Multiple skip events from the same validator remain in the audit
+history but count once toward both rules. Opening the record shows a collapsed
+**Skip history** ledger with timestamp, validator handle, reason, and comment; only
+admin APIs return validator names and comments. Skips do not change consensus.
 
 ### The Agreement column
 
@@ -554,6 +574,19 @@ classification (`type`, `outcome`, `outcome_quote`, `out_quote_source`), workflo
 `llm`. Holds the three checks, all corrections, `additional_checks` JSONB, notes,
 points, `flagged`/`flag_reason`, and the `is_shown` / `started_at` / `validated_at`
 timing that drives claiming and reaping. `UNIQUE (record_id, validator_slot)`.
+
+**`validation_skips`** — append-only history for released validator claims. Stores
+`record_id`, `validator_id`, the stable `queue_id`, a controlled `reason_code`, an
+optional comment (maximum 1,000 characters), and `skipped_at`. It is deliberately
+separate from `validation_queue` because a released queue slot is reusable.
+Historical `submission_failed` values remain valid so old audit rows can be read,
+but `/api/skip` no longer accepts that reason.
+
+**`submission_failure_releases`** — server-controlled save-recovery audit. Stores
+the browser's unique `submission_id`, exact queue/record/validator binding, a
+SHA-256 digest of the one-time stamp (never the raw stamp), safe failure metadata,
+expiry, and state: `save_failed`, `released`, `slot_closed`, or `expired`. These
+events are deliberately excluded from Skip counts and escalation thresholds.
 
 **`validated`** — final consensus records. Pair identity includes DOI/OpenAlex paper
 identity, `study_r`/`study_o` within-paper study numbers, and title fallbacks for
@@ -669,7 +702,7 @@ are ambiguous.
 
 ## 11. API reference
 
-59 endpoints. All admin routes currently require `X-Admin-Token`. Validator routes
+59 endpoints. All admin routes require an administrator session. Validator routes
 currently accept `coder_id` as identity; this is a known authorization vulnerability,
 not an API guarantee. The planned authenticated API will derive the validator id from
 the server-side session and remove these parameters (see [§19](#19-deferred-security-work)).
@@ -684,7 +717,9 @@ POST /api/update-seen                  dismiss the "what's new" gate
 GET  /api/next-pairs                   batch-claim (count, mode, buffered_only)
 POST /api/pairs/{queue_id}/start
 POST /api/judge                        submit a judgement
-POST /api/skip
+POST /api/skip                        release claim + save reason/comment history
+                                      (reason_code optional: old pages default to prefer_another)
+POST /api/submission-failures/release  consume one server-issued recovery stamp
 POST /api/senior-reject                tier ≥ 2 only
 POST /api/restricted                   report an inaccessible article
 GET  /api/my-judgements                own history
@@ -714,6 +749,14 @@ POST   /api/admin/banner
 GET    /api/admin/messages · /thread/{id} · POST /thread/{id}/reply · /message
 ```
 
+### Extractor maintenance
+
+```
+GET  /api/admin/maintenance/runs
+GET  /api/admin/maintenance/runs/{run_id}
+POST /api/admin/maintenance/run              full | sync | find | cleanup
+```
+
 ### Source Records
 
 ```
@@ -737,15 +780,66 @@ declaration order. New literal paths must go above the parameterised ones.
 
 ### In-process (APScheduler, starts with the app)
 
+All cron triggers specify UTC explicitly; Kubernetes node timezone and daylight
+saving changes do not alter these times.
+
 | Job | Schedule | What |
 |---|---|---|
-| `sync_csv.sync_once` | 02:00 UTC | Pull `extracted.csv` from the extractor repo and import new rows |
-| `_backfill_oa_work_ids` | 02:30 UTC | Fill missing OpenAlex work ids from DOIs |
+| `extractor_maintenance.run_scheduled` | 02:00 UTC | Under one lock: sync/import, OpenAlex enrichment, then read-only orphan reporting; never deletion |
+| `extractor_maintenance.run_queued` | every 10 seconds | Claim durable admin requests and recover work after pod termination |
 | `_retry_tiebreakers` | 00:22 UTC | Re-run consensus on records whose LLM call errored |
 | `_reap_stale_slots` | every 2 min | Release queue slots claimed but abandoned, so records return to circulation |
 
 The reaper matters: without it, a validator who closes the tab mid-record would lock
 that record indefinitely.
+
+The 02:00 extractor job is a fail-fast, non-destructive sync-and-report operation
+with OpenAlex enrichment sequenced inside the same process lock. A failed CSV sync
+marks orphan reporting `SKIPPED`. Child output and stage statuses append to
+`logs/extractor_maintenance.log` (configurable through
+`EXTRACTOR_MAINTENANCE_LOG`) and are mirrored to stdout. It is a nightly poll, not
+an immediate cross-repository upload trigger. It never selects the cleanup stage.
+Each stage transition is also committed to `extractor_maintenance_runs`. Part 1 is
+complete only after import, CSV promotion, an exact post-promotion byte check, and
+a verified archive digest for the same run. Standalone Part 2 and manual Part 3
+operations must inherit the newest verified source run IDs, and cleanup rechecks
+those persisted prerequisites before applying deletions. A failed newer sync
+therefore cannot fall back to an older success.
+
+Run IDs alone are not enough under pod replacement, so the run history also stores
+the `archive_file`/`archive_sha256` of the snapshot Part 1 imported. The orphan
+report and cleanup read that immutable archive from `EXTRACTOR_DATA_DIR` — which
+must be shared durable storage — and verify its sha256 first; cleanup additionally
+requires the digest it read to equal the one PostgreSQL recorded for the run. A
+replacement pod holding an older bundled CSV is blocked instead of deleting rows
+that a different pod imported.
+
+Before import, resolved pair IDs are compared with the baseline named by run
+history (the previous run's archive, verified by digest). Zero resolved IDs or
+removal above `EXTRACTOR_MAX_REMOVAL_PERCENT` blocks the run and leaves the
+known-good CSV untouched; additions produce a non-blocking warning. A missing or
+stale baseline while `unvalidated` is populated also blocks, rather than being
+read as a first deployment with no comparison to make.
+The threshold must parse as a finite value from 0 through 100; malformed,
+`NaN`, infinite, and out-of-range configuration blocks Part 1 before download.
+`extractor_maintenance_runs` retains complete logs and structured counts for the
+admin Extractor Pipeline tab. A session-level PostgreSQL advisory lock prevents
+overlapping live processes across web workers, while a partial unique index
+prevents duplicate active reservations. The admin's **Sync + report** action is
+non-destructive; cleanup is a separate manually confirmed request.
+
+Manual HTTP 202 responses persist only a durable `queued` row; they do not rely on
+an in-process web callback. Any pod may poll the row, but the advisory lock elects
+one executor. A replacement pod requeues an abandoned running job immediately
+after proving the former session lock is gone. Cleanup stores exact deleted record
+identities and per-table counts in `safety_report.cleanup_receipt` in the same
+transaction as deletion, so recovery can finalize a committed cleanup without
+running it again.
+Apply-mode cleanup takes a short `EXCLUSIVE NOWAIT` lock on `unvalidated`,
+`validation_queue`, `validated`, `validation_skips`, `submission_failure_releases`,
+`record_metadata`, `assignments`, and `validator_messages` before its safety scan.
+This prevents concurrent validation/audit writes from invalidating the delete list; if
+validation is already writing, cleanup aborts immediately and the failure is logged.
 
 ### GitHub Actions
 
@@ -765,6 +859,7 @@ Both need the `DATABASE_URL` secret. The hour gap is deliberate so they never co
 | `csv_to_db.py` | Import `extracted.csv` → `unvalidated` + `record_metadata` + 3 queue slots. `--dry-run` supported |
 | `export_validated.py` | `validated` → `data/validated_export.csv`, plus `needs_manual_refs.csv` listing entries whose identifiers CrossRef/DataCite cannot resolve. Replaces references with OpenAlex data where available, cached in `oa_ref_cache.json` |
 | `sync_csv.py` | Fetch `extracted.csv` from the extractor repo (nightly job calls `sync_once`) |
+| `extractor_maintenance.py` | Locked sync → orphan report routine plus a separate, manually requested guarded-cleanup stage, with one combined log |
 | `sync_sources.py` | Entry-sheet ingest → `source_records` |
 | `transform_sources.py` | `source_records` → FLoRA column set |
 | `backfill_oa_work_ids.py` | Fill `oa_work_id_o/_r` from DOIs via OpenAlex |
@@ -773,7 +868,7 @@ Both need the `DATABASE_URL` secret. The hour gap is deliberate so they never co
 | `update_originals.py` | Refresh original-study references on existing rows |
 | `update_outcomes.py` | Update outcome classification from a newer `extracted.csv` |
 | `find_orphans.py` | Diagnose rows in the DB no longer present in the CSV |
-| `cleanup_orphans.py` | Delete those rows |
+| `cleanup_orphans.py` | Manually delete CSV orphans only from the sha256-verified Part 1 archive; excluded, once-judged, and fully validated records remain, while assignments/skips/notes/access flags alone do not protect |
 | `build_static.py` | Generate `docs/pairs.json`, `hard_pairs.json`, `onboarding.json` for the static GitHub Pages demo |
 | `db_migrate.py` | Migrate an older schema forward |
 | `db_reset.py` | **Destructive** — wipes everything except `validators` |
@@ -789,7 +884,7 @@ DATABASE_URL=postgresql://postgres:PASSWORD@db.PROJECT.supabase.co:5432/postgres
 GEMINI_API_KEY=AIzaSy...
 GITHUB_TOKEN=                       # only if the extractor repo is private
 GITHUB_REPO=forrtproject/flora-extractor
-GITHUB_BRANCH=feature/extract
+GITHUB_BRANCH=main
 ADMIN_PASSWORD=                     # first-run admin seed; MUST be set in any deployment
 RESEND_API_KEY=                     # transactional email
 EMAIL_FROM="Flora Validator <noreply@forrt.org>"
@@ -815,7 +910,7 @@ same database, be aware they will all run the nightly jobs.
 ### Tests
 
 ```bash
-python -m pytest tests/ -q          # 275 tests
+python -m pytest tests/ -q          # 509 tests
 ```
 
 Coverage is on the logic that is hardest to reason about: `test_consensus_engine.py`
@@ -938,9 +1033,39 @@ main pipeline is for.
 
 ## 19. Deferred security work
 
-**Status: acknowledged 2026-08-18; deliberately deferred.** The current change set
-does not implement authentication or credential migration. These items are release
-blockers before treating the service as safe for arbitrary public traffic.
+**Status: partly implemented 2026-09-12.**
+
+Closed. Identity is a server-issued session rather than a client-supplied `coder_id`;
+administrator passwords are Argon2id hashes with no fallback; administrator accounts
+are created by emailed invitation and the recipient chooses their own password;
+sessions expire and are individually revocable; cross-site writes are refused;
+sign-in attempts are throttled.
+
+**NOT closed: validator authentication.** Sign-in requires a handle plus the email
+address on that account, and nothing more. The email that follows is a notice sent
+after the session already exists, so it cannot prevent anything. Handles are public on
+the leaderboard and academic addresses are frequently guessable, so anyone who knows
+or guesses both obtains a genuine session for that validator, with that validator's
+tier and history.
+
+This is a deliberate product decision taken on 2026-09-12 in favour of a
+frictionless sign-in, not an oversight. It is recorded here, and in the docstring of
+`login()` in `app.py`, so that it stays a known and revisitable choice. The fix, if
+it is revisited, is small: `auth_links` already implements single-use emailed links
+for administrator invitations, and the same mechanism covered validator sign-in
+before this decision.
+
+**Resolved (audit trail).** `security_events` records privileged actions with the
+server's view of the actor, written in the same transaction as the action and kept
+for 365 days. `GET /api/admin/security-events` reads it.
+
+**Resolved (admin sign-in field).** Admins had to type their password into the login
+screen's Email field, and anything containing `@` was routed to the validator
+endpoint — storing the password in `validators.email` in plaintext and opening a
+validator session. Admins now have a dedicated password form.
+
+Also not done: multi-factor authentication for trusted administrators. Admin auth
+remains single-factor.
 
 ### Validator impersonation
 
@@ -959,15 +1084,28 @@ profile is persisted in `localStorage` as `flora.coder`.
 
 ### Administrator credentials and tokens
 
-`admins.password` is plaintext. `_make_token()` hashes only the password plus a fixed
-string, so equal passwords produce equal bearer tokens, login does not create an
-independent session, and there is no session expiry or per-device revocation. A fresh
-database silently seeds `admin` from `ADMIN_PASSWORD`, whose code default is the
-publicly known `flora-admin-2025`. The seed runs only while `admins` is empty, so
-changing the environment later does not repair an existing installation. The admin
-login path also calls `rememberLogin(handle, password)`; a non-email value can remain
-in `flora.lastLogin` despite the adjacent comment claiming that passwords are never
-stored.
+**Resolved (item 4, partially).** `admins.password_hash` holds an Argon2id hash, and
+the plaintext `password` column is dropped once every row has been migrated. Existing
+passwords were hashed in place rather than reset, so no admin had to change anything.
+`_seed_admin_if_empty()` has no fallback password: with an empty `admins` table and no
+`ADMIN_PASSWORD`, startup raises instead of creating a publicly known account. The
+handle comes from `ADMIN_HANDLE` (default `flora_muenster`), which is not a secret and
+may live in code. `admin_password.py` is the operator recovery path when nobody can
+sign in. The frontend no longer writes the admin password into `flora.lastLogin`, and
+discards any value an older build left there.
+
+**Resolved (invitations).** A trusted admin creates an account with a handle and an
+email; `password_hash` starts NULL so the account cannot be signed into, and a
+single-use `auth_links` row is emailed. The recipient chooses their own password, so
+the inviter never learns it. Only the token digest is stored, issuing supersedes any
+outstanding link, and `admin_password.py --invite` prints one when email is
+unavailable.
+
+**Resolved (sessions).** Login now mints an opaque random token stored only as a
+digest in `sessions`, delivered in an `HttpOnly; Secure; SameSite=Lax` cookie, with
+expiry and revocation as columns. Two logins with the same password receive unrelated
+sessions; logout, a password change, and admin deletion revoke immediately. The old
+deterministic bearer token and the `X-Admin-Token` header are gone.
 
 ### Approved remediation direction
 
@@ -986,9 +1124,11 @@ token:
    challenge before account creation or login. Code-only users authenticate with a
    sufficiently random personal code stored as an Argon2id hash. Stop returning codes
    and clear legacy credential-bearing browser storage.
-4. Replace `admins.password` with an adaptive password hash (Argon2id), migrate or
-   reset every existing password, remove the hard-coded fallback, and require either
-   an explicit one-time bootstrap secret or an operator command when no admin exists.
+4. **(Done.)** Replace `admins.password` with an adaptive password hash (Argon2id),
+   migrate or reset every existing password, remove the hard-coded fallback, and
+   require either an explicit one-time bootstrap secret or an operator command when
+   no admin exists. Delivered as hash-in-place migration, `ADMIN_PASSWORD` with no
+   default, and `admin_password.py`. The remaining clause below is not yet done:
    Password changes, admin deletion, and logout revoke sessions. Trusted admins should
    receive MFA as a follow-up hardening step.
 5. Protect cookie-authenticated writes against CSRF with strict cookie attributes plus

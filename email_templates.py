@@ -172,3 +172,129 @@ def forgot_handle_email(handle: str) -> dict:
             f"— The FLoRA Validation team"
         ),
     }
+
+
+def _link_button(url: str, label: str) -> str:
+    return f"""
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
+         style="margin:26px 0;">
+    <tr>
+      <td align="center">
+        <a href="{url}"
+           style="display:inline-block;background:{ACCENT};color:#ffffff;text-decoration:none;
+                  font-size:15px;font-weight:600;padding:13px 30px;border-radius:8px;">{label}</a>
+      </td>
+    </tr>
+  </table>"""
+
+
+def admin_invite_email(handle: str, url: str, hours: int, inviter: str | None = None) -> dict:
+    """Invitation for a new administrator to choose their own password.
+
+    The link is the credential, so the copy says plainly that it is single-use,
+    when it dies, and what to do if it was not expected.
+    """
+    invited_by = f" by {inviter}" if inviter else ""
+    body = "".join([
+        f'<p style="margin:0 0 20px;font-size:16px;font-weight:600;color:{INK};">'
+        f"You have been invited{invited_by} as a FLoRA Validation administrator.</p>",
+        _paragraph(
+            f"Your administrator username is <strong>{handle}</strong>. "
+            f"Choose a password using the button below and you are ready to sign in."
+        ),
+        _link_button(url, "Choose your password"),
+        _paragraph(
+            f"This link works once and expires in {hours} hours. Nobody, including "
+            f"the person who invited you, can see the password you choose."
+        ),
+        f'<p style="margin:24px 0 0;font-size:13px;color:{MUTED};line-height:1.7;">'
+        f"Not expecting this? Ignore the email and the invitation lapses on its own. "
+        f"Tell the team if it keeps arriving.</p>",
+        _divider(),
+        _sign_off(),
+    ])
+    return {
+        "subject": "Set up your FLoRA Validation administrator account",
+        "html": _base_layout(body),
+        "text": (
+            f"You have been invited{invited_by} as a FLoRA Validation administrator.\n\n"
+            f"Your administrator username is: {handle}\n\n"
+            f"Choose a password here (works once, expires in {hours} hours):\n{url}\n\n"
+            f"Nobody else can see the password you choose.\n\n"
+            f"Not expecting this? Ignore the email and the invitation lapses.\n\n"
+            f"— The FLoRA Validation team"
+        ),
+    }
+
+
+def admin_reset_email(handle: str, url: str, hours: int) -> dict:
+    """Recovery link for an administrator who cannot sign in."""
+    body = "".join([
+        f'<p style="margin:0 0 20px;font-size:16px;font-weight:600;color:{INK};">'
+        f"Set a new password for {handle}.</p>",
+        _paragraph(
+            "Use the button below to choose a new administrator password. Your "
+            "current password keeps working until you do."
+        ),
+        _link_button(url, "Choose a new password"),
+        _paragraph(f"This link works once and expires in {hours} hours."),
+        f'<p style="margin:24px 0 0;font-size:13px;color:{MUTED};line-height:1.7;">'
+        f"Didn\u2019t ask for this? Your account is unchanged and the link will lapse. "
+        f"Tell the team so the request can be looked into.</p>",
+        _divider(),
+        _sign_off(),
+    ])
+    return {
+        "subject": "Reset your FLoRA Validation administrator password",
+        "html": _base_layout(body),
+        "text": (
+            f"Set a new password for {handle}.\n\n"
+            f"Choose a new password here (works once, expires in {hours} hours):\n{url}\n\n"
+            f"Your current password keeps working until you do.\n\n"
+            f"Didn\u2019t ask for this? Your account is unchanged and the link will lapse.\n\n"
+            f"— The FLoRA Validation team"
+        ),
+    }
+
+
+def validator_signin_notice_email(handle: str, when: str, is_new: bool) -> dict:
+    """Told-you-afterwards notice that someone signed in to this account.
+
+    This is a notification, not a credential: sign-in already happened by the
+    time it is sent, and nothing in it can be used to gain access. It exists so
+    the account owner finds out about a sign-in they did not make.
+    """
+    opening = (
+        f"Welcome to FLoRA Validation, {handle}."
+        if is_new else
+        f"You just signed in, {handle}."
+    )
+    body = "".join([
+        f'<p style="margin:0 0 20px;font-size:16px;font-weight:600;color:{INK};">'
+        f"{opening}</p>",
+        _paragraph(
+            f"Someone signed in to the FLoRA Validation account "
+            f"<strong>{handle}</strong> at {when}."
+        ),
+        _paragraph(
+            f'If that was you, nothing to do \u2014 carry on at '
+            f'<a href="{APP_URL}" style="color:{ACCENT};text-decoration:underline;">'
+            f"validation.forrt.org</a>."
+        ),
+        f'<p style="margin:24px 0 0;font-size:13px;color:{MUTED};line-height:1.7;">'
+        f"<strong>If that was not you</strong>, tell the FLoRA team as soon as you "
+        f"can so the account can be looked at.</p>",
+        _divider(),
+        _sign_off(),
+    ])
+    return {
+        "subject": "New sign-in to your FLoRA Validation account",
+        "html": _base_layout(body),
+        "text": (
+            f"{opening}\n\n"
+            f"Someone signed in to the account {handle} at {when}.\n\n"
+            f"If that was you, nothing to do: {APP_URL}\n\n"
+            f"If that was NOT you, tell the FLoRA team as soon as you can.\n\n"
+            f"\u2014 The FLoRA Validation team"
+        ),
+    }

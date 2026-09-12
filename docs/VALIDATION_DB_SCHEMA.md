@@ -13,7 +13,7 @@ replication/reproduction rows. The ten current methods and archived aliases are
 centralized in `extractor_vocab.py`; see `CSV_SCHEMA.md` for the full boundary
 contract.
 
-The validation workflow is centered on these five tables (the repository also
+The validation workflow is centered on these seven tables (the repository also
 owns admin, assignment, source-record, messaging, and configuration tables):
 
 | Table | Purpose |
@@ -21,6 +21,8 @@ owns admin, assignment, source-record, messaging, and configuration tables):
 | `validators` | Registered validators with level, points, and accuracy tracking |
 | `unvalidated` | One row per resolved (doi_r, doi_o) pair; tracks validation progress |
 | `validation_queue` | Three rows per record (human_1, human_2, llm); individual validator slots |
+| `validation_skips` | Append-only reason/comment history for released validator claims |
+| `submission_failure_releases` | Server-controlled audit and one-time capability for failed background saves |
 | `validated` | Final consensus records — contains only authoritative validated values |
 | `record_metadata` | Supplementary extraction data from extracted.csv |
 
@@ -231,6 +233,74 @@ CREATE TABLE validation_queue (
 
 ---
 
+### `validation_skips`
+
+One immutable event per successful Skip action. The history is separate from
+`validation_queue` because releasing a claim clears and reuses that queue slot.
+
+```sql
+CREATE TABLE validation_skips (
+    skip_id       UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    record_id     UUID        NOT NULL REFERENCES unvalidated(record_id),
+    validator_id  INTEGER     NOT NULL REFERENCES validators(id),
+    queue_id      UUID        REFERENCES validation_queue(queue_id),
+    reason_code   TEXT        NOT NULL CHECK (reason_code IN (
+                                  'prefer_another', 'inaccessible',
+                                  'eligibility_unclear', 'data_quality',
+                                  'interpretation_unclear', 'other',
+                                  'submission_failed')),
+    comment       TEXT        CHECK (comment IS NULL OR char_length(comment) <= 1000),
+    skipped_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+`submission_failed` is retained in the database constraint only for historical
+rows written by the former recovery design. `/api/skip` no longer accepts it and
+new automatic releases never write to this table.
+
+The admin Skipped panel counts **distinct validators**, not events. It includes a
+record after more than five distinct validators skip for any reason, or after two
+distinct validators report eligibility/data-quality concerns. The detail API joins
+`validator_id` to `validators.handle`; names and comments are admin-only.
+
+---
+
+### `submission_failure_releases`
+
+One audit row per browser-generated `submission_id`. `/api/judge` can create or
+rotate the capability only after the server observes a pre-commit save failure and
+verifies that the same validator still owns the unfinished slot. The raw random
+stamp is returned to the browser once; PostgreSQL stores only its SHA-256 digest.
+
+```sql
+CREATE TABLE submission_failure_releases (
+    failure_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    submission_id   UUID NOT NULL UNIQUE,
+    queue_id        UUID NOT NULL REFERENCES validation_queue(queue_id) ON DELETE CASCADE,
+    record_id       UUID NOT NULL REFERENCES unvalidated(record_id) ON DELETE CASCADE,
+    validator_id    INTEGER NOT NULL REFERENCES validators(id),
+    status          TEXT NOT NULL CHECK (status IN
+                        ('save_failed', 'released', 'slot_closed', 'expired')),
+    stamp_hash      TEXT NOT NULL UNIQUE CHECK (char_length(stamp_hash) = 64),
+    failure_code    TEXT NOT NULL,
+    failure_message TEXT,
+    failed_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at      TIMESTAMPTZ NOT NULL,
+    released_at     TIMESTAMPTZ
+);
+```
+
+`POST /api/submission-failures/release` accepts only the opaque stamp, not a
+client-supplied validator or record identity. It locks record, queue, then audit
+row and can clear only the bound unfinished slot. `released` and `slot_closed`
+consume the capability; `expired` requires a new server-confirmed failure before
+release can be attempted again. These rows do not contribute to `skipped_count`
+or the admin Skipped panel. Admin record detail exposes the safe audit fields but
+never `stamp_hash`. The two-minute stale-slot reaper marks elapsed `save_failed`
+rows as `expired`, even if no browser attempts to consume them.
+
+---
+
 ### `validated`
 
 Final consensus records. Contains **only** authoritative validated values — no
@@ -306,7 +376,7 @@ the complete A-side source and judgement history still attached to
 ### `admins` and authentication state
 
 `admins` currently stores `password TEXT` and `trusted BOOLEAN`. Admin bearer tokens
-are deterministic hashes of the plaintext password rather than independent session
+are deterministic hashes of the stored Argon2id hash rather than independent session
 rows. A known password fallback may seed a fresh database when `ADMIN_PASSWORD` is
 missing. This section documents current behavior, not an acceptable target design.
 The credential-hash, bootstrap, revocable-session, and CSRF migration is tracked in
@@ -400,15 +470,72 @@ Both humans complete
 
 ## Nightly Sync
 
-`sync_csv.py` downloads the latest `extracted.csv` from GitHub nightly at 2:00 AM UTC:
+`extractor_maintenance.run_scheduled()` starts nightly at 02:00 UTC and records
+each run in:
+
+```sql
+CREATE TABLE extractor_maintenance_runs (
+    run_id UUID PRIMARY KEY,
+    trigger TEXT,             -- scheduled | admin | cli
+    requested_stage TEXT,     -- full | sync | find | cleanup
+    requested_by TEXT,
+    status TEXT,              -- queued/running/success/warning/blocked/failed
+    created_at TIMESTAMPTZ,
+    started_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ,
+    stage_status JSONB,
+    safety_report JSONB,
+    log_text TEXT
+);
+```
+
+The partial unique index `uq_extractor_maintenance_one_active` permits only one
+queued/running history reservation. A session-level PostgreSQL advisory lock is
+held by `extractor_maintenance.py` for the complete child-process lifetime, so
+only one live operation can execute across all app workers. History is not
+automatically purged, and the admin API returns at least the previous seven days.
+Manual HTTP 202 responses commit the queued row only; a ten-second dispatcher
+poll executes it, so pod shutdown after the response cannot lose the request.
+If a running worker disappears, another lock holder requeues the same run.
+
+For a routine `full` run (the nightly job and the primary admin action):
 
 1. Fetches from `https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/data/extracted.csv`
-2. Archives to `data/extracted_DD.MM.YYYY.csv`
-3. Overwrites `data/extracted_latest.csv`
-4. Calls `csv_to_db.run_import()` to insert new rows, refresh metadata for existing
-   `pair_id`s, and safely re-key a corrected pair by `(work_id, original_rank)`
+2. Exclusively archives to
+   `data/extracted_YYYYMMDDTHHMMSSZ_<run-id>.csv` (collision suffixes preserve
+   every same-second retry)
+3. Compares unique resolved IDs against the baseline the orchestrator names from
+   run history — the previous run's archive, verified by sha256 — and blocks when
+   that baseline is missing or stale while `unvalidated` is populated
+4. Blocks an empty/zero-resolved candidate as an extractor error
+5. Blocks when removed resolved IDs are more than 10% of the previous set
+   (`EXTRACTOR_MAX_REMOVAL_PERCENT` overrides the threshold and must be finite
+   and within 0 through 100)
+6. Records newly added resolved IDs as a warning but allows the import
+7. Calls `csv_to_db.run_import()` to insert/refresh/re-key rows
+8. Atomically promotes the candidate only after import succeeds, verifies the
+   promoted bytes, reads the archive back to record `archive_file`/`archive_sha256`,
+   and records all Part 1 completion flags for that `run_id`
+9. Runs read-only orphan reporting against that exact archived snapshot and stops.
 
-APScheduler starts the job when `app.py` loads.
+Routine and scheduled runs never select `cleanup_orphans.py`, even when the
+omission is below the 10% synchronization threshold. Deletion requires a separate
+manual `cleanup` request with explicit confirmation. That request rechecks the
+persisted Part 1/2 run IDs and archive digest, then writes exact deleted identities
+and per-table counts to `safety_report.cleanup_receipt` in the same transaction as
+the DELETE statements. Crash recovery can therefore finalize a committed cleanup
+without repeating it.
+
+Any sync failure or safety block skips orphan reporting, so the old latest CSV
+cannot become a mass-deletion baseline. Admins can launch the non-destructive
+Sync + Report operation or each individual stage from the Extractor Pipeline tab
+and inspect the complete retained log.
+Standalone Part 2/3 requests are linked through `safety_report.source_sync_run_id`
+and `source_find_run_id`. They use only the newest prerequisite attempt and block
+when it is incomplete, even if an older run succeeded. The run IDs are paired with
+`safety_report.archive_file` and `archive_sha256`: the stage resolves that archive
+on `EXTRACTOR_DATA_DIR` and verifies its digest before reading it, so a pod without
+the shared volume blocks rather than acting on a different snapshot.
 
 ---
 

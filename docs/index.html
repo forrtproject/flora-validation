@@ -29,7 +29,7 @@
 
   <div class="login-maint-bar">
     <div class="login-maint-bar-inner">
-      🔧 Nightly maintenance 00:00–01:00 CET — the app may be briefly unavailable during this window.
+      🔧 Nightly maintenance 02:00–03:00 UTC — the app may be briefly unavailable during this window.
     </div>
   </div>
 
@@ -56,7 +56,7 @@
 
   <div class="login-right">
     <div class="login-card">
-      <p class="login-intro">Choose a username with an email or generate your personal code to begin.</p>
+      <p class="login-intro">Enter your username and email and we will send you a sign-in link.</p>
 
       <div class="login-circle">
         <div class="circle-handle">
@@ -65,7 +65,7 @@
         </div>
 
         <div class="circle-sep">
-          <span id="auth-sep-label">// sign in with email</span>
+          <span id="auth-sep-label">// we email you a sign-in link</span>
         </div>
 
         <!-- Email section (default) -->
@@ -76,46 +76,21 @@
           </div>
         </div>
 
-        <!-- Code section (hidden by default) -->
-        <div id="code-section" class="circle-auth-section hidden">
-          <div class="circle-codes">
-            <div class="code-row">
-              <span class="code-row-num">01</span>
-              <span class="code-step">The first two letters of city of birth <em>· first 2</em></span>
-              <input class="code-part" id="cp1" maxlength="2" placeholder="Am" autocomplete="off">
-            </div>
-            <div class="code-row">
-              <span class="code-row-num">02</span>
-              <span class="code-step">The first two letters of father's first name <em>· first 2</em></span>
-              <input class="code-part" id="cp2" maxlength="2" placeholder="in" autocomplete="off">
-            </div>
-            <div class="code-row">
-              <span class="code-row-num">03</span>
-              <span class="code-step">The last two digits of birth year <em>· last 2 digits</em></span>
-              <input class="code-part" id="cp3" maxlength="2" placeholder="01" autocomplete="off">
-            </div>
-            <div class="code-row">
-              <span class="code-row-num">04</span>
-              <span class="code-step">The first two letters of current street <em>· first 2</em></span>
-              <input class="code-part" id="cp4" maxlength="2" placeholder="Br" autocomplete="off">
-            </div>
-          </div>
-        </div>
-
+        <label for="remember-me" style="display:flex;align-items:center;gap:0.5rem;font-size:0.88rem;color:var(--muted);margin:0.35rem 0 0.6rem;cursor:pointer">
+          <input type="checkbox" id="remember-me" checked>
+          Stay signed in on this device
+        </label>
         <div class="code-footer">
-          <span id="code-preview-wrap" class="code-preview-label hidden">→ <strong id="code-preview">——</strong></span>
           <button id="login-btn">Enter →</button>
+        </div>
+        <div class="login-forgot-row hidden" id="not-you-row">
+          <button class="link-btn" id="not-you-btn">Not you? Clear this device</button>
         </div>
         <div class="login-forgot-row">
           <button class="link-btn" id="forgot-handle-btn">Forgot your username?</button>
         </div>
-        <div class="login-toggle-row">
-          <span class="toggle-label" id="toggle-label-email">Email</span>
-          <label class="toggle-switch">
-            <input type="checkbox" id="login-mode-toggle">
-            <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          </label>
-          <span class="toggle-label" id="toggle-label-code">Code</span>
+        <div class="login-forgot-row">
+          <button class="link-btn" id="claim-code-btn">Signed up with a personal code?</button>
         </div>
       </div>
     </div>
@@ -213,7 +188,13 @@
       <div class="stat"><span class="label">Rank</span><span id="stat-rank" class="value">—</span></div>
     </div>
     <div class="header-actions">
-      <button id="pending-saves-btn" class="ghost-btn pending-saves hidden" title="Judgements still saving in the background">⏳ <span id="pending-saves-count">0</span> saving</button>
+      <button id="pending-saves-btn" class="ghost-btn pending-saves hidden" type="button"
+              aria-haspopup="dialog" aria-controls="pending-submissions-modal"
+              title="Review judgements waiting to be saved">
+        <span aria-hidden="true">⏳</span>
+        <span id="pending-saves-count">0</span>
+        <span id="pending-saves-label">saving</span>
+      </button>
       <button id="assignments-btn" class="ghost-btn hidden" title="Records assigned to you">📋 Assignments <span id="assignments-count" class="inbox-badge">0</span></button>
       <button id="history-btn" class="ghost-btn" title="My Judgements">My Judgements</button>
       <button id="inbox-btn" class="ghost-btn inbox-btn-wrap" title="Messages">
@@ -285,6 +266,7 @@
       <button class="admin-tab-btn" data-tab="admins">Admins</button>
       <button class="admin-tab-btn" data-tab="dashboard">Dashboard</button>
       <button class="admin-tab-btn" data-tab="priority">Pool Priority</button>
+      <button class="admin-tab-btn" data-tab="maintenance">Extractor Pipeline <span id="admin-maintenance-badge" class="inbox-badge hidden" style="position:relative;top:-1px;right:auto;margin-left:4px">0</span></button>
       <button class="admin-tab-btn" data-tab="restricted">Restricted access <span id="admin-restricted-badge" class="inbox-badge hidden" style="position:relative;top:-1px;right:auto;margin-left:4px">0</span></button>
       <button class="admin-tab-btn" data-tab="messages">Messages <span id="admin-msg-badge" class="inbox-badge hidden" style="position:relative;top:-1px;right:auto;margin-left:4px">0</span></button>
     </div>
@@ -294,6 +276,7 @@
       <button class="admin-filter-btn active" data-filter="all">All <span class="filter-count" id="fc-all">—</span></button>
       <button class="admin-filter-btn" data-filter="pending_approval">Pending Approval <span class="filter-count" id="fc-pending-approval">—</span></button>
       <button class="admin-filter-btn" data-filter="needs_review">Needs Review <span class="filter-count" id="fc-needs-review">—</span></button>
+      <button class="admin-filter-btn" data-filter="skipped" title="Repeated skips or independent eligibility/data-quality reports">Skipped <span class="filter-count" id="fc-skipped">—</span></button>
       <button class="admin-filter-btn" data-filter="admin_comments" title="Show entries with a saved admin note">Admin comments <span class="filter-count" id="fc-admin-comments">—</span></button>
       <button class="admin-filter-btn" data-filter="validated">Validated <span class="filter-count" id="fc-validated">—</span></button>
       <button class="admin-filter-btn" data-filter="rejected">Excluded <span class="filter-count" id="fc-rejected">—</span></button>
@@ -314,6 +297,7 @@
             <th class="th-sort" data-sort="outcome">Outcome</th>
             <th class="th-sort" data-sort="status">Status</th>
             <th class="th-sort" data-sort="validators">Validators</th>
+            <th class="th-sort" data-sort="skips" title="Skip events and the number of distinct validators who submitted them">Skips</th>
             <th class="th-sort" data-sort="agreement" title="Share of the 3 checks where the two human validators agree — 🤖✗ marks checks where the LLM dissents from their consensus">Agreement</th>
             <th class="th-sort" data-sort="approved_by">Approved by</th>
             <th>Approve</th>
@@ -429,6 +413,71 @@
       </div>
     </div>
 
+    <div id="admin-tab-maintenance" class="hidden">
+      <section class="pipeline-console" aria-labelledby="pipeline-title">
+        <header class="pipeline-hero">
+          <div>
+            <p class="pipeline-kicker">Extractor operations</p>
+            <h2 id="pipeline-title">Snapshot safety &amp; maintenance</h2>
+            <p>Routine and nightly runs stop after the read-only orphan report. Deletion is a separate, explicitly confirmed admin action.</p>
+          </div>
+          <button id="pipeline-refresh-btn" class="ghost-btn" type="button">Refresh</button>
+        </header>
+
+        <div class="pipeline-policy-grid">
+          <article class="pipeline-policy-card">
+            <span class="pipeline-policy-index">01</span>
+            <strong>Empty snapshot</strong>
+            <p>Zero resolved pair IDs is treated as an extractor pipeline error.</p>
+          </article>
+          <article class="pipeline-policy-card">
+            <span class="pipeline-policy-index">02</span>
+            <strong>Removal guard</strong>
+            <p>More than <span id="pipeline-removal-limit">10%</span> removed IDs blocks promotion. Cleanup is always manual.</p>
+          </article>
+          <article class="pipeline-policy-card">
+            <span class="pipeline-policy-index">03</span>
+            <strong>New identifiers</strong>
+            <p>New resolved pair IDs are imported but leave a visible warning for review.</p>
+          </article>
+        </div>
+        <div id="pipeline-config-alert" class="pipeline-alert pipeline-alert-blocked hidden" role="alert"></div>
+
+        <div class="pipeline-actions" id="pipeline-actions">
+          <div class="pipeline-action-primary">
+            <span class="pipeline-action-label">Recommended safe operation</span>
+            <h3>Sync and inspect</h3>
+            <p>Import the current CSV and produce the read-only orphan report. This operation never deletes records.</p>
+            <button class="btn-primary pipeline-run-btn" data-stage="full" type="button">Run sync + report</button>
+          </div>
+          <div class="pipeline-action-stack">
+            <button class="pipeline-stage-btn pipeline-run-btn" data-stage="sync" type="button">
+              <span><b>1</b> CSV sync</span><small>Download, safety-check, import &amp; promote</small>
+            </button>
+            <button class="pipeline-stage-btn pipeline-run-btn" data-stage="find" type="button">
+              <span><b>2</b> Orphan report</span><small>Read-only comparison against latest CSV</small>
+            </button>
+            <button class="pipeline-stage-btn pipeline-run-btn pipeline-stage-danger" data-stage="cleanup" type="button">
+              <span><b>3</b> Manual guarded cleanup</span><small>Explicitly confirm permanent orphan deletion</small>
+            </button>
+          </div>
+        </div>
+
+        <div id="pipeline-live-status" class="pipeline-live-status hidden" role="status"></div>
+
+        <div class="pipeline-history-head">
+          <div>
+            <p class="pipeline-kicker">Audit trail</p>
+            <h3>Last seven days</h3>
+          </div>
+          <span id="pipeline-history-count" class="pipeline-history-count"></span>
+        </div>
+        <div id="pipeline-history" class="pipeline-history">
+          <p class="admin-loading">Loading pipeline history...</p>
+        </div>
+      </section>
+    </div>
+
     <div id="admin-tab-restricted" class="hidden">
       <div id="admin-restricted-body">
         <p class="admin-loading">Loading…</p>
@@ -455,7 +504,7 @@
     <div id="admin-tab-admins" class="hidden">
       <div class="admin-table-wrap" style="max-width:600px">
         <h3 style="margin:0 0 1rem">Admin Accounts</h3>
-        <p style="color:var(--muted);font-size:0.88rem;margin-bottom:1.25rem">Each admin has their own handle and password. Approvals are stamped with the approving admin's handle so errors can be traced.</p>
+        <p style="color:var(--muted);font-size:0.88rem;margin-bottom:1.25rem">Each admin has their own handle and password. Approvals are stamped with the approving admin's handle so errors can be traced. New admins receive a single-use invitation link and choose their own password &mdash; you never see it.</p>
         <div id="admin-admins-list"></div>
         <hr style="margin:1.5rem 0;border:none;border-top:1px solid var(--rule)">
         <div id="admin-add-form">
@@ -466,10 +515,10 @@
               <input id="new-admin-handle" class="admin-input" placeholder="e.g. lukas" autocomplete="off" style="width:160px">
             </div>
             <div>
-              <label class="admin-form-label">Password</label>
-              <input id="new-admin-password" class="admin-input" type="password" placeholder="••••••••" autocomplete="new-password" style="width:180px">
+              <label class="admin-form-label">Email</label>
+              <input id="new-admin-email" class="admin-input" type="email" placeholder="name@example.org" autocomplete="off" style="width:220px">
             </div>
-            <button id="add-admin-btn" class="btn-primary" onclick="addAdminAccount()">Add admin</button>
+            <button id="add-admin-btn" class="btn-primary" onclick="addAdminAccount()">Send invitation</button>
           </div>
         </div>
         <p id="admin-no-trust-msg" style="display:none;color:var(--muted);font-size:0.88rem">Only trusted admins can add or remove admin accounts.</p>
@@ -644,6 +693,82 @@
   </div>
 </div>
 
+<!-- ------------ PENDING JUDGEMENT RECOVERY MODAL ------------ -->
+<div id="pending-submissions-modal" class="faq-overlay pending-recovery-overlay hidden"
+     role="dialog" aria-modal="true" aria-labelledby="pending-submissions-title"
+     aria-describedby="pending-submissions-intro">
+  <div class="faq-panel pending-recovery-panel" tabindex="-1">
+    <div class="pending-recovery-header">
+      <div>
+        <span class="pending-recovery-kicker">Local recovery desk</span>
+        <h2 id="pending-submissions-title">Pending judgements</h2>
+      </div>
+      <button id="pending-submissions-close" class="faq-close" type="button"
+              aria-label="Close pending judgements" title="Close">×</button>
+    </div>
+    <div class="pending-recovery-body">
+      <div class="pending-recovery-intro-row">
+        <p id="pending-submissions-intro">Each judgement remains on this device until it is saved, the server confirms its record was released or closed, or you explicitly discard it.</p>
+        <span id="pending-modal-count" class="pending-modal-count" aria-live="polite"></span>
+      </div>
+      <div id="pending-modal-panel" class="pending-modal-panel"></div>
+      <p class="pending-recovery-note"><span aria-hidden="true">↳</span> Export JSON creates a local backup of the judgement only; it does not remove or submit anything.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ------------ SKIP REASON MODAL ------------ -->
+<div id="skip-reason-modal" class="faq-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="skip-reason-title" aria-describedby="skip-reason-intro">
+  <div class="skip-reason-panel">
+    <div class="faq-panel-header">
+      <div>
+        <span class="skip-reason-kicker">Release this record</span>
+        <span id="skip-reason-title" class="faq-panel-title">Why are you skipping?</span>
+      </div>
+      <button id="skip-reason-close" class="faq-close" type="button" title="Cancel">×</button>
+    </div>
+    <form id="skip-reason-form" class="skip-reason-form">
+      <p id="skip-reason-intro" class="skip-reason-intro">Your answer helps the review team distinguish a personal skip from an eligibility or data problem. It is not a judgement and earns no points.</p>
+      <fieldset class="skip-reason-options">
+        <legend class="sr-only">Select one reason</legend>
+        <label class="skip-reason-option">
+          <input type="radio" name="skip-reason" value="prefer_another">
+          <span><strong>Need more time or prefer another record</strong><small>The record returns to the validation pool.</small></span>
+        </label>
+        <label class="skip-reason-option">
+          <input type="radio" name="skip-reason" value="inaccessible">
+          <span><strong>Cannot access enough of the paper</strong><small>The record is also sent to Restricted access.</small></span>
+        </label>
+        <label class="skip-reason-option">
+          <input type="radio" name="skip-reason" value="eligibility_unclear">
+          <span><strong>Unclear whether this qualifies</strong><small>For example, an extended conference abstract or an unclear replication claim.</small></span>
+        </label>
+        <label class="skip-reason-option">
+          <input type="radio" name="skip-reason" value="data_quality">
+          <span><strong>Record or extracted data looks incorrect</strong><small>Possible mismatch, missing information, or broken source data.</small></span>
+        </label>
+        <label class="skip-reason-option">
+          <input type="radio" name="skip-reason" value="interpretation_unclear">
+          <span><strong>Study or outcome is difficult to interpret</strong><small>The source is available, but the coding decision remains unclear.</small></span>
+        </label>
+        <label class="skip-reason-option">
+          <input type="radio" name="skip-reason" value="other">
+          <span><strong>Other</strong><small>Describe the reason briefly below.</small></span>
+        </label>
+      </fieldset>
+
+      <label for="skip-reason-comment" class="skip-comment-label">Comment <span id="skip-comment-requirement">optional</span></label>
+      <textarea id="skip-reason-comment" class="skip-reason-comment" maxlength="1000" rows="3" placeholder="Add useful context for the review team…"></textarea>
+      <div class="skip-comment-meta"><span id="skip-reason-error" class="skip-reason-error" role="alert"></span><span id="skip-comment-count">0 / 1000</span></div>
+
+      <div class="skip-reason-actions">
+        <button id="skip-reason-cancel" class="ghost-btn" type="button">Keep this record</button>
+        <button id="skip-reason-submit" class="btn-primary" type="submit" disabled>Skip record →</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- ------------ GENERIC DIALOG MODAL ------------ -->
 <div id="dialog-modal" class="faq-overlay hidden" role="dialog" aria-modal="true">
   <div class="faq-panel" style="max-width:420px;text-align:center">
@@ -680,6 +805,96 @@
     <div id="faq-body" class="faq-body">
       <p class="faq-loading">Loading…</p>
     </div>
+  </div>
+</div>
+
+<!-- Shown only when the page is opened from an invitation or recovery link. -->
+<div id="auth-link-screen" class="hidden" style="position:fixed;inset:0;z-index:9000;background:var(--bg);overflow:auto;padding:2.5rem 1rem">
+  <div style="max-width:420px;margin:0 auto">
+    <h2 id="auth-link-title" style="margin:0 0 0.5rem">Choose your password</h2>
+    <p id="auth-link-intro" style="color:var(--muted);font-size:0.92rem;margin-bottom:1.25rem"></p>
+    <div id="auth-link-form">
+      <label class="admin-form-label" for="auth-link-password">New password</label>
+      <input id="auth-link-password" class="admin-input" type="password" autocomplete="new-password" style="width:100%;margin-bottom:0.75rem">
+      <label class="admin-form-label" for="auth-link-confirm">Repeat password</label>
+      <input id="auth-link-confirm" class="admin-input" type="password" autocomplete="new-password" style="width:100%;margin-bottom:1rem">
+      <div id="auth-link-error" style="color:var(--accent);font-size:0.88rem;min-height:1.2em;margin-bottom:0.75rem"></div>
+      <button id="auth-link-submit" class="btn-primary" style="width:100%">Set password</button>
+    </div>
+  </div>
+</div>
+
+<!-- One-time migration for accounts made before email sign-in. -->
+<div id="claim-code-screen" class="hidden" style="position:fixed;inset:0;z-index:9000;background:var(--bg);overflow:auto;padding:2.5rem 1rem">
+  <div style="max-width:460px;margin:0 auto">
+    <h2 style="margin:0 0 0.5rem">Add your email address</h2>
+    <p style="color:var(--muted);font-size:0.92rem;margin-bottom:1.25rem">
+      Your account was created with a personal code. Enter it once to confirm the
+      account is yours and choose the email address you will sign in with from now
+      on. Your points and history stay exactly as they are.
+    </p>
+
+    <label class="admin-form-label" for="claim-handle">Username</label>
+    <input id="claim-handle" class="admin-input" autocomplete="off" style="width:100%;margin-bottom:0.9rem">
+
+    <label class="admin-form-label">Your personal code</label>
+    <div class="circle-codes" style="margin-bottom:0.9rem">
+      <div class="code-row">
+        <span class="code-row-num">01</span>
+        <span class="code-step">First two letters of city of birth</span>
+        <input class="code-part claim-part" id="ccp1" maxlength="2" placeholder="Am" autocomplete="off">
+      </div>
+      <div class="code-row">
+        <span class="code-row-num">02</span>
+        <span class="code-step">First two letters of father's first name</span>
+        <input class="code-part claim-part" id="ccp2" maxlength="2" placeholder="in" autocomplete="off">
+      </div>
+      <div class="code-row">
+        <span class="code-row-num">03</span>
+        <span class="code-step">Last two digits of birth year</span>
+        <input class="code-part claim-part" id="ccp3" maxlength="2" placeholder="01" autocomplete="off">
+      </div>
+      <div class="code-row">
+        <span class="code-row-num">04</span>
+        <span class="code-step">First two letters of current street</span>
+        <input class="code-part claim-part" id="ccp4" maxlength="2" placeholder="Br" autocomplete="off">
+      </div>
+    </div>
+
+    <label class="admin-form-label" for="claim-email">Email address</label>
+    <input id="claim-email" class="admin-input" type="email" placeholder="you@example.com" autocomplete="email" style="width:100%;margin-bottom:1rem">
+
+    <div id="claim-error" style="color:var(--accent);font-size:0.88rem;min-height:1.2em;margin-bottom:0.75rem"></div>
+    <button id="claim-submit" class="btn-primary" style="width:100%;margin-bottom:0.6rem">Save and sign in</button>
+    <button id="claim-cancel" class="link-btn" style="width:100%">Back to sign in</button>
+  </div>
+</div>
+
+<!-- Administrator sign-in. Reached by triple-clicking the wordmark on the login
+     screen, or with ?admin=1. Hidden to keep it out of a validator's way, which
+     is tidiness rather than a security measure: /api/admin/login is public, and
+     the password, throttling and sessions are what actually protect it. -->
+<div id="admin-signin-screen" class="hidden" style="position:fixed;inset:0;z-index:9000;background:var(--bg);overflow:auto;padding:2.5rem 1rem">
+  <div style="max-width:380px;margin:0 auto">
+    <h2 style="margin:0 0 0.5rem">Administrator sign-in</h2>
+    <p style="color:var(--muted);font-size:0.92rem;margin-bottom:1.25rem">
+      For FLoRA administrators. Validators sign in on the main screen.
+    </p>
+    <form id="admin-signin-form" autocomplete="on">
+      <label class="admin-form-label" for="admin-signin-handle">Username</label>
+      <input id="admin-signin-handle" class="admin-input" name="username" autocomplete="username" style="width:100%;margin-bottom:0.9rem">
+
+      <label class="admin-form-label" for="admin-signin-password">Password</label>
+      <input id="admin-signin-password" class="admin-input" type="password" name="password" autocomplete="current-password" style="width:100%;margin-bottom:1rem">
+
+      <label for="admin-remember-me" style="display:flex;align-items:center;gap:0.5rem;font-size:0.88rem;color:var(--muted);margin-bottom:0.9rem;cursor:pointer">
+        <input type="checkbox" id="admin-remember-me">
+        Stay signed in on this device
+      </label>
+      <div id="admin-signin-error" style="color:var(--accent);font-size:0.88rem;min-height:1.2em;margin-bottom:0.75rem"></div>
+      <button id="admin-signin-submit" type="submit" class="btn-primary" style="width:100%;margin-bottom:0.6rem">Sign in</button>
+    </form>
+    <button id="admin-signin-cancel" class="link-btn" style="width:100%">Back</button>
   </div>
 </div>
 
