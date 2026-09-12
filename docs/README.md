@@ -516,6 +516,31 @@ outcome quote, choose a corrected outcome, and add notes.
 `was_unsure_original` or `was_unsure_outcome` in `additional_checks`. The consensus
 engine reads those flags and sends the record to `need_review`.
 
+### The coded original set (gate 2)
+
+One replication can target several originals, and the extractor codes one row per
+`(replication, original)` pair, so gate 2 shows a validator one of them at a time.
+A paper replicating a dominant original plus secondary ones may legitimately be
+coded against only the dominant one or against all of them, so a single row cannot
+distinguish a defensible subset from a wrong match.
+
+Gate 2 therefore lists every original coded for the same `doi_r` and marks the row
+being judged; the validator answers for that row alone. Served by `_coded_originals`
+(`app.py`) on every pair payload and rendered by `_codedOriginalsBlock`
+(`docs/app.js`), which draws nothing when there is only one coded original.
+
+The set carries no validation status or judgement fields — that would anchor the
+second validator against the two-human consensus design — and a blank `doi_r` is
+never grouped. The DOI match is case-insensitive, with a matching functional index,
+because DOI names are case-insensitive by spec and an exact match could split one
+paper's set; the pair identity key itself is unchanged. Rejected rows are filtered out in the `WHERE` clause: an
+admin-resolved duplicate stays in `unvalidated` as `rejected` carrying the same
+original as its survivor, which would otherwise list one original twice. The list
+is capped only as a runaway guard, the judged row is pinned so truncation cannot
+drop it, and the true set size is reported even when the list is capped.
+
+Reporting an original the extractor *missed* is not yet supported.
+
 For normal-mode abstract quotes, the frontend uses a fuzzy quote-in-abstract gate.
 If the effective quote is not found, it adds `quote_not_in_abstract`; consensus
 then requires admin review. The check is skipped for declared full-text quotes,

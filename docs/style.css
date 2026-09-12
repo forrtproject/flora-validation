@@ -1584,6 +1584,87 @@ details[open] .senior-reject-summary::before { content: "▾ "; }
   line-height: 1.5;
 }
 
+/* ---------- Coded original set (Gate II, multi-original replications) ---------- */
+/* Shown only when a replication was coded against more than one original, so the
+   validator can tell a defensible subset from a genuinely wrong match. */
+.coded-set {
+  margin: 0 0 1.25rem;
+  padding: 0.85rem 1rem;
+  background: var(--bg-alt);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  max-width: 65ch;
+}
+.cs-head {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 0.6rem;
+}
+.cs-list { list-style: none; margin: 0; padding: 0; }
+.cs-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 7px;
+  border-left: 2px solid transparent;
+}
+.cs-item + .cs-item { margin-top: 0.15rem; }
+.cs-current {
+  background: var(--bg);
+  border-left-color: var(--accent);
+}
+.cs-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--muted);
+  flex: 0 0 auto;
+  min-width: 1.1em;
+}
+.cs-body { flex: 1 1 auto; min-width: 0; }
+.cs-title {
+  display: block;
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  color: var(--ink);
+}
+.cs-current .cs-title { font-weight: 600; }
+.cs-meta {
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  margin-top: 0.15rem;
+  overflow-wrap: anywhere;
+}
+.cs-meta a { color: var(--accent); }
+.cs-nodoi { font-style: italic; }
+.cs-badge {
+  flex: 0 0 auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  border: 1px solid var(--accent-soft);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  white-space: nowrap;
+}
+.cs-hint {
+  margin-top: 0.7rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
 .outcome-info {
   background: var(--bg-alt);
   padding: 1.1rem 1.4rem;

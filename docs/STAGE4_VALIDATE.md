@@ -1,6 +1,12 @@
 
 # Stage 4 — Validate
 
+> **Stale — describes a retired prototype, not the app in production.**
+> This documents an older Flask + SQLite reviewer on port 5001 (`validate/`,
+> a `votes` table, `reviewer_id`). The live validator is the FastAPI +
+> PostgreSQL app in `app.py` with `docs/app.js`. Nothing below is safe to rely
+> on. See `docs/PROJECT.md` for current behaviour.
+
 **Input:** `data/extracted.csv` (loaded via `validate/import_csv.py`)
 **Output:** `data/validated.csv`
 **Run:**
@@ -127,6 +133,8 @@ This full log is loaded lazily (`GET /api/validate/log?doi_r=...`) to keep the i
 
 - Papers are served in order of `validation_status = pending` first, then `needs_review`
 - Multi-original papers (n_originals > 1) are grouped: all rows for a given `doi_r` appear together
+  <!-- Never built in this prototype. The live app instead shows the full coded set
+       inside Gate II; see docs/PROJECT.md "Multi-original replications". -->
 - Confirmed and rejected papers are hidden from the default queue; a toggle shows them for correction
 
 ---
