@@ -50,7 +50,12 @@
     </div>
     <div class="login-left-footer">
       <span>v0.2</span>
-      <button id="login-faq-btn">FAQ →</button>
+      <div class="login-left-footer-actions">
+        <!-- Public: a plain link, not a button, so it works before sign-in and can be
+             copied and shared on its own. -->
+        <a href="./dataset.html" id="login-dataset-link">Dataset →</a>
+        <button id="login-faq-btn">FAQ →</button>
+      </div>
     </div>
   </div>
 
@@ -262,6 +267,7 @@
     <div class="admin-tabs" id="admin-tabs">
       <button class="admin-tab-btn active" data-tab="entries">Entries</button>
       <button class="admin-tab-btn" data-tab="sources">Source Records</button>
+      <button class="admin-tab-btn" data-tab="flora">FLoRA</button>
       <button class="admin-tab-btn" data-tab="stats">Validator Stats</button>
       <button class="admin-tab-btn" data-tab="admins">Admins</button>
       <button class="admin-tab-btn" data-tab="dashboard">Dashboard</button>
@@ -278,6 +284,7 @@
       <button class="admin-filter-btn" data-filter="needs_review">Needs Review <span class="filter-count" id="fc-needs-review">—</span></button>
       <button class="admin-filter-btn" data-filter="skipped" title="Repeated skips or independent eligibility/data-quality reports">Skipped <span class="filter-count" id="fc-skipped">—</span></button>
       <button class="admin-filter-btn" data-filter="admin_comments" title="Show entries with a saved admin note">Admin comments <span class="filter-count" id="fc-admin-comments">—</span></button>
+      <button class="admin-filter-btn" data-filter="quality_flagged" title="Records with row-local data-quality problems — these may need excluding">Data quality <span class="filter-count" id="fc-quality-flagged">—</span></button>
       <button class="admin-filter-btn" data-filter="validated">Validated <span class="filter-count" id="fc-validated">—</span></button>
       <button class="admin-filter-btn" data-filter="rejected">Excluded <span class="filter-count" id="fc-rejected">—</span></button>
       <button class="admin-filter-btn" data-filter="admin_checked" style="display:none">Admin Checked <span class="filter-count" id="fc-admin-checked">—</span></button>
@@ -318,10 +325,36 @@
     <div id="admin-tab-sources" class="hidden">
       <div id="src-freshness" class="src-freshness"></div>
 
+      <!-- Manual sync. The button dispatches the same nightly GitHub Action, so
+           the gates in sync_sources.py apply identically to a manual run. -->
+      <section class="src-sync-panel" id="src-sync-panel">
+        <div class="src-sync-head">
+          <div>
+            <p class="src-sync-kicker">Entry-sheet sync</p>
+            <h3>Run the sync now</h3>
+            <p class="src-sync-blurb">Re-reads every enabled sheet and imports newly accepted rows, then
+              refreshes our own validated records. Sheet imports are insert-only: existing records are never
+              changed or removed. Runs on the server; also runs automatically at 03:00 UTC.</p>
+          </div>
+          <div class="src-sync-actions">
+            <button class="btn-primary" id="src-sync-run-btn" type="button">Run sync now</button>
+            <button class="ghost-btn" id="src-sync-refresh-btn" type="button" title="Refresh">Refresh</button>
+          </div>
+        </div>
+        <div id="src-sync-live" class="pipeline-live-status hidden" role="status"></div>
+        <div class="src-sync-log-head">
+          <span>Sync log</span>
+        </div>
+        <div id="src-sync-log" class="src-sync-log">
+          <p class="admin-loading">Loading sync history…</p>
+        </div>
+      </section>
+
       <div class="admin-filters" id="src-filters">
         <button class="admin-filter-btn active" data-filter="all">All <span class="filter-count" id="sfc-all">—</span></button>
         <button class="admin-filter-btn" data-filter="replication">Replications <span class="filter-count" id="sfc-repl">—</span></button>
         <button class="admin-filter-btn" data-filter="reproduction">Reproductions <span class="filter-count" id="sfc-repro">—</span></button>
+        <button class="admin-filter-btn" data-filter="validated">Validated <span class="filter-count" id="sfc-validated">—</span></button>
         <button class="admin-filter-btn" data-filter="unreviewed">Not reviewed <span class="filter-count" id="sfc-unreviewed">—</span></button>
         <button class="admin-filter-btn" data-filter="reviewed">Reviewed <span class="filter-count" id="sfc-reviewed">—</span></button>
         <button class="admin-filter-btn" data-filter="flagged">Duplicates <span class="filter-count" id="sfc-flagged">—</span></button>
@@ -476,6 +509,60 @@
           <p class="admin-loading">Loading pipeline history...</p>
         </div>
       </section>
+    </div>
+
+    <!-- FLoRA: the prepared product. Derived from source_records on demand by
+         transform_sources.build(), never materialised, so it cannot drift from
+         the Source Records tab. flora_id comes from the flora_records registry. -->
+    <div id="admin-tab-flora" class="hidden">
+      <section class="flora-head">
+        <div>
+          <p class="flora-kicker">Prepared dataset</p>
+          <h3>FLoRA records</h3>
+          <p class="flora-blurb">Outcomes derived, DOIs cleaned, exclusions and duplicates applied.
+            Each row keeps the record ID it has in Source Records &mdash; pinned when first assigned, so it
+            stays put even if a duplicate ruling changes which record the row derives from.</p>
+        </div>
+        <div class="flora-actions">
+          <button class="btn-primary" id="flora-export-btn" type="button">Export CSV</button>
+          <button class="ghost-btn" id="flora-refresh-btn" type="button">Refresh</button>
+        </div>
+      </section>
+
+      <div id="flora-stats" class="flora-stats"></div>
+      <div id="flora-unregistered" class="pipeline-alert pipeline-alert-blocked hidden" role="alert"></div>
+
+      <div class="admin-filters" id="flora-filters">
+        <button class="admin-filter-btn active" data-filter="all">All <span class="filter-count" id="ffc-all">—</span></button>
+        <button class="admin-filter-btn" data-filter="replication">Replications <span class="filter-count" id="ffc-repl">—</span></button>
+        <button class="admin-filter-btn" data-filter="reproduction">Reproductions <span class="filter-count" id="ffc-repro">—</span></button>
+      </div>
+
+      <div class="admin-search-bar src-toolbar">
+        <input id="flora-search-input" type="search" class="admin-search-input"
+               placeholder="Search record ID, DOI or reference…">
+        <select id="flora-source-filter" class="admin-input"><option value="">All sources</option></select>
+        <select id="flora-outcome-filter" class="admin-input"><option value="">All outcomes</option></select>
+      </div>
+
+      <div class="admin-table-wrap">
+        <table class="admin-table src-table">
+          <thead>
+            <tr>
+              <th class="th-sort" data-sort="flora_id">Record ID</th>
+              <th class="th-sort" data-sort="source">Sheet</th>
+              <th class="th-sort" data-sort="type">Type</th>
+              <th class="th-sort" data-sort="doi_o">Original</th>
+              <th class="th-sort" data-sort="doi_r">Replication / Reproduction</th>
+              <th class="th-sort" data-sort="outcome">Outcome</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="flora-table-body"></tbody>
+        </table>
+        <p class="admin-empty hidden" id="flora-empty">No records match this filter.</p>
+      </div>
+      <div class="admin-pager" id="flora-pager"></div>
     </div>
 
     <div id="admin-tab-restricted" class="hidden">

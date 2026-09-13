@@ -192,7 +192,13 @@ a:hover { text-decoration-thickness: 2px; }
   border-top: 1px solid var(--rule);
   animation: fadeLeft 0.7s 0.15s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
+.login-left-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
 .login-left-footer span,
+.login-left-footer a,
 .login-left-footer button {
   border: 1px solid var(--rule);
   border-radius: 999px;
@@ -203,9 +209,11 @@ a:hover { text-decoration-thickness: 2px; }
   font-size: inherit;
   letter-spacing: inherit;
   text-transform: inherit;
+  text-decoration: none;
   cursor: pointer;
   transition: border-color 0.15s, color 0.15s;
 }
+.login-left-footer a:hover,
 .login-left-footer button:hover {
   border-color: var(--ink);
   color: var(--ink);
@@ -3399,6 +3407,60 @@ details[open] > .chk-collapsible-summary::before { transform: rotate(90deg); }
 }
 .admin-override-banner strong { color: var(--green); }
 
+/* ---------- Data-quality flags (admin review panel) ---------- */
+/* Advisory only: nothing about where a record landed depends on these, so the
+   banner has to carry the warning on its own. Red, first in the panel, and it
+   states the consequence — the record may need excluding — rather than just
+   naming the failed checks. */
+.admin-quality-banner {
+  background: #fbeaea;
+  border: 1px solid var(--red);
+  border-left: 4px solid var(--red);
+  border-radius: 0.75rem;
+  padding: 0.85rem 1.1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+.admin-quality-banner strong { color: var(--red); }
+.aq-list {
+  list-style: none;
+  margin: 0.7rem 0 0;
+  padding: 0;
+}
+.aq-item {
+  padding: 0.4rem 0 0.4rem 0.85rem;
+  border-left: 2px solid var(--red);
+  margin-bottom: 0.35rem;
+  background: rgba(168, 50, 50, 0.05);
+  border-radius: 0 0.35rem 0.35rem 0;
+}
+.aq-item:last-child { margin-bottom: 0; }
+.aq-label {
+  display: block;
+  font-weight: 600;
+  color: var(--red);
+  font-size: 0.86rem;
+}
+.aq-detail {
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+  overflow-wrap: anywhere;
+}
+
+/* Row marker in the admin entry list, so a flagged record is visible without
+   opening it. */
+.aq-row-flag {
+  display: inline-block;
+  margin-left: 0.4rem;
+  color: var(--red);
+  font-weight: 700;
+  cursor: help;
+}
+
 .pair-abstract-details { margin-top: 0.5rem; font-size: 0.85rem; color: var(--muted); }
 .pair-abstract-details summary { cursor: pointer; color: var(--accent); }
 .pair-abstract-details p { margin-top: 0.4rem; line-height: 1.5; }
@@ -5701,6 +5763,164 @@ body.has-maint-banner #admin-screen {
 
 .src-fresh-warn { color: var(--red); font-weight: 600; }
 
+/* ---------- Manual entry-sheet sync panel (Source Records tab) ---------- */
+
+.src-sync-panel {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--bg-alt);
+  padding: 1rem 1.1rem;
+  margin-bottom: 1.1rem;
+}
+
+.src-sync-head {
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.src-sync-kicker {
+  margin: 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.src-sync-head h3 { margin: 0.15rem 0 0.3rem; font-size: 1.02rem; }
+
+.src-sync-blurb {
+  margin: 0;
+  max-width: 54ch;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.src-sync-actions { display: flex; gap: 0.5rem; align-items: center; flex-shrink: 0; }
+
+.src-sync-log-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 1rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.src-sync-link { color: var(--accent); text-decoration: none; font-weight: 600; }
+.src-sync-link:hover { text-decoration: underline; }
+
+.src-sync-log { margin-top: 0.6rem; }
+.src-sync-section + .src-sync-section { margin-top: 1rem; }
+
+.src-sync-section h4 {
+  margin: 0 0 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.src-sync-srclist { list-style: none; margin: 0; padding: 0; }
+
+.src-sync-src {
+  display: flex;
+  gap: 0.45rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+  padding: 0.38rem 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.82rem;
+}
+
+.src-sync-src:last-child { border-bottom: 0; }
+.src-sync-src-failed { color: var(--red); }
+.src-sync-when { color: var(--muted); font-size: 0.76rem; }
+
+.src-sync-bits {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.src-sync-run {
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 0.5rem 0.65rem;
+  margin-bottom: 0.5rem;
+  background: var(--bg);
+}
+
+.src-sync-run-top {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+}
+
+.src-sync-run-num { font-weight: 700; }
+.src-sync-run-top time { color: var(--muted); }
+.src-sync-trigger { color: var(--muted); }
+.src-sync-run-top .src-sync-link { margin-left: auto; }
+
+.src-sync-badge {
+  display: inline-block;
+  padding: 0.08rem 0.42rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--rule);
+  color: var(--muted);
+}
+
+/* Colour only carries emphasis here — the badge always spells the state out, so
+   the panel still reads correctly in monochrome or with colour vision deficiency. */
+.src-sync-badge-success,
+.src-sync-badge-ok        { color: var(--green); border-color: var(--green); }
+.src-sync-badge-failure,
+.src-sync-badge-failed    { color: var(--red);   border-color: var(--red); }
+.src-sync-badge-running,
+.src-sync-badge-queued    { color: var(--accent); border-color: var(--accent); }
+.src-sync-badge-unchanged { color: var(--muted); }
+
+/* Console output of a run. Capped and scrollable: a full sync prints a few hundred
+   lines, and an uncapped <pre> would push the grid off the screen. */
+.src-sync-logbox {
+  margin: 0.5rem 0 0;
+  padding: 0.55rem 0.7rem;
+  max-height: 16rem;
+  overflow: auto;
+  background: var(--bg-alt);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--fg, inherit);
+}
+
+.src-sync-full-log-btn { margin-top: 0.4rem; }
+
+.src-sync-empty { margin: 0; font-size: 0.82rem; color: var(--muted); }
+
+@media (max-width: 620px) {
+  .src-sync-actions { width: 100%; }
+  .src-sync-actions button { flex: 1; }
+  .src-sync-run-top .src-sync-link { margin-left: 0; flex-basis: 100%; }
+}
+
+
 .src-toolbar {
   display: flex;
   gap: 0.6rem;
@@ -5944,3 +6164,112 @@ body.has-maint-banner #admin-screen {
 .src-dup-actions .ghost-btn,
 .src-dup-open { font-size: 0.78rem; padding: 0.25rem 0.55rem; }
 .src-dup-open { width: 100%; }
+
+/* ---------- FLoRA tab (the prepared product) ---------- */
+
+.flora-head {
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 0.9rem;
+}
+
+.flora-kicker {
+  margin: 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.flora-head h3 { margin: 0.15rem 0 0.3rem; font-size: 1.02rem; }
+
+.flora-blurb {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.flora-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+
+.flora-stats {
+  display: flex;
+  gap: 1.1rem;
+  flex-wrap: wrap;
+  align-items: baseline;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 0.9rem;
+}
+
+.flora-stats b { color: var(--fg, inherit); font-size: 0.95rem; }
+.flora-stats .flora-when { margin-left: auto; font-style: italic; }
+.flora-stats .flora-retired b { color: var(--muted); }
+
+/* Monospace so ids line up down the column and a transposed digit is visible. */
+.flora-id,
+.flora-doi {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.76rem;
+}
+
+.flora-id { font-weight: 700; }
+/* Shown only when the pinned id and the current source record have diverged —
+   rare, and worth seeing rather than hiding. */
+.flora-repointed {
+  font-size: 0.68rem;
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.flora-source-key { color: var(--muted); font-size: 0.68rem; }
+.flora-url { color: var(--accent); font-size: 0.76rem; }
+/* The OpenAlex work id, under the DOI it was resolved from. Recessive: it is a
+   lookup handle, not the row's headline identifier. */
+.flora-oaid {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--rule);
+}
+.flora-oaid:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.flora-missing { color: var(--muted); font-style: italic; font-size: 0.76rem; }
+
+.admin-pager {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.9rem;
+}
+
+.flora-pageinfo { font-size: 0.8rem; color: var(--muted); }
+
+.flora-detail-title { margin: 0 0 0.25rem; font-size: 1rem; }
+.flora-detail-source { margin: 0 0 1rem; font-size: 0.82rem; color: var(--muted); }
+
+.flora-detail-table th {
+  text-align: left;
+  width: 30%;
+  vertical-align: top;
+  font-size: 0.76rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.flora-detail-table td {
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 620px) {
+  .flora-actions { width: 100%; }
+  .flora-actions button { flex: 1; }
+  .flora-stats .flora-when { margin-left: 0; flex-basis: 100%; }
+}

@@ -121,6 +121,12 @@ def _build_where(filters: dict):
         clauses.append("type = %s")
         params.append(filters["type"])
 
+    # Registry key, not paper type: `validated` holds both replications and
+    # reproductions, so it can only be isolated by where the row came from.
+    if filters.get("source"):
+        clauses.append("source = %s")
+        params.append(filters["source"])
+
     if filters.get("status"):
         clauses.append("validation_status = %s")
         params.append(filters["status"])
@@ -226,7 +232,8 @@ def _counts(cur) -> dict:
             COUNT(*) FILTER (WHERE type = 'replication')    AS replications,
             COUNT(*) FILTER (WHERE type = 'reproduction')   AS reproductions,
             COUNT(*) FILTER (WHERE reviewed_at IS NOT NULL) AS reviewed,
-            COUNT(*) FILTER (WHERE reviewed_at IS NULL)     AS unreviewed
+            COUNT(*) FILTER (WHERE reviewed_at IS NULL)     AS unreviewed,
+            COUNT(*) FILTER (WHERE source = 'validated')    AS validated
         FROM source_records
         """
     )

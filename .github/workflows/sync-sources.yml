@@ -29,6 +29,44 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python sync_sources.py
 
+      # The exclusions sheet plus the lists hard-coded in the R notebook. Runs
+      # before the transform reads transform_exclusions.
+      - name: Sync exclusions
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python sync_exclusions.py
+
+      # Projects our own validated records into the same grid. Runs even when a
+      # sheet failed a gate: it reads only the database, so an unshared sheet
+      # should not also stop our own records from refreshing. Unlike the sheet
+      # sync this one updates changed rows — see the module docstring for why —
+      # but never touches a row a human has reviewed in the grid.
+      - name: Sync validated records
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python sync_validated.py
+
+      # Bibliographic metadata (title/author/journal/year/volume/issue/pages/
+      # language/oa_url) for any DOI not already cached in work_metadata. Only new
+      # DOIs are fetched, so this is a no-op on most nights.
+      - name: Enrich DOI metadata
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENALEX_MAILTO: ${{ secrets.OPENALEX_MAILTO }}
+        run: python enrich_works.py
+
+      # Stable ids for the rows the transform will emit. Before the build
+      # so the dataset carries them, and if: always() for the same reason as the
+      # stage above — it reads only the database.
+      - name: Assign FLoRA record ids
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python flora_registry.py
+
       # Runs after the sync so the output reflects the night's new rows. Pure
       # function of the database — writes nothing back, so it is safe to re-run.
       - name: Build FLoRA dataset
@@ -43,7 +81,24 @@ jobs:
         # failed transform can never leave a stale file available for upload.
         run: |
           rm -f output/flora_entry_sheets.csv
-          python transform_sources.py
+          python transform_sources.py --review-issue
+
+      # Structural validation of what was just built. Never fails the job: a data
+      # problem is for a human to read, not a reason to withhold the dataset.
+      - name: Validate FLoRA dataset
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python validate_flora.py --output output/flora_validation.md
+
+      - name: Upload validation report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: flora-validation-${{ github.run_id }}
+          path: output/flora_validation.md
+          retention-days: 90
+          if-no-files-found: warn
 
       # Uploaded rather than committed: whether the R pipeline should read this
       # from a raw.githubusercontent URL (as it does for validated_export.csv) is
@@ -53,7 +108,11 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: flora-entry-sheets-${{ github.run_id }}
-          path: output/flora_entry_sheets.csv
+          path: |
+            output/flora_entry_sheets.csv
+            output/flora_export_log.csv
+            output/dup_outcome_conflicts.csv
+            output/preprint_dedup_candidates.csv
           retention-days: 90
           if-no-files-found: error
 

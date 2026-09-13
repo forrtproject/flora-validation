@@ -214,3 +214,56 @@ def test_ownership_rule_behaviour():
         [],           # unowned is unsendable, not adoptable
         [],           # signed out sends nothing
     ]
+
+# ── a signed-in admin must not be shown a password prompt ─────────────────────
+#
+# /?admin=1 is the keyboard- and screen-reader-reachable route to the sign-in
+# form. startup() opened that form immediately, then restored the session a moment
+# later and called enterAdminScreen() — which hid the login screen and showed the
+# admin panel but never closed the form. The admin ended up signed in, looking at
+# a password prompt sitting on top of their own panel, which is indistinguishable
+# from "remember me" having failed. Confirmed in a real browser: with a valid
+# remember-me cookie, /?admin=1 left #admin-signin-screen VISIBLE over
+# #admin-screen, and elementFromPoint at the centre returned admin-signin-cancel.
+
+def _js_function(name):
+    """The source of one top-level function in docs/app.js."""
+    start = JS.index(f"function {name}(")
+    end = JS.index("\n}\n", start) + 3
+    return JS[start:end]
+
+
+def test_entering_the_admin_screen_closes_the_sign_in_form():
+    """Reaching this screen means the server accepted a session, so a sign-in form
+    on top of it is wrong whatever opened it. This is the invariant that makes the
+    fix hold regardless of which route opened the form."""
+    body = _js_function("enterAdminScreen")
+    assert "#admin-signin-screen" in body
+    assert "hidden" in body
+
+
+def test_entering_the_admin_screen_clears_the_password_field():
+    """A password left in a hidden input is still in the DOM for the next person
+    at the machine."""
+    assert "admin-signin-password" in _js_function("enterAdminScreen")
+
+
+def test_the_admin_form_is_not_opened_before_the_session_is_known():
+    """Opening it first is what put the prompt on screen for an admin who was
+    already signed in; it now waits for /api/me to say there is no session."""
+    body = _js_function("startup")
+    assert "wantsAdminForm" in body
+    # Every call is guarded — there is no longer an unconditional one near the top,
+    # which is what opened the form before the session had been checked. (Static
+    # mode opens it before /api/me on purpose: there is no server session to wait
+    # for, so the guard is the whole contract, not the ordering.)
+    assert body.count("openAdminSignIn()") == body.count("if (wantsAdminForm) openAdminSignIn()")
+    # The flag is computed before anything can act on it.
+    assert body.index("wantsAdminForm =") < body.index("if (wantsAdminForm)")
+
+
+def test_the_admin_form_still_opens_when_there_is_no_session():
+    """The deferral must not become a removal: ?admin=1 is the only route in for
+    someone who cannot triple-click, and a signed-out admin still needs it."""
+    body = _js_function("startup")
+    assert body.count("if (wantsAdminForm) openAdminSignIn();") >= 3   # static, error, no-session

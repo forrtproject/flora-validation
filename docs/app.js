@@ -830,11 +830,11 @@ async function showAuthLinkScreen(token) {
 async function startup() {
   await detectMode();
   prefillLogin();
-  if (new URLSearchParams(location.search).get("admin")) {
-    // A keyboard- and screen-reader-reachable way to the same form: a
-    // triple-click gesture cannot be the only route in.
-    openAdminSignIn();
-  }
+  // ?admin is the keyboard- and screen-reader-reachable way to the sign-in form —
+  // a triple-click gesture cannot be the only route in. Opening it is DEFERRED
+  // until the session is known: showing it first meant a signed-in admin watched a
+  // password prompt appear and then sit on top of their own restored panel.
+  const wantsAdminForm = !!new URLSearchParams(location.search).get("admin");
   const linkToken = _authLinkToken();
   if (linkToken) {
     // Handled before any stored session: someone redeeming a link on a shared
@@ -847,6 +847,7 @@ async function startup() {
     if (stored) {
       try { state.coder = JSON.parse(stored); routeAfterLogin(); } catch {}
     }
+    if (wantsAdminForm) openAdminSignIn();
     return;
   }
   // The server decides whether we are signed in. localStorage only ever held a
@@ -855,6 +856,9 @@ async function startup() {
   try {
     me = await api("/me", "GET");
   } catch {
+    // The session could not be checked, so it cannot be assumed either — an admin
+    // who asked for the form still gets it.
+    if (wantsAdminForm) openAdminSignIn();
     return;
   }
   if (me.kind === "validator") {
@@ -868,6 +872,7 @@ async function startup() {
   } else {
     // No session: clear any stale profile a previous version left behind.
     localStorage.removeItem(STORAGE.CODER);
+    if (wantsAdminForm) openAdminSignIn();
   }
 }
 startup();
@@ -5103,6 +5108,14 @@ function enterAdminScreen() {
   $("#login-screen").classList.add("hidden");
   $("#onboarding-screen").classList.add("hidden");
   $("#game-screen").classList.add("hidden");
+  // Reaching this screen means the server has already accepted a session, so a
+  // sign-in form on top of it is wrong whatever opened it. Without this, an admin
+  // who bookmarks /?admin=1 gets openAdminSignIn() on load AND a restored session
+  // a moment later, and ends up staring at a password prompt while signed in —
+  // which is indistinguishable from "remember me" having failed.
+  $("#admin-signin-screen")?.classList.add("hidden");
+  const password = $("#admin-signin-password");
+  if (password) password.value = "";
   $("#admin-screen").classList.remove("hidden");
   startIdleLogout();   // admins included
   const badge = $("#admin-handle-badge");
@@ -5174,6 +5187,8 @@ function renderAdminCounts(counts) {
   $("#fc-needs-review").textContent     = counts.needs_review;
   $("#fc-skipped").textContent          = counts.skipped ?? 0;
   $("#fc-admin-comments").textContent   = counts.admin_comments ?? 0;
+  const fcQuality = $("#fc-quality-flagged");
+  if (fcQuality) fcQuality.textContent = counts.quality_flagged ?? 0;
   $("#fc-validated").textContent        = counts.validated;
   $("#fc-rejected").textContent         = counts.rejected ?? 0;
   const _fcAdminChecked = $("#fc-admin-checked");
@@ -5202,7 +5217,11 @@ function renderAdminTable(entries, total) {
   const offset = (_adminPage - 1) * ADMIN_PER_PAGE;
   body.innerHTML = entries.map((e, i) => {
     const s      = STATUS_LABELS[e.validation_status] || { text: e.validation_status, cls: "" };
+    const qf = Number(e.quality_flag_count) || 0;
     const flags  = [
+      // Advisory flags do not change validation_status, so the row is the only
+      // place an admin can see one without opening the record.
+      qf ? `<span class="aq-row-flag" title="${qf} data-quality problem${qf === 1 ? "" : "s"} — may need excluding">&#9888; ${qf}</span>` : "",
       e.has_llm_error  ? '<span class="admin-flag flag-llm" title="LLM error">LLM</span>' : "",
       e.is_tiebreaker  ? '<span class="admin-flag flag-tie" title="Tiebreaker">TIE</span>' : "",
       e.admin_checked  ? '<span class="admin-flag flag-admin" title="Admin checked">✓</span>' : "",
@@ -5341,6 +5360,25 @@ function renderAdminDetail(data) {
   const abstractBanner = data.abstract_only_conflict
     ? `<div class="admin-abstract-banner">
          <strong>Abstract conflict only</strong> — all checks and corrections agree. Only the edited abstract differs between the two validators. The longer edit is pre-filled in the resolution form and will be published when you resolve.
+       </div>`
+    : "";
+  // Row-local data-quality flags from record_checks.py, recorded when the record
+  // finished consensus. Advisory: nothing about where the record landed depends on
+  // them, so this banner is the only thing telling an admin the record may need
+  // excluding. It is rendered first, and in red, for that reason.
+  const qualityFlags = Array.isArray(rec.quality_flags) ? rec.quality_flags : [];
+  const qualityBanner = qualityFlags.length
+    ? `<div class="admin-quality-banner">
+         <strong>&#9888; ${qualityFlags.length} data-quality ${qualityFlags.length === 1 ? "problem" : "problems"} found</strong>
+         — this record may need to be excluded. These checks did not change where it
+         landed; review each one and decide.
+         <ul class="aq-list">
+           ${qualityFlags.map((f) => `
+             <li class="aq-item">
+               <span class="aq-label">${escapeHtml(f.label || f.code || "Check failed")}</span>
+               ${f.detail ? `<span class="aq-detail">${escapeHtml(f.detail)}</span>` : ""}
+             </li>`).join("")}
+         </ul>
        </div>`
     : "";
   const overrideBanner = rec.admin_override
@@ -5872,6 +5910,7 @@ function renderAdminDetail(data) {
 
   $("#admin-detail-title").textContent = (rec.title_r || rec.doi_r || "Entry Review").substring(0, 80);
   $("#admin-detail-body").innerHTML = `
+    ${qualityBanner}
     ${abstractBanner}
     ${quoteBanner}
     ${duplicateMergeBanner}
@@ -6333,6 +6372,7 @@ function closeAdminDetail() {
 function switchAdminTab(tab) {
   $("#admin-tab-entries").classList.toggle("hidden",    tab !== "entries");
   $("#admin-tab-sources").classList.toggle("hidden",    tab !== "sources");
+  $("#admin-tab-flora").classList.toggle("hidden",      tab !== "flora");
   $("#admin-tab-stats").classList.toggle("hidden",      tab !== "stats");
   $("#admin-tab-admins").classList.toggle("hidden",     tab !== "admins");
   $("#admin-tab-dashboard").classList.toggle("hidden",  tab !== "dashboard");
@@ -6343,7 +6383,8 @@ function switchAdminTab(tab) {
   $("#admin-tabs").querySelectorAll(".admin-tab-btn").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === tab);
   });
-  if (tab === "sources")    { resetSourceView(); fetchSourceRecords(); }
+  if (tab === "sources")    { resetSourceView(); fetchSourceRecords(); fetchSourceSync(); }
+  if (tab === "flora")      { resetFloraView(); fetchFloraRecords(); }
   if (tab === "stats")      fetchAdminStats();
   if (tab === "admins")     { fetchAdminAdmins(); fetchAdminBannerStatus(); }
   if (tab === "dashboard")  fetchAdminDashboard();
@@ -7778,6 +7819,9 @@ function srcQueryParams() {
   if (_srcFilter === "reviewed")   p.reviewed = "yes";
   if (_srcFilter === "unreviewed") p.reviewed = "no";
   if (_srcFilter === "flagged")    p.flagged  = "true";
+  // Our own validated records, projected into the grid by sync_validated.py. A
+  // registry key rather than a paper type, since it holds both kinds.
+  if (_srcFilter === "validated")  p.source   = "validated";
   if (_srcStatus) p.status = _srcStatus;
   if (_srcSearch) p.search = _srcSearch;
   if (_srcSort)   { p.sort = _srcSort; p.dir = _srcSortDir; }
@@ -7833,6 +7877,7 @@ function renderSourceRecords(data) {
   set("#sfc-reviewed", c.reviewed);
   set("#sfc-unreviewed", c.unreviewed);
   set("#sfc-flagged", c.flagged);
+  set("#sfc-validated", c.validated);
 
   const body  = $("#src-table-body");
   const empty = $("#src-empty");
@@ -7913,6 +7958,490 @@ async function fetchSourceFreshness() {
     el.innerHTML = "";
   }
 }
+
+/* ---------- Admin: FLoRA tab (the prepared product) ---------- */
+
+const FLORA_PER_PAGE = 50;
+let _floraFilter  = "all";
+let _floraSearch  = "";
+let _floraSource  = "";
+let _floraOutcome = "";
+let _floraSort    = "";
+let _floraSortDir = "asc";
+let _floraPage    = 1;
+let _floraSearchTimer = null;
+let _floraSelectsFilled = false;
+
+function resetFloraView() {
+  _floraFilter = "all"; _floraSearch = ""; _floraSource = ""; _floraOutcome = "";
+  _floraSort = ""; _floraSortDir = "asc"; _floraPage = 1;
+  const box = $("#flora-search-input"); if (box) box.value = "";
+  // The controls have to come back with the state. switchAdminTab() calls this on
+  // every entry to the tab, so a chip or a select left where the last visit put it
+  // shows a filter that is not being applied: the grid returns every row while
+  // "Replications" is still lit and the source dropdown still names one sheet.
+  $("#flora-filters")?.querySelectorAll(".admin-filter-btn")
+    .forEach((b) => b.classList.toggle("active", b.dataset.filter === "all"));
+  ["#flora-source-filter", "#flora-outcome-filter"].forEach((id) => {
+    const select = $(id); if (select) select.value = "";
+  });
+}
+
+function floraQueryParams() {
+  const p = { page: _floraPage, per_page: FLORA_PER_PAGE };
+  if (_floraFilter === "replication" || _floraFilter === "reproduction") p.type = _floraFilter;
+  if (_floraSource)  p.source  = _floraSource;
+  if (_floraOutcome) p.outcome = _floraOutcome;
+  if (_floraSearch)  p.search  = _floraSearch;
+  if (_floraSort)    { p.sort = _floraSort; p.dir = _floraSortDir; }
+  return p;
+}
+
+function floraQueryString(extra) {
+  return new URLSearchParams(Object.assign({}, floraQueryParams(), extra || {})).toString();
+}
+
+/** Replications carry `outcome`; reproductions carry the two axes joined into one
+ *  derived string by the transform. One column renders both. */
+function floraOutcomeCell(r) {
+  return escapeHtml(r.outcome || "—");
+}
+
+function floraIdentifierCell(doi, url, workId) {
+  let head;
+  if (doi) head = '<code class="flora-doi">' + escapeHtml(doi) + "</code>";
+  else if (url) head = '<a class="flora-url" href="' + escapeHtml(url) +
+                  '" target="_blank" rel="noopener noreferrer">' + srcShorten(url, 40) + "</a>";
+  else head = '<span class="flora-missing">no identifier</span>';
+  // The OpenAlex work id sits under the DOI it was resolved from, linked: it is the
+  // handle for pulling the paper's metadata back out of OpenAlex, and on a row with a
+  // placeholder DOI it is the only real identifier the row has.
+  if (workId) {
+    head += '<br><a class="flora-oaid" href="https://openalex.org/' + escapeHtml(workId) +
+            '" target="_blank" rel="noopener noreferrer" title="Open in OpenAlex">' +
+            escapeHtml(workId) + "</a>";
+  }
+  return head;
+}
+
+function fillFloraSelects(counts) {
+  if (_floraSelectsFilled) return;
+  const sourceSel = $("#flora-source-filter");
+  const outcomeSel = $("#flora-outcome-filter");
+  if (!sourceSel || !outcomeSel) return;
+  (counts.sources || []).forEach(v => {
+    const o = document.createElement("option");
+    o.value = v; o.textContent = v; sourceSel.appendChild(o);
+  });
+  (counts.outcomes || []).forEach(v => {
+    const o = document.createElement("option");
+    o.value = v; o.textContent = v; outcomeSel.appendChild(o);
+  });
+  _floraSelectsFilled = true;
+}
+
+function renderFloraRecords(data) {
+  const counts = data.counts || {};
+  const set = (id, v) => { const el = $(id); if (el) el.textContent = (v == null) ? "—" : v; };
+  set("#ffc-all", counts.all_records);
+  set("#ffc-repl", counts.replications);
+  set("#ffc-repro", counts.reproductions);
+  fillFloraSelects(counts);
+
+  // Rows the id registry has not reached. Not an error — it means a sync landed
+  // rows and no refresh has run since — but it is worth saying out loud, because
+  // an export taken now would carry blank ids for those rows.
+  const warn = $("#flora-unregistered");
+  if (warn) {
+    const notes = [];
+    if (counts.unregistered) {
+      notes.push("<b>" + counts.unregistered + " row(s) have no FLoRA id yet.</b> " +
+        "Run the entry-sheet sync (Source Records tab) to assign them.");
+    }
+    // Shown, not hidden: these rows are in the grid but will not reach the
+    // published export, and this is the screen someone fixes them on.
+    if (counts.untitled) {
+      notes.push("<b>" + counts.untitled + " row(s) have no title on one side</b> " +
+        "and are left out of the published export. Listed in " +
+        "<code>output/flora_export_log.csv</code>.");
+    }
+    if (notes.length) {
+      warn.innerHTML = notes.join("<br>");
+      warn.classList.remove("hidden");
+    } else {
+      warn.classList.add("hidden");
+    }
+  }
+
+  const body  = $("#flora-table-body");
+  const empty = $("#flora-empty");
+  const rows  = data.records || [];
+  if (!body) return;
+
+  if (!rows.length) {
+    body.innerHTML = "";
+    empty.classList.remove("hidden");
+  } else {
+    empty.classList.add("hidden");
+    body.innerHTML = rows.map(r =>
+      "<tr>" +
+        '<td><code class="flora-id">' + escapeHtml(r.flora_id || "unassigned") + "</code></td>" +
+        // The id IS the source record's display_id for almost every row, so repeating
+        // it would be a column of duplicates. Only the sheet it came from is shown —
+        // plus, when the two have diverged, which record the row now derives from.
+        '<td><small class="flora-source-key">' + escapeHtml(r.source || "") + "</small>" +
+          (r.flora_id && r.source_display_id && r.flora_id !== r.source_display_id
+            ? '<br><span class="flora-repointed" title="This record was re-pointed after a duplicate ruling; its id stays as first published">now ' +
+              escapeHtml(r.source_display_id) + "</span>"
+            : "") + "</td>" +
+        "<td>" + escapeHtml(r.type || "—") + "</td>" +
+        "<td>" + floraIdentifierCell(r.doi_o, null, r.oa_work_id_o) +
+          '<br><small>' + srcShorten(r.ref_o, 58) + "</small></td>" +
+        "<td>" + floraIdentifierCell(r.doi_r, r.url_r, r.oa_work_id_r) +
+          '<br><small>' + srcShorten(r.ref_r, 58) + "</small></td>" +
+        "<td>" + floraOutcomeCell(r) + "</td>" +
+        '<td><button class="ghost-btn flora-view-btn" type="button" data-flora-id="' +
+          escapeHtml(r.flora_id || "") + '">View</button></td>' +
+      "</tr>"
+    ).join("");
+  }
+
+  renderFloraPager(data);
+}
+
+function renderFloraPager(data) {
+  const pager = $("#flora-pager");
+  if (!pager) return;
+  const pages = Math.max(1, Math.ceil((data.total || 0) / (data.per_page || FLORA_PER_PAGE)));
+  if (pages <= 1) { pager.innerHTML = ""; return; }
+  pager.innerHTML =
+    '<button class="ghost-btn" id="flora-prev" ' + (data.page <= 1 ? "disabled" : "") + ">Previous</button>" +
+    '<span class="flora-pageinfo">Page ' + data.page + " of " + pages +
+      " · " + Number(data.total).toLocaleString() + " rows</span>" +
+    '<button class="ghost-btn" id="flora-next" ' + (data.page >= pages ? "disabled" : "") + ">Next</button>";
+  $("#flora-prev")?.addEventListener("click", () => { _floraPage--; fetchFloraRecords(); });
+  $("#flora-next")?.addEventListener("click", () => { _floraPage++; fetchFloraRecords(); });
+}
+
+async function fetchFloraStats() {
+  const box = $("#flora-stats");
+  if (!box) return;
+  try {
+    const s = await adminApi("/flora/stats");
+    const when = s.last_refresh ? srcTimeAgo(new Date(s.last_refresh)) : "never";
+    box.innerHTML =
+      '<span><b>' + Number(s.rows).toLocaleString() + "</b> rows</span>" +
+      '<span><b>' + Number(s.replications).toLocaleString() + "</b> replications</span>" +
+      '<span><b>' + Number(s.reproductions).toLocaleString() + "</b> reproductions</span>" +
+      '<span><b>' + Number(s.registry_live).toLocaleString() + "</b> ids issued</span>" +
+      (s.registry_retired ? '<span class="flora-retired"><b>' +
+        Number(s.registry_retired).toLocaleString() + "</b> retired</span>" : "") +
+      '<span class="flora-when">ids last assigned ' + escapeHtml(when) + "</span>";
+  } catch (e) {
+    box.innerHTML = '<span class="faq-error">Could not load stats (' + escapeHtml(e.message) + ")</span>";
+  }
+}
+
+async function fetchFloraRecords() {
+  const body = $("#flora-table-body");
+  if (!body) return;
+  body.innerHTML = '<tr><td colspan="7" class="admin-loading">Loading…</td></tr>';
+  try {
+    const data = await adminApi("/flora?" + floraQueryString());
+    renderFloraRecords(data);
+    fetchFloraStats();
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="7" class="admin-loading">Error: ' +
+                     escapeHtml(e.message) + "</td></tr>";
+  }
+}
+
+/* ---------- FLoRA: filters, sorting, export ---------- */
+
+$("#flora-filters")?.addEventListener("click", (e) => {
+  const btn = e.target.closest(".admin-filter-btn");
+  if (!btn) return;
+  $("#flora-filters").querySelectorAll(".admin-filter-btn")
+    .forEach(b => b.classList.toggle("active", b === btn));
+  _floraFilter = btn.dataset.filter;
+  _floraPage = 1;
+  fetchFloraRecords();
+});
+
+$("#flora-search-input")?.addEventListener("input", (e) => {
+  // Debounced: each keystroke would otherwise re-filter 3,000 rows server-side.
+  clearTimeout(_floraSearchTimer);
+  const value = e.target.value;
+  _floraSearchTimer = setTimeout(() => {
+    _floraSearch = value; _floraPage = 1; fetchFloraRecords();
+  }, 250);
+});
+
+$("#flora-source-filter")?.addEventListener("change", (e) => {
+  _floraSource = e.target.value; _floraPage = 1; fetchFloraRecords();
+});
+
+$("#flora-outcome-filter")?.addEventListener("change", (e) => {
+  _floraOutcome = e.target.value; _floraPage = 1; fetchFloraRecords();
+});
+
+$("#admin-tab-flora")?.addEventListener("click", (e) => {
+  const th = e.target.closest(".th-sort");
+  if (!th) return;
+  const col = th.dataset.sort;
+  if (_floraSort === col) {
+    _floraSortDir = _floraSortDir === "asc" ? "desc" : "asc";
+  } else {
+    _floraSort = col; _floraSortDir = "asc";
+  }
+  _floraPage = 1;
+  fetchFloraRecords();
+});
+
+$("#flora-refresh-btn")?.addEventListener("click", () => { _floraPage = 1; fetchFloraRecords(); });
+
+$("#flora-export-btn")?.addEventListener("click", async () => {
+  const btn = $("#flora-export-btn");
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = "Preparing…";
+  try {
+    // Fetched rather than linked: the endpoint needs the admin session, and the
+    // filter has to travel with it so the file matches what is on screen.
+    const res = await fetch("/api/admin/flora/export.csv?" + floraQueryString({ page: 1 }),
+                            { credentials: "same-origin" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "flora_" + new Date().toISOString().slice(0, 10) + ".csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast("Export downloaded.");
+  } catch (e) {
+    showToast("Could not export: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+});
+
+$("#flora-table-body")?.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".flora-view-btn");
+  if (!btn || !btn.dataset.floraId) return;
+  btn.disabled = true;
+  try {
+    const rec = await adminApi("/flora/" + encodeURIComponent(btn.dataset.floraId));
+    showFloraDetail(rec);
+  } catch (err) {
+    showToast("Could not load record: " + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function showFloraDetail(rec) {
+  const skip = new Set(["flora_id", "source_display_id", "source_record_id",
+                        "merged_display_ids", "merged_sources"]);
+  const rows = Object.keys(rec)
+    .filter(k => !skip.has(k) && rec[k] !== null && rec[k] !== "")
+    .map(k => '<tr><th>' + escapeHtml(k) + "</th><td>" + escapeHtml(String(rec[k])) + "</td></tr>")
+    .join("");
+  const body = $("#admin-detail-body");
+  if (!body) return;
+  body.innerHTML =
+    '<h3 class="flora-detail-title"><code>' + escapeHtml(rec.flora_id || "unassigned") + "</code></h3>" +
+    '<p class="flora-detail-source">Derived from source record <b>' +
+      escapeHtml(rec.source_display_id || "—") + "</b>" +
+      (rec.flora_id && rec.source_display_id && rec.flora_id !== rec.source_display_id
+        ? ' <span class="flora-repointed">(id pinned from the record this row was first built from)</span>'
+        : "") +
+      ((rec.merged_sources || []).length
+        ? "<br>Absorbed by deduplication: " +
+          rec.merged_sources.map(m =>
+            '<code class="flora-doi">' + escapeHtml(m.display_id) + "</code>").join(", ")
+        : "") +
+      "</p>" +
+    '<div class="admin-table-wrap"><table class="admin-table flora-detail-table"><tbody>' +
+      rows + "</tbody></table></div>";
+  $("#admin-detail-modal").classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+}
+
+/* ---------- Manual entry-sheet sync (queued job, run on the server) ---------- */
+
+let _srcSyncPollTimer = null;
+let _srcSyncWatching  = false;
+let _srcSyncOpenJob   = null;   // job whose full log the user expanded
+
+/** Per-source outcome of the last sync, read from source_sync_runs. This is the
+ *  half that says what actually landed in the table — the job log says what the
+ *  scripts printed, which is not the same question. */
+function srcSyncPerSourceRow(s) {
+  if (s.status === "failed") {
+    return '<li class="src-sync-src src-sync-src-failed"><b>' + escapeHtml(s.source) +
+           '</b> <span class="src-sync-badge src-sync-badge-failure">failed</span> ' +
+           escapeHtml(s.failure_reason || "no reason recorded") + "</li>";
+  }
+  const bits = [];
+  if (s.rows_fetched  != null) bits.push(Number(s.rows_fetched).toLocaleString() + " fetched");
+  if (s.rows_accepted != null) bits.push(Number(s.rows_accepted).toLocaleString() + " accepted");
+  if (s.rows_inserted)         bits.push("<b>+" + Number(s.rows_inserted).toLocaleString() + " new</b>");
+  if (s.rows_existing)         bits.push(Number(s.rows_existing).toLocaleString() + " already present");
+  if (s.rows_skipped)          bits.push(Number(s.rows_skipped).toLocaleString() + " skipped");
+  if (s.dup_ids)               bits.push(s.dup_ids + " duplicate ids");
+  if (s.dup_fingerprints)      bits.push(s.dup_fingerprints + " duplicate papers");
+  const when = s.started_at ? srcTimeAgo(new Date(s.started_at)) : "—";
+  return '<li class="src-sync-src"><b>' + escapeHtml(s.source) + "</b> " +
+         '<span class="src-sync-badge src-sync-badge-' + escapeHtml(s.status) + '">' +
+         escapeHtml(s.status) + "</span> " +
+         '<span class="src-sync-when">' + escapeHtml(when) + "</span>" +
+         (bits.length ? '<span class="src-sync-bits">' + bits.join(" · ") + "</span>" : "") +
+         "</li>";
+}
+
+function srcSyncDuration(job) {
+  if (!job.started_at) return "";
+  const end = job.finished_at ? new Date(job.finished_at) : new Date();
+  const secs = Math.max(0, Math.round((end - new Date(job.started_at)) / 1000));
+  return secs < 60 ? secs + "s" : Math.floor(secs / 60) + "m " + (secs % 60) + "s";
+}
+
+function renderSourceSync(data) {
+  const log  = $("#src-sync-log");
+  const live = $("#src-sync-live");
+  const btn  = $("#src-sync-run-btn");
+  if (!log) return false;
+
+  const jobs   = data.jobs || [];
+  const active = !!data.active;
+  if (btn) btn.disabled = active;
+
+  if (active) {
+    const job = jobs.find(j => j.status === "running") || jobs.find(j => j.status === "queued");
+    live.className = "pipeline-live-status";
+    live.innerHTML = '<span class="pipeline-live-dot"></span><b>' +
+      escapeHtml(job && job.status === "queued" ? "Queued" : "Running") + "</b> — " +
+      escapeHtml(job ? (job.requested_by || job.trigger) : "sync") +
+      ". The log below updates as it goes.";
+  } else {
+    live.classList.add("hidden");
+  }
+
+  const perSource = (data.sources || []).map(srcSyncPerSourceRow).join("");
+
+  const jobCards = jobs.length ? jobs.map(function (job) {
+    const started = job.created_at ? new Date(job.created_at).toLocaleString() : "—";
+    const dur = srcSyncDuration(job);
+    const truncated = job.log_length > (job.log_tail || "").length;
+    const isOpen = _srcSyncOpenJob === job.job_id;
+    return '<article class="src-sync-run">' +
+      '<div class="src-sync-run-top">' +
+        '<span class="src-sync-badge src-sync-badge-' + escapeHtml(job.status) + '">' +
+          escapeHtml(job.status) + "</span>" +
+        "<time>" + escapeHtml(started) + "</time>" +
+        (dur ? '<span class="src-sync-when">' + escapeHtml(dur) + "</span>" : "") +
+        '<span class="src-sync-trigger">' +
+          escapeHtml(job.trigger === "admin" ? "manual" : job.trigger) +
+          (job.requested_by ? " · " + escapeHtml(job.requested_by) : "") + "</span>" +
+      "</div>" +
+      '<pre class="src-sync-logbox" data-job-id="' + escapeHtml(job.job_id) + '">' +
+        escapeHtml(job.log_tail || "Waiting for output…") +
+      "</pre>" +
+      (truncated && !isOpen
+        ? '<button class="ghost-btn src-sync-full-log-btn" type="button" data-job-id="' +
+          escapeHtml(job.job_id) + '">Load complete log</button>'
+        : "") +
+    "</article>";
+  }).join("") : '<p class="src-sync-empty">No manual runs yet. The nightly job at 03:00 UTC does not appear here — see the per-sheet results above.</p>';
+
+  log.innerHTML =
+    (perSource
+      ? '<div class="src-sync-section"><h4>Last result per sheet</h4>' +
+        '<ul class="src-sync-srclist">' + perSource + "</ul></div>"
+      : "") +
+    '<div class="src-sync-section"><h4>Manual runs</h4>' + jobCards + "</div>";
+
+  // Keep the newest log scrolled to the end while a run is live, so new output is
+  // visible without the reader chasing it.
+  if (active) {
+    const box = log.querySelector(".src-sync-logbox");
+    if (box) box.scrollTop = box.scrollHeight;
+  }
+  return active;
+}
+
+async function fetchSourceSync() {
+  const log = $("#src-sync-log");
+  if (!log) return;
+  try {
+    const data = await adminApi("/source-sync/status?limit=10");
+    const active = renderSourceSync(data);
+    clearTimeout(_srcSyncPollTimer);
+    if (active) {
+      _srcSyncWatching = true;
+      _srcSyncPollTimer = setTimeout(fetchSourceSync, 3000);
+    } else {
+      _srcSyncPollTimer = null;
+      // A finished run means the grid behind this panel just changed, so reload it
+      // rather than leaving stale counts on screen.
+      if (_srcSyncWatching) {
+        _srcSyncWatching = false;
+        fetchSourceFreshness();
+        fetchSourceRecords();
+        showToast("Entry-sheet sync finished.");
+      }
+    }
+  } catch (e) {
+    log.innerHTML = '<p class="faq-error">Could not load sync status (' +
+                    escapeHtml(e.message) + ").</p>";
+  }
+}
+
+async function startSourceSync() {
+  const btn = $("#src-sync-run-btn");
+  const message = "Start the entry-sheet sync now?\n\n" +
+    "It re-reads every enabled sheet and imports newly accepted rows, then refreshes " +
+    "our own validated records. Sheet imports are insert-only, so nothing already in " +
+    "the table is changed or removed.";
+  if (!window.confirm(message)) return;
+  if (btn) btn.disabled = true;
+  try {
+    await adminApi("/source-sync/dispatch", "POST", {});
+    showToast("Sync queued.");
+    _srcSyncWatching = true;
+    clearTimeout(_srcSyncPollTimer);
+    _srcSyncPollTimer = setTimeout(fetchSourceSync, 800);
+  } catch (e) {
+    if (btn) btn.disabled = false;
+    showToast("Could not start sync: " + e.message);
+    fetchSourceSync();
+  }
+}
+
+$("#src-sync-run-btn")?.addEventListener("click", startSourceSync);
+$("#src-sync-refresh-btn")?.addEventListener("click", fetchSourceSync);
+
+$("#src-sync-log")?.addEventListener("click", async (e) => {
+  const button = e.target.closest(".src-sync-full-log-btn");
+  if (!button) return;
+  button.disabled = true;
+  button.textContent = "Loading…";
+  try {
+    const job = await adminApi("/source-sync/jobs/" + button.dataset.jobId);
+    const box = button.closest(".src-sync-run").querySelector(".src-sync-logbox");
+    box.textContent = job.log_text || "No output.";
+    _srcSyncOpenJob = button.dataset.jobId;
+    button.remove();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Retry complete log";
+    showToast("Could not load complete log: " + error.message);
+  }
+});
 
 /* ---------- Review panel (read-only in this phase) ---------- */
 

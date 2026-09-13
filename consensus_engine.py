@@ -11,6 +11,7 @@ import re
 from datetime import datetime, timezone
 
 from llm_validator import run_llm_validation
+from record_checks import check_record
 from extractor_vocab import (
     REPLICATION_OUTCOMES,
     derive_reproduction_outcome,
@@ -261,9 +262,24 @@ def _resolve_final(record: dict, winner: dict, other: dict | None = None) -> dic
 
 
 def _update_status(cur, record_id: str, status: str, is_tiebreaker: bool,
-                   final: dict | None, llm_summary: dict | None) -> None:
+                   final: dict | None, llm_summary: dict | None,
+                   record: dict | None = None) -> None:
+    """Write the consensus outcome, and the row-local quality flags with it.
+
+    Every terminal branch of evaluate_consensus() routes through here, so this is
+    the one place that sees a record once all three judges are done. The flags are
+    advisory: they are recorded and shown on the admin review panel, and never
+    change `status`. See record_checks for what is checked here and what stays on
+    the pipeline's cron job.
+    """
     params: list = [status, is_tiebreaker]
     set_clauses = ["validation_status = %s", "is_tiebreaker = %s"]
+
+    if record is not None:
+        # Checked against the values that would actually be published, so a
+        # correction a validator already made is not reported as a problem.
+        set_clauses += ["quality_flags = %s::jsonb", "quality_checked_at = NOW()"]
+        params.append(json.dumps(check_record(record, final)))
 
     if final:
         set_clauses += [
@@ -482,14 +498,14 @@ def evaluate_consensus(cur, record_id: str) -> None:
     )
     sr_row = cur.fetchone()
     if (sr_row["n"] if isinstance(sr_row, dict) else sr_row[0]) >= 1:
-        _update_status(cur, record_id, "rejected", False, None, None)
+        _update_status(cur, record_id, "rejected", False, None, None, record)
         return
 
     # If either validator answered "Can't tell" (unsure) on the original or outcome,
     # the record can't be auto-resolved — a validator explicitly couldn't judge it.
     # Route it to human review instead of treating unsure as a hard 'incorrect'.
     if _is_unsure(h1) or _is_unsure(h2):
-        _update_status(cur, record_id, "need_review", False, None, None)
+        _update_status(cur, record_id, "need_review", False, None, None, record)
         return
 
     # If the quote gate flagged either submission (outcome quote not found in the
@@ -498,7 +514,7 @@ def evaluate_consensus(cur, record_id: str) -> None:
     # or a mis-copied quote that needs fixing. This intentionally also stops the
     # senior auto-validate shortcut.
     if _quote_flagged(h1) or _quote_flagged(h2):
-        _update_status(cur, record_id, "need_review", False, None, None)
+        _update_status(cur, record_id, "need_review", False, None, None, record)
         return
 
     # Check if both human validators are senior (bypasses admin review on agreement)
@@ -526,32 +542,32 @@ def evaluate_consensus(cur, record_id: str) -> None:
                 _effective_corrected_type(h2) == "not_validation"):
             llm = run_llm_validation(record, context="sanity_check")
             if not llm.get("error") and _llm_matches(llm, h1):
-                _update_status(cur, record_id, "rejected", False, None, llm)
+                _update_status(cur, record_id, "rejected", False, None, llm, record)
             else:
                 # LLM thinks it IS a replication — admin should review
-                _update_status(cur, record_id, "need_review", False, None, llm)
+                _update_status(cur, record_id, "need_review", False, None, llm, record)
             return
 
         llm = run_llm_validation(record, context="sanity_check")
         final = _resolve_final(record, h1, h2)
         if has_senior:
             # At least one senior agreed — auto-validate, no admin review needed
-            _update_status(cur, record_id, "validated", False, final, llm)
+            _update_status(cur, record_id, "validated", False, final, llm, record)
             _insert_validated(cur, record, final)
         else:
             # Normal agreement — admin must approve
-            _update_status(cur, record_id, "consensus_reached", False, final, llm)
+            _update_status(cur, record_id, "consensus_reached", False, final, llm, record)
 
     elif checks_ok and not corrections_ok:
         # Branch 2: checks agree but corrections differ → need_review, no LLM
-        _update_status(cur, record_id, "need_review", False, None, None)
+        _update_status(cur, record_id, "need_review", False, None, None, record)
 
     else:
         # Branch 3: checks differ → LLM tiebreaker
         llm = run_llm_validation(record, context="tiebreaker")
 
         if llm.get("error"):
-            _update_status(cur, record_id, "need_review", True, None, llm)
+            _update_status(cur, record_id, "need_review", True, None, llm, record)
             return
 
         matches_h1 = _llm_matches(llm, h1)
@@ -560,17 +576,17 @@ def evaluate_consensus(cur, record_id: str) -> None:
         if matches_h1 and not matches_h2:
             if _effective_corrected_type(h1) == "not_validation":
                 # LLM + h1 agree it's not a replication, but h2 disagrees → admin decides
-                _update_status(cur, record_id, "need_review", True, None, llm)
+                _update_status(cur, record_id, "need_review", True, None, llm, record)
             else:
                 final = _resolve_final(record, h1, h2)
-                _update_status(cur, record_id, "consensus_reached", True, final, llm)
+                _update_status(cur, record_id, "consensus_reached", True, final, llm, record)
         elif matches_h2 and not matches_h1:
             if _effective_corrected_type(h2) == "not_validation":
                 # LLM + h2 agree it's not a replication, but h1 disagrees → admin decides
-                _update_status(cur, record_id, "need_review", True, None, llm)
+                _update_status(cur, record_id, "need_review", True, None, llm, record)
             else:
                 final = _resolve_final(record, h2, h1)
-                _update_status(cur, record_id, "consensus_reached", True, final, llm)
+                _update_status(cur, record_id, "consensus_reached", True, final, llm, record)
         else:
             # 3-way split or LLM matches neither/both
-            _update_status(cur, record_id, "need_review", True, None, llm)
+            _update_status(cur, record_id, "need_review", True, None, llm, record)

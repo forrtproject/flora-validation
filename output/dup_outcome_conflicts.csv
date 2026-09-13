@@ -1,0 +1,56 @@
+doi_o,doi_r,outcomes,resolved_to,url_r,sources
+10.1037/0022-3514.86.5.680,10.1016/j.jesp.2020.104052,failed | successful,mixed,,fred_replication_success
+10.1145/3290605.3300469,10.1098/rsos.231240,failed | successful,mixed,https://github.com/psych251/jakesch2023/blob/main/writeup/Replication%20Report%20Template.qmd,fred_replication_success
+10.1177/0956797616685771,10.1098/rsos.231240,mixed | successful,mixed,https://github.com/vboyce/251-254-MA/blob/main/reports/jordan2017_2.html,fred_replication_success
+10.1073/pnas.1523698113,10.1098/rsos.231240,successful | uninformative,successful || uninformative,https://rpubs.com/rhanah/982957,fred_replication_success
+10.1177/0956797615612202,10.1098/rsos.231240,failed | successful,mixed,https://github.com/psych251/porter2016/blob/master/writeup/Replication%20of%20Study%201%20by%20Porter%20et%20al.Rmd,fred_replication_success
+10.1177/0956797615573516,10.1098/rsos.231240,failed | successful,mixed,https://rpubs.com/jackie_schwartz/341565,fred_replication_success
+10.1177/0146167202286008,10.1017/s1930297500008470,mixed | successful,mixed,https://doi.org/10.1017/s1930297500008470,fred_replication_success | validated
+10.3758/bf03211160,10.20982/tqmp.20.1.r001,failed | successful,mixed,,fred_replication_success
+10.1037/a0023527,10.1037/a0036079,failed | mixed,mixed,,fred_replication_success
+10.1037/a0012833,10.1177/2515245920958687,failed | mixed,mixed,,fred_replication_success
+10.1037/0022-3514.94.1.116,10.1177/2515245920958687,failed | mixed,mixed,,fred_replication_success
+10.1177/1948550611410890,10.1037/xge0000067,failed | uninformative,uninformative || failed,,fred_replication_success
+10.1037/0022-3514.71.2.230,10.1037/0022-3514.83.2.406,mixed | successful,mixed,,fred_replication_success
+10.1111/j.1468-0017.2006.00297.x,10.1177/2515245918810225,mixed | successful,mixed,,fred_replication_success
+10.1002/(sici)1099-0771(199806)11:2%3c107::aid-bdm292%3e3.0.co;2-y,10.1177/2515245918810225,failed | successful,mixed,,fred_replication_success
+10.1037/0022-3514.73.4.733,10.1177/08902070221094216,failed | mixed,mixed,,fred_replication_success
+10.1126/science.1239918,10.1037/pspa0000064,failed | mixed,mixed,,fred_replication_success
+10.4148/1944-9771.1299,10.1111/fare.13030,mixed | successful,mixed,,fred_replication_success
+10.1016/0030-5073(76)90005-2,10.1037/xap0000366,failed | mixed,mixed,,fred_replication_success
+10.1126/science.1222426,10.1016/j.joep.2018.12.001,failed | mixed | successful,mixed,,fred_replication_success
+10.1037/pspa0000032,10.1017/s1930297500007774,failed | mixed | successful,mixed,,fred_replication_success
+10.1037/0096-3445.133.1.23,10.17605/osf.io/ahcpw,failed | successful,mixed,https://osf.io/qbp4g/files/ue9gm,fred_replication_success
+10.1080/02699931.2016.1273201,10.31234/osf.io/ntukz,failed | statistically successful but flawed,statistically successful but flawed || failed,,fred_replication_success
+10.1037/0022-3514.90.4.543,10.17605/osf.io/j9mfn,failed | successful,mixed,https://osf.io/8mqx5,fred_replication_success
+10.1017/s1930297500005064,10.1080/23743603.2021.1878340,failed | uninformative,failed || uninformative,,fred_replication_success
+10.1037/0022-3514.67.3.357,10.1525/collabra.37122,failed | mixed | successful,mixed,,fred_replication_success
+10.1016/j.jesp.2008.03.012,10.1027/1864-9335/a000188,failed | mixed | successful,mixed,,fred_replication_success | replications
+10.1111/j.1467-9280.2006.01720.x,10.17605/osf.io/4hjck,mixed | successful,mixed,,fred_replication_success
+10.1023/a:1007744326393,10.1016/j.jesp.2021.104222,failed | successful,mixed,,fred_replication_success
+10.1016/s0749-5978(02)00013-4,10.1016/j.jesp.2020.103972,mixed | successful,mixed,,fred_replication_success
+10.1016/s0022-1031(03)00065-9,10.1525/collabra.87489,failed | mixed | successful,mixed,,fred_replication_success
+10.1111/1467-9280.00376,10.1177/0956797620968526,mixed | successful,mixed,https://doi.org/10.1177/0956797620968526,fred_replication_success | replications
+10.1126/scitranslmed.3001318,10.7554/elife.17044,failed | mixed,mixed,https://doi.org/10.7554/elife.17044,replications
+10.1038/nature11005,10.7554/elife.29747,failed | mixed,mixed,https://doi.org/10.7554/elife.29747,replications
+10.3758/s13423-014-0683-5,10.1177/25152459241267902,failed | mixed,mixed,https://doi.org/10.1177/25152459241267902,replications
+10.1016/0030-5073(84)90043-6,10.1177/15480518251379918,failed | mixed,mixed,https://doi.org/10.1177/15480518251379918,replications
+10.1038/nature06288,10.1111/desc.13581,failed | mixed,mixed,https://doi.org/10.1111/desc.13581,replications
+10.1038/nm.2753,10.7554/elife.39944,failed | mixed,mixed,https://doi.org/10.7554/elife.39944,replications
+10.1093/jopart/muu053,10.1111/padm.13031,mixed | successful,mixed,https://doi.org/10.1111/padm.13031,replications | validated
+10.1073/pnas.1121623109,10.7554/elife.18173,failed | mixed,mixed,https://doi.org/10.7554/elife.18173,replications
+10.1037/0022-3514.75.1.5,10.1177/25152459251401177,failed | mixed,mixed,,replications
+10.1016/s1386-4181(01)00024-6,10.1561/104.00000058,mixed | successful,mixed,https://doi.org/10.1561/104.00000058,replications
+10.1073/pnas.1211645109,10.1002/ejsp.2390,mixed | successful,mixed,https://doi.org/10.1002/ejsp.2390,replications | validated
+10.1016/j.jfineco.2004.06.007,10.1561/104.00000072,failed | mixed,mixed,https://doi.org/10.1561/104.00000072,replications
+10.1198/073500102317352029,10.17016/feds.2017.062,mixed | successful,mixed,https://doi.org/10.17016/feds.2017.062,replications
+10.1002/jaba.672,10.1002/jaba.740,mixed | successful,mixed,https://doi.org/10.1002/jaba.740,replications | validated
+10.1287/orsc.1040.0065,10.1002/smj.2573,failed | mixed,mixed,https://doi.org/10.1002/smj.2573,replications | validated
+10.1038/nm.4246,10.1016/j.nicl.2019.101796,failed | mixed,mixed,,replications | validated
+10.1086/511995,10.5018/economics-ejournal.ja.2017-13,"computational issues, robustness challenges | failed","failed || computational issues, robustness challenges",https://doi.org/10.5018/economics-ejournal.ja.2017-13,replications | reproductions
+10.1016/j.neuron.2008.07.005,10.1016/j.cortex.2022.12.003,failed | mixed,mixed,https://doi.org/10.1016/j.cortex.2022.12.003,replications | validated
+10.1287/orsc.2017.1146,10.1057/s41267-022-00532-8,mixed | successful,mixed,https://doi.org/10.1057/s41267-022-00532-8,replications
+10.1007/bf01371820,10.1007/s00426-026-02299-1,failed | mixed,mixed,https://doi.org/10.1007/s00426-026-02299-1,replications | validated
+10.1257/0002828054201242,10.1002/jae.2922,"failed | not checked, robustness challenges","not checked, robustness challenges || failed",https://doi.org/10.1002/jae.2922,reproductions | validated
+10.3982/ecta6248,10.1002/jae.2861,"computationally reproducible, not checked | computationally reproducible, robust","computationally reproducible, robust || computationally reproducible, not checked",https://doi.org/10.1002/jae.2861,reproductions | validated
+10.1080/07350015.1995.10524601,10.1002/jae.2458,"computationally reproducible, not checked | successful","successful || computationally reproducible, not checked",,entry_sheet_replications | entry_sheet_reproductions

@@ -32,7 +32,9 @@ from pydantic import BaseModel, Field
 import hashlib
 import hmac
 import resend
+import flora_service
 import source_records_service
+import source_sync_runner
 from email_templates import forgot_handle_email
 import auth_links
 import security_events
@@ -1775,6 +1777,15 @@ def start_pair(queue_id: str,
     return {"ok": True}
 
 
+# Public, unauthenticated: the dataset-size page is linked from the sign-in screen
+# so anyone can see how the FLoRA collection is growing. Aggregate counts only —
+# no identifiers, no references, no reviewer information.
+@app.get("/api/flora/history")
+def public_flora_history():
+    with db() as cur:
+        return flora_service.history(cur)
+
+
 @app.get("/api/health")
 def health():
     """Lightweight liveness check (no DB) used by the client keep-warm ping and
@@ -2033,6 +2044,11 @@ def _housekeeping() -> None:
                 "WHERE attempted_at < NOW() - INTERVAL '7 days'"
             )
             security_events.prune(cur)
+            # A job left queued or running by a pod that died would block every
+            # later click, since queue_run() treats it as active.
+            abandoned = source_sync_runner.reap_stale_jobs(cur)
+            if abandoned:
+                logger.warning("Reaped %s abandoned sync job(s)", abandoned)
     except Exception:
         logger.exception("Session housekeeping failed")
 
@@ -4067,6 +4083,9 @@ def admin_entries(
         "validated":        "WHERE u.validation_status = 'validated'",
         "rejected":         "WHERE u.validation_status = 'rejected'",
         "admin_checked":    "WHERE u.admin_checked = TRUE",
+        # Advisory flags never change validation_status, so without a filter a
+        # flagged record is invisible until someone happens to open it.
+        "quality_flagged":  "WHERE jsonb_array_length(COALESCE(u.quality_flags, '[]'::jsonb)) > 0",
     }.get(filter, "")
 
     search = search.strip()
@@ -4111,6 +4130,7 @@ def admin_entries(
                 u.validator_1->>'validator_name' AS v1_handle,
                 u.validator_2->>'validator_name' AS v2_handle,
                 (u.llm_validator IS NOT NULL AND (u.llm_validator)::jsonb ? 'error')::boolean AS has_llm_error,
+                jsonb_array_length(COALESCE(u.quality_flags, '[]'::jsonb)) AS quality_flag_count,
                 {_AGREEMENT_SQL} AS agreement_pct,
                 {_LLM_DISSENT_SQL} AS llm_dissent,
                 (SELECT COUNT(*) FROM validation_queue vq
@@ -4169,6 +4189,9 @@ def admin_entries(
         c_admin = cur.fetchone()["n"]
         cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE validation_status = 'rejected'")
         c_rejected = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) AS n FROM unvalidated "
+                    "WHERE jsonb_array_length(COALESCE(quality_flags, '[]'::jsonb)) > 0")
+        c_quality = cur.fetchone()["n"]
 
     return {
         "entries": entries,
@@ -4185,6 +4208,7 @@ def admin_entries(
             "validated": c_validated,
             "rejected": c_rejected,
             "admin_checked": c_admin,
+            "quality_flagged": c_quality,
         },
     }
 
@@ -4205,7 +4229,7 @@ def admin_entry_detail(record_id: str, admin: dict = Depends(current_admin)):
         record["record_id"] = str(record["record_id"])
 
         # psycopg2 already deserialises JSONB to dicts; guard for string fallback
-        for field in ("validator_1", "validator_2", "llm_validator"):
+        for field in ("validator_1", "validator_2", "llm_validator", "quality_flags"):
             val = record.get(field)
             if isinstance(val, str):
                 record[field] = json.loads(val)
@@ -5250,10 +5274,12 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
 def _source_filters(
     type: str = "", status: str = "", outcome: str = "",
     search: str = "", reviewed: str = "", flagged: bool = False,
+    source: str = "",
 ) -> dict:
     return {
         "type": type, "status": status, "outcome": outcome,
         "search": search, "reviewed": reviewed, "flagged": flagged,
+        "source": source,
     }
 
 
@@ -5261,11 +5287,12 @@ def _source_filters(
 def admin_source_records(
     type: str = "", status: str = "", outcome: str = "",
     search: str = "", reviewed: str = "", flagged: bool = False,
+    source: str = "",
     sort: str = "", dir: str = "asc",
     page: int = 1, per_page: int = 50,
     admin: dict = Depends(current_admin),
 ):
-    filters = _source_filters(type, status, outcome, search, reviewed, flagged)
+    filters = _source_filters(type, status, outcome, search, reviewed, flagged, source)
     with db() as cur:
         return source_records_service.list_records(
             cur, filters, sort=sort, direction=dir, page=page, per_page=per_page
@@ -5276,10 +5303,11 @@ def admin_source_records(
 def admin_source_records_export(
     type: str = "", status: str = "", outcome: str = "",
     search: str = "", reviewed: str = "", flagged: bool = False,
+    source: str = "",
     admin: dict = Depends(current_admin),
 ):
     """Every row matching the current filter, not just the current page."""
-    filters = _source_filters(type, status, outcome, search, reviewed, flagged)
+    filters = _source_filters(type, status, outcome, search, reviewed, flagged, source)
     with db() as cur:
         columns, rows = source_records_service.export_rows(cur, filters)
 
@@ -5301,6 +5329,124 @@ def admin_source_sync_status(admin: dict = Depends(current_admin)):
     """Feeds the freshness banner above the grid."""
     with db() as cur:
         return source_records_service.sync_status(cur)
+
+
+# ---------------------------------------------------------------------------
+# FLoRA tab — the prepared product, not the records behind it.
+#
+# Derived from source_records on demand by transform_sources.build(), so it can
+# never drift from what the Source Records tab shows. flora_service caches the
+# frame until the underlying tables actually change.
+# ---------------------------------------------------------------------------
+
+def _flora_filters(type: str = "", source: str = "", outcome: str = "",
+                   search: str = "", unregistered: bool = False) -> dict:
+    return {"type": type, "source": source, "outcome": outcome,
+            "search": search, "unregistered": unregistered}
+
+
+@app.get("/api/admin/flora")
+def admin_flora_records(
+    type: str = "", source: str = "", outcome: str = "",
+    search: str = "", unregistered: bool = False,
+    sort: str = "", dir: str = "asc",
+    page: int = 1, per_page: int = 50,
+    admin: dict = Depends(current_admin),
+):
+    filters = _flora_filters(type, source, outcome, search, unregistered)
+    with db() as cur:
+        return flora_service.list_records(
+            cur, filters, sort=sort, direction=dir, page=page, per_page=per_page
+        )
+
+
+@app.get("/api/admin/flora/stats")
+def admin_flora_stats(admin: dict = Depends(current_admin)):
+    """Headline numbers plus when the id registry last ran."""
+    with db() as cur:
+        return flora_service.stats(cur)
+
+
+@app.get("/api/admin/flora/export.csv")
+def admin_flora_export(
+    type: str = "", source: str = "", outcome: str = "",
+    search: str = "", unregistered: bool = False,
+    admin: dict = Depends(current_admin),
+):
+    """Every row matching the current filter, all columns.
+
+    Same column order as the nightly artifact, so the two files are
+    interchangeable rather than subtly different.
+    """
+    filters = _flora_filters(type, source, outcome, search, unregistered)
+    with db() as cur:
+        body = flora_service.export_csv(cur, filters)
+
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="flora_{stamp}.csv"'},
+    )
+
+
+@app.get("/api/admin/flora/{flora_id}")
+def admin_flora_record(flora_id: str, admin: dict = Depends(current_admin)):
+    """One full row, every column, for the detail panel."""
+    with db() as cur:
+        record = flora_service.get_record(cur, flora_id)
+        if record is None:
+            raise HTTPException(404, "No such FLoRA record")
+        # The source rows dedup collapsed into this one. Shown so a reviewer can see
+        # what was folded in rather than having to reconstruct it from the grid.
+        record["merged_sources"] = flora_service.merged_sources(cur, flora_id)
+    return record
+
+
+# ---------------------------------------------------------------------------
+# Manual entry-sheet sync. The button queues a job; a scheduler on every pod drains
+# the queue under a PostgreSQL advisory lock, so the work happens out of band and
+# only one run is ever in flight. See source_sync_runner.py.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/admin/source-sync/status")
+def admin_source_sync_status_panel(limit: int = 10, admin: dict = Depends(current_admin)):
+    """Everything the sync panel renders: recent runs of the button, and the
+    per-source results of the last sync (which the nightly Action writes too)."""
+    with db() as cur:
+        jobs = source_sync_runner.recent_jobs(cur, limit)
+        per_source = source_records_service.sync_status(cur)
+        active = source_sync_runner.active_job_id(cur)
+    return {"jobs": jobs, "active": bool(active), "active_job_id": active, **per_source}
+
+
+@app.get("/api/admin/source-sync/jobs/{job_id}")
+def admin_source_sync_job(job_id: str, admin: dict = Depends(current_admin)):
+    """The complete log for one run, for when the tail is not enough."""
+    with db() as cur:
+        job = source_sync_runner.job_detail(cur, job_id)
+    if job is None:
+        raise HTTPException(404, "No such sync job")
+    return job
+
+
+@app.post("/api/admin/source-sync/dispatch", status_code=202)
+def admin_source_sync_dispatch(request: Request, admin: dict = Depends(current_admin)):
+    """Queue an entry-sheet sync. Returns immediately; the panel polls for the log."""
+    try:
+        with db() as cur:
+            job_id = source_sync_runner.queue_run(cur, admin["handle"], trigger="admin")
+            _audit(cur, security_events.SOURCE_SYNC_DISPATCHED, request, actor=admin,
+                   target_kind="source_sync_job", target_id=job_id, detail={"trigger": "admin"})
+    except source_sync_runner.SyncRunConflict as exc:
+        raise HTTPException(
+            409,
+            detail={
+                "message": "A sync run is already active",
+                "active_job_id": exc.active_job_id,
+            },
+        )
+    return {"status": "queued", "job_id": job_id}
 
 
 @app.get("/api/admin/source-records/duplicates")
@@ -5350,13 +5496,14 @@ def admin_source_record_update(
     req: SourceRecordUpdate,
     type: str = "", status: str = "", outcome: str = "",
     search: str = "", reviewed: str = "", flagged: bool = False,
+    source: str = "",
     sort: str = "", dir: str = "asc",
     admin: dict = Depends(current_admin),
 ):
     """Save a review. Stamps reviewer + timestamp even when nothing changed, and
     returns the next record in the active filter so 'Save & next' is one trip."""
     handle = admin["handle"]
-    filters = _source_filters(type, status, outcome, search, reviewed, flagged)
+    filters = _source_filters(type, status, outcome, search, reviewed, flagged, source)
     with db() as cur:
         # Computed BEFORE the save: stamping reviewed_at can move this row out of
         # its own filter (the "not reviewed" queue is exactly that case), and then
@@ -5396,12 +5543,13 @@ def admin_source_record_detail(
     record_id: str,
     type: str = "", status: str = "", outcome: str = "",
     search: str = "", reviewed: str = "", flagged: bool = False,
+    source: str = "",
     sort: str = "", dir: str = "asc",
     admin: dict = Depends(current_admin),
 ):
     """Full record for the review panel. The filter params are passed through so
     prev/next walk the queue the reviewer is actually looking at."""
-    filters = _source_filters(type, status, outcome, search, reviewed, flagged)
+    filters = _source_filters(type, status, outcome, search, reviewed, flagged, source)
     with db() as cur:
         try:
             return source_records_service.get_record(
@@ -5667,6 +5815,19 @@ def _start_scheduler() -> None:
         coalesce=True,
         next_run_time=datetime.now(timezone.utc),
         kwargs={"database_url": DATABASE_URL, "data_dir": DATA_DIR},
+    )
+    # Same durable-queue pattern as the extractor dispatcher above: the click only
+    # persists a row, and whichever pod wins the advisory lock runs it. A 5s poll
+    # keeps the button feeling immediate without meaningful load — the query is one
+    # indexed lookup that almost always returns nothing.
+    scheduler.add_job(
+        source_sync_runner.run_queued,
+        IntervalTrigger(seconds=5),
+        id="source_sync_dispatcher",
+        max_instances=1,
+        coalesce=True,
+        next_run_time=datetime.now(timezone.utc),
+        kwargs={"database_url": DATABASE_URL},
     )
     scheduler.add_job(
         _retry_tiebreakers,
