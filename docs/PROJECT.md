@@ -466,6 +466,52 @@ so light formatting edits do not register as disagreements.
 
 ---
 
+### Data-quality flags
+
+Every terminal branch of `evaluate_consensus` routes through `_update_status`, and
+that is where `record_checks.check_record()` runs — once all three judges are done
+with a record. The flags are stored on `unvalidated.quality_flags` (JSONB) with
+`quality_checked_at`, and shown in red at the top of the admin review panel, with a
+count on the entry row and a **Data quality** filter in the admin list.
+
+They are **advisory**. Nothing about where a record lands depends on them: a
+flagged record still validates, is still approved, is still published. The banner
+says the record *may need to be excluded* and an admin decides. That was a
+deliberate choice — several of these checks have real false-positive rates, and an
+automatic exclusion would be harder to notice than a red flag.
+
+Checks are run against the values that would actually be published (`final`
+overriding the raw record), so a correction a validator already made is never
+reported as a problem.
+
+#### What runs here, and what stays on cron
+
+This answers issue #139. A check belongs in the final validation step if it can be
+decided **from one row** and its answer **never changes on its own**:
+
+| Runs at consensus (`record_checks.py`) | Stays on the pipeline's cron (`validate_flora*.R`) |
+| --- | --- |
+| Required fields present | Conflicting references for one DOI (cross-row) |
+| DOI format `10.NNNN/…` | Exact duplicates by `doi_o`+`doi_r` (cross-row) |
+| Literal `NA`/`N/A` values | Retracted papers (time-varying) |
+| URLs start with `http` | DOIs resolve (time-varying, network) |
+| Type and outcome vocabularies | URLs resolve (time-varying, network) |
+| Year range, and `year_r >= year_o` | |
+
+Retractions and link rot are the important half of that split: a paper can be
+retracted, and a link can rot, long after a record was validated. Checking them
+once at consensus would be worse than not checking — it would read as a clean bill
+of health that silently goes stale.
+
+Two adaptations to this app's data model, without which the checks would be mostly
+noise: a blank `doi_o` is legitimate for DOI-less originals and is only flagged when
+there is no `oa_work_id_o` either; and years are parsed from the leading four digits
+because `year_o`/`year_r` are TEXT holding `'2020'`, `'2020.0'` and `' 2020'`.
+
+`backfill_quality_flags.py` applies the same checks to records that finished before
+the checks existed. It never changes `validation_status` — flag, don't reopen — and
+is safe to re-run, since flags are recomputed from current values each time.
+
 ## 8. The LLM validator
 
 `llm_validator.run_llm_validation(record, context)` where context is `sanity_check` or

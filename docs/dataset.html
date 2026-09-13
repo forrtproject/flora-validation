@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FLoRA dataset growth</title>
+<meta name="description" content="How the FORRT FLoRA replication dataset has grown over time. Open to everyone, no sign-in.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" type="image/svg+xml" href="./favicon.svg">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  /* Standalone rather than reusing style.css: this page is served to people who are
+     not signed in and has to render on its own, with no app shell around it. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f4efe6;
+    --bg-alt: #ebe4d2;
+    --surface: #fffdf8;
+    --ink: #262610;
+    --ink-soft: #36361a;
+    --muted: #6b6157;
+    --accent: #b54614;
+    --rule: #c8c0ad;
+    --rule-soft: #ddd6c6;
+    /* The two data series. Validated against the #f4efe6 surface: both sit in the
+       lightness band, clear the chroma floor, and stay separable under all three CVD
+       simulations as well as normal vision. The app's own warm tokens (accent, green,
+       amber) FAIL that separation check - they are a near-monochrome family - so the
+       charts carry their own pair. */
+    --series-source: #2a78d6;
+    --series-flora: #d95926;
+  }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    font-family: 'Inter Tight', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+
+  /* ---- masthead ---- */
+  .masthead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .masthead a.back {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-decoration: none;
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    padding: 0.3rem 0.8rem;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .masthead a.back:hover { border-color: var(--ink); color: var(--ink); }
+
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: clamp(1.6rem, 3.4vw, 2.4rem);
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    margin-top: 2rem;
+  }
+  h1 em { font-style: italic; font-weight: 400; color: var(--accent); }
+
+  .tagline {
+    color: var(--muted);
+    max-width: 60ch;
+    margin-top: 0.6rem;
+    font-size: 0.95rem;
+  }
+
+  /* ---- stat tiles ---- */
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: var(--rule-soft);
+    border: 1px solid var(--rule-soft);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-top: 2rem;
+  }
+  .tile { background: var(--surface); padding: 1.1rem 1.2rem; }
+  .tile .label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .tile .value {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 1.9rem;
+    font-weight: 600;
+    line-height: 1.15;
+    margin-top: 0.35rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .tile .sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.1rem; }
+  .tile.is-source .value { color: var(--series-source); }
+  .tile.is-flora .value { color: var(--series-flora); }
+
+  /* ---- chart figures ---- */
+  figure {
+    background: var(--surface);
+    border: 1px solid var(--rule-soft);
+    border-radius: 10px;
+    padding: 1.4rem 1.4rem 1.1rem;
+    margin-top: 1.75rem;
+  }
+  figure figcaption { margin-bottom: 1rem; }
+  figcaption .title {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 1.15rem;
+    font-weight: 600;
+  }
+  figcaption .note { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
+  .plot { position: relative; height: 320px; }
+  @media (max-width: 640px) { .plot { height: 260px; } }
+
+  /* ---- provenance note ---- */
+  .provenance {
+    margin-top: 1.75rem;
+    padding: 1.1rem 1.25rem;
+    background: var(--bg-alt);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    font-size: 0.87rem;
+    color: var(--ink-soft);
+  }
+  .provenance strong { font-weight: 600; }
+  .provenance p + p { margin-top: 0.6rem; }
+
+  /* ---- table view ---- */
+  .table-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 2.5rem;
+    flex-wrap: wrap;
+  }
+  .table-head h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 1.15rem;
+    font-weight: 600;
+  }
+  button.toggle {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: none;
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    padding: 0.3rem 0.8rem;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  button.toggle:hover { border-color: var(--ink); color: var(--ink); }
+
+  .table-scroll {
+    margin-top: 0.9rem;
+    overflow-x: auto;
+    border: 1px solid var(--rule-soft);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+  th, td {
+    text-align: right;
+    padding: 0.5rem 0.9rem;
+    border-bottom: 1px solid var(--rule-soft);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+    background: var(--bg-alt);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  th .swatch {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 2px;
+    margin-right: 0.4rem;
+  }
+  td.null { color: var(--muted); }
+  .carried, td .carried {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.58rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border: 1px solid var(--rule-soft);
+    border-radius: 999px;
+    padding: 0.05rem 0.4rem;
+    margin-left: 0.5rem;
+    white-space: nowrap;
+  }
+  .table-note {
+    margin-top: 0.7rem;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  /* ---- states ---- */
+  .state {
+    margin-top: 2rem;
+    padding: 2.5rem 1.25rem;
+    text-align: center;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--rule-soft);
+    border-radius: 10px;
+    font-size: 0.9rem;
+  }
+
+  footer {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--rule);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div class="masthead">
+    <svg height="34" viewBox="0 0 210 50" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="FORRT Validator">
+      <path d="M0,13 L0,0 L10,0 L10,7 L16,7 L16,0 L26,0 L26,7 L32,7 L32,0 L42,0 L42,50 L0,50 Z" fill="#b54614"/>
+      <rect x="12" y="13" width="18" height="10" fill="white"/>
+      <rect x="15" y="36" width="12" height="14" fill="#ebe4d2"/>
+      <path d="M15,36 Q21,28 27,36" fill="#ebe4d2"/>
+      <text x="54" y="26" font-family="Georgia,serif" font-size="26" font-weight="700" fill="#262610" letter-spacing="2">FORRT</text>
+      <text x="56" y="42" font-family="Georgia,serif" font-size="13" font-style="italic" fill="#b54614">Validator</text>
+    </svg>
+    <a class="back" href="./index.html">Sign in &rarr;</a>
+  </div>
+
+  <h1>FLoRA dataset <em>growth</em></h1>
+  <p class="tagline">
+    How many replication and reproduction records the collection holds, and how that has
+    changed. Updated after every pipeline run. Open to everyone &mdash; no account needed.
+  </p>
+
+  <div id="tiles" class="tiles" hidden>
+    <div class="tile is-source">
+      <div class="label">Source records</div>
+      <div class="value" id="t-source">&mdash;</div>
+      <div class="sub">everything ingested</div>
+    </div>
+    <div class="tile is-flora">
+      <div class="label">FLoRA dataset</div>
+      <div class="value" id="t-total">&mdash;</div>
+      <div class="sub">after exclusions &amp; deduplication</div>
+    </div>
+    <div class="tile">
+      <div class="label">Replications</div>
+      <div class="value" id="t-rep">&mdash;</div>
+    </div>
+    <div class="tile">
+      <div class="label">Reproductions</div>
+      <div class="value" id="t-repro">&mdash;</div>
+    </div>
+  </div>
+
+  <div id="loading" class="state">Loading&hellip;</div>
+  <div id="error" class="state" hidden>
+    The dataset figures are not available right now. Please try again shortly.
+  </div>
+
+  <div id="charts" hidden>
+    <figure>
+      <figcaption>
+        <div class="title">All-time</div>
+        <div class="note">Where each month finished. Hover a point for the exact counts.</div>
+      </figcaption>
+      <div class="plot"><canvas id="chart-all" role="img" aria-label="Line chart of dataset size at each month end"></canvas></div>
+    </figure>
+
+    <figure>
+      <figcaption>
+        <div class="title">Last 30 days</div>
+        <div class="note">One point per day. A day with no new records keeps the previous total.</div>
+      </figcaption>
+      <div class="plot"><canvas id="chart-30" role="img" aria-label="Line chart of dataset size on each of the last 30 days"></canvas></div>
+    </figure>
+
+    <div class="provenance">
+      <p>
+        <strong>Source records</strong> is every row ingested from the entry sheets and from the
+        records this project has validated itself. That table is insert-only and each row keeps
+        the date it first arrived, so this line is real history.
+      </p>
+      <p>
+        <strong>FLoRA dataset</strong> is what survives the exclusion list and duplicate
+        resolution. The published dataset only changes when the pipeline regenerates it, so on
+        a day with no run the figure is the one the last run produced. It begins on the first
+        day the pipeline recorded it and is not extended backwards: applying today&rsquo;s rules
+        to an older set of rows would produce a number that was never true on that day.
+      </p>
+    </div>
+
+    <div class="table-head">
+      <h2>Table view</h2>
+      <button class="toggle" id="table-toggle" aria-expanded="false" aria-controls="table-wrap">Show</button>
+    </div>
+    <div class="table-scroll" id="table-wrap" hidden>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Date</th>
+            <th scope="col"><span class="swatch" style="background:#2a78d6"></span>Source records</th>
+            <th scope="col"><span class="swatch" style="background:#d95926"></span>FLoRA dataset</th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+    <p class="table-note">
+      Most recent day first. A date marked <span class="carried">carried</span> is a day the
+      pipeline did not run, so the dataset still held the figure beside it.
+    </p>
+  </div>
+
+  <footer>
+    <span>FORRT &middot; FLoRA</span>
+    <span id="generated"></span>
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var SOURCE_COLOR = "#2a78d6";
+  var FLORA_COLOR  = "#d95926";
+  var INK          = "#262610";
+  var MUTED        = "#6b6157";
+  var GRID         = "#ddd6c6";
+  var SURFACE      = "#fffdf8";
+
+  var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  var EMDASH = "—";
+
+  function fmt(n) {
+    return (n === null || n === undefined) ? EMDASH : n.toLocaleString("en-US");
+  }
+
+  function monthLabel(ym) {
+    var parts = ym.split("-");
+    return MONTHS[parseInt(parts[1], 10) - 1] + " " + parts[0];
+  }
+
+  function dayLabel(iso) {
+    var parts = iso.split("-");
+    return MONTHS[parseInt(parts[1], 10) - 1] + " " + parseInt(parts[2], 10);
+  }
+
+  // Both series are the same measure (rows), so they share ONE y-axis. A second
+  // scale would make two differently-sized series look identically sized.
+  function lineChart(canvasId, labels, source, flora, measured) {
+    function series(label, data, color) {
+      return {
+        label: label,
+        data: data,
+        borderColor: color,
+        backgroundColor: color,
+        pointBackgroundColor: color,
+        // A ring in the surface colour keeps two points readable where the lines
+        // cross instead of merging them into one blob.
+        pointBorderColor: SURFACE,
+        pointBorderWidth: 2,
+        borderWidth: 2,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        tension: 0.25,
+        spanGaps: false
+      };
+    }
+
+    return new Chart(document.getElementById(canvasId), {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [
+          series("Source records", source, SOURCE_COLOR),
+          series("FLoRA dataset", flora, FLORA_COLOR)
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        // Crosshair behaviour: hovering anywhere in a column reads every series at
+        // that x, so the lines can be compared without having to hit a 4px dot.
+        interaction: { mode: "index", intersect: false },
+        layout: { padding: { top: 4, right: 8 } },
+        plugins: {
+          legend: {
+            position: "top",
+            align: "end",
+            labels: {
+              boxWidth: 8,
+              boxHeight: 8,
+              usePointStyle: true,
+              pointStyle: "circle",
+              color: MUTED,
+              font: { family: "'Inter Tight', sans-serif", size: 12 },
+              padding: 16
+            }
+          },
+          tooltip: {
+            backgroundColor: INK,
+            titleColor: "#f4efe6",
+            bodyColor: "#f4efe6",
+            borderWidth: 0,
+            padding: 10,
+            cornerRadius: 6,
+            usePointStyle: true,
+            titleFont: { family: "'Inter Tight', sans-serif", size: 12, weight: "600" },
+            bodyFont: { family: "'Inter Tight', sans-serif", size: 12 },
+            callbacks: {
+              label: function (ctx) {
+                if (ctx.parsed.y === null) return ctx.dataset.label + ": not recorded";
+                var text = ctx.dataset.label + ": " + fmt(ctx.parsed.y) + " rows";
+                // Only the FLoRA series is ever carried: source records are counted
+                // exactly for every day from the date each row arrived.
+                if (ctx.datasetIndex === 1 && measured && !measured[ctx.dataIndex]) {
+                  text += " (carried forward)";
+                }
+                return text;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            border: { color: GRID },
+            ticks: {
+              color: MUTED,
+              font: { family: "'JetBrains Mono', monospace", size: 10 },
+              maxRotation: 0,
+              autoSkipPadding: 12
+            }
+          },
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: "Total rows",
+              color: MUTED,
+              font: { family: "'Inter Tight', sans-serif", size: 11 }
+            },
+            grid: { color: GRID, lineWidth: 1, drawTicks: false },
+            border: { display: false },
+            ticks: {
+              color: MUTED,
+              font: { family: "'JetBrains Mono', monospace", size: 10 },
+              padding: 8,
+              callback: function (v) { return fmt(v); }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function renderTable(daily) {
+    var rows = [];
+    for (var i = daily.length - 1; i >= 0; i--) {
+      var d = daily[i];
+      var total = (d.total_rows === null)
+        ? '<td class="null">not recorded</td>'
+        : "<td>" + fmt(d.total_rows)
+          + (d.measured ? "" : '<span class="carried">carried</span>') + "</td>";
+      rows.push("<tr><td>" + d.date + "</td><td>" + fmt(d.source_rows) + "</td>" + total + "</tr>");
+    }
+    document.getElementById("table-body").innerHTML = rows.join("");
+  }
+
+  function render(data) {
+    document.getElementById("loading").hidden = true;
+
+    if (!data.latest || !data.daily.length) {
+      document.getElementById("error").hidden = false;
+      return;
+    }
+
+    var l = data.latest;
+    document.getElementById("t-source").textContent = fmt(l.source_rows);
+    document.getElementById("t-total").textContent  = fmt(l.total_rows);
+    document.getElementById("t-rep").textContent    = fmt(l.replications);
+    document.getElementById("t-repro").textContent  = fmt(l.reproductions);
+    document.getElementById("tiles").hidden  = false;
+    document.getElementById("charts").hidden = false;
+
+    var monthly = data.monthly;
+    lineChart(
+      "chart-all",
+      monthly.map(function (m) { return monthLabel(m.month); }),
+      monthly.map(function (m) { return m.source_rows; }),
+      monthly.map(function (m) { return m.total_rows; }),
+      monthly.map(function (m) { return m.measured; })
+    );
+
+    var last30 = data.daily.slice(-30);
+    lineChart(
+      "chart-30",
+      last30.map(function (d) { return dayLabel(d.date); }),
+      last30.map(function (d) { return d.source_rows; }),
+      last30.map(function (d) { return d.total_rows; }),
+      last30.map(function (d) { return d.measured; })
+    );
+
+    renderTable(data.daily);
+
+    // Rendered in UTC, like every other date on this page. generated_at is an
+    // instant; the series are UTC calendar days printed verbatim. Letting the
+    // browser convert this one to local time put the footer a day AHEAD of the
+    // newest row in the table for every reader east of UTC — one payload showing
+    // two different "today"s.
+    var when = new Date(data.generated_at);
+    document.getElementById("generated").textContent =
+      "Updated " + when.toLocaleDateString("en-GB",
+        { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  }
+
+  var toggle = document.getElementById("table-toggle");
+  toggle.addEventListener("click", function () {
+    var wrap = document.getElementById("table-wrap");
+    wrap.hidden = !wrap.hidden;
+    toggle.textContent = wrap.hidden ? "Show" : "Hide";
+    toggle.setAttribute("aria-expanded", String(!wrap.hidden));
+  });
+
+  fetch("/api/flora/history")
+    .then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(render)
+    .catch(function () {
+      document.getElementById("loading").hidden = true;
+      document.getElementById("error").hidden = false;
+    });
+})();
+</script>
+
+</body>
+</html>

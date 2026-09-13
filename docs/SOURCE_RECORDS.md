@@ -14,14 +14,20 @@ operate it, and what goes wrong.
 
 1. [Why this exists](#1-why-this-exists)
 2. [The whole flow in one picture](#2-the-whole-flow-in-one-picture)
-3. [The two entry sheets](#3-the-two-entry-sheets)
+3. [The entry sheets](#3-the-entry-sheets)
+   - [3.1 What is different about spreadsheet B](#31-what-is-different-about-spreadsheet-b)
+   - [3.2 Our own validated records](#32-our-own-validated-records-validated)
 4. [Prerequisite: the sheet UUID](#4-prerequisite-the-sheet-uuid)
 5. [The registry (`sources.yml`)](#5-the-registry-sourcesyml)
 6. [The sync (`sync_sources.py`)](#6-the-sync-sync_sourcespy)
 7. [Database schema](#7-database-schema)
 8. [The admin tab](#8-the-admin-tab)
 9. [The transform (`transform_sources.py`)](#9-the-transform-transform_sourcespy)
+   - [9.1 FLoRA record ids](#91-flora-record-ids-flora_registrypy)
+   - [9.2 Identifiers: what actually exists](#92-identifiers-what-actually-exists)
+   - [9.3 The FLoRA tab](#93-the-flora-tab)
 10. [The GitHub Action](#10-the-github-action)
+    - [10.1 The "Run sync now" button](#101-the-run-sync-now-button)
 11. [Common tasks](#11-common-tasks)
 12. [Troubleshooting](#12-troubleshooting)
 13. [Design decisions and why](#13-design-decisions-and-why)
@@ -78,18 +84,39 @@ app are permanent and do not need to be mirrored back to the sheet.
 
 ---
 
-## 3. The two entry sheets
+## 3. The entry sheets
 
-Both are tabs of one published Google spreadsheet, so they share a single sharing
-permission — if it breaks, both break together.
+Sheets come from **two** published Google spreadsheets. Tabs of the same spreadsheet
+share one sharing permission — if it breaks, they break together — while the two
+spreadsheets fail independently.
+
+**Spreadsheet A — the original entry sheets** (registry key `document`):
 
 | Sheet | gid | Raw rows | Accepted | Prefix |
 |---|---|---:|---:|---|
 | replications | `863031634` | 4,043 | **1,635** | `REPL-` |
 | reproductions | `984458430` | 157 | **18** | `REPRO-` |
 
-"Accepted" means `validation_status` (replications) or `validation` (reproductions) is
-one of:
+**Spreadsheet B — "Validating FReD replication success - Brinna"** (registry key
+`fred_document`). All three are replications, and all three differ structurally from
+spreadsheet A — see [§3.1](#31-what-is-different-about-spreadsheet-b):
+
+| Sheet | gid | Raw rows | Accepted | Prefix | |
+|---|---|---:|---:|---|---|
+| replication success | `984458430` | 1,979 | **983** | `FRED-` | |
+| replication success - BACKUP | `513210700` | 1,968 | *(974)* | `FREDB-` | **disabled** |
+| SCORE 2025 validation | `1421575264` | 88 | **88** | `SCORE-` | no validation column |
+
+The two remaining tabs of spreadsheet B — `Data validation` (`593748463`) and
+`File links` (`177801713`) — are working sheets, not entry sheets, and are not
+registered.
+
+Note that gid `984458430` appears in both spreadsheets. gids are only unique within a
+spreadsheet, and identity here is `(source, sheet_row_id)`, so the collision is
+harmless — but it does mean a gid alone never identifies a sheet.
+
+"Accepted" means `validation_status` (replications) or `validation` (reproductions and
+the FReD tabs) is one of:
 
 ```
 validated - chosen        validated - changed        validated - unchanged
@@ -97,6 +124,37 @@ validated - chosen        validated - changed        validated - unchanged
 
 Everything else — blank, `help needed`, `on hold`, `awaiting validation`,
 `validated - discarded` — is left in the sheet and never ingested.
+
+### 3.1 What is different about spreadsheet B
+
+Three differences, each absorbed by a registry key rather than by code:
+
+**The header is not the first row.** Both `replication success` tabs open with a
+banner row (`should include success criterion` over the outcome columns). Parsed
+normally, pandas takes that banner as the header and every real column comes back as
+`Unnamed: N`, so gate 4 reports the entire sheet missing instead of the header being
+off by one. `header_row: 1` moves the header down.
+
+**The UUID is in `flora_id`, not `id`.** These tabs *do* have a column named `id` — it
+holds `doi_o` and `doi_r` concatenated. Pointing `id_column` at it would key every row
+on a DOI pair. `_validate_registry` now refuses any source whose `id_column` is not
+also in `expected_columns`, so this fails once at startup rather than once per row.
+
+**`SCORE 2025 validation` has no validation column.** It is an already-curated list, so
+there is no per-row status to gate on. Its registry entry declares `validation_column:`
+explicitly empty, every fetched row is accepted, and `validation_status` lands NULL —
+which is what distinguishes these rows from ones a coder actively marked accepted.
+
+The BACKUP tab is registered but `enabled: false`. It is ~98.5% the same studies as
+`replication success` measured on `doi_o`+`doi_r`, but it shares **zero** `flora_id`
+values with it, so nothing dedupes the two. Under insert-only those ~974 duplicate
+rows would be permanent. It stays in the registry so the tab is documented and one
+flag away, rather than silently forgotten.
+
+Columns these tabs carry that `source_records` has no home for — `fred_id`, `link_r`,
+`study_r`, `entries_per_rep`, `frq`, `validator`, `validator_notes`, and the sheet's
+own `id` — are not promoted and stay recoverable in `raw`. Neither tab has a `year`
+column, so `year_r` is NULL for every FReD row.
 
 ### Columns taken from each sheet
 
@@ -128,6 +186,58 @@ Every other sheet column — `prep_notes`, `quote validated`, `target_match_libe
 
 **Reproductions do not have an `outcome` column.** They carry a two-dimensional
 outcome, and the single FLoRA label is derived downstream (see [§9](#9-the-transform-transform_sourcespy)).
+
+---
+
+### 3.2 Our own validated records (`validated`)
+
+Not a sheet. [`sync_validated.py`](../sync_validated.py) projects the project's own
+`validated` table into the same grid under the source key `validated`, prefix `VAL-`,
+so everything feeding the FLoRA dataset is reviewable in one place — and so the
+duplicate detector can show where the entry sheets already cover a record this project
+validated itself (currently **42** such groups).
+
+Identity is `validated.validated_record_id`, which is already a UUID, so it fits
+`(source, sheet_row_id)` with nothing invented.
+
+**This sync is not insert-only, and that is deliberate.** Insert-only exists because an
+entry sheet is external, its edits are unattributed, and the database should win once a
+row lands. None of that holds for a table inside this same database that we own and
+that legitimately changes when an admin re-opens a record. A permanently stale copy in
+the grid would be a bug, not a safeguard — so a changed validated record refreshes its
+grid row and bumps `version`.
+
+**With one hard exception:** a row whose `reviewed_at` is set has been reviewed by a
+human in the grid, and is never updated. Overwriting it would silently discard a
+reviewer's correction, which is exactly what insert-only was protecting against. Those
+rows are counted and reported by the run instead, so a divergence stays visible rather
+than being resolved by whoever wrote last.
+
+Two fields are deliberately *not* written:
+
+- **`validation_status` stays NULL.** That column holds the sheet coders' vocabulary
+  (`validated - chosen`). These rows never passed through a sheet, so reusing one of
+  those values would claim a provenance that does not exist. `source = 'validated'`
+  carries the meaning instead.
+- **`oa_work_id_o` / `oa_work_id_r` are left to the OpenAlex backfill**, which owns
+  them; writing them here would fight `trg_clear_stale_source_oa_work_id`, the trigger
+  that clears them whenever the DOI beside them is written.
+
+For reproductions, `validated.outcome` holds the two axes joined for display
+(`computationally reproducible, robust`). The grid keeps them apart in
+`outcome_computation` / `outcome_robustness`, which are copied directly, so the joined
+string is dropped rather than stored as a third spelling of the same data.
+
+Everything with no column of its own — `title_o`, `title_r`, `admin_approved`,
+`original_key`, `record_id`, `validated_at` — is preserved in `raw`.
+
+It runs nightly in the same GitHub Action, after the sheet sync and with `if: always()`
+so an unshared sheet cannot also stop our own records from refreshing.
+
+```
+python sync_validated.py --dry-run
+python sync_validated.py
+```
 
 ---
 
@@ -171,7 +281,8 @@ how their columns map. Adding or repointing a sheet is a config change here, nev
 code change.
 
 ```yaml
-document: "2PACX-1vT0VnLyrf9GC…"          # the published spreadsheet
+document: "2PACX-1vT0VnLyrf9GC…"          # default spreadsheet
+fred_document: &fred_document "2PACX-1vSlPVImL7kjz…"   # second spreadsheet
 url_template: "https://docs.google.com/spreadsheets/d/e/{document}/pub?gid={gid}&single=true&output=csv"
 
 accepted_values: ["validated - chosen", "validated - changed", "validated - unchanged"]
@@ -179,7 +290,7 @@ row_count_floor: 0.5                       # abort a source if it loses >50% of 
 
 sources:
   - key: replications
-    gid: 863031634
+    gid: 863031634                         # no `document` -> the default one
     validation_column: validation_status
     type_label: replication
     display_prefix: REPL
@@ -188,7 +299,23 @@ sources:
     column_map: {year: year_r}             # sheet name -> source_records name
     promoted: [...]                        # which columns become real columns
     enabled: true
+
+  - key: score_2025
+    document: *fred_document               # override -> the other spreadsheet
+    gid: 1421575264
+    header_row: 0                          # 0-based row the real header sits on
+    validation_column:                     # explicitly empty -> accept every row
+    id_column: flora_id
+    ...
 ```
+
+Three keys carry the multi-spreadsheet support:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `document` | top-level `document` | Which spreadsheet this tab belongs to |
+| `header_row` | `0` | 0-based row the real header sits on; skips banner rows |
+| `validation_column` | — | Empty means the sheet is pre-curated: accept every row |
 
 R can read this file too (`yaml::read_yaml()`), so the R pipeline and the sync can
 share one definition rather than two copies that happen to match today.
@@ -386,6 +513,34 @@ panel reloads rather than silently overwriting the first.
 
 ### Duplicate review
 
+**What a "duplicate" actually means here.** A row's `content_fingerprint` is
+`md5(normalised doi_o + "|" + normalised doi_r, falling back to url_r)`, set by a
+database trigger. Two rows sharing it describe **the same pair of papers**. It is a
+detector, not an identity key — identity is `(source, sheet_row_id)` — and it never
+blocks an import.
+
+The fingerprint deliberately **excludes `study_o` and `study_r`**, and that single
+fact explains most groups. One replication paper often covers several effects from
+one original, each a legitimate row with its own outcome. Measured on the current
+table, of 174 groups:
+
+| | Groups | Meaning |
+|---|---:|---|
+| Every member is a different study pair | **94** (54%) | Not errors — separate effects from one paper pair |
+| Every member is the same study pair | **71** (41%) | Genuine re-entry of the same effect |
+| Mixed | 9 (5%) | Distinct effects plus a true repeat inside one group |
+
+So roughly half the count is the fingerprint being intentionally coarse. Widening it to
+include the study numbers was rejected: study numbering is free text across the sheets
+(`1`, `1a`, `2`, blank), so it would miss real duplicates that a coder numbered
+differently — and a detector that under-reports is worse than one that over-reports
+into a review queue.
+
+Groups are also worth reading by **which sources collide**. Within one sheet means a
+coder entered the pair twice; across sheets means two coders reached the same pair
+independently — including a `validated` row overlapping a sheet row, which says the
+entry sheets already cover something this project validated itself.
+
 Click the **Duplicates** chip. Members of each group are shown side by side with their
 identifiers, references and outcomes, so the differences are scannable.
 
@@ -470,10 +625,314 @@ Columns: `doi_o` `ref_o` `url_o` `doi_r` `ref_r` `url_r` `abstract_r` `outcome`
 
 ---
 
+### 8.9 The R notebook, ported
+
+The FLoRA preparation pipeline used to live in an R notebook that read the Google
+Sheets directly. It is now reproduced here, so a dataset build depends on this
+repository alone.
+
+| R notebook step | Here |
+|---|---|
+| Download 5 sources (replications, reproductions, COS, SCORE, validated export) | `sync_sources.py` + `sync_validated.py` — all five are registry sources |
+| Step 4 exclusions sheet + manual lists | [`sync_exclusions.py`](../sync_exclusions.py) |
+| Outcome normalisation | `extractor_vocab` + the `outcome_alias` table |
+| DOI cleaning, redundant-URL stripping | `transform_sources.clean_doi` / `strip_redundant_url` |
+| Dedup | `transform_sources` step 5 + reviewer duplicate rulings |
+| Step 6b/7 references and metadata | [`enrich_works.py`](../enrich_works.py) via OpenAlex |
+| Step 7c text cleaning | `transform_sources.clean_text` |
+| Step 8 DOI hashes | `transform_sources.doi_hash` |
+| Step 9 language, 9c OA urls | `enrich_works.py` (same fetch) |
+| Step 9b COS non-replications | `sync_exclusions.COS_NON_REPLICATIONS` — 16 pairs |
+| Step 9d meta-paper annotation | `transform_sources.META_PAPER_DOIS` — 12 DOIs |
+| Step 7b OpenAlex work-id lookup | [`enrich_works.enrich_work_ids`](../enrich_works.py) |
+| Step 8b title from reference text | [`apa_references.py`](../apa_references.py) — not called by the notebook |
+| COS outcome-quote shorthand | [`cos_quote_rewrite.py`](../cos_quote_rewrite.py) |
+| Author overlap (`augmentation.R`) | [`author_overlap.py`](../author_overlap.py) — from cached authors, no network |
+| Step 10 title filter + export log | `transform_sources.missing_title_report` |
+| `validate_flora.R` | [`validate_flora.py`](../validate_flora.py) |
+| `validate_flora_network.R` | [`validate_flora_network.py`](../validate_flora_network.py) |
+
+**Two deliberate differences.**
+
+*The title filter drops rows from the export but not from the FLoRA tab.* The filter
+itself now matches the notebook and is on by default: rows with no title on one side
+are logged to `output/flora_export_log.csv` and left out of the export, and
+`--keep-untitled` turns that off.
+
+It was off while our title coverage was worse than R's. R backs a title with three
+fallbacks — `manual_references.xlsx`, OpenAlex lookups for OSF urls, and synthesis
+from structured fields — where we had only the OpenAlex DOI lookup, leaving 331 rows
+blank for reasons of **our** coverage rather than the data's. Two of those fallbacks
+now exist (OpenAlex work-id lookups at Step 7b, title recovery from the reference
+text at Step 8b), which closed it to 24 genuinely untitled rows — Google Docs links,
+DOIs OpenAlex does not hold.
+
+The FLoRA tab still lists those 24. It is the screen someone fixes such a row on, and
+a row hidden there is a row nobody fixes; `flora_service.counts()` reports them as
+`untitled` and the grid shows the number above the table.
+
+*`url_o` is excluded from the network URL check.* It holds titles rather than links on
+a large number of rows — which the structural validator reports — and checking them
+would be thousands of guaranteed failures burying the real ones.
+
+**Preprint deduplication** (notebook Steps 6a and 7d) is
+[`preprint_dedup.py`](../preprint_dedup.py), a port of `R/preprint_dedup.R`. It runs at
+two points, as the notebook does:
+
+- `apply_confirmed()` **before** enrichment, applying only the `keep_1`/`keep_2` rows
+  of [`cache/confirmed_preprint_duplicates.csv`](../cache/confirmed_preprint_duplicates.csv).
+  Running it first is what makes the metadata fetch use canonical DOIs instead of DOIs
+  it is about to discard.
+- `resolve()` **after** enrichment, because detection needs titles and authors.
+
+Detection uses all four of the notebook's routes: replication-side pairs under one
+`doi_o`, identical normalised titles, DOI-format variants, and fuzzy title matches
+within a first-author block — at the same 0.80 similarity threshold. Verified against
+the confirmed file's own recorded values: the Pennycook pair scores **0.991** here, the
+number R wrote into that file.
+
+`merge_doi_pair_dups()` is the piece our dedup previously lacked. Step 5 *drops* a
+colliding row; this *combines* them — study numbers joined with `; `, quotes with
+` || `, `COS` preferred as the source, and disagreeing outcomes collapsed to `mixed`
+or, when they cannot be mixed, retained as `A || B` so `validate_flora` reports them.
+Absorbed `record_id`s are carried through so `flora_records` provenance survives.
+
+Confirmed decisions write the discarded DOI into `alt_identifier_o`/`alt_identifier_r`;
+automatic ones do not. That asymmetry is the original's: recording an alias is a claim
+of equivalence, and the automatic rule is a guess until a human agrees with it.
+
+**The review nudge is ported too.** `maybe_open_review_issue()` files — or comments on
+— a GitHub issue when pairs are being auto-resolved and
+`cache/confirmed_preprint_duplicates.csv` has not been touched for 7 days. Three
+outcomes, as in R: no open issue carrying `[preprint-dedup-review]` → file one; an open
+one active inside the window → leave it alone; an open one itself stale → comment.
+
+It is **off by default**, and that default is load-bearing: `build()` runs on every
+FLoRA tab load, so a default of `True` would file GitHub issues when somebody opens a
+page. Only `transform_sources.py --review-issue` turns it on, which is what the nightly
+workflow passes. Every failure — no `gh`, no token, no network — is reported and
+ignored: a dataset build that already succeeded must not fail on a nudge.
+
+### 8.9.1 What a run writes
+
+Every run also appends to **`logs/flora_pipeline.log`**, whichever way it was
+started — the sync button, the nightly Action, cron, or a shell on the server.
+[`pipeline_logging.py`](../pipeline_logging.py) tees stdout and stderr into that
+file, timestamped and labelled with the component:
+
+```
+[2026-09-13 14:52:37] [sync-exclusions] START (pid 31152)
+[2026-09-13 14:52:42] [sync-exclusions]   sheet rows: 5
+[2026-09-13 14:52:42] [sync-exclusions] END (5.5s)
+```
+
+**Teed rather than converted to `logger.info()`.** The console output is read by
+humans watching a sync and captured verbatim by `source_sync_runner` into
+`source_sync_jobs.log_text`; rewriting 300 `print()` calls would have changed what
+both of them see, for no gain.
+
+**`start()` is never called at import.** `transform_sources` is imported by the web
+app — `flora_service` builds the FLoRA tab from it — so a module-level call would
+redirect the entire web process's output into a pipeline log the moment somebody
+opened a page. Every script calls it as the first statement of `main()` instead, and
+a test walks the module-level AST of every file to keep it that way.
+
+The file rotates at 5 MB keeping one previous copy, and `logs/` is gitignored. If the
+log cannot be opened the run says so on stderr and carries on unlogged: a pipeline
+that refuses to run because it cannot write a log file is worse than one that runs
+without it.
+
+| Started by | Where the output goes |
+|---|---|
+| Sync button | `source_sync_jobs.log_text` **and** `logs/flora_pipeline.log` |
+| Nightly Action | the Action run log, the artifacts, **and** the file (ephemeral in CI) |
+| Terminal / cron | console **and** `logs/flora_pipeline.log` |
+
+| File | Contents |
+|---|---|
+| `output/flora_entry_sheets.csv` | the dataset, 45 columns |
+| `output/flora_export_log.csv` | rows missing a title, with the reason |
+| `output/dup_outcome_conflicts.csv` | merged groups whose outcomes disagreed, and how each resolved |
+| `output/preprint_dedup_candidates.csv` | every detected pair and the action taken |
+
+All four are uploaded by the nightly workflow. The run also prints, per step: how many
+outcome spellings were recoded and to what, DOI values that are not DOIs, rows excluded
+by each rule, cells changed per text-cleaned column, conflicting outcomes, and a closing
+coverage table for every column of the output contract.
+
+`dup_outcome_conflicts.csv` currently holds **55** groups — the same paper, the same
+`url_r`, disagreeing outcomes. Those are source-data mistakes, not pipeline bugs.
+
+---
+
+### 9.0 Output columns: the FLoRA contract
+
+Two column sets, easy to confuse:
+
+- **`FLORA_COLUMNS`** — the R notebook's `flora_cols`, its *input* selection.
+- **`FLORA_OUTPUT_COLUMNS`** — its `output_cols`, the shape of `flora.csv`. **This is
+  what both exports now emit.**
+
+All 35 now carry data. 15 come from our own records; the other 20 are bibliographic
+enrichment, cached per DOI in `work_metadata` by
+[`enrich_works.py`](../enrich_works.py).
+
+**One API replaces the R pipeline's three.** The notebook fetches references from
+CrossRef (Step 6b), language from OpenAlex (Step 9) and OA links from Unpaywall
+(Step 9c). OpenAlex carries all of it — `biblio` holds volume/issue/pages, `language`
+is a field, and `open_access.oa_url` is the Unpaywall data OpenAlex already ingests —
+and it answers **50 DOIs per request**: ~100 requests for the whole corpus instead of
+~15,000.
+
+Measured coverage over 4,951 unique DOIs: **4,841 works cached (98%)**, 77 not held by
+OpenAlex. Per column, across the 3,032 product rows:
+
+| | Original side | Replication side |
+|---|---:|---:|
+| title / author / year | 98% | 89% |
+| journal | 97% | 82% |
+| volume / pages | 94% / 95% | 76% / 71% |
+| issue | 89% | 67% |
+| language | 98% | 82% |
+| `oa_url` | 36% | 58% |
+| bibtex | 98% | 89% |
+
+The replication side is lower throughout because 9% of rows have no `doi_r` at all —
+they are OSF links, which are not OpenAlex works.
+
+| Filled by us | How |
+|---|---|
+| `doi_o` `doi_r` `url_o` `url_r` `alt_identifier_o` `alt_identifier_r` | source_records |
+| `outcome` `outcome_quote` `outcome_quote_source` `type` `source` | the transform |
+| `apa_ref_o` `apa_ref_r` | our `ref_o`/`ref_r`, the sheet's own reference strings (100% / 99.9%) |
+| `title_*` `author_*` `journal_*` `year_*` `volume_*` `issue_*` `pages_*` `language_*` `oa_url_*` `bibtex_ref_*` | OpenAlex, cached in `work_metadata` |
+| `doi_o_hash` `doi_r_hash` | `substr(md5(doi), 1, 3)` — same 3-char bucket as `openssl::md5` in R |
+
+`apa_ref_o`/`apa_ref_r` deliberately keep the **sheets'** reference strings rather than
+a synthesised one. The R pipeline prefers CrossRef's formatted citation and falls back
+to the sheet (`coalesce(ref_o_clean, ref_o)`); with no CrossRef APA to prefer, the
+fallback is simply the value — and it is already real APA at 100% coverage. `bibtex_ref`
+IS synthesised from the structured fields, which is what the R side does via
+`synthesise_missing_refs_from_fields` when CrossRef returns none.
+
+Seven columns follow the 35 rather than being dropped: `abstract_r`, the six
+reproduction axis columns, and the three provenance columns. `abstract_r` feeds
+downstream classification and the axes are what the flat `outcome` is *derived from* —
+discarding either to match a column list exactly would lose data the database is the
+only copy of. Readers select by name, so trailing columns cost nothing;
+`to_output_shape(frame, keep_extras=False)` gives an exact 35-column file if something
+ever needs one.
+
+---
+
+### 9.1 FLoRA record ids (`flora_registry.py`)
+
+The transform is a pure function, which makes its output reproducible but
+**anonymous**: nothing in a produced row can be cited, and nothing links it back to
+the record it came from. [`flora_registry.py`](../flora_registry.py) supplies both,
+writing to `flora_records` — the only thing that does.
+
+```
+flora_id "FRED-000001"  →  primary_source_record_id  →  source_records (FRED-000001)
+                           merged_source_record_ids  →  rows dedup collapsed into it
+```
+
+**The id is the source record's own `display_id`, pinned.** There is no separate
+`FLORA-` series: a FLoRA row carries the id already visible in the Source Records tab
+(`REPL-000397`, `FRED-000001`, `VAL-000012`), so there is one namespace to learn and
+tracing a published row back needs no lookup.
+
+"Pinned" is the whole point — the id is copied **once**, at first assignment, and then
+lives in `flora_records`. It does not follow the primary source record afterwards.
+Reading `display_id` live instead would change 207 rows' identity the moment a reviewer
+ruled a survivor a duplicate, which is precisely what an identifier must not do.
+
+Collisions are possible but rare, and only via that same route: a record pins
+`REPL-000001`, later re-points elsewhere, and `REPL-000001` then returns as its own row
+because a reviewer ruled it `distinct`. The newcomer takes `REPL-000001-R2` rather than
+stealing an id that may already have been cited.
+
+**Identity follows provenance, not content.** A FLoRA row is "the same record" when
+it derives from the same `source_records` row — *not* when its `doi_o|doi_r` key
+matches. That key changes the moment a reviewer corrects a DOI, which would silently
+mint a new id for a record that has not changed. Source record ids are UUIDs on an
+insert-only table, so they are the one thing in the system that genuinely does not
+move.
+
+**The survivor can change.** The transform collapses duplicates and keeps the first
+row by `display_id`. A reviewer ruling that survivor a duplicate promotes a different
+row — same paper, same FLoRA record, different primary source id. Matching therefore
+falls back to any overlap between the row's source ids and those an existing record
+already claims, and **re-points** the record instead of issuing a new id. Verified
+against live data: ruling `FRED-000001` a duplicate re-pointed that record's primary
+source to `REPL-000481` while the row kept `FRED-000001` as its id. The grid shows the
+new source beside the id whenever the two have diverged, so it is visible rather than
+hidden.
+
+**Retirement, never deletion.** A row that stops appearing is stamped `retired_at`.
+Ids are never reused and rows are never deleted — a published id must keep resolving
+to what it meant.
+
+> **The `::text[]` cast in `_load_existing` is load-bearing.** psycopg2 has no
+> `uuid[]` parser registered, so a bare `uuid[]` arrives as the raw `'{a,b}'`
+> **string**. Iterating that yields single characters, which silently builds an index
+> of punctuation — and every survivor change then looks like a brand-new record. This
+> bug was live until the survivor-change test caught it.
+
+### 9.2 Identifiers: what actually exists
+
+`source_records.oa_work_id_o` / `oa_work_id_r` are **empty** — nothing populates them.
+[`backfill_oa_work_ids.py`](../backfill_oa_work_ids.py) targets the `unvalidated`
+table, and it resolves work ids **by DOI**, so a record with no DOI gets nothing from
+it either. Measured coverage:
+
+| | Count |
+|---|---:|
+| Missing `doi_o` | 29 (0.9%) — none have an OpenAlex id |
+| Missing `doi_r` | 300 — but 298 have a `url_r` |
+| No replication-side identifier at all | **2** |
+
+So "no DOI but has an OpenAlex work id" is currently a set of **zero** records. This
+is why `flora_id` is the pinned `display_id` rather than a DOI/OpenAlex cascade: it
+works for all 3,032 rows today, including the 2 with no usable identifier at all.
+
+---
+
+### 9.3 The FLoRA tab
+
+The admin panel's **FLoRA** tab shows the prepared product — the transform's output
+with `flora_id` attached — with search, filters, sorting, a detail view and a CSV
+export honouring the current filter.
+
+Nothing is materialised. [`flora_service.py`](../flora_service.py) derives the dataset
+on demand (~1s) and caches the frame until the underlying tables actually change,
+detected by a cheap signature query (row counts plus the newest `updated_at`) rather
+than a timer — so an edit in the Source Records tab shows up here immediately rather
+than after an arbitrary delay.
+
+| Route | Purpose |
+|---|---|
+| `GET /api/admin/flora` | One page of the grid, plus filter counts |
+| `GET /api/admin/flora/stats` | Row totals and when ids were last assigned |
+| `GET /api/admin/flora/export.csv` | Every row matching the filter, all columns |
+| `GET /api/admin/flora/{flora_id}` | One full row for the detail panel |
+
+The export uses the same column order as the nightly artifact — `FLORA_COLUMNS` then
+`PROVENANCE_COLUMNS` — so the two files are interchangeable rather than subtly
+different. `flora_id` is **appended, not prepended**: §9 is explicit that positional
+readers of the existing export must keep working.
+
+The read path never writes. `attach_ids()` only joins ids that already exist, so
+opening a page cannot assign one. Rows a sync has landed but no refresh has reached
+show a blank id, and the tab says so in a banner rather than hiding it.
+
+---
+
 ## 10. The GitHub Action
 
 [`.github/workflows/sync-sources.yml`](../.github/workflows/sync-sources.yml) —
-**03:00 UTC daily**, plus manual runs from the Actions tab.
+**03:00 UTC daily**, plus manual runs from the Actions tab or from the **Run sync
+now** button in the admin panel ([§10.1](#101-the-run-sync-now-button)).
 
 ```
 checkout → Python 3.12 → pip install → sync_sources.py → transform_sources.py
@@ -492,6 +951,60 @@ already stored.
 `output/flora_entry_sheets.csv` is **not committed**. It changes every night, so it is
 uploaded as a 90-day artifact instead. If the R pipeline should ever read it from a
 `raw.githubusercontent` URL the way it reads `validated_export.csv`, add a commit step.
+
+### 10.1 The "Run sync now" button
+
+The Source Records tab has a sync panel: a **Run sync now** button, live run status,
+and the complete console output of each run.
+
+The button **runs the same two scripts on the server** — `sync_sources.py` then
+`sync_validated.py` — rather than calling out to GitHub. No token, no API, nothing to
+configure: if the app can reach the database and the sheets, the button works.
+
+```
+button → POST /api/admin/source-sync/dispatch  (persists a queued row, returns a job id)
+       → scheduler on every pod polls the queue every 5s
+       → PostgreSQL advisory lock elects ONE executor
+       → stages run as subprocesses, log streamed into source_sync_jobs.log_text
+       → panel polls /api/admin/source-sync/status every 3s and tails the log
+       → grid and freshness banner reload when the run ends
+```
+
+**Why a queue and not an inline call.** A sync takes a minute or two, which an HTTP
+request cannot hold open. A queued row is also durable: if the pod that accepted the
+click dies, another picks the job up instead of the click being silently lost. This
+is the same shape as the extractor pipeline in `extractor_maintenance.py`.
+
+**Why subprocesses and not imports.** Both scripts call `sys.exit`, parse `argv` and
+hold module-level state. Importing them into a long-lived web process would leak that
+state between runs, and a hard crash in either would take the web server down.
+
+**One at a time.** `queue_run()` refuses (409) while a job is queued or running, and
+the advisory lock means that holds across pods, not just within one process. A job
+left behind by a dead pod is reaped after an hour by `_housekeeping`, so a crash
+cannot block the button forever.
+
+**What it does not guard.** The nightly GitHub Action runs the same scripts with its
+own connection and cannot see this lock. That overlap is tolerated rather than
+prevented: `sync_sources.py` is insert-only with `ON CONFLICT DO NOTHING`,
+`sync_validated.py` upserts by a unique key, and display ids come from an atomic
+counter — so a concurrent run duplicates effort but not data.
+
+| Route | Purpose |
+|---|---|
+| `POST /api/admin/source-sync/dispatch` | Queue a run. 409 if one is active. Audited as `source_sync.dispatched`. |
+| `GET /api/admin/source-sync/status` | Recent runs with log tails, **and** the per-source results of the last sync |
+| `GET /api/admin/source-sync/jobs/{id}` | The complete log for one run |
+
+**Two logs, deliberately.** `source_sync_jobs` records one *run of the button*, with
+everything the scripts printed. `source_sync_runs` records what each *source* did —
+and the nightly Action writes to it too, so the per-sheet list covers scheduled runs
+that never appear in the job list. The job log says what the scripts said; the
+per-sheet list says what landed.
+
+**Requirements: none beyond what the app already has.** The server needs
+`DATABASE_URL` and outbound access to `docs.google.com`. There is no token and no
+GitHub API involved.
 
 ---
 

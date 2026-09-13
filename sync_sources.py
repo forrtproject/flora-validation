@@ -41,6 +41,7 @@ import psycopg2.errors
 import yaml
 from dotenv import load_dotenv
 from console_encoding import use_utf8_output
+from pipeline_logging import start as start_logging
 from extractor_vocab import normalize_axis_value
 from psycopg2.extras import Json
 
@@ -158,10 +159,19 @@ def _assert_is_csv(payload: bytes) -> None:
         raise GateFailure("response was empty")
 
 
-def _parse(payload: bytes) -> pd.DataFrame:
-    """Gate 3."""
+def _parse(payload: bytes, header_row: int = 0) -> pd.DataFrame:
+    """Gate 3.
+
+    `header_row` is the 0-based row the real header sits on. Some sheets carry a
+    banner row of notes above it ("should include success criterion"), which pandas
+    would otherwise take as the header, leaving every real column named Unnamed:_N
+    and failing gate 4 with a confusing message.
+    """
     try:
-        return pd.read_csv(io.BytesIO(payload), dtype=str, encoding="utf-8-sig")
+        return pd.read_csv(
+            io.BytesIO(payload), dtype=str, encoding="utf-8-sig",
+            skiprows=header_row or None, low_memory=False,
+        )
     except Exception as e:
         raise GateFailure(f"could not parse as CSV: {e}")
 
@@ -193,6 +203,17 @@ def _validate_registry(cfg: dict) -> None:
         raise GateFailure(
             f"sources.yml lists promoted column(s) that source_records does not "
             f"have: {', '.join(unknown)}"
+        )
+
+    # The id column must be one gate 4 checks for. A sheet can carry a column
+    # literally named `id` that holds something else entirely (the FReD sheet's
+    # `id` is a concatenation of DOIs, while its UUID lives in `flora_id`), and
+    # pointing the registry at the wrong one makes every row fail the UUID check
+    # one at a time instead of failing the source once, here.
+    if cfg["id_column"] not in cfg["expected_columns"]:
+        raise GateFailure(
+            f"id_column {cfg['id_column']!r} is not in expected_columns — "
+            f"gate 4 would not verify the column the row identity depends on"
         )
 
 
@@ -305,14 +326,18 @@ def sync_source(cur, cfg: dict, registry: dict, dry_run: bool) -> dict:
     key = cfg["key"]
     print(f"\n── {cfg['label']} ({key}) " + "─" * (50 - len(cfg["label"]) - len(key)))
 
-    url = registry["url_template"].format(document=registry["document"], gid=cfg["gid"])
+    # A source may name its own `document`; sources without one share the registry's
+    # default. That is what lets a second spreadsheet join without every existing
+    # entry having to repeat the original document id.
+    document = cfg.get("document") or registry["document"]
+    url = registry["url_template"].format(document=document, gid=cfg["gid"])
     last = _last_successful_run(cur, key)
 
     try:
         _validate_registry(cfg)                                  # gate 0
         payload = _fetch(url)                                    # gate 1
         _assert_is_csv(payload)                                  # gate 2
-        df = _parse(payload)                                     # gate 3
+        df = _parse(payload, cfg.get("header_row", 0))           # gate 3
         _assert_columns(df, cfg["expected_columns"])             # gate 4
         _assert_row_count(len(df), last and last["rows_fetched"],
                           registry.get("row_count_floor", 0.5))  # gate 5
@@ -340,8 +365,16 @@ def sync_source(cur, cfg: dict, registry: dict, dry_run: bool) -> dict:
 
     print(f"  fetched {len(df)} rows × {len(df.columns)} columns")
 
-    accepted = df[df[cfg["validation_column"]].isin(registry["accepted_values"])]
-    print(f"  accepted: {len(accepted)}")
+    # A sheet with no validation column is one that is already curated — there is
+    # no per-row status to filter on, so every fetched row is accepted. Written as
+    # an explicit `validation_column:` with no value in the registry, never as an
+    # omitted key, so "this sheet has no gate" cannot be confused with a typo.
+    if cfg.get("validation_column"):
+        accepted = df[df[cfg["validation_column"]].isin(registry["accepted_values"])]
+        print(f"  accepted: {len(accepted)}")
+    else:
+        accepted = df
+        print(f"  accepted: {len(accepted)} (no validation column — all rows)")
 
     # Validate and canonicalise every accepted row before the first insert. A bad
     # value late in the sheet must not commit the valid prefix as a partial sync.
@@ -506,6 +539,7 @@ def run(only: "str | None" = None, dry_run: bool = False) -> None:
 
 
 if __name__ == "__main__":
+    start_logging("sync-sources")
     parser = argparse.ArgumentParser(description="Sync FLoRA entry sheets into source_records")
     parser.add_argument("--source", help="Only sync this registry key (e.g. replications)")
     parser.add_argument("--dry-run", action="store_true",

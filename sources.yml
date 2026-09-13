@@ -6,10 +6,23 @@
 #
 # Adding or repointing a sheet is a config change here — never a code change.
 
-# All entry sheets are tabs of one published Google spreadsheet, so they share a
-# single permission: if it is unshared, every source fails together.
+# Default spreadsheet. A source that omits `document` is a tab of this one, so the
+# original entry sheets keep sharing a single permission: if it is unshared, all of
+# them fail together. A source may override `document` to live in another
+# spreadsheet — then it carries its own permission and fails independently.
 document: "2PACX-1vT0VnLyrf9GCYXtN6l1DgaoLlg6H5r-08Op9eJzSripS1QBSHL031Arc27yUDe0YY7cB4TOnYMm2Vh1"
+
+# Second spreadsheet: "Validating FReD replication success - Brinna". Anchored here
+# rather than repeated in each source below so repointing it is one edit.
+fred_document: &fred_document "2PACX-1vSlPVImL7kjzMfpfX08JtAikvEiBg8uQ3HyEJs-YvuQMUa2RMvip-4v8-DilWl2PdwOD_UTD8gJ5wKA"
 url_template: "https://docs.google.com/spreadsheets/d/e/{document}/pub?gid={gid}&single=true&output=csv"
+
+# The exclusions sheet (Step 4 of the R notebook): papers that must not reach the
+# FLoRA dataset. Not a source — it produces no source_records rows — so it lives
+# here rather than under `sources`, and sync_exclusions.py reads it.
+exclusions:
+  gid: 1098183075
+  label: "Exclusions"
 
 # Statuses that qualify a row for ingest. Everything else is left in the sheet.
 accepted_values:
@@ -83,3 +96,98 @@ sources:
        outcome_computation, outcome_computational_quote,
        out_quote_computational_source, outcome_robustness,
        outcome_robustness_quote, out_quote_robust_source, validation_status]
+
+  # ── Second spreadsheet: "Validating FReD replication success - Brinna" ───────
+  #
+  # Three differences from the sources above, each handled by a key here rather
+  # than by code: it is a different `document`; its grids start with a banner row
+  # so the real header is `header_row: 1`; and its row UUID is in `flora_id`, NOT
+  # in the column named `id` (that one holds doi_o + doi_r concatenated — promoting
+  # it as identity would key every row on a DOI pair).
+
+  - key: fred_replication_success
+    label: "FReD Replication Success"
+    document: *fred_document
+    gid: 984458430
+    type_label: replication
+    display_prefix: FRED
+    enabled: true
+
+    # Row 0 is a banner ("should include success criterion"); the header is row 1.
+    header_row: 1
+
+    id_column: flora_id
+    validation_column: validation
+
+    expected_columns:
+      [flora_id, fred_id, ref_o, doi_o, url_o, study_o, ref_r, doi_r, url_r,
+       link_r, study_r, abstract_r, entries_per_rep, outcome, outcome_quote,
+       out_quote_source, validation, validator, validator_notes,
+       alt_identifier_r]
+
+    column_map:
+      validation: validation_status
+
+    # fred_id, link_r, study_r, entries_per_rep, validator, validator_notes, Coder,
+    # frq and the sheet's own `id` are not promoted — they have no column on
+    # source_records and stay recoverable in `raw`. This sheet has no `year`, so
+    # year_r stays NULL.
+    promoted:
+      [ref_o, doi_o, url_o, study_o, ref_r, doi_r, url_r, abstract_r, outcome,
+       outcome_quote, out_quote_source, alt_identifier_r, validation_status]
+
+  # Snapshot of the tab above: ~98.5% the same studies, but every row carries a
+  # different flora_id, so nothing dedupes against the live tab. Under insert-only
+  # those rows would be permanent. Left registered but disabled so the tab is
+  # documented and one flag away, rather than silently forgotten.
+  - key: fred_replication_success_backup
+    label: "FReD Replication Success (BACKUP)"
+    document: *fred_document
+    gid: 513210700
+    type_label: replication
+    display_prefix: FREDB
+    enabled: false
+
+    header_row: 1
+
+    id_column: flora_id
+    validation_column: validation
+
+    expected_columns:
+      [flora_id, fred_id, ref_o, doi_o, study_o, ref_r, doi_r, url_r, link_r,
+       study_r, abstract_r, entries_per_rep, outcome, outcome_quote,
+       out_quote_source, validation, validator, validator_notes]
+
+    column_map:
+      validation: validation_status
+
+    # No url_o and no alt_identifier_r on this tab — both stay NULL.
+    promoted:
+      [ref_o, doi_o, study_o, ref_r, doi_r, url_r, abstract_r, outcome,
+       outcome_quote, out_quote_source, validation_status]
+
+  # Already-curated list: there is no per-row validation column to gate on, so
+  # `validation_column:` is explicitly empty and every fetched row is accepted.
+  # validation_status lands NULL, which is what distinguishes these rows from ones
+  # a coder marked accepted.
+  - key: score_2025
+    label: "SCORE 2025 Validation"
+    document: *fred_document
+    gid: 1421575264
+    type_label: replication
+    display_prefix: SCORE
+    enabled: true
+
+    # This tab has no banner row.
+    header_row: 0
+
+    id_column: flora_id
+    validation_column:
+
+    expected_columns:
+      [flora_id, ref_o, doi_o, study_o, ref_r, doi_r, url_r, link_r, abstract_r,
+       outcome, outcome_quote, out_quote_source]
+
+    promoted:
+      [ref_o, doi_o, study_o, ref_r, doi_r, url_r, abstract_r, outcome,
+       outcome_quote, out_quote_source]

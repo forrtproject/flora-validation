@@ -869,6 +869,24 @@ ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS note_saved_at  TIMESTAMPTZ;
 -- Admin override flag: set when admin validates a previously-rejected record
 ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS admin_override BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- Row-local data-quality flags, computed by record_checks.check_record() when a
+-- record finishes consensus (see consensus_engine._update_status) and shown on the
+-- admin review panel. Advisory by design: they never change validation_status, and
+-- an admin decides whether a flagged record should be excluded. The cross-row and
+-- time-varying checks (duplicates, conflicting references, retractions, DOI/URL
+-- resolution) stay on the pipeline's cron job — see record_checks' docstring.
+--
+-- Lives on unvalidated, not validated: unvalidated keeps the working row for the
+-- life of the record, which is what the admin panel reads.
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS quality_flags      JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS quality_checked_at TIMESTAMPTZ;
+
+-- Partial index: the admin panel filters for flagged records, which are the small
+-- minority, so the index only carries those rows.
+CREATE INDEX IF NOT EXISTS idx_unvalidated_quality_flagged
+    ON unvalidated (quality_checked_at)
+    WHERE jsonb_array_length(quality_flags) > 0;
+
 -- Drop obsolete level column superseded by validator_tier
 ALTER TABLE validators DROP COLUMN IF EXISTS level;
 
@@ -1399,6 +1417,126 @@ CREATE INDEX IF NOT EXISTS idx_source_sync_runs_recent
 
 -- Per-source display_id counters. Sequential, assigned once, never reused —
 -- a raw UUID is unreadable aloud or in Slack, so rows also get REPL-000847.
+-- Manual "Run sync now" jobs from the admin panel. A click persists a queued row
+-- here rather than running inline: the sync takes a minute or two, which an HTTP
+-- request cannot hold open, and a durable row survives the pod that accepted the
+-- click. A PostgreSQL advisory lock (see source_sync_runner.py) elects one
+-- executor across pods; this table is the queue, not the mutex.
+--
+-- Distinct from source_sync_runs: that records what one SOURCE did during a sync
+-- (and is written by the nightly Action too). This records one RUN of the button,
+-- with the complete console output.
+-- Stable identity for rows of the FLoRA product.
+--
+-- transform_sources.py is a pure function of source_records — it derives outcomes,
+-- cleans DOIs and deduplicates on every run. That makes its output reproducible but
+-- ANONYMOUS: nothing in a produced row can be cited, and nothing links a row back to
+-- the record it came from. This table supplies both.
+--
+-- Identity follows PROVENANCE, not content. A FLoRA row is "the same record" when it
+-- derives from the same source_records row — so a reviewer correcting a DOI does not
+-- silently mint a new id, which a doi_o|doi_r key would.
+--
+-- The transform collapses duplicates (it keeps the first row by display_id and drops
+-- the rest), so one FLoRA row can come from several source records:
+--   primary_source_record_id  the survivor — a real foreign key
+--   merged_source_record_ids  the ones collapsed into it (no FK: Postgres cannot
+--                             constrain array elements)
+-- Bibliographic metadata per DOI, from OpenAlex. The cache behind the enrichment
+-- columns of the FLoRA output contract (title/author/journal/year/volume/issue/
+-- pages/language/oa_url/bibtex), which the R pipeline fetched from CrossRef,
+-- OpenAlex and Unpaywall on every render.
+--
+-- A table rather than the JSON files the R side uses (oa_cache.json et al): CI, the
+-- web app and every pod read the same rows, and a cache that lives in one process's
+-- filesystem is re-fetched by everything else.
+--
+-- Keyed on the CLEANED doi (lowercase, bare), which is what transform_sources
+-- produces and therefore what the join uses.
+CREATE TABLE IF NOT EXISTS work_metadata (
+    doi             TEXT PRIMARY KEY,
+    oa_work_id      TEXT,
+    title           TEXT,
+    authors         TEXT,        -- display names, "; "-joined
+    journal         TEXT,
+    year            TEXT,        -- text: the column it feeds is text on both sides
+    volume          TEXT,
+    issue           TEXT,
+    pages           TEXT,        -- "99-110"
+    language        TEXT,
+    oa_url          TEXT,
+    bibtex_ref      TEXT,
+    metadata_source TEXT NOT NULL DEFAULT 'openalex',
+    -- A DOI OpenAlex does not hold. Recorded so it is not re-requested on every run;
+    -- re-fetched only when the row is older than the refresh window.
+    not_found       BOOLEAN NOT NULL DEFAULT FALSE,
+    fetched_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_work_metadata_stale
+    ON work_metadata (fetched_at) WHERE not_found;
+
+-- Size of the FLoRA product over time, one row per day.
+--
+-- Keyed on the DATE, not the run: several runs a day are normal (a sync, a manual
+-- rebuild, the nightly job) and three points stacked on one day would say nothing.
+-- The last run of a day wins, which is the value that stood at the end of it.
+CREATE TABLE IF NOT EXISTS flora_dataset_history (
+    recorded_on   DATE PRIMARY KEY,
+    -- NULL on days seeded from source_records.first_seen_at: the product's size on
+    -- a past date cannot be reconstructed, because the exclusion and dedup rules
+    -- that produce it today did not exist then. Only source_rows is real history.
+    total_rows    INTEGER,
+    replications  INTEGER NOT NULL DEFAULT 0,
+    reproductions INTEGER NOT NULL DEFAULT 0,
+    source_rows   INTEGER NOT NULL DEFAULT 0,   -- source_records behind the product
+    recorded_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS flora_records (
+    flora_record_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    -- The source record's own display_id (REPL-000397, FRED-000001), copied once
+    -- and pinned. No separate series: one namespace shared with the Source Records
+    -- tab. Pinned rather than read live, because the primary source record can
+    -- change underneath a row and an id must not move with it.
+    flora_id                 TEXT UNIQUE NOT NULL,
+    primary_source_record_id UUID NOT NULL UNIQUE
+                                  REFERENCES source_records(record_id) ON DELETE CASCADE,
+    merged_source_record_ids UUID[] NOT NULL DEFAULT '{}',
+    -- type|doi_o|doi_r-or-url_r at the last refresh. Diagnostic only — never the
+    -- identity, precisely because a DOI correction changes it.
+    dedup_key                TEXT,
+    first_seen_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Set when a row stops appearing in the transform output (excluded, ruled a
+    -- duplicate, or its source record was merged away). The id is never reused and
+    -- the row is never deleted: a published id must keep resolving to what it meant.
+    retired_at               TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_flora_records_live
+    ON flora_records (flora_id) WHERE retired_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS source_sync_jobs (
+    job_id       UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    trigger      TEXT        NOT NULL CHECK (trigger IN ('admin', 'cli')),
+    requested_by TEXT,
+    status       TEXT        NOT NULL
+                             CHECK (status IN ('queued', 'running', 'success', 'failed')),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    started_at   TIMESTAMPTZ,
+    finished_at  TIMESTAMPTZ,
+    log_text     TEXT        NOT NULL DEFAULT ''
+);
+
+-- The dispatcher polls for queued work every few seconds, and queue_run() checks
+-- for an active job on every click.
+CREATE INDEX IF NOT EXISTS idx_source_sync_jobs_active
+    ON source_sync_jobs (created_at) WHERE status IN ('queued', 'running');
+
+CREATE INDEX IF NOT EXISTS idx_source_sync_jobs_recent
+    ON source_sync_jobs (created_at DESC);
+
 CREATE TABLE IF NOT EXISTS source_display_counters (
     source      TEXT    PRIMARY KEY,
     -- Stores the LAST value handed out, not the next one: _next_display_id
@@ -1455,6 +1593,16 @@ CREATE TABLE IF NOT EXISTS transform_exclusions (
     added_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CHECK (doi_r IS NOT NULL OR url_r IS NOT NULL)
 );
+
+-- Step 9b of the R notebook: COS entries a one-off LLM validation judged NOT to be
+-- genuine self-identified replications — meta-papers, conceptual extensions,
+-- alternative-theory tests. Those are keyed on the PAIR, not on doi_r alone: the
+-- same replication DOI can be a valid entry against a different original.
+--
+-- NULL doi_o keeps the original meaning: exclude on doi_r/url_r regardless of which
+-- original it is paired with.
+ALTER TABLE transform_exclusions ADD COLUMN IF NOT EXISTS doi_o TEXT;
+
 
 CREATE INDEX IF NOT EXISTS idx_transform_exclusions_doi ON transform_exclusions (lower(doi_r));
 CREATE INDEX IF NOT EXISTS idx_transform_exclusions_url ON transform_exclusions (lower(url_r));

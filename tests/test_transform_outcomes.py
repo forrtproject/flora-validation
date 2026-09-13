@@ -6,6 +6,7 @@ silent-drift failure that cost five weeks on the extractor side — a vocabulary
 change reaches published data and nothing reports it. Unknown values are now
 collected and the transform refuses to produce an export.
 """
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -170,7 +171,11 @@ def test_sync_workflow_actions_use_the_node24_generation():
                 "sync-sources.yml").read_text(encoding="utf-8")
     assert "actions/checkout@v7" in workflow
     assert "actions/setup-python@v7" in workflow
-    assert workflow.count("actions/upload-artifact@v7") == 2
+    # Every upload step, not a fixed number of them: the count is incidental and
+    # adding a legitimate artifact should not fail a test about action versions.
+    uploads = re.findall(r"actions/upload-artifact@(\S+)", workflow)
+    assert uploads, "no upload-artifact steps found"
+    assert set(uploads) == {"v7"}
 
 
 # ---------------------------------------------------------------------------
