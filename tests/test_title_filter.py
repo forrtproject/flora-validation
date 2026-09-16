@@ -135,4 +135,5 @@ def test_the_grid_surfaces_the_count_to_a_reviewer():
     holds fewer rows than the tab shows."""
     app_js = (ROOT / "docs" / "app.js").read_text(encoding="utf-8")
     assert "counts.untitled" in app_js
-    assert "flora_export_log.csv" in app_js
+    assert "left out of the final export" in app_js
+    assert "pipeline report records excluded rows" in app_js

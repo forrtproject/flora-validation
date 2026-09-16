@@ -1,5 +1,21 @@
 # FLoRA Validation
 
+## Complete preparation pipeline
+
+The administrator's **Source Records → Run pipeline + report** action now prepares
+the final CSV, validates that exact file, and retains CSV/Markdown/JSON downloads
+for each run. The export begins with `id`, `id_md5`, then the 35 supplied reference
+columns; existing reference rows keep their order and new records append.
+
+See the [full integration report](PIPELINE_INTEGRATION_REPORT.md) for the supplied
+helper mapping, exact CSV comparison, checks, configuration, and operating commands.
+
+The complete prepared dataset also has an independent `flora_data` table with
+permanent IDs and full MD5 lookup keys. See [Prepared FLoRA database table](FLORA_DATA_TABLE.md)
+for initial import, pipeline storage, retirement, and the title/DOI/hash lookup
+helpers. The [public API guide](FLORA_API.md) documents the implemented `/v1`
+DOI-prefix lookup, DOI lookup/list, search, and permanent ID-hash lookup routes.
+
 FLoRA Validation is the human-review and publication layer for the
 [FORRT FLoRA database](https://forrt.org/replication-hub/flora/). It receives
 replication/reproduction pairs from the separate `flora-extractor` project, asks
@@ -9,8 +25,9 @@ approved records as CSV.
 
 This repository also contains a second, independent pipeline for importing and
 reviewing FLoRA's published Google entry sheets. Those rows live in
-`source_records`, are edited through a separate admin screen, and are transformed
-into `output/flora_entry_sheets.csv`.
+`source_records`, are edited through a separate admin screen, and are combined with
+the app's approved records by `sync_validated.py`. The complete preparation command
+produces `output/flora.csv`; the older direct transform command remains available.
 
 This document describes the implementation in the checked-out `main` revision,
 not the intended design in old planning documents. Where the current code and an
@@ -76,8 +93,9 @@ This repository is responsible for:
 8. synchronizing the separate FLoRA entry sheets into `source_records`; and
 9. reviewing, deduplicating, and transforming those entry-sheet rows.
 
-The two input pipelines share PostgreSQL and the admin frontend, but they do not
-merge their records in the application:
+The two input pipelines share PostgreSQL and the admin frontend. Approved
+validation records also enter `source_records` through `sync_validated.py`, so
+the final preparation pipeline can combine, deduplicate, and export both inputs:
 
 ```text
 flora-extractor/data/extracted.csv

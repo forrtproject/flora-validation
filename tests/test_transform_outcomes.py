@@ -161,8 +161,13 @@ def test_sync_workflow_cannot_upload_a_stale_dataset_after_build_failure():
     workflow = (Path(__file__).resolve().parent.parent / ".github" / "workflows" /
                 "sync-sources.yml").read_text(encoding="utf-8")
     assert "id: build_dataset" in workflow
-    assert "rm -f output/flora_entry_sheets.csv" in workflow
+    # The shared preparation command builds a fresh candidate and promotes it
+    # only after validation. Its stale-file behavior is exercised by the
+    # preparation tests; CI must invoke it and upload only a completed run.
+    assert "python prepare_flora.py --output-dir output/prepared" in workflow
+    assert "if: success()" in workflow
     assert "if: steps.build_dataset.outcome == 'success'" in workflow
+    assert "output/prepared/" in workflow
     assert "if-no-files-found: error" in workflow
 
 

@@ -33,6 +33,7 @@ import hashlib
 import hmac
 import resend
 import flora_service
+from flora_public_api import create_router as create_flora_api_router, is_public_read_request
 import source_records_service
 import source_sync_runner
 from email_templates import forgot_handle_email
@@ -431,7 +432,7 @@ async def block_cross_site_writes(request: Request, call_next):
     session cookie this is the CSRF defence — one from the browser, one from
     the server, so neither has to be trusted alone.
     """
-    if _is_cross_site(request):
+    if _is_cross_site(request) and not is_public_read_request(request):
         return JSONResponse(
             {"detail": "Cross-site requests are not accepted"}, status_code=403
         )
@@ -5373,14 +5374,17 @@ def admin_flora_export(
     search: str = "", unregistered: bool = False,
     admin: dict = Depends(current_admin),
 ):
-    """Every row matching the current filter, all columns.
+    """Current rows matching the filter, in the canonical release order.
 
-    Same column order as the nightly artifact, so the two files are
-    interchangeable rather than subtly different.
+    Omit filters for the complete dataset. Retained per-run artifacts have their
+    own endpoint so later edits cannot change an earlier run's downloaded file.
     """
     filters = _flora_filters(type, source, outcome, search, unregistered)
-    with db() as cur:
-        body = flora_service.export_csv(cur, filters)
+    try:
+        with db() as cur:
+            body = flora_service.export_csv(cur, filters)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return Response(
@@ -5423,6 +5427,10 @@ def admin_source_sync_status_panel(limit: int = 10, admin: dict = Depends(curren
 @app.get("/api/admin/source-sync/jobs/{job_id}")
 def admin_source_sync_job(job_id: str, admin: dict = Depends(current_admin)):
     """The complete log for one run, for when the tail is not enough."""
+    try:
+        job_id = str(UUID(job_id))
+    except ValueError:
+        raise HTTPException(404, "No such pipeline run")
     with db() as cur:
         job = source_sync_runner.job_detail(cur, job_id)
     if job is None:
@@ -5430,9 +5438,44 @@ def admin_source_sync_job(job_id: str, admin: dict = Depends(current_admin)):
     return job
 
 
+@app.get("/api/admin/source-sync/jobs/{job_id}/artifacts/{artifact}")
+def admin_source_sync_artifact(
+    job_id: str, artifact: str, admin: dict = Depends(current_admin),
+):
+    """Download the exact CSV or report retained by an individual pipeline run."""
+    media_types = {
+        "flora.csv": "text/csv; charset=utf-8",
+        "recovery.csv": "text/csv; charset=utf-8",
+        "report.json": "application/json",
+        "report.md": "text/markdown; charset=utf-8",
+    }
+    if artifact not in media_types:
+        raise HTTPException(404, "No such pipeline artifact")
+    try:
+        job_id = str(UUID(job_id))
+    except ValueError:
+        raise HTTPException(404, "No such pipeline run")
+    with db() as cur:
+        body = source_sync_runner.job_artifact(cur, job_id, artifact)
+    if body is None:
+        raise HTTPException(404, "This run has no retained artifact. Review the run log or run the pipeline again.")
+    if artifact == "report.json":
+        body = json.dumps(body, indent=2, ensure_ascii=False) if not isinstance(body, str) else body
+    filename = "flora.csv" if artifact == "flora.csv" else f"flora_{job_id[:8]}_{artifact}"
+    return Response(
+        content=body,
+        media_type=media_types[artifact],
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @app.post("/api/admin/source-sync/dispatch", status_code=202)
 def admin_source_sync_dispatch(request: Request, admin: dict = Depends(current_admin)):
-    """Queue an entry-sheet sync. Returns immediately; the panel polls for the log."""
+    """Queue the complete FLoRA pipeline; the panel polls for its log and artifacts."""
     try:
         with db() as cur:
             job_id = source_sync_runner.queue_run(cur, admin["handle"], trigger="admin")
@@ -5865,6 +5908,10 @@ def serve_index():
         headers={"Cache-Control": "no-cache, must-revalidate"},
     )
 
+
+# Public lookup POSTs only read the committed prepared dataset. Their exact
+# paths are exempt from cross-site write blocking; admin routes stay protected.
+app.include_router(create_flora_api_router())
 
 # Registered last: the explicit routes above take precedence over the mount.
 app.mount("/", StaticFiles(directory=str(DOCS), html=True), name="docs")

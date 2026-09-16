@@ -69,20 +69,20 @@ def test_load_metadata_hands_over_the_openalex_work_id():
     select it — so the transform had nothing to join and the product carried only
     oa_url. Shipping the column without this is shipping an empty column."""
     cur = _Cur([{"doi": "10.1/x", "oa_work_id": "W123", "title": "T"}])
-    assert ew.load_metadata(cur)["10.1/x"]["oa_work_id"] == "W123"
+    assert ew.load_metadata(cur, include_seed=False)["10.1/x"]["oa_work_id"] == "W123"
     assert "oa_work_id" in cur.sql
 
 
 def test_load_metadata_keys_on_doi():
     cur = _Cur([{"doi": "10.1/x", "oa_work_id": "W1"}, {"doi": "10.2/y", "oa_work_id": "W2"}])
-    assert set(ew.load_metadata(cur)) == {"10.1/x", "10.2/y"}
+    assert set(ew.load_metadata(cur, include_seed=False)) == {"10.1/x", "10.2/y"}
 
 
 def test_load_metadata_skips_dois_openalex_could_not_find():
     """A not_found row is a cached negative, not metadata; joining it would overwrite
     a good sheet value with blanks."""
     cur = _Cur([])
-    ew.load_metadata(cur)
+    ew.load_metadata(cur, include_seed=False)
     assert "WHERE NOT not_found" in cur.sql
 
 

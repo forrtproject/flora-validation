@@ -18,7 +18,6 @@ up here immediately instead of after an arbitrary delay.
 The cache is per process. Several pods each keep their own; they agree because
 they derive from the same rows.
 """
-import io
 import threading
 from datetime import datetime, timezone
 
@@ -27,11 +26,12 @@ import pandas as pd
 
 import flora_registry
 import transform_sources
+import final_export
 
 # Columns the grid shows. The heavy ones (abstract_r, the quotes) are fetched only
 # when a single record is opened, and are always present in the export.
 LIST_COLUMNS = [
-    "flora_id", "source_display_id",
+    "flora_id", "export_id", "source_display_id",
     "type", "source",
     # oa_work_id_* rides with the DOI it was resolved from, on both sides. It is the
     # identifier for papers OpenAlex knows but a DOI lookup cannot reach directly,
@@ -69,12 +69,22 @@ def _signature(cur) -> tuple:
                (SELECT COUNT(*) FROM source_records
                  WHERE duplicate_status IS NOT NULL)                AS n_ruled,
                (SELECT COUNT(*) FROM flora_records)                 AS n_flora,
-               (SELECT COUNT(*) FROM transform_exclusions)          AS n_excluded
+               (SELECT COUNT(*) FROM transform_exclusions)          AS n_excluded,
+               (SELECT MAX(last_seen_at) FROM flora_records)        AS registry_updated,
+               (SELECT COUNT(*) FROM work_metadata)                 AS n_metadata,
+               (SELECT MAX(fetched_at) FROM work_metadata)          AS metadata_updated,
+               (SELECT MAX(reference_checked_at) FROM work_metadata) AS references_updated,
+               (SELECT md5(string_agg(row_to_json(e)::text, '' ORDER BY row_to_json(e)::text))
+                  FROM transform_exclusions e) AS exclusions_signature,
+               (SELECT md5(string_agg(row_to_json(a)::text, '' ORDER BY row_to_json(a)::text))
+                  FROM outcome_alias a) AS aliases_signature
         """
     )
     row = cur.fetchone()
     return (row["n_source"], str(row["max_updated"]), row["n_ruled"],
-            row["n_flora"], row["n_excluded"])
+            row["n_flora"], row["n_excluded"],
+            *(str(row.get(field)) for field in ("registry_updated", "n_metadata",
+              "metadata_updated", "references_updated", "exclusions_signature", "aliases_signature")))
 
 
 def dataset(cur) -> pd.DataFrame:
@@ -177,7 +187,7 @@ def _apply_filters(frame: pd.DataFrame, filters: dict) -> pd.DataFrame:
 
     search = (filters.get("search") or "").strip()
     if search:
-        cols = ["flora_id", "source_display_id", "doi_o", "doi_r", "ref_o", "ref_r",
+        cols = ["flora_id", "export_id", "source_display_id", "doi_o", "doi_r", "ref_o", "ref_r",
                 # A W-id pasted from OpenAlex finds its row, which is most of the
                 # point of carrying the id at all.
                 "oa_work_id_o", "oa_work_id_r",
@@ -186,7 +196,7 @@ def _apply_filters(frame: pd.DataFrame, filters: dict) -> pd.DataFrame:
         cols = [c for c in cols if c in out.columns]
         mask = False
         for col in cols:
-            mask = mask | out[col].astype(str).str.contains(search, case=False, na=False)
+            mask = mask | out[col].astype(str).str.contains(search, case=False, na=False, regex=False)
         out = out[mask]
 
     return out
@@ -232,8 +242,7 @@ def counts(frame: pd.DataFrame) -> dict:
         # Rows the published export drops for want of a title (the notebook's
         # Step 10). Counted here rather than filtered out: this grid is where
         # someone fixes them, and a row hidden here is a row nobody fixes.
-        "untitled": (int((frame["title_o"].isna() | frame["title_r"].isna()).sum())
-                     if {"title_o", "title_r"} <= set(frame.columns) else 0),
+        "untitled": len(frame) - len(transform_sources.drop_untitled(frame)),
         "sources": sorted(frame["source"].dropna().unique().tolist()),
         "outcomes": sorted(frame["outcome"].dropna().unique().tolist()),
     }
@@ -242,7 +251,10 @@ def counts(frame: pd.DataFrame) -> dict:
 def get_record(cur, flora_id: str) -> "dict | None":
     """One full row, every column. Used by the detail panel."""
     frame = dataset(cur)
-    match = frame[frame["flora_id"] == flora_id]
+    matched = frame["flora_id"] == flora_id
+    if "export_id" in frame:
+        matched = matched | (frame["export_id"] == flora_id)
+    match = frame[matched]
     if match.empty:
         return None
     row = match.iloc[0]
@@ -256,10 +268,10 @@ def merged_sources(cur, flora_id: str) -> list:
         SELECT s.display_id, s.source, s.doi_o, s.doi_r, s.outcome
         FROM flora_records f
         JOIN source_records s ON s.record_id = ANY(f.merged_source_record_ids)
-        WHERE f.flora_id = %s
+        WHERE f.flora_id = %s OR f.export_id = %s
         ORDER BY s.display_id
         """,
-        (flora_id,),
+        (flora_id, flora_id),
     )
     return [dict(r) for r in cur.fetchall()]
 
@@ -271,17 +283,21 @@ def export_csv(cur, filters: dict) -> str:
     writes — so this file and the nightly artifact are interchangeable rather than
     subtly different.
     """
-    frame = _apply_filters(dataset(cur), filters)
+    frame = transform_sources.drop_untitled(_apply_filters(dataset(cur), filters))
+    if not frame.empty and (
+        "export_id" not in frame or "export_position" not in frame
+        or frame["export_id"].map(final_export.text).eq("").any()
+        or frame["export_position"].isna().any()
+    ):
+        raise ValueError("Run the pipeline before exporting: some records do not yet have permanent IDs.")
     # The FLoRA output contract (output_cols in the R notebook), with abstract_r,
     # the reproduction axes and our provenance ids kept after it. Also drops
     # merged_display_ids, which is a search helper and not part of the contract.
     ordered = transform_sources.to_output_shape(frame)
-    buffer = io.StringIO()
     # Explicit newline: pandas otherwise picks the platform line ending, so the same
     # export would differ between a Windows dev box and the Linux server. A served
     # file should not depend on which machine produced it.
-    ordered.to_csv(buffer, index=False, lineterminator="\n")
-    return buffer.getvalue()
+    return final_export.csv_text(ordered)
 
 
 def history(cur, window_days: int = 120) -> dict:
