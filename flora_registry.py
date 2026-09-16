@@ -96,8 +96,9 @@ def _mint_ids(cur, source_ids: list, taken: set) -> dict:
 
 def _load_existing(cur) -> tuple:
     """Returns (by_primary, by_any_source). The second maps EVERY source id a
-    record claims — survivor and absorbed alike — so a changed survivor is still
-    recognised as the same record."""
+    record has claimed to its candidate records, so a changed survivor is still
+    recognised after multiple changes. Candidates prefer active, earlier records;
+    a split can leave several records with overlapping historical provenance."""
     cur.execute(
         """
         SELECT flora_record_id::text AS flora_record_id, flora_id,
@@ -108,16 +109,22 @@ def _load_existing(cur) -> tuple:
                -- punctuation. Every survivor change then looked like a brand-new
                -- record and minted a fresh id.
                merged_source_record_ids::text[] AS merged_source_record_ids,
+               historical_source_record_ids::text[] AS historical_source_record_ids,
                retired_at
         FROM flora_records
+        ORDER BY (retired_at IS NOT NULL), export_position NULLS LAST,
+                 first_seen_at, flora_id
         """
     )
     by_primary, by_any = {}, {}
     for row in cur.fetchall():
         record = dict(row)
         by_primary[record["primary_source_record_id"]] = record
-        for sid in [record["primary_source_record_id"], *(record["merged_source_record_ids"] or [])]:
-            by_any.setdefault(str(sid), record)
+        claims = [record["primary_source_record_id"],
+                  *(record["merged_source_record_ids"] or []),
+                  *(record.get("historical_source_record_ids") or [])]
+        for sid in dict.fromkeys(str(sid) for sid in claims):
+            by_any.setdefault(sid, []).append(record)
     return by_primary, by_any
 
 
@@ -156,11 +163,11 @@ def backfill_source_history(cur, verbose: bool = True) -> int:
 def record_history(cur, frame, verbose: bool = True) -> dict:
     """One row per day for the dataset-size chart, upserted.
 
-    Recorded here rather than in transform_sources because that script is a pure
-    function of the database and writes nothing back — and because refresh() has
-    already built the frame, so this costs a single INSERT rather than a second
-    two-second build.
+    Recorded here rather than in transform_sources.build() because the build is
+    read-only — and because refresh() already has the complete frame, so this
+    costs a single INSERT rather than a second two-second build.
     """
+    frame = transform_sources.drop_untitled(frame)
     total = len(frame)
     replications = int((frame["type"] == "replication").sum()) if total else 0
     reproductions = int((frame["type"] == "reproduction").sum()) if total else 0
@@ -189,12 +196,22 @@ def record_history(cur, frame, verbose: bool = True) -> dict:
             "reproductions": reproductions, "source_rows": source_rows}
 
 
-def refresh(cur, dry_run: bool = False, verbose: bool = True) -> dict:
+def refresh(cur, dry_run: bool = False, verbose: bool = True, *, frame=None) -> dict:
+    """Register a complete transform, optionally reusing the caller's build.
+
+    A caller supplying ``frame`` must hold the registry table lock before
+    building it, so another refresh cannot overtake that snapshot. The normal
+    CLI path acquires the lock and builds here.
+    """
     def say(*args):
         if verbose:
             print(*args)
 
-    frame = transform_sources.build(cur, verbose=False)
+    # Serialize before reading existing claims or allocating IDs. Locking only
+    # during register_order lets concurrent refreshes both mint from stale state.
+    cur.execute("LOCK TABLE flora_records IN SHARE ROW EXCLUSIVE MODE")
+    if frame is None:
+        frame = transform_sources.build(cur, verbose=False)
     if frame.empty:
         say("  transform produced no rows — nothing to register")
         return {"rows": 0, "assigned": 0, "rematched": 0, "unchanged": 0, "retired": 0}
@@ -203,18 +220,30 @@ def refresh(cur, dry_run: bool = False, verbose: bool = True) -> dict:
     key_map = frame.attrs.get("dedup_key", {})
     by_primary, by_any = _load_existing(cur)
 
+    # A group can split after a duplicate is ruled distinct. Reserve every
+    # surviving primary's record before looking through absorbed source IDs:
+    # otherwise an earlier row can steal a later primary's published identity.
+    primary_matches = {source_id: by_primary[source_id]
+                       for source_id in frame["source_record_id"]
+                       if source_id in by_primary}
+    reserved_records = {record["flora_record_id"] for record in primary_matches.values()}
+
     assigned = rematched = unchanged = 0
     seen_flora_records = set()
     to_create, to_update = [], []
 
     for source_id in frame["source_record_id"]:
         merged = [str(m) for m in (merged_map.get(source_id) or [])]
-        existing = by_primary.get(source_id)
+        existing = primary_matches.get(source_id)
         if existing is None:
             # Survivor changed: find a record already claiming any of these ids.
             for candidate_id in [source_id, *merged]:
-                if candidate_id in by_any:
-                    existing = by_any[candidate_id]
+                for candidate in by_any.get(candidate_id, []):
+                    if (candidate["flora_record_id"] not in reserved_records
+                            and candidate["flora_record_id"] not in seen_flora_records):
+                        existing = candidate
+                        break
+                if existing is not None:
                     break
             if existing is not None:
                 rematched += 1
@@ -267,6 +296,16 @@ def refresh(cur, dry_run: bool = False, verbose: bool = True) -> dict:
             UPDATE flora_records
                SET primary_source_record_id = %s,
                    merged_source_record_ids = %s::uuid[],
+                   -- SET expressions read the old row. Keep its previous
+                   -- primary and absorbed sources even when neither survives
+                   -- the current transform, so a later return keeps its ID.
+                   historical_source_record_ids = ARRAY(
+                       SELECT DISTINCT sid FROM unnest(
+                           historical_source_record_ids
+                           || ARRAY[primary_source_record_id]
+                           || merged_source_record_ids
+                       ) AS prior(sid)
+                   ),
                    dedup_key = %s,
                    last_seen_at = NOW(),
                    retired_at = NULL
@@ -283,6 +322,8 @@ def refresh(cur, dry_run: bool = False, verbose: bool = True) -> dict:
             [(rid,) for rid in retired],
         )
 
+    from final_export import register_order
+    register_order(cur, frame)
     backfill_source_history(cur, verbose=verbose)
     record_history(cur, frame, verbose=verbose)
 
@@ -300,11 +341,14 @@ def attach_ids(cur, frame):
     if frame.empty:
         return frame
     cur.execute(
-        "SELECT primary_source_record_id::text AS sid, flora_id FROM flora_records"
+        "SELECT primary_source_record_id::text AS sid, flora_id, export_id, export_position FROM flora_records"
     )
-    mapping = {r["sid"]: r["flora_id"] for r in cur.fetchall()}
+    records = [dict(r) for r in cur.fetchall()]
+    mapping = {r["sid"]: r["flora_id"] for r in records}
     frame = frame.copy()
     frame["flora_id"] = frame["source_record_id"].map(mapping)
+    for column in ("export_id", "export_position"):
+        frame[column] = frame["source_record_id"].map({r["sid"]: r.get(column) for r in records})
     return frame
 
 

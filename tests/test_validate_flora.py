@@ -90,11 +90,11 @@ def test_a_good_doi_passes():
 
 
 def test_an_unknown_source_is_flagged():
-    assert vf._check_sources(_df({"source": "COS"}))
+    assert vf._check_sources(_df({"source": "unknown source"}))
 
 
 def test_our_registry_keys_pass():
-    """The R version accepts the notebook's labels; ours are the registry keys."""
+    """Both preserved notebook labels and the website registry keys are valid."""
     for source in vf.VALID_SOURCES:
         assert not vf._check_sources(_df({"source": source}))
 
@@ -105,6 +105,18 @@ def test_an_unknown_type_is_flagged():
 
 def test_a_blank_outcome_is_flagged():
     assert vf._check_outcomes(_df({"outcome": None}))
+
+
+@pytest.mark.parametrize("outcome", ["successful", "computationally reproducible, nonsense", "not checked"])
+def test_invalid_reproduction_outcome_is_flagged(outcome):
+    assert vf._check_outcomes(_df({"type": "reproduction", "outcome": outcome}))
+
+
+@pytest.mark.parametrize("outcome", ["computationally reproducible, robust",
+                                    "computationally successful, robustness not checked",
+                                    "computational issues, not checked"])
+def test_current_and_supplied_reproduction_outcomes_are_valid(outcome):
+    assert not vf._check_outcomes(_df({"type": "reproduction", "outcome": outcome}))
 
 
 def test_exact_duplicate_pairs_are_flagged():

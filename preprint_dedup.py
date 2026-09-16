@@ -157,6 +157,15 @@ def extract_first_author(author) -> "str | None":
     text = _s(author)
     if not text:
         return None
+    if text.startswith("["):
+        try:
+            authors = json.loads(text)
+            if authors and isinstance(authors[0], dict):
+                family = authors[0].get("family") or authors[0].get("name")
+                if family:
+                    return str(family).strip().lower()
+        except (ValueError, TypeError):
+            pass
     first = re.split(r"[;&]", text)[0].strip()
     if "," in first:
         return first.split(",")[0].strip().lower() or None

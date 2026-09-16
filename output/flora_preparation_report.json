@@ -1,0 +1,231 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-15T17:51:26+00:00",
+  "mode": "existing_csv",
+  "status": "needs_attention",
+  "rows": 2914,
+  "stages": [
+    {
+      "name": "final CSV",
+      "status": "passed"
+    },
+    {
+      "name": "structural validation",
+      "status": "needs_attention",
+      "detail": "557 data issue(s)"
+    },
+    {
+      "name": "network validation",
+      "status": "skipped"
+    },
+    {
+      "name": "release preparation and history",
+      "status": "passed"
+    }
+  ],
+  "warnings": [
+    "Structural validation found 557 data issue(s).",
+    "Network validation: skipped; 0 finding(s)."
+  ],
+  "errors": [],
+  "warning_count": 2,
+  "failure_count": 0,
+  "identity": {
+    "status": "passed",
+    "rows": 2914,
+    "unique_ids": 2914
+  },
+  "columns": [
+    "id",
+    "id_md5",
+    "doi_o",
+    "alt_identifier_o",
+    "doi_o_hash",
+    "title_o",
+    "author_o",
+    "journal_o",
+    "year_o",
+    "volume_o",
+    "issue_o",
+    "pages_o",
+    "apa_ref_o",
+    "bibtex_ref_o",
+    "url_o",
+    "language_o",
+    "doi_r",
+    "alt_identifier_r",
+    "doi_r_hash",
+    "title_r",
+    "author_r",
+    "journal_r",
+    "year_r",
+    "volume_r",
+    "issue_r",
+    "pages_r",
+    "apa_ref_r",
+    "bibtex_ref_r",
+    "url_r",
+    "language_r",
+    "oa_url_o",
+    "oa_url_r",
+    "outcome",
+    "outcome_quote",
+    "outcome_quote_source",
+    "type",
+    "source"
+  ],
+  "structural": {
+    "results": [
+      {
+        "name": "No 'NA'/'N/A' strings",
+        "heading": "Literal 'NA'/'N/A' strings found",
+        "description": "A text column holds the literal string 'NA' instead of a missing value.",
+        "items": [],
+        "passed": true
+      },
+      {
+        "name": "Type values valid",
+        "heading": "Invalid type values",
+        "description": "type must be 'replication' or 'reproduction'.",
+        "items": [],
+        "passed": true
+      },
+      {
+        "name": "Source values valid",
+        "heading": "Invalid source values",
+        "description": "source must identify a supported dataset input.",
+        "items": [],
+        "passed": true
+      },
+      {
+        "name": "Year ranges reasonable",
+        "heading": "Implausible years",
+        "description": "year_o or year_r is outside 1890 to next year.",
+        "items": [
+          " | 10.1371/journal.pone.0120644: year_o=1880"
+        ],
+        "passed": false
+      },
+      {
+        "name": "year_r >= year_o",
+        "heading": "Replication year before original year",
+        "description": "Could indicate swapped entries or a data-entry error.",
+        "items": [
+          "10.1002/bin.1836 | 10.1002/jaba.659: year_o=2021; year_r=2019",
+          "10.1016/j.cognition.2025.106257 | 10.31234/osf.io/j2xn3: year_o=2026; year_r=2024"
+        ],
+        "passed": false
+      },
+      {
+        "name": "No exact duplicates",
+        "heading": "Exact duplicates (by doi_o + doi_r)",
+        "description": "Rows sharing the same doi_o and doi_r after deduplication.",
+        "items": [
+          "10.1002/per.2062 | https://osf.io/udbnf",
+          "10.1002/per.2062 | https://osf.io/ye5mq",
+          "10.1016/j.jesp.2010.11.006 | https://osf.io/4mtgf",
+          "10.1016/j.jesp.2010.11.006 | https://osf.io/xr32n",
+          "10.1017/s0003055412000299 | https://osf.io/ceaq3",
+          "10.1017/s0003055412000299 | https://osf.io/ck8aq",
+          "10.1017/s0043887112000032 | https://osf.io/kw5tv",
+          "10.1017/s0043887112000032 | https://osf.io/qev3x",
+          "10.1037/a0012833 | 10.1126/science.aac4716",
+          "10.1037/xge0000157 | https://osf.io/5r28d",
+          "10.1037/xge0000157 | https://osf.io/d3s25",
+          "10.1086/698750 | https://osf.io/gvayj",
+          "10.1086/698750 | https://osf.io/rzny2",
+          "10.1111/j.1467-9280.2007.01909.x | 10.1098/rsos.231240",
+          "10.1111/j.1467-9280.2008.02227.x | https://drive.google.com/file/d/1DDCuEgQah24QordxkRGO0EIt6Q681jyL/view",
+          "10.1111/j.1467-9280.2008.02227.x | https://web.archive.org/web/20191117063540/http://www.psychfiledrawer.org/replication.php?attempt=MTQ5",
+          "10.1111/j.1467-9280.2008.02227.x | https://web.archive.org/web/20191201181415/http://psychfiledrawer.org/replication.php?attempt=MTc3",
+          "10.1111/j.1468-0068.2010.00795.x | 10.1007/s13164-018-0400-9",
+          "10.1163/156853706776931222 | 10.1007/s13164-018-0400-9",
+          "10.1177/0956797615624492 | 10.1098/rsos.231240",
+          "10.1509/jmkr.47.2.348 | https://osf.io/x9j47",
+          "10.1509/jmkr.47.2.348 | https://osf.io/za8vm",
+          "10.1509/jmr.12.0430 | https://osf.io/2vmgw",
+          "10.1509/jmr.12.0430 | https://osf.io/ptjqy",
+          "10.5465/amj.2016.0086 | https://osf.io/bjfvk",
+          "10.5465/amj.2016.0086 | https://osf.io/jx64p",
+          "thekeep.eiu.edu/theses/4783 | https://thekeep.eiu.edu/theses/5025",
+          "thekeep.eiu.edu/theses/4783 | https://thekeep.eiu.edu/theses/5025/?utm_source=thekeep.eiu.edu%2Ftheses%2F5025"
+        ],
+        "passed": false
+      },
+      {
+        "name": "DOI mapped to conflicting references",
+        "heading": "DOI with conflicting references",
+        "description": "The same DOI appears with reference strings more than 20% apart.",
+        "items": [
+          "10.1098/rsos.231240: 95 different reference strings (doi_r/apa_ref_r)"
+        ],
+        "passed": false
+      }
+    ],
+    "suppressed": 0,
+    "has_issues": true,
+    "rows": 2914
+  },
+  "network": {
+    "status": "skipped",
+    "checks": "none",
+    "sections": {},
+    "coverage": {},
+    "suppressed": 0,
+    "issue_count": 0,
+    "rows": 2914
+  },
+  "release": {
+    "schema_version": 1,
+    "status": "prepared_locally",
+    "published": false,
+    "generated_at": "2026-09-15T17:52:05+00:00",
+    "filename": "flora.csv",
+    "bytes": 9627089,
+    "sha256": "d7a54f14acf016260199e3b5bcb0104e175cb0d0c5ee7e5e53b5477d84ebb6e4",
+    "md5": "7ce2d0a4299903be1d11fa307019cbc4",
+    "rows": 2914,
+    "columns": [
+      "id",
+      "id_md5",
+      "doi_o",
+      "alt_identifier_o",
+      "doi_o_hash",
+      "title_o",
+      "author_o",
+      "journal_o",
+      "year_o",
+      "volume_o",
+      "issue_o",
+      "pages_o",
+      "apa_ref_o",
+      "bibtex_ref_o",
+      "url_o",
+      "language_o",
+      "doi_r",
+      "alt_identifier_r",
+      "doi_r_hash",
+      "title_r",
+      "author_r",
+      "journal_r",
+      "year_r",
+      "volume_r",
+      "issue_r",
+      "pages_r",
+      "apa_ref_r",
+      "bibtex_ref_r",
+      "url_r",
+      "language_r",
+      "oa_url_o",
+      "oa_url_r",
+      "outcome",
+      "outcome_quote",
+      "outcome_quote_source",
+      "type",
+      "source"
+    ],
+    "version": null,
+    "release_notes": ""
+  },
+  "finished_at": "2026-09-15T17:52:05+00:00"
+}
