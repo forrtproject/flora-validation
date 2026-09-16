@@ -371,6 +371,21 @@ def _sheet_year(value):
     return match.group(1) if match else None
 
 
+_DOI_URL_RE = re.compile(r"^10\.\d{4,}/")
+
+
+def _doi_url(value):
+    """The DOI's landing page, which R's formatted metadata carries, or None.
+
+    Normalises through _s() rather than truth-testing the cell. pandas 3 hands a
+    missing str value to .map() as a float NaN, and NaN is TRUTHY, so a bare
+    `if value` guard let it through to re.match and took the whole build down
+    with a TypeError on every row that has no original DOI.
+    """
+    doi = _s(value)
+    return "https://doi.org/" + doi if _DOI_URL_RE.match(doi) else None
+
+
 def norm_url(value):
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
@@ -771,8 +786,7 @@ def build(cur, verbose: bool = True,
 
         if side == "o":
             # R's formatted metadata includes the original DOI landing page.
-            df["url_o"] = df["url_o"].fillna(df["doi_o"].map(
-                lambda value: "https://doi.org/" + value if value and re.match(r"^10\.\d{4,}/", value) else None))
+            df["url_o"] = df["url_o"].fillna(df["doi_o"].map(_doi_url))
 
     enriched = int(df["title_o"].notna().sum())
     say(f"  enriched: {enriched}/{len(df)} row(s) have original-side metadata")
