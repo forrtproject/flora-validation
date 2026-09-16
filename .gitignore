@@ -8,3 +8,5 @@ snapshots/
 /logs/
 # Per-run snapshot archives written by sync_csv.py
 /data/extracted_????????T??????Z_*.csv
+# Lock file the preparation pipeline deliberately leaves in place
+/output/.flora-preparation.lock
