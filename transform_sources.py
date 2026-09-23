@@ -5,13 +5,12 @@ Stage 11 of the entry-sheet pipeline. source_records is a *record*: what the
 sheet said, plus what a reviewer fixed, stored dirty on purpose. This produces
 the *product*: cleaned, deduplicated, narrowed to the columns FLoRA consumes.
 
-The script is a pure function of the database — it writes nothing back. That
-matters because the sync is insert-only: a row is written once and never
-updated, so cleaning at ingest would freeze today's rules into every existing
-row forever. Here, improving a rule means editing it and re-running, and all
-rows get the new behaviour immediately.
+The build() function derives the product without changing source data. Improving
+a cleaning rule and re-running applies the new behaviour to every row. Normal
+CLI exports also register permanent publication IDs before writing the CSV;
+--stats-only keeps the whole operation read-only.
 
-Six operations:
+Seven operations:
   1. normalise/derive the outcome (reproductions derive it from their two axes)
   2. clean DOIs                 (prefixes, whitespace, trailing garbage)
   3. strip redundant url_r      (~86% are just doi.org/<doi_r>)
@@ -47,6 +46,7 @@ import apa_references
 import author_overlap
 import cos_quote_rewrite
 import preprint_dedup
+import final_export
 from extractor_vocab import (
     REPLICATION_OUTCOMES,
     derive_reproduction_outcome,
@@ -116,6 +116,15 @@ DERIVED_COLUMNS = ["author_overlap", "author_overlap_pct"]
 
 # Our columns under the output contract's names.
 OUTPUT_RENAMES = {"ref_o": "apa_ref_o", "ref_r": "apa_ref_r"}
+
+# The admin grid retains source registry keys; the published CSV uses the names
+# from the supplied preparation notebook and reference snapshot.
+OUTPUT_SOURCES = {
+    "entry_sheet_replications": "replications",
+    "entry_sheet_reproductions": "reproductions",
+    "fred_replication_success": "COS",
+    "score_2025": "SCORE",
+}
 
 # Kept AFTER the 35 rather than dropped. The output contract has no home for them,
 # but abstract_r feeds downstream classification and the reproduction axes are the
@@ -241,7 +250,8 @@ def drop_untitled(frame):
     """
     if not {"title_o", "title_r"} <= set(frame.columns):
         return frame
-    return frame[frame["title_o"].notna() & frame["title_r"].notna()]
+    return frame[frame["title_o"].map(lambda value: bool(_s(value)))
+                 & frame["title_r"].map(lambda value: bool(_s(value)))]
 
 
 def missing_title_report(frame):
@@ -301,8 +311,11 @@ def to_output_shape(frame, keep_extras: bool = True):
     out = frame.rename(columns=OUTPUT_RENAMES).copy()
     out["doi_o_hash"] = out["doi_o"].apply(doi_hash)
     out["doi_r_hash"] = out["doi_r"].apply(doi_hash)
+    if "source" in out:
+        out["source"] = out["source"].replace(OUTPUT_SOURCES)
 
-    columns = list(FLORA_OUTPUT_COLUMNS)
+    out = final_export.with_identity(out)
+    columns = final_export.IDENTITY_COLUMNS + list(FLORA_OUTPUT_COLUMNS)
     if keep_extras:
         columns += [c for c in OUTPUT_EXTRAS if c in out.columns]
         columns += [c for c in PROVENANCE_COLUMNS if c in out.columns]
@@ -356,6 +369,21 @@ def _sheet_year(value):
     text = _s(value)
     match = _SHEET_YEAR_RE.match(text)
     return match.group(1) if match else None
+
+
+_DOI_URL_RE = re.compile(r"^10\.\d{4,}/")
+
+
+def _doi_url(value):
+    """The DOI's landing page, which R's formatted metadata carries, or None.
+
+    Normalises through _s() rather than truth-testing the cell. pandas 3 hands a
+    missing str value to .map() as a float NaN, and NaN is TRUTHY, so a bare
+    `if value` guard let it through to re.match and took the whole build down
+    with a TypeError on every row that has no original DOI.
+    """
+    doi = _s(value)
+    return "https://doi.org/" + doi if _DOI_URL_RE.match(doi) else None
 
 
 def norm_url(value):
@@ -692,9 +720,10 @@ def build(cur, verbose: bool = True,
     # OpenAlex and Unpaywall. Cached per DOI in work_metadata by enrich_works.py, so
     # this is a dictionary join, not network traffic.
     from enrich_works import load_metadata          # local: avoids an import cycle
+    from bibliographic_helpers import normalise_key
     meta = load_metadata(cur)
     for side, doi_col in (("o", "doi_o"), ("r", "doi_r")):
-        keys = df[doi_col].map(lambda d: meta.get(d) if d else None)
+        keys = df[doi_col].map(lambda d: meta.get(normalise_key(d)) if d else None)
         for field, column in (("title", f"title_{side}"), ("authors", f"author_{side}"),
                               ("journal", f"journal_{side}"), ("volume", f"volume_{side}"),
                               ("issue", f"issue_{side}"), ("pages", f"pages_{side}"),
@@ -702,6 +731,13 @@ def build(cur, verbose: bool = True,
                               ("oa_work_id", f"oa_work_id_{side}"),
                               ("bibtex_ref", f"bibtex_ref_{side}")):
             df[column] = keys.map(lambda m, f=field: (m or {}).get(f))
+
+        # Prefer provider-formatted citations and structured Crossref authors;
+        # retain source-sheet references when no provider can resolve the work.
+        df[f"author_{side}"] = keys.map(lambda m: (m or {}).get("authors_json")).fillna(df[f"author_{side}"])
+        df[f"ref_{side}"] = keys.map(lambda m: (m or {}).get("apa_ref")).fillna(df[f"ref_{side}"])
+        if side == "r":
+            df["abstract_r"] = df["abstract_r"].fillna(keys.map(lambda m: (m or {}).get("abstract")))
 
         # year is the one field we may already hold: the replications sheet carries
         # one. Metadata wins (it is the published year, the sheet's is hand-entered),
@@ -722,7 +758,7 @@ def build(cur, verbose: bool = True,
         if url_column in df.columns:
             from enrich_works import extract_work_id
             id_keys = df[url_column].map(
-                lambda u: meta.get(extract_work_id(u)) if u else None)
+                lambda u: (meta.get(normalise_key(u)) or meta.get(extract_work_id(u))) if u else None)
             for field, column in (("title", f"title_{side}"),
                                   ("authors", f"author_{side}"),
                                   ("journal", f"journal_{side}"),
@@ -736,10 +772,21 @@ def build(cur, verbose: bool = True,
                                   ("year", f"year_{side}")):
                 from_id = id_keys.map(lambda m, f=field: (m or {}).get(f))
                 df[column] = df[column].fillna(from_id)
+            # URL-only manual entries and OSF citations apply on both sides.
+            no_doi_citation = keys.map(lambda m: not bool((m or {}).get("apa_ref")))
+            from_citation = id_keys.map(lambda m: (m or {}).get("apa_ref"))
+            df.loc[no_doi_citation, f"ref_{side}"] = from_citation[no_doi_citation].combine_first(df.loc[no_doi_citation, f"ref_{side}"])
+            from_authors = id_keys.map(lambda m: (m or {}).get("authors_json"))
+            no_doi_authors = keys.map(lambda m: not bool((m or {}).get("authors_json") or (m or {}).get("authors")))
+            df.loc[no_doi_authors, f"author_{side}"] = from_authors[no_doi_authors].fillna(df.loc[no_doi_authors, f"author_{side}"])
 
         # …and only now the sheet's own year, for the rows neither lookup answered.
         if sheet_year is not None:
             df[f"year_{side}"] = df[f"year_{side}"].fillna(sheet_year)
+
+        if side == "o":
+            # R's formatted metadata includes the original DOI landing page.
+            df["url_o"] = df["url_o"].fillna(df["doi_o"].map(_doi_url))
 
     enriched = int(df["title_o"].notna().sum())
     say(f"  enriched: {enriched}/{len(df)} row(s) have original-side metadata")
@@ -929,17 +976,25 @@ def run(output: Path, stats_only: bool = False,
 
     conn = psycopg2.connect(database_url)
     try:
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        out = build(cur, review_issue=review_issue)
-        # build() leaves flora_id blank because assigning one is a write and it
-        # stays a pure read. The registry has already run by this point — the
-        # workflow orders it "before the build so the dataset carries them" — so
-        # the ids exist and attaching them is a read like any other. Without this
-        # the column shipped empty on every row of the published CSV.
-        #
-        # Imported here, not at the top: flora_registry imports this module.
-        from flora_registry import attach_ids
-        out = attach_ids(cur, out)
+        with conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                # Standalone preparation must pin IDs too. Otherwise a new row
+                # can ship under a provisional UUID and change identity when a
+                # later scheduled registry stage assigns its permanent ID.
+                # Lock before building; register this exact frame rather than
+                # running the transform again against potentially changed data.
+                if not stats_only:
+                    cur.execute("LOCK TABLE flora_records IN SHARE ROW EXCLUSIVE MODE")
+                out = build(cur, review_issue=review_issue)
+                # Imported here because flora_registry imports this module.
+                from flora_registry import attach_ids, refresh
+                if not stats_only:
+                    refresh(cur, verbose=False, frame=out)
+                out = attach_ids(cur, out)
+                if not stats_only and not out.empty:
+                    if (out["export_id"].map(final_export.text).eq("").any()
+                            or out["export_position"].isna().any()):
+                        raise ValueError("Cannot export a record without a pinned publication identity")
     finally:
         conn.close()
 
@@ -998,7 +1053,7 @@ def run(output: Path, stats_only: bool = False,
     shaped = to_output_shape(out)
     # Explicit newline so the file does not differ between a Windows dev box and
     # the Linux runner that produces the nightly artifact.
-    shaped.to_csv(output, index=False, encoding="utf-8", lineterminator="\n")
+    output.write_text(final_export.csv_text(shaped), encoding="utf-8", newline="")
     empty = [c for c in FLORA_OUTPUT_COLUMNS if shaped[c].isna().all()]
     print(f"\n  saved: {output}")
     print(f"  columns: {len(shaped.columns)} "

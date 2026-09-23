@@ -5801,6 +5801,48 @@ body.has-maint-banner #admin-screen {
 
 .src-sync-actions { display: flex; gap: 0.5rem; align-items: center; flex-shrink: 0; }
 
+.src-sync-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.2rem;
+  counter-reset: preparation;
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0.8rem 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.src-sync-flow li { font-size: 0.76rem; color: var(--ink); }
+.src-sync-flow li::before {
+  counter-increment: preparation;
+  content: "0" counter(preparation);
+  color: var(--accent);
+  margin-right: 0.5rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.67rem;
+}
+.src-sync-contract {
+  max-width: 96ch;
+  margin: 0.8rem 0 0;
+  font-size: 0.77rem;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.src-sync-contract code { color: var(--ink); font-size: 0.73rem; }
+.src-sync-artifacts { display: flex; flex-wrap: wrap; gap: 0.4rem 0.6rem; margin: 0.75rem 0; }
+.src-sync-artifact-note { flex-basis: 100%; margin: 0 0 0.1rem; font-size: 0.78rem; color: var(--muted); }
+.src-sync-artifact-counts { flex-basis: 100%; margin: 0 0 0.2rem; font-size: 0.74rem; font-family: 'JetBrains Mono', monospace; }
+.src-sync-artifact-btn { font-size: 0.75rem; }
+.src-sync-artifact-btn[data-artifact="flora.csv"] { border-color: var(--green); color: var(--green); }
+.src-sync-panel .ghost-btn, .flora-actions .ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
+  margin-left: 0;
+}
+.flora-actions { flex-wrap: wrap; }
+
 .src-sync-log-head {
   display: flex;
   justify-content: space-between;
@@ -5891,6 +5933,7 @@ body.has-maint-banner #admin-screen {
 .src-sync-badge-running,
 .src-sync-badge-queued    { color: var(--accent); border-color: var(--accent); }
 .src-sync-badge-unchanged { color: var(--muted); }
+.src-sync-badge-needs_attention { color: var(--amber); border-color: var(--amber); }
 
 /* Console output of a run. Capped and scrollable: a full sync prints a few hundred
    lines, and an uncapped <pre> would push the grid off the screen. */

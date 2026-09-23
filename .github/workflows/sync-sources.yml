@@ -67,52 +67,39 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python flora_registry.py
 
-      # Runs after the sync so the output reflects the night's new rows. Pure
-      # function of the database — writes nothing back, so it is safe to re-run.
-      - name: Build FLoRA dataset
+      # Same final command as the website's Run pipeline button. Validation reads
+      # the exact CSV snapshot, and the manifest fingerprints its downloaded bytes.
+      - name: Prepare final FLoRA CSV and reports
         id: build_dataset
-        # Runs even when a source failed a gate: the transform reads only the
-        # database, so a temporarily unshared sheet should not also cost us the
-        # nightly dataset built from the rows already stored.
-        if: always()
+        # Source refresh stages still run independently. A failure prevents a
+        # current release from silently containing an incomplete source refresh.
+        if: success()
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        # The repository contains a historical export. Remove it first so a
-        # failed transform can never leave a stale file available for upload.
-        run: |
-          rm -f output/flora_entry_sheets.csv
-          python transform_sources.py --review-issue
-
-      # Structural validation of what was just built. Never fails the job: a data
-      # problem is for a human to read, not a reason to withhold the dataset.
-      - name: Validate FLoRA dataset
-        if: always()
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python validate_flora.py --output output/flora_validation.md
+        run: python prepare_flora.py --output-dir output/prepared
 
       - name: Upload validation report
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: flora-validation-${{ github.run_id }}
-          path: output/flora_validation.md
+          path: |
+            output/prepared/flora_preparation_report.json
+            output/prepared/flora_preparation_report.md
+            output/prepared/flora_validation.md
+            output/prepared/flora_network_validation.md
           retention-days: 90
           if-no-files-found: warn
 
-      # Uploaded rather than committed: whether the R pipeline should read this
-      # from a raw.githubusercontent URL (as it does for validated_export.csv) is
-      # still an open decision. Committing it is a `git add` step away.
+      # Files remain reviewable artifacts. Sync does not publish a dataset release
+      # or create/comment on external review issues.
       - name: Upload FLoRA dataset
         if: steps.build_dataset.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
-          name: flora-entry-sheets-${{ github.run_id }}
+          name: flora-final-${{ github.run_id }}
           path: |
-            output/flora_entry_sheets.csv
-            output/flora_export_log.csv
-            output/dup_outcome_conflicts.csv
-            output/preprint_dedup_candidates.csv
+            output/prepared/
           retention-days: 90
           if-no-files-found: error
 

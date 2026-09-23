@@ -244,7 +244,8 @@ def test_counts_report_the_unregistered_backlog():
 def test_grid_columns_are_a_subset_of_what_the_transform_produces():
     produced = set(transform_sources.FLORA_COLUMNS
                    + transform_sources.ENRICHMENT_COLUMNS
-                   + transform_sources.PROVENANCE_COLUMNS)
+                   + transform_sources.PROVENANCE_COLUMNS
+                   + ["export_id"])  # attached from the publication registry
     assert not set(flora_service.LIST_COLUMNS) - produced
 
 
@@ -402,7 +403,8 @@ def _built_frame():
 
 def test_output_shape_starts_with_the_contract_exactly():
     out = transform_sources.to_output_shape(_built_frame())
-    assert list(out.columns)[:35] == FLORA_OUTPUT_CONTRACT
+    assert list(out.columns)[:2] == ["id", "id_md5"]
+    assert list(out.columns)[2:37] == FLORA_OUTPUT_CONTRACT
 
 
 def test_columns_we_cannot_fill_are_present_but_empty():
@@ -425,7 +427,7 @@ def test_extras_are_kept_after_the_contract_not_dropped():
     the flat outcome is derived FROM. Dropping either to match a column list exactly
     would lose data the database is the only copy of."""
     out = transform_sources.to_output_shape(_built_frame())
-    tail = list(out.columns)[35:]
+    tail = list(out.columns)[37:]
     assert "abstract_r" in tail
     assert "outcome_computation" in tail
     assert "flora_id" in tail
@@ -438,9 +440,10 @@ def test_the_openalex_work_id_trails_the_contract_rather_than_entering_it():
     existing export must keep working."""
     out = transform_sources.to_output_shape(_built_frame())
     columns = list(out.columns)
-    assert columns[:35] == FLORA_OUTPUT_CONTRACT
-    assert "oa_work_id_o" in columns[35:]
-    assert "oa_work_id_r" in columns[35:]
+    assert columns[:2] == ["id", "id_md5"]
+    assert columns[2:37] == FLORA_OUTPUT_CONTRACT
+    assert "oa_work_id_o" in columns[37:]
+    assert "oa_work_id_r" in columns[37:]
     assert out["oa_work_id_o"].iloc[0] == "W2741809807"
     assert pd.isna(out["oa_work_id_o"].iloc[1])
 
@@ -471,7 +474,7 @@ def test_the_work_id_is_dropped_for_an_exact_contract_match():
 
 def test_extras_can_be_dropped_for_an_exact_contract_match():
     out = transform_sources.to_output_shape(_built_frame(), keep_extras=False)
-    assert list(out.columns) == FLORA_OUTPUT_CONTRACT
+    assert list(out.columns) == ["id", "id_md5"] + FLORA_OUTPUT_CONTRACT
 
 
 def test_doi_hash_is_three_hex_characters():

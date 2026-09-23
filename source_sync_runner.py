@@ -22,20 +22,27 @@ The nightly GitHub Action runs the same two scripts with its own database
 connection and cannot see this lock. That overlap is tolerated rather than
 prevented: `sync_sources.py` is insert-only with ON CONFLICT DO NOTHING,
 `sync_validated.py` upserts by a unique key, and display ids come from an atomic
-counter — so a concurrent run duplicates effort but not data. Preventing it
-outright would mean the Action taking the same advisory lock, which is a change to
-make if the two ever start colliding in practice.
+counter. Final preparation separately captures the prepared-table revision before
+building and checks it under the materialization lock. If another run publishes
+in between, the older candidate is rejected and must be rebuilt; it cannot revert
+the newer snapshot. The queue lock does not need to span the Action's source sync.
 """
 import os
+import json
+import hashlib
+from contextlib import contextmanager
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import Json, RealDictCursor
+from output_lock import output_directory_lock
 
 ROOT = Path(__file__).resolve().parent
 
@@ -60,6 +67,7 @@ STAGES = [
     # reads the rows the stages above just landed.
     ("flora ids", [sys.executable, "flora_registry.py"]),
 ]
+FINAL_STAGE = "final CSV and reports"
 
 ACTIVE_STATUSES = ["queued", "running"]
 
@@ -121,7 +129,14 @@ def recent_jobs(cur, limit: int = 10) -> list:
         SELECT job_id::text AS job_id, trigger, requested_by, status,
                created_at, started_at, finished_at,
                right(log_text, 4000) AS log_tail,
-               length(log_text) AS log_length
+               length(log_text) AS log_length,
+               artifact_csv IS NOT NULL AS has_csv,
+               recovery_csv IS NOT NULL AS has_recovery_csv,
+               (report_json IS NOT NULL AND report_markdown IS NOT NULL) AS has_report,
+               report_json->>'status' AS report_status,
+               report_json->'rows' AS report_rows,
+               report_json->'warning_count' AS warning_count,
+               report_json->'failure_count' AS failure_count
         FROM source_sync_jobs
         ORDER BY created_at DESC
         LIMIT %s
@@ -135,13 +150,53 @@ def job_detail(cur, job_id: str) -> "dict | None":
     cur.execute(
         """
         SELECT job_id::text AS job_id, trigger, requested_by, status,
-               created_at, started_at, finished_at, log_text
+               created_at, started_at, finished_at, log_text,
+               artifact_csv IS NOT NULL AS has_csv,
+               recovery_csv IS NOT NULL AS has_recovery_csv,
+               (report_json IS NOT NULL AND report_markdown IS NOT NULL) AS has_report,
+               report_json->>'status' AS report_status,
+               report_json->'rows' AS report_rows,
+               report_json->'warning_count' AS warning_count,
+               report_json->'failure_count' AS failure_count
         FROM source_sync_jobs WHERE job_id = %s
         """,
         (job_id,),
     )
     row = cur.fetchone()
     return dict(row) if row else None
+
+
+def job_artifact(cur, job_id: str, artifact: str):
+    """An immutable run snapshot, available from any web pod.
+
+    The column is selected exclusively from this allowlist; an HTTP filename is
+    never interpolated into SQL or resolved against the filesystem.
+    """
+    column = {"flora.csv": "artifact_csv", "recovery.csv": "recovery_csv", "report.json": "report_json",
+              "report.md": "report_markdown"}.get(artifact)
+    if column is None:
+        return None
+    cur.execute(f"SELECT {column} AS artifact FROM source_sync_jobs WHERE job_id = %s",
+                (job_id,))
+    row = cur.fetchone()
+    return row["artifact"] if row else None
+
+
+def _persist_artifacts(conn, job_id, report, csv_text=None, *, recovery_csv=None):
+    from prepare_flora import render_report
+    report["warning_count"] = len(report.get("warnings", []))
+    report["failure_count"] = len(report.get("errors", []))
+    markdown = render_report(report)
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE source_sync_jobs SET artifact_csv=%s, report_json=%s, "
+            "report_markdown=%s WHERE job_id=%s",
+            (csv_text, Json(report), markdown, job_id),
+        )
+        if recovery_csv is not None:
+            cur.execute("UPDATE source_sync_jobs SET recovery_csv=%s WHERE job_id=%s",
+                        (recovery_csv, job_id))
+    conn.commit()
 
 
 # ── execution ─────────────────────────────────────────────────────────────────
@@ -190,6 +245,19 @@ def _run_stage(conn, job_id: str, name: str, command: list) -> bool:
     return code == 0
 
 
+@contextmanager
+def _run_workspace(output_root):
+    directory = Path(tempfile.mkdtemp(prefix="flora-sync-", dir=output_root))
+    try:
+        yield directory
+    except Exception as exc:
+        # A database outage must not destroy the only copy of a committed CSV.
+        # The runner records this path in the job log for local recovery.
+        raise RuntimeError(f"Pipeline artifacts retained at {directory}") from exc
+    else:
+        shutil.rmtree(directory)
+
+
 def _execute(conn, job_id: str) -> None:
     with conn.cursor() as cur:
         cur.execute(
@@ -199,12 +267,98 @@ def _execute(conn, job_id: str) -> None:
     conn.commit()
 
     ok = True
+    stage_results = []
     for name, command in STAGES:
         # Stages are independent on purpose: sync_validated.py reads only the
         # database, so a sheet that failed its gates must not also stop our own
         # records from refreshing. Mirrors `if: always()` in the workflow.
-        if not _run_stage(conn, job_id, name, command):
+        passed = _run_stage(conn, job_id, name, command)
+        stage_results.append({"name": name, "status": "passed" if passed else "failed"})
+        if not passed:
             ok = False
+
+    from prepare_flora import REPORT_JSON, timestamp, write_report
+    report = {"schema_version": 1, "generated_at": timestamp(),
+              "mode": "database_pipeline", "status": "failed", "rows": 0,
+              "stages": stage_results, "warnings": [], "errors": []}
+    csv_text = None
+    artifacts_persisted = False
+    if ok:
+        output_root = ROOT / "output"
+        output_root.mkdir(parents=True, exist_ok=True)
+        # Each run gets fresh paths. A timed-out or failed process can never make
+        # an earlier export available under this job's download URL.
+        with _run_workspace(output_root) as directory:
+            output_dir = Path(directory)
+            command = [sys.executable, "prepare_flora.py", "--output-dir", str(output_dir)]
+            if os.environ.get("FLORA_API_FILTER", "").strip().lower() in {"1", "true", "yes"}:
+                command.append("--api-filter")
+            ok = _run_stage(conn, job_id, FINAL_STAGE, command)
+            report_path = output_dir / REPORT_JSON
+            if report_path.exists():
+                report = json.loads(report_path.read_text(encoding="utf-8"))
+                report["stages"] = stage_results + report.get("stages", [])
+            csv_path = output_dir / "flora.csv"
+            # The report and its completed state are required as well as exit 0.
+            # A mocked/no-op command or interrupted process must not pass a job.
+            ok = bool(ok and csv_path.exists()
+                      and report.get("status") in {"success", "needs_attention"})
+            if ok:
+                csv_text = csv_path.read_bytes().decode("utf-8")
+                report["finished_at"] = timestamp()
+                _persist_artifacts(conn, job_id, report, csv_text)
+                artifacts_persisted = True
+                # Also leave the conventional CLI artifacts on this executor.
+                # Downloads are already durable. A local copy error must not
+                # discard them or hide a successfully committed dataset.
+                artifact_name = "preparation report"
+                try:
+                    write_report(output_dir, report)
+                    with output_directory_lock(output_root):
+                        for artifact in output_dir.iterdir():
+                            if artifact.is_file() and not artifact.name.startswith("."):
+                                artifact_name = artifact.name
+                                destination = output_root / artifact.name
+                                temporary = destination.with_name(destination.name + ".tmp")
+                                temporary.write_bytes(artifact.read_bytes())
+                                temporary.replace(destination)
+                except OSError as exc:
+                    report.setdefault("warnings", []).append(
+                        f"Could not copy local artifact {artifact_name}: {exc}. "
+                        "The job's CSV and report remain available for download.")
+                    report["status"] = "needs_attention"
+                    artifacts_persisted = False  # save the additional warning
+            else:
+                report["status"] = "failed"
+                recovery_csv = None
+                if (report.get("storage", {}).get("status") == "committed"
+                        and report.get("recovery_csv") in {"flora_committed_recovery.csv", ".flora.candidate.csv"}):
+                    payload = (output_dir / report["recovery_csv"]).read_bytes()
+                    if hashlib.sha256(payload).hexdigest() != report.get("release", {}).get("sha256"):
+                        raise ValueError("Recovery CSV does not match the committed candidate's manifest")
+                    recovery_csv = payload.decode("utf-8")
+                    report["recovery_csv"] = report["recovery_artifact"] = "recovery.csv"
+                detail = ("The committed CSV is retained as the recovery download."
+                          if recovery_csv is not None else "No CSV is available for this run.")
+                report.setdefault("errors", []).append(
+                    "Final preparation did not complete with a current CSV and report. " + detail)
+                report["finished_at"] = timestamp()
+                # Save the committed recovery bytes before the workspace closes.
+                _persist_artifacts(conn, job_id, report, recovery_csv=recovery_csv)
+                artifacts_persisted = True
+    else:
+        report["errors"] = [f"{stage['name']} failed" for stage in stage_results
+                            if stage["status"] == "failed"]
+        report["stages"].append({"name": FINAL_STAGE, "status": "skipped",
+                                  "detail": "An upstream stage failed."})
+        _append_log(conn, job_id, f"\n[{_timestamp()}] {FINAL_STAGE}: skipped; "
+                    "an upstream stage failed, so no current CSV was produced.\n")
+    report["finished_at"] = timestamp()
+    if not artifacts_persisted:
+        _persist_artifacts(conn, job_id, report, csv_text)
+    if report.get("warnings"):
+        _append_log(conn, job_id, f"[{_timestamp()}] preparation needs attention: "
+                    + " ".join(report["warnings"]) + "\n")
 
     status = "success" if ok else "failed"
     with conn.cursor() as cur:
@@ -251,6 +405,7 @@ def run_queued(database_url: str) -> None:
                 _execute(conn, job_id)
             except Exception:
                 conn.rollback()
+                failure = traceback.format_exc()
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -259,9 +414,16 @@ def run_queued(database_url: str) -> None:
                             log_text = log_text || %s
                         WHERE job_id=%s
                         """,
-                        (f"\nrunner crashed:\n{traceback.format_exc()}\n", job_id),
+                        (f"\nrunner crashed:\n{failure}\n", job_id),
                     )
                 conn.commit()
+                from prepare_flora import timestamp
+                _persist_artifacts(conn, job_id, {
+                    "schema_version": 1, "generated_at": timestamp(),
+                    "finished_at": timestamp(), "mode": "database_pipeline",
+                    "status": "failed", "rows": 0, "stages": [], "warnings": [],
+                    "errors": ["The pipeline runner crashed; see the job log for details."],
+                })
         finally:
             with conn.cursor() as cur:
                 cur.execute("SELECT pg_advisory_unlock(%s)", (SYNC_ADVISORY_LOCK_ID,))
@@ -276,8 +438,9 @@ def run_queued(database_url: str) -> None:
 
 def reap_stale_jobs(cur, older_than_minutes: int = 60) -> int:
     """A job left 'running' by a pod that died would block the queue forever, since
-    queue_run treats it as active. Older than the stage timeout means nobody is
-    working on it any more."""
+    queue_run treats it as active. The advisory lock check protects a live runner
+    even when several long stages make its total duration exceed this threshold.
+    """
     cur.execute(
         """
         UPDATE source_sync_jobs
@@ -285,6 +448,7 @@ def reap_stale_jobs(cur, older_than_minutes: int = 60) -> int:
             log_text = log_text || '\nabandoned: no runner finished this job\n'
         WHERE status IN ('queued', 'running')
           AND created_at < NOW() - make_interval(mins => %s)
+          AND pg_try_advisory_xact_lock(7342025092)
         """,
         (older_than_minutes,),
     )

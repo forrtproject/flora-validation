@@ -36,6 +36,7 @@ from pathlib import Path
 
 import psycopg2
 import psycopg2.extras
+import pandas as pd
 from dotenv import load_dotenv
 
 from console_encoding import use_utf8_output
@@ -149,7 +150,10 @@ def _collect(df, columns) -> list:
     return out
 
 
-def check_resolution(cur, df, kind: str, limit: int = 0, verbose: bool = True) -> list:
+def check_resolution(cur, df, kind: str, limit: int = 0, verbose: bool = True,
+                     statistics: dict = None) -> list:
+    if limit < 0:
+        raise ValueError("network limit must be zero (all) or positive")
     columns = ("doi_o", "doi_r") if kind == "doi" else ("url_r", "oa_url_o", "oa_url_r")
     targets = _collect(df, columns)
     if kind == "url":
@@ -165,6 +169,9 @@ def check_resolution(cur, df, kind: str, limit: int = 0, verbose: bool = True) -
     # cached, and reporting them as cached would say the run was complete.
     n_cached = len(targets) - len(outstanding)
     todo = outstanding[:limit] if limit else outstanding
+    if statistics is not None:
+        statistics.update(targets=len(targets), cached=n_cached, checked=len(todo),
+                          deferred=len(outstanding) - len(todo))
 
     if verbose:
         deferred = len(outstanding) - len(todo)
@@ -183,6 +190,68 @@ def check_resolution(cur, df, kind: str, limit: int = 0, verbose: bool = True) -
             print(f"    {n}/{len(todo)}", file=sys.stderr)
         time.sleep(DELAY)
     return failed
+
+
+def validate(cur, df, checks="all", limit=0, suppressions=None) -> dict:
+    """Check one exported frame and preserve coverage as well as findings.
+
+    A limited run and an unavailable Retraction Watch download are incomplete,
+    even when none of the links checked failed. They must never look like a pass.
+    """
+    if checks not in {"all", "retractions", "dois", "urls", "none"}:
+        raise ValueError(f"Unknown network checks: {checks}")
+    if limit < 0:
+        raise ValueError("network limit must be zero (all) or positive")
+    suppressions = suppressions or set()
+    sections, coverage = {}, {}
+    suppressed = 0
+    incomplete = checks != "all"
+
+    def keep(heading, items):
+        nonlocal suppressed
+        retained = []
+        for label in items:
+            if (heading, item_id(label)) in suppressions:
+                suppressed += 1
+            else:
+                retained.append(label)
+        return retained
+
+    if checks in ("all", "retractions"):
+        items = check_retractions(df)
+        skipped = any(item.startswith("SKIPPED:") for item in items)
+        incomplete = incomplete or skipped
+        coverage["retractions"] = {"status": "skipped" if skipped else "checked"}
+        # An unavailable source is not a suppressible data-quality finding.
+        sections["Retracted papers"] = items if skipped else keep("Retracted papers", items)
+    for kind, selector, heading in (
+        ("doi", "dois", "DOIs that failed to resolve"),
+        ("url", "urls", "URLs that failed to resolve"),
+    ):
+        if checks not in ("all", selector):
+            continue
+        stats = {}
+        sections[heading] = keep(heading, check_resolution(
+            cur, df, kind, limit, statistics=stats))
+        coverage[selector] = stats
+        incomplete = incomplete or bool(stats["deferred"])
+    issues = sum(len(items) for items in sections.values())
+    return {"status": "skipped" if checks == "none" else
+            "incomplete" if incomplete else "needs_attention" if issues else "passed",
+            "checks": checks, "sections": sections, "coverage": coverage,
+            "suppressed": suppressed, "issue_count": issues, "rows": len(df)}
+
+
+def render_validation(report: dict) -> str:
+    text = render(report["sections"], report["rows"], report["suppressed"])
+    text += f"\n\n**Network validation status: {report['status']}**\n"
+    for kind, coverage in report["coverage"].items():
+        if "targets" in coverage:
+            text += (f"\n- {kind}: {coverage['targets']} targets; {coverage['cached']} cached; "
+                     f"{coverage['checked']} checked; {coverage['deferred']} deferred.")
+    if report["checks"] != "all":
+        text += f"\n\nOnly the selected checks ran: {report['checks']}."
+    return text + "\n"
 
 
 # ── report ────────────────────────────────────────────────────────────────────
@@ -219,6 +288,8 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=0,
                         help="check at most this many new targets per kind")
     parser.add_argument("--output", type=Path, help="write the report here")
+    parser.add_argument("--input", type=Path,
+                        help="validate this exact CSV; database is used only for link cache")
     parser.add_argument("--fail-on-issues", action="store_true")
     args = parser.parse_args()
 
@@ -232,30 +303,12 @@ def main() -> int:
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         ensure_cache(cur)
-        df = load_dataset(cur)
+        df = (pd.read_csv(args.input, dtype=str, keep_default_na=False,
+                          na_values=["NA", ""], encoding="utf-8-sig")
+              if args.input else load_dataset(cur))
         suppressions = load_suppressions()
-        sections, suppressed = {}, 0
-
-        def keep(heading, items):
-            nonlocal suppressed
-            out = []
-            for item in items:
-                if (heading, item_id(item)) in suppressions:
-                    suppressed += 1
-                else:
-                    out.append(item)
-            return out
-
-        if args.checks in ("all", "retractions"):
-            sections["Retracted papers"] = keep("Retracted papers", check_retractions(df))
-        if args.checks in ("all", "dois"):
-            sections["DOIs that failed to resolve"] = keep(
-                "DOIs that failed to resolve", check_resolution(cur, df, "doi", args.limit))
-        if args.checks in ("all", "urls"):
-            sections["URLs that failed to resolve"] = keep(
-                "URLs that failed to resolve", check_resolution(cur, df, "url", args.limit))
-
-        text = render(sections, len(df), suppressed)
+        report = validate(cur, df, args.checks, args.limit, suppressions)
+        text = render_validation(report)
     finally:
         conn.close()
 
@@ -266,7 +319,7 @@ def main() -> int:
     else:
         print(text)
 
-    has_issues = any(sections.values())
+    has_issues = report["status"] != "passed"
     return 1 if (args.fail_on_issues and has_issues) else 0
 
 

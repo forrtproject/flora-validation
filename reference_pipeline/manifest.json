@@ -1,0 +1,102 @@
+[
+  {
+    "supplied_name": "prepare_flora.qmd",
+    "repository_path": "reference_pipeline/prepare_flora.qmd",
+    "sha256": "c028545088ac6da2b28e7f884dcc6da6964f4360c63cba8d351c2c1101b4d7e0"
+  },
+  {
+    "supplied_name": "validate_flora_network (1).R",
+    "repository_path": "reference_pipeline/R/validate_flora_network.R",
+    "sha256": "65bdee6c4f1fb57eb4640466494d5ec0ff1347c45c46de37490da57e90c0e42c"
+  },
+  {
+    "supplied_name": "validate_flora (1).R",
+    "repository_path": "reference_pipeline/R/validate_flora.R",
+    "sha256": "7da80d5637efd22f4594fd4b93ee3cb7b4435b94b9bae033f5d411543b5ee303"
+  },
+  {
+    "supplied_name": "update_readme_log.R",
+    "repository_path": "reference_pipeline/R/update_readme_log.R",
+    "sha256": "b543e786e2eeb58893a1266ae4b4e63d8619d8f6764011e607a70cf959fc2ba3"
+  },
+  {
+    "supplied_name": "unpaywall_cache.R",
+    "repository_path": "reference_pipeline/R/unpaywall_cache.R",
+    "sha256": "2c930fe916bebed6cbdea327daf0aa45a2f20f30e9c41c64608bcccb0a6b6be7"
+  },
+  {
+    "supplied_name": "release_helpers.R",
+    "repository_path": "reference_pipeline/R/release_helpers.R",
+    "sha256": "3186153a303d8b8e4ad038b16e1e793875d6487427e035069964f10093d323bf"
+  },
+  {
+    "supplied_name": "preprint_dedup (1).R",
+    "repository_path": "reference_pipeline/R/preprint_dedup.R",
+    "sha256": "0d3d1becf63ebccef4a767c62215b8852791c5cf51ca39174436b99a72139f6a"
+  },
+  {
+    "supplied_name": "outcome_vocabulary.R",
+    "repository_path": "reference_pipeline/R/outcome_vocabulary.R",
+    "sha256": "96b4b4fbb3f89194cd431d2b5cbd87d25dc77973e125544d48d61a978caeabe8"
+  },
+  {
+    "supplied_name": "osf_citation.R",
+    "repository_path": "reference_pipeline/R/osf_citation.R",
+    "sha256": "312c5381e0433189e4c33b4d41c5f0de471b1e9b9b128325b041502840a14a00"
+  },
+  {
+    "supplied_name": "openalex_cache.R",
+    "repository_path": "reference_pipeline/R/openalex_cache.R",
+    "sha256": "cf4c1a8af485afdab03c0347e2308e7eab9a1163ee63686b39dd26caf2967b8f"
+  },
+  {
+    "supplied_name": "llm_classification.R",
+    "repository_path": "reference_pipeline/R/llm_classification.R",
+    "sha256": "8a9545b96fc90a1cb315b15398c7b508a667178b709c8b96255dcfb59bdbd303"
+  },
+  {
+    "supplied_name": "filter_flora (1).R",
+    "repository_path": "reference_pipeline/R/filter_flora.R",
+    "sha256": "dd6088f30724726cbabf6348cb8e0bc4534e436dc5faacf11999e2fe9a41634b"
+  },
+  {
+    "supplied_name": "data_cleaning (1).R",
+    "repository_path": "reference_pipeline/R/data_cleaning.R",
+    "sha256": "c655a07f640708fa97f2b804787a62a6f51cd64d9e6ef0155a08c4333448868d"
+  },
+  {
+    "supplied_name": "filter_flora.R",
+    "repository_path": "reference_pipeline/R/filter_flora.R",
+    "sha256": "dd6088f30724726cbabf6348cb8e0bc4534e436dc5faacf11999e2fe9a41634b"
+  },
+  {
+    "supplied_name": "data_cleaning.R",
+    "repository_path": "reference_pipeline/R/data_cleaning.R",
+    "sha256": "c655a07f640708fa97f2b804787a62a6f51cd64d9e6ef0155a08c4333448868d"
+  },
+  {
+    "supplied_name": "crossref_cache.R",
+    "repository_path": "reference_pipeline/R/crossref_cache.R",
+    "sha256": "f10fbb9adcb3674d2bfbfa296cd1f241b63216c3384aa0da63fab6495592736a"
+  },
+  {
+    "supplied_name": "cos_quote_rewrite.R",
+    "repository_path": "reference_pipeline/R/cos_quote_rewrite.R",
+    "sha256": "5b26779b2d0870e5495eedd5a064ff1f8ed3286153691426dc4e07b7a2debb48"
+  },
+  {
+    "supplied_name": "cache_config.R",
+    "repository_path": "reference_pipeline/R/cache_config.R",
+    "sha256": "e6f19cf08c8e83407da418be36482edda60bd08f1d2333fc4dcbefd8b952c34b"
+  },
+  {
+    "supplied_name": "augmentation.R",
+    "repository_path": "reference_pipeline/R/augmentation.R",
+    "sha256": "14e2ef6c543c75fd7752cded05bd0860fe2bbdf3514545caf8471ee7bffefc51"
+  },
+  {
+    "supplied_name": "flora (18).csv",
+    "repository_path": "data/flora_reference.csv",
+    "sha256": "a024faec39c5a3a2e160ea0bee10ddec718fcd4e9c6c6bae323c6038d3d39765"
+  }
+]

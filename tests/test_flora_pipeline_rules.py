@@ -120,6 +120,45 @@ def test_a_sheet_year_is_normalised_or_dropped(raw, expected):
     assert ts._sheet_year(raw) == expected
 
 
+# ── Step 7: the original DOI's landing page ───────────────────────────────────
+
+@pytest.mark.parametrize(("raw", "expected"), [
+    ("10.1016/0010-0285(72)90003-5", "https://doi.org/10.1016/0010-0285(72)90003-5"),
+    ("  10.1037/abc123  ", "https://doi.org/10.1037/abc123"),
+    ("10.123/too-short-a-prefix", None),
+    ("https://doi.org/10.1016/j.jesp.2015.10.012", None),   # already a URL, not a bare DOI
+    ("", None),
+    (None, None),
+    (float("nan"), None),
+])
+def test_a_doi_becomes_a_landing_page_or_nothing(raw, expected):
+    assert ts._doi_url(raw) == expected
+
+
+def test_a_missing_doi_does_not_take_the_build_down():
+    """The regression: pandas 3 hands a missing str value to .map() as float NaN,
+    and NaN is TRUTHY — so the original `if value and re.match(...)` guard passed
+    the float straight to re.match. Every row without an original DOI (about 60 of
+    2925) raised TypeError, so the FLoRA tab answered 500 and the preparation
+    pipeline could never finish a run.
+
+    Exercised through .map() rather than by calling the helper directly, because
+    the NaN only appears once pandas does the mapping. Asserted on missingness
+    rather than on None: a str column stores the helper's None back as NaN, which
+    is what the fillna downstream consumes anyway."""
+    column = pd.Series(["10.1016/abc123", None, ""], dtype="str")
+    mapped = column.map(ts._doi_url)
+    assert mapped[0] == "https://doi.org/10.1016/abc123"
+    assert mapped.isna().tolist() == [False, True, True]
+
+
+def test_the_landing_page_never_overwrites_a_url_the_source_supplied():
+    """fillna, not assignment: url_o carries manually entered links that the DOI
+    landing page must not replace."""
+    source = (ROOT / "transform_sources.py").read_text(encoding="utf-8")
+    assert 'df["url_o"] = df["url_o"].fillna(df["doi_o"].map(_doi_url))' in source
+
+
 # ── provenance: the registered id reaches the export ──────────────────────────
 
 def test_the_export_attaches_the_registered_flora_id():
