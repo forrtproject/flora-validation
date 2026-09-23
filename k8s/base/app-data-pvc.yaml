@@ -1,0 +1,16 @@
+# Holds EXTRACTOR_DATA_DIR: extracted_latest.csv plus the immutable per-run
+# snapshot archives. Must be ReadWriteMany (manilabronze) — see the comment on
+# EXTRACTOR_DATA_DIR in .env.example: a pod-local directory makes orphan
+# cleanup block after every pod replacement, and Parts 2/3 of the sync
+# pipeline re-read the exact archive Part 1 wrote, by sha256.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: flora-app-data
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: manilabronze
+  resources:
+    requests:
+      storage: 10Gi

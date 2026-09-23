@@ -1,0 +1,21 @@
+# Based on https://cloud.uni-muenster.de/docs/kubernetes/services/certificatemanagement/
+# The docs mention the example Certificate also sets a German-institution
+# `subject:` block and `cert-manager.io/issue-temporary-certificate: "true"` —
+# copy those from the linked example once you can see it; they aren't
+# reproduced in full there, so don't guess the exact Subject fields.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: flora-certificate
+spec:
+  secretName: flora-certificate
+  issuerRef:
+    name: wwuit-acme
+    kind: ClusterIssuer
+  commonName: validation.forrt.org
+  dnsNames:
+    - validation.forrt.org
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always

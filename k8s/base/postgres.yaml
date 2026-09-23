@@ -1,0 +1,102 @@
+# Uni Cloud Münster offers no managed PostgreSQL / operator (confirmed by the
+# Uni Cloud team by email), so Postgres runs as a plain single-replica
+# Deployment against its own PVC. `strategy: Recreate` guarantees the old pod
+# fully terminates (and releases the RWO volume) before a replacement starts —
+# never two Postgres pods mounting the same cinderbronze/cindergold volume.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: flora-postgres-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: cindergold
+  resources:
+    requests:
+      storage: 60Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flora-postgres
+spec:
+  selector:
+    app: flora-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flora-postgres
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: flora-postgres
+  template:
+    metadata:
+      labels:
+        app: flora-postgres
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        # postgres:16-alpine's built-in "postgres" user is uid/gid 70 (the
+        # Debian-based postgres image uses 999 instead — don't mix these up).
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: flora-postgres-secrets
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+              ephemeral-storage: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)"]
+            initialDelaySeconds: 20
+            periodSeconds: 20
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: flora-postgres-data
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

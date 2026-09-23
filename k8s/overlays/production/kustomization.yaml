@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Set to the exact namespace name approved on the Kubernetes project request
+# form (Namespaces und Ressourcen > Namespace #1 > Namespace-Name).
+namespace: REPLACE_WITH_PROD_NAMESPACE
+
+resources:
+  - ../../base
+
+patches:
+  - target:
+      kind: Gateway
+      name: flora-gateway
+    patch: |-
+      - op: replace
+        path: /metadata/annotations/wwu.io~1nic_node
+        value: istio.ms1.k8s.wwu.de
+      - op: replace
+        path: /spec/servers/1/tls/credentialName
+        value: REPLACE_WITH_PROD_NAMESPACE--flora-certificate
