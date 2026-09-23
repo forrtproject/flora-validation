@@ -438,6 +438,41 @@ def load_rules(cur):
     return aliases, exclusions
 
 
+def load_dedup_decisions(cur):
+    """Admin rulings on preprint duplicate pairs, made in the FLoRA tab.
+
+    Guarded: the nightly job runs from the repository and can reach the database
+    before the deployed site's init_db() has created the table.
+    """
+    cur.execute("SELECT to_regclass('preprint_dedup_decisions') IS NOT NULL AS present")
+    if not cur.fetchone()["present"]:
+        return []
+    cur.execute("SELECT side, doi_1, doi_2, action, decided_at FROM preprint_dedup_decisions")
+    return [dict(r) for r in cur.fetchall()]
+
+
+def load_cross_type_duplicates(cur):
+    """Rows ruled a duplicate of a row of the OTHER type, which load() leaves out.
+
+    The Source Records duplicate detector keys on the paper, not the type, so a
+    replication and a reproduction of one paper arrive there as a duplicate group.
+    Usually both are valid records; a 'duplicate' ruling between them removes one
+    from FLoRA. Listed so every run surfaces them for a second look.
+    """
+    cur.execute(
+        """
+        SELECT d.display_id, d.type, d.doi_o, d.doi_r, d.url_r,
+               s.display_id AS duplicate_of, s.type AS duplicate_of_type,
+               d.duplicate_reviewed_by
+        FROM source_records d
+        JOIN source_records s ON s.record_id = d.duplicate_of
+        WHERE d.duplicate_status = 'duplicate' AND d.type IS DISTINCT FROM s.type
+        ORDER BY d.display_id
+        """
+    )
+    return [dict(r) for r in cur.fetchall()]
+
+
 def _canonical_axis(row, column, problems):
     """Canonical axis value for export, recording rather than hiding bad data."""
     if row.get("type") != "reproduction":
@@ -540,7 +575,7 @@ def build(cur, verbose: bool = True,
     traced back to what it came from:
 
         source_record_id   the surviving source_records row (dedup keeps the first
-                           by display_id)
+                           row; a website-validated duplicate decides its values)
         source_display_id  that row's human id, e.g. REPL-000397
         merged_record_ids  rows the dedup collapsed into it, if any
 
@@ -553,8 +588,13 @@ def build(cur, verbose: bool = True,
 
     df = load(cur)
     aliases, exclusions = load_rules(cur)
+    dedup_decisions = load_dedup_decisions(cur)
+    cross_type = load_cross_type_duplicates(cur)
 
     say("=== FLoRA entry-sheet transform ===")
+    if cross_type:
+        say(f"  ⚠ {len(cross_type)} row(s) ruled a duplicate of a record of the other "
+            "type are left out: " + ", ".join(r["display_id"] for r in cross_type[:10]))
     if df.empty:
         say("No rows to transform.")
         return pd.DataFrame(columns=FLORA_COLUMNS + PROVENANCE_COLUMNS)
@@ -631,7 +671,7 @@ def build(cur, verbose: bool = True,
 
     df = preprint_dedup.apply_confirmed(
         df, normalise_outcome=_normalise_outcome, verbose=verbose,
-        conflicts_out=conflicts)
+        conflicts_out=conflicts, rulings=dedup_decisions)
 
     # 3 ── exclusions
     # Runs BEFORE url_r is stripped: an operator registering an exclusion copies
@@ -685,18 +725,61 @@ def build(cur, verbose: bool = True,
     key = df["type"].fillna("") + "|" + df["doi_o"].fillna("") + "|" + right
 
     exempt = df["duplicate_status"].eq("distinct")
+    # The survivor of each key is its first row, as it always was: which row a key
+    # becomes is its published identity, so nothing here moves it. A record validated
+    # on this website decides the VALUES instead (below), whatever its position.
     collides = key.duplicated() & key.ne("||")
+    survivors = df.index[~key.duplicated()]
 
     # Which rows each survivor absorbs. Captured BEFORE the drop: afterwards the
     # collapsed rows are simply gone and their record_ids with them, and those ids
     # are what makes a produced row traceable back to its sources.
     df = df.assign(_key=key)
     dropped = df[collides & ~exempt]
-    merged_by_key = (dropped.groupby("_key")["record_id"].apply(list).to_dict()
-                     if not dropped.empty else {})
+    # A dropped row hands over its own id AND whatever an earlier merge (step 2b)
+    # already folded into it; the survivor then adds these to its own list rather
+    # than replacing it, so no absorbed id is lost between the two steps.
+    prior = (df["merged_record_ids"] if "merged_record_ids" in df.columns
+             else pd.Series([[] for _ in range(len(df))], index=df.index))
+    merged_by_key = {}
+    for idx in dropped.index:
+        ids = merged_by_key.setdefault(df.at[idx, "_key"], [])
+        ids.append(df.at[idx, "record_id"])
+        ids.extend(prior[idx] if isinstance(prior[idx], list) else [])
 
-    df = df[~(collides & ~exempt)].copy()
-    df["merged_record_ids"] = df["_key"].map(lambda k: merged_by_key.get(k, []))
+    # A website-validated row that is dropped still decides the survivor's values:
+    # its judgement wins, as in the merge below (preprint_dedup.website_overrides).
+    # A row ruled 'distinct' is its own record and is never dropped, so it never
+    # speaks for another. And a drop settles a disagreement as silently as a merge
+    # does, so it is logged the same way.
+    survivor_of = {df.at[idx, "_key"]: idx for idx in survivors}
+    for k, group in dropped.groupby("_key"):
+        kept = survivor_of[k]
+        rows = [df.loc[kept], *(group.loc[i] for i in group.index)]
+        overrides = preprint_dedup.website_overrides(rows, _normalise_outcome)
+        for column, value in overrides.items():
+            if column in df.columns:
+                df.at[kept, column] = value
+        outcomes = {o for o in (_normalise_outcome(r.get("outcome")) for r in rows) if o}
+        if len(outcomes) > 1:
+            conflicts.append({
+                "doi_o": df.at[kept, "doi_o"], "doi_r": df.at[kept, "doi_r"],
+                "type": df.at[kept, "type"],
+                "outcomes": " | ".join(sorted(outcomes)),
+                "resolved_to": _normalise_outcome(df.at[kept, "outcome"]),
+                "resolved_by": "website record" if "outcome" in overrides else "first record",
+                "url_r": df.at[kept, "url_r"],
+                "sources": " | ".join(dict.fromkeys(str(r.get("source")) for r in rows)),
+            })
+
+    keep = ~(collides & ~exempt)
+    survivor_set = set(survivors)
+    df = df[keep].copy()
+    df["merged_record_ids"] = [
+        (list(prior[idx]) if isinstance(prior[idx], list) else [])
+        + (merged_by_key.get(k, []) if idx in survivor_set else [])
+        for idx, k in zip(df.index, df["_key"])
+    ]
     df["dedup_key"] = df["_key"]
     df = df.drop(columns=["_key"])
     rescued = int((collides & exempt).sum())
@@ -794,9 +877,12 @@ def build(cur, verbose: bool = True,
     # 6b ── preprint/publication duplicates (notebook Step 7d)
     # After enrichment because detection needs titles and authors, which only
     # arrive with the metadata join.
-    df, _dedup_log = preprint_dedup.resolve(
-        df, normalise_outcome=_normalise_outcome, verbose=verbose,
-        conflicts_out=conflicts, open_review_issue=review_issue)
+    # No file here: build() stays read-only. run() writes the log beside the
+    # output, and the FLoRA tab reads it from the frame.
+    df, dedup_log = preprint_dedup.resolve(
+        df, candidates_out=None, normalise_outcome=_normalise_outcome,
+        verbose=verbose, conflicts_out=conflicts, open_review_issue=review_issue,
+        rulings=dedup_decisions)
 
     # 8 ── text cleaning (Step 7c of the notebook)
     # After enrichment, because titles and journals arrive from OpenAlex carrying
@@ -870,6 +956,12 @@ def build(cur, verbose: bool = True,
     out.attrs["merged_record_ids"] = dict(zip(df["record_id"], df["merged_record_ids"]))
     out.attrs["dedup_key"] = dict(zip(df["record_id"], df["dedup_key"]))
     out.attrs["outcome_conflicts"] = conflicts
+    # NaN never equals itself, and pandas compares attrs when it combines frames.
+    out.attrs["preprint_dedup_log"] = [
+        {k: (None if isinstance(v, float) and pd.isna(v) else v) for k, v in row.items()}
+        for row in dedup_log.to_dict("records")
+    ]
+    out.attrs["cross_type_duplicates"] = cross_type
 
     # DUMMY_* placeholders keyed manual references upstream; they are not DOIs.
     for col in ("doi_o", "doi_r"):
@@ -1035,6 +1127,24 @@ def run(output: Path, stats_only: bool = False,
         for conflict in conflicts[:5]:
             print(f"      {conflict.get('doi_o')} + {conflict.get('doi_r')}  "
                   f"[{conflict.get('outcomes')} -> {conflict.get('resolved_to')!r}]")
+
+    # Every detected preprint pair and what happened to it. Beside the output so
+    # the nightly artifact and the preparation report carry it.
+    dedup_log = out.attrs.get("preprint_dedup_log") or []
+    if dedup_log:
+        dedup_path = output.parent / "preprint_dedup_candidates.csv"
+        preprint_dedup.write_candidates(dedup_log, dedup_path)
+        pending = len(preprint_dedup.unresolved(dedup_log))
+        print(f"\n  {len(dedup_log)} preprint duplicate pair(s), {pending} awaiting "
+              f"a decision in the FLoRA tab -> {dedup_path}")
+
+    cross_type = out.attrs.get("cross_type_duplicates") or []
+    if cross_type:
+        cross_path = output.parent / "cross_type_duplicate_rulings.csv"
+        pd.DataFrame(cross_type).to_csv(cross_path, index=False, encoding="utf-8",
+                                        lineterminator="\n")
+        print(f"\n  ⚠ {len(cross_type)} row(s) ruled a duplicate of a record of the other "
+              f"type -> {cross_path}")
 
     report = missing_title_report(out)
     if not report.empty:

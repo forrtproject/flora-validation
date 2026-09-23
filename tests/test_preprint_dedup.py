@@ -144,6 +144,183 @@ def test_a_pair_with_a_missing_doi_cannot_be_resolved():
     assert pdd.default_resolve_pair("replication", "10.1/a", None, False, False) is None
 
 
+# ── held for review ───────────────────────────────────────────────────────────
+
+def test_generic_osf_dois_are_not_preprints():
+    """10.17605/ holds OSF projects and registrations, not just preprints."""
+    assert not pdd.is_preprint_doi("10.17605/osf.io/vufm2")
+    assert pdd.is_repository_doi("10.17605/OSF.IO/VUFM2")
+
+
+def _reproductions(first_authors, dois=("10.17605/osf.io/v9ykq", "10.17605/osf.io/vufm2")):
+    """Two SCORE reproduction reports of Ku & Zaroff (2014), as in the sheet."""
+    return pd.DataFrame({
+        "doi_o": ["10.1016/j.jenvp.2014.10.008"] * 2,
+        "doi_r": list(dois),
+        "title_r": ["Reproduction (with author data): Ku & Zaroff (2014, Journal "
+                    "of Environmental Psychology)"] * 2,
+        "author_r": list(first_authors),
+        "year_r": ["2022", "2020"],
+        "title_o": ["Ku & Zaroff"] * 2,
+        "author_o": ["Ku"] * 2,
+    })
+
+
+def test_independent_osf_reproductions_are_not_even_candidates():
+    """Identical templated titles by different teams are not duplicates."""
+    candidates = pdd.find_duplicates(_reproductions(["Parsons", "Sonmez"]), verbose=False)
+    assert candidates.empty or "replication" not in set(candidates["side"])
+
+
+def test_differing_first_authors_are_held_and_both_rows_kept(tmp_path):
+    frame = _reproductions(["Parsons", "Sonmez"],
+                           dois=("10.31234/osf.io/aaaaa", "10.31234/osf.io/bbbbb"))
+    out, log = pdd.resolve(frame, confirmed_path=tmp_path / "none.csv",
+                           candidates_out=None, verbose=False)
+    assert len(out) == 2
+    row = log[log["side"] == "replication"].iloc[0]
+    assert row["applied_action"] == pdd.NEEDS_REVIEW
+    assert row["resolution"] == "review: first authors differ"
+
+
+def test_two_preprints_need_a_matching_first_author():
+    candidate = {"side": "replication", "first_author_1": None, "first_author_2": "fox",
+                 "is_preprint_1": True, "is_preprint_2": True}
+    assert pdd.review_reason(candidate) == "two preprints without a matching first author"
+
+
+def test_two_preprints_by_the_same_author_still_resolve_automatically():
+    candidate = {"side": "replication", "first_author_1": "fox", "first_author_2": "fox",
+                 "is_preprint_1": True, "is_preprint_2": True}
+    assert pdd.review_reason(candidate) is None
+
+
+def test_doi_variants_are_never_held():
+    """One normalised DOI already proves they are the same paper."""
+    candidate = {"side": "original (DOI variant)", "first_author_1": "a",
+                 "first_author_2": "b", "is_preprint_1": False, "is_preprint_2": False}
+    assert pdd.review_reason(candidate) is None
+
+
+def test_a_confirmed_override_beats_review(tmp_path):
+    confirmed = tmp_path / "confirmed.csv"
+    confirmed.write_text("side,doi_1,doi_2,action\n"
+                         "replication,10.31234/osf.io/aaaaa,10.31234/osf.io/bbbbb,keep_1\n",
+                         encoding="utf-8")
+    frame = _reproductions(["Parsons", "Sonmez"],
+                           dois=("10.31234/osf.io/aaaaa", "10.31234/osf.io/bbbbb"))
+    out, _ = pdd.resolve(frame, confirmed_path=confirmed, candidates_out=None,
+                         verbose=False)
+    assert list(out["doi_r"]) == ["10.31234/osf.io/aaaaa"]
+
+
+def test_candidates_carry_what_a_reviewer_needs(tmp_path):
+    frame = _reproductions(["Parsons", "Sonmez"],
+                           dois=("10.31234/osf.io/aaaaa", "10.31234/osf.io/bbbbb"))
+    frame["display_id"] = ["REPRO-000001", "REPRO-000002"]
+    frame["type"] = "reproduction"
+    frame["outcome"] = ["computationally reproducible, robust",
+                        "computational issues, not checked"]
+    frame["url_r"] = [None, "https://osf.io/x"]
+    candidate = pdd.find_duplicates(frame, verbose=False).iloc[0]
+    assert candidate["source_display_id_2"] == "REPRO-000002"
+    assert candidate["outcome_1"] == "computationally reproducible, robust"
+    assert candidate["url_2"] == "https://osf.io/x"
+
+
+# ── rulings made on the website ───────────────────────────────────────────────
+
+def test_a_website_ruling_wins_over_the_file_for_the_same_pair(tmp_path):
+    confirmed = tmp_path / "confirmed.csv"
+    confirmed.write_text("side,doi_1,doi_2,action\nreplication,10.1/a,10.1/b,keep_1\n",
+                         encoding="utf-8")
+    rows = pdd.confirmed_decisions(confirmed, [
+        {"side": "replication", "doi_1": "10.1/B", "doi_2": "10.1/A", "action": "keep_both"}])
+    assert [r["action"] for r in rows] == ["keep_both"]
+
+
+def test_a_ruling_with_an_unknown_action_is_ignored(tmp_path):
+    rows = pdd.confirmed_decisions(tmp_path / "none.csv", [
+        {"side": "replication", "doi_1": "10.1/a", "doi_2": "10.1/b", "action": "maybe"}])
+    assert rows == []
+
+
+def test_a_website_keep_both_keeps_a_pair_the_rules_would_drop(tmp_path):
+    """Same author and a lone preprint: the default rule drops the preprint."""
+    frame = _reproductions(["Fox", "Fox"], dois=("10.31234/osf.io/x", "10.1016/j.x.2020"))
+    ruling = {"side": "replication", "doi_1": "10.31234/osf.io/x",
+              "doi_2": "10.1016/j.x.2020", "action": "keep_both"}
+    out, log = pdd.resolve(frame, confirmed_path=tmp_path / "none.csv",
+                           candidates_out=None, verbose=False, rulings=[ruling])
+    assert len(out) == 2
+    assert log.iloc[0]["applied_action"] == "keep_both"
+
+
+def test_a_website_keep_ruling_applies_before_enrichment(tmp_path):
+    frame = _reproductions(["Parsons", "Sonmez"],
+                           dois=("10.31234/osf.io/aaaaa", "10.31234/osf.io/bbbbb"))
+    ruling = {"side": "replication", "doi_1": "10.31234/osf.io/aaaaa",
+              "doi_2": "10.31234/osf.io/bbbbb", "action": "keep_2"}
+    out = pdd.apply_confirmed(frame, confirmed_path=tmp_path / "none.csv",
+                              verbose=False, rulings=[ruling])
+    assert list(out["doi_r"]) == ["10.31234/osf.io/bbbbb"]
+
+
+def test_only_undecided_pairs_are_unresolved():
+    log = [{"applied_action": a} for a in
+           ("needs_review", "auto_keep_1", "auto_keep_2", "keep_1", "keep_both", "skipped")]
+    assert [d["applied_action"] for d in pdd.unresolved(log)] == \
+        ["needs_review", "auto_keep_1", "auto_keep_2"]
+
+
+def test_the_candidates_log_is_headed_by_its_instructions(tmp_path):
+    path = tmp_path / "out" / "candidates.csv"
+    pdd.write_candidates([{"side": "replication", "doi_1": "10.1/a", "doi_2": "10.1/b",
+                           "applied_action": "needs_review"}], path)
+    rows = pd.read_csv(path, dtype=str, keep_default_na=False)
+    assert rows.iloc[0]["side"] == "INSTRUCTIONS -->"
+    assert "FLoRA tab" in rows.iloc[0]["resolution"]
+    assert rows.iloc[1]["applied_action"] == "needs_review"
+
+
+def test_a_pair_missing_a_doi_is_skipped_not_queued(tmp_path):
+    """Nobody can rule on it (a ruling names both DOIs), so queueing it would leave a
+    warning on every run that no one can clear."""
+    frame = _reproductions(["Parsons", "Sonmez"], dois=("10.31234/osf.io/aaaaa", None))
+    _, log = pdd.resolve(frame, confirmed_path=tmp_path / "none.csv",
+                         candidates_out=None, verbose=False)
+    row = log[log["side"] == "replication"].iloc[0]
+    assert row["applied_action"] == "skipped"
+    assert pdd.unresolved(log.to_dict("records")) == []
+
+
+def test_the_review_issue_can_be_filed_from_a_build_that_writes_no_log(tmp_path, monkeypatch):
+    """build() passes candidates_out=None; the issue text still names the log."""
+    bodies = []
+
+    def fake_gh(*args, **kwargs):
+        if args[1] == "list":
+            return "[]"
+        body_file = args[args.index("--body-file") + 1]
+        bodies.append(open(body_file, encoding="utf-8").read())
+        return "https://github.com/x/y/issues/1"
+
+    monkeypatch.setattr(pdd.shutil, "which", lambda _: "/usr/bin/gh")
+    monkeypatch.setattr(pdd, "_gh", fake_gh)
+    frame = _reproductions(["Parsons", "Sonmez"],
+                           dois=("10.31234/osf.io/aaaaa", "10.31234/osf.io/bbbbb"))
+    pdd.resolve(frame, confirmed_path=_stale_file(tmp_path), candidates_out=None,
+                verbose=False, open_review_issue=True)
+    assert bodies and pdd.CANDIDATES_PATH.name in bodies[0]
+
+
+def test_a_repository_doi_still_loses_to_a_publisher_doi(tmp_path):
+    frame = _reproductions(["Fox", "Fox"], dois=("10.17605/osf.io/x", "10.1016/j.x.2020"))
+    out, _ = pdd.resolve(frame, confirmed_path=tmp_path / "none.csv",
+                         candidates_out=None, verbose=False)
+    assert list(out["doi_r"]) == ["10.1016/j.x.2020"]
+
+
 # ── the confirmed file ────────────────────────────────────────────────────────
 
 def test_the_confirmed_file_loads_past_its_bom():
@@ -229,7 +406,8 @@ def test_cos_wins_as_the_source():
 
 
 def test_disagreeing_mixable_outcomes_become_mixed():
-    frame = _pair_frame(outcome=["successful", "failed"])
+    # No website record here: with one, its outcome would win instead.
+    frame = _pair_frame(outcome=["successful", "failed"], source=["replications", "COS"])
     out, conflicts = pdd.merge_doi_pair_dups(frame, verbose=False)
     assert out["outcome"].iloc[0] == "mixed"
     assert len(conflicts) == 1
@@ -238,7 +416,8 @@ def test_disagreeing_mixable_outcomes_become_mixed():
 def test_an_unmixable_clash_is_retained_for_validation():
     """Kept as "A || B" so validate_flora reports it — merging it into something
     valid would hide a source-data mistake."""
-    frame = _pair_frame(outcome=["successful", "computationally reproducible"])
+    frame = _pair_frame(outcome=["successful", "computationally reproducible"],
+                        source=["replications", "COS"])
     out, _ = pdd.merge_doi_pair_dups(frame, verbose=False)
     assert pdd.OUTCOME_CLASH_SEP in out["outcome"].iloc[0]
 
@@ -248,6 +427,164 @@ def test_absorbed_record_ids_survive_the_merge():
     promotes one of the absorbed rows."""
     out, _ = pdd.merge_doi_pair_dups(_pair_frame(), verbose=False)
     assert "r2" in out["merged_record_ids"].iloc[0]
+
+
+def test_a_replication_and_a_reproduction_of_one_pair_stay_two_records():
+    """The absorb bug: merged, the reproduction was published as a replication
+    with 'failed || computational issues, robustness challenges' as its outcome."""
+    frame = _pair_frame(type=["replication", "reproduction"],
+                        outcome=["failed", "computational issues, robustness challenges"])
+    out, conflicts = pdd.merge_doi_pair_dups(frame, verbose=False)
+    assert sorted(out["type"]) == ["replication", "reproduction"]
+    assert set(out["outcome"]) == {"failed", "computational issues, robustness challenges"}
+    assert conflicts.empty
+
+
+def test_two_rows_of_one_type_still_merge():
+    frame = _pair_frame(type=["reproduction", "reproduction"])
+    out, _ = pdd.merge_doi_pair_dups(frame, verbose=False)
+    assert len(out) == 1 and out["type"].iloc[0] == "reproduction"
+
+
+def test_a_conflict_names_the_type_it_happened_in():
+    frame = _pair_frame(type=["replication", "replication"], outcome=["successful", "failed"])
+    _, conflicts = pdd.merge_doi_pair_dups(frame, verbose=False)
+    assert conflicts["type"].tolist() == ["replication"]
+
+
+def _typed_rows(rows):
+    """(doi_r, type) rows under one original, all with one templated title."""
+    return pd.DataFrame({
+        "doi_o": ["10.1/original"] * len(rows),
+        "doi_r": [doi for doi, _ in rows],
+        "type": [kind for _, kind in rows],
+        "title_r": ["A replication and reproduction of X"] * len(rows),
+        "author_r": ["Fox"] * len(rows),
+        "year_r": ["2021"] * len(rows),
+        "title_o": ["X"] * len(rows),
+        "author_o": ["Orig"] * len(rows),
+    })
+
+
+def test_a_preprint_drop_spares_a_record_type_the_publication_lacks(tmp_path):
+    """The preprint has a replication and a reproduction row; the publication only
+    a replication row. Dropping the preprint must not take the reproduction."""
+    frame = _typed_rows([("10.31234/osf.io/pre", "replication"),
+                         ("10.31234/osf.io/pre", "reproduction"),
+                         ("10.1016/j.pub", "replication")])
+    out, log = pdd.resolve(frame, confirmed_path=tmp_path / "none.csv",
+                           candidates_out=None, verbose=False)
+    assert log.iloc[0]["applied_action"] == "auto_keep_2"
+    kept = set(zip(out["doi_r"], out["type"]))
+    assert kept == {("10.1016/j.pub", "replication"), ("10.31234/osf.io/pre", "reproduction")}
+
+
+def test_rows_of_different_types_are_not_preprint_candidates():
+    frame = _typed_rows([("10.31234/osf.io/pre", "reproduction"),
+                         ("10.1016/j.pub", "replication")])
+    assert pdd.find_duplicates(frame, verbose=False).empty
+
+
+def _website_and_sheet(**over):
+    """FLORA-001697: the entry sheet and the website disagree on robustness."""
+    base = {
+        "doi_o": ["10.3982/ecta6248"] * 2, "doi_r": ["10.1002/jae.2861"] * 2,
+        "url_r": [None, None], "type": ["reproduction"] * 2,
+        "source": ["reproductions", "validated"],
+        "record_id": ["sheet", "website"], "merged_record_ids": [[], []],
+        "outcome": ["computationally reproducible, robust",
+                    "computationally reproducible, not checked"],
+        "outcome_computation": ["computationally reproducible"] * 2,
+        "outcome_robustness": ["robust", "not checked"],
+        "outcome_quote": ["sheet quote", None],
+    }
+    base.update(over)
+    return pd.DataFrame(base)
+
+
+def test_the_website_record_wins_a_merge():
+    out, conflicts = pdd.merge_doi_pair_dups(_website_and_sheet(), verbose=False)
+    row = out.iloc[0]
+    assert row["outcome"] == "computationally reproducible, not checked"
+    assert row["outcome_robustness"] == "not checked"
+    assert row["source"] == "validated"
+    # Values only: the row stays the one it was (and keeps its published id), with
+    # the website record traceable in its provenance.
+    assert row["record_id"] == "sheet" and row["merged_record_ids"] == ["website"]
+    # Still logged, so the sheet can be corrected, but settled.
+    assert conflicts.iloc[0]["resolved_by"] == "website record"
+    assert pdd.OUTCOME_CLASH_SEP not in row["outcome"]
+
+
+def test_a_field_the_website_left_blank_falls_back_to_what_we_have():
+    out, _ = pdd.merge_doi_pair_dups(_website_and_sheet(), verbose=False)
+    assert out.iloc[0]["outcome_quote"] == "sheet quote"
+
+
+def test_without_a_website_record_the_merge_rules_are_unchanged():
+    frame = _website_and_sheet(source=["reproductions", "reproductions"])
+    out, conflicts = pdd.merge_doi_pair_dups(frame, verbose=False)
+    assert pdd.OUTCOME_CLASH_SEP in out.iloc[0]["outcome"]
+    assert conflicts.iloc[0]["resolved_by"] == "merge rules"
+
+
+def test_rows_a_reviewer_ruled_distinct_are_never_merged():
+    """'Keep — distinct' in Source Records means its own record; the merge used to
+    fold such rows together anyway, one step after the dedup exempted them."""
+    frame = _pair_frame(outcome=["successful", "failed"], source=["replications", "COS"],
+                        duplicate_status=["distinct", "distinct"])
+    out, conflicts = pdd.merge_doi_pair_dups(frame, verbose=False)
+    assert sorted(out["outcome"]) == ["failed", "successful"]
+    assert conflicts.empty
+
+
+def test_an_unruled_row_still_merges_beside_a_distinct_one():
+    frame = pd.concat([_pair_frame(duplicate_status=[None, None]),
+                       _pair_frame(duplicate_status=["distinct", "distinct"])
+                       .assign(record_id=["r3", "r4"])], ignore_index=True)
+    out, _ = pdd.merge_doi_pair_dups(frame, verbose=False)
+    assert len(out) == 3          # r1+r2 merged; r3 and r4 kept as ruled
+
+
+def test_the_first_website_row_with_a_judgement_speaks_for_the_website():
+    frame = _website_and_sheet(
+        source=["validated", "validated"], record_id=["blank-web", "web"],
+        outcome=[None, "computationally reproducible, not checked"],
+        outcome_computation=[None, "computationally reproducible"],
+        outcome_robustness=[None, "not checked"])
+    frame = pd.concat([frame, _website_and_sheet().iloc[[0]]], ignore_index=True)
+    out, _ = pdd.merge_doi_pair_dups(frame, verbose=False)
+    assert out.iloc[0]["outcome"] == "computationally reproducible, not checked"
+
+
+def test_a_website_row_without_a_judgement_does_not_override_the_evidence():
+    frame = _website_and_sheet(
+        source=["replications", "validated"], type=["replication"] * 2,
+        outcome=["successful", None], outcome_computation=[None, None],
+        outcome_robustness=[None, None], outcome_quote=["sheet quote", "web quote"])
+    out, _ = pdd.merge_doi_pair_dups(frame, verbose=False)
+    assert out.iloc[0]["outcome"] == "successful"
+    # No judgement of its own, so its quote is merged like any other.
+    assert out.iloc[0]["outcome_quote"] == "sheet quote || web quote"
+
+
+def test_an_osf_and_a_preprint_doi_without_matching_authors_are_held():
+    """A generic OSF DOI loses like a preprint when resolving, so it must count as
+    one for the review rule too, or the pair falls to the arbitrary tie-break."""
+    candidate = {"side": "replication", "doi_1": "10.17605/osf.io/aaaa1",
+                 "doi_2": "10.31234/osf.io/bbbb2", "first_author_1": None,
+                 "first_author_2": "parsons", "is_preprint_1": False, "is_preprint_2": True}
+    assert pdd.review_reason(candidate) == "two preprints without a matching first author"
+
+
+def test_a_recent_ruling_in_the_tab_counts_as_review_activity(tmp_path, monkeypatch):
+    """Rulings made on the website never touch the confirmed file, which would
+    otherwise look abandoned and file an issue every night."""
+    monkeypatch.setattr(pdd.shutil, "which", lambda _: "/usr/bin/gh")
+    monkeypatch.setattr(pdd, "_gh", lambda *a, **k: pytest.fail("no issue expected"))
+    assert pdd.maybe_open_review_issue(
+        _auto(), confirmed_path=_stale_file(tmp_path), verbose=False,
+        last_ruling_at=datetime.now(timezone.utc)) == "skipped"
 
 
 def test_rows_without_a_pair_are_untouched():
@@ -262,6 +599,16 @@ def _auto(n=3):
     return [{"resolution": "auto: drop doi_2", "applied_action": "auto_keep_1",
              "doi_1": f"10.1/a{i}", "doi_2": f"10.2/b{i}",
              "side": "replication", "title_sim": 0.95} for i in range(n)]
+
+
+def test_held_pairs_also_count_toward_the_review_issue(tmp_path, monkeypatch):
+    monkeypatch.setattr(pdd.shutil, "which", lambda _: "/usr/bin/gh")
+    monkeypatch.setattr(pdd, "_gh", lambda *a, **k: "[]" if a[1] == "list" else "url")
+    held = [{"resolution": "review: first authors differ",
+             "applied_action": pdd.NEEDS_REVIEW, "doi_1": "10.1/a", "doi_2": "10.2/b",
+             "side": "replication", "title_sim": 1.0}]
+    assert pdd.maybe_open_review_issue(held, confirmed_path=_stale_file(tmp_path),
+                                       verbose=False) == "filed"
 
 
 def test_no_auto_resolutions_means_no_issue():

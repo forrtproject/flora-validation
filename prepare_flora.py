@@ -22,6 +22,7 @@ import pandas as pd
 import psycopg2
 import psycopg2.extras
 
+import preprint_dedup
 import release_helpers
 import validate_flora
 import validate_flora_network
@@ -33,6 +34,17 @@ REPORT_MARKDOWN = "flora_preparation_report.md"
 TRANSFORM_DIAGNOSTICS = {
     "flora_export_log.csv": "rows omitted because a title is missing",
     "dup_outcome_conflicts.csv": "merged groups with conflicting outcomes",
+    "preprint_dedup_candidates.csv":
+        "preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates)",
+    "cross_type_duplicate_rulings.csv":
+        "rows ruled a duplicate of a record of the other type and left out "
+        "(check in Source Records, Duplicates)",
+}
+# A diagnostic file can log more than needs attention. The candidates log records
+# every detected pair, including ones a human already ruled on, so only the
+# unresolved ones count.
+DIAGNOSTIC_FILTERS = {
+    "preprint_dedup_candidates.csv": preprint_dedup.unresolved,
 }
 
 
@@ -240,6 +252,8 @@ def _prepare(output_dir, input_path, network_checks, network_limit,
                 path = output_dir / name
                 if path.exists() and path.stat().st_mtime_ns != previous_diagnostics[name]:
                     records = pd.read_csv(path, dtype=str, keep_default_na=False).to_dict("records")
+                    if name in DIAGNOSTIC_FILTERS:
+                        records = DIAGNOSTIC_FILTERS[name](records)
                     report["diagnostics"][name] = {
                         "description": description, "rows": len(records), "records": records}
                     if records:

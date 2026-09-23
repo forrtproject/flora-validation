@@ -116,6 +116,31 @@ def test_current_transform_diagnostics_are_embedded_in_report(tmp_path, monkeypa
     assert any("title is missing" in warning for warning in report["warnings"])
 
 
+def test_only_undecided_preprint_pairs_are_reported(tmp_path, monkeypatch):
+    """The candidates log records every detected pair; a pair an admin already
+    ruled on needs no one's attention, so it must not raise a warning."""
+    import preprint_dedup
+    import transform_sources
+
+    def pair(n, action):
+        return {"side": "replication", "doi_1": f"10.1/a{n}", "doi_2": f"10.1/b{n}",
+                "applied_action": action, "resolution": action}
+
+    def build(output, **kwargs):
+        write_input(output)
+        preprint_dedup.write_candidates(
+            [pair(1, "needs_review"), pair(2, "auto_keep_1"), pair(3, "keep_both")],
+            output.parent / "preprint_dedup_candidates.csv")
+
+    monkeypatch.setattr(transform_sources, "run", build)
+    report = preparation.prepare(tmp_path / "release", network_checks="none", store_data=False)
+    diagnostic = report["diagnostics"]["preprint_dedup_candidates.csv"]
+    assert diagnostic["rows"] == 2
+    assert {r["applied_action"] for r in diagnostic["records"]} == {"needs_review", "auto_keep_1"}
+    assert any(w.startswith("2 preprint duplicate pairs awaiting a decision")
+               for w in report["warnings"])
+
+
 def test_unchanged_old_transform_log_is_not_reported_as_current(tmp_path, monkeypatch):
     import transform_sources
     output_dir = tmp_path / "release"

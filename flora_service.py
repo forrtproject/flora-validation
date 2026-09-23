@@ -25,6 +25,7 @@ import numpy as np
 import pandas as pd
 
 import flora_registry
+import preprint_dedup
 import transform_sources
 import final_export
 
@@ -51,7 +52,7 @@ SORT_COLUMNS = {
     "outcome": "outcome",
 }
 
-_cache = {"signature": None, "frame": None}
+_cache = {"signature": None, "frame": None, "dedup_log": None}
 _lock = threading.Lock()
 
 
@@ -77,31 +78,49 @@ def _signature(cur) -> tuple:
                (SELECT md5(string_agg(row_to_json(e)::text, '' ORDER BY row_to_json(e)::text))
                   FROM transform_exclusions e) AS exclusions_signature,
                (SELECT md5(string_agg(row_to_json(a)::text, '' ORDER BY row_to_json(a)::text))
-                  FROM outcome_alias a) AS aliases_signature
+                  FROM outcome_alias a) AS aliases_signature,
+               -- DOI order too: keep_1 names doi_1, so a re-ruling that stores the
+               -- pair the other way round changes the outcome with the same action.
+               (SELECT md5(string_agg(concat_ws('|', pair_key, side, doi_1, doi_2, action),
+                                      '' ORDER BY pair_key))
+                  FROM preprint_dedup_decisions) AS dedup_decisions_signature
         """
     )
     row = cur.fetchone()
     return (row["n_source"], str(row["max_updated"]), row["n_ruled"],
             row["n_flora"], row["n_excluded"],
             *(str(row.get(field)) for field in ("registry_updated", "n_metadata",
-              "metadata_updated", "references_updated", "exclusions_signature", "aliases_signature")))
+              "metadata_updated", "references_updated", "exclusions_signature", "aliases_signature",
+              "dedup_decisions_signature")))
 
 
-def dataset(cur) -> pd.DataFrame:
-    """The prepared FLoRA dataset with flora_id attached. Read-only."""
+def _current(cur) -> "tuple[pd.DataFrame, list]":
+    """The cached build: the frame, and the preprint dedup log that came with it."""
     signature = _signature(cur)
     with _lock:
         if _cache["signature"] == signature and _cache["frame"] is not None:
-            return _cache["frame"]
+            return _cache["frame"], _cache["dedup_log"]
 
     frame = transform_sources.build(cur, verbose=False)
+    # Taken before the joins below: attrs are metadata, and the review queue must
+    # not depend on whether a later frame operation carries them along.
+    dedup_log = list(frame.attrs.get("preprint_dedup_log") or [])
     frame = flora_registry.attach_ids(cur, frame)
     frame = _attach_merged_ids(cur, frame)
+    # Pinned on the cached frame too, so a caller holding the frame reads the log of
+    # that same build — not whatever a concurrent build left in the cache since.
+    frame.attrs["preprint_dedup_log"] = dedup_log
 
     with _lock:
         _cache["signature"] = signature
         _cache["frame"] = frame
-    return frame
+        _cache["dedup_log"] = dedup_log
+    return frame, dedup_log
+
+
+def dataset(cur) -> pd.DataFrame:
+    """The prepared FLoRA dataset with flora_id attached. Read-only."""
+    return _current(cur)[0]
 
 
 def _attach_merged_ids(cur, frame):
@@ -136,6 +155,7 @@ def invalidate() -> None:
     with _lock:
         _cache["signature"] = None
         _cache["frame"] = None
+        _cache["dedup_log"] = None
 
 
 def _cell(value):
@@ -229,7 +249,11 @@ def list_records(cur, filters: dict, sort: str = "", direction: str = "asc",
         "total": int(len(filtered)),
         "page": page,
         "per_page": per_page,
-        "counts": counts(frame),
+        "counts": {**counts(frame),
+                   # Drives the badge on the tab's review button, so nobody has to
+                   # open the queue to learn whether it is empty.
+                   "preprint_pending": len(preprint_dedup.unresolved(
+                       frame.attrs.get("preprint_dedup_log") or []))},
     }
 
 
@@ -436,3 +460,114 @@ def stats(cur) -> dict:
         "registry_retired": registry["retired"],
         "last_refresh": registry["last_refresh"],
     }
+
+
+# ---------------------------------------------------------------------------
+# Preprint duplicates: the review queue in the FLoRA tab.
+#
+# The build detects pairs that may be one paper under two DOIs, typically a
+# preprint and its publication. The pairs it could not settle (held with both rows
+# kept, or dropped by the default guess) wait here for an admin. A ruling goes into
+# preprint_dedup_decisions, which the transform reads on every build: this tab
+# reflects it at once, the published CSV at the next pipeline run.
+# ---------------------------------------------------------------------------
+
+class PairNotFound(LookupError):
+    """The pair is not detected by the current build, so there is nothing to rule on."""
+
+
+_REVIEW_FIELDS = ("side", "doi_o_group", "title_sim", "resolution", "applied_action",
+                  "doi_remove", "doi_keep")
+_PAPER_FIELDS = ("doi", "title", "first_author", "year", "is_preprint",
+                 "source_display_id", "type", "outcome", "url")
+
+
+def _lower(value) -> str:
+    return "" if _cell(value) is None else str(value).strip().lower()
+
+
+def _review_item(decision: dict) -> dict:
+    """One candidate as a review card needs it: the verdict on the pair, and each
+    side as a paper someone can recognise."""
+    item = {field: _cell(decision.get(field)) for field in _REVIEW_FIELDS}
+    item["pair_key"] = preprint_dedup.pair_key(decision.get("doi_1"), decision.get("doi_2"))
+    item["papers"] = []
+    for n in (1, 2):
+        paper = {field: _cell(decision.get(f"{field}_{n}")) for field in _PAPER_FIELDS}
+        paper["is_repository"] = preprint_dedup.is_repository_doi(paper["doi"])
+        paper["position"] = n
+        item["papers"].append(paper)
+    return item
+
+
+def preprint_review(cur) -> dict:
+    """Pairs awaiting a ruling, and the rulings already made, newest first."""
+    _, dedup_log = _current(cur)
+    pending = [_review_item(d) for d in preprint_dedup.unresolved(dedup_log)]
+    cur.execute(
+        """
+        SELECT pair_key, side, doi_1, doi_2, action, doi_o_group, title_1, title_2,
+               note, decided_by, decided_at
+        FROM preprint_dedup_decisions
+        ORDER BY decided_at DESC
+        """
+    )
+    decided = [{key: _cell(value) for key, value in dict(row).items()}
+               for row in cur.fetchall()]
+    return {"pending": pending, "decided": decided, "total_pending": len(pending)}
+
+
+def decide_preprint_pair(cur, doi_1: str, doi_2: str, action: str,
+                         admin_handle: str, note: str = "") -> dict:
+    """Record an admin's ruling on a pair the current build detected.
+
+    Only a detected pair can be ruled on: it is what the admin was shown. The
+    ruling is stored in the candidate's own DOI order, so keep_1 / keep_2 name the
+    same paper here as in the candidates log, whichever order the client sent.
+    """
+    if action not in preprint_dedup.VALID_ACTIONS:
+        raise ValueError("action must be keep_1, keep_2 or keep_both")
+    key = preprint_dedup.pair_key(doi_1, doi_2)
+    _, dedup_log = _current(cur)
+    candidate = next((d for d in dedup_log
+                      if preprint_dedup.pair_key(d.get("doi_1"), d.get("doi_2")) == key), None)
+    if candidate is None:
+        raise PairNotFound(key)
+    if not _lower(candidate.get("doi_1")) or not _lower(candidate.get("doi_2")):
+        raise ValueError("This pair has a missing DOI and cannot be ruled on here")
+    if action != "keep_both" and _lower(doi_1) != _lower(candidate["doi_1"]):
+        action = "keep_2" if action == "keep_1" else "keep_1"
+
+    cur.execute(
+        """
+        INSERT INTO preprint_dedup_decisions
+            (pair_key, side, doi_1, doi_2, action, doi_o_group, title_1, title_2,
+             note, decided_by)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (pair_key) DO UPDATE
+           SET side = EXCLUDED.side, doi_1 = EXCLUDED.doi_1, doi_2 = EXCLUDED.doi_2,
+               action = EXCLUDED.action, doi_o_group = EXCLUDED.doi_o_group,
+               title_1 = EXCLUDED.title_1, title_2 = EXCLUDED.title_2,
+               note = EXCLUDED.note, decided_by = EXCLUDED.decided_by,
+               decided_at = NOW()
+        """,
+        (key, _cell(candidate.get("side")), candidate["doi_1"], candidate["doi_2"],
+         action, _cell(candidate.get("doi_o_group")), _cell(candidate.get("title_1")),
+         _cell(candidate.get("title_2")), (note or "").strip() or None, admin_handle),
+    )
+    return {"pair_key": key, "action": action, "decided_by": admin_handle,
+            "doi_1": candidate["doi_1"], "doi_2": candidate["doi_2"]}
+
+
+def undo_preprint_decision(cur, pair_key: str) -> dict:
+    """Withdraw a ruling and return what it was, for the audit trail. The pair
+    returns to the default rules on the next build, or to the confirmed file's
+    ruling if the file has one for it."""
+    cur.execute(
+        "DELETE FROM preprint_dedup_decisions WHERE pair_key = %s "
+        "RETURNING action, doi_1, doi_2, note, decided_by",
+        (pair_key,))
+    withdrawn = cur.fetchone()
+    if withdrawn is None:
+        raise PairNotFound(pair_key)
+    return dict(withdrawn)
