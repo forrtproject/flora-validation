@@ -8048,22 +8048,19 @@ function renderFloraRecords(data) {
   set("#ffc-repro", counts.reproductions);
   fillFloraSelects(counts);
 
-  // Rows the id registry has not reached. Not an error — it means a sync landed
-  // rows and no refresh has run since — but it is worth saying out loud, because
-  // an export taken now would carry blank ids for those rows.
+  // Rows the id registry has not reached must be assigned before export.
   const warn = $("#flora-unregistered");
   if (warn) {
     const notes = [];
     if (counts.unregistered) {
       notes.push("<b>" + counts.unregistered + " row(s) have no FLoRA id yet.</b> " +
-        "Run the entry-sheet sync (Source Records tab) to assign them.");
+        "Run the pipeline (Source Records tab) to assign them before exporting.");
     }
     // Shown, not hidden: these rows are in the grid but will not reach the
     // published export, and this is the screen someone fixes them on.
     if (counts.untitled) {
       notes.push("<b>" + counts.untitled + " row(s) have no title on one side</b> " +
-        "and are left out of the published export. Listed in " +
-        "<code>output/flora_export_log.csv</code>.");
+        "and are left out of the final export. The pipeline report records excluded rows.");
     }
     if (notes.length) {
       warn.innerHTML = notes.join("<br>");
@@ -8085,7 +8082,9 @@ function renderFloraRecords(data) {
     empty.classList.add("hidden");
     body.innerHTML = rows.map(r =>
       "<tr>" +
-        '<td><code class="flora-id">' + escapeHtml(r.flora_id || "unassigned") + "</code></td>" +
+        '<td><code class="flora-id">' + escapeHtml(r.flora_id || "unassigned") + "</code>" +
+          (r.export_id && r.export_id !== r.flora_id
+            ? '<br><small title="Permanent ID in the CSV">CSV: ' + escapeHtml(r.export_id) + '</small>' : '') + "</td>" +
         // The id IS the source record's display_id for almost every row, so repeating
         // it would be a column of duplicates. Only the sheet it came from is shown —
         // plus, when the two have diverged, which record the row now derives from.
@@ -8200,33 +8199,42 @@ $("#admin-tab-flora")?.addEventListener("click", (e) => {
 
 $("#flora-refresh-btn")?.addEventListener("click", () => { _floraPage = 1; fetchFloraRecords(); });
 
-$("#flora-export-btn")?.addEventListener("click", async () => {
-  const btn = $("#flora-export-btn");
-  btn.disabled = true;
-  const original = btn.textContent;
-  btn.textContent = "Preparing…";
+async function downloadAdminArtifact(path, filename, button) {
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "Preparing…";
   try {
-    // Fetched rather than linked: the endpoint needs the admin session, and the
-    // filter has to travel with it so the file matches what is on screen.
-    const res = await fetch("/api/admin/flora/export.csv?" + floraQueryString({ page: 1 }),
-                            { credentials: "same-origin" });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "flora_" + new Date().toISOString().slice(0, 10) + ".csv";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    showToast("Export downloaded.");
-  } catch (e) {
-    showToast("Could not export: " + e.message);
+    const res = await fetch("/api/admin" + path, { credentials: "same-origin" });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      const detail = error.detail;
+      throw new Error(typeof detail === "string" ? detail : detail?.message || "HTTP " + res.status);
+    }
+    const url = URL.createObjectURL(await res.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // Give the browser time to begin reading the object URL before releasing it.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast("Download ready.");
+  } catch (error) {
+    showToast("Could not download: " + error.message);
   } finally {
-    btn.disabled = false;
-    btn.textContent = original;
+    button.disabled = false;
+    button.textContent = original;
   }
+}
+
+$("#flora-export-btn")?.addEventListener("click", (event) => {
+  downloadAdminArtifact("/flora/export.csv?" + floraQueryString({ page: 1 }),
+    "flora_filtered_" + new Date().toISOString().slice(0, 10) + ".csv", event.currentTarget);
+});
+
+$("#flora-export-all-btn")?.addEventListener("click", (event) => {
+  downloadAdminArtifact("/flora/export.csv", "flora.csv", event.currentTarget);
 });
 
 $("#flora-table-body")?.addEventListener("click", async (e) => {
@@ -8271,11 +8279,42 @@ function showFloraDetail(rec) {
   document.body.style.overflow = "hidden";
 }
 
-/* ---------- Manual entry-sheet sync (queued job, run on the server) ---------- */
+/* ---------- Complete FLoRA pipeline (queued job, run on the server) ---------- */
 
 let _srcSyncPollTimer = null;
 let _srcSyncWatching  = false;
 let _srcSyncOpenJob   = null;   // job whose full log the user expanded
+let _srcSyncWatchedJob = null;
+const _srcSyncFullLogs = new Map();
+
+function srcSyncArtifacts(job) {
+  const jobId = escapeHtml(job.job_id);
+  const button = (artifact, label) => '<button class="ghost-btn src-sync-artifact-btn" type="button" ' +
+    'data-job-id="' + jobId + '" data-artifact="' + artifact + '">' + label + '</button>';
+  const downloads = [];
+  if (job.has_csv) downloads.push(button("flora.csv", "Download final CSV"));
+  if (job.has_recovery_csv) downloads.push(button("recovery.csv", "Download recovery CSV"));
+  if (job.has_report) {
+    downloads.push(button("report.md", "Download full report"));
+    downloads.push(button("report.json", "Report JSON"));
+  }
+  let message = "";
+  if (job.has_csv) message = job.report_status === "needs_attention"
+    ? "CSV generated. Validation found issues to review in the report."
+    : "Final CSV retained for this run.";
+  else if (job.has_recovery_csv) message = "Publication failed after the database was updated. The committed CSV is available for recovery.";
+  else if (job.status === "failed") message = "This run failed. Review its report or log before retrying.";
+  else if (job.status === "success") message = "This older run has no retained CSV. Run the complete pipeline to create one.";
+  if (!downloads.length && !message) return "";
+  const counts = [];
+  if (job.report_rows != null) counts.push(Number(job.report_rows).toLocaleString() + " rows");
+  if (job.warning_count) counts.push(Number(job.warning_count).toLocaleString() + (Number(job.warning_count) === 1 ? " warning" : " warnings"));
+  if (job.failure_count) counts.push(Number(job.failure_count).toLocaleString() + (Number(job.failure_count) === 1 ? " error" : " errors"));
+  return '<div class="src-sync-artifacts">' +
+    (message ? '<p class="src-sync-artifact-note">' + message + '</p>' : "") +
+    (counts.length ? '<p class="src-sync-artifact-counts">' + counts.join(" · ") + '</p>' : "") +
+    downloads.join("") + '</div>';
+}
 
 /** Per-source outcome of the last sync, read from source_sync_runs. This is the
  *  half that says what actually landed in the table — the job log says what the
@@ -8322,11 +8361,12 @@ function renderSourceSync(data) {
 
   if (active) {
     const job = jobs.find(j => j.status === "running") || jobs.find(j => j.status === "queued");
+    _srcSyncWatchedJob = data.active_job_id || (job && job.job_id) || _srcSyncWatchedJob;
     live.className = "pipeline-live-status";
     live.innerHTML = '<span class="pipeline-live-dot"></span><b>' +
       escapeHtml(job && job.status === "queued" ? "Queued" : "Running") + "</b> — " +
-      escapeHtml(job ? (job.requested_by || job.trigger) : "sync") +
-      ". The log below updates as it goes.";
+      escapeHtml(job ? (job.requested_by || job.trigger) : "pipeline") +
+      ". The log updates after each stage; downloads appear when the run finishes.";
   } else {
     live.classList.add("hidden");
   }
@@ -8337,33 +8377,36 @@ function renderSourceSync(data) {
     const started = job.created_at ? new Date(job.created_at).toLocaleString() : "—";
     const dur = srcSyncDuration(job);
     const truncated = job.log_length > (job.log_tail || "").length;
-    const isOpen = _srcSyncOpenJob === job.job_id;
+    const cachedLog = _srcSyncFullLogs.get(job.job_id);
+    const isOpen = _srcSyncOpenJob === job.job_id && cachedLog && cachedLog.length >= job.log_length;
+    const status = job.status === "success" && job.report_status === "needs_attention" ? "needs_attention" : job.status;
     return '<article class="src-sync-run">' +
       '<div class="src-sync-run-top">' +
-        '<span class="src-sync-badge src-sync-badge-' + escapeHtml(job.status) + '">' +
-          escapeHtml(job.status) + "</span>" +
+        '<span class="src-sync-badge src-sync-badge-' + escapeHtml(status) + '">' +
+          escapeHtml(status === "needs_attention" ? "needs review" : status) + "</span>" +
         "<time>" + escapeHtml(started) + "</time>" +
         (dur ? '<span class="src-sync-when">' + escapeHtml(dur) + "</span>" : "") +
         '<span class="src-sync-trigger">' +
           escapeHtml(job.trigger === "admin" ? "manual" : job.trigger) +
           (job.requested_by ? " · " + escapeHtml(job.requested_by) : "") + "</span>" +
       "</div>" +
+      srcSyncArtifacts(job) +
       '<pre class="src-sync-logbox" data-job-id="' + escapeHtml(job.job_id) + '">' +
-        escapeHtml(job.log_tail || "Waiting for output…") +
+        escapeHtml((isOpen && cachedLog) || job.log_tail || "Waiting for output…") +
       "</pre>" +
       (truncated && !isOpen
         ? '<button class="ghost-btn src-sync-full-log-btn" type="button" data-job-id="' +
           escapeHtml(job.job_id) + '">Load complete log</button>'
         : "") +
     "</article>";
-  }).join("") : '<p class="src-sync-empty">No manual runs yet. The nightly job at 03:00 UTC does not appear here — see the per-sheet results above.</p>';
+  }).join("") : '<p class="src-sync-empty">Run the pipeline to create a final CSV and a report. Results from external scheduled imports appear in the per-sheet history.</p>';
 
   log.innerHTML =
     (perSource
       ? '<div class="src-sync-section"><h4>Last result per sheet</h4>' +
         '<ul class="src-sync-srclist">' + perSource + "</ul></div>"
       : "") +
-    '<div class="src-sync-section"><h4>Manual runs</h4>' + jobCards + "</div>";
+    '<div class="src-sync-section"><h4>Pipeline runs</h4>' + jobCards + "</div>";
 
   // Keep the newest log scrolled to the end while a run is live, so new output is
   // visible without the reader chasing it.
@@ -8392,32 +8435,38 @@ async function fetchSourceSync() {
         _srcSyncWatching = false;
         fetchSourceFreshness();
         fetchSourceRecords();
-        showToast("Entry-sheet sync finished.");
+        const finished = (data.jobs || []).find(job => job.job_id === _srcSyncWatchedJob);
+        showToast(finished?.status === "failed"
+          ? "Pipeline failed. Review the report and log."
+          : finished?.report_status === "needs_attention" ? "CSV ready. Validation found issues; review the report."
+          : finished?.has_csv ? "Pipeline complete. Final CSV and report are ready."
+          : "Pipeline finished. Check its report and log for output details.");
+        _srcSyncWatchedJob = null;
       }
     }
   } catch (e) {
-    log.innerHTML = '<p class="faq-error">Could not load sync status (' +
-                    escapeHtml(e.message) + ").</p>";
+    log.innerHTML = '<p class="faq-error">Could not load pipeline status (' +
+                    escapeHtml(e.message) + "). Use Refresh to try again.</p>";
+    if (_srcSyncWatching) {
+      clearTimeout(_srcSyncPollTimer);
+      _srcSyncPollTimer = setTimeout(fetchSourceSync, 5000);
+    }
   }
 }
 
 async function startSourceSync() {
   const btn = $("#src-sync-run-btn");
-  const message = "Start the entry-sheet sync now?\n\n" +
-    "It re-reads every enabled sheet and imports newly accepted rows, then refreshes " +
-    "our own validated records. Sheet imports are insert-only, so nothing already in " +
-    "the table is changed or removed.";
-  if (!window.confirm(message)) return;
   if (btn) btn.disabled = true;
   try {
-    await adminApi("/source-sync/dispatch", "POST", {});
-    showToast("Sync queued.");
+    const job = await adminApi("/source-sync/dispatch", "POST", {});
+    _srcSyncWatchedJob = job.job_id;
+    showToast("Pipeline queued.");
     _srcSyncWatching = true;
     clearTimeout(_srcSyncPollTimer);
     _srcSyncPollTimer = setTimeout(fetchSourceSync, 800);
   } catch (e) {
     if (btn) btn.disabled = false;
-    showToast("Could not start sync: " + e.message);
+    showToast("Could not start pipeline: " + e.message);
     fetchSourceSync();
   }
 }
@@ -8426,6 +8475,16 @@ $("#src-sync-run-btn")?.addEventListener("click", startSourceSync);
 $("#src-sync-refresh-btn")?.addEventListener("click", fetchSourceSync);
 
 $("#src-sync-log")?.addEventListener("click", async (e) => {
+  const artifactButton = e.target.closest(".src-sync-artifact-btn");
+  if (artifactButton) {
+    const artifact = artifactButton.dataset.artifact;
+    const jobId = artifactButton.dataset.jobId;
+    await downloadAdminArtifact("/source-sync/jobs/" + encodeURIComponent(jobId) +
+      "/artifacts/" + encodeURIComponent(artifact),
+      artifact === "flora.csv" ? "flora.csv" : "flora_" + jobId.slice(0, 8) + "_" + artifact,
+      artifactButton);
+    return;
+  }
   const button = e.target.closest(".src-sync-full-log-btn");
   if (!button) return;
   button.disabled = true;
@@ -8435,6 +8494,7 @@ $("#src-sync-log")?.addEventListener("click", async (e) => {
     const box = button.closest(".src-sync-run").querySelector(".src-sync-logbox");
     box.textContent = job.log_text || "No output.";
     _srcSyncOpenJob = button.dataset.jobId;
+    _srcSyncFullLogs.set(button.dataset.jobId, box.textContent);
     button.remove();
   } catch (error) {
     button.disabled = false;

@@ -325,28 +325,33 @@
     <div id="admin-tab-sources" class="hidden">
       <div id="src-freshness" class="src-freshness"></div>
 
-      <!-- Manual sync. The button dispatches the same nightly GitHub Action, so
-           the gates in sync_sources.py apply identically to a manual run. -->
+      <!-- The server queues the complete preparation pipeline and retains its
+           final CSV and reports with the run. -->
       <section class="src-sync-panel" id="src-sync-panel">
         <div class="src-sync-head">
           <div>
-            <p class="src-sync-kicker">Entry-sheet sync</p>
-            <h3>Run the sync now</h3>
-            <p class="src-sync-blurb">Re-reads every enabled sheet and imports newly accepted rows, then
-              refreshes our own validated records. Sheet imports are insert-only: existing records are never
-              changed or removed. Runs on the server; also runs automatically at 03:00 UTC.</p>
+            <p class="src-sync-kicker">FLoRA preparation</p>
+            <h3>Run the complete pipeline</h3>
+            <p class="src-sync-blurb">Import accepted source rows, apply exclusions and validated records,
+              enrich metadata, assign stable IDs, and prepare the final CSV with a validation report.</p>
           </div>
           <div class="src-sync-actions">
-            <button class="btn-primary" id="src-sync-run-btn" type="button">Run sync now</button>
+            <button class="btn-primary" id="src-sync-run-btn" type="button">Run pipeline + report</button>
             <button class="ghost-btn" id="src-sync-refresh-btn" type="button" title="Refresh">Refresh</button>
           </div>
         </div>
+        <ol class="src-sync-flow" aria-label="Pipeline sequence">
+          <li>Sources &amp; exclusions</li><li>Validated records</li><li>Metadata &amp; IDs</li><li>Final CSV &amp; checks</li>
+        </ol>
+        <p class="src-sync-contract">The CSV starts with <code>id</code> and <code>id_md5</code>,
+          followed by the reference columns in their original order. Existing rows keep the reference order;
+          new rows and additional columns follow at the end. Completed runs retain their own downloads below.</p>
         <div id="src-sync-live" class="pipeline-live-status hidden" role="status"></div>
         <div class="src-sync-log-head">
-          <span>Sync log</span>
+          <span>Pipeline history &amp; downloads</span>
         </div>
         <div id="src-sync-log" class="src-sync-log">
-          <p class="admin-loading">Loading sync history…</p>
+          <p class="admin-loading">Loading pipeline history…</p>
         </div>
       </section>
 
@@ -521,10 +526,13 @@
           <h3>FLoRA records</h3>
           <p class="flora-blurb">Outcomes derived, DOIs cleaned, exclusions and duplicates applied.
             Each row keeps the record ID it has in Source Records &mdash; pinned when first assigned, so it
-            stays put even if a duplicate ruling changes which record the row derives from.</p>
+            stays put even if a duplicate ruling changes which record the row derives from.
+            Downloads use the reference CSV order, with <code>id</code> and <code>id_md5</code> first.
+            Download a completed pipeline run and its report from Source Records.</p>
         </div>
         <div class="flora-actions">
-          <button class="btn-primary" id="flora-export-btn" type="button">Export CSV</button>
+          <button class="btn-primary" id="flora-export-all-btn" type="button">Download full CSV</button>
+          <button class="ghost-btn" id="flora-export-btn" type="button">Export filtered CSV</button>
           <button class="ghost-btn" id="flora-refresh-btn" type="button">Refresh</button>
         </div>
       </section>

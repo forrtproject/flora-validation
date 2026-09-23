@@ -1476,6 +1476,12 @@ CREATE TABLE IF NOT EXISTS work_metadata (
 CREATE INDEX IF NOT EXISTS idx_work_metadata_stale
     ON work_metadata (fetched_at) WHERE not_found;
 
+-- Shared reference-provider cache, used by the web worker and nightly pipeline.
+ALTER TABLE work_metadata ADD COLUMN IF NOT EXISTS apa_ref TEXT;
+ALTER TABLE work_metadata ADD COLUMN IF NOT EXISTS abstract TEXT;
+ALTER TABLE work_metadata ADD COLUMN IF NOT EXISTS authors_json TEXT;
+ALTER TABLE work_metadata ADD COLUMN IF NOT EXISTS reference_checked_at TIMESTAMPTZ;
+
 -- Size of the FLoRA product over time, one row per day.
 --
 -- Keyed on the DATE, not the run: several runs a day are normal (a sync, a manual
@@ -1517,6 +1523,153 @@ CREATE TABLE IF NOT EXISTS flora_records (
 CREATE INDEX IF NOT EXISTS idx_flora_records_live
     ON flora_records (flora_id) WHERE retired_at IS NULL;
 
+-- Publication identity and position are pinned once, independently of corrected
+-- DOIs and changing dedup survivors. Positions of retired records stay reserved.
+ALTER TABLE flora_records ADD COLUMN IF NOT EXISTS export_id TEXT;
+ALTER TABLE flora_records ADD COLUMN IF NOT EXISTS export_position BIGINT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_flora_export_id ON flora_records (export_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_flora_export_position ON flora_records (export_position);
+
+-- Historical provenance survives changes in the current deduplication survivor.
+ALTER TABLE flora_records ADD COLUMN IF NOT EXISTS historical_source_record_ids UUID[] NOT NULL DEFAULT '{}';
+UPDATE flora_records f
+   SET historical_source_record_ids = ARRAY(
+       SELECT DISTINCT sid FROM unnest(f.historical_source_record_ids
+          || ARRAY[f.primary_source_record_id] || f.merged_source_record_ids) sid
+       ORDER BY sid)
+ WHERE NOT (ARRAY[f.primary_source_record_id] || f.merged_source_record_ids)
+           <@ f.historical_source_record_ids;
+
+-- Complete prepared FLoRA rows, separate from source_records and its ID registry.
+-- No source foreign key/cascade: a published record outlives its source record.
+-- IDs come from the pinned publication registry or the supplied reference CSV.
+CREATE TABLE IF NOT EXISTS flora_data (
+    id TEXT PRIMARY KEY,
+    id_md5 TEXT GENERATED ALWAYS AS (md5(id)) STORED,
+    doi_o TEXT,
+    alt_identifier_o TEXT,
+    doi_o_hash TEXT,
+    title_o TEXT,
+    author_o TEXT,
+    journal_o TEXT,
+    year_o TEXT,
+    volume_o TEXT,
+    issue_o TEXT,
+    pages_o TEXT,
+    apa_ref_o TEXT,
+    bibtex_ref_o TEXT,
+    url_o TEXT,
+    language_o TEXT,
+    doi_r TEXT,
+    alt_identifier_r TEXT,
+    doi_r_hash TEXT,
+    title_r TEXT,
+    author_r TEXT,
+    journal_r TEXT,
+    year_r TEXT,
+    volume_r TEXT,
+    issue_r TEXT,
+    pages_r TEXT,
+    apa_ref_r TEXT,
+    bibtex_ref_r TEXT,
+    url_r TEXT,
+    language_r TEXT,
+    oa_url_o TEXT,
+    oa_url_r TEXT,
+    outcome TEXT,
+    outcome_quote TEXT,
+    outcome_quote_source TEXT,
+    type TEXT,
+    source TEXT,
+    export_position BIGINT NOT NULL UNIQUE CHECK (export_position > 0),
+    extra_fields JSONB NOT NULL DEFAULT '{}',
+    record_version BIGINT NOT NULL DEFAULT 1,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    retired_at TIMESTAMPTZ,
+    CONSTRAINT flora_data_id_not_blank CHECK (btrim(id) <> '' AND id = btrim(id)),
+    CONSTRAINT flora_data_hash_unique UNIQUE (id_md5)
+);
+CREATE INDEX IF NOT EXISTS idx_flora_data_doi_o_normalized ON flora_data
+    (regexp_replace(lower(btrim(doi_o)), '^(https?://)?(dx\.)?doi\.org/|^doi:\s*', ''));
+CREATE INDEX IF NOT EXISTS idx_flora_data_doi_r_normalized ON flora_data
+    (regexp_replace(lower(btrim(doi_r)), '^(https?://)?(dx\.)?doi\.org/|^doi:\s*', ''));
+CREATE INDEX IF NOT EXISTS idx_flora_data_titles ON flora_data USING GIN
+    (to_tsvector('simple', coalesce(title_o, '') || ' ' || coalesce(title_r, '')));
+CREATE INDEX IF NOT EXISTS idx_flora_data_active_order ON flora_data (export_position)
+    WHERE retired_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS flora_data_metadata (
+    singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+    columns JSONB NOT NULL,
+    snapshot_sha256 TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE OR REPLACE FUNCTION protect_flora_data_identity() RETURNS trigger AS $$
+BEGIN
+    IF NEW.id IS DISTINCT FROM OLD.id OR NEW.export_position IS DISTINCT FROM OLD.export_position THEN
+        RAISE EXCEPTION 'FLoRA id and publication position are permanent';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_flora_data_identity ON flora_data;
+CREATE TRIGGER trg_flora_data_identity BEFORE UPDATE ON flora_data
+    FOR EACH ROW EXECUTE FUNCTION protect_flora_data_identity();
+
+CREATE OR REPLACE FUNCTION protect_flora_registry_identity() RETURNS trigger AS $$
+BEGIN
+    IF NEW.flora_record_id IS DISTINCT FROM OLD.flora_record_id
+       OR NEW.flora_id IS DISTINCT FROM OLD.flora_id
+       OR (OLD.export_id IS NOT NULL AND NEW.export_id IS DISTINCT FROM OLD.export_id)
+       OR (OLD.export_position IS NOT NULL AND NEW.export_position IS DISTINCT FROM OLD.export_position) THEN
+        RAISE EXCEPTION 'Registered FLoRA IDs and publication positions are permanent';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_flora_registry_identity ON flora_records;
+CREATE TRIGGER trg_flora_registry_identity BEFORE UPDATE ON flora_records
+    FOR EACH ROW EXECUTE FUNCTION protect_flora_registry_identity();
+
+CREATE OR REPLACE FUNCTION protect_source_record_identity() RETURNS trigger AS $$
+BEGIN
+    IF NEW.record_id IS DISTINCT FROM OLD.record_id
+       OR (OLD.display_id IS NOT NULL AND NEW.display_id IS DISTINCT FROM OLD.display_id) THEN
+        RAISE EXCEPTION 'Source record IDs are permanent';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_source_record_identity ON source_records;
+CREATE TRIGGER trg_source_record_identity BEFORE UPDATE ON source_records
+    FOR EACH ROW EXECUTE FUNCTION protect_source_record_identity();
+
+CREATE OR REPLACE FUNCTION prevent_flora_identity_deletion() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'Permanent identities in % cannot be deleted or truncated; retire records instead', TG_TABLE_NAME;
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_flora_data_no_delete ON flora_data;
+CREATE TRIGGER trg_flora_data_no_delete BEFORE DELETE ON flora_data
+    FOR EACH ROW EXECUTE FUNCTION prevent_flora_identity_deletion();
+DROP TRIGGER IF EXISTS trg_flora_data_no_truncate ON flora_data;
+CREATE TRIGGER trg_flora_data_no_truncate BEFORE TRUNCATE ON flora_data
+    FOR EACH STATEMENT EXECUTE FUNCTION prevent_flora_identity_deletion();
+DROP TRIGGER IF EXISTS trg_flora_registry_no_delete ON flora_records;
+CREATE TRIGGER trg_flora_registry_no_delete BEFORE DELETE ON flora_records
+    FOR EACH ROW EXECUTE FUNCTION prevent_flora_identity_deletion();
+DROP TRIGGER IF EXISTS trg_flora_registry_no_truncate ON flora_records;
+CREATE TRIGGER trg_flora_registry_no_truncate BEFORE TRUNCATE ON flora_records
+    FOR EACH STATEMENT EXECUTE FUNCTION prevent_flora_identity_deletion();
+DROP TRIGGER IF EXISTS trg_source_records_no_delete ON source_records;
+CREATE TRIGGER trg_source_records_no_delete BEFORE DELETE ON source_records
+    FOR EACH ROW EXECUTE FUNCTION prevent_flora_identity_deletion();
+DROP TRIGGER IF EXISTS trg_source_records_no_truncate ON source_records;
+CREATE TRIGGER trg_source_records_no_truncate BEFORE TRUNCATE ON source_records
+    FOR EACH STATEMENT EXECUTE FUNCTION prevent_flora_identity_deletion();
+
 CREATE TABLE IF NOT EXISTS source_sync_jobs (
     job_id       UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     trigger      TEXT        NOT NULL CHECK (trigger IN ('admin', 'cli')),
@@ -1536,6 +1689,12 @@ CREATE INDEX IF NOT EXISTS idx_source_sync_jobs_active
 
 CREATE INDEX IF NOT EXISTS idx_source_sync_jobs_recent
     ON source_sync_jobs (created_at DESC);
+
+-- Per-run artifacts survive restarts and are shared between web/worker pods.
+ALTER TABLE source_sync_jobs ADD COLUMN IF NOT EXISTS artifact_csv TEXT;
+ALTER TABLE source_sync_jobs ADD COLUMN IF NOT EXISTS recovery_csv TEXT;
+ALTER TABLE source_sync_jobs ADD COLUMN IF NOT EXISTS report_json JSONB;
+ALTER TABLE source_sync_jobs ADD COLUMN IF NOT EXISTS report_markdown TEXT;
 
 CREATE TABLE IF NOT EXISTS source_display_counters (
     source      TEXT    PRIMARY KEY,

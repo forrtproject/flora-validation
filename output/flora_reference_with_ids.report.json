@@ -1,0 +1,10 @@
+{
+  "mode": "reference_snapshot",
+  "rows": 2914,
+  "columns": 37,
+  "reference_sha256": "a024faec39c5a3a2e160ea0bee10ddec718fcd4e9c6c6bae323c6038d3d39765",
+  "output_sha256": "d7a54f14acf016260199e3b5bcb0104e175cb0d0c5ee7e5e53b5477d84ebb6e4",
+  "original_cells_preserved": true,
+  "original_row_order_preserved": true,
+  "live_sources_fetched": false
+}

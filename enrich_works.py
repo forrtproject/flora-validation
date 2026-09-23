@@ -1,33 +1,10 @@
-"""enrich_works.py — bibliographic metadata for every DOI in the FLoRA product.
+"""Bibliographic metadata and references for the website preparation pipeline.
 
-Fills the enrichment half of the FLoRA output contract: title, authors, journal,
-year, volume, issue, pages, language, oa_url and bibtex_ref, for both sides of each
-pair. These are the columns the R notebook fetched from CrossRef (Step 6b), OpenAlex
-(Step 9) and Unpaywall (Step 9c) on every render.
-
-ONE SOURCE, NOT THREE
----------------------
-OpenAlex carries all of it: `biblio` has volume/issue/pages, `language` is a field,
-and `open_access.oa_url` is the Unpaywall data OpenAlex already ingests. So one API
-replaces three, and it answers 50 DOIs per request instead of one — ~100 requests for
-the whole corpus rather than ~15,000.
-
-WHAT IS NOT TAKEN FROM HERE
----------------------------
-`apa_ref_o` / `apa_ref_r` keep the entry sheets' own reference strings, which are
-already real APA and 100% populated. The R pipeline prefers CrossRef's formatted
-citation and falls back to the sheet (`coalesce(ref_o_clean, ref_o)`); with no
-CrossRef APA to prefer, the fallback is simply the value. Synthesising a worse APA
-string over a good one would be a downgrade, not a fill.
-
-`bibtex_ref` IS synthesised from the structured fields — the same thing the R side
-does via `synthesise_missing_refs_from_fields` when CrossRef returns no BibTeX.
-
-CACHING
--------
-`work_metadata`, keyed on the cleaned DOI. Safe and cheap to re-run: only DOIs with
-no row are fetched. A DOI OpenAlex does not hold is recorded with `not_found`, so a
-permanent miss is not re-requested nightly; pass --retry-missing to try those again.
+OpenAlex supplies language, abstract and work identifiers. The supplied R caches
+seed reference fields and citations; manual overrides have highest priority.
+Uncached references use Crossref, DataCite, DOI content negotiation, OSF and
+Unpaywall through bibliographic_helpers. Results share the PostgreSQL cache used
+by the website, and transient provider failures are never cached as misses.
 
 Usage:
     python enrich_works.py
@@ -55,6 +32,7 @@ from dotenv import load_dotenv
 
 from console_encoding import use_utf8_output
 from pipeline_logging import start as start_logging
+import bibliographic_helpers as references
 
 load_dotenv()
 use_utf8_output()
@@ -72,7 +50,7 @@ RETRIES = 3
 DELAY = 0.15
 
 FIELDS = ("id,doi,title,display_name,publication_year,language,biblio,"
-          "authorships,primary_location,open_access,best_oa_location,type")
+          "authorships,primary_location,open_access,best_oa_location,type,abstract_inverted_index")
 
 
 class EnrichmentError(RuntimeError):
@@ -81,14 +59,7 @@ class EnrichmentError(RuntimeError):
 
 def _norm_doi(value) -> str:
     """Match transform_sources.clean_doi's output, which is what the join uses."""
-    if not value:
-        return ""
-    v = str(value).strip().lower()
-    for prefix in ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/",
-                   "http://dx.doi.org/", "doi:"):
-        if v.startswith(prefix):
-            v = v[len(prefix):]
-    return v.strip()
+    return references.normalise_key(value)
 
 
 def _fetch_batch(dois: list) -> list:
@@ -121,6 +92,14 @@ def _authors(work: dict) -> "str | None":
     ]
     names = [n for n in names if n]
     return "; ".join(names) or None
+
+
+def reconstruct_abstract(index) -> "str | None":
+    if not isinstance(index, dict) or not index:
+        return None
+    words = {position: word for word, positions in index.items()
+             for position in (positions or []) if isinstance(position, int)}
+    return " ".join(str(words[position]) for position in sorted(words)) or None
 
 
 def _journal(work: dict) -> "str | None":
@@ -164,7 +143,10 @@ def _bibtex(work: dict, doi: str, row: dict) -> "str | None":
     for field, value in (("title", row.get("title")), ("author", authors),
                          ("journal", row.get("journal")), ("year", row.get("year")),
                          ("volume", row.get("volume")), ("number", row.get("issue")),
-                         ("pages", row.get("pages")), ("doi", doi)):
+                         ("pages", row.get("pages")),
+                         ("doi", doi if references.is_doi(doi) else None),
+                         ("url", "https://openalex.org/" + doi
+                          if re.fullmatch(r"W\d+", doi) else None)):
         if value:
             # Braces in a title would unbalance the entry.
             safe = str(value).replace("{", "(").replace("}", ")")
@@ -173,7 +155,7 @@ def _bibtex(work: dict, doi: str, row: dict) -> "str | None":
     return "\n".join(parts)
 
 
-def shape(work: dict) -> "tuple | None":
+def shape(work: dict) -> "dict | None":
     """OpenAlex work -> a work_metadata row. None if it carries no usable DOI."""
     doi = _norm_doi(work.get("doi"))
     if not doi:
@@ -184,6 +166,7 @@ def shape(work: dict) -> "tuple | None":
         "oa_work_id": (work.get("id") or "").rsplit("/", 1)[-1] or None,
         "title": work.get("title") or work.get("display_name") or None,
         "authors": _authors(work),
+        "authors_json": references.author_fields(references._parse_authors(_authors(work)))["authors_json"],
         "journal": _journal(work),
         "year": str(work["publication_year"]) if work.get("publication_year") else None,
         "volume": biblio.get("volume") or None,
@@ -191,6 +174,7 @@ def shape(work: dict) -> "tuple | None":
         "pages": _pages(biblio),
         "language": work.get("language") or None,
         "oa_url": _oa_url(work),
+        "abstract": reconstruct_abstract(work.get("abstract_inverted_index")),
     }
     row["bibtex_ref"] = _bibtex(work, doi, row)
     return row
@@ -237,21 +221,29 @@ def known_dois(cur, retry_missing: bool = False) -> set:
 
 
 def _store(cur, rows: list) -> None:
+    rows = [{"apa_ref": None, "abstract": None, "authors_json": None,
+             "metadata_source": "openalex", **row} for row in rows]
     psycopg2.extras.execute_batch(
         cur,
         """
         INSERT INTO work_metadata
             (doi, oa_work_id, title, authors, journal, year, volume, issue, pages,
-             language, oa_url, bibtex_ref, metadata_source, not_found, fetched_at)
+             language, oa_url, bibtex_ref, apa_ref, abstract, authors_json,
+             metadata_source, not_found, fetched_at)
         VALUES (%(doi)s, %(oa_work_id)s, %(title)s, %(authors)s, %(journal)s, %(year)s,
                 %(volume)s, %(issue)s, %(pages)s, %(language)s, %(oa_url)s,
-                %(bibtex_ref)s, 'openalex', FALSE, NOW())
+                %(bibtex_ref)s, %(apa_ref)s, %(abstract)s, %(authors_json)s,
+                %(metadata_source)s, FALSE, NOW())
         ON CONFLICT (doi) DO UPDATE SET
             oa_work_id = EXCLUDED.oa_work_id, title = EXCLUDED.title,
             authors = EXCLUDED.authors, journal = EXCLUDED.journal,
             year = EXCLUDED.year, volume = EXCLUDED.volume, issue = EXCLUDED.issue,
             pages = EXCLUDED.pages, language = EXCLUDED.language,
             oa_url = EXCLUDED.oa_url, bibtex_ref = EXCLUDED.bibtex_ref,
+            apa_ref = COALESCE(EXCLUDED.apa_ref, work_metadata.apa_ref),
+            abstract = COALESCE(EXCLUDED.abstract, work_metadata.abstract),
+            authors_json = COALESCE(EXCLUDED.authors_json, work_metadata.authors_json),
+            metadata_source = EXCLUDED.metadata_source,
             not_found = FALSE, fetched_at = NOW()
         """,
         rows,
@@ -415,6 +407,7 @@ def shape_by_work_id(work: dict, work_id: str) -> "dict | None":
             "oa_work_id": (work.get("id") or "").rsplit("/", 1)[-1] or work_id,
             "title": work.get("title") or work.get("display_name") or None,
             "authors": _authors(work),
+            "authors_json": references.author_fields(references._parse_authors(_authors(work)))["authors_json"],
             "journal": _journal(work),
             "year": (str(work["publication_year"])
                      if work.get("publication_year") else None),
@@ -423,6 +416,7 @@ def shape_by_work_id(work: dict, work_id: str) -> "dict | None":
             "pages": _pages(biblio),
             "language": work.get("language") or None,
             "oa_url": _oa_url(work),
+            "abstract": reconstruct_abstract(work.get("abstract_inverted_index")),
         }
         row["bibtex_ref"] = _bibtex(work, work_id, row)
     else:
@@ -433,6 +427,7 @@ def shape_by_work_id(work: dict, work_id: str) -> "dict | None":
         row["bibtex_ref"] = _bibtex(work, work_id, row)
     if not row.get("title"):
         return None
+    row["metadata_source"] = WORK_ID_SOURCE
     return row
 
 
@@ -472,16 +467,135 @@ def enrich_work_ids(cur, dry_run: bool = False, retry_missing: bool = False,
     return {"wanted": len(wanted), "fetched": len(rows), "missing": len(absent)}
 
 
-def load_metadata(cur) -> dict:
-    """Every cached row, keyed by DOI, for the transform to join against."""
+def load_metadata(cur, include_seed: bool = True) -> dict:
+    """Metadata keyed by DOI/work-id/normalized URL, with manual overrides last.
+
+    ``include_seed`` adds the supplied provider cache and reference workbook.
+    Database-only callers can retain the narrower historical behavior.
+    """
     cur.execute(
         """
         SELECT doi, oa_work_id, title, authors, journal, year, volume, issue,
-               pages, language, oa_url, bibtex_ref
+               pages, language, oa_url, bibtex_ref, apa_ref, abstract,
+               authors_json, metadata_source, reference_checked_at
         FROM work_metadata WHERE NOT not_found
         """
     )
-    return {r["doi"]: dict(r) for r in cur.fetchall()}
+    cached = {r["doi"]: dict(r) for r in cur.fetchall()}
+    if not include_seed:
+        return cached
+    seed = references.load_reference_seed()
+    combined = {key: dict(row) for key, row in seed["records"].items()}
+    reference_fields = ("title", "authors", "authors_json", "journal", "year", "volume",
+                        "issue", "pages", "apa_ref", "bibtex_ref", "metadata_source")
+    for key, row in cached.items():
+        supplied = combined.get(key, {})
+        merged = references.merge_present(supplied, row)
+        if (row.get("metadata_source") or "").startswith("openalex"):
+            # OpenAlex is a fallback for bibliographic fields. Crossref/manual
+            # cache values retain the precedence specified by the R helpers.
+            preferred = {field: supplied.get(field) for field in reference_fields}
+            merged = references.merge_present(merged, preferred)
+        if row.get("reference_checked_at"):
+            merged["_reference_cached"] = True
+            merged["_unpaywall_cached"] = True
+            # A direct Unpaywall response can correctly clear an old OA URL.
+            merged["oa_url"] = row.get("oa_url")
+        combined[key] = merged
+    for key, row in references.load_manual_references().items():
+        combined[key] = references.merge_present(combined.get(key, {}), row)
+    return combined
+
+
+def reference_keys_in_product(cur) -> list:
+    """Both paper sides, including URL-only reports and manual DUMMY keys."""
+    cur.execute("""
+        SELECT doi_o, doi_r, url_o, url_r FROM source_records
+        WHERE duplicate_status IS DISTINCT FROM 'duplicate'
+    """)
+    wanted = []
+    seen = set()
+    for row in cur.fetchall():
+        for side in ("o", "r"):
+            for column in (f"doi_{side}", f"url_{side}"):
+                key = references.normalise_key(row.get(column))
+                if key and key not in seen:
+                    seen.add(key)
+                    wanted.append(key)
+    return wanted
+
+
+def _store_reference_rows(cur, rows):
+    """Persist complete, merged reference results independently of OpenAlex."""
+    fields = ("doi", "oa_work_id", "title", "authors", "journal", "year", "volume",
+              "issue", "pages", "language", "oa_url", "bibtex_ref", "apa_ref",
+              "abstract", "authors_json", "metadata_source")
+    values = [{**{field: row.get(field) for field in fields},
+               "metadata_source": row.get("metadata_source") or "reference-lookup",
+               "not_found": not any(row.get(field) for field in ("title", "apa_ref", "bibtex_ref"))}
+              for row in rows]
+    assignments = ", ".join(f"{field} = EXCLUDED.{field}" for field in fields if field != "doi")
+    psycopg2.extras.execute_batch(cur,
+        f"""INSERT INTO work_metadata ({', '.join(fields)}, not_found, reference_checked_at, fetched_at)
+            VALUES ({', '.join('%(' + field + ')s' for field in fields)},
+                    %(not_found)s, NOW(), NOW())
+            ON CONFLICT (doi) DO UPDATE SET {assignments},
+                not_found = EXCLUDED.not_found, reference_checked_at = NOW(), fetched_at = NOW()""",
+        values)
+
+
+def enrich_references(cur, dry_run=False, retry_missing=False, limit=0, verbose=True):
+    """Apply supplied caches, manual overrides, DOI/OSF references and Unpaywall.
+
+    Transient failures abort the enclosing enrichment transaction and remain
+    retryable. A confirmed missing reference is cached, like the original helper.
+    """
+    wanted = reference_keys_in_product(cur)
+    meta = load_metadata(cur, include_seed=True)
+    cur.execute("SELECT doi FROM work_metadata WHERE reference_checked_at IS NOT NULL"
+                + (" AND NOT not_found" if retry_missing else ""))
+    checked = {row["doi"] for row in cur.fetchall()}
+    manual = references.load_manual_references()
+    todo = [key for key in wanted if key not in checked
+            and (references.is_doi(key) or references.osf_id(key) or key in manual)]
+    # Curated edits should be picked up even after this identifier was cached.
+    todo.extend(key for key in wanted if key in manual and key in checked)
+    if limit:
+        todo = todo[:limit]
+    if verbose:
+        print(f"  Reference keys: {len(wanted)}; to prepare: {len(todo)}; manual: {len(manual)}")
+    stats = {"wanted": len(wanted), "todo": len(todo), "fetched": 0, "cached": 0, "missing": 0}
+    if dry_run:
+        return stats
+    email = os.getenv("UNPAYWALL_EMAIL") or os.getenv("OPENALEX_MAILTO") or MAILTO
+    for position, key in enumerate(todo, 1):
+        row = dict(meta.get(key) or {})
+        used_network = False
+        if references.is_doi(key):
+            if not row.get("_reference_cached") and key not in manual:
+                row = references.merge_present(row, references.fetch_doi_reference(key))
+                used_network = True
+            if not row.get("_unpaywall_cached"):
+                oa = references.fetch_unpaywall(key, email)
+                if oa is not None:
+                    row["oa_url"] = oa["oa_url"]
+                used_network = True
+        elif references.osf_id(key) and key not in manual and not row.get("_reference_cached"):
+            row = references.merge_present(row, references.fetch_osf_reference(key))
+            used_network = True
+        if key in manual:
+            row = references.merge_present(row, manual[key])
+        row = references.synthesise_references(row, key)
+        row["doi"] = key
+        _store_reference_rows(cur, [row])
+        stats["fetched" if used_network else "cached"] += 1
+        if not any(row.get(field) for field in ("title", "apa_ref", "bibtex_ref")):
+            stats["missing"] += 1
+        if verbose and (position % 50 == 0 or position == len(todo)):
+            print(f"    references {position}/{len(todo)}")
+        if used_network:
+            time.sleep(DELAY)
+    return stats
 
 
 def main() -> int:
@@ -500,7 +614,7 @@ def main() -> int:
         print("DATABASE_URL is not set", file=sys.stderr)
         return 2
 
-    print("=== OpenAlex enrichment ===")
+    print("=== Bibliographic enrichment ===")
     conn = psycopg2.connect(database_url)
     conn.autocommit = False
     try:
@@ -514,9 +628,12 @@ def main() -> int:
             stats["fetched"] += id_stats["fetched"]
             stats["missing"] += id_stats["missing"]
             stats["work_ids"] = id_stats["wanted"]
+            ref_stats = enrich_references(cur, dry_run=args.dry_run,
+                                         retry_missing=args.retry_missing, limit=args.limit)
+            stats["references"] = ref_stats
         if not args.dry_run:
             conn.commit()
-    except EnrichmentError as exc:
+    except (EnrichmentError, references.ReferenceLookupError) as exc:
         conn.rollback()
         print(f"  FAILED - {exc}")
         return 1

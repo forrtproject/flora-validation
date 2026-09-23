@@ -34,6 +34,7 @@ people who share a surname; the figure is a signal for a reader, not an identity
 claim, and the alternative (initials too) would miss "J. Smith" against
 "John Smith".
 """
+import json
 import re
 
 import pandas as pd
@@ -47,16 +48,35 @@ _SPLIT = re.compile(r"\s*(?:;|\band\b|&)\s*")
 _PUNCT = re.compile(r"[^\w\s'\-]", re.UNICODE)
 
 
-def families(value) -> set:
-    """The set of lowercased family names in an author string."""
+def _family_names(value) -> list:
+    """Family names from structured authors or the older display-name format."""
     if value is None:
-        return set()
+        return []
     text = str(value).strip()
     if not text or text.lower() in ("nan", "none"):
-        return set()
+        return []
 
-    out = set()
+    if isinstance(value, list) or text.startswith("["):
+        try:
+            authors = value if isinstance(value, list) else json.loads(text)
+        except ValueError:
+            return []
+        if not isinstance(authors, list):
+            return []
+        # Structured family names preserve particles (e.g. "van Hell").
+        # Keep duplicates here: two authors named Smith are two team members,
+        # even though intersection counts their shared surname only once in R.
+        return [re.sub(r"\s+", " ", str(author["family"]).strip().lower())
+                for author in authors if isinstance(author, dict)
+                and author.get("family") and str(author["family"]).strip()]
+
+    out = []
     for name in _SPLIT.split(text):
+        if "," in name:
+            family = _PUNCT.sub(" ", name.split(",", 1)[0]).strip().lower()
+            if family:
+                out.append(re.sub(r"\s+", " ", family))
+            continue
         name = _PUNCT.sub(" ", name).strip()
         if not name:
             continue
@@ -71,8 +91,13 @@ def families(value) -> set:
         if len(family) < 2 and len(tokens) > 1:
             family = tokens[-2].lower()
         if len(family) >= 2:
-            out.add(family)
+            out.append(family)
     return out
+
+
+def families(value) -> set:
+    """Distinct lowercased surnames, accepting Crossref JSON and display names."""
+    return set(_family_names(value))
 
 
 def count(author_o, author_r) -> "tuple":
@@ -81,10 +106,10 @@ def count(author_o, author_r) -> "tuple":
     Returns (None, None) when either side has no usable author list: zero would
     read as "no shared authors", which is a finding, and we do not have one.
     """
-    left, right = families(author_o), families(author_r)
+    left, right = families(author_o), _family_names(author_r)
     if not left or not right:
         return None, None
-    shared = len(left & right)
+    shared = len(left & set(right))
     return shared, round(100.0 * shared / len(right), 1)
 
 

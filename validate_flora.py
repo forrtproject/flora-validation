@@ -7,10 +7,9 @@ can be ticked to suppress it.
 
 WHAT CHANGED IN THE PORT
 ------------------------
-`source` values. The R version accepts COS / replications / reproductions, which are
-the notebook's labels for its five inputs. Ours are the registry keys — five
-different strings for the same five inputs — so the valid set is ours. Everything
-else is a like-for-like port.
+`source` values. Both the supplied notebook labels and the website's registry keys
+are accepted, and preserved reference rows
+must not become validation failures merely because their labels predate the site.
 
 Suppressions live in the same CSV the R version uses
 (`output/flora_validation_suppressions.csv`), in the same shape, so a suppression
@@ -47,10 +46,11 @@ use_utf8_output()
 ROOT = Path(__file__).parent
 SUPPRESSIONS_FILE = ROOT / "output" / "flora_validation_suppressions.csv"
 
-# Ours, not the notebook's. See the module docstring.
 VALID_SOURCES = {
     "entry_sheet_replications", "entry_sheet_reproductions",
     "fred_replication_success", "score_2025", "validated",
+    "COS", "SCORE", "replications", "reproductions",
+    "openalex", "openalex_snapshot", "i4r",
 }
 VALID_TYPES = {"replication", "reproduction"}
 URL_COLUMNS = ["url_r", "oa_url_o", "oa_url_r", "url_o"]
@@ -159,7 +159,8 @@ def _check_urls(df):
 
 
 def _check_outcomes(df):
-    from extractor_vocab import derive_reproduction_outcome  # noqa: F401
+    from extractor_vocab import (normalize_axis_value, OUTCOME_COMPUTATION_VALUES,
+                                 OUTCOME_ROBUSTNESS_VALUES)
     issues = []
     for _, row in df.iterrows():
         outcome = _text(row.get("outcome"))
@@ -167,6 +168,16 @@ def _check_outcomes(df):
             issues.append(f"{row_id(row)}: outcome is blank")
         elif row.get("type") == "replication" and outcome not in REPLICATION_OUTCOMES:
             issues.append(f"{row_id(row)}: type=replication; outcome='{outcome}'")
+        elif row.get("type") == "reproduction":
+            parts = [part.strip() for part in outcome.split(",")]
+            try:
+                valid = (len(parts) == 2
+                         and normalize_axis_value("outcome_computation", parts[0]) in OUTCOME_COMPUTATION_VALUES
+                         and normalize_axis_value("outcome_robustness", parts[1]) in OUTCOME_ROBUSTNESS_VALUES)
+            except ValueError:
+                valid = False
+            if not valid:
+                issues.append(f"{row_id(row)}: type=reproduction; outcome='{outcome}'")
     return issues
 
 
@@ -264,7 +275,7 @@ CHECKS = [
     ("Type values valid", "Invalid type values", _check_types,
      "type must be 'replication' or 'reproduction'."),
     ("Source values valid", "Invalid source values", _check_sources,
-     "source must be one of the registry keys."),
+     "source must identify a supported dataset input."),
     ("Year ranges reasonable", "Implausible years", _check_year_ranges,
      "year_o or year_r is outside 1890 to next year."),
     ("year_r >= year_o", "Replication year before original year", _check_year_order,
@@ -360,21 +371,26 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path,
                         help="write the report here instead of stdout")
+    parser.add_argument("--input", type=Path,
+                        help="validate this exact CSV instead of rebuilding from the database")
     parser.add_argument("--fail-on-issues", action="store_true",
                         help="exit 1 when anything is flagged (for CI)")
     args = parser.parse_args()
 
-    database_url = os.environ.get("DATABASE_URL")
-    if not database_url:
-        print("DATABASE_URL is not set", file=sys.stderr)
-        return 2
-
-    conn = psycopg2.connect(database_url)
-    try:
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        df = load_dataset(cur)
-    finally:
-        conn.close()
+    if args.input:
+        df = pd.read_csv(args.input, dtype=str, keep_default_na=False,
+                         na_values=["NA", ""], encoding="utf-8-sig")
+    else:
+        database_url = os.environ.get("DATABASE_URL")
+        if not database_url:
+            print("DATABASE_URL is not set", file=sys.stderr)
+            return 2
+        conn = psycopg2.connect(database_url)
+        try:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            df = load_dataset(cur)
+        finally:
+            conn.close()
 
     report = validate(df, load_suppressions())
     text = render(report)

@@ -1,0 +1,1132 @@
+{
+  "verified_at": "2026-09-16T05:59:47.187089+00:00",
+  "mode": "isolated_local_postgresql_http",
+  "production_accessed": false,
+  "snapshot": {
+    "file": "output/flora.csv",
+    "sha256": "d7a54f14acf016260199e3b5bcb0104e175cb0d0c5ee7e5e53b5477d84ebb6e4",
+    "rows": 2914,
+    "doi_records": 4817,
+    "hashes_checked": 2914,
+    "entirely_doi_less_rows": 2,
+    "csv_unchanged": true
+  },
+  "examples": {
+    "doi_lookup": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/original-lookup",
+        "body": {
+          "dois": [
+            "10.1016/0010-0285(72)90003-5"
+          ]
+        }
+      },
+      "status": 200,
+      "response": {
+        "results": {
+          "10.1016/0010-0285(72)90003-5": {
+            "doi": "10.1016/0010-0285(72)90003-5",
+            "types": [
+              "original"
+            ],
+            "doi_hash": "dec",
+            "title": "Sentence memory: A constructive versus interpretive approach",
+            "authors": [
+              {
+                "given": "John D.",
+                "family": "Bransford",
+                "sequence": "first"
+              },
+              {
+                "given": "J.Richard",
+                "family": "Barclay",
+                "sequence": "additional"
+              },
+              {
+                "given": "Jeffery J.",
+                "family": "Franks",
+                "sequence": "additional"
+              }
+            ],
+            "journal": "Cognitive Psychology",
+            "year": "1972",
+            "volume": "3",
+            "issue": "2",
+            "pages": "193-209",
+            "apa_ref": "Bransford, J. D., Barclay, J. R., & Franks, J. J. (1972). Sentence memory: A constructive versus interpretive approach. Cognitive Psychology, 3(2), 193–209. https://doi.org/10.1016/0010-0285(72)90003-5",
+            "bibtex_ref": "@article{Bransford_1972, title={Sentence memory: A constructive versus interpretive approach}, volume={3}, ISSN={0010-0285}, url={http://dx.doi.org/10.1016/0010-0285(72)90003-5}, DOI={10.1016/0010-0285(72)90003-5}, number={2}, journal={Cognitive Psychology}, publisher={Elsevier BV}, author={Bransford, John D. and Barclay, J.Richard and Franks, Jeffery J.}, year={1972}, month=Apr, pages={193–209} }",
+            "url": "https://doi.org/10.1016/0010-0285(72)90003-5",
+            "record": {
+              "stats": {
+                "n_replications_total": 1,
+                "n_replications_with_doi": 1,
+                "n_replications_only": 0,
+                "n_unique_replication_dois": 1,
+                "n_reproductions_total": 0,
+                "n_reproductions_with_doi": 0,
+                "n_reproductions_only": 0,
+                "n_originals_total": 0,
+                "n_unique_original_dois": 0
+              },
+              "originals": [],
+              "replications": [
+                {
+                  "id": "FLORA-000001",
+                  "id_md5": "2de91c651bc82ac3d5e43031660a22b6",
+                  "doi": "10.17605/osf.io/bu3gm",
+                  "doi_hash": "e1d",
+                  "title": "Spontaneous construction of causally relevant spatial models: Bulgarian replication of the model-type effect",
+                  "authors": [
+                    {
+                      "given": "Nikolay R.",
+                      "family": "Rachev",
+                      "sequence": "first"
+                    }
+                  ],
+                  "journal": "OSF Registries",
+                  "year": "2025",
+                  "volume": null,
+                  "issue": null,
+                  "pages": null,
+                  "apa_ref": "Rachev, N. R. (2025). Spontaneous construction of causally relevant spatial models: Bulgarian replication of the model-type effect. OSF Registries. https://doi.org/10.17605/OSF.IO/BU3GM",
+                  "bibtex_ref": "@misc{https://doi.org/10.17605/osf.io/bu3gm,\n  doi = {10.17605/OSF.IO/BU3GM},\n  url = {https://osf.io/bu3gm/},\n  author = {Rachev, Nikolay R.},\n  keywords = {Social and Behavioral Sciences, inferences, psycholinguistics, sentence memory, spatial models},\n  title = {Spontaneous construction of causally relevant spatial models: Bulgarian replication of the model-type effect},\n  publisher = {OSF Registries},\n  year = {2025},\n  copyright = {Creative Commons Attribution Share Alike 4.0 International}\n}",
+                  "url": null,
+                  "language": null,
+                  "oa_url": null,
+                  "type": "replication",
+                  "outcome": "uninformative",
+                  "outcome_quote": "Unlike Bransford et al. (1972), I found no significant model type (same/different) by probe type (old/new) interaction effect on the recognition scores.",
+                  "outcome_quote_source": "abstract",
+                  "source": "replications"
+                }
+              ],
+              "reproductions": []
+            },
+            "outcome_mix": {
+              "uninformative": 1
+            },
+            "replication_year_counts": {
+              "2025": 1
+            },
+            "first_replication_year": "2025",
+            "first_replication_outcome": "uninformative"
+          }
+        }
+      }
+    },
+    "doi_prefix_lookup": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/prefix-lookup",
+        "body": {
+          "prefixes": [
+            "dec"
+          ]
+        }
+      },
+      "status": 200,
+      "response": {
+        "results": {
+          "dec": [
+            {
+              "doi": "10.1016/0010-0285(72)90003-5",
+              "types": [
+                "original"
+              ],
+              "doi_hash": "dec",
+              "title": "Sentence memory: A constructive versus interpretive approach",
+              "authors": [
+                {
+                  "given": "John D.",
+                  "family": "Bransford",
+                  "sequence": "first"
+                },
+                {
+                  "given": "J.Richard",
+                  "family": "Barclay",
+                  "sequence": "additional"
+                },
+                {
+                  "given": "Jeffery J.",
+                  "family": "Franks",
+                  "sequence": "additional"
+                }
+              ],
+              "journal": "Cognitive Psychology",
+              "year": "1972",
+              "volume": "3",
+              "issue": "2",
+              "pages": "193-209",
+              "apa_ref": "Bransford, J. D., Barclay, J. R., & Franks, J. J. (1972). Sentence memory: A constructive versus interpretive approach. Cognitive Psychology, 3(2), 193–209. https://doi.org/10.1016/0010-0285(72)90003-5",
+              "bibtex_ref": "@article{Bransford_1972, title={Sentence memory: A constructive versus interpretive approach}, volume={3}, ISSN={0010-0285}, url={http://dx.doi.org/10.1016/0010-0285(72)90003-5}, DOI={10.1016/0010-0285(72)90003-5}, number={2}, journal={Cognitive Psychology}, publisher={Elsevier BV}, author={Bransford, John D. and Barclay, J.Richard and Franks, Jeffery J.}, year={1972}, month=Apr, pages={193–209} }",
+              "url": "https://doi.org/10.1016/0010-0285(72)90003-5",
+              "record": {
+                "stats": {
+                  "n_replications_total": 1,
+                  "n_replications_with_doi": 1,
+                  "n_replications_only": 0,
+                  "n_unique_replication_dois": 1,
+                  "n_reproductions_total": 0,
+                  "n_reproductions_with_doi": 0,
+                  "n_reproductions_only": 0,
+                  "n_originals_total": 0,
+                  "n_unique_original_dois": 0
+                },
+                "originals": [],
+                "replications": [
+                  {
+                    "id": "FLORA-000001",
+                    "id_md5": "2de91c651bc82ac3d5e43031660a22b6",
+                    "doi": "10.17605/osf.io/bu3gm",
+                    "doi_hash": "e1d",
+                    "title": "Spontaneous construction of causally relevant spatial models: Bulgarian replication of the model-type effect",
+                    "authors": [
+                      {
+                        "given": "Nikolay R.",
+                        "family": "Rachev",
+                        "sequence": "first"
+                      }
+                    ],
+                    "journal": "OSF Registries",
+                    "year": "2025",
+                    "volume": null,
+                    "issue": null,
+                    "pages": null,
+                    "apa_ref": "Rachev, N. R. (2025). Spontaneous construction of causally relevant spatial models: Bulgarian replication of the model-type effect. OSF Registries. https://doi.org/10.17605/OSF.IO/BU3GM",
+                    "bibtex_ref": "@misc{https://doi.org/10.17605/osf.io/bu3gm,\n  doi = {10.17605/OSF.IO/BU3GM},\n  url = {https://osf.io/bu3gm/},\n  author = {Rachev, Nikolay R.},\n  keywords = {Social and Behavioral Sciences, inferences, psycholinguistics, sentence memory, spatial models},\n  title = {Spontaneous construction of causally relevant spatial models: Bulgarian replication of the model-type effect},\n  publisher = {OSF Registries},\n  year = {2025},\n  copyright = {Creative Commons Attribution Share Alike 4.0 International}\n}",
+                    "url": null,
+                    "language": null,
+                    "oa_url": null,
+                    "type": "replication",
+                    "outcome": "uninformative",
+                    "outcome_quote": "Unlike Bransford et al. (1972), I found no significant model type (same/different) by probe type (old/new) interaction effect on the recognition scores.",
+                    "outcome_quote_source": "abstract",
+                    "source": "replications"
+                  }
+                ],
+                "reproductions": []
+              },
+              "outcome_mix": {
+                "uninformative": 1
+              },
+              "replication_year_counts": {
+                "2025": 1
+              },
+              "first_replication_year": "2025",
+              "first_replication_outcome": "uninformative"
+            },
+            {
+              "doi": "10.1093/scan/nsu108",
+              "types": [
+                "original"
+              ],
+              "doi_hash": "dec",
+              "title": "The association between the 5-HTTLPR and neural correlates of fear conditioning and connectivity",
+              "authors": [
+                {
+                  "given": "Tim",
+                  "family": "Klucken",
+                  "sequence": "first"
+                },
+                {
+                  "given": "Jan",
+                  "family": "Schweckendiek",
+                  "sequence": "additional"
+                },
+                {
+                  "given": "Carlo",
+                  "family": "Blecker",
+                  "sequence": "additional"
+                },
+                {
+                  "given": "Bertram",
+                  "family": "Walter",
+                  "sequence": "additional"
+                },
+                {
+                  "given": "Yvonne",
+                  "family": "Kuepper",
+                  "sequence": "additional"
+                },
+                {
+                  "given": "Juergen",
+                  "family": "Hennig",
+                  "sequence": "additional"
+                },
+                {
+                  "given": "Rudolf",
+                  "family": "Stark",
+                  "sequence": "additional"
+                }
+              ],
+              "journal": "Social Cognitive and Affective Neuroscience",
+              "year": "2014",
+              "volume": "10",
+              "issue": "5",
+              "pages": "700-707",
+              "apa_ref": "Klucken, T., Schweckendiek, J., Blecker, C., Walter, B., Kuepper, Y., Hennig, J., & Stark, R. (2014). The association between the 5-HTTLPR and neural correlates of fear conditioning and connectivity. Social Cognitive and Affective Neuroscience, 10(5), 700–707. https://doi.org/10.1093/scan/nsu108",
+              "bibtex_ref": "@article{Klucken_2014, title={The association between the 5-HTTLPR and neural correlates of fear conditioning and connectivity}, volume={10}, ISSN={1749-5016}, url={http://dx.doi.org/10.1093/scan/nsu108}, DOI={10.1093/scan/nsu108}, number={5}, journal={Social Cognitive and Affective Neuroscience}, publisher={Oxford University Press (OUP)}, author={Klucken, Tim and Schweckendiek, Jan and Blecker, Carlo and Walter, Bertram and Kuepper, Yvonne and Hennig, Juergen and Stark, Rudolf}, year={2014}, month=aug, pages={700–707} }",
+              "url": null,
+              "record": {
+                "stats": {
+                  "n_replications_total": 1,
+                  "n_replications_with_doi": 1,
+                  "n_replications_only": 0,
+                  "n_unique_replication_dois": 1,
+                  "n_reproductions_total": 0,
+                  "n_reproductions_with_doi": 0,
+                  "n_reproductions_only": 0,
+                  "n_originals_total": 0,
+                  "n_unique_original_dois": 0
+                },
+                "originals": [],
+                "replications": [
+                  {
+                    "id": "FLORA-000287",
+                    "id_md5": "a38a05259d2e0840c332c0b34d610df0",
+                    "doi": "10.3389/fnbeh.2018.00080",
+                    "doi_hash": "5f1",
+                    "title": "Failure to Replicate the Association Between Fractional Anisotropy and the Serotonin Transporter Gene (5-HTTLPR, rs25531)",
+                    "authors": [
+                      {
+                        "given": "Tim",
+                        "family": "Klucken",
+                        "sequence": "first"
+                      },
+                      {
+                        "given": "Isabell",
+                        "family": "Tapia León",
+                        "sequence": "additional"
+                      },
+                      {
+                        "given": "Carlo",
+                        "family": "Blecker",
+                        "sequence": "additional"
+                      },
+                      {
+                        "given": "Onno",
+                        "family": "Kruse",
+                        "sequence": "additional"
+                      },
+                      {
+                        "given": "Tobias",
+                        "family": "Stalder",
+                        "sequence": "additional"
+                      },
+                      {
+                        "given": "Rudolf",
+                        "family": "Stark",
+                        "sequence": "additional"
+                      }
+                    ],
+                    "journal": "Frontiers in Behavioral Neuroscience",
+                    "year": "2018",
+                    "volume": "12",
+                    "issue": null,
+                    "pages": null,
+                    "apa_ref": "Klucken, T., Tapia León, I., Blecker, C., Kruse, O., Stalder, T., & Stark, R. (2018). Failure to Replicate the Association Between Fractional Anisotropy and the Serotonin Transporter Gene (5-HTTLPR, rs25531). Frontiers in Behavioral Neuroscience, 12. https://doi.org/10.3389/fnbeh.2018.00080",
+                    "bibtex_ref": "@article{Klucken_2018, title={Failure to Replicate the Association Between Fractional Anisotropy and the Serotonin Transporter Gene (5-HTTLPR, rs25531)}, volume={12}, ISSN={1662-5153}, url={http://dx.doi.org/10.3389/fnbeh.2018.00080}, DOI={10.3389/fnbeh.2018.00080}, journal={Frontiers in Behavioral Neuroscience}, publisher={Frontiers Media SA}, author={Klucken, Tim and Tapia León, Isabell and Blecker, Carlo and Kruse, Onno and Stalder, Tobias and Stark, Rudolf}, year={2018}, month=apr }",
+                    "url": null,
+                    "language": "en",
+                    "oa_url": "https://www.frontiersin.org/articles/10.3389/fnbeh.2018.00080/pdf",
+                    "type": "replication",
+                    "outcome": "failed",
+                    "outcome_quote": "As a main result, we did not find any significant relationship between the 5-HTTLPR and FA in the UF-tract although power analyses showed an adequate power.",
+                    "outcome_quote_source": "abstract",
+                    "source": "replications"
+                  }
+                ],
+                "reproductions": []
+              },
+              "outcome_mix": {
+                "failed": 1
+              },
+              "replication_year_counts": {
+                "2018": 1
+              },
+              "first_replication_year": "2018",
+              "first_replication_outcome": "failed"
+            },
+            {
+              "doi": "10.1073/pnas.251541498",
+              "types": [
+                "original"
+              ],
+              "doi_hash": "dec",
+              "title": "Can race be erased? Coalitional computation and social categorization",
+              "authors": [
+                {
+                  "given": "Robert",
+                  "family": "Kurzban",
+                  "sequence": "first"
+                },
+                {
+                  "given": "John",
+                  "family": "Tooby",
+                  "sequence": "additional"
+                },
+                {
+                  "given": "Leda",
+                  "family": "Cosmides",
+                  "sequence": "additional"
+                }
+              ],
+              "journal": "Proceedings of the National Academy of Sciences",
+              "year": "2001",
+              "volume": "98",
+              "issue": "26",
+              "pages": "15387-15392",
+              "apa_ref": "Kurzban, R., Tooby, J., & Cosmides, L. (2001). Can race be erased? Coalitional computation and social categorization. Proceedings of the National Academy of Sciences, 98(26), 15387–15392. https://doi.org/10.1073/pnas.251541498",
+              "bibtex_ref": "@article{Kurzban_2001, title={Can race be erased? Coalitional computation and social categorization}, volume={98}, ISSN={1091-6490}, url={http://dx.doi.org/10.1073/pnas.251541498}, DOI={10.1073/pnas.251541498}, number={26}, journal={Proceedings of the National Academy of Sciences}, publisher={Proceedings of the National Academy of Sciences}, author={Kurzban, Robert and Tooby, John and Cosmides, Leda}, year={2001}, month=dec, pages={15387–15392} }",
+              "url": null,
+              "record": {
+                "stats": {
+                  "n_replications_total": 1,
+                  "n_replications_with_doi": 1,
+                  "n_replications_only": 0,
+                  "n_unique_replication_dois": 1,
+                  "n_reproductions_total": 0,
+                  "n_reproductions_with_doi": 0,
+                  "n_reproductions_only": 0,
+                  "n_originals_total": 0,
+                  "n_unique_original_dois": 0
+                },
+                "originals": [],
+                "replications": [
+                  {
+                    "id": "FLORA-000696",
+                    "id_md5": "a543e9f1a2d2e10a6b40b68770d14117",
+                    "doi": "10.3389/fpsyg.2014.01035",
+                    "doi_hash": "c04",
+                    "title": "Can race really be erased? A pre-registered replication study",
+                    "authors": [
+                      {
+                        "given": "Wouter",
+                        "family": "Voorspoels",
+                        "sequence": "first"
+                      },
+                      {
+                        "given": "Annelies",
+                        "family": "Bartlema",
+                        "sequence": "additional"
+                      },
+                      {
+                        "given": "Wolf",
+                        "family": "Vanpaemel",
+                        "sequence": "additional"
+                      }
+                    ],
+                    "journal": "Frontiers in Psychology",
+                    "year": "2014",
+                    "volume": "5",
+                    "issue": null,
+                    "pages": null,
+                    "apa_ref": "Voorspoels, W., Bartlema, A., & Vanpaemel, W. (2014). Can race really be erased? A pre-registered replication study. Frontiers in Psychology, 5. https://doi.org/10.3389/fpsyg.2014.01035",
+                    "bibtex_ref": "@article{Voorspoels_2014, title={Can race really be erased? A pre-registered replication study}, volume={5}, ISSN={1664-1078}, url={http://dx.doi.org/10.3389/fpsyg.2014.01035}, DOI={10.3389/fpsyg.2014.01035}, journal={Frontiers in Psychology}, publisher={Frontiers Media SA}, author={Voorspoels, Wouter and Bartlema, Annelies and Vanpaemel, Wolf}, year={2014}, month=sep }",
+                    "url": null,
+                    "language": "en",
+                    "oa_url": "https://www.frontiersin.org/articles/10.3389/fpsyg.2014.01035/pdf",
+                    "type": "replication",
+                    "outcome": "successful",
+                    "outcome_quote": "Our results indicate that the encoding of race is indeed reduced when another coalitional cue is available",
+                    "outcome_quote_source": "abstract",
+                    "source": "replications"
+                  }
+                ],
+                "reproductions": []
+              },
+              "outcome_mix": {
+                "successful": 1
+              },
+              "replication_year_counts": {
+                "2014": 1
+              },
+              "first_replication_year": "2014",
+              "first_replication_outcome": "successful"
+            },
+            {
+              "doi": "10.2308/bria-2020-021",
+              "types": [
+                "replication"
+              ],
+              "doi_hash": "dec",
+              "title": "Management Accountants' Empathy and Their Violation of Fiduciary Duties: A Replication and Extension Study Using fMRI",
+              "authors": [
+                {
+                  "given": "Sergeja",
+                  "family": "Slapničar",
+                  "sequence": "first",
+                  "ORCID": "https://orcid.org/0000-0002-7228-7560"
+                },
+                {
+                  "given": "Mina",
+                  "family": "Ličen",
+                  "sequence": "additional",
+                  "ORCID": "https://orcid.org/0000-0003-4114-3334"
+                },
+                {
+                  "given": "Frank G. H.",
+                  "family": "Hartmann",
+                  "sequence": "additional"
+                },
+                {
+                  "given": "Anka Slana",
+                  "family": "Ozimič",
+                  "sequence": "additional"
+                },
+                {
+                  "given": "Grega",
+                  "family": "Repovš",
+                  "sequence": "additional",
+                  "ORCID": "https://orcid.org/0000-0003-1837-3879"
+                }
+              ],
+              "journal": "Behavioral Research in Accounting",
+              "year": "2021",
+              "volume": "33",
+              "issue": "1",
+              "pages": "21-42",
+              "apa_ref": "Slapničar, S., Ličen, M., Hartmann, F. G. H., Ozimič, A. S., & Repovš, G. (2021). Management Accountants’ Empathy and Their Violation of Fiduciary Duties: A Replication and Extension Study Using fMRI. Behavioral Research in Accounting, 33(1), 21–42. https://doi.org/10.2308/bria-2020-021",
+              "bibtex_ref": "@article{Slapni_ar_2021, title={Management Accountants’ Empathy and Their Violation of Fiduciary Duties: A Replication and Extension Study Using fMRI}, volume={33}, ISSN={1050-4753}, url={http://dx.doi.org/10.2308/bria-2020-021}, DOI={10.2308/bria-2020-021}, number={1}, journal={Behavioral Research in Accounting}, publisher={American Accounting Association}, author={Slapničar, Sergeja and Ličen, Mina and Hartmann, Frank G. H. and Ozimič, Anka Slana and Repovš, Grega}, year={2021}, month=Jan, pages={21–42} }",
+              "url": null,
+              "record": {
+                "stats": {
+                  "n_replications_total": 0,
+                  "n_replications_with_doi": 0,
+                  "n_replications_only": 0,
+                  "n_unique_replication_dois": 0,
+                  "n_reproductions_total": 0,
+                  "n_reproductions_with_doi": 0,
+                  "n_reproductions_only": 0,
+                  "n_originals_total": 1,
+                  "n_unique_original_dois": 1
+                },
+                "originals": [
+                  {
+                    "id": "FLORA-001078",
+                    "id_md5": "a24af5801e6c0f02ae08432a399ecc0a",
+                    "doi": "10.1016/j.aos.2016.02.003",
+                    "doi_hash": "287",
+                    "title": "Why controllers compromise on their fiduciary duties: EEG evidence on the role of the human mirror neuron system",
+                    "authors": [
+                      {
+                        "given": "Philip I.",
+                        "family": "Eskenazi",
+                        "sequence": "first"
+                      },
+                      {
+                        "given": "Frank G.H.",
+                        "family": "Hartmann",
+                        "sequence": "additional"
+                      },
+                      {
+                        "given": "Wim J.R.",
+                        "family": "Rietdijk",
+                        "sequence": "additional"
+                      }
+                    ],
+                    "journal": "Accounting, Organizations and Society",
+                    "year": "2016",
+                    "volume": "50",
+                    "issue": null,
+                    "pages": "41-50",
+                    "apa_ref": "Eskenazi, P. I., Hartmann, F. G. H., & Rietdijk, W. J. R. (2016). Why controllers compromise on their fiduciary duties: EEG evidence on the role of the human mirror neuron system. Accounting, Organizations and Society, 50, 41–50. https://doi.org/10.1016/j.aos.2016.02.003",
+                    "bibtex_ref": "@article{Eskenazi_2016, title={Why controllers compromise on their fiduciary duties: EEG evidence on the role of the human mirror neuron system}, volume={50}, ISSN={0361-3682}, url={http://dx.doi.org/10.1016/j.aos.2016.02.003}, DOI={10.1016/j.aos.2016.02.003}, journal={Accounting, Organizations and Society}, publisher={Elsevier BV}, author={Eskenazi, Philip I. and Hartmann, Frank G.H. and Rietdijk, Wim J.R.}, year={2016}, month=Apr, pages={41–50} }",
+                    "url": null,
+                    "language": "en",
+                    "oa_url": null
+                  }
+                ],
+                "replications": [],
+                "reproductions": []
+              },
+              "outcome_mix": {},
+              "replication_year_counts": {},
+              "first_replication_year": null,
+              "first_replication_outcome": null
+            },
+            {
+              "doi": "10.1111/j.1467-9280.2008.02090.x",
+              "types": [
+                "original"
+              ],
+              "doi_hash": "dec",
+              "title": "First Impressions and Last Resorts",
+              "authors": [
+                {
+                  "given": "Tanya",
+                  "family": "Kraljic",
+                  "sequence": "first"
+                },
+                {
+                  "given": "Arthur G.",
+                  "family": "Samuel",
+                  "sequence": "additional"
+                },
+                {
+                  "given": "Susan E.",
+                  "family": "Brennan",
+                  "sequence": "additional"
+                }
+              ],
+              "journal": "Psychological Science",
+              "year": "2008",
+              "volume": "19",
+              "issue": "4",
+              "pages": "332-338",
+              "apa_ref": "Kraljic, T., Samuel, A. G., & Brennan, S. E. (2008). First Impressions and Last Resorts. Psychological Science, 19(4), 332–338. https://doi.org/10.1111/j.1467-9280.2008.02090.x",
+              "bibtex_ref": "@article{Kraljic_2008, title={First Impressions and Last Resorts: How Listeners Adjust to Speaker Variability}, volume={19}, ISSN={1467-9280}, url={http://dx.doi.org/10.1111/j.1467-9280.2008.02090.x}, DOI={10.1111/j.1467-9280.2008.02090.x}, number={4}, journal={Psychological Science}, publisher={SAGE Publications}, author={Kraljic, Tanya and Samuel, Arthur G. and Brennan, Susan E.}, year={2008}, month=Apr, pages={332–338} }",
+              "url": "https://doi.org/10.1111/j.1467-9280.2008.02090.x",
+              "record": {
+                "stats": {
+                  "n_replications_total": 1,
+                  "n_replications_with_doi": 1,
+                  "n_replications_only": 0,
+                  "n_unique_replication_dois": 1,
+                  "n_reproductions_total": 0,
+                  "n_reproductions_with_doi": 0,
+                  "n_reproductions_only": 0,
+                  "n_originals_total": 0,
+                  "n_unique_original_dois": 0
+                },
+                "originals": [],
+                "replications": [
+                  {
+                    "id": "FLORA-002522",
+                    "id_md5": "5086b03c0268743f1ce6c0e4158e1375",
+                    "doi": "10.55370/urj.v2i1.1423",
+                    "doi_hash": "c10",
+                    "title": "Auditory Processing Difficulties Influence on Perceptual Learning",
+                    "authors": [
+                      {
+                        "given": "Kathy",
+                        "family": "Fiallo",
+                        "sequence": "first"
+                      },
+                      {
+                        "given": "Alexia",
+                        "family": "Galati",
+                        "sequence": "additional"
+                      }
+                    ],
+                    "journal": "UNC Charlotte Undergraduate Research Journal",
+                    "year": "2022",
+                    "volume": "2",
+                    "issue": "1",
+                    "pages": null,
+                    "apa_ref": "Fiallo, K., & Galati, A. (2022). Auditory Processing Difficulties Influence on Perceptual Learning. UNC Charlotte Undergraduate Research Journal, 2(1). https://doi.org/10.55370/urj.v2i1.1423",
+                    "bibtex_ref": "@article{Fiallo_2022, title={Auditory Processing Difficulties Influence on Perceptual Learning}, volume={2}, ISSN={2770-8543}, url={http://dx.doi.org/10.55370/urj.v2i1.1423}, DOI={10.55370/urj.v2i1.1423}, number={1}, journal={UNC Charlotte Undergraduate Research Journal}, publisher={J. Murrey Atkins Library, University of North Carolina at Charlotte}, author={Fiallo, Kathy and Galati, Alexia}, year={2022}, month=Oct }",
+                    "url": null,
+                    "language": "en",
+                    "oa_url": "https://journals.charlotte.edu/urj/article/download/1423/1236",
+                    "type": "replication",
+                    "outcome": "failed",
+                    "outcome_quote": "We did not replicate the findings on the effect of visual context on perceptual learning from the original study by Kraljic et al. (2008).",
+                    "outcome_quote_source": "abstract",
+                    "source": "openalex"
+                  }
+                ],
+                "reproductions": []
+              },
+              "outcome_mix": {
+                "failed": 1
+              },
+              "replication_year_counts": {
+                "2022": 1
+              },
+              "first_replication_year": "2022",
+              "first_replication_outcome": "failed"
+            }
+          ]
+        }
+      }
+    },
+    "title_search": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/search",
+        "body": {
+          "query": "memory",
+          "limit": 2
+        }
+      },
+      "status": 200,
+      "response": {
+        "query": "memory",
+        "total": 127,
+        "offset": 0,
+        "limit": 2,
+        "hasMore": true,
+        "results": {
+          "10.1002/acp.1376": {
+            "doi": "10.1002/acp.1376",
+            "types": [
+              "original"
+            ],
+            "doi_hash": "c82",
+            "title": "Eyewitness memory following discussion: using the MORI technique with a Western sample",
+            "authors": [
+              {
+                "given": "Maryanne",
+                "family": "Garry",
+                "sequence": "first"
+              },
+              {
+                "given": "Lauren",
+                "family": "French",
+                "sequence": "additional"
+              },
+              {
+                "given": "Toni",
+                "family": "Kinzett",
+                "sequence": "additional"
+              },
+              {
+                "given": "Kazuo",
+                "family": "Mori",
+                "sequence": "additional"
+              }
+            ],
+            "journal": "Applied Cognitive Psychology",
+            "year": "2007",
+            "volume": "22",
+            "issue": "4",
+            "pages": "431-439",
+            "apa_ref": "Garry, M., French, L., Kinzett, T., & Mori, K. (2007). Eyewitness memory following discussion: using the MORI technique with a Western sample. Applied Cognitive Psychology, 22(4), 431–439. Portico. https://doi.org/10.1002/acp.1376",
+            "bibtex_ref": "@article{Garry_2007, title={Eyewitness memory following discussion: using the MORI technique with a Western sample}, volume={22}, ISSN={1099-0720}, url={http://dx.doi.org/10.1002/acp.1376}, DOI={10.1002/acp.1376}, number={4}, journal={Applied Cognitive Psychology}, publisher={Wiley}, author={Garry, Maryanne and French, Lauren and Kinzett, Toni and Mori, Kazuo}, year={2007}, month=aug, pages={431–439} }",
+            "url": null,
+            "record": {
+              "stats": {
+                "n_replications_total": 1,
+                "n_replications_with_doi": 1,
+                "n_replications_only": 0,
+                "n_unique_replication_dois": 1,
+                "n_reproductions_total": 0,
+                "n_reproductions_with_doi": 0,
+                "n_reproductions_only": 0,
+                "n_originals_total": 0,
+                "n_unique_original_dois": 0
+              },
+              "originals": [],
+              "replications": [
+                {
+                  "id": "FLORA-001715",
+                  "id_md5": "ff3a76b1b8c816de5f71a32bfa687474",
+                  "doi": "10.1037/h0101833",
+                  "doi_hash": "b43",
+                  "title": "Eyewitness memory distortion following co-witness discussion: A replication of Garry, French, Kinzett, and Mori (2008) in ten countries.",
+                  "authors": [
+                    {
+                      "given": "Hiroshi",
+                      "family": "Ito",
+                      "sequence": "first"
+                    },
+                    {
+                      "given": "Krystian",
+                      "family": "Barzykowski",
+                      "sequence": "additional"
+                    },
+                    {
+                      "given": "Magdalena",
+                      "family": "Grzesik",
+                      "sequence": "additional"
+                    },
+                    {
+                      "given": "Sami",
+                      "family": "Gülgöz",
+                      "sequence": "additional",
+                      "ORCID": "https://orcid.org/0000-0002-1262-2347"
+                    },
+                    {
+                      "given": "Ceren",
+                      "family": "Gürdere",
+                      "sequence": "additional"
+                    },
+                    {
+                      "given": "Steve M. J.",
+                      "family": "Janssen",
+                      "sequence": "additional",
+                      "ORCID": "https://orcid.org/0000-0002-3100-128X"
+                    },
+                    {
+                      "given": "Jessie",
+                      "family": "Khor",
+                      "sequence": "additional"
+                    },
+                    {
+                      "given": "Harriet",
+                      "family": "Rowthorn",
+                      "sequence": "additional"
+                    },
+                    {
+                      "given": "Kimberley A.",
+                      "family": "Wade",
+                      "sequence": "additional"
+                    },
+                    {
+                      "given": "Karlos",
+                      "family": "Luna",
+                      "sequence": "additional"
+                    },
+                    {
+                      "given": "Pedro B.",
+                      "family": "Albuquerque",
+                      "sequence": "additional",
+                      "ORCID": "https://orcid.org/0000-0002-5874-4497"
+                    },
+                    {
+                      "given": "Devvarta",
+                      "family": "Kumar",
+                      "sequence": "additional"
+                    },
+                    {
+                      "given": "Arman Deep",
+                      "family": "Singh",
+                      "sequence": "additional"
+                    },
+                    {
+                      "given": "William Weber",
+                      "family": "Cecconello",
+                      "sequence": "additional"
+                    },
+                    {
+                      "given": "Sara",
+                      "family": "Cadavid",
+                      "sequence": "additional",
+                      "ORCID": "https://orcid.org/0000-0002-2606-3742"
+                    },
+                    {
+                      "given": "Nicole C.",
+                      "family": "Laird",
+                      "sequence": "additional"
+                    },
+                    {
+                      "given": "Mario J.",
+                      "family": "Baldassari",
+                      "sequence": "additional"
+                    },
+                    {
+                      "given": "D. Stephen",
+                      "family": "Lindsay",
+                      "sequence": "additional"
+                    },
+                    {
+                      "given": "Kazuo",
+                      "family": "Mori",
+                      "sequence": "additional"
+                    }
+                  ],
+                  "journal": "Journal of Applied Research in Memory and Cognition",
+                  "year": "2019",
+                  "volume": "8",
+                  "issue": "1",
+                  "pages": "68-77",
+                  "apa_ref": "Ito, H., Barzykowski, K., Grzesik, M., Gülgöz, S., Gürdere, C., Janssen, S. M. J., Khor, J., Rowthorn, H., Wade, K. A., Luna, K., Albuquerque, P. B., Kumar, D., Singh, A. D., Cecconello, W. W., Cadavid, S., Laird, N. C., Baldassari, M. J., Lindsay, D. S., & Mori, K. (2019). Eyewitness memory distortion following co-witness discussion: A replication of Garry, French, Kinzett, and Mori (2008) in ten countries. Journal of Applied Research in Memory and Cognition, 8(1), 68–77. https://doi.org/10.1037/h0101833",
+                  "bibtex_ref": "@article{Ito_2019, title={Eyewitness memory distortion following co-witness discussion: A replication of Garry, French, Kinzett, and Mori (2008) in ten countries.}, volume={8}, ISSN={2211-3681}, url={http://dx.doi.org/10.1037/h0101833}, DOI={10.1037/h0101833}, number={1}, journal={Journal of Applied Research in Memory and Cognition}, publisher={American Psychological Association (APA)}, author={Ito, Hiroshi and Barzykowski, Krystian and Grzesik, Magdalena and Gülgöz, Sami and Gürdere, Ceren and Janssen, Steve M. J. and Khor, Jessie and Rowthorn, Harriet and Wade, Kimberley A. and Luna, Karlos and Albuquerque, Pedro B. and Kumar, Devvarta and Singh, Arman Deep and Cecconello, William Weber and Cadavid, Sara and Laird, Nicole C. and Baldassari, Mario J. and Lindsay, D. Stephen and Mori, Kazuo}, year={2019}, month=mar, pages={68–77} }",
+                  "url": null,
+                  "language": "en",
+                  "oa_url": null,
+                  "type": "replication",
+                  "outcome": "successful",
+                  "outcome_quote": "Each of the 10 samples replicated the Garry et al. finding: Participants often reported on the final test a non-witnessed answer that their co-witness had stated during the collaboration phase",
+                  "outcome_quote_source": "abstract",
+                  "source": "COS"
+                }
+              ],
+              "reproductions": []
+            },
+            "outcome_mix": {
+              "successful": 1
+            },
+            "replication_year_counts": {
+              "2019": 1
+            },
+            "first_replication_year": "2019",
+            "first_replication_outcome": "successful",
+            "score": 0.0
+          },
+          "10.1002/acp.2881": {
+            "doi": "10.1002/acp.2881",
+            "types": [
+              "original"
+            ],
+            "doi_hash": "b72",
+            "title": "The Relationship of Handwriting Speed, Working Memory, Language Comprehension and Outlines to Lecture Note‐taking and Test‐taking among College Students",
+            "authors": [
+              {
+                "given": "Stephen T.",
+                "family": "Peverly",
+                "sequence": "first"
+              },
+              {
+                "given": "Pooja C.",
+                "family": "Vekaria",
+                "sequence": "additional"
+              },
+              {
+                "given": "Lindsay A.",
+                "family": "Reddington",
+                "sequence": "additional"
+              },
+              {
+                "given": "James F.",
+                "family": "Sumowski",
+                "sequence": "additional"
+              },
+              {
+                "given": "Kamauru R.",
+                "family": "Johnson",
+                "sequence": "additional"
+              },
+              {
+                "given": "Crystal M.",
+                "family": "Ramsay",
+                "sequence": "additional"
+              }
+            ],
+            "journal": "Applied Cognitive Psychology",
+            "year": "2012",
+            "volume": "27",
+            "issue": "1",
+            "pages": "115-126",
+            "apa_ref": "Peverly, S. T., Vekaria, P. C., Reddington, L. A., Sumowski, J. F., Johnson, K. R., & Ramsay, C. M. (2012). The Relationship of Handwriting Speed, Working Memory, Language Comprehension and Outlines to Lecture Note‐taking and Test‐taking among College Students. Applied Cognitive Psychology, 27(1), 115–126. Portico. https://doi.org/10.1002/acp.2881",
+            "bibtex_ref": "@article{Peverly_2012, title={The Relationship of Handwriting Speed, Working Memory, Language Comprehension and Outlines to Lecture Note‐taking and Test‐taking among College Students}, volume={27}, ISSN={1099-0720}, url={http://dx.doi.org/10.1002/acp.2881}, DOI={10.1002/acp.2881}, number={1}, journal={Applied Cognitive Psychology}, publisher={Wiley}, author={Peverly, Stephen T. and Vekaria, Pooja C. and Reddington, Lindsay A. and Sumowski, James F. and Johnson, Kamauru R. and Ramsay, Crystal M.}, year={2012}, month=nov, pages={115–126} }",
+            "url": null,
+            "record": {
+              "stats": {
+                "n_replications_total": 1,
+                "n_replications_with_doi": 1,
+                "n_replications_only": 0,
+                "n_unique_replication_dois": 1,
+                "n_reproductions_total": 0,
+                "n_reproductions_with_doi": 0,
+                "n_reproductions_only": 0,
+                "n_originals_total": 0,
+                "n_unique_original_dois": 0
+              },
+              "originals": [],
+              "replications": [
+                {
+                  "id": "FLORA-000133",
+                  "id_md5": "c71140e02a897677a8212edfbea64b6d",
+                  "doi": "10.1177/0022219419897268",
+                  "doi_hash": "aa6",
+                  "title": "The Lecture Note-Taking Skills of Adolescents With and Without Learning Disabilities",
+                  "authors": [
+                    {
+                      "given": "Lisa M.",
+                      "family": "Oefinger",
+                      "sequence": "first"
+                    },
+                    {
+                      "given": "Stephen T.",
+                      "family": "Peverly",
+                      "sequence": "additional"
+                    }
+                  ],
+                  "journal": "Journal of Learning Disabilities",
+                  "year": "2020",
+                  "volume": "53",
+                  "issue": "3",
+                  "pages": "176-188",
+                  "apa_ref": "Oefinger, L. M., & Peverly, S. T. (2020). The Lecture Note-Taking Skills of Adolescents With and Without Learning Disabilities. Journal of Learning Disabilities, 53(3), 176–188. https://doi.org/10.1177/0022219419897268",
+                  "bibtex_ref": "@article{Oefinger_2020, title={The Lecture Note-Taking Skills of Adolescents With and Without Learning Disabilities}, volume={53}, ISSN={1538-4780}, url={http://dx.doi.org/10.1177/0022219419897268}, DOI={10.1177/0022219419897268}, number={3}, journal={Journal of Learning Disabilities}, publisher={SAGE Publications}, author={Oefinger, Lisa M. and Peverly, Stephen T.}, year={2020}, month=jan, pages={176–188} }",
+                  "url": null,
+                  "language": "en",
+                  "oa_url": "https://doi.org/10.7916/d8xw4h4w",
+                  "type": "replication",
+                  "outcome": "successful",
+                  "outcome_quote": "Results of regression analyses indicated that note-taking (f(2) = 1.94) and test-taking (f(2) = 2.69) were associated with listening comprehension and background knowledge predominately.",
+                  "outcome_quote_source": "abstract",
+                  "source": "replications"
+                }
+              ],
+              "reproductions": []
+            },
+            "outcome_mix": {
+              "successful": 1
+            },
+            "replication_year_counts": {
+              "2020": 1
+            },
+            "first_replication_year": "2020",
+            "first_replication_outcome": "successful",
+            "score": 0.0
+          }
+        }
+      }
+    },
+    "doi_search": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/search",
+        "body": {
+          "query": "10.1016/0010-0285(72)90003-5",
+          "limit": 2
+        }
+      },
+      "status": 200,
+      "response": {
+        "query": "10.1016/0010-0285(72)90003-5",
+        "total": 1,
+        "offset": 0,
+        "limit": 2,
+        "hasMore": false,
+        "results": {
+          "10.1016/0010-0285(72)90003-5": {
+            "doi": "10.1016/0010-0285(72)90003-5",
+            "types": [
+              "original"
+            ],
+            "doi_hash": "dec",
+            "title": "Sentence memory: A constructive versus interpretive approach",
+            "authors": [
+              {
+                "given": "John D.",
+                "family": "Bransford",
+                "sequence": "first"
+              },
+              {
+                "given": "J.Richard",
+                "family": "Barclay",
+                "sequence": "additional"
+              },
+              {
+                "given": "Jeffery J.",
+                "family": "Franks",
+                "sequence": "additional"
+              }
+            ],
+            "journal": "Cognitive Psychology",
+            "year": "1972",
+            "volume": "3",
+            "issue": "2",
+            "pages": "193-209",
+            "apa_ref": "Bransford, J. D., Barclay, J. R., & Franks, J. J. (1972). Sentence memory: A constructive versus interpretive approach. Cognitive Psychology, 3(2), 193–209. https://doi.org/10.1016/0010-0285(72)90003-5",
+            "bibtex_ref": "@article{Bransford_1972, title={Sentence memory: A constructive versus interpretive approach}, volume={3}, ISSN={0010-0285}, url={http://dx.doi.org/10.1016/0010-0285(72)90003-5}, DOI={10.1016/0010-0285(72)90003-5}, number={2}, journal={Cognitive Psychology}, publisher={Elsevier BV}, author={Bransford, John D. and Barclay, J.Richard and Franks, Jeffery J.}, year={1972}, month=Apr, pages={193–209} }",
+            "url": "https://doi.org/10.1016/0010-0285(72)90003-5",
+            "record": {
+              "stats": {
+                "n_replications_total": 1,
+                "n_replications_with_doi": 1,
+                "n_replications_only": 0,
+                "n_unique_replication_dois": 1,
+                "n_reproductions_total": 0,
+                "n_reproductions_with_doi": 0,
+                "n_reproductions_only": 0,
+                "n_originals_total": 0,
+                "n_unique_original_dois": 0
+              },
+              "originals": [],
+              "replications": [
+                {
+                  "id": "FLORA-000001",
+                  "id_md5": "2de91c651bc82ac3d5e43031660a22b6",
+                  "doi": "10.17605/osf.io/bu3gm",
+                  "doi_hash": "e1d",
+                  "title": "Spontaneous construction of causally relevant spatial models: Bulgarian replication of the model-type effect",
+                  "authors": [
+                    {
+                      "given": "Nikolay R.",
+                      "family": "Rachev",
+                      "sequence": "first"
+                    }
+                  ],
+                  "journal": "OSF Registries",
+                  "year": "2025",
+                  "volume": null,
+                  "issue": null,
+                  "pages": null,
+                  "apa_ref": "Rachev, N. R. (2025). Spontaneous construction of causally relevant spatial models: Bulgarian replication of the model-type effect. OSF Registries. https://doi.org/10.17605/OSF.IO/BU3GM",
+                  "bibtex_ref": "@misc{https://doi.org/10.17605/osf.io/bu3gm,\n  doi = {10.17605/OSF.IO/BU3GM},\n  url = {https://osf.io/bu3gm/},\n  author = {Rachev, Nikolay R.},\n  keywords = {Social and Behavioral Sciences, inferences, psycholinguistics, sentence memory, spatial models},\n  title = {Spontaneous construction of causally relevant spatial models: Bulgarian replication of the model-type effect},\n  publisher = {OSF Registries},\n  year = {2025},\n  copyright = {Creative Commons Attribution Share Alike 4.0 International}\n}",
+                  "url": null,
+                  "language": null,
+                  "oa_url": null,
+                  "type": "replication",
+                  "outcome": "uninformative",
+                  "outcome_quote": "Unlike Bransford et al. (1972), I found no significant model type (same/different) by probe type (old/new) interaction effect on the recognition scores.",
+                  "outcome_quote_source": "abstract",
+                  "source": "replications"
+                }
+              ],
+              "reproductions": []
+            },
+            "outcome_mix": {
+              "uninformative": 1
+            },
+            "replication_year_counts": {
+              "2025": 1
+            },
+            "first_replication_year": "2025",
+            "first_replication_outcome": "uninformative",
+            "score": 0.0
+          }
+        }
+      }
+    },
+    "permanent_id_hash_lookup": {
+      "request": {
+        "method": "POST",
+        "path": "/v1/id-lookup",
+        "body": {
+          "hashes": [
+            "2de91c651bc82ac3d5e43031660a22b6"
+          ]
+        }
+      },
+      "status": 200,
+      "response": {
+        "results": {
+          "2de91c651bc82ac3d5e43031660a22b6": {
+            "id": "FLORA-000001",
+            "id_md5": "2de91c651bc82ac3d5e43031660a22b6",
+            "doi_o": "10.1016/0010-0285(72)90003-5",
+            "alt_identifier_o": null,
+            "doi_o_hash": "dec",
+            "title_o": "Sentence memory: A constructive versus interpretive approach",
+            "author_o": "[{\"given\":\"John D.\",\"family\":\"Bransford\",\"sequence\":\"first\"},{\"given\":\"J.Richard\",\"family\":\"Barclay\",\"sequence\":\"additional\"},{\"given\":\"Jeffery J.\",\"family\":\"Franks\",\"sequence\":\"additional\"}]",
+            "journal_o": "Cognitive Psychology",
+            "year_o": "1972",
+            "volume_o": "3",
+            "issue_o": "2",
+            "pages_o": "193-209",
+            "apa_ref_o": "Bransford, J. D., Barclay, J. R., & Franks, J. J. (1972). Sentence memory: A constructive versus interpretive approach. Cognitive Psychology, 3(2), 193–209. https://doi.org/10.1016/0010-0285(72)90003-5",
+            "bibtex_ref_o": " @article{Bransford_1972, title={Sentence memory: A constructive versus interpretive approach}, volume={3}, ISSN={0010-0285}, url={http://dx.doi.org/10.1016/0010-0285(72)90003-5}, DOI={10.1016/0010-0285(72)90003-5}, number={2}, journal={Cognitive Psychology}, publisher={Elsevier BV}, author={Bransford, John D. and Barclay, J.Richard and Franks, Jeffery J.}, year={1972}, month=Apr, pages={193–209} }\n",
+            "url_o": "https://doi.org/10.1016/0010-0285(72)90003-5",
+            "language_o": "en",
+            "doi_r": "10.17605/osf.io/bu3gm",
+            "alt_identifier_r": null,
+            "doi_r_hash": "e1d",
+            "title_r": "Spontaneous construction of causally relevant spatial models: Bulgarian replication of the model-type effect",
+            "author_r": "[{\"given\":\"Nikolay R.\",\"family\":\"Rachev\",\"sequence\":\"first\"}]",
+            "journal_r": "OSF Registries",
+            "year_r": "2025",
+            "volume_r": null,
+            "issue_r": null,
+            "pages_r": null,
+            "apa_ref_r": "Rachev, N. R. (2025). Spontaneous construction of causally relevant spatial models: Bulgarian replication of the model-type effect. OSF Registries. https://doi.org/10.17605/OSF.IO/BU3GM",
+            "bibtex_ref_r": "@misc{https://doi.org/10.17605/osf.io/bu3gm,\n  doi = {10.17605/OSF.IO/BU3GM},\n  url = {https://osf.io/bu3gm/},\n  author = {Rachev, Nikolay R.},\n  keywords = {Social and Behavioral Sciences, inferences, psycholinguistics, sentence memory, spatial models},\n  title = {Spontaneous construction of causally relevant spatial models: Bulgarian replication of the model-type effect},\n  publisher = {OSF Registries},\n  year = {2025},\n  copyright = {Creative Commons Attribution Share Alike 4.0 International}\n}\n",
+            "url_r": null,
+            "language_r": null,
+            "oa_url_o": null,
+            "oa_url_r": null,
+            "outcome": "uninformative",
+            "outcome_quote": "Unlike Bransford et al. (1972), I found no significant model type (same/different) by probe type (old/new) interaction effect on the recognition scores.",
+            "outcome_quote_source": "abstract",
+            "type": "replication",
+            "source": "replications",
+            "_meta": {
+              "export_position": 1,
+              "record_version": 1,
+              "created_at": "2026-09-16T07:59:34.445086+02:00",
+              "updated_at": "2026-09-16T07:59:34.445086+02:00",
+              "retired_at": null,
+              "active": true
+            }
+          }
+        }
+      }
+    }
+  }
+}

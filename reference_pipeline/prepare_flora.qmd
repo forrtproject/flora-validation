@@ -1,0 +1,1075 @@
+---
+title: "FLoRA Preparation Pipeline"
+subtitle: "Download, deduplicate, and prepare paper-level dataset (Replications + Reproductions)"
+author: "FORRT Team"
+date: "`r Sys.Date()`"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    theme: cosmo
+    code-fold: true
+    code-summary: "Show code"
+params: {}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = TRUE,
+  warning = TRUE,
+  error = FALSE,
+  cache = FALSE
+)
+
+library(dplyr)
+library(stringr)
+library(tibble)
+library(readxl)
+library(jsonlite)
+library(glue)
+library(httr)
+
+# Use project-root paths via here
+if (!file.exists(here::here("R", "cache_config.R"))) {
+  stop("Cannot find cache config. Ensure you're in the project or run from repo root.")
+}
+
+# Source Helper Functions
+source(here::here("R", "cache_config.R"))
+source(here::here("R", "augmentation.R"))
+source(here::here("R", "crossref_cache.R"))
+source(here::here("R", "openalex_cache.R"))
+source(here::here("R", "llm_classification.R"))
+source(here::here("R", "unpaywall_cache.R"))
+source(here::here("R", "preprint_dedup.R"))
+source(here::here("R", "cos_quote_rewrite.R"))
+source(here::here("R", "outcome_vocabulary.R"))
+
+```
+
+## Configuration
+
+```{r data-sources}
+FReD_FOUNDATION_SUCCESS_CODING <- "https://docs.google.com/spreadsheets/d/1J9Lp_RF6hqlDlLT3aMW3zvbQ3GYGbmFzZYdFc7XXwhc/export?gid=984458430&format=csv"
+REPLICATION_GSHEET_URL <- "https://docs.google.com/spreadsheets/d/e/2PACX-1vT0VnLyrf9GCYXtN6l1DgaoLlg6H5r-08Op9eJzSripS1QBSHL031Arc27yUDe0YY7cB4TOnYMm2Vh1/pub?gid=863031634&single=true&output=csv"
+REPRODUCTION_GSHEET_URL <- "https://docs.google.com/spreadsheets/d/e/2PACX-1vT0VnLyrf9GCYXtN6l1DgaoLlg6H5r-08Op9eJzSripS1QBSHL031Arc27yUDe0YY7cB4TOnYMm2Vh1/pub?gid=984458430&single=true&output=csv"
+EXCLUSIONS_GSHEET_URL <- "https://docs.google.com/spreadsheets/d/e/2PACX-1vT0VnLyrf9GCYXtN6l1DgaoLlg6H5r-08Op9eJzSripS1QBSHL031Arc27yUDe0YY7cB4TOnYMm2Vh1/pub?gid=1098183075&single=true&output=csv"
+FLORA_OUTPUT <- here::here("output", "flora.csv")
+
+SCORE_URL <- "https://docs.google.com/spreadsheets/d/e/2PACX-1vSlPVImL7kjzMfpfX08JtAikvEiBg8uQ3HyEJs-YvuQMUa2RMvip-4v8-DilWl2PdwOD_UTD8gJ5wKA/pub?gid=1421575264&single=true&output=csv"
+VALIDATED_EXPORT_URL <- "https://raw.githubusercontent.com/forrtproject/flora-validation/main/data/validated_export.csv"
+
+cat("\n=== FLoRA Preparation Pipeline ===\n")
+```
+
+## Download FLoRA Data (Replications + Reproductions)
+
+```{r download-data}
+# Download replications
+replications <- tryCatch({
+  read_csv(REPLICATION_GSHEET_URL, show_col_types = FALSE)
+}, error = function(e) {
+  stop("Failed to download replications data. Check URL and network connection.\n",
+       "Error: ", e$message)
+})
+
+cat(sprintf("    ✓ Downloaded %d replication rows × %d columns\n", nrow(replications), ncol(replications)))
+
+# Filter for validated entries only
+replications <- replications %>%
+  filter(validation_status %in% c("validated - chosen", "validated - changed", "validated - unchanged"))
+cat(sprintf("    ✓ Filtered to %d validated replications\n", nrow(replications)))
+
+# Download reproductions
+reproductions <- tryCatch({
+  read_csv(REPRODUCTION_GSHEET_URL, show_col_types = FALSE)
+}, error = function(e) {
+  stop("Failed to download reproductions data. Check URL and network connection.\n",
+       "Error: ", e$message)
+})
+
+cat(sprintf("    ✓ Downloaded %d reproduction rows × %d columns\n", nrow(reproductions), ncol(reproductions)))
+
+# Filter for validated entries only
+reproductions <- reproductions %>%
+  filter(validation %in% c("validated - chosen", "validated - changed", "validated - unchanged"))
+cat(sprintf("    ✓ Filtered to %d validated reproductions\n", nrow(reproductions)))
+
+# Combine both datasets (handle case where one might be empty)
+# Add source variable to track data origin. Both source sheets use
+# `out_quote_source`; the rest of the pipeline (and downstream COS/SCORE
+# branches) use `outcome_quote_source`, so harmonise here.
+tag_source <- function(df, type_label, source_label) {
+  df %>%
+    rename_with(~ "outcome_quote_source", any_of("out_quote_source")) %>%
+    mutate(type = type_label, source = source_label)
+}
+if (nrow(reproductions) == 0) {
+  flora_raw <- tag_source(replications, "replication", "replications")
+} else if (nrow(replications) == 0) {
+  flora_raw <- tag_source(reproductions, "reproduction", "reproductions")
+} else {
+  flora_raw <- bind_rows(
+    tag_source(replications, "replication", "replications"),
+    tag_source(reproductions, "reproduction", "reproductions")
+  )
+}
+```
+
+### Add COS source data
+
+```{r}
+replications_cos <- read_csv(FReD_FOUNDATION_SUCCESS_CODING, show_col_types = FALSE, skip = 1)
+
+cat(sprintf("    ✓ Downloaded %d COS rows\n", nrow(replications_cos)))
+
+# Filter for validated entries only
+replications_cos <- replications_cos %>%
+  filter(validation %in% c("validated - chosen", "validated - changed", "validated - unchanged"))
+cat(sprintf("    ✓ Filtered to %d validated COS entries\n", nrow(replications_cos)))
+
+# Expand shorthand outcome quotes (e.g. "no marked in Replicate column") into
+# self-contained descriptions of the project's coding logic. Must run before
+# the summarise() below, which concatenates per-coding quotes with " || ".
+replications_cos <- replications_cos %>%
+  mutate(outcome_quote = rewrite_cos_quote(outcome_quote))
+cat(sprintf("    ✓ Rewrote %d shorthand outcome quotes\n",
+            sum(str_detect(replications_cos$outcome_quote,
+                           "^Coded as |^Replicated = |^Rep\\. (s1|s2|s1\\+s2) = |^95% CI for the meta-analytic |^Subjective replication success rating |^Classified as mixed:|^Outcome classified as "),
+                na.rm = TRUE)))
+
+replications_cos <- replications_cos %>%
+  mutate(repl_id = coalesce(url_r, doi_r)) %>%
+  group_by(doi_o, repl_id) %>%
+  summarise(
+    ref_o = first(ref_o),
+    ref_r = first(ref_r),
+    url_r = first(url_r),
+    doi_r = first(doi_r),
+    abstract_r = first(abstract_r),
+    outcome = if (length(unique(outcome)) == 1) unique(outcome) else "mixed",
+    outcome_quote = paste(unique(na.omit(outcome_quote)), collapse = " || "),
+    outcome_quote_source = paste(unique(na.omit(out_quote_source)), collapse = " || "),
+    type = "replication",
+    source = "COS",
+    .groups = "drop"
+  )
+
+cat(sprintf("    ✓ Processed %d COS replication rows × %d columns\n", nrow(replications_cos), ncol(replications_cos)))
+
+flora_raw <- bind_rows(
+  flora_raw,
+  replications_cos
+)
+
+```
+
+### Add SCORE data
+
+```{r score-integration}
+cat("\n### SCORE Integration\n")
+
+score_data <- tryCatch({
+  read_csv(SCORE_URL, show_col_types = FALSE)
+}, error = function(e) {
+  stop("Failed to download SCORE data. Check URL and network connection.\n",
+       "Error: ", e$message)
+})
+
+cat(sprintf("✓ Loaded SCORE data: %d rows\n", nrow(score_data)))
+
+score_prepared <- score_data %>%
+  rename(outcome_quote_source = out_quote_source) %>%
+  mutate(
+    type = "replication",
+    source = "SCORE"
+  ) %>%
+  select(-any_of("link_r"))
+
+# Merge using common columns
+common_cols <- intersect(names(flora_raw), names(score_prepared))
+cat(sprintf("  Common columns: %d\n", length(common_cols)))
+
+flora_raw <- bind_rows(
+  flora_raw,
+  score_prepared %>% select(all_of(common_cols))
+)
+
+cat(sprintf("✓ Merged with FLoRA data\n"))
+cat(sprintf("  Total rows after SCORE merge: %d\n", nrow(flora_raw)))
+```
+
+### Add Validated Export Data
+
+```{r validated-export}
+validated_export <- tryCatch({
+  read_csv(VALIDATED_EXPORT_URL, show_col_types = FALSE)
+}, error = function(e) {
+  warning("Failed to load validated export. Proceeding without it.\n", e$message)
+  NULL
+})
+
+if (!is.null(validated_export)) {
+  cat(sprintf("    ✓ Loaded %d validated export rows × %d columns\n",
+              nrow(validated_export), ncol(validated_export)))
+
+  common_cols <- intersect(names(flora_raw), names(validated_export))
+  flora_raw <- bind_rows(
+    flora_raw,
+    validated_export %>% select(all_of(common_cols))
+  )
+
+  cat(sprintf("    ✓ Total rows after validated export merge: %d\n", nrow(flora_raw)))
+}
+```
+
+### Normalise outcome vocabulary
+
+The five sources (replications, reproductions, COS, SCORE, validated export)
+have drifted apart in how they spell the outcome codes. Recode onto the
+canonical vocabulary in `R/outcome_vocabulary.R` here, before deduplication, so
+that a spelling variant is never mistaken for a genuine outcome clash when rows
+are merged.
+
+```{r normalise-outcomes}
+outcome_before <- flora_raw$outcome
+flora_raw <- flora_raw %>% mutate(outcome = normalise_outcome(outcome))
+
+recodes <- outcome_recode_summary(outcome_before, flora_raw$outcome)
+if (nrow(recodes) == 0) {
+  cat("    ✓ All outcome values already canonical\n")
+} else {
+  cat(sprintf("    ✓ Recoded %d outcome value(s):\n", sum(recodes$n)))
+  for (i in seq_len(nrow(recodes))) {
+    cat(sprintf("        '%s' -> '%s' (%d)\n", recodes$from[i], recodes$to[i], recodes$n[i]))
+  }
+}
+
+unknown <- flora_raw %>%
+  filter(!is.na(outcome), !outcome %in% VALID_OUTCOMES) %>%
+  count(outcome, source, sort = TRUE)
+if (nrow(unknown) > 0) {
+  cat("    ⚠ Outcome values outside the allowed vocabulary (flagged by validation):\n")
+  for (i in seq_len(nrow(unknown))) {
+    cat(sprintf("        '%s' (%s, n = %d)\n", unknown$outcome[i], unknown$source[i], unknown$n[i]))
+  }
+}
+```
+
+### Apply Exclusions
+
+```{r exclusions}
+# Download exclusions list
+exclusions <- tryCatch({
+  read_csv(EXCLUSIONS_GSHEET_URL, show_col_types = FALSE)
+}, error = function(e) {
+  warning("Failed to download exclusions. Proceeding without exclusions.\n", e$message)
+  tibble(doi_r = character(), url_r = character(), reason = character())
+})
+
+cat(sprintf("    ✓ Downloaded %d exclusions\n", nrow(exclusions)))
+
+# Apply exclusions based on doi_r or url_r
+pre_exclusion <- nrow(flora_raw)
+
+flora_raw <- flora_raw %>%
+  filter(
+    !(doi_r %in% exclusions$doi_r[!is.na(exclusions$doi_r)]) &
+    !(url_r %in% exclusions$url_r[!is.na(exclusions$url_r)])
+  )
+
+post_exclusion <- nrow(flora_raw)
+cat(sprintf("    ✓ Excluded %d rows based on exclusion list\n", pre_exclusion - post_exclusion))
+
+# Manual exclusions
+manual_exclusion_dois <- c(
+  "10.31234/osf.io/jfmsz",      # Withdrawn paper
+  "10.1177/0956797619831612",    # Replicates correlations, not claims (Soto 2019)
+  "korbmacher_2022"              # Readded with proper identifier
+)
+manual_exclusion_urls <- c(
+  "https://replications.clearerthinking.org/replication-2022psci33-8"  # Readded with proper identifier
+)
+pre_manual <- nrow(flora_raw)
+flora_raw <- flora_raw %>%
+  filter(
+    !tolower(doi_r) %in% tolower(manual_exclusion_dois) &
+    !tolower(url_r) %in% tolower(manual_exclusion_urls)
+  )
+cat(sprintf("    ✓ Excluded %d rows based on manual exclusion list (withdrawn/retracted)\n",
+            pre_manual - nrow(flora_raw)))
+```
+
+## Data Preparation
+
+```{r prepare}
+# Select relevant fields for FLoRA. alt_identifier_o/_r are optional source-sheet
+# columns (currently only on the replications sheet) holding manually curated
+# alternative identifiers (e.g. preprint DOIs); preserved if present.
+flora_cols <- c("doi_o", "ref_o", "url_o",
+                "doi_r", "ref_r",  "url_r",
+                "abstract_r", "outcome", "outcome_quote", "outcome_quote_source", "type", "source",
+                "alt_identifier_o", "alt_identifier_r")
+
+# Clean scraped DOIs: strip prefixes, whitespace, and trailing garbage phrases
+# (e.g. "10.1002/pits.22106digital object identifier (doi)",
+#       "10.1016/j.learninstruc.2018.04.010 get rights and content").
+# DOIs cannot contain whitespace, so we drop anything from the first space on.
+clean_doi <- function(x) {
+  x <- tolower(trimws(as.character(x)))
+  x <- gsub("^(https?://)?(dx\\.)?doi\\.org/", "", x)
+  x <- gsub("^doi:\\s*", "", x)
+  x <- sub("\\s*digital\\s*object\\s*identifier.*$", "", x)
+  x <- sub("\\s*get\\s*rights\\s*and\\s*content.*$", "", x)
+  x <- sub("\\s.*$", "", x)
+  x <- trimws(x)
+  dplyr::na_if(x, "")
+}
+
+flora_data <- flora_raw %>%
+  select(any_of(flora_cols)) %>%
+  mutate(
+    doi_o = clean_doi(doi_o),
+    doi_r = clean_doi(doi_r)
+  ) %>% # remove redundant DOI urls
+  mutate(
+    url_r = if_else(!is.na(doi_r) & str_detect(tolower(url_r), if_else(is.na(doi_r), fixed("dummy_val"), fixed(doi_r))), 
+                    NA_character_, url_r)
+  )
+  
+```
+
+## Deduplication
+
+Currently minimal.
+
+```{r deduplicate}
+
+pre_dedup <- nrow(flora_data)
+
+# Normalize URLs before dedup so that e.g. https://osf.io/abc/ and osf.io/abc match
+norm_url <- function(x) {
+  x <- tolower(trimws(as.character(x)))
+  x <- gsub("^https?://", "", x)
+  x <- gsub("^www\\.", "", x)
+  x <- gsub("/+$", "", x)
+  dplyr::na_if(x, "")
+}
+
+flora_data <- flora_data %>%
+  mutate(url_r_norm = norm_url(url_r)) %>%
+  distinct(doi_o, coalesce(url_r_norm, doi_r), .keep_all = TRUE) %>%
+  select(-url_r_norm)
+
+# Collapse remaining (doi_o, doi_r) duplicates whose url_r values are
+# compatible (<=1 distinct non-NA url_r). Distinct url_r rows are kept
+# separate as they may be different replication reports of the same dataset.
+flora_data <- merge_doi_pair_dups(flora_data, verbose = TRUE)
+
+post_dedup <- nrow(flora_data)
+
+cat(sprintf("✓ Removed %d duplicate rows\n", post_dedup - pre_dedup))
+
+# Check for suspicious near-duplicates that survived dedup
+# Case 1: Same doi_o with same ref_r text but different identifiers (fake DOI case)
+dup_check <- flora_data %>%
+  filter(!is.na(ref_r), ref_r != "") %>%
+  group_by(doi_o, tolower(trimws(ref_r))) %>%
+  filter(n() > 1) %>%
+  ungroup()
+
+if (nrow(dup_check) > 0) {
+  cat(sprintf("⚠ WARNING: %d rows have same doi_o + ref_r text but different identifiers:\n",
+              nrow(dup_check)))
+  dup_check %>%
+    select(doi_o, doi_r, url_r, ref_r) %>%
+    print(n = 20)
+}
+
+# Case 2: Same doi_o where one has doi_r and another has url_r pointing to same resource
+dup_check2 <- flora_data %>%
+  filter(!is.na(doi_r), !is.na(url_r)) %>%
+  mutate(url_r_norm = norm_url(url_r),
+         doi_as_url = norm_url(paste0("doi.org/", doi_r))) %>%
+  inner_join(
+    flora_data %>%
+      filter(!is.na(url_r), is.na(doi_r)) %>%
+      mutate(url_r_norm = norm_url(url_r)) %>%
+      select(doi_o, url_r_norm_other = url_r_norm, url_r_other = url_r),
+    by = "doi_o"
+  ) %>%
+  filter(url_r_norm == url_r_norm_other | doi_as_url == url_r_norm_other)
+
+if (nrow(dup_check2) > 0) {
+  cat(sprintf("⚠ WARNING: %d rows may be duplicates (doi_r and url_r point to same resource):\n",
+              nrow(dup_check2)))
+  dup_check2 %>%
+    select(doi_o, doi_r, url_r, url_r_other) %>%
+    print(n = 20)
+}
+```
+
+## Step 5: DOI Validation
+
+Validate whether DOIs are in correct format and can be resolved
+
+```{r validate-dois}
+# Check DOI format (should start with "10.")
+flora_data <- flora_data %>%
+  mutate(
+    doi_o_valid = is.na(doi_o) | str_starts(tolower(doi_o), "10."),
+    doi_r_valid = is.na(doi_r) | str_starts(tolower(doi_r), "10.")
+  )
+
+
+invalid_indices <- !flora_data$doi_o_valid
+invalid_o <- sum(invalid_indices)
+
+if (invalid_o > 0) {
+  # Logic: Show all if < 10, otherwise show 5
+  show_all <- invalid_o < 10
+  n_to_show <- if (show_all) invalid_o else 5
+  
+  # Select values
+  vals <- head(flora_data$doi_o[invalid_indices], n_to_show)
+  
+  # Determine label based on whether we are showing the full set or a subset
+  label <- if (show_all) "Invalid doi_o values:" else "Example invalid doi_o values:"
+  
+  cat(sprintf("⚠ Found %d invalid doi_o values\n", invalid_o),
+      paste(label, paste(vals, collapse = ", ")), "\n")
+}
+
+invalid_indices <- !flora_data$doi_r_valid
+invalid_r <- sum(invalid_indices)
+
+if (invalid_r > 0) {
+  # Logic: Show all if < 10, otherwise show 5
+  show_all <- invalid_o < 10
+  n_to_show <- if (show_all) invalid_r else 5
+  
+  # Select values
+  vals <- head(flora_data$doi_r[invalid_indices], n_to_show)
+  
+  # Determine label based on whether we are showing the full set or a subset
+  label <- if (show_all) "Invalid doi_r values:" else "Example invalid doi_r values:"
+  
+  cat(sprintf("⚠ Found %d invalid doi_r values\n", invalid_o),
+      paste(label, paste(vals, collapse = ", ")), "\n")
+}
+
+flora_data <- flora_data %>% select(-doi_o_valid, -doi_r_valid)
+
+#TK add DOI resolution check when available in metacheck
+    
+```
+
+## Step 6a: Apply confirmed preprint-publication deduplication
+
+Apply previously confirmed DOI replacements *before* fetching references,
+so the reference join uses the canonical DOI and produces consistent metadata.
+(New candidate detection runs later in Step 7c, after titles/authors are available.)
+
+```{r apply-confirmed-dedup}
+flora_data <- apply_confirmed_preprint_dedup(flora_data, verbose = TRUE)
+```
+
+## Step 6b: Fetch DOI References (APA + BibTeX)
+
+```{r fetch-references}
+# Get unique DOIs (after dedup, so we fetch for canonical DOIs)
+unique_dois <- unique(tolower(c(flora_data$doi_o, flora_data$doi_r)))
+unique_dois <- unique_dois[!is.na(unique_dois)]
+
+# Fetch both APA and BibTeX references with CrossRef + DataCite fallback
+refs <- get_references(unique_dois)
+```
+
+<!-- Step 6b: Fetch url_r References - TODO: implement if needed
+```{r fetch-url-refs, eval=FALSE}
+# Placeholder for URL-keyed reference fetching
+```
+-->
+
+## Step 7: Add clean References and Individual Fields
+
+```{r clean-refs}
+
+flora_augmented <- flora_data %>%
+  # Add original references and fields
+  left_join(
+    refs %>% rename(
+      doi_o = doi,
+      ref_o_clean = reference_apa,
+      bibtex_o = reference_bibtex,
+      title_o = title,
+      author_o = author,
+      journal_o = journal,
+      year_o = year,
+      volume_o = volume,
+      issue_o = issue,
+      pages_o = pages
+    ),
+    by = "doi_o"
+  ) %>%
+  # Add replication references and fields
+  left_join(
+    refs %>% rename(
+      doi_r = doi,
+      ref_r_clean = reference_apa,
+      bibtex_r = reference_bibtex,
+      title_r = title,
+      author_r = author,
+      journal_r = journal,
+      year_r = year,
+      volume_r = volume,
+      issue_r = issue,
+      pages_r = pages
+    ),
+    by = "doi_r"
+  ) %>%
+  mutate(
+    ref_o = coalesce(ref_o_clean, ref_o),
+    ref_r = coalesce(ref_r_clean, ref_r)
+  )
+
+# ---- Step 7 stats helpers ----
+has_text <- function(x) !is.na(x) & nzchar(trimws(as.character(x)))
+
+count_missing <- function(x) sum(!has_text(x))
+count_present <- function(x) sum(has_text(x))
+
+cat(sprintf("✓ Added clean references (APA + BibTeX) and individual fields\n"))
+
+# ---- BEFORE patch stats ----
+cat("\n--- Step 7 stats (BEFORE manual/BibTeX recovery) ---\n")
+cat(sprintf("Rows: %d\n", nrow(flora_augmented)))
+
+cat(sprintf("APA present:    %d original, %d replication\n",
+            count_present(flora_augmented$ref_o_clean),
+            count_present(flora_augmented$ref_r_clean)))
+cat(sprintf("APA missing:    %d original, %d replication\n",
+            count_missing(flora_augmented$ref_o_clean),
+            count_missing(flora_augmented$ref_r_clean)))
+
+cat(sprintf("BibTeX present: %d original, %d replication\n",
+            count_present(flora_augmented$bibtex_o),
+            count_present(flora_augmented$bibtex_r)))
+cat(sprintf("BibTeX missing: %d original, %d replication\n",
+            count_missing(flora_augmented$bibtex_o),
+            count_missing(flora_augmented$bibtex_r)))
+
+cat(sprintf("Title present:  %d original, %d replication\n",
+            count_present(flora_augmented$title_o),
+            count_present(flora_augmented$title_r)))
+cat(sprintf("Title missing:  %d original, %d replication\n",
+            count_missing(flora_augmented$title_o),
+            count_missing(flora_augmented$title_r)))
+
+cat("  Consider adding missing refs to manual_references.xlsx\n")
+
+# ---- Run patch ----
+cat("\n### Step 7b: Manual URL overrides + BibTeX title recovery (R)\n")
+before_title_r_missing <- count_missing(flora_augmented$title_r)
+before_ref_r_missing   <- count_missing(flora_augmented$ref_r_clean)
+before_bib_r_missing   <- count_missing(flora_augmented$bibtex_r)
+
+flora_augmented <- augment_with_manual_url_refs_r(flora_augmented, verbose = TRUE)
+
+# Mirror for the original side: patch title_o/author_o/etc. from manual
+# references when url_o matches (for originals with no DOI — e.g., book
+# chapters with a publisher landing page as the only identifier).
+flora_augmented <- augment_with_manual_url_refs(flora_augmented, side = "o",
+                                                 verbose = TRUE)
+
+# Additional fallback: fetch title/authors/year from OpenAlex when url_r is an
+# OpenAlex URL (these works have no DOI, so CrossRef/DataCite can't help).
+flora_augmented <- augment_with_openalex_url_refs_r(flora_augmented, verbose = TRUE)
+
+# Final fallback: synthesise APA/BibTeX strings from structured fields for
+# rows that still lack them (e.g. CrossRef returned BibTeX but no APA).
+flora_augmented <- synthesise_missing_refs_from_fields(flora_augmented, side = "r",
+                                                        verbose = TRUE)
+flora_augmented <- synthesise_missing_refs_from_fields(flora_augmented, side = "o",
+                                                        verbose = TRUE)
+
+# ---- AFTER patch stats ----
+cat("\n--- Step 7 stats (AFTER manual/BibTeX recovery) ---\n")
+cat(sprintf("Rows: %d\n", nrow(flora_augmented)))
+
+cat(sprintf("APA present:    %d original, %d replication\n",
+            count_present(flora_augmented$ref_o_clean),
+            count_present(flora_augmented$ref_r_clean)))
+cat(sprintf("APA missing:    %d original, %d replication\n",
+            count_missing(flora_augmented$ref_o_clean),
+            count_missing(flora_augmented$ref_r_clean)))
+
+cat(sprintf("BibTeX present: %d original, %d replication\n",
+            count_present(flora_augmented$bibtex_o),
+            count_present(flora_augmented$bibtex_r)))
+cat(sprintf("BibTeX missing: %d original, %d replication\n",
+            count_missing(flora_augmented$bibtex_o),
+            count_missing(flora_augmented$bibtex_r)))
+
+cat(sprintf("Title present:  %d original, %d replication\n",
+            count_present(flora_augmented$title_o),
+            count_present(flora_augmented$title_r)))
+cat(sprintf("Title missing:  %d original, %d replication\n",
+            count_missing(flora_augmented$title_o),
+            count_missing(flora_augmented$title_r)))
+
+cat("\nRecovered on R side (replication/reproduction):\n")
+cat(sprintf("  title_r recovered:  %d\n", before_title_r_missing - count_missing(flora_augmented$title_r)))
+cat(sprintf("  apa ref recovered:  %d\n", before_ref_r_missing   - count_missing(flora_augmented$ref_r_clean)))
+cat(sprintf("  bibtex recovered:   %d\n", before_bib_r_missing   - count_missing(flora_augmented$bibtex_r)))
+
+```
+
+## Step 7c: Clean text fields
+
+Strip HTML/JATS markup (`<i>`, `<sup>`, `<scp>`, `<mml:math>`, …) and decode
+common HTML entities (`&amp;`, `&nbsp;`, …) from titles, references, journals,
+abstracts, and outcome quotes. Also collapse stray PDF-copy linebreaks in
+abstracts and outcome quotes (joining single newlines with a space while
+preserving paragraph breaks). Done before preprint-dedup detection so title
+similarity is computed on clean strings, and before LLM classification so
+abstracts feed in clean.
+
+```{r clean-text-fields}
+flora_augmented <- clean_flora_text_fields(flora_augmented, verbose = TRUE)
+```
+
+## Step 7d: Resolve preprint-publication duplicates
+
+Detect candidates and apply resolutions. Default behaviour is to **drop one
+DOI from each detected pair** (the preprint when exactly one is a preprint;
+the non-canonical form for DOI-variant pairs; otherwise `doi_2`). To preserve
+both rows or flip the chosen survivor, add the pair to
+`cache/confirmed_preprint_duplicates.csv` with `action` = `keep_both` /
+`keep_1` / `keep_2`. Confirmed `keep_1`/`keep_2` entries already applied in
+Step 6a; this step picks up new pairs surfaced by augmentation and honours
+`keep_both` overrides. See [issue #105](https://github.com/forrtproject/FReD/issues/105).
+
+```{r preprint-dedup-resolve}
+flora_augmented <- resolve_preprint_dedup(flora_augmented, verbose = TRUE)
+```
+
+## Step 8: Add Privacy-Preserving IDs
+
+```{r add-ids}
+# Create 3-character hash hash for privacy-preserving API lookup
+flora_augmented <- flora_augmented %>%
+  mutate(
+    doi_o_hash = as.character(substr(openssl::md5(doi_o), 1, 3)),
+    doi_r_hash = as.character(substr(openssl::md5(doi_r), 1, 3))
+  )
+cat(sprintf(
+  "  Unique original hashes: %d\n",
+  n_distinct(flora_augmented$doi_o_hash, na.rm = TRUE)
+))
+cat(sprintf(
+  "  Unique original hashes: %d\n",
+  n_distinct(flora_augmented$doi_o_hash, na.rm = TRUE)
+))
+cat(sprintf(
+  "  Unique replication hashes: %d\n",
+  n_distinct(flora_augmented$doi_r_hash, na.rm = TRUE)
+))
+
+```
+
+## Step 9: Add Language from OpenAlex
+
+```{r add-metadata}
+cat("\n### Step 9: Adding language from OpenAlex\n")
+
+# OpenAlex metadata functions are provided by R/openalex_cache.R (get_openalex_language)
+
+# Get OpenAlex mailto from environment or use default
+openalex_mailto <- Sys.getenv("OPENALEX_MAILTO", NA_character_)
+
+# add language columns if not already present
+if (!"language_o" %in% names(flora_augmented)) {
+  flora_augmented <- flora_augmented %>%
+    mutate(language_o = NA_character_)
+}
+if (!"language_r" %in% names(flora_augmented)) {
+  flora_augmented <- flora_augmented %>%
+    mutate(language_r = NA_character_)
+}
+
+# Add metadata only where fields are currently empty
+dois_to_fetch_o <- flora_augmented %>%
+  filter(!is.na(doi_o), is.na(language_o)) %>%
+  pull(doi_o) %>%
+  unique()
+
+dois_to_fetch_r <- flora_augmented %>%
+  filter(!is.na(doi_r), is.na(language_r)) %>%
+  pull(doi_r) %>%
+  unique()
+
+cat(sprintf(
+  "Fetching language for %d unique original DOIs and %d unique replication DOIs...\n",
+  length(dois_to_fetch_o), length(dois_to_fetch_r)
+))
+
+# Fetch language for original DOIs (vectorised, cache-backed)
+if (length(dois_to_fetch_o) > 0) {
+  meta_o <- get_openalex_language(dois_to_fetch_o, mailto = openalex_mailto)
+  meta_o <- meta_o[!is.na(meta_o$doi), ]
+
+  flora_augmented <- flora_augmented %>%
+    left_join(
+      meta_o %>% rename(doi_o = doi, language_o_new = language),
+      by = "doi_o"
+    ) %>%
+    mutate(
+      language_o = coalesce(language_o, language_o_new)
+    ) %>%
+    select(-language_o_new)
+}
+
+# Fetch language for replication DOIs (vectorised, cache-backed)
+if (length(dois_to_fetch_r) > 0) {
+  meta_r <- get_openalex_language(dois_to_fetch_r, mailto = openalex_mailto)
+  meta_r <- meta_r[!is.na(meta_r$doi), ]
+
+  flora_augmented <- flora_augmented %>%
+    left_join(
+      meta_r %>% rename(doi_r = doi, language_r_new = language),
+      by = "doi_r"
+    ) %>%
+    mutate(
+      language_r = coalesce(language_r, language_r_new)
+    ) %>%
+    select(-language_r_new)
+}
+
+
+cat(sprintf(
+  "  Original papers with language: %d\n",
+  sum(!is.na(flora_augmented$language_o), na.rm = TRUE)
+))
+cat(sprintf(
+  "  Replication papers with language: %d\n",
+  sum(!is.na(flora_augmented$language_r), na.rm = TRUE)
+))
+```
+
+## Step 9b: Exclude COS non-replications (frozen one-off validation)
+
+```{r exclude-cos-non-replications}
+# The COS replication-intent LLM classification was a ONE-OFF validation step
+# (see issue #124). Rather than re-running an LLM and shipping the derived
+# `self_identified_replication` / `replication_intent_confidence` columns on
+# every render, its result is frozen here as a static exclusion list.
+#
+# These (doi_o, doi_r) pairs are COS entries the validation flagged as NOT
+# genuine self-identified replications — meta-papers (e.g. the RSOS "176
+# student replications" summary), conceptual extensions, alternative-theory
+# tests, or withdrawn work. Frozen from the 2026-06-17 validation render; the
+# LLM code that produced them is preserved (disabled) at the end of this chunk.
+cos_non_replications <- tibble::tribble(
+  ~doi_o,                              ~doi_r,
+  "10.1016/j.cognition.2014.09.006",   "10.1007/s00213-019-05314-z",
+  "10.1016/j.jml.2010.11.002",         "10.3758/s13421-019-00899-4",
+  "10.1016/j.neuron.2006.03.036",      "10.1093/geronb/gbt044",
+  "10.1037/0022-3514.71.2.230",        "10.1037/0022-3514.83.2.406",
+  "10.1037/0022-3514.71.2.230",        "10.1037/0022-3514.90.6.893",
+  "10.1037/0022-3514.94.1.116",        "10.1177/0146167213510746",
+  "10.1037/0096-3445.136.2.241",       "10.1186/2050-7283-1-22",
+  "10.1037/a0019337",                  "10.3758/s13421-019-00958-w",
+  "10.1080/13506280544000110",         "10.1016/j.actpsy.2020.103138",
+  "10.1080/135062899395000",           "10.1080/17470218.2012.699077",
+  "10.1111/j.1467-7687.2009.00859.x",  "10.1037/a0024923",
+  "10.1111/j.1467-9280.2007.02004.x",  "10.1371/journal.pone.0096339",
+  "10.1177/0146167216684132",          "10.1525/collabra.185",
+  "10.1177/0956797611435919",          "10.1177/0956797613486983",
+  "10.1177/0956797617721270",          "10.3758/s13414-019-01723-6",
+  "10.1523/jneurosci.3427-13.2014",    "10.1093/cercor/bhx353"
+)
+
+pre_excl <- nrow(flora_augmented)
+flora_augmented <- flora_augmented %>%
+  anti_join(cos_non_replications, by = c("doi_o", "doi_r"))
+cat(sprintf("\n### Step 9b: Excluded %d COS non-replications (frozen one-off validation)\n",
+            pre_excl - nrow(flora_augmented)))
+
+# --- DISABLED: original one-off LLM replication-intent classification --------
+# This generated `self_identified_replication`, `replication_intent_confidence`
+# and `replication_intent_reasoning` for COS rows. Re-enable (and re-add the
+# columns to output_cols) only to refresh the exclusion list above.
+#
+# cos_rows <- flora_augmented %>% filter(source == "COS")
+# non_cos_rows <- flora_augmented %>% filter(source != "COS")
+#
+# # Fetch abstracts from OpenAlex for COS replication DOIs where abstract_r is missing
+# dois_needing_abstract <- cos_rows %>%
+#   filter(!is.na(doi_r), is.na(abstract_r) | abstract_r == "") %>%
+#   pull(doi_r) %>% unique()
+# if (length(dois_needing_abstract) > 0) {
+#   openalex_abstracts <- get_openalex_abstracts(dois_needing_abstract, mailto = openalex_mailto)
+#   openalex_abstracts <- openalex_abstracts[!is.na(openalex_abstracts$doi), ]
+#   cos_rows <- cos_rows %>%
+#     left_join(openalex_abstracts %>% rename(doi_r = doi, abstract_r_oa = abstract), by = "doi_r") %>%
+#     mutate(abstract_r = coalesce(abstract_r, abstract_r_oa)) %>%
+#     select(-abstract_r_oa)
+#   cos_rows <- clean_flora_text_fields(cos_rows, verbose = FALSE)
+# }
+#
+# # Run LLM classification on COS rows only (function in R/llm_classification.R)
+# cos_rows <- classify_replication_intent(cos_rows)
+# non_cos_rows <- non_cos_rows %>%
+#   mutate(self_identified_replication = TRUE,
+#          replication_intent_confidence = "high",
+#          replication_intent_reasoning = "Pre-screened source")
+# flora_augmented <- bind_rows(cos_rows, non_cos_rows)
+# ---------------------------------------------------------------------------
+```
+
+## Step 9c: Add Open Access URLs from Unpaywall
+
+```{r add-oa-urls}
+cat("\n### Step 9c: Adding Open Access URLs from Unpaywall\n")
+
+# Collect all unique DOIs
+all_dois <- unique(c(flora_augmented$doi_o, flora_augmented$doi_r))
+all_dois <- all_dois[!is.na(all_dois) & nzchar(all_dois)]
+
+cat(sprintf("Looking up %d unique DOIs in Unpaywall...\n", length(all_dois)))
+
+unpaywall_email <- Sys.getenv("OPENALEX_MAILTO", "lukas.wallrich@gmail.com")
+oa_results <- get_unpaywall_oa(all_dois, email = unpaywall_email)
+
+# Join OA URLs for original papers
+flora_augmented <- flora_augmented %>%
+  left_join(
+    oa_results %>% rename(doi_o = doi, oa_url_o = oa_url),
+    by = "doi_o"
+  ) %>%
+  left_join(
+    oa_results %>% rename(doi_r = doi, oa_url_r = oa_url),
+    by = "doi_r"
+  )
+
+cat(sprintf("  Original papers with OA URL: %d\n",
+            sum(!is.na(flora_augmented$oa_url_o) & nzchar(flora_augmented$oa_url_o))))
+cat(sprintf("  Replication papers with OA URL: %d\n",
+            sum(!is.na(flora_augmented$oa_url_r) & nzchar(flora_augmented$oa_url_r))))
+```
+
+## Step 9d: Annotate meta-paper references
+
+```{r annotate-meta-papers}
+cat("\n### Step 9d: Annotating meta-paper references\n")
+
+# Known meta-paper DOIs (replication papers that aggregate multiple studies)
+meta_paper_dois <- tolower(c(
+  "10.1038/s41562-024-02062-9",   # Holzmeister et al. 2024
+  "10.3389/fcomm.2022.1048896",   # 10 cases of sensory research
+  "10.1073/pnas.2103313118",      # scarcity effects
+  "10.1007/s13164-018-0400-9",    # X-PHI
+  "10.1038/s41562-018-0399-z",    # Camerer 2018
+  "10.1098/rsos.231240",          # Boyce
+  "10.1027/1864-9335/a000178",    # ML1
+  "10.1177/2515245918810225",     # ML2
+  "10.1016/j.jesp.2015.10.012",  # ML3
+  "10.1126/science.aac4716",     # RP:P
+  "10.1177/08902070221094216",   # SVO development
+  "10.1126/science.aaf0918"     # Camerer 2016
+))
+
+# Warn about potential meta-papers not yet in the list (doi_r with >=5 distinct url_r)
+candidate_meta <- flora_augmented %>%
+  filter(!is.na(doi_r), !is.na(url_r), nzchar(url_r)) %>%
+  group_by(doi_r) %>%
+  summarise(n_urls = n_distinct(url_r), .groups = "drop") %>%
+  filter(n_urls >= 5, !tolower(doi_r) %in% meta_paper_dois)
+
+if (nrow(candidate_meta) > 0) {
+  cat(sprintf("⚠ WARNING: %d DOIs have >=5 distinct url_r but are not in meta_paper_dois list.\n",
+              nrow(candidate_meta)))
+  cat("  Review and add to meta_paper_dois if appropriate:\n")
+  for (i in seq_len(nrow(candidate_meta))) {
+    cat(sprintf("    %s (%d distinct urls)\n", candidate_meta$doi_r[i], candidate_meta$n_urls[i]))
+  }
+}
+
+cat(sprintf("  Known meta-papers: %d\n", length(meta_paper_dois)))
+
+# For meta-paper entries with url_r, append individual report URL to ref_r and ref_r_clean
+is_meta <- tolower(flora_augmented$doi_r) %in% meta_paper_dois
+has_url <- !is.na(flora_augmented$url_r) & nzchar(flora_augmented$url_r)
+to_annotate <- is_meta & has_url
+
+flora_augmented <- flora_augmented %>%
+  mutate(
+    ref_r = if_else(
+      to_annotate & !grepl("Individual report available at", ref_r, fixed = TRUE),
+      paste0(ref_r, " Individual report available at ", url_r),
+      ref_r
+    ),
+    ref_r_clean = if_else(
+      to_annotate & !is.na(ref_r_clean) & !grepl("Individual report available at", ref_r_clean, fixed = TRUE),
+      paste0(ref_r_clean, " Individual report available at ", url_r),
+      ref_r_clean
+    )
+  )
+
+cat(sprintf("  Rows annotated with individual report URL: %d\n", sum(to_annotate)))
+```
+
+## Step 10: Format for Output and Remove NAs
+
+```{r format-output}
+cat("\n### Step 11: Formatting for output\n")
+
+# Select and reorder columns for output
+output_cols <- c(
+"doi_o", "alt_identifier_o", "doi_o_hash", "title_o", "author_o", "journal_o", "year_o", "volume_o", "issue_o", "pages_o", "apa_ref_o", "bibtex_ref_o", "url_o", "language_o",
+"doi_r", "alt_identifier_r", "doi_r_hash", "title_r", "author_r", "journal_r", "year_r", "volume_r", "issue_r", "pages_r", "apa_ref_r", "bibtex_ref_r", "url_r", "language_r",
+"oa_url_o", "oa_url_r",
+"outcome", "outcome_quote", "outcome_quote_source", "type", "source"
+)
+
+flora_renames <- c(
+  c(apa_ref_o = "ref_o_clean", apa_ref_r = "ref_r_clean", bibtex_ref_o = "bibtex_o",
+    bibtex_ref_r = "bibtex_r")
+)
+
+flora_augmented <- flora_augmented %>%
+  rename(!!!flora_renames)
+
+available_output <- intersect(output_cols, names(flora_augmented))
+setdiff(available_output, output_cols)
+
+flora_all <- flora_augmented %>% select(all_of(available_output))
+
+# Strip DUMMY_* placeholder DOIs used to key manual_references entries for
+# papers with no real DOI/URL (e.g., book chapters). Must run after metadata
+# enrichment so the join works, but before output.
+flora_all <- strip_dummy_dois(flora_all, verbose = TRUE)
+
+# Log rows that will be excluded due to missing titles
+excluded_rows <- flora_all %>%
+  filter(is.na(title_o) | title_o == "" | is.na(title_r) | title_r == "") %>%
+  mutate(
+    reason = case_when(
+      (is.na(title_o) | title_o == "") & (is.na(title_r) | title_r == "") ~ "missing both title_o and title_r",
+      is.na(title_o) | title_o == "" ~ "missing title_o",
+      is.na(title_r) | title_r == "" ~ "missing title_r"
+    )
+  ) %>%
+  select(reason, source, doi_o, apa_ref_o, doi_r, url_r, apa_ref_r)
+
+if (nrow(excluded_rows) > 0) {
+  export_log_path <- here::here("output", "flora_export_log.csv")
+  write_excel_csv(excluded_rows, export_log_path)
+  cat(sprintf("⚠ %d rows excluded due to missing reference details\n", nrow(excluded_rows)))
+  cat(sprintf("  Export log saved to: %s\n", export_log_path))
+} else {
+  cat("✓ No rows excluded due to missing reference details\n")
+}
+
+# Apply title filter
+flora_final <- flora_all %>%
+  filter(!is.na(title_o), title_o != "", !is.na(title_r), title_r != "")
+
+# Non-replication COS rows are now excluded earlier (Step 9b, frozen list);
+# no self_identified_replication filter is applied here.
+
+cat(sprintf("✓ Formatted for output\n"))
+cat(sprintf("  Final columns: %d\n", ncol(flora_final)))
+cat(sprintf("  Final rows: %d\n", nrow(flora_final)))
+```
+
+## Step 11: Save Output
+
+```{r save}
+cat("\n### Step 12: Saving output\n")
+
+# Create output directory if needed
+if (!dir.exists(here::here("output"))) {
+  dir.create(here::here("output"))
+}
+
+# Save as CSV
+write_excel_csv(flora_final, FLORA_OUTPUT)
+
+cat(sprintf("✓ Saved to: %s\n", FLORA_OUTPUT))
+cat(sprintf("  Format: CSV (UTF-8)\n"))
+cat(sprintf("  Rows: %d (Replications + Reproductions)\n", nrow(flora_final)))
+cat(sprintf("  Columns: %d\n", ncol(flora_final)))
+
+# Summary statistics (flora_final has renamed columns!)
+has_text <- function(x) !is.na(x) & nzchar(trimws(as.character(x)))
+
+cat("\n### Summary Statistics\n")
+cat(sprintf("Total paper pairs: %d\n", nrow(flora_final)))
+
+# by type
+if ("type" %in% names(flora_final)) {
+  cat("\nRows by type:\n")
+  print(table(flora_final$type, useNA = "ifany"))
+}
+
+# outcomes
+if ("outcome" %in% names(flora_final)) {
+  cat(sprintf("Rows with outcome codes: %d\n",
+              sum(has_text(flora_final$outcome))))
+}
+
+# APA refs (final names)
+if ("apa_ref_o" %in% names(flora_final)) {
+  cat(sprintf("Original papers with APA reference: %d\n",
+              sum(has_text(flora_final$apa_ref_o))))
+}
+if ("apa_ref_r" %in% names(flora_final)) {
+  cat(sprintf("Replication/reproduction papers with APA reference: %d\n",
+              sum(has_text(flora_final$apa_ref_r))))
+}
+
+# BibTeX refs (final names)
+if ("bibtex_ref_o" %in% names(flora_final)) {
+  cat(sprintf("Original papers with BibTeX: %d\n",
+              sum(has_text(flora_final$bibtex_ref_o))))
+}
+if ("bibtex_ref_r" %in% names(flora_final)) {
+  cat(sprintf("Replication/reproduction papers with BibTeX: %d\n",
+              sum(has_text(flora_final$bibtex_ref_r))))
+}
+
+# Language
+if ("language_o" %in% names(flora_final)) {
+  cat(sprintf("Original papers with language metadata: %d\n",
+              sum(has_text(flora_final$language_o))))
+}
+if ("language_r" %in% names(flora_final)) {
+  cat(sprintf("Replication/reproduction papers with language metadata: %d\n",
+              sum(has_text(flora_final$language_r))))
+}
+
+# DOIs
+if ("doi_o" %in% names(flora_final)) {
+  cat(sprintf("Rows with original DOI: %d\n",
+              sum(has_text(flora_final$doi_o))))
+}
+if ("doi_r" %in% names(flora_final)) {
+  cat(sprintf("Rows with replication/reproduction DOI: %d\n",
+              sum(has_text(flora_final$doi_r))))
+}
+```
+
+## Pipeline Complete
+
+```{r complete}
+cat("\n=== FLoRA Preparation Pipeline Complete ===\n")
+cat("(Includes both Replications and Reproductions)\n")
+cat(sprintf("Completion time: %s\n", format(Sys.time(), "%Y-%m-%d %H:%M:%S")))
+cat(sprintf("Output file: %s\n", FLORA_OUTPUT))
+cat("\nNext steps:\n")
+cat("1. Review the generated flora.csv file\n")
+cat("2. Optionally: pipelines/flora/release_flora.qmd to release to OSF\n")
+```
