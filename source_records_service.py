@@ -508,20 +508,39 @@ def duplicate_groups(cur, unresolved_only: bool = True) -> dict:
     groups = []
     for fp in fingerprints:
         members = grouped.get(fp, [])
-        outcomes = {
-            m.get("outcome") or f"{m.get('outcome_computation')}/{m.get('outcome_robustness')}"
-            for m in members
-        }
+        # Outcomes compared within each type: across types they use different
+        # vocabularies, so they always "differ" and say nothing about a duplicate.
+        outcomes_by_type = {}
+        for m in members:
+            outcomes_by_type.setdefault(m.get("type"), set()).add(
+                m.get("outcome")
+                or f"{m.get('outcome_computation')}/{m.get('outcome_robustness')}")
+        type_counts = {}
+        for m in members:
+            type_counts[m.get("type")] = type_counts.get(m.get("type"), 0) + 1
+        # The fingerprint keys on the paper, not the type, so a replication and a
+        # reproduction of one paper land here too. Those are usually two valid
+        # records; a 'duplicate' ruling between them removes one from FLoRA.
+        mixed_types = len(type_counts) > 1
         groups.append({
             "fingerprint": fp,
             "members": members,
             # Members disagreeing about the outcome are the ones worth opening first.
-            "outcomes_differ": len(outcomes) > 1,
+            "outcomes_differ": any(len(v) > 1 for v in outcomes_by_type.values()),
             "cross_sheet": len({m["source"] for m in members}) > 1,
+            "mixed_types": mixed_types,
+            # Only one row of each type: nothing here is a likely duplicate.
+            "_types_only": mixed_types and max(type_counts.values()) == 1,
             "resolved": all(m["duplicate_status"] for m in members),
         })
 
-    groups.sort(key=lambda g: (not g["outcomes_differ"], not g["cross_sheet"]))
+    # Groups that only pair one replication with one reproduction go last: they
+    # are the least likely to be real duplicates, and first place invited the
+    # ruling that removes a reproduction.
+    groups.sort(key=lambda g: (g["_types_only"], not g["outcomes_differ"],
+                               not g["cross_sheet"]))
+    for g in groups:
+        del g["_types_only"]
     return {"groups": groups, "total": len(groups)}
 
 

@@ -351,7 +351,10 @@ def test_signature_covers_every_way_the_dataset_can_change():
                        "n_flora": 1, "n_excluded": 0}])
     flora_service._signature(cur)
     sql = cur.executed[0][0]
-    for table in ("source_records", "flora_records", "transform_exclusions"):
+    # preprint_dedup_decisions: a ruling in the review queue changes which rows
+    # the build keeps, so the cached frame must not outlive one.
+    for table in ("source_records", "flora_records", "transform_exclusions",
+                  "preprint_dedup_decisions"):
         assert table in sql
     assert "MAX(updated_at)" in sql
 

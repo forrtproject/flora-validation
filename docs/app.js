@@ -7985,6 +7985,7 @@ function resetFloraView() {
   ["#flora-source-filter", "#flora-outcome-filter"].forEach((id) => {
     const select = $(id); if (select) select.value = "";
   });
+  resetFloraDedupView();
 }
 
 function floraQueryParams() {
@@ -8047,6 +8048,7 @@ function renderFloraRecords(data) {
   set("#ffc-repl", counts.replications);
   set("#ffc-repro", counts.reproductions);
   fillFloraSelects(counts);
+  setFloraDedupCount(counts.preprint_pending);
 
   // Rows the id registry has not reached must be assigned before export.
   const warn = $("#flora-unregistered");
@@ -8061,6 +8063,10 @@ function renderFloraRecords(data) {
     if (counts.untitled) {
       notes.push("<b>" + counts.untitled + " row(s) have no title on one side</b> " +
         "and are left out of the final export. The pipeline report records excluded rows.");
+    }
+    if (counts.preprint_pending) {
+      notes.push("<b>" + counts.preprint_pending + " preprint duplicate pair(s) await a decision.</b> " +
+        '<button class="link-btn flora-dedup-open" type="button">Review them</button>');
     }
     if (notes.length) {
       warn.innerHTML = notes.join("<br>");
@@ -8278,6 +8284,334 @@ function showFloraDetail(rec) {
   $("#admin-detail-modal").classList.remove("hidden");
   document.body.style.overflow = "hidden";
 }
+
+/* ---------- FLoRA: preprint duplicate review ---------- */
+
+// Pairs that may be one paper under two DOIs, which the build could not settle.
+// Kept by pair key, so a button only has to carry the key.
+let _floraDedupItems = new Map();
+let _floraDedupShowDecided = false;
+
+const FLORA_DEDUP_LABELS = {
+  keep_1: "Same paper — kept A",
+  keep_2: "Same paper — kept B",
+  keep_both: "Different papers — kept both",
+};
+
+function floraDedupGrid() {
+  const tab = $("#admin-tab-flora");
+  return [$("#flora-filters"), $("#flora-pager"),
+          tab?.querySelector(".src-toolbar"), tab?.querySelector(".admin-table-wrap")];
+}
+
+/** Put the grid back without fetching; resetFloraView() calls this on tab entry. */
+function resetFloraDedupView() {
+  $("#flora-dedup-view")?.classList.add("hidden");
+  floraDedupGrid().forEach((el) => el?.classList.remove("hidden"));
+}
+
+function showFloraDedupView() {
+  floraDedupGrid().forEach((el) => el?.classList.add("hidden"));
+  $("#flora-dedup-view")?.classList.remove("hidden");
+  fetchFloraDedup();
+}
+
+function setFloraDedupCount(n) {
+  const el = $("#flora-dedup-count");
+  if (el) el.textContent = (n == null) ? "—" : n;
+  $("#flora-dedup-btn")?.classList.toggle("flora-dedup-attention", Number(n) > 0);
+}
+
+async function fetchFloraDedup() {
+  const body = $("#flora-dedup-body");
+  if (!body) return;
+  body.innerHTML = '<p class="admin-loading">Loading…</p>';
+  try {
+    renderFloraDedup(await adminApi("/flora/preprint-duplicates"));
+  } catch (e) {
+    body.innerHTML = '<p class="admin-loading">Error: ' + escapeHtml(e.message) + "</p>";
+  }
+}
+
+function floraDedupDoi(doi) {
+  if (!doi) return '<span class="flora-missing">no DOI</span>';
+  if (!/^10\./.test(doi)) return '<code class="flora-doi">' + escapeHtml(doi) + "</code>";
+  const href = "https://doi.org/" + encodeURIComponent(doi).replace(/%2F/g, "/");
+  return '<a class="flora-doi" href="' + escapeHtml(href) +
+         '" target="_blank" rel="noopener noreferrer">' + escapeHtml(doi) + "</a>";
+}
+
+/** A hover explanation. Every choice on the review screens carries one, because a
+ *  label like "keep A" does not say what happens to B, or when. */
+function tip(text) {
+  return ' title="' + escapeHtml(text) + '"';
+}
+
+const FLORA_DEDUP_WHEN =
+  " Shows in this tab at once; the published CSV, the public API and the Atlas change " +
+  "at the next pipeline run (nightly, or Run pipeline in Source Records).";
+
+/** What kind of record a DOI names — the first thing to read when deciding. */
+function floraDedupKind(p) {
+  if (p.is_preprint) {
+    return '<span class="src-dup-badge"' +
+      tip("A preprint-server DOI (PsyArXiv, arXiv, SSRN, bioRxiv…). When the same paper " +
+          "also has a publisher DOI, the published version is usually the one to keep.") +
+      ">preprint</span>";
+  }
+  if (p.is_repository) {
+    return '<span class="src-dup-badge"' +
+      tip("A generic OSF DOI: a project, registration or file, not necessarily a preprint. " +
+          "Different teams' reports often share one templated title here.") + ">OSF</span>";
+  }
+  return '<span class="src-dup-badge src-dup-badge-ok"' +
+    tip("Not a preprint or OSF DOI, so usually the published article.") + ">publisher DOI</span>";
+}
+
+function floraDedupIsOriginal(item) {
+  return (item.side || "").startsWith("original");
+}
+
+/** The paper the automatic rule set aside (dropped, or for originals: merged away). */
+function floraDedupSetAside(item, p) {
+  return !!(item.doi_remove && p.doi && item.doi_remove.toLowerCase() === p.doi.toLowerCase());
+}
+
+/** What each decision does to this particular pair, for its button's tooltip. The
+ *  two sides differ: a replication-side "same paper" removes a record, while for two
+ *  originals it only lists the replications under one DOI — no record goes, no ID
+ *  changes. */
+function floraDedupChoiceTip(item, action) {
+  const [a, b] = item.papers;
+  const doi = (p) => p.doi || "no DOI";
+  const original = floraDedupIsOriginal(item);
+  if (action === "keep_both") {
+    const setAside = item.papers.find((p) => floraDedupSetAside(item, p));
+    let detail;
+    if (original) {
+      detail = setAside
+        ? "The two originals stay separate: the replications the automatic rule had " +
+          "listed under the other DOI go back under " + doi(setAside) + ". No record is " +
+          "removed and no ID changes."
+        : "Nothing changes: both originals already stay separate. This confirms it and " +
+          "takes the pair off this list.";
+    } else {
+      detail = setAside
+        ? "Brings back " + doi(setAside) + ", which the automatic rule dropped, so both " +
+          "stay. The returning record gets its permanent FLoRA ID at the next pipeline " +
+          "run; until then Download full CSV waits for that run."
+        : "Nothing is dropped: both records already stay. This confirms it and takes the " +
+          "pair off this list.";
+    }
+    return "Different papers. " + detail + FLORA_DEDUP_WHEN;
+  }
+  const [kept, gone] = action === "keep_1" ? [a, b] : [b, a];
+  const [keptLabel, goneLabel] = action === "keep_1" ? ["A", "B"] : ["B", "A"];
+  if (original) {
+    return "Same original paper. Every replication recorded under " + goneLabel + " (" +
+      doi(gone) + ") is listed under " + keptLabel + " (" + doi(kept) + "), and " +
+      goneLabel + "'s DOI is kept on those rows as an alternative identifier. No record " +
+      "is removed and no ID changes." + FLORA_DEDUP_WHEN;
+  }
+  const identity = floraDedupSetAside(item, kept)
+    // Keeping the record the rule dropped: it has no published ID of its own yet.
+    ? keptLabel + " was dropped by the automatic rule, so it comes back and gets its " +
+      "permanent FLoRA ID at the next pipeline run (Download full CSV waits for that run). " +
+      "The paper's published ID therefore changes: " + goneLabel + "'s ID is retired, not " +
+      "deleted, so existing links still resolve. "
+    : keptLabel + " keeps its FLoRA ID. If " + goneLabel + " was already published, its ID " +
+      "is retired, not deleted, so existing links still resolve. ";
+  return "Same paper. Keeps " + keptLabel + " (" + doi(kept) + ") and removes " + goneLabel +
+    " (" + doi(gone) + ") from FLoRA; " + keptLabel + " lists " + goneLabel + "'s DOI as " +
+    "an alternative identifier. " + identity + FLORA_DEDUP_WHEN.trim();
+}
+
+function floraDedupPaper(item, p) {
+  const letter = p.position === 1 ? "A" : "B";
+  const dropped = floraDedupSetAside(item, p);
+  const rows = [
+    ["DOI", floraDedupDoi(p.doi)],
+    ["title", escapeHtml(p.title || "—")],
+    ["first author", escapeHtml(p.first_author || "—")],
+    ["year", escapeHtml(p.year || "—")],
+  ];
+  // Only the replication side carries a record of its own; an original's row
+  // outcome belongs to one of its replications, not to the paper.
+  if (item.side === "replication") {
+    rows.push(["record", '<span' + tip("Its record ID in Source Records.") + ">" +
+                         escapeHtml(p.source_display_id || "—") + "</span>"]);
+    rows.push(["outcome", escapeHtml(p.outcome || "—")]);
+    if (p.url && /^https?:\/\//i.test(p.url)) {
+      rows.push(["link", '<a href="' + escapeHtml(p.url) +
+        '" target="_blank" rel="noopener noreferrer">' + srcShorten(p.url, 48) + "</a>"]);
+    }
+  }
+  return '<div class="src-dup-card' + (dropped ? " src-dup-done" : "") + '">' +
+    '<div class="src-dup-card-head"><strong>' + letter + "</strong> " + floraDedupKind(p) + "</div>" +
+    '<dl class="src-dup-fields flora-dedup-fields">' +
+      rows.map(([k, v]) => "<dt>" + k + "</dt><dd>" + v + "</dd>").join("") +
+    "</dl>" +
+    (!dropped ? "" : floraDedupIsOriginal(item)
+      ? '<div class="flora-dedup-dropped"' +
+          tip("The automatic rule treated this DOI as the same original as the other one and " +
+              "lists its replications there. Nothing was removed. Different papers, keep " +
+              "both moves them back.") +
+          ">Its replications are listed under the other DOI for now</div>"
+      : '<div class="flora-dedup-dropped"' +
+          tip("The automatic rule removed this record from FLoRA as the likely duplicate. " +
+              "It stays out unless you choose Different papers, keep both, or keep this one.") +
+          ">Dropped from the dataset for now</div>") +
+  "</div>";
+}
+
+function floraDedupGroup(item) {
+  const [a, b] = item.papers;
+  const key = escapeHtml(item.pair_key);
+  const status = item.applied_action === "needs_review"
+    ? '<span class="src-dup-badge src-dup-badge-warn"' +
+        tip("Both records are in FLoRA right now. The automatic rule would have dropped one, " +
+            "but it will not guess here (different first authors, or two preprints without " +
+            "a matching author), so a person has to decide.") +
+        ">both kept until decided — " +
+        escapeHtml((item.resolution || "").replace(/^review:\s*/, "")) + "</span>"
+    : floraDedupIsOriginal(item)
+      ? '<span class="src-dup-badge src-dup-badge-warn"' +
+          tip("The automatic rule treated the two DOIs as one original and lists all their " +
+              "replications under one of them. Nothing was removed. Nobody has confirmed " +
+              "that yet; your decision replaces the guess.") +
+          ">merged automatically — not confirmed</span>"
+      : '<span class="src-dup-badge src-dup-badge-warn"' +
+          tip("The automatic rule treated these as one paper and dropped one (a preprint " +
+              "loses to a published version). Nobody has confirmed that yet; your decision " +
+              "replaces the guess.") +
+          ">one dropped automatically — not confirmed</span>";
+  const flags = [status];
+  if (item.title_sim != null) {
+    flags.push('<span class="src-dup-badge"' +
+      tip("How alike the two titles are: 1.00 means identical, ignoring case and " +
+          "punctuation. Templated titles can match exactly for different reports, so check " +
+          "authors and years too.") +
+      ">title similarity " + Number(item.title_sim).toFixed(2) + "</span>");
+  }
+  if (item.side === "replication" && a.outcome && b.outcome && a.outcome !== b.outcome) {
+    flags.push('<span class="src-dup-badge src-dup-badge-warn"' +
+      tip("The two records report different outcomes. If they are the same paper, only the " +
+          "kept record's outcome is published, so pick carefully.") + ">outcomes differ</span>");
+  }
+  // Why the pair was found, in words rather than the detector's route name.
+  const originalRoutes = {
+    "original": "Two original DOIs with the same title",
+    "original (fuzzy)": "Two original DOIs: same first author, similar titles",
+    "original (DOI variant)": "One original DOI written two ways",
+  };
+  const context = item.side === "replication" && item.doi_o_group
+    ? "Both replicate " + floraDedupDoi(item.doi_o_group)
+    : escapeHtml(originalRoutes[item.side] || "Two original DOIs");
+  return '<div class="src-dup-group">' +
+    '<div class="src-dup-group-head flora-dedup-head">' + flags.join(" ") +
+      '<span class="src-dim2 flora-dedup-context">' + context + "</span></div>" +
+    '<div class="src-dup-cards">' + floraDedupPaper(item, a) + floraDedupPaper(item, b) + "</div>" +
+    '<div class="flora-dedup-actions">' +
+      ["keep_1", "keep_2", "keep_both"].map((action) =>
+        '<button class="ghost-btn flora-dedup-decide" type="button" data-key="' + key +
+          '" data-action="' + action + '"' + tip(floraDedupChoiceTip(item, action)) + ">" +
+          { keep_1: "Same paper — keep A", keep_2: "Same paper — keep B",
+            keep_both: "Different papers — keep both" }[action] + "</button>"
+      ).join("") +
+      '<input class="admin-input flora-dedup-note" type="text" maxlength="500" ' +
+        'placeholder="Note (optional)" aria-label="Note for this decision"' +
+        tip("Optional. Saved with your decision and shown in the decided list, so others " +
+            "can see why.") + ">" +
+    "</div>" +
+  "</div>";
+}
+
+function floraDedupDecidedRow(d) {
+  const when = d.decided_at ? srcTimeAgo(new Date(d.decided_at)) : "";
+  return "<tr>" +
+    "<td><b>A</b> " + floraDedupDoi(d.doi_1) + "<br><small>" + srcShorten(d.title_1, 80) + "</small>" +
+      "<br><b>B</b> " + floraDedupDoi(d.doi_2) + "<br><small>" + srcShorten(d.title_2, 80) + "</small></td>" +
+    "<td>" + escapeHtml(FLORA_DEDUP_LABELS[d.action] || d.action) +
+      (d.note ? "<br><small>" + escapeHtml(d.note) + "</small>" : "") + "</td>" +
+    "<td>" + escapeHtml(d.decided_by || "") + (when ? "<br><small>" + escapeHtml(when) + "</small>" : "") + "</td>" +
+    '<td><button class="ghost-btn flora-dedup-undo" type="button" data-key="' +
+      escapeHtml(d.pair_key) + '"' +
+      tip("Withdraw this decision. The pair goes back to the automatic rules (or to " +
+          "cache/confirmed_preprint_duplicates.csv, if the file lists it) and returns to " +
+          "the list above if it still needs a decision." + FLORA_DEDUP_WHEN) +
+      ">Undo</button></td>" +
+  "</tr>";
+}
+
+function renderFloraDedup(data) {
+  const pending = data.pending || [];
+  const decided = data.decided || [];
+  _floraDedupItems = new Map(pending.map((item) => [item.pair_key, item]));
+  setFloraDedupCount(pending.length);
+  $("#flora-dedup-summary").textContent =
+    pending.length + " awaiting a decision · " + decided.length + " decided";
+  $("#flora-dedup-body").innerHTML = pending.length
+    ? pending.map(floraDedupGroup).join("")
+    : '<p class="admin-empty">No preprint duplicate pairs need a decision.</p>';
+
+  const box = $("#flora-dedup-decided");
+  box.classList.toggle("hidden", !_floraDedupShowDecided);
+  box.innerHTML = '<h4 class="flora-dedup-subhead">Decided pairs</h4>' + (decided.length
+    ? '<div class="admin-table-wrap"><table class="admin-table flora-dedup-decided-table">' +
+        "<thead><tr><th>Pair</th><th>Decision</th><th>By</th><th></th></tr></thead>" +
+        "<tbody>" + decided.map(floraDedupDecidedRow).join("") + "</tbody></table></div>"
+    : '<p class="admin-empty">No decisions yet.</p>');
+}
+
+async function decideFloraDedup(button) {
+  const item = _floraDedupItems.get(button.dataset.key);
+  if (!item) return;
+  const group = button.closest(".src-dup-group");
+  const note = group?.querySelector(".flora-dedup-note")?.value || "";
+  const buttons = group ? [...group.querySelectorAll("button")] : [button];
+  buttons.forEach((b) => { b.disabled = true; });
+  try {
+    await adminApi("/flora/preprint-duplicates/decision", "POST", {
+      doi_1: item.papers[0].doi, doi_2: item.papers[1].doi,
+      action: button.dataset.action, note: note,
+    });
+    showToast("Saved. FLoRA records show it now; the published CSV at the next pipeline run.");
+    fetchFloraDedup();
+  } catch (e) {
+    buttons.forEach((b) => { b.disabled = false; });
+    await showAlert("Error: " + e.message);
+  }
+}
+
+async function undoFloraDedup(button) {
+  const ok = await showConfirm("Withdraw this decision? The pair goes back to the " +
+                               "automatic rules until someone decides again.");
+  if (!ok) return;
+  try {
+    await adminApi("/flora/preprint-duplicates/decision?pair_key=" +
+                   encodeURIComponent(button.dataset.key), "DELETE");
+    showToast("Decision withdrawn.");
+    fetchFloraDedup();
+  } catch (e) {
+    await showAlert("Error: " + e.message);
+  }
+}
+
+$("#flora-dedup-btn")?.addEventListener("click", showFloraDedupView);
+$("#flora-dedup-back")?.addEventListener("click", () => { resetFloraDedupView(); fetchFloraRecords(); });
+$("#flora-unregistered")?.addEventListener("click", (e) => {
+  if (e.target.closest(".flora-dedup-open")) showFloraDedupView();
+});
+$("#flora-dedup-show-decided")?.addEventListener("change", (e) => {
+  _floraDedupShowDecided = e.target.checked;
+  $("#flora-dedup-decided")?.classList.toggle("hidden", !_floraDedupShowDecided);
+});
+$("#flora-dedup-view")?.addEventListener("click", (e) => {
+  const decide = e.target.closest(".flora-dedup-decide");
+  if (decide) { decideFloraDedup(decide); return; }
+  const undo = e.target.closest(".flora-dedup-undo");
+  if (undo) undoFloraDedup(undo);
+});
 
 /* ---------- Complete FLoRA pipeline (queued job, run on the server) ---------- */
 
@@ -8810,9 +9144,33 @@ function renderSourceDuplicates(data) {
 
   $("#src-dup-body").innerHTML = groups.map((g) => {
     const flags = [];
-    if (g.outcomes_differ) flags.push('<span class="src-dup-badge src-dup-badge-warn">outcomes differ</span>');
-    if (g.cross_sheet)     flags.push('<span class="src-dup-badge">both sheets</span>');
-    if (g.resolved)        flags.push('<span class="src-dup-badge src-dup-badge-ok">resolved</span>');
+    if (g.mixed_types) {
+      flags.push('<span class="src-dup-badge src-dup-badge-ok"' +
+        tip("One paper recorded once as a replication and once as a reproduction. FLoRA " +
+            "keeps these as two records; they only look alike because they share DOIs.") +
+        ">replication + reproduction</span>");
+    }
+    if (g.outcomes_differ) {
+      flags.push('<span class="src-dup-badge src-dup-badge-warn"' +
+        tip("The rows disagree about the outcome. If they are one report, only the kept " +
+            "row's outcome is published, so check which is right before choosing.") +
+        ">outcomes differ</span>");
+    }
+    if (g.cross_sheet) {
+      flags.push('<span class="src-dup-badge"' +
+        tip("The rows come from different entry sheets.") + ">both sheets</span>");
+    }
+    if (g.resolved) {
+      flags.push('<span class="src-dup-badge src-dup-badge-ok"' +
+        tip("Every row in this group has a decision. Change one with its buttons below.") +
+        ">resolved</span>");
+    }
+    // A replication and a reproduction of one paper share a fingerprint but are
+    // usually two valid records; say so before anyone rules one away.
+    const mixedNote = g.mixed_types
+      ? '<p class="src-dup-mixed-note">Same paper, different types. Usually both are valid ' +
+        'records: keep them as <b>distinct</b> unless the same report was entered in the wrong sheet.</p>'
+      : "";
 
     const cards = g.members.map((m) => {
       const outcome = m.type === "reproduction"
@@ -8841,18 +9199,36 @@ function renderSourceDuplicates(data) {
         "</dl>" +
         state +
         '<div class="src-dup-actions">' +
-          '<button class="ghost-btn src-dup-distinct" data-id="' + m.record_id + '">Keep — distinct</button>' +
+          '<button class="ghost-btn src-dup-distinct" data-id="' + m.record_id + '"' +
+            tip(m.display_id + " is its own record: it stays in FLoRA, and the automatic " +
+                "dedup will not merge it into the others. Shows in the FLoRA tab at once; " +
+                "the published data changes at the next pipeline run.") +
+            ">Keep — distinct</button>" +
           others.map((o) =>
             '<button class="ghost-btn src-dup-dupe" data-id="' + m.record_id +
-            '" data-of="' + o.record_id + '">Duplicate of ' + escapeHtml(o.display_id) + "</button>"
+            '" data-of="' + o.record_id + '" data-type="' + escapeHtml(m.type || "") +
+            '" data-of-type="' + escapeHtml(o.type || "") +
+            '" data-of-label="' + escapeHtml(o.display_id) + '"' +
+            tip("The same report entered twice: " + m.display_id + " is left out of FLoRA " +
+                "and " + o.display_id + " is kept (and marked distinct)." +
+                (m.type && o.type && m.type !== o.type
+                  ? " These are a " + m.type + " and a " + o.type + ", so this removes the " +
+                    m.type + "; you will be asked to confirm."
+                  : "") +
+                " Shows in the FLoRA tab at once; the published data changes at the next " +
+                "pipeline run.") +
+            ">Duplicate of " + escapeHtml(o.display_id) + "</button>"
           ).join("") +
         "</div>" +
-        '<button class="ghost-btn src-dup-open" data-id="' + m.record_id + '">Open full record</button>' +
+        '<button class="ghost-btn src-dup-open" data-id="' + m.record_id + '"' +
+          tip("Open this row's full review panel. Nothing is decided by opening it.") +
+          ">Open full record</button>" +
       "</div>";
     }).join("");
 
     return '<div class="src-dup-group">' +
       '<div class="src-dup-group-head">' + flags.join(" ") + "</div>" +
+      mixedNote +
       '<div class="src-dup-cards">' + cards + "</div>" +
     "</div>";
   }).join("");
@@ -8869,6 +9245,20 @@ async function resolveSourceDuplicate(recordId, status, duplicateOf) {
   }
 }
 
+/** A duplicate ruling across types removes a record of the other kind from FLoRA,
+ *  which is almost never intended; ask before making it. */
+async function confirmSourceDuplicate(button) {
+  const { type, ofType, ofLabel } = button.dataset;
+  if (type && ofType && type !== ofType) {
+    const ok = await showConfirm(
+      "This record is a " + type + " and " + ofLabel + " is a " + ofType + ". " +
+      "Marking it a duplicate removes the " + type + " from FLoRA. Only do this if the " +
+      "same report was entered in the wrong sheet.");
+    if (!ok) return;
+  }
+  resolveSourceDuplicate(button.dataset.id, "duplicate", button.dataset.of);
+}
+
 $("#src-dup-back").onclick = hideSourceDuplicates;
 $("#src-dup-show-resolved").addEventListener("change", (e) => {
   _srcDupShowResolved = e.target.checked;
@@ -8879,7 +9269,7 @@ $("#src-dup-body").addEventListener("click", (e) => {
   const distinct = e.target.closest(".src-dup-distinct");
   if (distinct) { resolveSourceDuplicate(distinct.dataset.id, "distinct"); return; }
   const dupe = e.target.closest(".src-dup-dupe");
-  if (dupe) { resolveSourceDuplicate(dupe.dataset.id, "duplicate", dupe.dataset.of); return; }
+  if (dupe) { confirmSourceDuplicate(dupe); return; }
   const open = e.target.closest(".src-dup-open");
   if (open) openSourceRecord(open.dataset.id);
 });

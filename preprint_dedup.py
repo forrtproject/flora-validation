@@ -10,7 +10,8 @@ A Python port of R/preprint_dedup.R (FReD issue #105). Two kinds of duplicate:
 The pipeline touches this twice, as the notebook does:
 
 - `apply_confirmed(...)` runs EARLY, before metadata is fetched, and applies only
-  the `keep_1`/`keep_2` rows of `cache/confirmed_preprint_duplicates.csv`. Running
+  the `keep_1`/`keep_2` rulings — from `cache/confirmed_preprint_duplicates.csv`
+  and from the website's FLoRA tab (`preprint_dedup_decisions`). Running
   it first is what makes the enrichment fetch canonical DOIs rather than DOIs it is
   about to discard.
 - `resolve(...)` runs AFTER enrichment, because detection needs titles and authors.
@@ -24,6 +25,18 @@ Both drop or replace rows. Only a confirmed one writes the discarded DOI into
 original and preserved here: recording an identifier as an alias for a record is a
 claim of equivalence, and the automatic rule is a guess until a human has agreed
 with it.
+
+DELIBERATE DEPARTURES FROM R
+----------------------------
+R auto-dropped every candidate. Here a pair is held as `needs_review` (both rows
+kept) when its first authors differ, or when both DOIs are preprints without a
+matching first author. The generic OSF prefix `10.17605/` is no longer a preprint
+prefix. Together these stop independent reproductions of one original, which share
+templated titles, from being collapsed into one.
+
+Rulings can also come from the website: admins decide pending pairs in the FLoRA
+tab, stored in `preprint_dedup_decisions` and passed in as `rulings`. They use
+the confirmed file's vocabulary and win over it for the same pair.
 
 NOT PORTED: the `gh` CLI issue-filing in `maybe_open_dedup_review_issue`. The
 candidates log is written exactly as before, and our workflow already uploads
@@ -65,18 +78,43 @@ TITLE_THRESHOLD = 0.80
 # reliably keeps the published version; without it the outcome depended on the
 # arbitrary doi_1/doi_2 ordering tie-break instead.
 PREPRINT_DOI_PREFIXES = (
-    "10.31234/", "10.31219/", "10.31222/", "10.17605/", "10.48550/", "10.1101/",
+    "10.31234/", "10.31219/", "10.31222/", "10.48550/", "10.1101/",
     "10.2139/", "10.20944/", "10.21203/", "10.53841/",
 )
 
+# Generic OSF DOIs (projects, registrations, files) — deliberately NOT preprints.
+# SCORE-style reproduction reports live here under templated titles such as
+# "Reproduction (with author data): Ku & Zaroff (2014, ...)", so two independent
+# teams reproducing one original get identical titles. Counting the prefix as a
+# preprint let those pairs skip the first-author check and silently dropped one
+# attempt. It still loses to a publisher DOI when resolving a confirmed pair.
+REPOSITORY_DOI_PREFIXES = ("10.17605/",)
+
 VALID_ACTIONS = {"keep_1", "keep_2", "keep_both"}
+NEEDS_REVIEW = "needs_review"
 APPLY_ACTIONS = {"keep_1", "keep_2"}
+# Pairs no human has ruled on: held with both rows kept, or dropped by the default
+# guess. These are what the FLoRA tab lists and the preparation report warns about.
+UNRESOLVED_ACTIONS = {NEEDS_REVIEW, "auto_keep_1", "auto_keep_2"}
 
 # A genuine outcome clash survives a merge as "A || B", which validate_flora then
 # reports because it is not in the allowed vocabulary. Merging it to something
 # valid would hide a source-data mistake.
 OUTCOME_CLASH_SEP = " || "
 _MIXABLE = {"successful", "mixed", "failed"}
+
+# Records validated on this website (source_records.source = 'validated'; every one
+# of them exists because someone validated it). When one shares a group with an
+# entry-sheet or FReD row it is the reviewed record, so its judgement wins — and when
+# the judgements disagree, its evidence too. It decides VALUES only: which row the
+# group becomes (and so its published id) is chosen exactly as before. Everything
+# else merges by the ordinary rules, and a field it leaves blank falls back to what
+# the others have. See website_overrides().
+WEBSITE_SOURCE = "validated"
+_JUDGEMENT = ("outcome", "outcome_computation", "outcome_robustness")
+_EVIDENCE = ("outcome_quote", "outcome_quote_source", "out_quote_source",
+             "outcome_computational_quote", "out_quote_computational_source",
+             "outcome_robustness_quote", "out_quote_robust_source")
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9 ]")
@@ -97,6 +135,11 @@ def _s(value) -> str:
 def is_preprint_doi(doi) -> bool:
     text = _s(doi).lower()
     return bool(text) and text.startswith(PREPRINT_DOI_PREFIXES)
+
+
+def is_repository_doi(doi) -> bool:
+    text = _s(doi).lower()
+    return bool(text) and text.startswith(REPOSITORY_DOI_PREFIXES)
 
 
 def normalize_doi(doi) -> str:
@@ -214,6 +257,25 @@ def load_confirmed(path: Path = CONFIRMED_PATH) -> list:
                 if (row.get("action") or "").strip() in VALID_ACTIONS]
 
 
+def confirmed_decisions(path: Path = CONFIRMED_PATH, rulings=None) -> list:
+    """The confirmed file's rows overlaid with admin rulings, one row per pair.
+
+    `rulings` are the rulings made in the FLoRA tab (preprint_dedup_decisions).
+    For the same pair a ruling there wins over the file: it is the newer decision,
+    and the file is edited by hand far less often.
+    """
+    merged = {pair_key(r["doi_1"], r["doi_2"]): r for r in load_confirmed(path)}
+    for row in rulings or []:
+        if _s(row.get("action")) in VALID_ACTIONS:
+            merged[pair_key(row.get("doi_1"), row.get("doi_2"))] = row
+    return list(merged.values())
+
+
+def unresolved(decisions) -> list:
+    """The decisions a human still has to rule on."""
+    return [d for d in decisions if _s(d.get("applied_action")) in UNRESOLVED_ACTIONS]
+
+
 def derive_remove_keep(action, doi_1, doi_2):
     if action == "keep_1":
         return doi_2, doi_1
@@ -239,6 +301,31 @@ def default_resolve_pair(side, doi_1, doi_2, is_preprint_1, is_preprint_2):
         if canon2 and not canon1:
             return doi_1, doi_2
     return doi_2, doi_1
+
+
+def review_reason(candidate) -> "str | None":
+    """Why a candidate must not be auto-resolved, or None when the default may run.
+
+    A similar title only says two reports are about the same original; the first
+    author is what says they are the same report. So a pair is held for a human when
+    the first authors differ, and when both DOIs are preprints the authors must
+    positively match — two preprints are otherwise resolved by the arbitrary doi_2
+    tie-break. DOI variants are exempt: one normalised DOI already proves identity.
+    """
+    if "DOI variant" in _s(candidate.get("side")):
+        return None
+    # _s: a missing author can arrive as NaN once candidates pass through a frame.
+    fa1, fa2 = _s(candidate.get("first_author_1")), _s(candidate.get("first_author_2"))
+    if fa1 and fa2 and fa1 != fa2:
+        return "first authors differ"
+    # A generic OSF DOI counts here as it does in default_resolve_pair: otherwise an
+    # OSF + preprint pair would fall to the arbitrary doi_2 tie-break this rule exists
+    # to prevent.
+    unpublished = [candidate.get(f"is_preprint_{n}") or is_repository_doi(candidate.get(f"doi_{n}"))
+                   for n in (1, 2)]
+    if all(unpublished) and not (fa1 and fa1 == fa2):
+        return "two preprints without a matching first author"
+    return None
 
 
 # ── merging rows that share (doi_o, doi_r) ────────────────────────────────────
@@ -283,25 +370,79 @@ def _prefer_cos(values):
     return present[0] if present else None
 
 
+def website_overrides(rows, normalise_outcome=None) -> dict:
+    """The values a website-validated record imposes on the row its group becomes.
+
+    `rows` are the group's rows (dicts or Series). Returns {} when none comes from
+    the website. The first website row carrying a judgement speaks for them: its
+    judgement and its `source` win, and its evidence too when the group's judgements
+    disagree. A blank field imposes nothing, so the other rows' value stands.
+
+    Values only — never which row survives. Moving the survivor would move the
+    registry's primary record, and with it, in edge cases, the published id.
+    """
+    normalise_outcome = normalise_outcome or (lambda v: _s(v) or None)
+    website = [r for r in rows if _s(r.get("source")) == WEBSITE_SOURCE]
+    if not website:
+        return {}
+
+    def has_judgement(r):
+        return any(not _blank(r.get(c)) for c in _JUDGEMENT)
+
+    preferred = next((r for r in website if has_judgement(r)), website[0])
+    fields = list(_JUDGEMENT)
+    # `source` credits the record the row publishes — except that the R rule of
+    # crediting COS whenever a COS row took part still applies (_prefer_cos).
+    if not any(_s(r.get("source")).upper() == "COS" for r in rows):
+        fields.append("source")
+    if has_judgement(preferred):
+        judgements = {tuple(normalise_outcome(r.get(c)) if c == "outcome" else _s(r.get(c))
+                            for c in _JUDGEMENT)
+                      for r in rows if has_judgement(r)}
+        if len(judgements) > 1:
+            fields += _EVIDENCE
+    return {c: (normalise_outcome(preferred.get(c)) if c == "outcome" else preferred.get(c))
+            for c in fields if not _blank(preferred.get(c))}
+
+
 def merge_doi_pair_dups(frame, normalise_outcome=None, verbose=True):
-    """Merge rows sharing (doi_o, doi_r) when their url_r values are compatible.
+    """Merge rows sharing (type, doi_o, doi_r) when their url_r values are compatible.
 
     Two or more distinct non-null url_r means the rows are kept apart — they may be
     different replication reports of the same dataset. One or none means they are
     the same record entered twice, and their columns are combined rather than one
     row being dropped: a discarded row can carry the only outcome_quote there is.
+
+    `type` is part of the key, as in the transform's own dedup: a replication and a
+    reproduction of one paper are two records. Merging them published the
+    reproduction as a replication, with both outcomes joined into an invalid value.
+
+    A row a reviewer ruled 'distinct' in Source Records is never merged, as the
+    transform's own dedup already exempts it: the ruling says it is its own record.
     """
     if frame.empty or not {"doi_o", "doi_r"} <= set(frame.columns):
         return frame, pd.DataFrame()
 
     normalise_outcome = normalise_outcome or (lambda v: _s(v) or None)
+    # Absorbed record_ids must be recorded even before the transform's own dedup
+    # has created the column: apply_confirmed() merges at step 2b, and ids dropped
+    # there left flora_registry unable to recognise the row once its survivor changed
+    # — it minted a new published id and retired the old one.
+    if "record_id" in frame.columns and "merged_record_ids" not in frame.columns:
+        frame = frame.assign(merged_record_ids=[[] for _ in range(len(frame))])
     has_pair = frame["doi_o"].notna() & frame["doi_r"].notna()
-    untouched, pairs = frame[~has_pair], frame[has_pair]
+    ruled_distinct = (frame["duplicate_status"].eq("distinct")
+                      if "duplicate_status" in frame.columns
+                      else pd.Series(False, index=frame.index))
+    untouched, pairs = frame[~has_pair | ruled_distinct], frame[has_pair & ~ruled_distinct]
     if pairs.empty:
         return frame, pd.DataFrame()
 
+    keys = ["type", "doi_o", "doi_r"] if "type" in pairs.columns else ["doi_o", "doi_r"]
     merged_rows, kept_index, conflicts = [], [], []
-    for (doi_o, doi_r), group in pairs.groupby(["doi_o", "doi_r"], sort=False):
+    # dropna=False: a row without a type must still meet its duplicates.
+    for key, group in pairs.groupby(keys, sort=False, dropna=False):
+        doi_o, doi_r = key[-2], key[-1]
         distinct_urls = group["url_r"].dropna().nunique() if "url_r" in group else 0
         if len(group) <= 1 or distinct_urls > 1:
             kept_index.extend(group.index.tolist())
@@ -329,6 +470,13 @@ def merge_doi_pair_dups(frame, normalise_outcome=None, verbose=True):
             else:
                 row[column] = _first_non_null(values)
 
+        # A website-validated record's values win; the row stays the one it was.
+        overrides = {}
+        if "source" in group.columns and group["source"].eq(WEBSITE_SOURCE).any():
+            overrides = website_overrides(
+                [group.iloc[i] for i in range(len(group))], normalise_outcome)
+            row.update({c: v for c, v in overrides.items() if c in group.columns})
+
         # Provenance has to survive the merge: the rows being folded in are the ones
         # flora_registry needs to recognise if a reviewer later promotes one of them,
         # and _first_non_null would simply drop their ids.
@@ -342,8 +490,11 @@ def merge_doi_pair_dups(frame, normalise_outcome=None, verbose=True):
         if len(canonical) > 1:
             conflicts.append({
                 "doi_o": doi_o, "doi_r": doi_r,
+                "type": _s(row.get("type")) or None,
                 "outcomes": " | ".join(sorted(str(c) for c in canonical)),
                 "resolved_to": row.get("outcome"),
+                # Which rule settled it: the website record, or the merge rules.
+                "resolved_by": "website record" if "outcome" in overrides else "merge rules",
                 "url_r": _paste_unique(group.get("url_r", []), " | "),
                 "sources": _paste_unique(group.get("source", []), " | "),
             })
@@ -389,6 +540,19 @@ def _candidate(side, row_1, row_2, doi_key, title_key, author_key, year_key,
     }
 
 
+def _replication_context(row_1, row_2):
+    """What a reviewer needs to tell two reports apart: the record each came from,
+    its type and outcome, and its link. Replication side only — on the original side
+    a row's outcome belongs to one of its replications, not to the paper."""
+    out = {}
+    for n, row in ((1, row_1), (2, row_2)):
+        out[f"source_display_id_{n}"] = _s(row.get("display_id")) or None
+        out[f"type_{n}"] = _s(row.get("type")) or None
+        out[f"outcome_{n}"] = _s(row.get("outcome")) or None
+        out[f"url_{n}"] = _s(row.get("url_r")) or None
+    return out
+
+
 def find_duplicates(frame, title_threshold=TITLE_THRESHOLD, verbose=True):
     """Candidate pairs, by the notebook's four routes (A, B1, B2, B3)."""
     candidates = []
@@ -406,6 +570,10 @@ def find_duplicates(frame, title_threshold=TITLE_THRESHOLD, verbose=True):
                 if (not _blank(a.get("doi_r")) and not _blank(b.get("doi_r"))
                         and normalize_doi(a["doi_r"]) == normalize_doi(b["doi_r"])):
                     continue
+                # A replication and a reproduction of one original are two
+                # records, not one record under two DOIs.
+                if _s(a.get("type")) != _s(b.get("type")):
+                    continue
                 similarity = title_similarity(a.get("title_r"), b.get("title_r"))
                 if similarity < title_threshold:
                     continue
@@ -418,9 +586,11 @@ def find_duplicates(frame, title_threshold=TITLE_THRESHOLD, verbose=True):
                 # original legitimately share wording.
                 if not author_match and not any_preprint:
                     continue
-                candidates.append(_candidate(
+                candidate = _candidate(
                     "replication", a, b, "doi_r", "title_r", "author_r", "year_r",
-                    similarity, f"doi_o: {doi_o}", doi_o))
+                    similarity, f"doi_o: {doi_o}", doi_o)
+                candidate.update(_replication_context(a, b))
+                candidates.append(candidate)
 
     # The original side is judged per distinct doi_o, not per row.
     originals = (frame[frame["doi_o"].notna() & frame["title_o"].notna()]
@@ -494,18 +664,25 @@ def find_duplicates(frame, title_threshold=TITLE_THRESHOLD, verbose=True):
 # ── application ───────────────────────────────────────────────────────────────
 
 def _drop_replication(frame, doi_remove, doi_keep, annotate: bool):
-    """Drop rows carrying the losing doi_r, but ONLY inside doi_o groups that also
-    hold the surviving one. Without that restriction the same preprint DOI paired
-    with an unrelated original would be removed as collateral."""
+    """Drop rows carrying the losing doi_r, but ONLY where the surviving one has a
+    row of the same type under the same original.
+
+    The original restriction stops the same preprint DOI paired with an unrelated
+    original being removed as collateral. The type restriction stops a reproduction
+    being removed because the published version was recorded only as a replication:
+    those are two records about one paper, and only one of them has a survivor."""
     lower_r = frame["doi_r"].apply(lambda v: _s(v).lower())
     lower_o = frame["doi_o"].apply(lambda v: _s(v).lower())
-    keepers = set(lower_o[lower_r == _s(doi_keep).lower()])
+    kind = frame["type"].apply(_s) if "type" in frame.columns else pd.Series("", index=frame.index)
+    group = pd.Series(list(zip(lower_o, kind)), index=frame.index)
+    keepers = set(group[lower_r == _s(doi_keep).lower()])
     if not keepers:
         return frame
 
-    is_target = (lower_r == _s(doi_remove).lower()) & lower_o.isin(keepers)
+    in_keeper_group = group.apply(lambda g: g in keepers)
+    is_target = (lower_r == _s(doi_remove).lower()) & in_keeper_group
     if annotate:
-        is_kept = (lower_r == _s(doi_keep).lower()) & lower_o.isin(keepers)
+        is_kept = (lower_r == _s(doi_keep).lower()) & in_keeper_group
         if is_kept.any():
             frame.loc[is_kept, "alt_identifier_r"] = [
                 append_alt_identifier(v, doi_remove)
@@ -537,10 +714,14 @@ def _ensure_alt_columns(frame):
 
 
 def apply_confirmed(frame, confirmed_path: Path = CONFIRMED_PATH,
-                    normalise_outcome=None, verbose=True, conflicts_out=None):
-    """Step 6a — apply only the confirmed keep_1/keep_2 rows, before enrichment."""
+                    normalise_outcome=None, verbose=True, conflicts_out=None,
+                    rulings=None):
+    """Step 6a — apply only the confirmed keep_1/keep_2 rows, before enrichment.
+
+    `rulings` are admin rulings from the FLoRA tab, overlaid on the file.
+    """
     frame = _ensure_alt_columns(frame.copy())
-    confirmed = [r for r in load_confirmed(confirmed_path)
+    confirmed = [r for r in confirmed_decisions(confirmed_path, rulings)
                  if r["action"] in APPLY_ACTIONS]
     if not confirmed:
         if verbose:
@@ -576,11 +757,31 @@ def apply_confirmed(frame, confirmed_path: Path = CONFIRMED_PATH,
     return frame
 
 
+def write_candidates(decisions, path: Path) -> None:
+    """The candidates log, headed by a row telling a reader what to do with it."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    instructions = {
+        "side": "INSTRUCTIONS -->", "doi_1": "DOI #1", "doi_2": "DOI #2",
+        "applied_action": "auto-default = drop one (preprint loses; else doi_2); "
+                          "needs_review = kept both, differing first authors "
+                          "or two preprints without a matching author",
+        "resolution": "Decide in the website's FLoRA tab (Preprint duplicates), or "
+                      "copy the row into cache/confirmed_preprint_duplicates.csv "
+                      "with action keep_both / keep_1 / keep_2",
+    }
+    pd.concat([pd.DataFrame([instructions]), pd.DataFrame(list(decisions))],
+              ignore_index=True) \
+      .to_csv(path, index=False, encoding="utf-8", lineterminator="\n")
+
+
 def resolve(frame, confirmed_path: Path = CONFIRMED_PATH,
             candidates_out: Path = CANDIDATES_PATH,
             title_threshold=TITLE_THRESHOLD, normalise_outcome=None, verbose=True,
-            conflicts_out=None, open_review_issue=False):
-    """Step 7d — detect candidates and apply overrides or the default rule."""
+            conflicts_out=None, open_review_issue=False, rulings=None):
+    """Step 7d — detect candidates and apply overrides or the default rule.
+
+    `rulings` are admin rulings from the FLoRA tab, overlaid on the file.
+    """
     frame = _ensure_alt_columns(frame.copy())
     candidates = find_duplicates(frame, title_threshold, verbose)
     if candidates.empty:
@@ -589,7 +790,7 @@ def resolve(frame, confirmed_path: Path = CONFIRMED_PATH,
         return frame, candidates
 
     overrides = {pair_key(r["doi_1"], r["doi_2"]): r
-                 for r in load_confirmed(confirmed_path)}
+                 for r in confirmed_decisions(confirmed_path, rulings)}
 
     decisions = []
     for candidate in candidates.to_dict("records"):
@@ -608,10 +809,23 @@ def resolve(frame, confirmed_path: Path = CONFIRMED_PATH,
                 decision.update(resolution=f"override: {action}",
                                 applied_action=action,
                                 doi_remove=remove, doi_keep=keep)
+        elif _blank(candidate["doi_1"]) or _blank(candidate["doi_2"]):
+            # Before review: a ruling names both DOIs, so a pair without one could
+            # never be cleared from the queue and would warn on every run.
+            decision.update(resolution="skipped: NA DOI in pair",
+                            applied_action="skipped",
+                            doi_remove=None, doi_keep=None)
+        elif (reason := review_reason(candidate)) is not None:
+            decision.update(resolution=f"review: {reason}",
+                            applied_action=NEEDS_REVIEW,
+                            doi_remove=None, doi_keep=None)
         else:
+            # A repository DOI is not a preprint for detection, but against a
+            # publisher DOI it is still the less canonical record.
             result = default_resolve_pair(
                 candidate["side"], candidate["doi_1"], candidate["doi_2"],
-                candidate["is_preprint_1"], candidate["is_preprint_2"])
+                candidate["is_preprint_1"] or is_repository_doi(candidate["doi_1"]),
+                candidate["is_preprint_2"] or is_repository_doi(candidate["doi_2"]))
             if result is None:
                 decision.update(resolution="skipped: NA DOI in pair",
                                 applied_action="skipped",
@@ -649,22 +863,15 @@ def resolve(frame, confirmed_path: Path = CONFIRMED_PATH,
 
     log = pd.DataFrame(decisions)
     if candidates_out:
-        candidates_out.parent.mkdir(parents=True, exist_ok=True)
-        instructions = {
-            "side": "INSTRUCTIONS -->", "doi_1": "DOI #1", "doi_2": "DOI #2",
-            "applied_action": "auto-default = drop one (preprint loses; else doi_2)",
-            "resolution": "Override: copy the row into "
-                          "cache/confirmed_preprint_duplicates.csv with action "
-                          "keep_both / keep_1 / keep_2",
-        }
-        pd.concat([pd.DataFrame([instructions]), log], ignore_index=True) \
-          .to_csv(candidates_out, index=False, encoding="utf-8", lineterminator="\n")
+        write_candidates(decisions, candidates_out)
 
     if verbose:
         auto = sum(1 for d in decisions if d["resolution"].startswith("auto"))
         over = sum(1 for d in decisions if d["resolution"].startswith("override"))
         skip = sum(1 for d in decisions if d["resolution"].startswith("skipped"))
-        print(f"  auto-dropped: {auto} | override: {over} | skipped (NA DOI): {skip}")
+        review = sum(1 for d in decisions if d["resolution"].startswith("review"))
+        print(f"  auto-dropped: {auto} | override: {over} | "
+              f"held for review (kept both): {review} | skipped (NA DOI): {skip}")
         print(f"  net rows removed: {before - len(frame)}")
         if candidates_out:
             print(f"  candidates log: {candidates_out}")
@@ -673,8 +880,12 @@ def resolve(frame, confirmed_path: Path = CONFIRMED_PATH,
     # load, so a default of True would file GitHub issues when somebody opens a
     # page. Only the CLI and the nightly job turn it on.
     if open_review_issue:
-        maybe_open_review_issue(decisions, confirmed_path, candidates_out,
-                                verbose=verbose)
+        # build() writes no log itself (run() does, under the same name), but the
+        # issue text still has to point at one.
+        # A ruling made in the tab is review activity just as an edit of the file is.
+        ruled_at = [r.get("decided_at") for r in rulings or [] if r.get("decided_at")]
+        maybe_open_review_issue(decisions, confirmed_path, candidates_out or CANDIDATES_PATH,
+                                verbose=verbose, last_ruling_at=max(ruled_at, default=None))
     return frame, log
 
 
@@ -713,22 +924,23 @@ def _issue_body(auto_rows, confirmed_path: Path, candidates_out: Path,
                 stale_days: int, age_days: float) -> str:
     preview_n = min(20, len(auto_rows))
     preview = "\n".join(
-        "- `{}` <-> `{}` ({}, sim={}) — auto: {}".format(
+        "- `{}` <-> `{}` ({}, sim={}) — {}".format(
             row.get("doi_1"), row.get("doi_2"), row.get("side"),
             row.get("title_sim", "?"), row.get("applied_action"))
         for row in auto_rows[:preview_n]
     )
     age = "never written" if age_days == float("inf") else f"{age_days:.1f} days ago"
     return (
-        f"The FLoRA preparation pipeline auto-resolved **{len(auto_rows)}** "
-        f"preprint/publication duplicate pair(s), but `{confirmed_path.name}` has "
+        f"The FLoRA preparation pipeline auto-resolved or held for review "
+        f"**{len(auto_rows)}** preprint/publication duplicate pair(s) "
+        f"(`needs_review` pairs keep both rows), but `{confirmed_path.name}` has "
         f"not been touched in over {stale_days} days (last edit {age}).\n\n"
-        "Please review the candidates and either confirm the auto-default by adding "
-        f"the rows to `cache/{confirmed_path.name}` with `action=keep_1` / `keep_2`, "
-        "or override with `keep_both`.\n\n"
+        "Please decide them in the website's FLoRA tab (Preprint duplicates), or add "
+        f"rows to `cache/{confirmed_path.name}` with `action=keep_1` / `keep_2` to "
+        "confirm the auto-default, or `keep_both` to override it.\n\n"
         "Until each pair is confirmed, the surviving row's `alt_identifier_*` will "
         "**not** be annotated with the dropped DOI.\n\n"
-        f"**First {preview_n} of {len(auto_rows)} auto-resolved pair(s):**\n\n"
+        f"**First {preview_n} of {len(auto_rows)} unconfirmed pair(s):**\n\n"
         f"{preview}\n\n"
         f"Full log: `{candidates_out.name}` (uploaded as a workflow artifact)\n\n"
         "_Filed automatically by `preprint_dedup.py`._"
@@ -738,7 +950,7 @@ def _issue_body(auto_rows, confirmed_path: Path, candidates_out: Path,
 def maybe_open_review_issue(decisions, confirmed_path: Path = CONFIRMED_PATH,
                             candidates_out: Path = CANDIDATES_PATH,
                             stale_days: int = DEDUP_STALE_DAYS,
-                            verbose: bool = True) -> str:
+                            verbose: bool = True, last_ruling_at=None) -> str:
     """Nudge a human when pairs are being auto-resolved and nobody is reviewing.
 
     Three outcomes, matching the R original:
@@ -749,8 +961,9 @@ def maybe_open_review_issue(decisions, confirmed_path: Path = CONFIRMED_PATH,
     Staleness is measured on the confirmed file's mtime: pairs being resolved by
     the default rule are fine as long as somebody is still confirming them.
     """
-    auto_rows = [d for d in decisions
-                 if str(d.get("resolution", "")).startswith("auto")]
+    # Held pairs need a human as much as guessed ones: until confirmed, a real
+    # preprint duplicate stays in the dataset twice.
+    auto_rows = unresolved(decisions)
     if not auto_rows:
         if verbose:
             print("  no auto-resolved pairs — no review issue needed")
@@ -759,6 +972,9 @@ def maybe_open_review_issue(decisions, confirmed_path: Path = CONFIRMED_PATH,
     age_days = (_days_since(
         datetime.fromtimestamp(confirmed_path.stat().st_mtime, timezone.utc))
         if confirmed_path.exists() else float("inf"))
+    # Rulings made in the FLoRA tab never touch the file, so they count as well.
+    if last_ruling_at is not None:
+        age_days = min(age_days, _days_since(last_ruling_at))
     if age_days <= stale_days:
         if verbose:
             print(f"  {len(auto_rows)} auto-resolved pair(s); confirmed file touched "

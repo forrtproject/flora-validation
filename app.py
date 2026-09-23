@@ -5394,6 +5394,59 @@ def admin_flora_export(
     )
 
 
+# Preprint duplicates: pairs that may be one paper under two DOIs, which the build
+# could not settle. Declared before /flora/{flora_id}, which would otherwise take
+# "preprint-duplicates" for a record id.
+
+@app.get("/api/admin/flora/preprint-duplicates")
+def admin_flora_preprint_duplicates(admin: dict = Depends(current_admin)):
+    """Pairs awaiting a ruling, and the rulings already made."""
+    with db() as cur:
+        return flora_service.preprint_review(cur)
+
+
+class PreprintPairDecision(BaseModel):
+    doi_1: str = Field(max_length=512)
+    doi_2: str = Field(max_length=512)
+    action: str                       # 'keep_1' | 'keep_2' | 'keep_both'
+    note: str = Field("", max_length=500)
+
+
+@app.post("/api/admin/flora/preprint-duplicates/decision")
+def admin_flora_preprint_decide(req: PreprintPairDecision, request: Request,
+                                admin: dict = Depends(current_admin)):
+    """Rule on one pair. The FLoRA tab reflects it at once; the published CSV at
+    the next pipeline run."""
+    with db() as cur:
+        try:
+            result = flora_service.decide_preprint_pair(
+                cur, req.doi_1, req.doi_2, req.action, admin["handle"], req.note)
+        except flora_service.PairNotFound:
+            raise HTTPException(404, "This pair is no longer detected. Refresh the list.")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        # The table keeps only the current ruling; the audit trail keeps each one.
+        _audit(cur, security_events.FLORA_PREPRINT_RULED, request, actor=admin,
+               target_kind="preprint_pair", target_id=result["pair_key"],
+               detail={"action": result["action"], "doi_1": result["doi_1"],
+                       "doi_2": result["doi_2"], "note": req.note or None})
+    return result
+
+
+@app.delete("/api/admin/flora/preprint-duplicates/decision")
+def admin_flora_preprint_undo(pair_key: str, request: Request,
+                              admin: dict = Depends(current_admin)):
+    """Withdraw a ruling; the pair goes back to the default rules."""
+    with db() as cur:
+        try:
+            withdrawn = flora_service.undo_preprint_decision(cur, pair_key)
+        except flora_service.PairNotFound:
+            raise HTTPException(404, "No ruling is stored for this pair.")
+        _audit(cur, security_events.FLORA_PREPRINT_WITHDRAWN, request, actor=admin,
+               target_kind="preprint_pair", target_id=pair_key, detail=withdrawn)
+    return {"status": "withdrawn", "pair_key": pair_key}
+
+
 @app.get("/api/admin/flora/{flora_id}")
 def admin_flora_record(flora_id: str, admin: dict = Depends(current_admin)):
     """One full row, every column, for the detail panel."""

@@ -1307,6 +1307,7 @@ be reviewed as executable migration history, not only fresh-install DDL.
 | `source_sync_runs` | Per-source freshness, gate result, counts, and payload hash |
 | `source_display_counters` | Last sequential number handed out per source |
 | `transform_exclusions` | DOI/URL decisions omitted from transformed output |
+| `preprint_dedup_decisions` | Admin rulings on preprint duplicate pairs, made in the FLoRA tab |
 | `outcome_alias` | Replication raw-to-canonical outcome lookup |
 
 The former `reproduction_outcome_map` table is deliberately dropped by the

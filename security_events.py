@@ -53,6 +53,10 @@ VALIDATOR_CODE_CLAIMED = "validator.code_claimed"
 VALIDATOR_ASSIGNED = "validator.assigned"
 MAINTENANCE_STARTED = "maintenance.started"
 SOURCE_SYNC_DISPATCHED = "source_sync.dispatched"
+# A ruling decides which records are published; the table keeps only the current
+# one, so who ruled, who withdrew it and why are kept here.
+FLORA_PREPRINT_RULED = "flora.preprint_ruled"
+FLORA_PREPRINT_WITHDRAWN = "flora.preprint_withdrawn"
 
 ACTIONS = frozenset({
     ADMIN_SIGNED_IN, ADMIN_SIGN_IN_FAILED, ADMIN_SIGNED_OUT, ADMIN_INVITED,
@@ -61,6 +65,7 @@ ACTIONS = frozenset({
     VALIDATOR_TIER_CHANGED, VALIDATOR_CODE_CLAIMED, VALIDATOR_ASSIGNED,
     MAINTENANCE_STARTED,
     SOURCE_SYNC_DISPATCHED,
+    FLORA_PREPRINT_RULED, FLORA_PREPRINT_WITHDRAWN,
 })
 
 

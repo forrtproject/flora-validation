@@ -455,6 +455,7 @@ collide on the `display_id` index.
 | `outcome_alias` | Replication outcome spelling → canonical value (8 rows) |
 | `reproduction_outcome_map` | `(computational, robustness)` → single label (12 rows) |
 | `transform_exclusions` | Rows dropped from the output, by `doi_r` or `url_r`, with a reason |
+| `preprint_dedup_decisions` | Admin rulings on preprint duplicate pairs (`keep_1` / `keep_2` / `keep_both`), made in the FLoRA tab |
 
 These replace values hardcoded in the R notebook. They are read at transform time, so
 changing one is a row edit and a re-run — never a data migration.
@@ -697,6 +698,32 @@ colliding row; this *combines* them — study numbers joined with `; `, quotes w
 or, when they cannot be mixed, retained as `A || B` so `validate_flora` reports them.
 Absorbed `record_id`s are carried through so `flora_records` provenance survives.
 
+**A record validated on this website wins — its values, not its identity.** When a
+`source = 'validated'` row shares a key with entry-sheet or FReD rows of the same
+type, its judgement (`outcome`, both reproduction axes) and `source` are what the
+row publishes; when the judgements disagree, its quotes and quote sources win too.
+A field it leaves blank falls back to the other rows. Which row the group becomes is
+chosen exactly as before (the first), so its published FLoRA ID never moves because
+of this rule, and a row a reviewer ruled *distinct* is never merged or dropped and
+never speaks for another. Rows of different types are left alone. Conflicts it settles
+— in the step 5 drop as well as the merges — are logged in `dup_outcome_conflicts.csv`
+with `resolved_by = website record`, so the entry sheet can be corrected.
+
+Absorbed `record_id`s are recorded by every merge, including the step 2b one that
+runs before step 5; they used to be lost there, leaving the registry unable to
+recognise a row whose survivor later changed.
+
+**`type` is part of every dedup key**, as in step 5: a replication and a reproduction
+of one paper are two records. The merge groups on `(type, doi_o, doi_r)`; the preprint
+dedup pairs only rows of one type, and drops a losing DOI's row only where the kept DOI
+has a row of the same type under the same original. Merging on `(doi_o, doi_r)` alone
+had published reproductions as replications with a joined `A || B` outcome
+(FLORA-001148, FLORA-002617); the next run splits them, the replication keeping its ID.
+The Source Records duplicate detector still keys on the paper alone, so it can catch a
+report entered in the wrong sheet; mixed-type groups are labelled there and a
+cross-type *duplicate* ruling asks for confirmation. Existing cross-type rulings are
+listed in `cross_type_duplicate_rulings.csv` and warned about on every run.
+
 Confirmed decisions write the discarded DOI into `alt_identifier_o`/`alt_identifier_r`;
 automatic ones do not. That asymmetry is the original's: recording an alias is a claim
 of equivalence, and the automatic rule is a guess until a human agrees with it.
@@ -754,8 +781,19 @@ without it.
 | `output/flora_export_log.csv` | rows missing a title, with the reason |
 | `output/dup_outcome_conflicts.csv` | merged groups whose outcomes disagreed, and how each resolved |
 | `output/preprint_dedup_candidates.csv` | every detected pair and the action taken |
+| `output/cross_type_duplicate_rulings.csv` | rows ruled a duplicate of a record of the other type (only when there are any) |
 
-All four are uploaded by the nightly workflow. The run also prints, per step: how many
+The logs are written beside the dataset, so in the nightly job they land in
+`output/prepared/` and are uploaded with it by the workflow.
+
+Preprint duplicate pairs nobody has ruled on (`needs_review`, or an unconfirmed
+`auto_keep_*`) also become a warning in the preparation report and on the pipeline
+job, and are listed for a decision under **FLoRA tab → Preprint duplicates**. A pair
+is held as `needs_review`, with both rows kept, when its first authors differ or when
+both DOIs are preprints without a matching first author. A ruling there is stored in
+`preprint_dedup_decisions`, wins over `cache/confirmed_preprint_duplicates.csv` for
+the same pair, shows in the tab at once and reaches the published CSV at the next
+run. The run also prints, per step: how many
 outcome spellings were recoded and to what, DOI values that are not DOIs, rows excluded
 by each rule, cells changed per text-cleaned column, conflicting outcomes, and a closing
 coverage table for every column of the output contract.

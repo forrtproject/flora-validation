@@ -402,12 +402,26 @@
            Shown grouped so the two rows can be compared side by side. -->
       <div id="src-dup-view" class="hidden">
         <div class="src-dup-toolbar">
-          <button id="src-dup-back" class="ghost-btn">← Back to grid</button>
-          <label class="src-dup-toggle">
+          <button id="src-dup-back" class="ghost-btn"
+                  title="Return to the Source Records grid. Nothing here is changed by leaving.">← Back to grid</button>
+          <label class="src-dup-toggle"
+                 title="Also list groups where every row already has a decision, so you can change one.">
             <input type="checkbox" id="src-dup-show-resolved"> Show resolved
           </label>
           <span id="src-dup-count" class="src-dim2"></span>
         </div>
+        <dl class="flora-dedup-legend src-dup-legend">
+          <dt>Keep &mdash; distinct</dt>
+          <dd>This row is its own record. It stays in FLoRA and the automatic dedup will not
+            merge it into the others.</dd>
+          <dt>Duplicate of &hellip;</dt>
+          <dd>The same report was entered twice. This row is left out of FLoRA and the one you
+            name is kept (and marked distinct). Across a replication and a reproduction this
+            removes a real record, so it asks you to confirm.</dd>
+          <dt>When it takes effect</dt>
+          <dd>The FLoRA tab shows it at once; the published CSV, the public API and the Atlas
+            change at the next pipeline run. Hover over any button or label for details.</dd>
+        </dl>
         <div id="src-dup-body"></div>
       </div>
     </div><!-- end admin-tab-sources -->
@@ -534,6 +548,9 @@
           <button class="btn-primary" id="flora-export-all-btn" type="button">Download full CSV</button>
           <button class="ghost-btn" id="flora-export-btn" type="button">Export filtered CSV</button>
           <button class="ghost-btn" id="flora-refresh-btn" type="button">Refresh</button>
+          <button class="ghost-btn" id="flora-dedup-btn" type="button"
+                  title="Pairs that may be one paper under two DOIs (usually a preprint and its published version), waiting for someone to decide. The number is how many are waiting.">Preprint duplicates
+            <span class="filter-count" id="flora-dedup-count">—</span></button>
         </div>
       </section>
 
@@ -571,6 +588,50 @@
         <p class="admin-empty hidden" id="flora-empty">No records match this filter.</p>
       </div>
       <div class="admin-pager" id="flora-pager"></div>
+
+      <!-- Preprint duplicates: pairs that may be one paper under two DOIs (a preprint
+           and its publication) which the build could not settle. A ruling here is
+           read by the transform: this tab shows it at once, the CSV at the next run. -->
+      <div id="flora-dedup-view" class="hidden">
+        <div class="src-dup-toolbar">
+          <button id="flora-dedup-back" class="ghost-btn" type="button"
+                  title="Return to the FLoRA records grid. Nothing here is changed by leaving.">← Back to records</button>
+          <label class="src-dup-toggle"
+                 title="Also list the decisions already made, with who made them, their note and an Undo button.">
+            <input type="checkbox" id="flora-dedup-show-decided"> Show decided pairs
+          </label>
+          <span id="flora-dedup-summary" class="src-dim2"></span>
+        </div>
+        <p class="flora-blurb flora-dedup-help">Each pair may be one paper under two DOIs
+          &mdash; usually a preprint and its published version: either two reports of the
+          same original with similar titles, or two original DOIs that look like one paper.
+          Compare the authors, years and DOIs, then choose.
+          Hover over any button or label for what it means.</p>
+        <dl class="flora-dedup-legend">
+          <dt>Same paper &mdash; keep A / keep B</dt>
+          <dd>The other record is removed from FLoRA and the kept one lists the removed DOI
+            as an alternative identifier. The kept one keeps its FLoRA ID &mdash; unless it
+            was the one the automatic rule had dropped: then it comes back and gets its ID
+            at the next pipeline run. A removed record that was already published keeps its
+            ID as retired, so existing links still work.
+            For two <i>original</i> DOIs nothing is removed: the replications are listed
+            under the kept DOI, and no ID changes.</dd>
+          <dt>Different papers &mdash; keep both</dt>
+          <dd>Both stay in FLoRA. A record the automatic rule had dropped comes back and
+            gets its permanent FLoRA ID at the next pipeline run (Download full CSV waits
+            for that run). For two original DOIs, their replications go back under their
+            own DOI.</dd>
+          <dt>Undo</dt>
+          <dd>Under <i>Show decided pairs</i>. Withdraws a decision: the pair goes back to
+            the automatic rules and, if it still needs a decision, to this list.</dd>
+          <dt>When it takes effect</dt>
+          <dd>This tab shows your decision at once. The published CSV, the public API and
+            the Atlas change at the next pipeline run &mdash; nightly, or <i>Run pipeline</i>
+            in Source Records.</dd>
+        </dl>
+        <div id="flora-dedup-body"></div>
+        <div id="flora-dedup-decided" class="hidden"></div>
+      </div>
     </div>
 
     <div id="admin-tab-restricted" class="hidden">

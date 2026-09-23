@@ -1766,6 +1766,27 @@ ALTER TABLE transform_exclusions ADD COLUMN IF NOT EXISTS doi_o TEXT;
 CREATE INDEX IF NOT EXISTS idx_transform_exclusions_doi ON transform_exclusions (lower(doi_r));
 CREATE INDEX IF NOT EXISTS idx_transform_exclusions_url ON transform_exclusions (lower(url_r));
 
+-- Admin rulings on preprint/publication duplicate pairs, made in the FLoRA tab.
+-- Same vocabulary as cache/confirmed_preprint_duplicates.csv, relative to the pair
+-- as stored here: keep_1 keeps doi_1, keep_2 keeps doi_2, keep_both = not the same
+-- paper. For the same pair a ruling here wins over the file.
+CREATE TABLE IF NOT EXISTS preprint_dedup_decisions (
+    pair_key    TEXT        PRIMARY KEY,   -- preprint_dedup.pair_key(doi_1, doi_2)
+    side        TEXT        NOT NULL,
+    doi_1       TEXT        NOT NULL,
+    doi_2       TEXT        NOT NULL,
+    action      TEXT        NOT NULL CHECK (action IN ('keep_1', 'keep_2', 'keep_both')),
+    -- Copied from the candidate when ruled on: a keep_1/keep_2 ruling drops the
+    -- losing row before detection runs, so the pair is never detected again and
+    -- the decided list would otherwise have nothing but two DOIs to show.
+    doi_o_group TEXT,
+    title_1     TEXT,
+    title_2     TEXT,
+    note        TEXT,
+    decided_by  TEXT        NOT NULL,
+    decided_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Replication outcome spellings drift between sources. Mapped at transform time
 -- rather than stored, so fixing a spelling is a row here and a re-run, never a
 -- migration over stored data.
