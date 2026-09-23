@@ -57,9 +57,15 @@ CANDIDATES_PATH = ROOT / "output" / "preprint_dedup_candidates.csv"
 
 TITLE_THRESHOLD = 0.80
 
-# Preprint servers, verbatim from the R constant.
+# Preprint servers. Verbatim from the R constant, plus "10.31222/" (MetaArXiv):
+# FReD issue #<TBD> — 10.31222/osf.io/sjyp3 (the MetaArXiv preprint of Kohrt et al.
+# 2023's published replication, 10.1098/rsos.221306) was missing from this list, so
+# is_preprint_doi() returned False for it. The pair still got detected as a
+# candidate (same first author, "kohrt"), but only the "preprint loses" rule
+# reliably keeps the published version; without it the outcome depended on the
+# arbitrary doi_1/doi_2 ordering tie-break instead.
 PREPRINT_DOI_PREFIXES = (
-    "10.31234/", "10.31219/", "10.17605/", "10.48550/", "10.1101/",
+    "10.31234/", "10.31219/", "10.31222/", "10.17605/", "10.48550/", "10.1101/",
     "10.2139/", "10.20944/", "10.21203/", "10.53841/",
 )
 
