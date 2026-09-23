@@ -1,0 +1,17 @@
+.git
+.github
+.agents
+.venv
+__pycache__
+*.pyc
+node_modules
+tests
+cache
+output
+logs
+docs/superpowers
+.env
+*.db
+snapshots/
+data/extracted_????????T??????Z_*.csv
+k8s

@@ -1,0 +1,92 @@
+# No GPU is requested here on purpose — see docs/KUBERNETES_DEPLOYMENT.md
+# ("About the GPU request"). Nothing in this codebase runs local inference
+# (google-genai only calls the remote Gemini API over HTTPS), and the
+# cluster's own GPU docs say GPUs here can't be attached to a long-running
+# Deployment at all — they're allocated per-Job and are already fully used by
+# JupyterHub.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flora-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: flora-app
+  template:
+    metadata:
+      labels:
+        app: flora-app
+        # Required by the cluster's external-routing feature for any pod that
+        # needs outbound internet access (Gemini API, GitHub, Resend).
+        egress.k8s.uni-muenster.de/enabled: "true"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: flora
+          # Replace with the image you push (e.g. from a GitHub Actions build).
+          image: REPLACE_WITH_YOUR_REGISTRY/flora-validation:REPLACE_WITH_TAG
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: flora-config
+            - secretRef:
+                name: flora-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+              ephemeral-storage: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: logs
+              mountPath: /app/logs
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: flora-app-data
+        - name: logs
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flora-app
+spec:
+  selector:
+    app: flora-app
+  ports:
+    - port: 80
+      targetPort: 8000

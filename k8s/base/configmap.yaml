@@ -1,0 +1,25 @@
+# Non-secret configuration. Values that differ between prod and staging are
+# overridden by the matching overlay; see k8s/overlays/*/kustomization.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flora-config
+data:
+  APP_BASE_URL: "https://validation.forrt.org"
+  ALLOWED_ORIGINS: ""
+  ADMIN_HANDLE: "flora_muenster"
+  EMAIL_FROM: "Flora Validator <noreply@forrt.org>"
+  GITHUB_REPO: "forrtproject/flora-extractor"
+  GITHUB_BRANCH: "main"
+  # Shared durable storage (see app-data-pvc.yaml) — required because the
+  # extractor pipeline addresses snapshot archives by content digest and
+  # refuses to run if a pod replacement loses the file (see
+  # extractor_storage.py resolve_data_dir()).
+  EXTRACTOR_DATA_DIR: "/app/data"
+  EXTRACTOR_MAINTENANCE_LOG: "/app/logs/extractor_maintenance.log"
+  EXTRACTOR_MAX_REMOVAL_PERCENT: "10"
+  EXTRACTOR_STAGE_TIMEOUT_SECONDS: "7200"
+  EXTRACTOR_LOCK_WAIT_SECONDS: "15"
+  SUBMISSION_FAILURE_STAMP_TTL_MINUTES: "30"
+  # One platform router (the Istio ingress gateway) sits in front of uvicorn.
+  TRUSTED_PROXY_HOPS: "1"

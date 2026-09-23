@@ -1,0 +1,101 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Set to the exact namespace name approved on the Kubernetes project request
+# form (second Namespace block, Umgebung = Test/Staging).
+namespace: REPLACE_WITH_STAGING_NAMESPACE
+
+resources:
+  - ../../base
+
+patches:
+  # Smaller footprint: staging carries no real traffic, just lets you test a
+  # deploy before it reaches production.
+  - target:
+      kind: Deployment
+      name: flora-app
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+            ephemeral-storage: 512Mi
+
+  # Cheaper HDD storage class is fine for staging data.
+  - target:
+      kind: PersistentVolumeClaim
+      name: flora-postgres-data
+    patch: |-
+      - op: replace
+        path: /spec/storageClassName
+        value: cinderbronze
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 10Gi
+
+  - target:
+      kind: PersistentVolumeClaim
+      name: flora-app-data
+    patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 5Gi
+
+  - target:
+      kind: Deployment
+      name: flora-postgres
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+            ephemeral-storage: 512Mi
+
+  - target:
+      kind: Gateway
+      name: flora-gateway
+    patch: |-
+      - op: replace
+        path: /metadata/annotations/wwu.io~1nic_node
+        value: istio.ms1.staging.k8s.wwu.de
+      - op: replace
+        path: /spec/servers/0/hosts/0
+        value: "./staging.validation.forrt.org"
+      - op: replace
+        path: /spec/servers/1/hosts/0
+        value: "./staging.validation.forrt.org"
+      - op: replace
+        path: /spec/servers/1/tls/credentialName
+        value: REPLACE_WITH_STAGING_NAMESPACE--flora-certificate
+
+  - target:
+      kind: VirtualService
+      name: flora-vs
+    patch: |-
+      - op: replace
+        path: /spec/hosts/0
+        value: staging.validation.forrt.org
+
+  - target:
+      kind: Certificate
+      name: flora-certificate
+    patch: |-
+      - op: replace
+        path: /spec/commonName
+        value: staging.validation.forrt.org
+      - op: replace
+        path: /spec/dnsNames/0
+        value: staging.validation.forrt.org

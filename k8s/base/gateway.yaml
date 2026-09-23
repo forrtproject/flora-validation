@@ -1,0 +1,43 @@
+# Based on the exact example at
+# https://cloud.uni-muenster.de/docs/kubernetes/network/nicintegration/ and
+# https://cloud.uni-muenster.de/docs/kubernetes/network/ingressgateway/
+# This cluster uses an Istio Gateway, not a plain nginx Ingress.
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: flora-gateway
+  annotations:
+    # ms1 (Einsteinstraße) is the main location; overridden to the staging
+    # NIC node by the staging overlay.
+    wwu.io/nic_node: istio.ms1.k8s.wwu.de
+    wwu.io/nic_public_dns: "true"
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    # "./<host>" scopes the host to Gateway/VirtualService pairs in this same
+    # namespace, per Istio convention — no namespace literal needed here.
+    - hosts:
+        - "./validation.forrt.org"
+      port:
+        name: http
+        number: 80
+        protocol: HTTP
+      tls:
+        httpsRedirect: true
+    - hosts:
+        - "./validation.forrt.org"
+      port:
+        name: https
+        number: 443
+        protocol: HTTPS
+      tls:
+        # Per the docs, the credential is looked up as "<namespace>--<secret>",
+        # and the namespace here MUST be the literal, final namespace name
+        # approved on the project form (Istio's ingress gateway resolves this
+        # across namespaces, so a "." shorthand does not work here). Fill this
+        # in once your namespace request is approved — both overlays already
+        # do this via a patch; update the value there.
+        credentialName: REPLACE_WITH_NAMESPACE_NAME--flora-certificate
+        minProtocolVersion: TLSV1_3
+        mode: SIMPLE

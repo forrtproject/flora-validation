@@ -1,0 +1,22 @@
+# NOTE: cloud.uni-muenster.de's own docs show the Gateway example but do not
+# publish a full VirtualService example (they point to their internal
+# workshop / the wwukube-examples GitLab repo instead — see
+# https://cloud.uni-muenster.de/docs/kubernetes/network/ingressgateway/ and
+# https://zivgitlab.uni-muenster.de/wwuit-sys/wwukube/wwukube-examples).
+# This is standard, stable Istio VirtualService syntax; diff it against that
+# repo's example before applying, in case the cluster expects extra fields.
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: flora-vs
+spec:
+  hosts:
+    - "validation.forrt.org"
+  gateways:
+    - flora-gateway
+  http:
+    - route:
+        - destination:
+            host: flora-app
+            port:
+              number: 80
