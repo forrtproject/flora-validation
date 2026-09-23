@@ -1972,3 +1972,31 @@ CREATE INDEX IF NOT EXISTS idx_extractor_maintenance_runs_recent
 CREATE UNIQUE INDEX IF NOT EXISTS uq_extractor_maintenance_one_active
     ON extractor_maintenance_runs ((1))
     WHERE status IN ('queued', 'running');
+
+-- Records retired because flora-extractor stopped shipping their pair_id: the
+-- original changed (a new pair_id), the work was set aside, or routing dropped it.
+-- The extractor lists them in data/retired_pairs.csv; `csv_to_db.py --retire`
+-- removes only untouched ones (status 'unvalidated', no queue slot shown or
+-- judged, no assignment, no validated row) and archives each here WHOLE first, so
+-- a retirement is auditable and reversible. An archive table rather than a new
+-- validation_status value: status is read by dozens of queries (serving, counts,
+-- admin filters, consensus), several as NOT IN lists that would silently count a
+-- 'retired' record as open work. No FK to unvalidated: the source row is gone.
+CREATE TABLE IF NOT EXISTS retired_records (
+    id                  BIGSERIAL   PRIMARY KEY,
+    record_id           UUID        NOT NULL,
+    pair_id             TEXT        NOT NULL,
+    reason              TEXT        NOT NULL,
+    detail              TEXT,
+    superseded_by       TEXT,
+    manifest_retired_at TEXT,
+    manifest_release    TEXT,
+    unvalidated_row     JSONB       NOT NULL,
+    metadata_row        JSONB,
+    queue_rows          JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    skip_rows           JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    retired_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    retired_by          TEXT        NOT NULL DEFAULT 'csv_to_db --retire'
+);
+CREATE INDEX IF NOT EXISTS retired_records_pair_id_idx ON retired_records(pair_id);
+CREATE INDEX IF NOT EXISTS retired_records_record_id_idx ON retired_records(record_id);
