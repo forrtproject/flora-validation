@@ -53,6 +53,8 @@ def test_a_manifest_with_an_unknown_reason_is_refused(tmp_path):
 class _Cursor:
     """Answers the retire path's reads from *state*; records every statement."""
 
+    total = 1000  # rows in unvalidated, for the automatic cap
+
     def __init__(self, state, log):
         self.state, self.log, self.rowcount, self._rows = state, log, 0, []
 
@@ -70,6 +72,8 @@ class _Cursor:
             self._rows = [(r["record_id"], p, r["validation_status"], r["has_activity"],
                            r["in_validated"], r["assigned"])
                           for p, r in self.state.items() if p in wanted]
+        elif "COUNT(*) FROM unvalidated" in text:
+            self._rows = [(self.total,)]
         elif text.startswith("SELECT"):
             self._rows = [(True,)]
         elif text.startswith("DELETE FROM unvalidated"):
@@ -161,3 +165,58 @@ def test_apply_archives_before_it_deletes_and_only_notes_a_touched_record(
     assert len(notes) == 1
     assert not any(sql.startswith("UPDATE unvalidated SET validation_status")
                    for sql in writes)
+
+
+def test_automatic_apply_runs_inside_the_maintenance_lock_behind_the_gate(
+        _files, monkeypatch):
+    conn = _Conn({"clean": _record("r1"), "seen": _record("r2", has_activity=True)})
+    monkeypatch.setattr(csv_to_db.psycopg2, "connect", lambda url: conn)
+    gated = []
+    monkeypatch.setattr(csv_to_db, "_require_retire_gate",
+                        lambda cur, run, path, commit: gated.append((run, commit)))
+    summary = _files[0].parent / "summary.json"
+    csv_to_db.run_retire(*_files, apply=True, maintenance_run_id="run-1",
+                         source_commit="c0ffee", summary_path=summary)
+    assert gated == [("run-1", "c0ffee")]
+    # The parent's session holds the advisory lock; taking it again would fail.
+    assert not any("advisory" in sql for sql in conn.log)
+    assert any(sql.startswith("DELETE FROM unvalidated") for sql in conn.log)
+    counts = json.loads(summary.read_text(encoding="utf-8"))
+    assert (counts["status"], counts["retire"], counts["flag"]) == ("applied", 1, 1)
+
+
+def test_automatic_apply_over_the_cap_writes_nothing(_files, monkeypatch):
+    conn = _Conn({"clean": _record("r1")})
+    monkeypatch.setattr(csv_to_db.psycopg2, "connect", lambda url: conn)
+    monkeypatch.setattr(csv_to_db, "_require_retire_gate", lambda *a: None)
+    monkeypatch.setattr(_Cursor, "total", 5)  # 1 of 5 = 20% > 15%
+    summary = _files[0].parent / "summary.json"
+    with pytest.raises(csv_to_db.RetireCapExceeded):
+        csv_to_db.run_retire(*_files, apply=True, maintenance_run_id="run-1",
+                             source_commit="c0ffee", summary_path=summary)
+    assert not any(sql.startswith(("INSERT", "UPDATE", "DELETE", "LOCK"))
+                   for sql in conn.log)
+    assert json.loads(summary.read_text(encoding="utf-8"))["status"] == "blocked"
+
+
+@pytest.mark.parametrize("value", ["", "lots", "nan", "-1", "101", True])
+def test_an_unusable_retire_cap_refuses(value):
+    with pytest.raises(ValueError, match="EXTRACTOR_MAX_RETIRE_PERCENT"):
+        csv_to_db.max_retire_percent(value)
+
+
+def test_the_gate_refuses_a_manifest_from_another_commit(_files, monkeypatch):
+    import cleanup_orphans
+
+    monkeypatch.setattr(cleanup_orphans, "_require_maintenance_gate", lambda *a: None)
+
+    class Cur:
+        def execute(self, sql, params=None):
+            pass
+
+        def fetchone(self):
+            return ("imported-at",)
+
+    csv_to_db._require_retire_gate(Cur(), "run-1", _files[1], "imported-at")
+    with pytest.raises(RuntimeError, match="different|imported the CSV at"):
+        csv_to_db._require_retire_gate(Cur(), "run-1", _files[1], "manifest-at")

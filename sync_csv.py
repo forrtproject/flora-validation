@@ -134,6 +134,37 @@ def _fetch_csv(url: str) -> bytes:
     return response.content
 
 
+_COMMIT_SHA = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _resolve_source_commit() -> str | None:
+    """The commit the branch points at now, so the CSV and the retire manifest
+    (``csv_to_db.py --retire``) are read from the same one.
+
+    Best effort: without it the sync downloads the branch as it always did, and
+    the retire stage, which needs the pair, refuses to run.
+    """
+    token = os.environ.get("GITHUB_TOKEN", "")
+    headers = {"Accept": "application/vnd.github.sha"}
+    if token:
+        headers["Authorization"] = f"token {token}"
+    try:
+        response = requests.get(
+            f"https://api.github.com/repos/{_GITHUB_REPO}/commits/{_GITHUB_BRANCH}",
+            headers=headers,
+            timeout=60,
+        )
+    except requests.RequestException as exc:
+        print(f"[sync_csv] could not resolve {_GITHUB_BRANCH} to a commit: {exc}")
+        return None
+    sha = response.text.strip() if isinstance(response.text, str) else ""
+    if response.status_code != 200 or not _COMMIT_SHA.match(sha):
+        print(f"[sync_csv] could not resolve {_GITHUB_BRANCH} to a commit "
+              f"(HTTP {response.status_code})")
+        return None
+    return sha
+
+
 def _archive_token(maintenance_run_id: str | None) -> str:
     normalized = re.sub(r"[^A-Za-z0-9]", "", maintenance_run_id or "")
     return normalized[:8] or uuid4().hex[:8]
@@ -439,7 +470,6 @@ def sync_once(
     as a background job; callers that need fail-fast behavior can inspect the
     return value (the command-line entry point converts it to an exit code).
     """
-    url = _build_url(_GITHUB_REPO, _GITHUB_BRANCH, _CSV_FILE_PATH)
     candidate_path = None
     report = {
         "success": False,
@@ -466,10 +496,16 @@ def sync_once(
         "promotion_verified": False,
         "part1_completed": False,
         "max_removal_percent": None,
+        # The flora-extractor commit the CSV was read at; the retire stage reads
+        # data/retired_pairs.csv at the same one.
+        "source_commit": None,
     }
     try:
         max_removal_percent = parse_max_removal_percent()
         report["max_removal_percent"] = max_removal_percent
+        source_commit = _resolve_source_commit()
+        report["source_commit"] = source_commit
+        url = _build_url(_GITHUB_REPO, source_commit or _GITHUB_BRANCH, _CSV_FILE_PATH)
         print(f"[sync_csv] Fetching {url} …")
         content = _fetch_csv(url)
         report["download_completed"] = True

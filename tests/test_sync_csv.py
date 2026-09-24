@@ -560,7 +560,8 @@ def test_a_lost_baseline_is_recovered_from_the_extractor_history_by_digest(tmp_p
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert succeeded is True
     assert mock_import.call_count == 1
-    assert commits_seen[0]["until"] == "2026-09-12T14:26:57Z"
+    history_queries = [params for params in commits_seen if params]
+    assert history_queries[0]["until"] == "2026-09-12T14:26:57Z"
     restored = tmp_path / report["baseline_file"]
     assert hashlib.sha256(restored.read_bytes()).hexdigest() == report["baseline_sha256"]
     assert report["added_count"] == 1 and report["removed_count"] == 0
@@ -589,3 +590,26 @@ def test_history_without_the_recorded_bytes_still_blocks(tmp_path):
     assert succeeded is False
     assert mock_import.call_count == 0
     assert report["error_code"] == "baseline_snapshot_unavailable"
+
+
+def test_the_csv_is_read_at_a_resolved_commit_which_the_report_records(tmp_path):
+    """The retire stage reads the manifest at this commit, never the moving branch."""
+    from sync_csv import sync_once
+
+    sha = "d7f55d98b7994109a12701c935b21fcc9dd14968"
+    urls = []
+
+    def get(url, headers=None, params=None, timeout=None):
+        urls.append(url)
+        if url.startswith("https://api.github.com/"):
+            return MagicMock(status_code=200, text=sha + "\n")
+        return MagicMock(status_code=200, content=FAKE_CSV_CONTENT)
+
+    report_path = tmp_path / "report.json"
+    with patch("sync_csv.requests.get", side_effect=get), \
+         patch("sync_csv.run_import"):
+        assert sync_once(data_dir=tmp_path, report_path=report_path,
+                         maintenance_run_id="run-pinned") is True
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["source_commit"] == sha
+    assert urls[-1].endswith(f"/{sha}/data/extracted.csv")

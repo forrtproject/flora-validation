@@ -228,6 +228,24 @@ name whenever the extractor has not moved), then the newest commits touching
 Only bytes matching the recorded digest are accepted, so the guard still compares
 against exactly the snapshot that was imported; otherwise the run blocks as before.
 
+Part 1 also resolves the branch to a commit first and downloads the CSV at that
+commit (`source_commit` in the safety report). The full routine's last stage,
+`retire_superseded` (`EXTRACTOR_AUTO_RETIRE`, on by default), reads
+flora-extractor's `data/retired_pairs.csv` at that same commit and runs
+`csv_to_db.py --retire --apply` against the archived snapshot Part 1 imported.
+It acts only on pair ids the manifest names and the imported CSV no longer
+carries. Records nobody has touched are archived whole in `retired_records`, then
+deleted. Touched records are flagged in `admin_notes`, and rejected ones are left
+alone. It is idempotent, because a retired pair id is absent the next time. The
+child does not take the advisory lock, which the parent's session holds.
+Instead it proves, through `extractor_maintenance_runs`, that it belongs to the
+live run whose Parts 1 and 2 verified this snapshot at this commit. A plan over
+`EXTRACTOR_MAX_RETIRE_PERCENT` (15) of `unvalidated` retires nothing (stage
+`BLOCKED`, warning `retire_cap_exceeded`). Any retire outcome is a warning,
+because the import stands. Manual: `python csv_to_db.py --input
+data/extracted_latest.csv --retire github` (dry run), then `--apply
+--expect-retire N`.
+
 To run the complete non-destructive routine manually:
 `python extractor_maintenance.py`. To preview or apply the distinct destructive
 stage, use `python extractor_maintenance.py --stage cleanup --dry-run-cleanup` or
