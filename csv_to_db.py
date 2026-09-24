@@ -592,6 +592,20 @@ def _validate_source_slots(resolved: pd.DataFrame) -> None:
         )
 
 
+def _rekey_candidates(slot_records: list, incoming_pair_ids: set,
+                      rekeyed_record_ids: set) -> list:
+    """The existing records a new pair_id may take over at its (work, rank) slot.
+
+    A record whose pair_id this same CSV still ships is not superseded — its
+    original only moved to another rank — and re-keying it would leave that
+    pair without a record (or chain the re-key onward). Nor may one record be
+    re-keyed twice in a run: the slot map is loaded once, before any re-key.
+    """
+    return [record for record in slot_records
+            if record["pair_id"] not in incoming_pair_ids
+            and record["record_id"] not in rekeyed_record_ids]
+
+
 def _refresh_rekeyed_record(cur, existing: dict, incoming: dict) -> None:
     """Apply an authoritative source re-key without overwriting final decisions."""
     cur.execute(
@@ -801,6 +815,8 @@ def run_import(csv_path: Path, dry_run: bool = False, release_id: str = "",
                     for _, r in resolved.iterrows()
                 ])
 
+                incoming_pair_ids = {_s(p) for p in resolved["pair_id"] if _s(p)}
+                rekeyed_record_ids: set = set()
                 inserted = 0
                 rekeyed = 0
                 skipped_dup = 0
@@ -822,7 +838,11 @@ def run_import(csv_path: Path, dry_run: bool = False, release_id: str = "",
                         continue
 
                     source_slot = _source_slot_key(row)
-                    slot_matches = existing_source_slots.get(source_slot, []) if source_slot else []
+                    slot_matches = _rekey_candidates(
+                        existing_source_slots.get(source_slot, []) if source_slot else [],
+                        incoming_pair_ids,
+                        rekeyed_record_ids,
+                    )
                     if len(slot_matches) == 1:
                         existing = slot_matches[0]
                         incoming = _build_unvalidated_row(
@@ -837,6 +857,7 @@ def run_import(csv_path: Path, dry_run: bool = False, release_id: str = "",
                         )
                         existing_pair_ids.pop(existing["pair_id"], None)
                         existing_pair_ids[pair_id] = existing["record_id"]
+                        rekeyed_record_ids.add(existing["record_id"])
                         rekeyed += 1
                         continue
                     if len(slot_matches) > 1:
@@ -934,7 +955,11 @@ def _retire_state(cur, pair_ids: list) -> dict:
                (u.validator_1 IS NOT NULL OR u.validator_2 IS NOT NULL
                 OR EXISTS (SELECT 1 FROM validation_queue q
                            WHERE q.record_id = u.record_id
-                             AND (q.is_shown OR q.is_validated))) AS has_activity,
+                             AND (q.is_shown OR q.is_validated))
+                OR EXISTS (SELECT 1 FROM validated_record_merges mg
+                           WHERE u.record_id IN (mg.duplicate_record_id,
+                                                 mg.survivor_record_id)))
+                   AS has_activity,
                EXISTS (SELECT 1 FROM validated v
                        WHERE v.record_id = u.record_id) AS in_validated,
                EXISTS (SELECT 1 FROM assignments a
@@ -1079,9 +1104,30 @@ def _print_retire_plan(plan: list) -> None:
                   f"pair_id={step['pair_id']}  {step['doi_r']} -> {step['doi_o']}")
 
 
+RETIRE_MANIFEST_REPO_PATH = "data/retired_pairs.csv"
+
+
+def fetch_retire_manifest(dest: Path) -> Path:
+    """Download flora-extractor's manifest the way sync_csv downloads the CSV.
+
+    Same repository, branch and token, so ``--retire github`` needs no copy of
+    the file on the host. The manifest is append-only upstream; a newer copy than
+    the imported CSV is harmless, because a pair id the imported CSV still
+    carries is never retired, and --expect-retire binds an apply to the plan
+    that was reviewed.
+    """
+    from sync_csv import _GITHUB_BRANCH, _GITHUB_REPO, _build_url, _fetch_csv
+
+    url = _build_url(_GITHUB_REPO, _GITHUB_BRANCH, RETIRE_MANIFEST_REPO_PATH)
+    print(f"Fetching {url} …")
+    dest.write_bytes(_fetch_csv(url))
+    return dest
+
+
 def run_retire(manifest_path: Path, csv_path: Path, apply: bool = False,
                expect_retire: "int | None" = None, include_unexplained: bool = False,
-               report_path: "Path | None" = None) -> list:
+               report_path: "Path | None" = None,
+               summary_path: "Path | None" = None) -> list:
     """Plan (and with *apply*, carry out) the retirement of the manifest's pair ids.
 
     *csv_path* is the extracted.csv the database was last imported from: a pair id
@@ -1113,6 +1159,7 @@ def run_retire(manifest_path: Path, csv_path: Path, apply: bool = False,
             conn.rollback()
             _print_retire_plan(plan)
             _write_retire_report(report_path, plan)
+            _write_retire_summary(summary_path, manifest_path, csv_path, plan)
             print("\n[dry-run] Nothing written. To apply this plan: --apply "
                   f"--expect-retire {sum(s['action'] == 'retire' for s in plan)}")
             return plan
@@ -1167,6 +1214,27 @@ def run_retire(manifest_path: Path, csv_path: Path, apply: bool = False,
         conn.close()
 
 
+def _write_retire_summary(path: "Path | None", manifest_path: Path, csv_path: Path,
+                          plan: list) -> None:
+    """Counts only, for the maintenance run history (extractor_maintenance.py)."""
+    if path is None:
+        return
+    import json
+    from extractor_storage import sha256_file
+
+    actions: dict = {}
+    for step in plan:
+        actions[step["action"]] = actions.get(step["action"], 0) + 1
+    Path(path).write_text(json.dumps({
+        "manifest_sha256": sha256_file(manifest_path),
+        "input_sha256": sha256_file(csv_path),
+        "manifest_pairs": len(plan),
+        "actions": actions,
+        "retire": actions.get("retire", 0),
+        "flag": actions.get("flag", 0),
+    }, sort_keys=True), encoding="utf-8")
+
+
 def _write_retire_report(path: "Path | None", plan: list) -> None:
     if path is None:
         return
@@ -1193,9 +1261,10 @@ if __name__ == "__main__":
         help="Allow archived CSV headers that predate the current extractor contract.",
     )
     parser.add_argument(
-        "--retire", type=Path, default=None, metavar="MANIFEST",
+        "--retire", default=None, metavar="MANIFEST",
         help="Retire the records flora-extractor stopped shipping, named in its "
-             "data/retired_pairs.csv. Dry run (read-only) unless --apply. --input "
+             "data/retired_pairs.csv (a path, or 'github' to fetch it the way the "
+             "sync fetches the CSV). Dry run (read-only) unless --apply. --input "
              "must be the CSV the database was last imported from.",
     )
     parser.add_argument("--apply", action="store_true",
@@ -1207,16 +1276,23 @@ if __name__ == "__main__":
                         help="With --retire: also act on 'unexplained' entries.")
     parser.add_argument("--retire-report", type=Path, default=None,
                         help="With --retire: write the plan as a CSV.")
+    parser.add_argument("--retire-summary-json", type=Path, default=None,
+                        help=argparse.SUPPRESS)  # extractor_maintenance.py's report stage
     args = parser.parse_args()
 
     if not args.input.exists():
         raise FileNotFoundError(f"Input file not found: {args.input}")
 
     if args.retire is not None:
-        run_retire(args.retire, args.input, apply=args.apply,
-                   expect_retire=args.expect_retire,
-                   include_unexplained=args.include_unexplained,
-                   report_path=args.retire_report)
+        import tempfile
+        with tempfile.TemporaryDirectory() as scratch:
+            manifest = (fetch_retire_manifest(Path(scratch) / "retired_pairs.csv")
+                        if args.retire == "github" else Path(args.retire))
+            run_retire(manifest, args.input, apply=args.apply,
+                       expect_retire=args.expect_retire,
+                       include_unexplained=args.include_unexplained,
+                       report_path=args.retire_report,
+                       summary_path=args.retire_summary_json)
         raise SystemExit(0)
 
     run_import(

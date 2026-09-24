@@ -1,4 +1,6 @@
 """csv_to_db.py --retire: remove only what flora-extractor named, only if untouched."""
+import json
+
 import pandas as pd
 import pytest
 
@@ -122,10 +124,13 @@ def _files(tmp_path, monkeypatch):
 def test_the_dry_run_is_a_read_only_session_that_only_selects(_files, monkeypatch):
     conn = _Conn({"clean": _record("r1"), "seen": _record("r2", has_activity=True)})
     monkeypatch.setattr(csv_to_db.psycopg2, "connect", lambda url: conn)
-    plan = csv_to_db.run_retire(*_files)
+    summary = _files[0].parent / "summary.json"
+    plan = csv_to_db.run_retire(*_files, summary_path=summary)
     assert {s["pair_id"]: s["action"] for s in plan} == {"clean": "retire",
                                                          "seen": "flag"}
     assert conn.readonly and conn.commits == 0
+    counts = json.loads(summary.read_text(encoding="utf-8"))
+    assert (counts["retire"], counts["flag"], counts["manifest_pairs"]) == (1, 1, 2)
     assert conn.log and all(sql.startswith("SELECT") for sql in conn.log)
 
 
