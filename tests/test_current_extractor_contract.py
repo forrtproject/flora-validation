@@ -210,3 +210,17 @@ def test_database_declares_lineage_and_provenance_columns():
         "ADD COLUMN IF NOT EXISTS bibtex_ref_r       TEXT",
     ):
         assert declaration in SCHEMA
+
+
+def test_a_rank_shuffle_does_not_rekey_a_record_whose_pair_still_ships():
+    """Measured on the 2026-09-24 export: 11 new pairs landed on a slot whose record
+    held a pair the same CSV still shipped at another rank; 2 of those pairs would
+    have ended the import with no record at all."""
+    from csv_to_db import _rekey_candidates
+
+    slot = [{"record_id": "r1", "pair_id": "moved"}]
+    assert _rekey_candidates(slot, {"moved", "new"}, set()) == []
+    assert _rekey_candidates(slot, {"new"}, set()) == slot
+    assert _rekey_candidates(slot, {"new"}, {"r1"}) == []
+    two = slot + [{"record_id": "r2", "pair_id": "gone"}]
+    assert _rekey_candidates(two, {"moved", "new"}, set()) == [two[1]]

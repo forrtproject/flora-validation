@@ -220,6 +220,14 @@ CSV is then reported as `missing_local_baseline` / `baseline_snapshot_unavailabl
 rather than being silently treated as a first deployment, which would switch the
 removal guard off exactly when the database is most exposed.
 
+When the recorded archive is gone (a redeploy onto a pod-local data directory),
+Part 1 looks for the same bytes before blocking: any other archive on the host
+with the recorded sha256 (a blocked run re-downloads the baseline under a new
+name whenever the extractor has not moved), then the newest commits touching
+`data/extracted.csv` up to the archive's timestamp in the extractor repository.
+Only bytes matching the recorded digest are accepted, so the guard still compares
+against exactly the snapshot that was imported; otherwise the run blocks as before.
+
 To run the complete non-destructive routine manually:
 `python extractor_maintenance.py`. To preview or apply the distinct destructive
 stage, use `python extractor_maintenance.py --stage cleanup --dry-run-cleanup` or

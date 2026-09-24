@@ -194,6 +194,17 @@ def _lock_wait_seconds() -> int:
     return max(0, configured)
 
 
+def _retire_report_enabled() -> bool:
+    """EXTRACTOR_RETIRE_REPORT: add the read-only retire plan to the full routine.
+
+    Off by default. It only ever plans (``csv_to_db.py --retire`` without
+    --apply, in a read-only session); retiring stays a manual, reviewed run,
+    like cleanup, because unattended work never deletes.
+    """
+    value = os.environ.get("EXTRACTOR_RETIRE_REPORT", "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
 def _emit(log_file: IO[str], message: str) -> None:
     value = message if message.endswith("\n") else message + "\n"
     sys.stdout.write(value)
@@ -942,6 +953,7 @@ def run_pipeline(
     succeeded = False
     run_log: _RunLog | None = None
     report_path: Path | None = None
+    retire_summary_path: Path | None = None
     lock_conn = None
     history_owned = False
     setup_error = "pipeline failed before logging started"
@@ -1001,6 +1013,13 @@ def run_pipeline(
             "--maintenance-run-id",
             str(run_id),
         ]
+        if requested_stage == "full" and _retire_report_enabled():
+            summary_handle = tempfile.NamedTemporaryFile(
+                prefix="flora_retire_plan_", suffix=".json", delete=False
+            )
+            summary_handle.close()
+            retire_summary_path = Path(summary_handle.name)
+
         if "sync_csv" in selected:
             baseline = _baseline_expectation(database_url)
             if baseline.get("baseline_file"):
@@ -1014,10 +1033,11 @@ def run_pipeline(
         # path can hand the orphan stages an unbound file.
         find_command: list[str] | None = None
         cleanup_command: list[str] | None = None
+        retire_command: list[str] | None = None
         backfill_command = [sys.executable, str(ROOT / "backfill_oa_work_ids.py")]
 
         def bind_orphan_stages(snapshot_path: Path, snapshot_sha256: str) -> None:
-            nonlocal find_command, cleanup_command
+            nonlocal find_command, cleanup_command, retire_command
             find_command = [
                 sys.executable,
                 str(ROOT / "find_orphans.py"),
@@ -1038,6 +1058,19 @@ def run_pipeline(
             ]
             if apply_cleanup:
                 cleanup_command.append("--apply")
+            if retire_summary_path is not None:
+                # The snapshot is the one Part 1 just imported, digest-verified
+                # above: a pair id it still carries is never planned for retiring.
+                retire_command = [
+                    sys.executable,
+                    str(ROOT / "csv_to_db.py"),
+                    "--input",
+                    str(snapshot_path),
+                    "--retire",
+                    "github",
+                    "--retire-summary-json",
+                    str(retire_summary_path),
+                ]
 
         succeeded = True
         with log_path.open("a", encoding="utf-8", newline="") as combined_log:
@@ -1249,6 +1282,23 @@ def run_pipeline(
                         )
                 persist_progress()
 
+            # Read-only, like the orphan report, and non-blocking like the
+            # OpenAlex enrichment: a failed plan is a warning, never a failed sync.
+            if succeeded and retire_command is not None:
+                result = _run_stage(run_log, "retire_report", retire_command, runner)
+                try:
+                    safety_report["retire_plan"] = json.loads(
+                        retire_summary_path.read_text(encoding="utf-8")
+                    )
+                except (OSError, ValueError):
+                    safety_report["retire_plan"] = None
+                if not result.success or not safety_report["retire_plan"]:
+                    warning_codes = list(safety_report.get("warning_codes") or [])
+                    if "retire_report_failed" not in warning_codes:
+                        warning_codes.append("retire_report_failed")
+                    safety_report["warning_codes"] = warning_codes
+                persist_progress()
+
             if succeeded and "cleanup_orphans" in selected:
                 if cleanup_command is None:
                     raise RuntimeError(
@@ -1349,6 +1399,8 @@ def run_pipeline(
     finally:
         if report_path is not None:
             report_path.unlink(missing_ok=True)
+        if retire_summary_path is not None:
+            retire_summary_path.unlink(missing_ok=True)
         try:
             if database_url and history_owned:
                 try:

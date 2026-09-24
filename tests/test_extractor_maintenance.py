@@ -1286,3 +1286,40 @@ def test_the_performing_map_is_derived_from_the_stage_table():
         for request, stages in em._STAGES_BY_REQUEST.items():
             if stage in stages:
                 assert request in requests, f"{request} runs {stage} but is missing"
+
+
+def test_the_retire_plan_is_off_unless_its_flag_is_set(tmp_path, monkeypatch):
+    monkeypatch.delenv("EXTRACTOR_RETIRE_REPORT", raising=False)
+    runner = ScriptedRunner({"sync_csv.py": (0, ""), "find_orphans.py": (0, "")})
+    assert run_pipeline(data_dir=tmp_path / "data", log_path=tmp_path / "m.log",
+                        runner=runner) is True
+    assert _script_order(runner) == ["sync_csv.py", "find_orphans.py"]
+
+
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_the_flagged_retire_plan_is_read_only_and_never_fails_the_sync(
+        tmp_path, monkeypatch, exit_code):
+    monkeypatch.setenv("EXTRACTOR_RETIRE_REPORT", "1")
+    runner = ScriptedRunner({"sync_csv.py": (0, ""), "find_orphans.py": (0, ""),
+                             "csv_to_db.py": (exit_code, "retire plan\n")})
+    log_path = tmp_path / "m.log"
+    succeeded = run_pipeline(data_dir=tmp_path / "data", log_path=log_path,
+                             runner=runner, trigger="scheduled")
+
+    assert succeeded is True
+    assert _script_order(runner) == ["sync_csv.py", "find_orphans.py", "csv_to_db.py"]
+    retire = runner.commands[-1]
+    find_input, _ = _stage_input(runner, "find_orphans.py")
+    assert retire[retire.index("--input") + 1] == find_input
+    assert retire[retire.index("--retire") + 1] == "github"
+    assert "--apply" not in retire
+    # The scripted child writes no summary, so the plan is reported missing.
+    assert "[pipeline] WARNING" in log_path.read_text(encoding="utf-8")
+
+
+def test_a_single_stage_request_never_runs_the_retire_plan(tmp_path, monkeypatch):
+    monkeypatch.setenv("EXTRACTOR_RETIRE_REPORT", "1")
+    runner = ScriptedRunner({"sync_csv.py": (0, "")})
+    assert run_pipeline(data_dir=tmp_path / "data", log_path=tmp_path / "m.log",
+                        runner=runner, requested_stage="sync") is True
+    assert _script_order(runner) == ["sync_csv.py"]
