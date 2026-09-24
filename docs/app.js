@@ -6444,6 +6444,12 @@ function maintenanceNotice(run) {
   if (report.error_code === "snapshot_archive_unavailable" || report.error_code === "snapshot_archive_mismatch" || report.error_code === "snapshot_archive_unrecorded" || report.error_code === "snapshot_digest_missing") {
     return `<div class="pipeline-alert pipeline-alert-blocked"><b>Snapshot could not be verified:</b> the archived CSV that Part 1 imported is not readable on this host, so orphan reporting was stopped and manual cleanup remains unavailable. Check that the extractor data directory is on shared, durable storage, then re-run Sync + Report.</div>`;
   }
+  if ((report.warning_codes || []).includes("retire_cap_exceeded")) {
+    return `<div class="pipeline-alert pipeline-alert-blocked"><b>Automatic retire refused:</b> the extractor's manifest would retire ${Number((report.retire || {}).retire || 0).toLocaleString()} records, above the EXTRACTOR_MAX_RETIRE_PERCENT cap (${Number((report.retire || {}).retire_limit || 0).toLocaleString()}). The import stands; nothing was retired. Review with <code>csv_to_db.py --retire github</code>.</div>`;
+  }
+  if ((report.warning_codes || []).includes("retire_failed") || (report.warning_codes || []).includes("retire_source_commit_unknown")) {
+    return `<div class="pipeline-alert pipeline-alert-warning"><b>Automatic retire did not run to completion:</b> the import stands; see the retire_superseded stage in the log below.</div>`;
+  }
   if ((report.warning_codes || []).includes("new_resolved_pair_ids")) {
     const sample = (report.added_pair_ids || []).slice(0, 8).map(escapeHtml).join(", ");
     return `<div class="pipeline-alert pipeline-alert-warning"><b>New resolved identifiers:</b> ${Number(report.added_count || 0).toLocaleString()} pair ID(s) were added.${sample ? `<span class="pipeline-id-sample">${sample}${report.added_ids_truncated ? ", ..." : ""}</span>` : ""}</div>`;

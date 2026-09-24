@@ -5,8 +5,14 @@ Maintenance is deliberately sequenced:
 1. ``sync_csv.py`` downloads, validates, imports, and promotes the candidate CSV.
 2. Scheduled full runs enrich missing OpenAlex IDs while the same lock is held.
 3. ``find_orphans.py`` writes a complete read-only orphan report.
-4. ``cleanup_orphans.py --apply`` is a separate, explicitly requested manual
-   stage. Routine full/nightly runs stop after the read-only orphan report.
+4. ``csv_to_db.py --retire`` (full runs, EXTRACTOR_AUTO_RETIRE, on by default)
+   retires the records flora-extractor names in data/retired_pairs.csv, read at
+   the commit the sync imported: untouched records are archived in
+   retired_records then deleted, touched ones only flagged, under a
+   EXTRACTOR_MAX_RETIRE_PERCENT cap. It is the one stage an unattended run may
+   delete in, because it acts on what the extractor stated, not on absence.
+5. ``cleanup_orphans.py --apply`` is a separate, explicitly requested manual
+   stage. Routine full/nightly runs never run it.
 
 The orphan report and cleanup read the immutable archive the sync imported —
 identified by sha256, not by the mutable ``extracted_latest.csv`` — so a pod
@@ -192,6 +198,14 @@ def _lock_wait_seconds() -> int:
     except ValueError:
         return DEFAULT_LOCK_WAIT_SECONDS
     return max(0, configured)
+
+
+def _auto_retire_enabled() -> bool:
+    """EXTRACTOR_AUTO_RETIRE: end the full routine by retiring what the extractor
+    withdrew (``csv_to_db.py --retire``, applied). On unless set to 0/false/no/off.
+    """
+    value = os.environ.get("EXTRACTOR_AUTO_RETIRE", "1").strip().lower()
+    return value not in {"0", "false", "no", "off"}
 
 
 def _emit(log_file: IO[str], message: str) -> None:
@@ -930,8 +944,9 @@ def run_pipeline(
         raise ValueError(f"unknown maintenance stage: {requested_stage}")
 
     # This is the final invariant, independent of which scheduler/dispatcher
-    # entry point invoked us: unattended work may report deletion candidates but
-    # can never pass --apply. Only an explicit admin/CLI request can delete.
+    # entry point invoked us: unattended work may report orphan candidates but
+    # can never pass --apply to cleanup. (The retire stage below is the one
+    # exception, bounded by the extractor's manifest and its own cap.)
     if trigger == "scheduled":
         apply_cleanup = False
 
@@ -942,6 +957,8 @@ def run_pipeline(
     succeeded = False
     run_log: _RunLog | None = None
     report_path: Path | None = None
+    retire_summary_path: Path | None = None
+    snapshot_bound: tuple[Path, str] | None = None
     lock_conn = None
     history_owned = False
     setup_error = "pipeline failed before logging started"
@@ -1001,6 +1018,15 @@ def run_pipeline(
             "--maintenance-run-id",
             str(run_id),
         ]
+        auto_retire = requested_stage == "full" and _auto_retire_enabled()
+        if auto_retire:
+            statuses["retire_superseded"] = "PENDING"
+            summary_handle = tempfile.NamedTemporaryFile(
+                prefix="flora_retire_", suffix=".json", delete=False
+            )
+            summary_handle.close()
+            retire_summary_path = Path(summary_handle.name)
+
         if "sync_csv" in selected:
             baseline = _baseline_expectation(database_url)
             if baseline.get("baseline_file"):
@@ -1017,7 +1043,7 @@ def run_pipeline(
         backfill_command = [sys.executable, str(ROOT / "backfill_oa_work_ids.py")]
 
         def bind_orphan_stages(snapshot_path: Path, snapshot_sha256: str) -> None:
-            nonlocal find_command, cleanup_command
+            nonlocal find_command, cleanup_command, snapshot_bound
             find_command = [
                 sys.executable,
                 str(ROOT / "find_orphans.py"),
@@ -1038,6 +1064,7 @@ def run_pipeline(
             ]
             if apply_cleanup:
                 cleanup_command.append("--apply")
+            snapshot_bound = (snapshot_path, snapshot_sha256)
 
         succeeded = True
         with log_path.open("a", encoding="utf-8", newline="") as combined_log:
@@ -1249,6 +1276,63 @@ def run_pipeline(
                         )
                 persist_progress()
 
+            # Retire what the extractor withdrew — the one stage an unattended run
+            # may delete in, and only within csv_to_db.run_retire's limits: the
+            # manifest's pair ids, untouched records only (archived first), a
+            # cap on the count, and the manifest read at the commit this run's
+            # CSV came from. It runs inside this run's lock (the child proves it
+            # through the run history rather than taking the lock again). Its
+            # outcome is a warning, never a failed sync: the import stands.
+            if auto_retire:
+                retire_warning = None
+                source_commit = safety_report.get("source_commit")
+                if not succeeded:
+                    statuses["retire_superseded"] = "SKIPPED"
+                    _mark_skipped(run_log, "retire_superseded",
+                                  "an earlier stage did not succeed")
+                elif not (database_url and history_owned):
+                    statuses["retire_superseded"] = "SKIPPED"
+                    _mark_skipped(run_log, "retire_superseded",
+                                  "no audited run history to gate the apply on")
+                elif snapshot_bound is None or not source_commit:
+                    statuses["retire_superseded"] = "SKIPPED"
+                    retire_warning = "retire_source_commit_unknown"
+                    _mark_skipped(run_log, "retire_superseded",
+                                  "the sync did not record the extractor commit it "
+                                  "read, so the manifest cannot be matched to it")
+                else:
+                    retire_command = [
+                        sys.executable, str(ROOT / "csv_to_db.py"),
+                        "--input", str(snapshot_bound[0]),
+                        "--retire", "github",
+                        "--retire-commit", str(source_commit),
+                        "--apply",
+                        "--maintenance-run-id", str(run_id),
+                        "--retire-summary-json", str(retire_summary_path),
+                    ]
+                    result = _run_stage(run_log, "retire_superseded", retire_command,
+                                        runner)
+                    try:
+                        summary = json.loads(
+                            retire_summary_path.read_text(encoding="utf-8"))
+                    except (OSError, ValueError):
+                        summary = None
+                    safety_report["retire"] = summary
+                    if result.success and summary:
+                        statuses["retire_superseded"] = "SUCCESS"
+                    elif result.returncode == 3:
+                        statuses["retire_superseded"] = "BLOCKED"
+                        retire_warning = "retire_cap_exceeded"
+                    else:
+                        statuses["retire_superseded"] = "FAILED"
+                        retire_warning = "retire_failed"
+                if retire_warning:
+                    warning_codes = list(safety_report.get("warning_codes") or [])
+                    if retire_warning not in warning_codes:
+                        warning_codes.append(retire_warning)
+                    safety_report["warning_codes"] = warning_codes
+                persist_progress()
+
             if succeeded and "cleanup_orphans" in selected:
                 if cleanup_command is None:
                     raise RuntimeError(
@@ -1349,6 +1433,8 @@ def run_pipeline(
     finally:
         if report_path is not None:
             report_path.unlink(missing_ok=True)
+        if retire_summary_path is not None:
+            retire_summary_path.unlink(missing_ok=True)
         try:
             if database_url and history_owned:
                 try:
