@@ -23,3 +23,5 @@ data:
   SUBMISSION_FAILURE_STAMP_TTL_MINUTES: "30"
   # One platform router (the Istio ingress gateway) sits in front of uvicorn.
   TRUSTED_PROXY_HOPS: "1"
+  # Uvicorn workers per pod, read by the Dockerfile CMD (default 1).
+  WEB_CONCURRENCY: "2"

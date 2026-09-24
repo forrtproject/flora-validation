@@ -462,28 +462,49 @@ def db():
         conn.close()
 
 
-def init_db():
-    """Apply db_schema.sql (idempotent) and seed from extracted_latest.csv if DB is empty."""
-    with db() as cur:
-        cur.execute(SCHEMA_PATH.read_text())
+# Same key family as extractor_maintenance / source_sync_runner.
+SCHEMA_INIT_ADVISORY_LOCK_ID = 7_342_025_093
 
-    # Seed unvalidated table from latest CSV if it has never been loaded
-    with db() as cur:
-        cur.execute("SELECT COUNT(*) AS n FROM unvalidated")
-        if cur.fetchone()["n"] == 0:
-            latest_csv = DATA_DIR / "extracted_latest.csv"
-            if latest_csv.exists():
-                import subprocess, sys
-                subprocess.run(
-                    [sys.executable, str(ROOT / "csv_to_db.py"), "--input", str(latest_csv),
-                     "--allow-legacy-schema"],
-                    # The bundled seed is an intentional archived snapshot. It
-                    # predates the current Stage-3 columns, so opt into legacy
-                    # replay explicitly, but never ignore an actual import error:
-                    # an empty app that appears healthy is worse than a failed
-                    # deployment with an actionable traceback.
-                    check=True,
-                )
+
+def init_db():
+    """Apply db_schema.sql (idempotent) and seed from extracted_latest.csv if DB is empty.
+
+    Every uvicorn worker and every pod runs this at import. Two sessions replaying
+    the same DDL at once take AccessExclusiveLocks in different orders, and
+    PostgreSQL aborts one with DeadlockDetected, killing that worker. A
+    session-level advisory lock makes them take turns; it is held on a connection
+    of its own because the seed below runs csv_to_db.py in a subprocess that must
+    not queue behind this process's transactions. PostgreSQL drops the lock if the
+    process dies mid-bootstrap."""
+    lock_conn = psycopg2.connect(DATABASE_URL)
+    lock_conn.autocommit = True
+    try:
+        with lock_conn.cursor() as lock_cur:
+            lock_cur.execute("SELECT pg_advisory_lock(%s)", (SCHEMA_INIT_ADVISORY_LOCK_ID,))
+
+        with db() as cur:
+            cur.execute(SCHEMA_PATH.read_text())
+
+        # Seed unvalidated table from latest CSV if it has never been loaded
+        with db() as cur:
+            cur.execute("SELECT COUNT(*) AS n FROM unvalidated")
+            if cur.fetchone()["n"] == 0:
+                latest_csv = DATA_DIR / "extracted_latest.csv"
+                if latest_csv.exists():
+                    import subprocess, sys
+                    subprocess.run(
+                        [sys.executable, str(ROOT / "csv_to_db.py"), "--input", str(latest_csv),
+                         "--allow-legacy-schema"],
+                        # The bundled seed is an intentional archived snapshot. It
+                        # predates the current Stage-3 columns, so opt into legacy
+                        # replay explicitly, but never ignore an actual import error:
+                        # an empty app that appears healthy is worse than a failed
+                        # deployment with an actionable traceback.
+                        check=True,
+                    )
+    finally:
+        # Closing the session releases the advisory lock.
+        lock_conn.close()
 
 
 init_db()
