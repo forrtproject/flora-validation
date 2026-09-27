@@ -1227,6 +1227,9 @@ details[open] .senior-reject-summary::before { content: "▾ "; }
 .disagree-tab { padding: 0.35rem 0.85rem; border: 1px solid var(--rule); background: var(--bg); border-radius: 8px; cursor: pointer; font-size: 0.85rem; color: var(--ink); }
 .disagree-tab.active { background: var(--accent, #b54614); color: #fff; border-color: var(--accent, #b54614); }
 .disagree-caption { font-size: 0.8rem; color: var(--muted); margin: 0 0 0.55rem; }
+/* Replications and reproductions get their own outcome rows: one outcome vs two axes. */
+.disagree-group { margin: 0.9rem 0 0.35rem; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+.disagree-note { margin: 0.5rem 0 0; font-size: 0.76rem; color: var(--muted); font-style: italic; }
 .disagree-row { position: relative; display: flex; align-items: center; gap: 1rem; padding: 0.6rem 0.85rem; border: 1px solid var(--rule); border-radius: 8px; margin-bottom: 0.4rem; }
 .disagree-row:not(.disagree-row-nomatrix) { cursor: help; }
 .disagree-row:not(.disagree-row-nomatrix):hover { border-color: var(--accent, #b54614); }
@@ -1368,7 +1371,13 @@ details[open] .senior-reject-summary::before { content: "▾ "; }
   font-size: 0.82rem;
   color: var(--muted);
 }
-.outcome-choice-tier { position: relative; margin-top: 0.65rem; }
+/* Points a same-category "correction" at "Right outcome, better quote". */
+.outcome-correction-hint {
+  margin: -0.35rem 0 0.7rem;
+  font-size: 0.76rem;
+  color: var(--muted);
+  font-style: italic;
+}.outcome-choice-tier { position: relative; margin-top: 0.65rem; }
 .outcome-choice-tier:first-of-type { margin-top: 0; }
 .outcome-tier-label {
   display: block;
@@ -1810,12 +1819,6 @@ textarea.comment:focus { background: var(--bg-alt); }
   content: "⚠";
   flex-shrink: 0;
   font-size: 0.75rem;
-}
-
-/* Outcome choices locked while quote edit textarea is open */
-.choices.quote-edit-open .choice {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 .actions {
@@ -3120,6 +3123,7 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
 .chk-row:first-child { border-top: none; }
 .chk-label   { min-width: 4.5rem; color: var(--muted); font-size: 0.76rem; flex-shrink: 0; }
 .chk-extr-val  { color: var(--ink); font-size: 0.8rem; flex: 1; }
+.chk-was-tag   { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .chk-extr-empty { color: var(--muted); font-style: italic; }
 .chk-ok        { color: var(--green, #2a9d2a); font-weight: 600; white-space: nowrap; }
 .chk-fail      { color: var(--red); font-weight: 600; }
@@ -3339,13 +3343,29 @@ details[open] > .chk-collapsible-summary::before { transform: rotate(90deg); }
   border-top: 1px solid var(--rule);
 }
 
-.admin-reject-action > button {
-  width: 100%;
+/* "Not a replication?": the other FLoRA type, or out of FLoRA. Each action
+   carries its meaning next to it, so neither reads as the other. */
+.admin-reject-heading {
+  margin: 0 0 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.admin-reject-choice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  margin-top: 0.45rem;
+}
+.admin-reject-choice > button {
+  flex: 0 0 13.5rem;
   box-sizing: border-box;
-  padding: 0.65rem 0.75rem;
+  padding: 0.6rem 0.75rem;
   font-size: clamp(0.68rem, 1.5vw, 0.84rem);
   border-radius: 0.5rem;
 }
+.admin-reject-note { font-size: 0.75rem; color: var(--muted); }
 .btn-reject-outline {
   font-size: 0.82rem;
   padding: 0.35rem 0.8rem;

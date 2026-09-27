@@ -567,6 +567,72 @@ If the effective quote is not found, it adds `quote_not_in_abstract`; consensus
 then requires admin review. The check is skipped for declared full-text quotes,
 hard mode, assignments, not-a-validation decisions, and missing quote/abstract.
 
+### Replication outcome UI
+
+The replication outcome gate offers **Looks right**, **Right outcome, better
+quote**, **Mischaracterised** and **Can't tell**. "Right outcome, better quote"
+opens the quote editor and cannot be submitted until the quote's wording changes
+(punctuation, case and spacing alone do not count); it is sent as
+`outcome_check = "correct"` with the new `corrected_outcome_quote` and
+`additional_checks.outcome_quote_disputed = true`. "Looks right" may also carry a
+quote edit, for a quote that was fine but could be longer. Clicking any choice
+while the quote editor is open keeps the edit and then takes the choice.
+
+"Can't tell" is sent as `outcome_check = "incorrect"` with no `corrected_outcome`
+and `was_unsure_outcome`; the record keeps its outcome and consensus routes it to
+review. Only the evidence of the submitted type travels with a judgement: a quote
+edited before a type change is not sent.
+
+"Mischaracterised" greys out the category the page shows, because choosing it
+would not be a correction. Every replication judgement records that shown category
+in `additional_checks.shown_outcome`, and the API (`_same_outcome_as_agreement`)
+stores `incorrect` plus that same category as agreement with
+`outcome_quote_disputed`, so it neither splits consensus against a "Looks right" nor
+costs the agreement bonus. It never compares against the record's outcome alone: an
+import can change that under an open page, and a genuine "failed → successful" then
+looks like "successful → successful".
+
+Saved drafts retain the type and outcome values they were reviewed against. If
+those values change before resume, the affected choices must be reviewed again;
+text edits are retained. Older drafts without that baseline also require fresh
+choices, so a saved correction cannot silently become agreement with a new import.
+
+An assignment shows, and resolves against, the record's effective values
+(`_effective_record`): an earlier `final_*` decision in place of the extracted value
+it replaced, for the type, outcome, quotes, titles, link, abstract and original DOI.
+"Looks right" stores exactly what the screen showed, and "Mischaracterised" can
+restore anything else, the extracted value included. The highlighted original in
+the coded set uses the same effective original as the assignment's main card.
+New assignment summaries preserve these values in `shown_record` for the admin
+audit card; older summaries fall back to the extracted record because their full
+historical baseline was not saved.
+
+A record with no extracted outcome shows "No outcome extracted" and offers no
+agreement; "Can't tell" on it stores `cannot_be_determined`.
+
+`backfill_outcome_agreement.py` converts judgements saved before this rule only
+where the judgement recorded today's outcome as its `shown_outcome`. Nothing else
+records what a page showed, so every older judgement is listed for a person to
+check and converted only with `--include-unverified` — and then never re-evaluated,
+by the script or by the nightly tiebreaker retry (`_retry_tiebreakers` skips any
+record holding a converted judgement). It is a dry run unless given `--apply`.
+Re-evaluation also requires the record to remain a replication. Its row is locked
+while eligibility is checked and consensus runs, so a later type change cannot
+turn old replication judgements into approval of a reproduction.
+
+### The other type vs out of FLoRA
+
+Both replications and reproductions belong in FLoRA; only a record that is neither
+(`not_validation`) is rejected. Every screen names that case the same way —
+"neither type — not in FLoRA" — never "not a replication". The admin entry panel
+asks "Not a replication?" (or "Not a reproduction?") and offers two separate
+actions: "↻ It's a reproduction" switches the Type field, opens that type's fields
+and puts the cursor where they need input, to be saved with "Mark as Resolved";
+"✗ Reject — not in FLoRA" asks for confirmation and rejects. A record already
+rejected shows the same "↻ It's a reproduction", which opens its edit panel as a
+reproduction. The senior fast-reject reads "Reject — neither a replication nor a
+reproduction".
+
 ### Reproduction outcome UI
 
 When the effective type is `reproduction`, the frontend replaces the single
@@ -601,6 +667,9 @@ validator.vote_score
 + 2 when original_check == "correct"
 + 2 when outcome_check == "correct"
 + 1 when nonblank validator_notes are supplied
++ 1 when an outcome quote of the submitted type (the replication quote, or either
+    reproduction axis quote) is reworded from the extracted one shown
+    (letters and digits compared; punctuation, case and spacing do not count)
 ```
 
 Hard-pool submissions multiply that total by two. Assigned restricted records
@@ -1816,6 +1885,11 @@ python -m pytest -q
 
 The current working tree collects 509 tests across 22 test modules. They run without a live
 PostgreSQL or Gemini service by mocking cursors and external calls.
+
+No `.env` is needed: `tests/conftest.py` sets `DATABASE_URL` to a placeholder before
+anything is imported, so a `.env` holding the production URL is never loaded into a
+test run. Tests that need a real PostgreSQL are skipped unless
+`FLORA_TEST_DATABASE_URL` names a local server they may create throwaway databases on.
 
 Useful focused commands:
 

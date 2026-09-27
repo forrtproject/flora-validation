@@ -628,6 +628,53 @@ def _coded_originals(cur, doi_r, record_id) -> tuple[list[dict], int]:
     return out, total
 
 
+# The earlier decisions an assignment resolves against: (shown field, the final_*
+# column that replaces it, when a decision counts). An assignment "never reverts
+# past an existing correction", so its screen must show these, not the extracted
+# values under them. "value" counts any non-blank decision; "set" counts a blank
+# one too, for the fields where blank is a deliberate answer (a cleared DOI, an
+# axis quote the validator emptied). Each mode is the fallback assignment_judge
+# applies to the same field.
+_EFFECTIVE_FIELDS = (
+    ("type", "final_type", "value"),
+    ("outcome", "final_outcome", "value"),
+    ("outcome_quote", "final_outcome_quote", "value"),
+    ("outcome_computation", "final_outcome_computation", "set"),
+    ("outcome_computational_quote", "final_computational_quote", "set"),
+    ("out_quote_computational_source", "final_computational_source", "set"),
+    ("outcome_robustness", "final_outcome_robustness", "set"),
+    ("outcome_robustness_quote", "final_robustness_quote", "set"),
+    ("out_quote_robust_source", "final_robustness_source", "set"),
+    ("title_r", "final_title_r", "value"),
+    ("url_r", "final_url_r", "value"),
+    ("abstract_r", "final_abstract_r", "value"),
+    ("doi_o", "final_doi_o", "set"),
+    ("title_o", "final_title_o", "value"),
+)
+
+
+def _effective_record(rec: dict) -> dict:
+    """The record as an assignment shows and judges it: each earlier decision in
+    place of the extracted value it replaced, with the final_* columns dropped.
+
+    One definition for both sides — get_assignment shows it, assignment_judge
+    resolves every value against it — so "Looks right" keeps exactly what the
+    screen showed and "Mischaracterised" offers every value other than that one.
+    """
+    view = {k: v for k, v in rec.items() if not k.startswith("final_")}
+    for shown, final, counts in _EFFECTIVE_FIELDS:
+        decided = rec.get(final)
+        if decided or (counts == "set" and decided is not None):
+            view[shown] = decided
+    if ((_normalize_doi(view.get("doi_o")) or "").lower() !=
+            (_normalize_doi(rec.get("doi_o")) or "").lower()):
+        # These belong to the extracted original. Once its DOI is replaced or
+        # cleared, they must not link to or describe that old paper as the new one.
+        for field in ("url_o", "oa_work_id_o", "ref_o", "authors_o", "year_o"):
+            view[field] = None
+    return view
+
+
 def _enrich_pair(pair: dict, cur=None) -> dict:
     """Add OA URLs and the one remaining legacy frontend alias.
 
@@ -841,6 +888,19 @@ def _request_is_unsure(req) -> bool:
     )
 
 
+def _unsure_without_correction(req) -> bool:
+    """A "Can't tell" on the outcome: incorrect, nothing suggested, marked unsure.
+
+    The check columns have no third value, so the validator's real answer lives in
+    was_unsure_outcome. It is not a correction: the record keeps its outcome and
+    consensus sends it to review (_request_is_unsure). Read as a correction with no
+    value, it was refused with a 400, so "Can't tell" could not be submitted.
+    """
+    return (req.outcome_check == "incorrect"
+            and not (req.corrected_outcome or "").strip()
+            and bool(_request_additional_checks(req).get("was_unsure_outcome")))
+
+
 def _requested_reproduction_axes(req) -> tuple[str | None, str | None]:
     """Validate and canonicalise axis corrections, including legacy joined input.
 
@@ -935,10 +995,14 @@ def _validated_outcome_request(req, base_type: str | None, base_outcome: str | N
     requested_outcome = normalize_outcome(req.corrected_outcome)
     if requested_outcome and requested_outcome not in REPLICATION_OUTCOMES:
         raise HTTPException(400, f"Invalid replication outcome: {requested_outcome}")
-    if type_changed or req.outcome_check == "incorrect":
+    if type_changed or (req.outcome_check == "incorrect" and not _unsure_without_correction(req)):
         outcome = requested_outcome
     else:
         outcome = requested_outcome or normalize_outcome(base_outcome)
+        # "Can't tell" on a record with no extracted outcome has nothing to keep —
+        # and not being able to tell is exactly what cannot_be_determined means.
+        if not outcome and _unsure_without_correction(req):
+            outcome = "cannot_be_determined"
     if not outcome or outcome not in REPLICATION_OUTCOMES or outcome == "not_a_replication":
         raise HTTPException(
             400,
@@ -959,8 +1023,83 @@ def _normalize_doi(doi: str | None) -> str | None:
     return re.sub(r'(?i)^(?:https?://(?:dx\.)?doi\.org/|doi:)\s*', '', doi.strip()) or None
 
 
-def _points_for(req: JudgeRequest, vote_score: int) -> int:
-    """Calculate points for a submission. Base = validator's vote_score."""
+def _same_outcome_as_agreement(req: JudgeRequest, base_type: str | None,
+                               base_outcome: str | None) -> JudgeRequest:
+    """Read "Mischaracterised" plus the category the record already has as what it
+    means: the outcome is right, its quote is not.
+
+    Stored as a correction it would split consensus against a validator who
+    clicked "Looks right" — both mean the same outcome — cost the agreement bonus,
+    and count as an outcome correction in the stats. The dispute itself is kept in
+    additional_checks.
+
+    Only when the client says which outcome it showed (additional_checks.
+    shown_outcome) and that is the category chosen: equal to the record's outcome
+    NOW is not enough, because a nightly import can change it under an open page,
+    and a genuine "failed → successful" then looks like "successful → successful".
+    Older clients send no shown outcome and are stored as sent;
+    backfill_outcome_agreement.py lists those for a person to check.
+    """
+    shown_raw = _request_additional_checks(req).get("shown_outcome")
+    if shown_raw is not None and not isinstance(shown_raw, str):
+        # A client fault, and a 4xx: a crash here would be a 500, which /judge's
+        # failure guard treats as the server's fault and answers with a stamp.
+        raise HTTPException(400, "additional_checks.shown_outcome must be text")
+    if req.type_check != "correct" or req.outcome_check != "incorrect":
+        return req
+    if base_type != "replication":
+        return req
+    requested = normalize_outcome((req.corrected_outcome or "").lower())
+    shown = normalize_outcome((shown_raw or "").lower())
+    if not requested or requested != shown or shown != normalize_outcome((base_outcome or "").lower()):
+        return req
+    checks = {**_request_additional_checks(req), "outcome_quote_disputed": True}
+    return req.model_copy(update={
+        "outcome_check": "correct",
+        "corrected_outcome": None,
+        "additional_checks": checks,
+    })
+
+
+# Per type: (request field, the column the pair screen shows it replacing).
+_OUTCOME_EVIDENCE_FIELDS = {
+    "replication": (("corrected_outcome_quote", "outcome_quote"),),
+    "reproduction": (("corrected_computational_quote", "outcome_computational_quote"),
+                     ("corrected_robustness_quote", "outcome_robustness_quote")),
+}
+
+
+def _quote_words(text) -> str:
+    """A quote's wording: letters and digits, lowercased (docs/app.js _quoteWords)."""
+    return re.sub(r"[\W_]", "", (text or "").lower())
+
+
+def _improved_outcome_evidence(req: JudgeRequest, rec: dict, target_type: str | None) -> bool:
+    """Did the validator reword the outcome evidence of the type they submit?
+
+    Only that type's quotes count: an edit left over from before a type change
+    evidences a judgement nobody is making, and "not a replication" has none.
+    Nor does "Can't tell", or an axis the validator could not judge: a quote
+    cannot evidence an outcome nobody decided, even one typed before choosing.
+    Compared with the quote the pair screen showed, and by wording alone, so
+    punctuation, case or spacing do not earn the point.
+    """
+    if _request_additional_checks(req).get("was_unsure_outcome"):
+        return False
+    for field, shown_column in _OUTCOME_EVIDENCE_FIELDS.get(target_type, ()):
+        words = _quote_words(getattr(req, field, None))
+        if words and words != _quote_words(rec.get(shown_column)):
+            return True
+    return False
+
+
+def _points_for(req: JudgeRequest, vote_score: int, improved_evidence: bool = False) -> int:
+    """Calculate points for a submission. Base = validator's vote_score.
+
+    ``improved_evidence`` (see _improved_outcome_evidence) earns one more: a better
+    outcome quote is extra work, and the flow that asks for one must not pay less
+    than simply agreeing.
+    """
     pts = vote_score
     checks = _request_additional_checks(req)
     if req.original_check == "correct" and not checks.get("was_unsure_original"):
@@ -975,6 +1114,8 @@ def _points_for(req: JudgeRequest, vote_score: int) -> int:
             and axes_affirmed):
         pts += 2
     if req.validator_notes and req.validator_notes.strip():
+        pts += 1
+    if improved_evidence:
         pts += 1
     return pts
 
@@ -2259,7 +2400,25 @@ def get_assignment(record_id: str,
         row = _fetch_pair_row(cur, record_id)
         if not row:
             raise HTTPException(404, "Record not found")
-        pair = _enrich_pair(dict(row), cur)
+        # Shown as assignment_judge will resolve it: an earlier decision, not the
+        # extracted value it replaced. Showing the extracted one greyed it out of
+        # "Mischaracterised" while "Looks right" kept the decision, so a record
+        # decided "successful" over an extracted "failed" could not go back.
+        cur.execute(
+            f"SELECT {', '.join(final for _, final, _ in _EFFECTIVE_FIELDS)} "
+            "FROM unvalidated WHERE record_id = %s",
+            (record_id,),
+        )
+        decisions = cur.fetchone() or {}
+        pair = _enrich_pair(_effective_record({**dict(row), **dict(decisions)}), cur)
+        for original in pair["coded_originals"]:
+            if original["is_current"]:
+                # The highlighted original is the one this assignment judges.
+                # Other originals keep their extracted values; their decisions
+                # are not part of this assignment.
+                for field in ("doi_o", "title_o", "url_o", "oa_work_id_o",
+                              "oa_url_o", "authors_o", "year_o"):
+                    original[field] = pair.get(field)
         pair["judge_count"] = row["judge_count"]
     return {"pair": pair}
 
@@ -2304,81 +2463,74 @@ def assignment_judge(req: JudgeRequest,
         if not validator:
             raise HTTPException(404, "Validator not found")
 
-        base_type = rec.get("final_type") or rec["type"]
-        base_outcome = rec.get("final_outcome") or rec.get("outcome")
-        base_computation = (
-            rec.get("final_outcome_computation")
-            if rec.get("final_outcome_computation") is not None
-            else rec.get("outcome_computation")
-        )
-        base_robustness = (
-            rec.get("final_outcome_robustness")
-            if rec.get("final_outcome_robustness") is not None
-            else rec.get("outcome_robustness")
-        )
+        # What get_assignment showed: earlier decisions over extracted values.
+        shown = _effective_record(rec)
+        base_type = shown["type"]
+        base_outcome = shown.get("outcome")
+        base_computation = shown.get("outcome_computation")
+        base_robustness = shown.get("outcome_robustness")
+        req = _same_outcome_as_agreement(req, base_type, base_outcome)
         final_type, final_outcome, final_computation, final_robustness = _validated_outcome_request(
             req, base_type, base_outcome, base_computation, base_robustness
         )
         is_not_val = final_type == "not_validation"
-        pts = _points_for(req, validator["vote_score"]) * 2   # assignments are double
+        pts = _points_for(req, validator["vote_score"],
+                          improved_evidence=_improved_outcome_evidence(req, shown, final_type)) * 2   # assignments are double
         new_status = (
             "rejected" if is_not_val
             else "need_review" if _request_is_unsure(req)
             else "consensus_reached"
         )
 
-        # Final values: validator's corrections, then any prior correction (final_*),
-        # then the raw extracted value — never revert past an existing correction.
+        # Final values: the validator's corrections, else what the screen showed —
+        # any prior correction (final_*) over the raw extracted value, per
+        # _EFFECTIVE_FIELDS — so an existing correction is never reverted and
+        # "Looks right" stores exactly what was on screen.
         final_computational_quote = (
             req.corrected_computational_quote
             if req.corrected_computational_quote is not None
-            else rec.get("final_computational_quote")
-            if rec.get("final_computational_quote") is not None
-            else rec.get("outcome_computational_quote")
+            else shown.get("outcome_computational_quote")
         )
         final_computational_source = (
             req.corrected_computational_source
             if req.corrected_computational_source is not None
-            else rec.get("final_computational_source")
-            if rec.get("final_computational_source") is not None
-            else rec.get("out_quote_computational_source")
+            else shown.get("out_quote_computational_source")
         )
         final_robustness_quote = (
             req.corrected_robustness_quote
             if req.corrected_robustness_quote is not None
-            else rec.get("final_robustness_quote")
-            if rec.get("final_robustness_quote") is not None
-            else rec.get("outcome_robustness_quote")
+            else shown.get("outcome_robustness_quote")
         )
         final_robustness_source = (
             req.corrected_robustness_source
             if req.corrected_robustness_source is not None
-            else rec.get("final_robustness_source")
-            if rec.get("final_robustness_source") is not None
-            else rec.get("out_quote_robust_source")
+            else shown.get("out_quote_robust_source")
         )
         if final_type != "reproduction":
             final_computational_quote = None
             final_computational_source = None
             final_robustness_quote = None
             final_robustness_source = None
-        final_title_r  = corrected_title_r             or rec.get("final_title_r")        or rec["title_r"]
-        final_url_r    = req.corrected_url_r          or rec.get("final_url_r")          or rec["url_r"]
-        final_abstract = req.corrected_abstract       or rec.get("final_abstract_r")     or rec["abstract_r"]
+        final_title_r  = corrected_title_r             or shown.get("title_r")
+        final_url_r    = req.corrected_url_r          or shown.get("url_r")
+        final_abstract = req.corrected_abstract       or shown.get("abstract_r")
         # doi_o has a legitimate blank state (see admin_resolve) — the assignment
         # flow currently never sends '' (a blank client-side input collapses to
         # null before submission), but a prior deliberate clear stored on the
         # record must still survive here rather than reverting via `or`.
-        final_doi_o    = req.corrected_doi_o if req.corrected_doi_o is not None else (
-            rec["final_doi_o"] if rec.get("final_doi_o") is not None else rec["doi_o"])
-        final_title_o  = corrected_title_o             or rec.get("final_title_o")        or rec["title_o"]
-        final_quote    = req.corrected_outcome_quote  or rec.get("final_outcome_quote")  or rec["outcome_quote"]
+        final_doi_o    = (req.corrected_doi_o if req.corrected_doi_o is not None
+                          else shown.get("doi_o"))
+        final_title_o  = corrected_title_o             or shown.get("title_o")
+        final_quote    = req.corrected_outcome_quote  or shown.get("outcome_quote")
         final_doi_pub  = _normalize_doi(req.doi_r_published) or rec.get("doi_r_published")
 
         summary = {
             "validator_id":   coder_id,
             "validator_name": validator["handle"],
             "is_assignment":  True,
+            # Keep the baseline independent of later imports and decisions, so
+            # the audit card can show what this validator agreed with or changed.
+            "shown_record": {field: shown.get(field) for field, _, _ in _EFFECTIVE_FIELDS},
             "type_check":     req.type_check,
             "original_check": req.original_check,
             "outcome_check":  req.outcome_check,
@@ -2478,6 +2630,7 @@ def judge(req: JudgeRequest,
             raise HTTPException(404, f"record_id '{req.record_id}' not found")
         record_id = rec["record_id"]
         rec = dict(rec)
+        req = _same_outcome_as_agreement(req, rec.get("type"), rec.get("outcome"))
         target_type, target_outcome, target_computation, target_robustness = _validated_outcome_request(
             req,
             rec.get("type"),
@@ -2488,7 +2641,8 @@ def judge(req: JudgeRequest,
         corrected_outcome = (
             target_outcome
             if target_type == "replication"
-            and (req.corrected_outcome or target_type != rec.get("type") or req.outcome_check == "incorrect")
+            and (req.corrected_outcome or target_type != rec.get("type")
+                 or (req.outcome_check == "incorrect" and not _unsure_without_correction(req)))
             else None
         )
 
@@ -2520,7 +2674,8 @@ def judge(req: JudgeRequest,
 
         queue_id = slot_row["queue_id"]
         validator_slot = slot_row["validator_slot"]
-        pts = _points_for(req, validator["vote_score"])
+        pts = _points_for(req, validator["vote_score"],
+                          improved_evidence=_improved_outcome_evidence(req, rec, target_type))
         # Hard-pool records (undeterminable outcome / no abstract) earn double.
         if _record_is_hard(cur, record_id):
             pts *= 2
@@ -3114,12 +3269,24 @@ def forgot_handle(req: ForgotHandleRequest):
 # Admin endpoints
 # ---------------------------------------------------------------------------
 
+# How many records a validator (alias `v`) judged that an admin has since approved
+# (validation_status 'validated'). One definition for the validators table's
+# "approved" column and the approval card's track record, so the two agree.
+_APPROVED_COUNT_SQL = """(SELECT COUNT(DISTINCT aq.record_id)
+                 FROM validation_queue aq
+                 JOIN unvalidated au ON au.record_id = aq.record_id
+                 WHERE aq.validator_id   = v.id
+                   AND aq.is_validated   = TRUE
+                   AND aq.validator_slot IN ('human_1', 'human_2')
+                   AND au.validation_status = 'validated')"""
+
+
 @app.get("/api/admin/stats")
 def admin_stats(admin: dict = Depends(current_admin)):
 
     with db() as cur:
         cur.execute(
-            """
+            f"""
             SELECT
                 v.id,
                 v.handle,
@@ -3144,13 +3311,7 @@ def admin_stats(admin: dict = Depends(current_admin)):
                 )::numeric, 1)     AS max_min,
                 (SELECT COUNT(*) FROM validation_queue fq
                  WHERE fq.validator_id = v.id AND fq.flagged = TRUE) AS flagged_count,
-                (SELECT COUNT(DISTINCT aq.record_id)
-                 FROM validation_queue aq
-                 JOIN unvalidated au ON au.record_id = aq.record_id
-                 WHERE aq.validator_id   = v.id
-                   AND aq.is_validated   = TRUE
-                   AND aq.validator_slot IN ('human_1', 'human_2')
-                   AND au.validation_status = 'validated') AS approved_count
+                {_APPROVED_COUNT_SQL} AS approved_count
             FROM validators v
             LEFT JOIN validation_queue vq
                 ON  vq.validator_id   = v.id
@@ -3187,17 +3348,161 @@ def admin_stats(admin: dict = Depends(current_admin)):
     return {"validators": rows, "summary": summary}
 
 
-def _confusion(pairs):
+def _confusion(pairs, order=()):
     """Build a confusion matrix {labels, grid} from (row_value, col_value) pairs.
-    Rows and cols share the same label space (a square matrix)."""
-    labels = sorted({str(x) for p in pairs for x in p if x not in (None, "")})
+
+    Rows and cols share the same label space (a square matrix, so the diagonal is
+    agreement). Only pairs with both values are counted, and only labels that
+    occur in a counted pair are listed: one that appeared only beside a blank
+    would be an all-empty row and column. `order` leads, in its order; any other
+    label follows alphabetically.
+    """
+    counted = [(str(a), str(b)) for a, b in pairs if a not in (None, "") and b not in (None, "")]
+    present = {x for p in counted for x in p}
+    labels = [l for l in order if l in present] + sorted(present - set(order))
     idx = {l: i for i, l in enumerate(labels)}
     grid = [[0] * len(labels) for _ in labels]
-    for a, b in pairs:
-        a, b = (str(a) if a not in (None, "") else None), (str(b) if b not in (None, "") else None)
-        if a in idx and b in idx:
-            grid[idx[a]][idx[b]] += 1
+    for a, b in counted:
+        grid[idx[a]][idx[b]] += 1
     return {"labels": labels, "grid": grid}
+
+
+# "Can't tell" is stored as incorrect with nothing corrected; on the dashboard it is
+# its own answer, not agreement with the extracted value.
+_CANT_TELL = "Can't tell"
+
+# Category order per matrix: the codebook's, so every matrix reads the same way.
+_MATRIX_ORDER = {
+    "type": ("replication", "reproduction", "not_validation"),
+    "original": ("correct", "incorrect", _CANT_TELL),
+    "replication_outcome": ("successful", "failed", "mixed", "statistically successful but flawed",
+                            "uninformative", "descriptive only", "cannot_be_determined", _CANT_TELL),
+    "reproduction_computation": ("computationally reproducible", "computational issues",
+                                 "technical failure", "not checked", "cannot_be_determined"),
+    "reproduction_robustness": ("robust", "robustness challenges", "not checked",
+                                "cannot_be_determined"),
+}
+
+
+def _judged_type(v: dict, record: dict):
+    if v.get("type_check") == "incorrect" and v.get("corrected_type"):
+        return v["corrected_type"]
+    return record.get("type")
+
+
+def _judged_original(v: dict):
+    if _as_dict(v.get("additional_checks")).get("was_unsure_original"):
+        return _CANT_TELL
+    return v.get("original_check")
+
+
+def _judged_replication_outcome(v: dict, record: dict):
+    if v.get("outcome_check") == "correct":
+        return record.get("outcome")
+    if v.get("corrected_outcome"):
+        return v["corrected_outcome"]
+    if _as_dict(v.get("additional_checks")).get("was_unsure_outcome"):
+        return _CANT_TELL
+    return None
+
+
+def _judged_axis(v: dict, record: dict, axis: str):
+    """A reproduction axis as the validator left it. Summaries store the effective
+    value — their correction, cannot_be_determined for "Can't tell", or the
+    extracted value they confirmed; older ones only a confirmation of it."""
+    value = v.get(f"corrected_{axis}")
+    if value:
+        return value
+    return record.get(axis) if v.get("outcome_check") == "correct" else None
+
+
+def _disagreements(a_rows, b_rows) -> dict:
+    """The dashboard's two disagreement views, outcomes split by type.
+
+    One outcome matrix mixed replication categories with joined reproduction
+    labels, compared reproductions by that joined label (so an axis correction
+    looked like agreement), and read "Can't tell" as agreement. Now replications
+    get one outcome matrix and reproductions one per axis, each only over records
+    where both sides are that type; the rest are counted under Type.
+
+    a_rows: records with both human slots (validator_1/2 summaries).
+    b_rows: validated records (extracted vs final values).
+    """
+    dims = ("type", "original", "replication_outcome",
+            "reproduction_computation", "reproduction_robustness")
+    axes = (("outcome_computation", "reproduction_computation"),
+            ("outcome_robustness", "reproduction_robustness"))
+
+    # View A — Validator 1 vs Validator 2.
+    a = {d: {"validated": 0, "unvalidated": 0, "records": 0} for d in dims}
+    a_pairs = {d: [] for d in dims}
+    type_split = 0
+    for r in a_rows:
+        v1, v2 = _as_dict(r["validator_1"]), _as_dict(r["validator_2"])
+        # What each validator judged against: an assignment showed the record's
+        # effective values (earlier decisions included) and saved them as
+        # shown_record, so its "Looks right" confirmed those, not the extracted ones.
+        s1, s2 = ({**r, **v["shown_record"]} if v.get("is_assignment") and v.get("shown_record")
+                  else r for v in (v1, v2))
+        group = "validated" if r["validation_status"] == "validated" else "unvalidated"
+
+        def compare(dim, x1, x2):
+            a_pairs[dim].append((x1, x2))
+            if x1 not in (None, "") and x2 not in (None, ""):
+                a[dim]["records"] += 1
+                if x1 != x2:
+                    a[dim][group] += 1
+
+        t1, t2 = _judged_type(v1, s1), _judged_type(v2, s2)
+        compare("type", t1, t2)
+        compare("original", _judged_original(v1), _judged_original(v2))
+        if t1 != t2:
+            type_split += 1          # outcomes in two vocabularies: compared under Type only
+        elif t1 == "replication":
+            compare("replication_outcome",
+                    _judged_replication_outcome(v1, s1), _judged_replication_outcome(v2, s2))
+        elif t1 == "reproduction":
+            for axis, dim in axes:
+                compare(dim, _judged_axis(v1, s1, axis), _judged_axis(v2, s2, axis))
+
+    # View B — the pipeline's extracted values vs the final ones.
+    b_dims = ("type", "replication_outcome", "reproduction_computation", "reproduction_robustness")
+    b = {d: {"count": 0, "records": 0} for d in b_dims}
+    b_pairs = {d: [] for d in b_dims}
+    type_changed = original_changed = 0
+    for r in b_rows:
+        def compare(dim, extracted, final):
+            b_pairs[dim].append((extracted, final))
+            if extracted not in (None, "") and final not in (None, ""):
+                b[dim]["records"] += 1
+                if extracted != final:
+                    b[dim]["count"] += 1
+
+        et, ft = r["type"], (r["final_type"] or r["type"])
+        compare("type", et, ft)
+        if r["final_doi_o"] is not None and r["final_doi_o"] != r["doi_o"]:
+            original_changed += 1
+        if et != ft:
+            type_changed += 1
+        elif et == "replication":
+            compare("replication_outcome", r["outcome"], r["final_outcome"] or r["outcome"])
+        elif et == "reproduction":
+            for axis, dim in axes:
+                compare(dim, r[axis], r[f"final_{axis}"] or r[axis])
+
+    return {
+        "validator": {
+            "total_records": len(a_rows),
+            "type_split": type_split,
+            **{d: {**a[d], "matrix": _confusion(a_pairs[d], _MATRIX_ORDER[d])} for d in dims},
+        },
+        "pipeline": {
+            "total_validated": len(b_rows),
+            "type_changed": type_changed,
+            "original": {"count": original_changed},
+            **{d: {**b[d], "matrix": _confusion(b_pairs[d], _MATRIX_ORDER[d])} for d in b_dims},
+        },
+    }
 
 
 def _as_dict(v):
@@ -3313,8 +3618,19 @@ def admin_dashboard(admin: dict = Depends(current_admin)):
         cur.execute("""
             SELECT
                 COUNT(*) FILTER (WHERE type_check     = 'incorrect')                AS type_corrections,
-                COUNT(*) FILTER (WHERE original_check = 'incorrect')                AS original_corrections,
-                COUNT(*) FILTER (WHERE outcome_check  = 'incorrect')                AS outcome_corrections,
+                -- "Can't tell" is stored as incorrect too; it corrects nothing.
+                COUNT(*) FILTER (WHERE original_check = 'incorrect'
+                                   AND NOT COALESCE(additional_checks ? 'was_unsure_original', FALSE))
+                                                                                    AS original_corrections,
+                -- On a reproduction the flag means either axis was "Can't tell";
+                -- the other axis may still have been corrected.
+                COUNT(*) FILTER (WHERE outcome_check  = 'incorrect'
+                                   AND (NOT COALESCE(additional_checks ? 'was_unsure_outcome', FALSE)
+                                        OR additional_checks->'reproduction_axis_checks'
+                                               @> '{"computation": "wrong"}'
+                                        OR additional_checks->'reproduction_axis_checks'
+                                               @> '{"robustness": "wrong"}'))
+                                                                                    AS outcome_corrections,
                 COUNT(*) FILTER (WHERE corrected_title_r IS NOT NULL
                                    AND corrected_title_r <> '')                     AS title_corrections
             FROM validation_queue
@@ -3356,7 +3672,8 @@ def admin_dashboard(admin: dict = Depends(current_admin)):
 
         # View A — Validator vs Validator (records with both human slots filled).
         cur.execute("""
-            SELECT validation_status, type, outcome, validator_1, validator_2
+            SELECT validation_status, type, outcome, outcome_computation, outcome_robustness,
+                   validator_1, validator_2
             FROM unvalidated
             WHERE validator_1 IS NOT NULL AND validator_2 IS NOT NULL
         """)
@@ -3364,54 +3681,15 @@ def admin_dashboard(admin: dict = Depends(current_admin)):
 
         # View B — Pipeline (extracted) vs Final, over validated records.
         cur.execute("""
-            SELECT type, outcome, final_type, final_outcome, doi_o, final_doi_o
+            SELECT type, outcome, outcome_computation, outcome_robustness,
+                   final_type, final_outcome, final_outcome_computation, final_outcome_robustness,
+                   doi_o, final_doi_o
             FROM unvalidated
             WHERE validation_status = 'validated'
         """)
         b_rows = cur.fetchall()
 
-    # ----- View A: each validator's effective decision, then disagreements -----
-    def _choice(v, check_key, corrected_key, extracted):
-        return v[corrected_key] if v.get(check_key) == "incorrect" and v.get(corrected_key) else extracted
-
-    a_type, a_orig, a_out = [], [], []
-    a_counts = {d: {"validated": 0, "unvalidated": 0} for d in ("type", "original", "outcome")}
-    for r in a_rows:
-        v1, v2 = _as_dict(r["validator_1"]), _as_dict(r["validator_2"])
-        grp = "validated" if r["validation_status"] == "validated" else "unvalidated"
-        t1, t2 = _choice(v1, "type_check", "corrected_type", r["type"]),    _choice(v2, "type_check", "corrected_type", r["type"])
-        o1, o2 = _choice(v1, "outcome_check", "corrected_outcome", r["outcome"]), _choice(v2, "outcome_check", "corrected_outcome", r["outcome"])
-        g1, g2 = v1.get("original_check"), v2.get("original_check")
-        a_type.append((t1, t2)); a_orig.append((g1, g2)); a_out.append((o1, o2))
-        if t1 != t2: a_counts["type"]["validated" if grp == "validated" else "unvalidated"] += 1
-        if g1 != g2: a_counts["original"]["validated" if grp == "validated" else "unvalidated"] += 1
-        if o1 != o2: a_counts["outcome"]["validated" if grp == "validated" else "unvalidated"] += 1
-
-    # ----- View B: extracted vs final -----
-    b_type, b_out = [], []
-    b_counts = {"type": 0, "outcome": 0, "original": 0}
-    for r in b_rows:
-        et, ft = r["type"],    (r["final_type"]    or r["type"])
-        eo, fo = r["outcome"], (r["final_outcome"] or r["outcome"])
-        b_type.append((et, ft)); b_out.append((eo, fo))
-        if et != ft: b_counts["type"] += 1
-        if eo != fo: b_counts["outcome"] += 1
-        if r["final_doi_o"] is not None and r["final_doi_o"] != r["doi_o"]: b_counts["original"] += 1
-
-    disagreements = {
-        "validator": {
-            "total_records": len(a_rows),
-            "type":     {**a_counts["type"],     "matrix": _confusion(a_type)},
-            "original": {**a_counts["original"], "matrix": _confusion(a_orig)},
-            "outcome":  {**a_counts["outcome"],  "matrix": _confusion(a_out)},
-        },
-        "pipeline": {
-            "total_validated": len(b_rows),
-            "type":     {"count": b_counts["type"],     "matrix": _confusion(b_type)},
-            "outcome":  {"count": b_counts["outcome"],  "matrix": _confusion(b_out)},
-            "original": {"count": b_counts["original"]},
-        },
-    }
+    disagreements = _disagreements(a_rows, b_rows)
 
     records_with_2  = int(agree_row["records_with_2"]  or 0)
     full_agreements = int(agree_row["full_agreements"] or 0)
@@ -4338,11 +4616,12 @@ def admin_entry_detail(record_id: str, admin: dict = Depends(current_admin)):
         validator_stats = {}
         if human_ids:
             cur.execute(
-                """
+                f"""
                 SELECT v.id AS validator_id,
                        v.total_judgements AS judged,
                        (SELECT COUNT(*) FROM validation_queue vq
-                        WHERE vq.validator_id = v.id AND vq.flagged) AS flags
+                        WHERE vq.validator_id = v.id AND vq.flagged) AS flags,
+                       {_APPROVED_COUNT_SQL} AS approved
                 FROM validators v
                 WHERE v.id = ANY(%s)
                 """,
@@ -4350,7 +4629,7 @@ def admin_entry_detail(record_id: str, admin: dict = Depends(current_admin)):
             )
             for r in cur.fetchall():
                 validator_stats[str(r["validator_id"])] = {
-                    "judged": r["judged"], "flags": r["flags"],
+                    "judged": r["judged"], "flags": r["flags"], "approved": r["approved"],
                 }
 
     # Detect abstract-only conflict
@@ -5809,10 +6088,20 @@ def _retry_tiebreakers() -> None:
     from consensus_engine import evaluate_consensus
     try:
         with db() as cur:
+            # Not records holding a judgement backfill_outcome_agreement.py
+            # converted: whether they may be settled is that script's call, made
+            # with checks this retry does not have (both validators must have seen
+            # today's outcome, an admin must not have touched the record). Settled
+            # here, a genuine correction beside a stale "Looks right" would pass.
             cur.execute("""
-                SELECT record_id FROM unvalidated
-                WHERE validation_status = 'need_review' AND is_tiebreaker = TRUE
-                  AND llm_validator IS NOT NULL AND llm_validator ? 'error'
+                SELECT u.record_id FROM unvalidated u
+                WHERE u.validation_status = 'need_review' AND u.is_tiebreaker = TRUE
+                  AND u.llm_validator IS NOT NULL AND u.llm_validator ? 'error'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM validation_queue vq
+                      WHERE vq.record_id = u.record_id
+                        AND vq.additional_checks ? 'outcome_agreement_backfilled'
+                  )
             """)
             ids = [str(r["record_id"]) for r in cur.fetchall()]
         print(f"[retry_tiebreakers] Found {len(ids)} stuck tiebreaker record(s)")
