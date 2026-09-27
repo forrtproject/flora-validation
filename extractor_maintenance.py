@@ -42,6 +42,7 @@ import psycopg2
 import psycopg2.errors
 from dotenv import load_dotenv
 
+import db_pool
 from console_encoding import use_utf8_output
 from extractor_storage import (
     SnapshotIntegrityError,
@@ -890,12 +891,30 @@ def dispatch_queued_run(
     return True
 
 
+def _has_pending_run(database_url: str) -> bool:
+    """The every-few-seconds question, asked on a pooled connection.
+
+    Exactly the rows _prepare_durable_run selects, so answering no skips nothing
+    it would have done: with neither a queued nor a running row it only takes the
+    session lock and gives it back. That lock needs a dedicated connection, so it
+    is opened only when there is work for it.
+    """
+    with db_pool.cursor(database_url) as cur:
+        cur.execute(
+            "SELECT EXISTS (SELECT 1 FROM extractor_maintenance_runs "
+            "WHERE status IN ('queued', 'running')) AS pending"
+        )
+        return bool(cur.fetchone()["pending"])
+
+
 def run_queued(database_url: str | None = None, data_dir: Path = DEFAULT_DATA_DIR) -> None:
     """APScheduler polling entry point for durable admin maintenance requests."""
     database_url = database_url or os.environ.get("DATABASE_URL")
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for maintenance dispatch")
     try:
+        if not _has_pending_run(database_url):
+            return
         dispatch_queued_run(database_url, data_dir=data_dir)
     except Exception:
         print("[extractor_maintenance] Durable dispatcher failed:")

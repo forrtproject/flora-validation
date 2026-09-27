@@ -42,6 +42,8 @@ from pathlib import Path
 
 import psycopg2
 from psycopg2.extras import Json, RealDictCursor
+
+import db_pool
 from output_lock import output_directory_lock
 
 ROOT = Path(__file__).resolve().parent
@@ -370,6 +372,15 @@ def _execute(conn, job_id: str) -> None:
     _append_log(conn, job_id, f"[{_timestamp()}] run {status}\n")
 
 
+def _has_queued_job(database_url: str) -> bool:
+    """The every-few-seconds question, asked on a pooled connection. Almost every
+    tick answers no, and a no should not cost a whole new connection."""
+    with db_pool.cursor(database_url) as cur:
+        cur.execute("SELECT EXISTS (SELECT 1 FROM source_sync_jobs "
+                    "WHERE status = 'queued') AS queued")
+        return bool(cur.fetchone()["queued"])
+
+
 def run_queued(database_url: str) -> None:
     """Scheduler entry point. Takes the lock, runs at most one queued job, returns.
 
@@ -378,6 +389,10 @@ def run_queued(database_url: str) -> None:
     """
     conn = None
     try:
+        # The lock below is session-level, so it needs a connection of its own
+        # that is never pooled. Open one only when there is work for it.
+        if not _has_queued_job(database_url):
+            return
         conn = psycopg2.connect(database_url)
         conn.autocommit = False
         with conn.cursor() as cur:

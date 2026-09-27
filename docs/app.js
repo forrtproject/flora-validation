@@ -38,6 +38,12 @@ function blankJudgement() {
 }
 
 const $ = (sel) => document.querySelector(sel);
+// Pollers skip their ticks in a background tab: nobody is looking, and every
+// tick is a database query billed as egress. A poller that skipped one records
+// it here, and the visibilitychange catch-up beside startMaintenanceSystem()
+// re-runs exactly those once the tab is shown again.
+const _pageHidden = () => document.visibilityState === "hidden";
+const _missedWhileHidden = new Set();
 const STORAGE = {
   CODER: "flora.coder",
   CODERS: "flora.coders",
@@ -1235,11 +1241,16 @@ async function refreshAssignments() {
 }
 
 // Near-real-time: poll every 30s while the app is open (matches the inbox poll),
-// so an admin's assignment surfaces without a page reload.
+// so an admin's assignment surfaces without a page reload. Paused while the tab
+// is hidden, and caught up when it is shown again.
 function startAssignmentsPoll() {
   if (API_MODE === "static") return;
   clearInterval(_assignmentsPollTimer);
-  _assignmentsPollTimer = setInterval(() => { if (state.coder) refreshAssignments(); }, 30_000);
+  _assignmentsPollTimer = setInterval(() => {
+    if (!state.coder) return;
+    if (_pageHidden()) { _missedWhileHidden.add("assignments"); return; }
+    refreshAssignments();
+  }, 30_000);
 }
 
 function _renderAssignmentsList() {
@@ -1378,9 +1389,9 @@ function openInbox() {
   renderInbox();
   modal.classList.remove("hidden");
   document.body.style.overflow = "hidden";
-  // Poll for new messages every 30s while inbox is open
+  // Poll for new messages every 30s while inbox is open and the tab is visible
   _inboxPollTimer = setInterval(async () => {
-    if ($("#inbox-modal")?.classList.contains("hidden")) return;
+    if ($("#inbox-modal")?.classList.contains("hidden") || _pageHidden()) return;
     try {
       const r = await api("/messages");
       const prev = _inboxMessages.length;
@@ -2192,10 +2203,24 @@ function startMaintenanceSystem() {
     _updateMaintBanner();
   }, 30_000);
 
-  // Poll admin banner every 60 seconds
+  // Poll the admin banner every 5 minutes: it changes a few times a year, and
+  // every open tab asks. Cleared first so a second sign-in cannot stack a timer.
   _pollAdminBanner();
-  _bann._pollInterval = setInterval(_pollAdminBanner, 60_000);
+  clearInterval(_bann._pollInterval);
+  _bann._pollInterval = setInterval(() => {
+    if (_pageHidden()) { _missedWhileHidden.add("banner"); return; }
+    _pollAdminBanner();
+  }, 5 * 60_000);
 }
+
+// Catch up when a tab comes back into view, instead of polling while hidden:
+// one request for each poller that skipped a tick, none for a quick glance away
+// that no tick fell into.
+document.addEventListener("visibilitychange", () => {
+  if (_pageHidden()) return;
+  if (_missedWhileHidden.delete("assignments") && state.coder) refreshAssignments();
+  if (_missedWhileHidden.delete("banner")) _pollAdminBanner();
+});
 
 $("#maint-banner-close").onclick = () => {
   const {phase, adminMsg, _dismissed} = _bann;
@@ -6544,6 +6569,13 @@ function renderMaintenanceRuns(data) {
 async function fetchMaintenanceRuns() {
   const body = $("#pipeline-history");
   if (!body) return;
+  // A run can take an hour; a background tab watching it re-arms without asking,
+  // and fetches again within 3s of being looked at.
+  if (_pageHidden() && _maintenancePollTimer) {
+    clearTimeout(_maintenancePollTimer);   // one chain, even if called directly
+    _maintenancePollTimer = setTimeout(fetchMaintenanceRuns, 3000);
+    return;
+  }
   try {
     const data = await adminApi("/maintenance/runs?days=7&limit=100");
     const active = renderMaintenanceRuns(data);
@@ -8754,6 +8786,12 @@ function renderSourceSync(data) {
 async function fetchSourceSync() {
   const log = $("#src-sync-log");
   if (!log) return;
+  // Same as fetchMaintenanceRuns: a background tab re-arms without asking.
+  if (_pageHidden() && _srcSyncPollTimer) {
+    clearTimeout(_srcSyncPollTimer);       // one chain, even if called directly
+    _srcSyncPollTimer = setTimeout(fetchSourceSync, 3000);
+    return;
+  }
   try {
     const data = await adminApi("/source-sync/status?limit=10");
     const active = renderSourceSync(data);

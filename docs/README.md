@@ -150,9 +150,12 @@ There is no frontend build step. `docs/index.html` loads `docs/style.css` and
 routes. The same frontend can fall back to a static/localStorage demo when its
 probe to `./api/leaderboard` fails.
 
-The app uses one short-lived PostgreSQL connection per `db()` context. Each
-context commits on success, rolls back on any exception, and closes the connection.
-There is no ORM and no persistent connection pool in this repository.
+Each `db()` context is one transaction: it commits on success and rolls back on
+any exception. Its connection comes from a small per-process pool (`db_pool.py`)
+and goes back to it afterwards, because opening a connection per request cost a
+TLS handshake that Supabase bills as egress. Code that needs session state
+(advisory locks, read-only sessions) opens its own connection instead. There is
+no ORM in this repository.
 
 ## Quick start
 

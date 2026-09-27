@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field
 import hashlib
 import hmac
 import resend
+import db_pool
 import flora_service
 from flora_public_api import create_router as create_flora_api_router, is_public_read_request
 import source_records_service
@@ -450,16 +451,9 @@ async def block_cross_site_writes(request: Request, call_next):
 
 @contextmanager
 def db():
-    conn = psycopg2.connect(DATABASE_URL)
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    try:
+    """One transaction on a pooled connection; see db_pool.py for why pooled."""
+    with db_pool.cursor(DATABASE_URL) as cur:
         yield cur
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
 
 
 # Same key family as extractor_maintenance / source_sync_runner.
@@ -5923,7 +5917,10 @@ def _start_scheduler() -> None:
     )
     # Admin requests persist only a queued row. Every pod polls that durable
     # queue; the PostgreSQL advisory lock elects exactly one executor and lets a
-    # replacement pod recover work whose original process disappeared.
+    # replacement pod recover work whose original process disappeared. An empty
+    # queue is answered on a pooled connection; the lock's own connection is
+    # opened only when a row is waiting (each used to cost a new connection,
+    # ~8,600 a day from this job alone).
     scheduler.add_job(
         run_queued,
         IntervalTrigger(seconds=10),
@@ -5935,8 +5932,8 @@ def _start_scheduler() -> None:
     )
     # Same durable-queue pattern as the extractor dispatcher above: the click only
     # persists a row, and whichever pod wins the advisory lock runs it. A 5s poll
-    # keeps the button feeling immediate without meaningful load — the query is one
-    # indexed lookup that almost always returns nothing.
+    # keeps the button feeling immediate without meaningful load — one small query
+    # on a pooled connection that almost always returns nothing.
     scheduler.add_job(
         source_sync_runner.run_queued,
         IntervalTrigger(seconds=5),

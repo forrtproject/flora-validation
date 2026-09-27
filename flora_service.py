@@ -15,15 +15,24 @@ tables actually change, detected by a cheap signature query (row counts plus the
 latest updated_at) rather than a timer, so an edit in the Source Records tab shows
 up here immediately instead of after an arbitrary delay.
 
+The build's two big inputs — every source row, and every cached work_metadata
+row with its abstract — are cached separately, each keyed on only the signature
+fields of its own table. A preprint ruling, an exclusion or a registry refresh
+changes the signature but neither input, so it re-runs the build in memory
+instead of re-downloading both tables. Before this, reviewing the preprint queue
+pulled the whole dataset out of the database once per click.
+
 The cache is per process. Several pods each keep their own; they agree because
 they derive from the same rows.
 """
 import threading
 from datetime import datetime, timezone
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
 
+import bibliographic_helpers
 import flora_registry
 import preprint_dedup
 import transform_sources
@@ -52,16 +61,51 @@ SORT_COLUMNS = {
     "outcome": "outcome",
 }
 
-_cache = {"signature": None, "frame": None, "dedup_log": None}
+_cache = {"signature": None, "files": None, "frame": None, "dedup_log": None,
+          "rows_key": None, "rows": None, "metadata_key": None, "metadata": None}
 _lock = threading.Lock()
 
 
-def _signature(cur) -> tuple:
+class _Signature(NamedTuple):
+    """One probe's reading. Still a tuple, so two probes compare field by field."""
+    n_source: object
+    max_updated: str
+    n_ruled: object
+    n_flora: object
+    n_excluded: object
+    registry_updated: str
+    n_metadata: str
+    metadata_updated: str
+    references_updated: str
+    exclusions: str
+    aliases: str
+    dedup_decisions: str
+    source_versions: str = "None"
+    metadata_versions: str = "None"
+
+    def rows_key(self) -> tuple:
+        """What transform_sources.load() reads: source_records, nothing else."""
+        return self.n_source, self.max_updated, self.n_ruled, self.source_versions
+
+    def metadata_key(self) -> tuple:
+        """The database half of what enrich_works.load_metadata() reads:
+        work_metadata. The files it merges in are keyed separately."""
+        return (self.n_metadata, self.metadata_updated, self.references_updated,
+                self.metadata_versions)
+
+
+def _signature(cur) -> _Signature:
     """Cheap 'has anything changed' probe.
 
     Counts plus the newest updated_at. A reviewer's edit bumps updated_at, a sync
     bumps the count, and a registry refresh bumps the flora count — so every way
     the dataset can change moves this.
+
+    updated_at alone is not enough for the two big tables. NOW() is a
+    transaction's START time, so a long sync that commits after a reviewer's
+    quicker edit lands with an older updated_at and leaves the maximum where it
+    was. The xmin sums move on every committed insert or update however long it
+    ran, which matters now that those tables are cached separately.
     """
     cur.execute(
         """
@@ -75,6 +119,8 @@ def _signature(cur) -> tuple:
                (SELECT COUNT(*) FROM work_metadata)                 AS n_metadata,
                (SELECT MAX(fetched_at) FROM work_metadata)          AS metadata_updated,
                (SELECT MAX(reference_checked_at) FROM work_metadata) AS references_updated,
+               (SELECT SUM(xmin::text::bigint) FROM source_records) AS source_versions,
+               (SELECT SUM(xmin::text::bigint) FROM work_metadata)  AS metadata_versions,
                (SELECT md5(string_agg(row_to_json(e)::text, '' ORDER BY row_to_json(e)::text))
                   FROM transform_exclusions e) AS exclusions_signature,
                (SELECT md5(string_agg(row_to_json(a)::text, '' ORDER BY row_to_json(a)::text))
@@ -87,21 +133,33 @@ def _signature(cur) -> tuple:
         """
     )
     row = cur.fetchone()
-    return (row["n_source"], str(row["max_updated"]), row["n_ruled"],
+    return _Signature(row["n_source"], str(row["max_updated"]), row["n_ruled"],
             row["n_flora"], row["n_excluded"],
             *(str(row.get(field)) for field in ("registry_updated", "n_metadata",
               "metadata_updated", "references_updated", "exclusions_signature", "aliases_signature",
-              "dedup_decisions_signature")))
+              "dedup_decisions_signature", "source_versions", "metadata_versions")))
 
 
 def _current(cur) -> "tuple[pd.DataFrame, list]":
     """The cached build: the frame, and the preprint dedup log that came with it."""
     signature = _signature(cur)
+    # The seed and manual-reference files load_metadata() merges in. Checked on
+    # every request like the signature: a stat per file, no database traffic.
+    files = bibliographic_helpers.reference_files_version()
+    metadata_key = (signature.metadata_key(), files)
     with _lock:
-        if _cache["signature"] == signature and _cache["frame"] is not None:
+        if (_cache["signature"] == signature and _cache["files"] == files
+                and _cache["frame"] is not None):
             return _cache["frame"], _cache["dedup_log"]
+        rows = _cache["rows"] if _cache["rows_key"] == signature.rows_key() else None
+        metadata = _cache["metadata"] if _cache["metadata_key"] == metadata_key else None
 
-    frame = transform_sources.build(cur, verbose=False)
+    if rows is None:
+        rows = transform_sources.load(cur)
+    if metadata is None:
+        from enrich_works import load_metadata          # local: avoids an import cycle
+        metadata = load_metadata(cur)
+    frame = transform_sources.build(cur, verbose=False, rows=rows, metadata=metadata)
     # Taken before the joins below: attrs are metadata, and the review queue must
     # not depend on whether a later frame operation carries them along.
     dedup_log = list(frame.attrs.get("preprint_dedup_log") or [])
@@ -113,8 +171,13 @@ def _current(cur) -> "tuple[pd.DataFrame, list]":
 
     with _lock:
         _cache["signature"] = signature
+        _cache["files"] = files
         _cache["frame"] = frame
         _cache["dedup_log"] = dedup_log
+        _cache["rows_key"] = signature.rows_key()
+        _cache["rows"] = rows
+        _cache["metadata_key"] = metadata_key
+        _cache["metadata"] = metadata
     return frame, dedup_log
 
 
@@ -151,11 +214,11 @@ def _attach_merged_ids(cur, frame):
 
 
 def invalidate() -> None:
-    """Drop the cached frame. For tests and for a caller that knows it just wrote."""
+    """Drop the cached frame and its inputs. For tests and for a caller that knows
+    it just wrote."""
     with _lock:
-        _cache["signature"] = None
-        _cache["frame"] = None
-        _cache["dedup_log"] = None
+        for key in _cache:
+            _cache[key] = None
 
 
 def _cell(value):
