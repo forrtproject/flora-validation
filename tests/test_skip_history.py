@@ -469,7 +469,9 @@ def test_pending_submission_recovery_is_available_from_the_header_and_accessible
 
     assert '$("#pending-saves-btn")?.addEventListener("click", openPendingSubmissions)' in JS
     assert '$("#pending-submissions-close")?.addEventListener("click", closePendingSubmissions)' in JS
-    assert "if (event.target === event.currentTarget) closePendingSubmissions()" in JS
+    # A backdrop click closes it — one that also started on the backdrop, so a
+    # drag out of the panel does not (see tests/test_backdrop_close.py).
+    assert 'onBackdropClick($("#pending-submissions-modal"), closePendingSubmissions)' in JS
 
     key_handler = JS.split("function _onPendingModalKeydown(event)", 1)[1].split(
         "function openPendingSubmissions", 1

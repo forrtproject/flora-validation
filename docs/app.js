@@ -33,16 +33,38 @@ function blankJudgement() {
     comment: "",
     edited_abstract: null,
     edited_outcome_quote: null,
+    // "Right outcome, better quote": the category is right, the quote is not.
+    // outcome stays "correct"; this only asks for the improved quote.
+    outcome_quote_fix: false,
     no_access: false,          // hard mode: "I cannot access this article"
   };
 }
 
 const $ = (sel) => document.querySelector(sel);
+
+// Close an overlay when its backdrop is clicked: a click that started there too.
+// A press inside the panel that is released on the backdrop — dragging to select
+// the text of a title field, say — also delivers its click to the backdrop, and
+// closed the panel mid-edit (reloading the entry list behind the admin panel, so
+// it looked as if the whole site had reloaded).
+function onBackdropClick(overlay, close) {
+  if (!overlay) return;
+  let pressedOnBackdrop = false;
+  overlay.addEventListener("pointerdown", (e) => { pressedOnBackdrop = e.target === overlay; });
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay && pressedOnBackdrop) close(e);
+    pressedOnBackdrop = false;
+  });
+}
 // Pollers skip their ticks in a background tab: nobody is looking, and every
 // tick is a database query billed as egress. A poller that skipped one records
 // it here, and the visibilitychange catch-up beside startMaintenanceSystem()
 // re-runs exactly those once the tab is shown again.
 const _pageHidden = () => document.visibilityState === "hidden";
+// What a `not_validation` type means, wherever a person reads it. "Not a
+// replication" read as if reproductions were rejected too; both types belong in
+// FLoRA, and only records that are neither are left out.
+const NOT_IN_FLORA_LABEL = "neither type — not in FLoRA";
 const _missedWhileHidden = new Set();
 const STORAGE = {
   CODER: "flora.coder",
@@ -460,20 +482,27 @@ function buildConsensusSummary(v1, v2, llm) {
     groupBy(j => j.type_check === "correct" ? "ok" : (j.corrected_type || "incorrect")),
     s => s === "ok" ? "the type is correct"
        : s === "incorrect" ? "the type is wrong"
-       : s === "not_validation" ? "it's not a validation"
+       : s === "not_validation" ? "it's neither type — not in FLoRA"
        : `the type should be ${s}`
   );
   if (typeS) lines.push(typeS);
 
+  // "Can't tell" is stored as incorrect; its own flag says it was neither answer.
   const origS = summarize(
-    groupBy(j => j.original_check === "correct" ? "right" : j.original_check === "incorrect" ? "wrong" : null),
-    s => `the original is the ${s} paper`
+    groupBy(j => j.original_check === "correct" ? "right"
+               : j.additional_checks?.was_unsure_original ? "unsure"
+               : j.original_check === "incorrect" ? "wrong" : null),
+    s => s === "unsure" ? "the original paper is unclear" : `the original is the ${s} paper`
   );
   if (origS) lines.push(origS);
 
   const outS = summarize(
-    groupBy(j => j.outcome_check === "correct" ? "ok" : (j.corrected_outcome || "incorrect")),
+    groupBy(j => j.outcome_check === "correct" ? "ok"
+               : j.corrected_outcome ? j.corrected_outcome
+               : j.additional_checks?.was_unsure_outcome ? "unsure"
+               : "incorrect"),
     s => s === "ok" ? "the outcome is correct"
+       : s === "unsure" ? "the outcome is unclear"
        : s === "incorrect" ? "the outcome is wrong"
        : `the outcome should be ${fmtOutcome(s)}`
   );
@@ -1315,9 +1344,7 @@ function exitAssignment() {
 
 $("#assignments-btn")?.addEventListener("click", openAssignmentsPanel);
 $("#assignments-close-btn")?.addEventListener("click", closeAssignmentsPanel);
-$("#assignments-modal")?.addEventListener("click", (e) => {
-  if (e.target === $("#assignments-modal")) closeAssignmentsPanel();
-});
+onBackdropClick($("#assignments-modal"), closeAssignmentsPanel);
 $("#assignment-exit-btn")?.addEventListener("click", exitAssignment);
 
 /* Keep-warm: ping the lightweight /api/health every 10 min while the app is open
@@ -1341,9 +1368,7 @@ let _inboxMessages = [];
 function initInbox() {
   $("#inbox-btn")?.addEventListener("click", openInbox);
   $("#inbox-close-btn")?.addEventListener("click", closeInbox);
-  $("#inbox-modal")?.addEventListener("click", e => {
-    if (e.target === $("#inbox-modal")) closeInbox();
-  });
+  onBackdropClick($("#inbox-modal"), closeInbox);
 }
 
 async function fetchMessages() {
@@ -1597,14 +1622,10 @@ let _histJudgements = [];
 function initHistory() {
   $("#history-btn")?.addEventListener("click", openHistory);
   $("#history-close-btn")?.addEventListener("click", closeHistory);
-  $("#history-modal")?.addEventListener("click", e => {
-    if (e.target === $("#history-modal")) closeHistory();
-  });
+  onBackdropClick($("#history-modal"), closeHistory);
   $("#hist-detail-close-btn")?.addEventListener("click", closeHistDetail);
   $("#hist-detail-back-btn")?.addEventListener("click", closeHistDetail);
-  $("#hist-detail-modal")?.addEventListener("click", e => {
-    if (e.target === $("#hist-detail-modal")) closeHistDetail();
-  });
+  onBackdropClick($("#hist-detail-modal"), closeHistDetail);
 }
 
 async function openHistory() {
@@ -1762,9 +1783,12 @@ function closeHistDetail() {
   $("#hist-detail-modal")?.classList.add("hidden");
 }
 
-function _detailCheckRow(label, extracted, checkVal, corrected) {
+function _detailCheckRow(label, extracted, checkVal, corrected, unsure = false) {
+  // "Can't tell" is stored as incorrect with nothing corrected; it is neither.
   const statusIcon = checkVal === "correct"
     ? `<span class="hd-chk hd-chk-ok">✓ Confirmed</span>`
+    : unsure && !corrected
+    ? `<span class="hd-chk hd-chk-na">? Couldn't tell</span>`
     : checkVal === "incorrect"
     ? `<span class="hd-chk hd-chk-fail">✗ Corrected</span>`
     : `<span class="hd-chk hd-chk-na">— Not checked</span>`;
@@ -1797,7 +1821,7 @@ function renderHistDetail(d) {
 
   const notVal = d.corrected_type === "not_validation";
   const typeCorrDisplay = d.corrected_type
-    ? (notVal ? "Not a replication/reproduction" : d.corrected_type)
+    ? (notVal ? "Neither type — not in FLoRA" : d.corrected_type)
     : null;
 
   const dateStr = d.validated_at ? fmtDate(d.validated_at) : "";
@@ -2025,8 +2049,10 @@ function renderHistDetail(d) {
         <div class="hd-col-label">Your judgement</div>
         ${titleCorrHtml}
         ${_detailCheckRow("Study type", d.extracted_type, d.type_check, typeCorrDisplay)}
-        ${_detailCheckRow("Original study", d.title_o || d.doi_o || null, d.original_check, d.corrected_title_o || d.corrected_study_o || d.corrected_doi_o)}
-        ${_detailCheckRow("Outcome", d.extracted_outcome, d.outcome_check, d.corrected_outcome)}
+        ${_detailCheckRow("Original study", d.title_o || d.doi_o || null, d.original_check, d.corrected_title_o || d.corrected_study_o || d.corrected_doi_o, !!d.additional_checks?.was_unsure_original)}
+        ${_detailCheckRow("Outcome", d.additional_checks?.shown_outcome || d.extracted_outcome, d.outcome_check, d.corrected_outcome,
+            ((d.type_check === "incorrect" && d.corrected_type) || d.extracted_type) === "replication"
+              && !!d.additional_checks?.was_unsure_outcome)}
         ${judgementAxesHtml}
         ${quoteHtml}
         ${notesHtml}
@@ -2248,9 +2274,7 @@ $("#mode-toggle").onclick = async () => {
 
 $("#pending-saves-btn")?.addEventListener("click", openPendingSubmissions);
 $("#pending-submissions-close")?.addEventListener("click", closePendingSubmissions);
-$("#pending-submissions-modal")?.addEventListener("click", (event) => {
-  if (event.target === event.currentTarget) closePendingSubmissions();
-});
+onBackdropClick($("#pending-submissions-modal"), closePendingSubmissions);
 
 /* ---------- Split-layout toggle ---------- */
 let splitLayout = localStorage.getItem("flora.splitLayout") !== "0"; // default on
@@ -2307,6 +2331,39 @@ async function refreshLeaderboard() {
 const _DRAFT_KEY = (pair_id) => `flora.draft.${pair_id}`;
 let _draftInterval = null;
 
+function _draftReviewBaseline(pair) {
+  return {
+    type: String(pair.type || "").toLowerCase(),
+    outcome: _canonicalOutcome(pair.outcome),
+    outcome_computation: pair.outcome_computation || null,
+    outcome_robustness: pair.outcome_robustness || null,
+  };
+}
+
+function _prepareDraft(draft, pair) {
+  const current = _draftReviewBaseline(pair);
+  const judgement = draft || blankJudgement();
+  const previous = draft?.shown_record;
+  const changed = !!draft && Object.keys(current).some(key =>
+    !previous || previous[key] !== current[key]);
+  if (changed) {
+    // Old drafts have no reliable baseline. A refreshed import can also change
+    // a genuine correction into the new extracted value. Require a fresh review
+    // instead of relabelling either case as agreement with the refreshed record.
+    if (!previous || previous.type !== current.type) judgement.type = null;
+    judgement.outcome = null;
+    judgement.corrected_outcome = null;
+    judgement.outcome_quote_fix = false;
+    judgement.repro_computation = null;
+    judgement.repro_robustness = null;
+    judgement.repro_computation_check = null;
+    judgement.repro_robustness_check = null;
+    showToast("Draft text restored. Please review the type and outcome again before submitting.");
+  }
+  judgement.shown_record = current;
+  return judgement;
+}
+
 function _startDraftSave(pair_id) {
   clearInterval(_draftInterval);
   _draftInterval = setInterval(() => {
@@ -2339,6 +2396,38 @@ function _restoreDraftInputs(card, draft) {
   const pubBtn = card.querySelector("#doi-r-published-btn");
   if (pubBtn && draft.doi_r_published) pubBtn.textContent = "published DOI (✓ added)";
 
+  // The replication outcome quote: show the saved edit rather than the extracted
+  // text it replaces, so what the validator sees is what will be submitted.
+  if (draft.edited_outcome_quote) {
+    const quoteText = card.querySelector("#outcome-quote-text");
+    if (quoteText) {
+      quoteText.textContent = `"${draft.edited_outcome_quote}"`;
+      quoteText.classList.remove("hidden");
+    }
+    card.querySelector("#outcome-quote-empty")?.classList.add("hidden");
+    const editQuoteBtn = card.querySelector("#edit-quote-btn");
+    if (editQuoteBtn) editQuoteBtn.textContent = "edit quote (✓ edited)";
+  }
+
+  // Restore evidence even when changed record values require new gate answers.
+  for (const [key, qField, sField] of [
+    ["comp", "edited_computational_quote", "edited_computational_source"],
+    ["robust", "edited_robustness_quote", "edited_robustness_source"],
+  ]) {
+    if (draft[qField]) {
+      const display = card.querySelector(`#repro-quote-${key}`);
+      const edit = card.querySelector(`#repro-quote-edit-${key}`);
+      const btn = card.querySelector(`[data-repro-quote-edit="${key}"]`);
+      if (edit) edit.value = draft[qField];
+      if (display) { display.textContent = `"${draft[qField]}"`; display.classList.remove("hidden"); }
+      if (btn) btn.textContent = "edit quote (✓ edited)";
+    }
+    if (draft[sField]) {
+      const sel = card.querySelector(`#repro-quote-source-${key}`);
+      if (sel) sel.value = draft[sField];
+    }
+  }
+
   // Restore the hard-mode "can't access" checkbox so state and UI stay in sync.
   const noAccessCb = card.querySelector("#no-access-cb");
   if (noAccessCb && draft.no_access) {
@@ -2364,16 +2453,11 @@ function _replayGates(card, draft) {
   const a = {
     type: draft.type, original: draft.original, outcome: draft.outcome,
     corrected_outcome: draft.corrected_outcome,
+    outcome_quote_fix: draft.outcome_quote_fix,
     corrected_doi_o: draft.corrected_doi_o, corrected_study_o: draft.corrected_study_o,
     repro_computation: draft.repro_computation, repro_robustness: draft.repro_robustness,
     repro_computation_check: draft.repro_computation_check,
     repro_robustness_check: draft.repro_robustness_check,
-    // Per-axis quote edits live in inputs, not choice buttons, so they are
-    // restored directly rather than replayed through onChoice.
-    edited_computational_quote: draft.edited_computational_quote,
-    edited_computational_source: draft.edited_computational_source,
-    edited_robustness_quote: draft.edited_robustness_quote,
-    edited_robustness_source: draft.edited_robustness_source,
   };
   const body = card.querySelector(".pair-body");
   const click = (sel) => { const b = card.querySelector(sel); if (b) onChoice(b); return b; };
@@ -2423,31 +2507,20 @@ function _replayGates(card, draft) {
         click(`[${attr}="${value}"]`);
       }
     }
-    // Per-axis evidence: restore into the inputs and back onto the live draft,
-    // which the axis clicks above do not carry.
-    for (const [key, qField, sField] of [
-      ["comp",   "edited_computational_quote", "edited_computational_source"],
-      ["robust", "edited_robustness_quote",    "edited_robustness_source"],
-    ]) {
-      if (a[qField]) {
-        state.judgement[qField] = a[qField];
-        const display = card.querySelector(`#repro-quote-${key}`);
-        const edit    = card.querySelector(`#repro-quote-edit-${key}`);
-        const btn     = card.querySelector(`[data-repro-quote-edit="${key}"]`);
-        if (edit)    edit.value = a[qField];
-        if (display) { display.textContent = `"${a[qField]}"`; display.classList.remove("hidden"); }
-        if (btn)     btn.textContent = "edit quote (✓ edited)";
-      }
-      if (a[sField]) {
-        state.judgement[sField] = a[sField];
-        const sel = card.querySelector(`#repro-quote-source-${key}`);
-        if (sel) sel.value = a[sField];
-      }
-    }
   } else if (a.outcome) {
-    click(`[data-outcome="${a.outcome}"]`);
-    if (a.outcome === "wrong" && a.corrected_outcome) {
-      click(`[data-correct-outcome="${a.corrected_outcome}"]`);
+    // Only a draft with the same recorded baseline may normalize a same-value
+    // correction into a quote edit. Stale/unknown baselines were reset above.
+    const reclassified = (state.currentPair?.type || "").toLowerCase() === "reproduction";
+    const sameAsExtracted = a.outcome === "wrong" && !reclassified &&
+      !!a.corrected_outcome &&
+      _canonicalOutcome(a.corrected_outcome) === _canonicalOutcome(state.currentPair?.outcome);
+    if ((a.outcome === "correct" && a.outcome_quote_fix) || sameAsExtracted) {
+      click("[data-quote-fix]");
+    } else {
+      click(`[data-outcome="${a.outcome}"]`);
+      if (a.outcome === "wrong" && a.corrected_outcome) {
+        click(`[data-correct-outcome="${a.corrected_outcome}"]`);
+      }
     }
   }
   updateSubmitState(body);
@@ -2579,7 +2652,7 @@ function _showActivePair(pair) {
   const pair_id  = pair.pair_id;
   const draftRaw = pair.resumed ? localStorage.getItem(_DRAFT_KEY(pair_id)) : null;
   const draft    = draftRaw ? (() => { try { return JSON.parse(draftRaw); } catch { return null; } })() : null;
-  state.judgement = draft || blankJudgement();
+  state.judgement = _prepareDraft(draft, pair);
   const card = $("#pair-card");
   renderPairInto(card, pair, { onboarding: false, judgeCount: pair.judge_count });
   if (pair.resumed) { _restoreDraftInputs(card, draft); _replayGates(card, draft); }
@@ -2604,7 +2677,7 @@ async function _loadSinglePair() {
   const pair_id  = resp.pair.pair_id;
   const draftRaw = resp.resumed ? localStorage.getItem(_DRAFT_KEY(pair_id)) : null;
   const draft    = draftRaw ? (() => { try { return JSON.parse(draftRaw); } catch { return null; } })() : null;
-  state.judgement = draft || blankJudgement();
+  state.judgement = _prepareDraft(draft, resp.pair);
 
   const card = $("#pair-card");
   renderPairInto(card, resp.pair, { onboarding: false, judgeCount: resp.judge_count });
@@ -3238,13 +3311,13 @@ function renderPairInto(container, p, { onboarding, judgeCount }) {
        <div class="choices">
          <button class="choice success" data-type="replication">Replication<small>different data</small></button>
          <button class="choice success" data-type="reproduction">Reproduction<small>same data</small></button>
-         <button class="choice danger" data-type="not_validation">✗ Not either type<small>not a replication</small></button>
+         <button class="choice danger" data-type="not_validation">✗ Not either type<small>not in FLoRA</small></button>
        </div>`
     : `<p class="question">The system classified this as&ensp;<span class="outcome-label ${pType}">${pType}</span>&ensp;— is that correct?</p>
        <div class="choices">
          <button class="choice success" data-type="${pType}">✓ Correct</button>
          <button class="choice warn" data-type="${oppositeType}">Actually ${oppositeType}<small>${oppositeLabel}</small></button>
-         <button class="choice danger" data-type="not_validation">✗ Not either type<small>not studying replication</small></button>
+         <button class="choice danger" data-type="not_validation">✗ Not either type<small>not in FLoRA</small></button>
        </div>`;
   const gate2Question = onboarding
     ? "Does this match the paper actually being validated?"
@@ -3297,11 +3370,11 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
       <!-- Senior validator fast-reject panel -->
       <div id="senior-reject-panel" class="senior-reject-panel${(state.coder && state.coder.validator_tier >= 2) ? '' : ' hidden'}">
         <details>
-          <summary class="senior-reject-summary">Senior override: mark as not a replication</summary>
+          <summary class="senior-reject-summary">Senior override: reject — not in FLoRA</summary>
           <div class="senior-reject-body">
-            <p class="senior-reject-hint">As a senior validator you can immediately reject this record. No second validator or LLM check will run.</p>
+            <p class="senior-reject-hint">As a senior validator you can immediately reject this record as neither a replication nor a reproduction. No second validator or LLM check will run. A reproduction is not rejected: choose it as the type above.</p>
             <textarea id="senior-reject-notes" class="senior-reject-notes" placeholder="Notes (optional)…"></textarea>
-            <button id="senior-reject-btn" class="btn-reject">✗ Mark as Not a Replication</button>
+            <button id="senior-reject-btn" class="btn-reject">✗ Reject — neither a replication nor a reproduction</button>
           </div>
         </details>
       </div>
@@ -3367,7 +3440,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
         <div class="gate-body">
           <p class="question">${gate3Question}</p>
           <div class="outcome-info">
-            <span class="outcome-label ${escapeHtml(outcomeLabel)}">${escapeHtml(fmtOutcome(outcomeLabel))}</span>
+            <span class="outcome-label ${escapeHtml(outcomeLabel)}">${p.outcome ? escapeHtml(fmtOutcome(outcomeLabel)) : "No outcome extracted"}</span>
             <div class="outcome-quote-wrap">
               <div class="outcome-quote${hasQuote ? "" : " hidden"}" id="outcome-quote-text">${hasQuote ? `"${escapeHtml(p.outcome_phrase)}"` : ""}</div>
               ${hasQuote ? "" : '<p id="outcome-quote-empty" style="margin:0.4rem 0"><em>No outcome quote was extracted.</em></p>'}
@@ -3378,11 +3451,14 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
           <div id="replication-outcome">
             <div class="choices">
               <button class="choice success" data-outcome="correct">Looks right</button>
+              <button class="choice success" data-outcome="correct" data-quote-fix="1"
+                      title="The outcome is right, but the quote doesn't show it. You'll improve the quote next.">Right outcome, better quote</button>
               <button class="choice danger" data-outcome="wrong">Mischaracterised</button>
               <button class="choice warn" data-outcome="unsure">Can't tell</button>
             </div>
             <div class="outcome-correction hidden" id="outcome-correction">
               <p id="outcome-correction-label" class="outcome-correction-label">What is the correct outcome?</p>
+              <p id="outcome-correction-hint" class="outcome-correction-hint">Same outcome, weak quote? Use “Right outcome, better quote” instead.</p>
               ${_replicationCorrectionChoices()}
             </div>
           </div>
@@ -3511,6 +3587,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
         unanswerGate(gate3);
       }
       state.judgement.outcome = null;
+      state.judgement.outcome_quote_fix = false;
       state.judgement.corrected_outcome = null;
       state.judgement.repro_computation = null;
       state.judgement.repro_robustness = null;
@@ -3693,7 +3770,7 @@ function wireEditButtons(container, p) {
         await loadNextPair();
       } catch (e) {
         seniorRejectBtn.disabled = false;
-        seniorRejectBtn.textContent = "✗ Mark as Not a Replication";
+        seniorRejectBtn.textContent = "✗ Reject — neither a replication nor a reproduction";
         await showAlert("Error: " + e.message);
       }
     };
@@ -3703,26 +3780,14 @@ function wireEditButtons(container, p) {
   if (editQuoteBtn) {
     const quoteText    = container.querySelector("#outcome-quote-text");
     const quoteEdit    = container.querySelector("#outcome-quote-edit");
-    const outcomeChoices    = container.querySelector("#gate-3 .choices");
 
-    const _lockChoices = () => {
-      if (!outcomeChoices) return;
-      outcomeChoices.classList.add("quote-edit-open");
-      outcomeChoices.querySelectorAll(".choice").forEach(b => {
-        b.setAttribute("data-pre-lock-title", b.title || "");
-        b.title = "Save your edited quote first";
-      });
-    };
-    const _unlockChoices = () => {
-      if (!outcomeChoices) return;
-      outcomeChoices.classList.remove("quote-edit-open");
-      outcomeChoices.querySelectorAll(".choice").forEach(b => {
-        b.title = b.getAttribute("data-pre-lock-title") || "";
-        b.removeAttribute("data-pre-lock-title");
-      });
-    };
-
-    const _saveQuote = () => {
+    // Saves the edit and closes the editor. `answer` is false when the save is a
+    // side effect — focus leaving the textarea, or a choice being clicked — rather
+    // than the "save edited quote" press: only that press may complete "Right
+    // outcome, better quote" or say what it still needs. Completing it on a side
+    // effect collapsed the gate under a click meant for another choice, and the
+    // judgement went out as the choice the validator was leaving.
+    const _saveQuote = ({ answer = true } = {}) => {
       if (quoteEdit.classList.contains("hidden")) return;
       const v = quoteEdit.value.trim();
       state.judgement.edited_outcome_quote = v && v !== (p.outcome_phrase || "").trim() ? v : null;
@@ -3738,7 +3803,6 @@ function wireEditButtons(container, p) {
         }
       }
       quoteEdit.classList.add("hidden");
-      _unlockChoices();
 
       // Editing the quote is independent of the outcome judgement (for both
       // replication and reproduction). Just record the edit and update the button —
@@ -3763,6 +3827,23 @@ function wireEditButtons(container, p) {
         }
       }
 
+      // "Right outcome, better quote" waits for the quote: answer the gate once it
+      // has one, or reopen it and say what is still missing.
+      if (answer && gate3 && state.judgement.outcome_quote_fix) {
+        const sel = gate3.querySelector(".choice.selected[data-quote-fix]");
+        if (sel && _hasBetterQuote(state.judgement, p)) {
+          answerGate(gate3, getAnswerLabel(sel), getAnswerClass(sel));
+        } else {
+          _reopenGate(gate3);
+          showToast("Change the quote's wording to continue, or choose “Looks right” if it already shows the outcome.");
+        }
+      } else if (gate3 && state.judgement.outcome_quote_fix &&
+                 !_hasBetterQuote(state.judgement, p)) {
+        // A side-effect save that took the better quote away (reverted, reworded
+        // back) must not leave a collapsed gate over a Submit that is now off.
+        _reopenGate(gate3);
+      }
+
       updateSubmitState(container.querySelector(".pair-body"));
     };
 
@@ -3774,7 +3855,6 @@ function wireEditButtons(container, p) {
         if (quoteText) quoteText.classList.add("hidden");
         quoteEdit.classList.remove("hidden");
         editQuoteBtn.textContent = "save edited quote";
-        _lockChoices();
         quoteEdit.focus();
       } else {
         _saveQuote();
@@ -3786,7 +3866,19 @@ function wireEditButtons(container, p) {
     // so we don't run it twice.
     quoteEdit.addEventListener("blur", (e) => {
       if (e.relatedTarget === editQuoteBtn) return;
-      _saveQuote();
+      _saveQuote({ answer: false });
+    });
+    // How onChoice and the submit guard end the edit before acting on a click.
+    quoteEdit.addEventListener("quote:commit", () => _saveQuote({ answer: false }));
+    // Pressing any button or link would blur the textarea before the click lands,
+    // and closing the editor on that blur moves the page by the textarea's height,
+    // so the click then misses its target. Keep the focus here instead; the click's
+    // own handler commits the edit once it has arrived. That includes "save edited
+    // quote" itself: Safari and Firefox on macOS do not focus a clicked button, so
+    // the blur's relatedTarget check above cannot recognise it, and the blur-save
+    // then closed the editor that the click reopened — the save never completed.
+    container.querySelector(".pair-body")?.addEventListener("mousedown", (e) => {
+      if (!quoteEdit.classList.contains("hidden") && e.target.closest("button, a")) e.preventDefault();
     });
   }
 
@@ -3852,8 +3944,12 @@ function wireEditButtons(container, p) {
 }
 
 function onChoice(btn) {
-  // Block clicks while the quote edit textarea is open
-  if (btn.closest(".choices")?.classList.contains("quote-edit-open")) return;
+  // A choice clicked while the outcome quote editor is open ends the edit first —
+  // the text is kept — and then counts as the choice it is. (These clicks used to
+  // be refused, but the blur that closed the editor moved the page, so the refused
+  // click was usually lost rather than refused.)
+  btn.closest(".pair-body")?.querySelector("#outcome-quote-edit:not(.hidden)")
+    ?.dispatchEvent(new CustomEvent("quote:commit"));
 
   const pairBody = btn.closest(".pair-body");
   const parent = btn.parentElement;
@@ -3872,6 +3968,7 @@ function onChoice(btn) {
       unanswerGate(g3); g3.classList.add("hidden");
       state.judgement.original = null;
       state.judgement.outcome = null;
+      state.judgement.outcome_quote_fix = false;
       state.judgement.corrected_outcome = null;
       state.judgement.repro_computation = null;
       state.judgement.repro_robustness = null;
@@ -3888,6 +3985,7 @@ function onChoice(btn) {
       // Outcome taxonomy differs by type — clear any prior outcome picks and
       // switch gate-3 between the replication and reproduction selectors.
       state.judgement.outcome = null;
+      state.judgement.outcome_quote_fix = false;
       state.judgement.corrected_outcome = null;
       state.judgement.repro_computation = null;
       state.judgement.repro_robustness = null;
@@ -3903,6 +4001,7 @@ function onChoice(btn) {
     if (wasAnswered) {
       unanswerGate(pairBody.querySelector("#gate-3"));
       state.judgement.outcome = null;
+      state.judgement.outcome_quote_fix = false;
       state.judgement.corrected_outcome = null;
       state.judgement.repro_computation = null;
       state.judgement.repro_robustness = null;
@@ -3946,7 +4045,11 @@ function onChoice(btn) {
     }
   } else if (btn.dataset.outcome) {
     state.judgement.outcome = btn.dataset.outcome;
+    state.judgement.outcome_quote_fix = !!btn.dataset.quoteFix;
     state.judgement.corrected_outcome = null;
+    // "Mischaracterised" is not an answer until its category is picked; a chip
+    // left from an earlier answer would claim otherwise.
+    if (btn.dataset.outcome === "wrong") _reopenGate(gate);
     const correctionRow = pairBody.querySelector("#outcome-correction");
     if (correctionRow) {
       const show = btn.dataset.outcome === "wrong";
@@ -4037,6 +4140,16 @@ function onChoice(btn) {
   // Keep gate-3 open after "Mischaracterised" so the user can pick the correct
   // outcome inline; it collapses once they do (handled in the branch above).
   if (btn.dataset.outcome === "wrong") return;
+  // "Right outcome, better quote" is answered by the quote, not the click: open
+  // the editor, and let saving the edit collapse the gate (see _saveQuote). The
+  // gate is reopened first, so a chip left by an earlier answer cannot stand in
+  // for the quote this one still needs.
+  if (btn.dataset.quoteFix && !_hasBetterQuote(state.judgement, state.currentPair)) {
+    _reopenGate(gate);
+    const editor = pairBody.querySelector("#outcome-quote-edit");
+    if (editor?.classList.contains("hidden")) pairBody.querySelector("#edit-quote-btn")?.click();
+    return;
+  }
   _chipTimer = setTimeout(() => answerGate(gate, getAnswerLabel(btn), getAnswerClass(btn)), 300);
 }
 
@@ -4052,6 +4165,15 @@ function answerGate(gate, label, cls) {
   if (changeBtn) { changeBtn.textContent = "change ↩"; changeBtn.classList.remove("hidden"); }
   const body = gate.querySelector(".gate-body");
   if (body) body.classList.remove("open");
+}
+
+// Un-answer a gate but keep its selected choice: the answer its chip showed is no
+// longer complete, and the validator is still working in it.
+function _reopenGate(gate) {
+  if (!gate) return;
+  gate.classList.remove("gate-answered");
+  gate.querySelector(".gate-chip")?.classList.add("hidden");
+  gate.querySelector(".gate-change-btn")?.classList.add("hidden");
 }
 
 function unanswerGate(gate) {
@@ -4072,6 +4194,10 @@ function getAnswerLabel(btn) {
   }
   if (btn.dataset.original) {
     return { correct: "Correct match", wrong: "Wrong paper", unsure: "Can't tell" }[btn.dataset.original] || btn.dataset.original;
+  }
+  if (btn.dataset.quoteFix) {
+    return _hasBetterQuote(state.judgement, state.currentPair)
+      ? "Right outcome · ✎ better quote" : "Right outcome · quote needed";
   }
   if (btn.dataset.outcome) {
     const base = { correct: "Looks right", wrong: "Mischaracterised", unsure: "Can't tell" }[btn.dataset.outcome] || btn.dataset.outcome;
@@ -4253,6 +4379,30 @@ function _reproAxisBlock({ key, attr, values, eyebrow, label, extracted, quote, 
 // undermines it. A replication category in its own right — not a flavour of
 // "successful" and not "mixed". Mirrors extractor_vocab.FLAWED_OUTCOME.
 const _FLAWED_OUTCOME = "statistically successful but flawed";
+// The stored spelling of a replication outcome, as extractor_vocab.OUTCOME_RENAME
+// maps it, so an extracted "success" and the "successful" button compare equal.
+const _OUTCOME_RENAME = {
+  success: "successful",
+  failure: "failed",
+  descriptive: "descriptive only",
+  statistically_successful_but_flawed: _FLAWED_OUTCOME,
+  statistically_successful_but_fundamentally_flawed: _FLAWED_OUTCOME,
+};
+function _canonicalOutcome(value) {
+  const cleaned = String(value || "").trim().toLowerCase();
+  return _OUTCOME_RENAME[cleaned] || cleaned || null;
+}
+
+// A quote's wording: letters and digits, lowercased. app._quote_words keeps the
+// same, so an "improvement" made of punctuation, case or spacing alone counts on
+// neither side — not for "Right outcome, better quote", not for the point.
+const _quoteWords = (s) => String(s || "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+
+// Does "Right outcome, better quote" have its better quote yet?
+function _hasBetterQuote(j, p) {
+  return !!j.edited_outcome_quote &&
+    _quoteWords(j.edited_outcome_quote) !== _quoteWords(p?.outcome_phrase);
+}
 
 // Build <option>s for the admin outcome <select> by type. Keeps the current value even
 // if it isn't in the canonical list (e.g. legacy / cannot_be_determined) so nothing is lost.
@@ -4290,13 +4440,32 @@ function _applyOutcomeMode(pairBody) {
   // permanently blank box and invite a validator to justify two judgements with
   // one quote.
   if (replQuote) replQuote.classList.toggle("hidden", isRepro);
-  const looksRight = pairBody.querySelector('[data-outcome="correct"]');
-  if (looksRight) {
-    looksRight.disabled = reclassifiedToReplication;
-    looksRight.title = reclassifiedToReplication
+  // Both "Looks right" and "Right outcome, better quote" agree with the extracted
+  // outcome, which a type change leaves behind — and which some records (no
+  // abstract, an extractor error) never had. The server refuses agreement with
+  // nothing, so it is not offered.
+  const noOutcome = !reclassifiedToReplication && !_canonicalOutcome(state.currentPair?.outcome);
+  pairBody.querySelectorAll('#replication-outcome [data-outcome="correct"]').forEach((b) => {
+    if (!("defaultTitle" in b.dataset)) b.dataset.defaultTitle = b.title || "";
+    b.disabled = reclassifiedToReplication || noOutcome;
+    b.title = reclassifiedToReplication
       ? "The extracted outcome belongs to the reproduction grid. Choose a replication outcome."
-      : "";
-  }
+      : noOutcome
+      ? "No outcome was extracted. Choose one under “Mischaracterised”, or “Can't tell”."
+      : b.dataset.defaultTitle;
+  });
+  // "Mischaracterised" cannot mean the category the record already has: that is
+  // "Right outcome, better quote", and recording it as a correction splits
+  // consensus against a validator who clicked "Looks right".
+  const extracted = reclassifiedToReplication ? null : _canonicalOutcome(state.currentPair?.outcome);
+  pairBody.querySelectorAll("#outcome-correction [data-correct-outcome]").forEach((b) => {
+    if (!("defaultTitle" in b.dataset)) b.dataset.defaultTitle = b.title || "";
+    const same = !!extracted && _canonicalOutcome(b.dataset.correctOutcome) === extracted;
+    b.disabled = same;
+    b.classList.toggle("outcome-option-extracted", same);
+    b.title = same ? "This is the extracted outcome." : b.dataset.defaultTitle;
+  });
+  pairBody.querySelector("#outcome-correction-hint")?.classList.toggle("hidden", !extracted);
   if (q) {
     if (!q.dataset.replQuestion) q.dataset.replQuestion = q.textContent;
     q.textContent = isRepro
@@ -4324,7 +4493,11 @@ function updateSubmitState(pairBody) {
     ? (j.repro_computation && j.repro_robustness)
     : reclassifiedToReplication
     ? (j.outcome === "wrong" && j.corrected_outcome)
-    : (j.outcome && (j.outcome !== "wrong" || j.corrected_outcome)); // replication flow
+    : (j.outcome && (j.outcome !== "wrong" || j.corrected_outcome) &&
+       // Agreement needs an extracted outcome to agree with (a replayed draft can
+       // hold one the disabled button no longer offers).
+       (j.outcome !== "correct" || !!_canonicalOutcome(state.currentPair?.outcome)) &&
+       (!j.outcome_quote_fix || _hasBetterQuote(j, state.currentPair))); // replication flow
   const ready = j.type === "not_validation" || (j.type && j.original && outcomeReady);
   const btn = (pairBody || document).querySelector("#submit-btn");
   if (btn) btn.disabled = !ready;
@@ -4401,8 +4574,14 @@ function showSkipReasonDialog() {
     };
     $("#skip-reason-close").onclick = () => finish(null);
     $("#skip-reason-cancel").onclick = () => finish(null);
+    // As onBackdropClick, but as properties: this dialog is rewired on every
+    // open, and listeners would pile up. A drag that selects comment text and
+    // ends on the backdrop must not discard the comment.
+    let pressedOnBackdrop = false;
+    modal.onpointerdown = (event) => { pressedOnBackdrop = event.target === modal; };
     modal.onclick = (event) => {
-      if (event.target === modal) finish(null);
+      if (event.target === modal && pressedOnBackdrop) finish(null);
+      pressedOnBackdrop = false;
     };
 
     modal.classList.remove("hidden");
@@ -4488,6 +4667,18 @@ async function submitJudgement() {
   const addl = {};
   if (!isNotValidation && j.original === "unsure") addl.was_unsure_original = true;
   if (!isNotValidation && j.outcome  === "unsure") addl.was_unsure_outcome  = true;
+  // The outcome was agreed; only its evidence was disputed. Kept so the review
+  // screen can say so — the verdict itself stays a plain "correct".
+  if (!isNotValidation && j.type === "replication" && j.outcome === "correct" &&
+      j.outcome_quote_fix) {
+    addl.outcome_quote_disputed = true;
+  }
+  // The outcome this page showed. A nightly import can change the record's
+  // outcome while the page is open, and the server must not read a correction
+  // made against the old value as agreement with the new one.
+  if (!isNotValidation && j.type === "replication" && p.outcome) {
+    addl.shown_outcome = p.outcome;
+  }
   if (!isNotValidation && j.type === "reproduction" &&
       (j.repro_computation_check === "unsure" || j.repro_robustness_check === "unsure")) {
     addl.was_unsure_outcome = true;
@@ -4530,6 +4721,8 @@ async function submitJudgement() {
       : "incorrect";
   };
 
+  const isReplication  = !isNotValidation && j.type === "replication";
+  const isReproduction = !isNotValidation && j.type === "reproduction";
   const payload = {
     record_id: String(p.record_id),
     pair_id:   p.pair_id || null,
@@ -4543,16 +4736,19 @@ async function submitJudgement() {
     corrected_doi_o:         j.corrected_doi_o   || null,
     corrected_title_o:       j.corrected_study_o || null,
     corrected_outcome:       j.corrected_outcome || null,
-    corrected_outcome_quote: j.edited_outcome_quote || null,
+    // Evidence travels only with the type it evidences. An edit made before the
+    // validator switched type (to reproduction, or to "neither") stays in state
+    // but describes a judgement they are no longer submitting.
+    corrected_outcome_quote: isReplication ? (j.edited_outcome_quote || null) : null,
     // Reproduction axes, sent unjoined. Null on replications, and null on the
     // axis the validator did not re-evidence — a blank quote means "no change",
     // not "clear the extractor's".
     corrected_outcome_computation:  j.repro_computation || null,
-    corrected_computational_quote:  j.edited_computational_quote || null,
-    corrected_computational_source: j.edited_computational_source || null,
+    corrected_computational_quote:  isReproduction ? (j.edited_computational_quote || null) : null,
+    corrected_computational_source: isReproduction ? (j.edited_computational_source || null) : null,
     corrected_outcome_robustness:   j.repro_robustness || null,
-    corrected_robustness_quote:     j.edited_robustness_quote || null,
-    corrected_robustness_source:    j.edited_robustness_source || null,
+    corrected_robustness_quote:     isReproduction ? (j.edited_robustness_quote || null) : null,
+    corrected_robustness_source:    isReproduction ? (j.edited_robustness_source || null) : null,
     corrected_abstract:      j.edited_abstract || null,
     corrected_title_r:       j.corrected_study_r || null,
     corrected_url_r:         j.corrected_url_r || null,
@@ -4829,6 +5025,15 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     if (e.target.tagName === "TEXTAREA" && !(e.metaKey || e.ctrlKey)) return;
     if (e.target.tagName === "INPUT" && !(e.metaKey || e.ctrlKey)) return;
+    // A button or link reached from the keyboard answers Enter itself: Tab to
+    // "Right outcome, better quote" and Enter must choose it, not submit the
+    // previous answer. One that merely kept focus after a mouse click still
+    // gives Enter to Submit, the shortcut this handler exists for.
+    if (e.target.closest?.("button, a") && e.target.id !== "submit-btn") {
+      let fromKeyboard = false;
+      try { fromKeyboard = e.target.matches(":focus-visible"); } catch (_) {}
+      if (fromKeyboard) return;
+    }
     e.preventDefault();
     const btn = $("#submit-btn");
     if (btn && !btn.disabled) btn.click();
@@ -4935,6 +5140,10 @@ async function guardedSubmit() {
     const el = card?.querySelector(sel);
     if (el && !el.classList.contains("hidden")) el.blur();
   });
+  // Likewise the outcome quote editor, which the mousedown guard keeps focused
+  // through this click (so the click is not lost to the editor closing under it).
+  card?.querySelector("#outcome-quote-edit:not(.hidden)")
+    ?.dispatchEvent(new CustomEvent("quote:commit"));
 
   // 1. Title correction panel open but not saved — block regardless of content
   const titleEdit = card?.querySelector("#title-edit");
@@ -5067,7 +5276,7 @@ async function openHelp() {
 }
 $("#game-help-btn").onclick = openHelp;
 $("#onb-help-btn").onclick  = openHelp;
-$("#faq-modal").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeFaq(); });
+onBackdropClick($("#faq-modal"), closeFaq);
 
 /* ============================================================
    ADMIN PANEL
@@ -5380,6 +5589,18 @@ async function openAdminDetail(recordId) {
   }
 }
 
+// A validator's track record beside their judgement on the approval screen: how
+// many of their records an admin approved and how many were flagged — the same
+// counts as the validators table — with the total submitted on hover. The total
+// alone ("55 validated") said nothing about how those judgements held up.
+function _trackRecordText(st) {
+  return `${st.approved || 0} approved · ${st.flags || 0} 🚩`;
+}
+function _trackRecordTitle(st) {
+  return `${st.approved || 0} of their records approved by an admin · ${st.flags || 0} ` +
+         `judgement${st.flags === 1 ? "" : "s"} flagged · ${st.judged || 0} submitted in total`;
+}
+
 function renderAdminDetail(data) {
   const rec = data.record;
   const abstractBanner = data.abstract_only_conflict
@@ -5586,6 +5807,12 @@ function renderAdminDetail(data) {
 
   const humanCard = (label, v, qs = {}) => {
     if (!v) return `<div class="admin-val-card admin-val-empty"><div class="admin-val-label">${label}</div><p>Not yet submitted.</p></div>`;
+    // Assignments review the effective record, including earlier decisions.
+    // Preserve explicit nulls (e.g. a cleared DOI) and fall back for legacy
+    // summaries that predate the server's snapshot of what the validator saw.
+    const shown = v.is_assignment && v.shown_record
+      ? { ...rec, ...v.shown_record } : rec;
+    const baselineLabel = v.is_assignment && v.shown_record ? "Shown" : "Extracted";
     const tier = v.validator_tier ?? 0;
     const isSeniorReject = !!v.senior_reject;
     const queueId  = qs.queue_id  || null;
@@ -5594,17 +5821,46 @@ function renderAdminDetail(data) {
     const isNotVal = v.corrected_type === "not_validation";
     const who = v.validator_name ? escapeHtml(v.validator_name) : "validator";
 
-    // Short inline row for enum-like fields (Type, Outcome)
-    const shortRow = (fieldLabel, extracted, checkVal, corrDisplay) => {
+    // Short inline row for enum-like fields (Type, Outcome). A suggestion names
+    // what it replaces ("was failed → suggests successful"), so the row reads as a
+    // change rather than two unlabeled values; agreedNote qualifies an agreement.
+    const shortRow = (fieldLabel, extracted, checkVal, corrDisplay, agreedNote = "", unsure = false) => {
       const agreed = checkVal === "correct";
-      const extr = `<span class="chk-extr-val">${escapeHtml(String(extracted || "—"))}</span>`;
-      if (agreed) return `<div class="chk-row"><span class="chk-label">${fieldLabel}</span>${extr}<span class="chk-ok">✓ ${who} agreed</span></div>`;
+      const extrText = escapeHtml(String(extracted || "—"));
+      if (agreed) return `<div class="chk-row"><span class="chk-label">${fieldLabel}</span><span class="chk-extr-val">${extrText}</span><span class="chk-ok">✓ ${who} agreed</span>${agreedNote}</div>`;
+      // "Can't tell" is stored as incorrect with nothing suggested; it is neither.
+      if (unsure && !corrDisplay) return `<div class="chk-row"><span class="chk-label">${fieldLabel}</span><span class="chk-extr-val">${extrText}</span><span class="chk-uncertain">? ${who} couldn't tell</span></div>`;
+      const extr = corrDisplay
+        ? `<span class="chk-extr-val"><span class="chk-was-tag">was</span> ${extrText}</span>`
+        : `<span class="chk-extr-val">${extrText}</span>`;
       const corrPart = corrDisplay
         ? `<span class="chk-correction">${corrDisplay}</span>`
         : (isNotVal ? `<span class="chk-na-note">n/a</span>` : "");
       const failLabel = corrDisplay ? `<span class="chk-fail">✗ ${who} suggests:</span>` : `<span class="chk-fail">✗</span>`;
       return `<div class="chk-row"><span class="chk-label">${fieldLabel}</span>${extr}${failLabel}${corrPart}</div>`;
     };
+    // An agreed outcome whose quote the validator replaced, or said was weak. A
+    // change of punctuation, case or spacing alone is not an improvement — the
+    // same rule the validator screen and the point use (_quoteWords).
+    const quoteEdited = !!v.corrected_outcome_quote;
+    const quoteReworded = quoteEdited &&
+      _quoteWords(v.corrected_outcome_quote) !== _quoteWords(shown.outcome_quote);
+    const outcomeAgreedNote = quoteReworded
+      ? ` <span class="chk-edit-badge">· ✎ improved the quote</span>`
+      : quoteEdited
+      ? ` <span class="chk-edit-badge">· ✎ touched up the quote's punctuation</span>`
+      : v.additional_checks?.outcome_quote_disputed
+      ? ` <span class="chk-edit-badge">· questioned the quote</span>`
+      : "";
+    // What this validator was shown: recorded with the judgement since
+    // shown_outcome existed. The record's outcome now may differ — an import can
+    // change it, and an assignment shows an earlier decision over it.
+    const shownOutcome = v.is_assignment && v.shown_record
+      ? shown.outcome : (v.additional_checks?.shown_outcome || shown.outcome);
+    // "Can't tell" is the replication outcome's; on a reproduction the flag says
+    // one axis was unsure, which the axis rows below show.
+    const judgedType = (v.type_check === "incorrect" && v.corrected_type) || shown.type;
+    const outcomeUnsure = judgedType === "replication" && !!v.additional_checks?.was_unsure_outcome;
 
     // Long expandable block row for free-text fields (Original, etc.)
     const longRow = (fieldLabel, extracted, checkVal, corrVal) => {
@@ -5615,10 +5871,10 @@ function renderAdminDetail(data) {
           ? `<span class="chk-fail">✗ ${who} corrected:</span>`
           : `<span class="chk-fail">✗ ${who} flagged</span>`;
       const origBlock = extracted
-        ? `<div class="chk-long-group"><span class="chk-long-tag">Extracted</span><span class="chk-long-val">${escapeHtml(extracted)}</span></div>` : "";
+        ? `<div class="chk-long-group"><span class="chk-long-tag">${baselineLabel}</span><span class="chk-long-val">${escapeHtml(extracted)}</span></div>` : "";
       const corrBlock = !agreed && corrVal
         ? `<div class="chk-long-group chk-long-group-diff"><span class="chk-long-tag">→ Suggests</span><span class="chk-long-val">${escapeHtml(corrVal)}</span></div>`
-        : (!agreed && isNotVal ? `<span class="chk-na-note" style="margin-left:0.5rem">n/a (not a replication)</span>` : "");
+        : (!agreed && isNotVal ? `<span class="chk-na-note" style="margin-left:0.5rem">n/a (not in FLoRA)</span>` : "");
       return `<div class="chk-row-long"><div class="chk-row-long-head"><span class="chk-label">${fieldLabel}</span>${verdict}</div>${origBlock}${corrBlock}</div>`;
     };
 
@@ -5626,7 +5882,7 @@ function renderAdminDetail(data) {
     const editRow = (fieldLabel, origVal, corrVal, collapsible = false) => {
       if (!corrVal) return "";
       const origBlock = origVal
-        ? `<div class="chk-long-group"><span class="chk-long-tag">Extracted</span><span class="chk-long-val">${escapeHtml(origVal)}</span></div>` : "";
+        ? `<div class="chk-long-group"><span class="chk-long-tag">${baselineLabel}</span><span class="chk-long-val">${escapeHtml(origVal)}</span></div>` : "";
       const corrBlock = `<div class="chk-long-group chk-long-group-diff"><span class="chk-long-tag">→ Suggests</span><span class="chk-long-val">${escapeHtml(corrVal)}</span></div>`;
       if (collapsible) {
         const preview = escapeHtml(String(corrVal).length > 55 ? String(corrVal).substring(0, 55) + "…" : String(corrVal));
@@ -5647,10 +5903,10 @@ function renderAdminDetail(data) {
       </div>`;
     };
 
-    const typeCorr = v.corrected_type ? escapeHtml(v.corrected_type === "not_validation" ? "not a replication" : v.corrected_type) : null;
+    const typeCorr = v.corrected_type ? escapeHtml(v.corrected_type === "not_validation" ? NOT_IN_FLORA_LABEL : v.corrected_type) : null;
     const doiCorrRow = v.corrected_doi_o ? `<div class="chk-row-long">
         <div class="chk-row-long-head"><span class="chk-label">Orig. DOI</span><span class="chk-fail">✗ ${who} corrected:</span></div>
-        <div class="chk-long-group"><span class="chk-long-tag">Extracted</span><span class="chk-long-val">${escapeHtml(rec.doi_o || "—")}</span></div>
+        <div class="chk-long-group"><span class="chk-long-tag">${baselineLabel}</span><span class="chk-long-val">${escapeHtml(shown.doi_o || "—")}</span></div>
         <div class="chk-long-group chk-long-group-diff"><span class="chk-long-tag">→ Suggests</span><span class="chk-long-val">${doiLink(v.corrected_doi_o)}</span></div>
       </div>` : "";
     const repDoiCorrRow = v.corrected_doi_r ? `<div class="chk-row-long">
@@ -5661,7 +5917,7 @@ function renderAdminDetail(data) {
     const urlLink = (u) => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener" class="doi-link">${escapeHtml(u.length > 50 ? u.substring(0, 50) + "…" : u)}</a>`;
     const repUrlCorrRow = v.corrected_url_r ? `<div class="chk-row-long">
         <div class="chk-row-long-head"><span class="chk-label">Link fix</span><span class="chk-edit-badge">✎ ${who} edited</span></div>
-        <div class="chk-long-group"><span class="chk-long-tag">Extracted</span><span class="chk-long-val">${rec.url_r ? urlLink(rec.url_r) : "—"}</span></div>
+        <div class="chk-long-group"><span class="chk-long-tag">${baselineLabel}</span><span class="chk-long-val">${shown.url_r ? urlLink(shown.url_r) : "—"}</span></div>
         <div class="chk-long-group chk-long-group-diff"><span class="chk-long-tag">→ Suggests</span><span class="chk-long-val">${urlLink(v.corrected_url_r)}</span></div>
       </div>` : "";
     const pubDoiRow = v.doi_r_published ? `<div class="chk-row-long">
@@ -5687,21 +5943,21 @@ function renderAdminDetail(data) {
         : `<div class="chk-long-group"><span class="chk-na-note">No axis evidence submitted</span></div>`;
       return `<div class="chk-row-long admin-axis-review">
         <div class="chk-row-long-head"><span class="chk-label">${label}</span>${verdict}</div>
-        <div class="chk-long-group"><span class="chk-long-tag">Extracted</span><span class="chk-long-val">${escapeHtml(fmtOutcome(extracted) || "Not coded")}</span></div>
+        <div class="chk-long-group"><span class="chk-long-tag">${baselineLabel}</span><span class="chk-long-val">${escapeHtml(fmtOutcome(extracted) || "Not coded")}</span></div>
         <div class="chk-long-group chk-long-group-diff"><span class="chk-long-tag">Submitted</span><span class="chk-long-val">${escapeHtml(fmtOutcome(selected) || "Not coded")}</span></div>
         ${evidence}
       </div>`;
     };
-    const validatorType = v.corrected_type || rec.type;
-    const reproductionRows = validatorType === "reproduction" ||
-      v.corrected_outcome_computation || v.corrected_outcome_robustness
+    const reproductionRows = judgedType === "reproduction"
       ? `<div class="admin-axis-pair">
-           ${reproAxisRow("Computation", "computation", rec.outcome_computation,
-             v.corrected_outcome_computation, v.corrected_computational_quote,
-             v.corrected_computational_source)}
-           ${reproAxisRow("Robustness", "robustness", rec.outcome_robustness,
-             v.corrected_outcome_robustness, v.corrected_robustness_quote,
-             v.corrected_robustness_source)}
+           ${reproAxisRow("Computation", "computation", shown.outcome_computation,
+             v.corrected_outcome_computation || (v.outcome_check === "correct" ? shown.outcome_computation : null),
+             v.corrected_computational_quote ?? shown.outcome_computational_quote,
+             v.corrected_computational_source ?? shown.out_quote_computational_source)}
+           ${reproAxisRow("Robustness", "robustness", shown.outcome_robustness,
+             v.corrected_outcome_robustness || (v.outcome_check === "correct" ? shown.outcome_robustness : null),
+             v.corrected_robustness_quote ?? shown.outcome_robustness_quote,
+             v.corrected_robustness_source ?? shown.out_quote_robust_source)}
          </div>`
       : "";
 
@@ -5714,7 +5970,7 @@ function renderAdminDetail(data) {
           ${(() => {
             const st = vstats[v.validator_id];
             return st
-              ? `<span class="val-name-stats" title="${st.judged || 0} judgements submitted overall · ${st.flags || 0} of them flagged by admins">${st.judged || 0} validated · ${st.flags || 0} 🚩</span>`
+              ? `<span class="val-name-stats" title="${_trackRecordTitle(st)}">${_trackRecordText(st)}</span>`
               : "";
           })()}
         </span>
@@ -5723,17 +5979,17 @@ function renderAdminDetail(data) {
       ${isFlagged && flagReason ? `<div class="flag-reason-bar">🚩 Flagged: ${escapeHtml(flagReason)}</div>` : ""}
       <div class="admin-val-meta">${fmtDate(v.validated_at)}${v.points != null ? ` · +${v.points} pts` : ""}</div>
       <div class="admin-val-checks">
-        ${shortRow("Type",    rec.type,    v.type_check,    typeCorr)}
-        ${longRow("Orig. Title", rec.title_o, v.original_check, v.corrected_title_o || null)}
+        ${shortRow("Type",    shown.type,    v.type_check,    typeCorr)}
+        ${longRow("Orig. Title", shown.title_o, v.original_check, v.corrected_title_o || null)}
         ${doiCorrRow}
-        ${shortRow("Outcome", fmtOutcome(rec.outcome), v.outcome_check, v.corrected_outcome ? escapeHtml(fmtOutcome(v.corrected_outcome)) : null)}
+        ${shortRow("Outcome", fmtOutcome(shownOutcome), v.outcome_check, v.corrected_outcome ? escapeHtml(fmtOutcome(v.corrected_outcome)) : null, outcomeAgreedNote, outcomeUnsure)}
         ${reproductionRows}
-        ${editRow("Title fix",  rec.title_r,      v.corrected_title_r)}
+        ${editRow("Title fix",  shown.title_r,      v.corrected_title_r)}
         ${repDoiCorrRow}
         ${repUrlCorrRow}
         ${pubDoiRow}
-        ${editRow("Quote",      rec.outcome_quote, v.corrected_outcome_quote, true)}
-        ${editRow("Abstract",   rec.abstract_r,    v.corrected_abstract,      true)}
+        ${editRow("Quote",      shown.outcome_quote, v.corrected_outcome_quote, true)}
+        ${editRow("Abstract",   shown.abstract_r,    v.corrected_abstract,      true)}
         ${v.validator_notes ? `<div class="chk-row-long"><div class="chk-row-long-head"><span class="chk-label">Notes</span></div><p class="chk-notes-text">${escapeHtml(v.validator_notes)}</p></div>` : ""}
       </div>
     </div>`;
@@ -5755,7 +6011,7 @@ function renderAdminDetail(data) {
       <div class="admin-val-label">LLM ${ctxLabel}</div>
       <div class="admin-val-meta">${escapeHtml(v.model || "")} · ${fmtDate(v.validated_at)}${v.vote_score != null ? ` · score ${v.vote_score}` : ""}</div>
       <div class="admin-val-checks">
-        <div class="chk-row"><span class="chk-label">Type</span>${chk(v.type_check)}${v.corrected_type ? `<span class="chk-correction">→ ${escapeHtml(v.corrected_type === "not_validation" ? "not a replication" : v.corrected_type)}</span>` : ""}</div>
+        <div class="chk-row"><span class="chk-label">Type</span>${chk(v.type_check)}${v.corrected_type ? `<span class="chk-correction">→ ${escapeHtml(v.corrected_type === "not_validation" ? NOT_IN_FLORA_LABEL : v.corrected_type)}</span>` : ""}</div>
         <div class="chk-row"><span class="chk-label">Original</span>${chk(v.original_check)}${v.corrected_doi_o ? `<span class="chk-correction">→ ${doiLink(v.corrected_doi_o)}</span>` : ""}</div>
         <div class="chk-row"><span class="chk-label">Outcome</span>${chk(v.outcome_check)}${v.corrected_outcome ? `<span class="chk-correction">→ ${escapeHtml(v.corrected_outcome)}</span>` : ""}</div>
       </div>
@@ -5977,9 +6233,10 @@ function renderAdminDetail(data) {
 
         ${rec.validation_status === "rejected" ? `
         <div class="not-val-decision">
-          <p class="not-val-who">⚠ This record was <strong>rejected</strong> as not a replication${notValWho ? ` by <strong>${notValWho}</strong>` : ""}. Validation happens once — it won't be sent back for re-validation.</p>
-          <p class="not-val-hint">Need to change it? Review and edit the fields below.</p>
+          <p class="not-val-who">⚠ This record was <strong>rejected</strong> — neither a replication nor a reproduction, so not in FLoRA${notValWho ? ` — by <strong>${notValWho}</strong>` : ""}. Validation happens once — it won't be sent back for re-validation.</p>
+          <p class="not-val-hint">If it is a reproduction, open it as one and code the two axes. To change anything else, review and edit the fields.</p>
           <div class="not-val-buttons">
+            <button id="notval-is-repro-btn" class="btn-outline" data-type="reproduction">↻ It's a reproduction</button>
             <button id="confirm-is-rep-btn" class="btn-outline">Review / edit fields</button>
             <button id="admin-skip-notval-btn" class="ghost-btn">Skip →</button>
           </div>
@@ -6000,7 +6257,7 @@ function renderAdminDetail(data) {
              data-orig-doi-r-published="${escapeHtml(storedPubDoi)}"
              data-orig-alt-identifier-r="${escapeHtml(finalAltIds)}">
           ${hasNotValidation
-            ? `<p class="admin-resolve-hint">Fill in the correct values — this will override the "not a replication" call.</p>`
+            ? `<p class="admin-resolve-hint">Fill in the correct values — this will override the "neither type — not in FLoRA" call.</p>`
             : hasProposals
             ? `<p class="admin-resolve-hint">Validators' corrections are <strong>pre-filled below</strong> and will be saved when you resolve — review and adjust as needed.</p>`
             : `<p class="admin-resolve-hint">Edit the final values directly and mark as resolved. Changes are auto-detected.</p>`}
@@ -6067,21 +6324,49 @@ function renderAdminDetail(data) {
             <button id="admin-detail-cancel" class="ghost-btn">Cancel</button>
           </div>
           <div class="admin-reject-action">
-            <button id="admin-reject-btn" class="btn-reject-outline">✗ Reject — Not a Replication</button>
+            <p class="admin-reject-heading">Not a ${finalType === "reproduction" ? "reproduction" : "replication"}?</p>
+            <div class="admin-reject-choice">
+              <button id="admin-other-type-btn" class="btn-outline"
+                      data-type="${finalType === "reproduction" ? "replication" : "reproduction"}">↻ It's a ${finalType === "reproduction" ? "replication" : "reproduction"}</button>
+              <span class="admin-reject-note">the other FLoRA type — switches Type and opens its fields</span>
+            </div>
+            <div class="admin-reject-choice">
+              <button id="admin-reject-btn" class="btn-reject-outline">✗ Reject — not in FLoRA</button>
+              <span class="admin-reject-note">neither a replication nor a reproduction</span>
+            </div>
           </div>
         </div>
       </div>
     </div>
   `;
 
+  // "It's a reproduction" / "It's a replication": the other FLoRA type is a
+  // correction of the type, not a rejection. Open the edit panel (hidden behind
+  // the notice on a rejected record), switch Type through its own change handler
+  // so the outcome options and axis fields follow, and put the admin where the
+  // new type needs input. "Mark as Resolved" then saves it as usual.
+  const openAsType = (type) => {
+    $(".not-val-decision")?.classList.add("hidden");
+    $("#ar-normal-form")?.classList.remove("hidden");
+    const sel = $("#ar-type-sel");
+    if (sel && sel.value !== type) {
+      sel.value = type;
+      sel.dispatchEvent(new Event("change"));
+    }
+    const target = type === "reproduction" ? $("#ar-outcome-computation") : $("#ar-outcome-sel");
+    target?.scrollIntoView({ block: "center", behavior: "smooth" });
+    target?.focus({ preventScroll: true });
+  };
   if (rec.validation_status === "rejected") {
     // Rejected records show a heads-up; "Review / edit fields" reveals the form.
     $("#confirm-is-rep-btn")?.addEventListener("click", () => {
       $(".not-val-decision")?.classList.add("hidden");
       $("#ar-normal-form").classList.remove("hidden");
     });
+    $("#notval-is-repro-btn")?.addEventListener("click", () => openAsType("reproduction"));
     $("#admin-skip-notval-btn")?.addEventListener("click", () => advanceToNextAdminEntry());
   }
+  $("#admin-other-type-btn")?.addEventListener("click", (e) => openAsType(e.currentTarget.dataset.type));
   $("#admin-save-note-btn")?.addEventListener("click", async () => {
     const btn = $("#admin-save-note-btn");
     const note = $("#admin-note-text").value.trim();
@@ -6104,10 +6389,26 @@ function renderAdminDetail(data) {
     const sel = $("#ar-outcome-sel");
     if (sel) sel.innerHTML = _outcomeOptionsFor(ev.target.value, "");
     $("#ar-repro-axes")?.classList.toggle("hidden", ev.target.value !== "reproduction");
+    // The "Not a …?" choice always offers the type the form is not set to.
+    const isRepro = ev.target.value === "reproduction";
+    const heading = $(".admin-reject-heading");
+    if (heading) heading.textContent = `Not a ${isRepro ? "reproduction" : "replication"}?`;
+    const other = $("#admin-other-type-btn");
+    if (other) {
+      other.dataset.type = isRepro ? "replication" : "reproduction";
+      other.textContent = `↻ It's a ${other.dataset.type}`;
+    }
   });
   $("#admin-resolve-btn")?.addEventListener("click", () => submitAdminResolve(rec.record_id));
   $("#admin-reject-btn")?.addEventListener("click", async () => {
     const btn = $("#admin-reject-btn");
+    // Rejecting is final for this record, and both types belong in FLoRA: say
+    // which it is before doing it, naming the other-type button as it reads now.
+    const other = $("#admin-other-type-btn")?.dataset.type || "reproduction";
+    const sure = await showConfirm(
+      "Reject this record as neither a replication nor a reproduction? It will be left out of FLoRA. " +
+      `If it is a ${other}, use “It's a ${other}” instead.`);
+    if (!sure) return;
     btn.disabled = true;
     btn.textContent = "Rejecting…";
     try {
@@ -6119,11 +6420,11 @@ function renderAdminDetail(data) {
         corrected_type: "not_validation",
         admin_notes:    $("#admin-note-text")?.value.trim() || null,
       });
-      showToast("Record rejected — marked as not a replication.");
+      showToast("Record rejected — not in FLoRA.");
       await advanceToNextAdminEntry();
     } catch (e) {
       btn.disabled = false;
-      btn.textContent = "✗ Reject — Not a Replication";
+      btn.textContent = "✗ Reject — not in FLoRA";
       await showAlert("Error: " + e.message);
     }
   });
@@ -6174,8 +6475,8 @@ function renderAdminDetail(data) {
               stats.flags = Math.max(0, (stats.flags || 0) + (resp.flagged ? 1 : -1));
               const chip = btn.closest(".admin-val-card")?.querySelector(".val-name-stats");
               if (chip) {
-                chip.textContent = `${stats.judged || 0} validated · ${stats.flags} 🚩`;
-                chip.title = `${stats.judged || 0} judgements submitted overall · ${stats.flags} of them flagged by admins`;
+                chip.textContent = _trackRecordText(stats);
+                chip.title = _trackRecordTitle(stats);
               }
             }
           }
@@ -7016,7 +7317,7 @@ let _dashData = null;
 
 function _renderMatrix(m, rowLabel, colLabel) {
   if (!m || !m.labels || !m.labels.length) return '<p class="mx-empty">No data.</p>';
-  const lab = (s) => escapeHtml(fmtOutcome(s) || s);
+  const lab = (s) => escapeHtml(s === "not_validation" ? "Neither type" : (fmtOutcome(s) || s));
   const head = m.labels.map((l) => `<th>${lab(l)}</th>`).join("");
   const rows = m.labels.map((rl, i) =>
     `<tr><th class="mx-rowlab">${lab(rl)}</th>` +
@@ -7034,38 +7335,44 @@ function _renderDisagree(view) {
   const body = $("#disagree-body");
   if (!dd || !body) return;
   const plural = (n) => (n !== 1 ? "s" : "");
+  // One row per dimension; the matrix opens on hover. Outcomes are split by type:
+  // replications have one outcome, reproductions two independent axes.
+  const row = (label, n, split, matrix, rowAxis, colAxis) => `<div class="disagree-row">
+      <span class="disagree-dim">${label}</span>
+      <span class="disagree-count">${n} <span class="disagree-unit">article${plural(n)}</span>
+        <span class="disagree-split">${split}</span></span>
+      <div class="matrix-popover">${_renderMatrix(matrix, rowAxis, colAxis)}</div>
+    </div>`;
+  const group = (title) => `<h4 class="disagree-group">${title}</h4>`;
+  const note = (n, text) => n
+    ? `<p class="disagree-note">${n} article${plural(n)} ${text}</p>` : "";
 
   if (view === "validator") {
-    const dims = [["type", "Type"], ["original", "Original"], ["outcome", "Outcome"]];
+    const v = dd.validator;
+    const dim = (label, x) => row(label, (x.validated || 0) + (x.unvalidated || 0),
+      `${x.validated} validated · ${x.unvalidated} open · of ${x.records} compared`, x.matrix, "V1 ↓", "V2 →");
     body.innerHTML =
-      `<p class="disagree-caption">${dd.validator.total_records} articles with both validators · counts = records where V1 and V2 differ</p>` +
-      dims.map(([k, label]) => {
-        const x = dd.validator[k];
-        const n = (x.validated || 0) + (x.unvalidated || 0);
-        return `<div class="disagree-row">
-          <span class="disagree-dim">${label}</span>
-          <span class="disagree-count">${n} <span class="disagree-unit">article${plural(n)}</span>
-            <span class="disagree-split">${x.validated} validated · ${x.unvalidated} open</span></span>
-          <div class="matrix-popover">${_renderMatrix(x.matrix, "V1 ↓", "V2 →")}</div>
-        </div>`;
-      }).join("");
+      `<p class="disagree-caption">${v.total_records} articles with both validators · counts = records where V1 and V2 differ</p>` +
+      dim("Type", v.type) + dim("Original", v.original) +
+      group("Replications") + dim("Outcome", v.replication_outcome) +
+      group("Reproductions") + dim("Computation", v.reproduction_computation) +
+      dim("Robustness", v.reproduction_robustness) +
+      note(v.type_split, `where the validators chose different types ${v.type_split === 1 ? "is" : "are"} compared under Type only.`);
   } else {
-    const dims = [["type", "Type"], ["outcome", "Outcome"]];
+    const p = dd.pipeline;
+    const dim = (label, x) => row(label, x.count, `of ${x.records} compared`, x.matrix, "Extracted ↓", "Final →");
     body.innerHTML =
-      `<p class="disagree-caption">${dd.pipeline.total_validated} validated articles · counts = where the final value differs from the pipeline's extracted value</p>` +
-      dims.map(([k, label]) => {
-        const x = dd.pipeline[k];
-        return `<div class="disagree-row">
-          <span class="disagree-dim">${label}</span>
-          <span class="disagree-count">${x.count} <span class="disagree-unit">article${plural(x.count)}</span></span>
-          <div class="matrix-popover">${_renderMatrix(x.matrix, "Extracted ↓", "Final →")}</div>
-        </div>`;
-      }).join("") +
+      `<p class="disagree-caption">${p.total_validated} validated articles · counts = where the final value differs from the pipeline's extracted value</p>` +
+      dim("Type", p.type) +
       `<div class="disagree-row disagree-row-nomatrix">
         <span class="disagree-dim">Original</span>
-        <span class="disagree-count">${dd.pipeline.original.count} <span class="disagree-unit">article${plural(dd.pipeline.original.count)}</span>
+        <span class="disagree-count">${p.original.count} <span class="disagree-unit">article${plural(p.original.count)}</span>
           <span class="disagree-split">original DOI corrected</span></span>
-      </div>`;
+      </div>` +
+      group("Replications") + dim("Outcome", p.replication_outcome) +
+      group("Reproductions") + dim("Computation", p.reproduction_computation) +
+      dim("Robustness", p.reproduction_robustness) +
+      note(p.type_changed, `whose type changed ${p.type_changed === 1 ? "is" : "are"} compared under Type only.`);
   }
 }
 
@@ -7203,11 +7510,9 @@ $("#vflags-close")?.addEventListener("click", () => {
   document.body.style.overflow = "";
 });
 
-$("#validator-flags-modal")?.addEventListener("click", (e) => {
-  if (e.target === e.currentTarget) {
-    e.currentTarget.classList.add("hidden");
-    document.body.style.overflow = "";
-  }
+onBackdropClick($("#validator-flags-modal"), (e) => {
+  e.currentTarget.classList.add("hidden");
+  document.body.style.overflow = "";
 });
 
 async function openComposeDialog(validatorId, handle) {
@@ -7721,9 +8026,7 @@ $("#admin-tabs").addEventListener("click", (e) => {
 // Wire up admin screen events
 $("#admin-logout-btn").onclick = signOutAdmin;
 $("#admin-detail-close").onclick = closeAdminDetail;
-$("#admin-detail-modal").addEventListener("click", (e) => {
-  if (e.target === e.currentTarget) closeAdminDetail();
-});
+onBackdropClick($("#admin-detail-modal"), closeAdminDetail);
 $("#admin-filters").addEventListener("click", (e) => {
   const btn = e.target.closest(".admin-filter-btn");
   if (!btn) return;
@@ -7819,7 +8122,7 @@ async function submitForgotHandle() {
 $("#forgot-handle-btn").onclick  = openForgotModal;
 $("#forgot-close-btn").onclick   = closeForgotModal;
 $("#forgot-cancel-btn").onclick  = closeForgotModal;
-$("#forgot-modal").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeForgotModal(); });
+onBackdropClick($("#forgot-modal"), closeForgotModal);
 $("#forgot-submit-btn").onclick  = submitForgotHandle;
 $("#forgot-email-input").addEventListener("keydown", (e) => { if (e.key === "Enter") submitForgotHandle(); });
 
@@ -9116,9 +9419,7 @@ $("#src-export-btn").onclick = async () => {
 };
 
 $("#src-detail-close").onclick = closeSourceRecord;
-$("#src-detail-modal").addEventListener("click", (e) => {
-  if (e.target === e.currentTarget) closeSourceRecord();
-});
+onBackdropClick($("#src-detail-modal"), closeSourceRecord);
 $("#src-prev-btn").onclick = () => { if (_srcNeighbours.prev_id) openSourceRecord(_srcNeighbours.prev_id); };
 $("#src-next-btn").onclick = () => { if (_srcNeighbours.next_id) openSourceRecord(_srcNeighbours.next_id); };
 
