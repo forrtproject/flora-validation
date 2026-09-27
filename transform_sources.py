@@ -568,7 +568,9 @@ def derive_quote_source(row):
 
 
 def build(cur, verbose: bool = True,
-          review_issue: bool = False) -> pd.DataFrame:
+          review_issue: bool = False, *,
+          rows: "pd.DataFrame | None" = None,
+          metadata: "dict | None" = None) -> pd.DataFrame:
     """The prepared FLoRA dataset, as a DataFrame. Reads only; writes nothing.
 
     Carries three provenance columns beyond the FLoRA set so a produced row can be
@@ -581,12 +583,18 @@ def build(cur, verbose: bool = True,
 
     flora_id is NOT added here: assigning one is a write, and this stays a pure
     function of the database. flora_registry.refresh() attaches it.
+
+    `rows` and `metadata` are a caller's still-current load(cur) and
+    enrich_works.load_metadata(cur) results. Those two reads are nearly all of a
+    build's database egress (every source row and every cached abstract), so the
+    FLoRA tab passes them in when only a small table — a preprint ruling, an
+    exclusion — has changed. `rows` is copied, never modified.
     """
     def say(*args):
         if verbose:
             print(*args)
 
-    df = load(cur)
+    df = load(cur) if rows is None else rows.copy()
     aliases, exclusions = load_rules(cur)
     dedup_decisions = load_dedup_decisions(cur)
     cross_type = load_cross_type_duplicates(cur)
@@ -804,7 +812,7 @@ def build(cur, verbose: bool = True,
     # this is a dictionary join, not network traffic.
     from enrich_works import load_metadata          # local: avoids an import cycle
     from bibliographic_helpers import normalise_key
-    meta = load_metadata(cur)
+    meta = load_metadata(cur) if metadata is None else metadata
     for side, doi_col in (("o", "doi_o"), ("r", "doi_r")):
         keys = df[doi_col].map(lambda d: meta.get(normalise_key(d)) if d else None)
         for field, column in (("title", f"title_{side}"), ("authors", f"author_{side}"),

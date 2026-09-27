@@ -1001,10 +1001,11 @@ configure: if the app can reach the database and the sheets, the button works.
 
 ```
 button → POST /api/admin/source-sync/dispatch  (persists a queued row, returns a job id)
-       → scheduler on every pod polls the queue every 5s
+       → scheduler on every pod polls the queue every 5s (pooled connection)
        → PostgreSQL advisory lock elects ONE executor
        → stages run as subprocesses, log streamed into source_sync_jobs.log_text
-       → panel polls /api/admin/source-sync/status every 3s and tails the log
+       → panel polls /api/admin/source-sync/status every 3s (while the tab is
+         visible) and tails the log
        → grid and freshness banner reload when the run ends
 ```
 

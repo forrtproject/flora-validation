@@ -15,9 +15,8 @@ from fastapi import APIRouter, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
-import psycopg2
-from psycopg2.extras import RealDictCursor
 
+import db_pool
 import flora_api_records
 import flora_api_search
 import flora_store
@@ -38,16 +37,13 @@ def is_public_read_request(request):
 
 @contextmanager
 def readonly_database():
-    connection = psycopg2.connect(os.environ["DATABASE_URL"])
-    try:
+    with db_pool.cursor(os.environ["DATABASE_URL"]) as cur:
         # Revision metadata and dataset rows must describe the same committed
         # snapshot. PostgreSQL also enforces that API requests cannot write.
-        connection.set_session(isolation_level="REPEATABLE READ", readonly=True)
-        with connection:
-            with connection.cursor(cursor_factory=RealDictCursor) as cur:
-                yield cur
-    finally:
-        connection.close()
+        # Set per transaction, not with set_session, so the pooled connection
+        # goes back in its default mode for the next borrower.
+        cur.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        yield cur
 
 
 class DatasetNotReady(Exception):

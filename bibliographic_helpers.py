@@ -431,10 +431,27 @@ def _read_seed(path, modified_ns):
     return data
 
 
+def reference_seed_path():
+    return Path(os.getenv("FLORA_REFERENCE_SEED", str(
+        Path(__file__).resolve().parent / "data" / "reference_metadata_seed.json.gz")))
+
+
+def reference_files_version() -> tuple:
+    """Which seed and manual-reference files load_reference_seed() and
+    load_manual_references() would read now, and when each last changed. For a
+    caller that keeps their merged result: a swapped file changes this."""
+    versions = []
+    for path in (reference_seed_path(), manual_reference_path()):
+        try:
+            versions.append((str(path), path.stat().st_mtime_ns))
+        except OSError:
+            versions.append((str(path), None))
+    return tuple(versions)
+
+
 def load_reference_seed():
     """Frozen public provider responses supplied with the original R pipeline."""
-    path = Path(os.getenv("FLORA_REFERENCE_SEED", str(
-        Path(__file__).resolve().parent / "data" / "reference_metadata_seed.json.gz")))
+    path = reference_seed_path()
     if not path.exists():
         if os.getenv("FLORA_REFERENCE_SEED"):
             raise FileNotFoundError(f"Configured reference seed is missing: {path}")
