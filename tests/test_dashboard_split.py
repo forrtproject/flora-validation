@@ -288,3 +288,137 @@ def test_outcome_corrections_leave_out_only_a_pure_cant_tell(admin_api, local_da
     dashboard = admin_api.get("/api/admin/dashboard")
     assert dashboard.status_code == 200, dashboard.text
     assert dashboard.json()["corrections"]["outcome_corrections"] == 3
+
+
+# ── outcome quote corrections ─────────────────────────────────────────────────
+
+def _record(cur, record_type="replication", status="need_review", **quotes):
+    columns = ["doi_r", "type", "outcome", "validation_status", *quotes]
+    cur.execute(f"INSERT INTO unvalidated ({', '.join(columns)}) "
+                f"VALUES ({', '.join(['%s'] * len(columns))}) RETURNING record_id::text AS id",
+                ("10.9/q", record_type, "failed", status, *quotes.values()))
+    return cur.fetchone()["id"]
+
+
+def test_a_reworded_quote_counts_as_a_quote_correction_whatever_button(admin_api, local_database):
+    """"Right outcome, better quote", "Looks right" with a reworded quote and an old
+    "Mischaracterised → the same outcome" all corrected the quote. Punctuation, case
+    and spacing alone did not; nor did leaving it."""
+    extracted = "The effect replicated, but only partially."
+    judgements = [
+        ("replication", {"outcome_quote": extracted},
+         {"outcome_check": "correct", "corrected_outcome_quote": "The effect did not replicate.",
+          "additional_checks": {"outcome_quote_disputed": True}}),                  # counts
+        ("replication", {"outcome_quote": extracted},
+         {"outcome_check": "correct",
+          "corrected_outcome_quote": extracted + " Both samples were small."}),      # counts
+        ("replication", {"outcome_quote": extracted},
+         {"outcome_check": "correct", "corrected_outcome_quote": "the effect replicated but "
+                                                                 "only partially"}),  # wording same
+        ("replication", {"outcome_quote": extracted}, {"outcome_check": "correct"}),  # no edit
+        ("replication", {"outcome_quote": extracted},
+         {"outcome_check": "correct", "corrected_outcome_quote": "Mixed evidence overall.",
+          "additional_checks": {"outcome_agreement_backfilled": True,
+                                "outcome_quote_disputed": True}}),                  # counts
+        ("reproduction", {"outcome_computational_quote": "The code ran."},
+         {"outcome_check": "incorrect",
+          "corrected_computational_quote": "The code ran after two fixes."}),         # counts
+    ]
+    with local_database, local_database.cursor(cursor_factory=RealDictCursor) as cur:
+        for record_type, quotes, judgement in judgements:
+            record_id = _record(cur, record_type, **quotes)
+            checks = judgement.pop("additional_checks", None)
+            columns = ["record_id", "validator_slot", "is_shown", "is_validated", "type_check",
+                       "original_check", *judgement, "additional_checks"]
+            cur.execute(f"INSERT INTO validation_queue ({', '.join(columns)}) "
+                        f"VALUES ({', '.join(['%s'] * len(columns))})",
+                        (record_id, "human_1", True, True, "correct", "correct",
+                         *judgement.values(), json.dumps(checks) if checks else None))
+    dashboard = admin_api.get("/api/admin/dashboard")
+    assert dashboard.status_code == 200, dashboard.text
+    corrections = dashboard.json()["corrections"]
+    assert corrections["outcome_quote_corrections"] == 4
+    assert corrections["outcome_corrections"] == 1        # only the reproduction's axis
+
+
+def test_the_pipeline_counts_final_quotes_reworded_from_the_extracted(admin_api, local_database):
+    extracted = "The effect replicated."
+    with local_database, local_database.cursor(cursor_factory=RealDictCursor) as cur:
+        _record(cur, status="validated", outcome_quote=extracted,
+                final_outcome_quote="The effect did not replicate.")                   # counts
+        _record(cur, status="validated", outcome_quote=extracted,
+                final_outcome_quote="the effect  replicated")                           # wording same
+        _record(cur, status="validated", outcome_quote=extracted)                       # kept
+        _record(cur, "reproduction", status="validated",
+                outcome_robustness_quote="Robust.", final_robustness_quote="Robust to all checks.")
+        _record(cur, status="need_review", outcome_quote=extracted,
+                final_outcome_quote="Not validated yet.")                               # not final
+    dashboard = admin_api.get("/api/admin/dashboard")
+    assert dashboard.status_code == 200, dashboard.text
+    assert dashboard.json()["disagreements"]["pipeline"]["outcome_quote"] == {"count": 2}
+
+
+def test_the_dashboard_shows_the_corrections_and_the_quote_line():
+    render = _js_function("function renderAdminDashboard(d) {")
+    assert '["Outcome quote", c.outcome_quote_corrections,' in render
+    for label in ('["Type", c.type_corrections,', '["Original", c.original_corrections,',
+                  '["Outcome", c.outcome_corrections,', '["Title", c.title_corrections,'):
+        assert label in render
+    disagree = _js_function("function _renderDisagree(view) {")
+    assert "final quote reworded" in disagree and "p.outcome_quote.count" in disagree
+
+
+def _judgement(cur, record_id, checks=None, **columns):
+    columns = {"type_check": "correct", "original_check": "correct", "outcome_check": "correct",
+               **columns}
+    names = ["record_id", "validator_slot", "is_shown", "is_validated", *columns, "additional_checks"]
+    cur.execute(f"INSERT INTO validation_queue ({', '.join(names)}) "
+                f"VALUES ({', '.join(['%s'] * len(names))})",
+                (record_id, "human_1", True, True, *columns.values(),
+                 json.dumps(checks) if checks else None))
+
+
+def test_neither_type_counts_under_type_alone(admin_api, local_database):
+    """"Neither type" is sent with every check incorrect; it flagged no original and
+    changed no outcome."""
+    with local_database, local_database.cursor(cursor_factory=RealDictCursor) as cur:
+        _judgement(cur, _record(cur), type_check="incorrect", corrected_type="not_validation",
+                   original_check="incorrect", outcome_check="incorrect")
+    corrections = admin_api.get("/api/admin/dashboard").json()["corrections"]
+    assert (corrections["type_corrections"], corrections["original_corrections"],
+            corrections["outcome_corrections"]) == (1, 0, 0)
+
+
+def test_the_quote_count_follows_the_rule_that_earns_the_point(admin_api, local_database):
+    """Only a quote of the type judged, not "Can't tell", and — once judgements
+    record it — what was decided against the quote shown, not the record's now."""
+    extracted = "The effect replicated."
+    reworded = "The effect did not replicate at all."
+    with local_database, local_database.cursor(cursor_factory=RealDictCursor) as cur:
+        _judgement(cur, _record(cur, outcome_quote=extracted), corrected_outcome_quote=reworded,
+                   type_check="incorrect", corrected_type="not_validation",
+                   original_check="incorrect", outcome_check="incorrect")      # left from before
+        _judgement(cur, _record(cur, outcome_quote=extracted), corrected_outcome_quote=reworded,
+                   type_check="incorrect", corrected_type="reproduction",
+                   outcome_check="incorrect")                                  # the other type's
+        _judgement(cur, _record(cur, outcome_quote=extracted), corrected_outcome_quote=reworded,
+                   outcome_check="incorrect", checks={"was_unsure_outcome": True})   # Can't tell
+        for _ in range(2):
+            _judgement(cur, _record(cur, outcome_quote=reworded), corrected_outcome_quote=reworded,
+                       checks={"outcome_quote_reworded": True})     # the import caught up since
+        _judgement(cur, _record(cur, outcome_quote=extracted), corrected_outcome_quote=reworded,
+                   checks={"outcome_quote_reworded": False})        # the import moved away since
+    corrections = admin_api.get("/api/admin/dashboard").json()["corrections"]
+    assert corrections["outcome_quote_corrections"] == 2
+
+
+def test_the_pipeline_quote_line_leaves_type_changes_to_type(admin_api, local_database):
+    with local_database, local_database.cursor(cursor_factory=RealDictCursor) as cur:
+        _record(cur, status="validated", final_type="reproduction",        # type changed, and
+                outcome_quote="The effect replicated.",                     # its replication quote
+                final_outcome_quote="The code ran and the effect held.",    # rewritten with it
+                final_computational_quote="The code ran.")
+        _record(cur, status="validated", outcome_quote="The effect replicated.",
+                final_outcome_quote="The effect did not replicate.")
+    pipeline = admin_api.get("/api/admin/dashboard").json()["disagreements"]["pipeline"]
+    assert (pipeline["type_changed"], pipeline["outcome_quote"]["count"]) == (1, 1)

@@ -5842,9 +5842,12 @@ function renderAdminDetail(data) {
     // An agreed outcome whose quote the validator replaced, or said was weak. A
     // change of punctuation, case or spacing alone is not an improvement — the
     // same rule the validator screen and the point use (_quoteWords).
+    // Judgements record the answer the server gave at submission, against the
+    // quote shown then; older ones are compared with the record's quote now.
     const quoteEdited = !!v.corrected_outcome_quote;
-    const quoteReworded = quoteEdited &&
-      _quoteWords(v.corrected_outcome_quote) !== _quoteWords(shown.outcome_quote);
+    const recorded = v.additional_checks?.outcome_quote_reworded;
+    const quoteReworded = quoteEdited && (typeof recorded === "boolean" ? recorded
+      : _quoteWords(v.corrected_outcome_quote) !== _quoteWords(shown.outcome_quote));
     const outcomeAgreedNote = quoteReworded
       ? ` <span class="chk-edit-badge">· ✎ improved the quote</span>`
       : quoteEdited
@@ -7256,6 +7259,23 @@ function renderAdminDashboard(d) {
     </div>
 
     <div class="dash-section">
+      <div class="dash-section-label">Corrections <span class="dash-chart-sub">(judgements that changed the value)</span></div>
+      <div class="dash-cards">
+        ${[
+          ["Type", c.type_corrections, "Judgements that changed the record's type"],
+          ["Original", c.original_corrections, "Judgements that flagged the original study as wrong (“Can't tell” not counted)"],
+          ["Outcome", c.outcome_corrections, "Judgements that changed the outcome (“Can't tell” not counted)"],
+          ["Outcome quote", c.outcome_quote_corrections, "Judgements that reworded an outcome quote, whichever button went with it — including “Right outcome, better quote”. Punctuation, case or spacing alone don't count."],
+          ["Title", c.title_corrections, "Judgements that corrected the replication's title"],
+        ].map(([label, n, title]) => `
+        <div class="dash-card dash-card-neutral" title="${escapeHtml(title)}">
+          <span class="dash-card-val">${n ?? "—"}</span>
+          <span class="dash-card-label">${label}</span>
+        </div>`).join("")}
+      </div>
+    </div>
+
+    <div class="dash-section">
       <div class="dash-section-label">Disagreements <span class="dash-chart-sub">(articles — hover a row for the confusion matrix)</span></div>
       <div class="disagree-toggle">
         <button class="disagree-tab active" data-view="validator">Validator vs Validator</button>
@@ -7369,6 +7389,11 @@ function _renderDisagree(view) {
         <span class="disagree-count">${p.original.count} <span class="disagree-unit">article${plural(p.original.count)}</span>
           <span class="disagree-split">original DOI corrected</span></span>
       </div>` +
+      (p.outcome_quote ? `<div class="disagree-row disagree-row-nomatrix">
+        <span class="disagree-dim">Outcome quote</span>
+        <span class="disagree-count">${p.outcome_quote.count} <span class="disagree-unit">article${plural(p.outcome_quote.count)}</span>
+          <span class="disagree-split">final quote reworded</span></span>
+      </div>` : "") +
       group("Replications") + dim("Outcome", p.replication_outcome) +
       group("Reproductions") + dim("Computation", p.reproduction_computation) +
       dim("Robustness", p.reproduction_robustness) +

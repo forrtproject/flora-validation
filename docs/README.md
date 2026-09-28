@@ -611,14 +611,31 @@ A record with no extracted outcome shows "No outcome extracted" and offers no
 agreement; "Can't tell" on it stores `cannot_be_determined`.
 
 `backfill_outcome_agreement.py` converts judgements saved before this rule only
-where the judgement recorded today's outcome as its `shown_outcome`. Nothing else
-records what a page showed, so every older judgement is listed for a person to
-check and converted only with `--include-unverified` — and then never re-evaluated,
-by the script or by the nightly tiebreaker retry (`_retry_tiebreakers` skips any
-record holding a converted judgement). It is a dry run unless given `--apply`.
-Re-evaluation also requires the record to remain a replication. Its row is locked
-while eligibility is checked and consensus runs, so a later type change cannot
-turn old replication judgements into approval of a reproduction.
+where the judgement saw today's outcome: recorded as its `shown_outcome`, or, with
+`--extractor-history`, where every row that could have been the record (under its
+`pair_id`, duplicates included, or in its `work_id`/`original_rank` slot under an
+earlier `pair_id`) in every version of the extracted file the app could have
+imported — flora-extractor on any branch, merges included, and this repository's
+`data/extracted*.csv` — up to the judgement's submission gives that outcome.
+Anything else is listed for a person to check and converted only with
+`--include-unverified` — and then never re-evaluated, by the script or by the
+nightly tiebreaker retry (`_retry_tiebreakers` skips any record holding a converted
+judgement). It is a dry run unless given `--apply`. Each converted judgement keeps
+the answer it replaced (`outcome_agreement_original`), and `--apply` first saves
+every judgement it changes, and `--reevaluate` every record it settles, to
+`backups/` (git-ignored). Re-evaluation also requires the record to remain a
+replication. Its row is locked while eligibility is checked and consensus runs, so
+a later type change cannot turn old replication judgements into approval of a
+reproduction.
+
+The dashboard counts outcome quote corrections apart from outcome corrections: a
+judgement that reworded its outcome quote, whichever button went with it, by the
+rule that earns the point. Each judgement records that answer as
+`additional_checks.outcome_quote_reworded` when it is submitted, against the quote
+its screen showed; older ones are compared with the record's extracted quote. The
+Corrections row shows judgements (Type, Original, Outcome, Outcome quote, Title;
+"neither type" counts under Type alone), and "Pipeline vs Final" adds validated
+articles whose final quote was reworded, leaving type changes to Type.
 
 ### The other type vs out of FLoRA
 
