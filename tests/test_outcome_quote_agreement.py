@@ -118,7 +118,10 @@ def test_both_judge_endpoints_apply_the_rule_before_validating_the_outcome():
         body = source[source.index(endpoint):]
         body = body[:body.index("\n@app.")]
         assert body.index("_same_outcome_as_agreement(req") < body.index("_validated_outcome_request(")
-        assert "improved_evidence=_improved_outcome_evidence(req, " in body
+        # One answer for the point and for the record the dashboard counts.
+        assert "reworded = _improved_outcome_evidence(req, " in body
+        assert body.index("req = _with_quote_reworded(req, reworded)") < body.index("_points_for(")
+        assert "improved_evidence=reworded" in body
 
 
 def test_consensus_counts_it_as_agreeing_with_looks_right():
@@ -326,10 +329,14 @@ def test_backfill_conversion_keeps_the_quote_and_marks_the_change():
     out = backfill.converted(judgement)
     assert (out["outcome_check"], out["corrected_outcome"]) == ("correct", None)
     assert out["corrected_outcome_quote"] == "Better."
-    assert out["additional_checks"] == {"x": 1, "outcome_quote_disputed": True,
-                                        "outcome_agreement_backfilled": True}
+    assert out["additional_checks"] == {
+        "x": 1, "outcome_quote_disputed": True, "outcome_agreement_backfilled": True,
+        # what it replaces, so the conversion can be undone exactly
+        "outcome_agreement_original": {"outcome_check": "incorrect", "corrected_outcome": "failed"}}
     assert backfill.converted(judgement, unverified=True)["additional_checks"][
         "outcome_agreement_unverified"] is True
+    assert backfill.converted(judgement, history=True)["additional_checks"][
+        "outcome_agreement_history_checked"] is True
 
 
 @pytest.mark.parametrize("checks,verdict", [
@@ -689,6 +696,36 @@ def test_judge_reads_the_shown_category_as_agreement(api, local_database):
     assert row["additional_checks"]["outcome_quote_disputed"] is True
     # vote_score 10 + original 2 + outcome agreement 2 + reworded quote 1
     assert row["points"] == 15
+
+
+def test_each_judgement_records_whether_it_reworded_the_quote(api, local_database):
+    """What the dashboard counts: decided at submission against the quote the
+    screen showed (a later import may rewrite the record's), by the rule that
+    earns the point, and by the server whatever the client claims."""
+    client, coder_id = api
+    outcomes = {}
+    for doi, quote, claim in (("10.9999/q1", "We found no effect in 300 people.", None),
+                              ("10.9999/q2", "we found no effect", True),      # punctuation only
+                              ("10.9999/q3", None, None)):
+        record_id = _record(local_database, doi_r=doi)
+        _slot(local_database, record_id, coder_id)
+        checks = {"shown_outcome": "failed", **({"outcome_quote_reworded": claim} if claim else {})}
+        response = client.post("/api/judge", json=_judge_payload(
+            record_id, corrected_outcome_quote=quote, additional_checks=checks))
+        assert response.status_code == 200, response.text
+        outcomes[doi] = _stored(local_database, record_id)["additional_checks"]["outcome_quote_reworded"]
+    assert outcomes == {"10.9999/q1": True, "10.9999/q2": False, "10.9999/q3": False}
+
+    record_id = _record(local_database, doi_r="10.9999/q4")
+    _assign(local_database, record_id, coder_id)
+    response = client.post("/api/assignment-judge", json=_judge_payload(
+        record_id, corrected_outcome_quote="We found no effect in 300 people.",
+        additional_checks={"shown_outcome": "failed"}))
+    assert response.status_code == 200, response.text
+    with local_database.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("SELECT validator_1 FROM unvalidated WHERE record_id = %s", (record_id,))
+        assert cur.fetchone()["validator_1"]["additional_checks"]["outcome_quote_reworded"] is True
+    local_database.commit()
 
 
 def test_judge_keeps_a_correction_made_against_an_outcome_since_changed(api, local_database):

@@ -1093,6 +1093,15 @@ def _improved_outcome_evidence(req: JudgeRequest, rec: dict, target_type: str | 
     return False
 
 
+def _with_quote_reworded(req: JudgeRequest, reworded: bool) -> JudgeRequest:
+    """The judgement, recording whether it reworded its outcome quote — the rule
+    _improved_outcome_evidence applies, against the quote the screen showed. The
+    dashboard counts this; comparing later with the record's quote would drift as
+    imports rewrite it. Set here, whatever the client sent under that name."""
+    return req.model_copy(update={"additional_checks": {
+        **_request_additional_checks(req), "outcome_quote_reworded": reworded}})
+
+
 def _points_for(req: JudgeRequest, vote_score: int, improved_evidence: bool = False) -> int:
     """Calculate points for a submission. Base = validator's vote_score.
 
@@ -2474,8 +2483,9 @@ def assignment_judge(req: JudgeRequest,
             req, base_type, base_outcome, base_computation, base_robustness
         )
         is_not_val = final_type == "not_validation"
-        pts = _points_for(req, validator["vote_score"],
-                          improved_evidence=_improved_outcome_evidence(req, shown, final_type)) * 2   # assignments are double
+        reworded = _improved_outcome_evidence(req, shown, final_type)
+        req = _with_quote_reworded(req, reworded)
+        pts = _points_for(req, validator["vote_score"], improved_evidence=reworded) * 2   # assignments are double
         new_status = (
             "rejected" if is_not_val
             else "need_review" if _request_is_unsure(req)
@@ -2674,8 +2684,9 @@ def judge(req: JudgeRequest,
 
         queue_id = slot_row["queue_id"]
         validator_slot = slot_row["validator_slot"]
-        pts = _points_for(req, validator["vote_score"],
-                          improved_evidence=_improved_outcome_evidence(req, rec, target_type))
+        reworded = _improved_outcome_evidence(req, rec, target_type)
+        req = _with_quote_reworded(req, reworded)
+        pts = _points_for(req, validator["vote_score"], improved_evidence=reworded)
         # Hard-pool records (undeterminable outcome / no abstract) earn double.
         if _record_is_hard(cur, record_id):
             pts *= 2
@@ -3348,6 +3359,15 @@ def admin_stats(admin: dict = Depends(current_admin)):
     return {"validators": rows, "summary": summary}
 
 
+def _sql_reworded(edited: str, extracted: str) -> str:
+    """SQL: does `edited` change the wording of `extracted`? Wording as _quote_words
+    reads it — letters and digits, lowercased — so punctuation, case and spacing
+    alone are no change. Counted in the database, so no quote text leaves it."""
+    def words(expr):
+        return f"regexp_replace(lower(COALESCE({expr}, '')), '[^[:alnum:]]+', '', 'g')"
+    return f"({words(edited)} <> '' AND {words(edited)} <> {words(extracted)})"
+
+
 def _confusion(pairs, order=()):
     """Build a confusion matrix {labels, grid} from (row_value, col_value) pairs.
 
@@ -3500,6 +3520,9 @@ def _disagreements(a_rows, b_rows) -> dict:
             "total_validated": len(b_rows),
             "type_changed": type_changed,
             "original": {"count": original_changed},
+            # Final outcome quote reworded from the extracted one (the SQL's
+            # quote_reworded, so the quote text itself is never fetched).
+            "outcome_quote": {"count": sum(1 for r in b_rows if r.get("quote_reworded"))},
             **{d: {**b[d], "matrix": _confusion(b_pairs[d], _MATRIX_ORDER[d])} for d in b_dims},
         },
     }
@@ -3618,13 +3641,17 @@ def admin_dashboard(admin: dict = Depends(current_admin)):
         cur.execute("""
             SELECT
                 COUNT(*) FILTER (WHERE type_check     = 'incorrect')                AS type_corrections,
-                -- "Can't tell" is stored as incorrect too; it corrects nothing.
+                -- "Can't tell" is stored as incorrect too; it corrects nothing. Nor
+                -- does "neither type": it is sent with every check incorrect, and
+                -- counts under Type alone.
                 COUNT(*) FILTER (WHERE original_check = 'incorrect'
+                                   AND corrected_type IS DISTINCT FROM 'not_validation'
                                    AND NOT COALESCE(additional_checks ? 'was_unsure_original', FALSE))
                                                                                     AS original_corrections,
                 -- On a reproduction the flag means either axis was "Can't tell";
                 -- the other axis may still have been corrected.
                 COUNT(*) FILTER (WHERE outcome_check  = 'incorrect'
+                                   AND corrected_type IS DISTINCT FROM 'not_validation'
                                    AND (NOT COALESCE(additional_checks ? 'was_unsure_outcome', FALSE)
                                         OR additional_checks->'reproduction_axis_checks'
                                                @> '{"computation": "wrong"}'
@@ -3638,6 +3665,34 @@ def admin_dashboard(admin: dict = Depends(current_admin)):
               AND validator_slot IN ('human_1', 'human_2')
         """)
         corrections = dict(cur.fetchone())
+        # Judgements that reworded an outcome quote, whichever button went with it:
+        # "Right outcome, better quote", "Looks right" with a better quote, or an
+        # older "Mischaracterised → the same outcome" — by the rule that earns the
+        # point (_improved_outcome_evidence), which each judgement now records as
+        # outcome_quote_reworded. Older ones are compared here, by the same rule,
+        # with the extracted quote of the type they judged: not the other type's (an
+        # edit left from before a type change), not "neither type", not "Can't tell".
+        judged_type = ("CASE WHEN vq.type_check = 'incorrect' AND vq.corrected_type IS NOT NULL "
+                       "THEN vq.corrected_type ELSE u.type END")
+        cur.execute(f"""
+            SELECT COUNT(*) AS outcome_quote_corrections
+            FROM validation_queue vq
+            JOIN unvalidated u ON u.record_id = vq.record_id
+            WHERE vq.is_validated = TRUE
+              AND vq.validator_slot IN ('human_1', 'human_2')
+              AND CASE
+                    WHEN vq.additional_checks ? 'outcome_quote_reworded'
+                      THEN vq.additional_checks->>'outcome_quote_reworded' = 'true'
+                    WHEN COALESCE(vq.additional_checks ? 'was_unsure_outcome', FALSE) THEN FALSE
+                    WHEN {judged_type} = 'replication'
+                      THEN {_sql_reworded("vq.corrected_outcome_quote", "u.outcome_quote")}
+                    WHEN {judged_type} = 'reproduction'
+                      THEN {_sql_reworded("vq.corrected_computational_quote", "u.outcome_computational_quote")}
+                        OR {_sql_reworded("vq.corrected_robustness_quote", "u.outcome_robustness_quote")}
+                    ELSE FALSE
+                  END
+        """)
+        corrections.update(cur.fetchone())
 
         # Inter-validator agreement rate
         cur.execute("""
@@ -3680,10 +3735,17 @@ def admin_dashboard(admin: dict = Depends(current_admin)):
         a_rows = cur.fetchall()
 
         # View B — Pipeline (extracted) vs Final, over validated records.
-        cur.execute("""
+        cur.execute(f"""
             SELECT type, outcome, outcome_computation, outcome_robustness,
                    final_type, final_outcome, final_outcome_computation, final_outcome_robustness,
-                   doi_o, final_doi_o
+                   doi_o, final_doi_o,
+                   -- A type change is compared under Type only, here as below.
+                   CASE WHEN COALESCE(final_type, type) <> type THEN FALSE
+                        WHEN type = 'reproduction'
+                        THEN {_sql_reworded("final_computational_quote", "outcome_computational_quote")}
+                          OR {_sql_reworded("final_robustness_quote", "outcome_robustness_quote")}
+                        ELSE {_sql_reworded("final_outcome_quote", "outcome_quote")}
+                   END AS quote_reworded
             FROM unvalidated
             WHERE validation_status = 'validated'
         """)

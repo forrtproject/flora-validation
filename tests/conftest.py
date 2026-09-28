@@ -10,5 +10,14 @@ points DATABASE_URL at a throwaway database for that test only.
 """
 import os
 
+import pytest
+
 os.environ["DATABASE_URL"] = "postgresql://stub/stub"
 os.environ.setdefault("ADMIN_PASSWORD", "bootstrap-password-for-import")
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _backfill_backups_outside_the_repository(tmp_path_factory):
+    """backfill_outcome_agreement.py --apply saves a backup file first; a test run
+    must not leave them in the repository's backups/ folder."""
+    os.environ["OUTCOME_BACKFILL_BACKUP_DIR"] = str(tmp_path_factory.mktemp("backfill-backups"))

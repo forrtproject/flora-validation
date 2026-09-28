@@ -10,3 +10,5 @@ snapshots/
 /data/extracted_????????T??????Z_*.csv
 # Lock file the preparation pipeline deliberately leaves in place
 /output/.flora-preparation.lock
+# Backups the outcome-agreement backfill writes before changing anything
+/backups/
