@@ -135,8 +135,8 @@ CREATE TABLE IF NOT EXISTS validation_queue (
 -- Skip action. The validation_queue slot is cleared and may be claimed again, so
 -- skip context must live independently of that mutable slot. Admin escalation is
 -- derived from distinct validators: >5 for any reason, or >=2 for
--- eligibility/data-quality. Guarded orphan cleanup removes these dependent events
--- only when it removes an unvalidated source record with no submitted judgement.
+-- eligibility/data-quality. The retire stage (csv_to_db.py --retire) removes these
+-- dependent events only with an untouched source record, archived first.
 CREATE TABLE IF NOT EXISTS validation_skips (
     skip_id       UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     record_id     UUID        NOT NULL REFERENCES unvalidated(record_id),
@@ -1930,12 +1930,13 @@ UPDATE source_record_edits e
 -- Extractor maintenance: durable run history and reservation exclusion
 -- ============================================================================
 
--- The web app exposes nightly sync/report and separate manual cleanup to admins. Keep
--- complete run logs in PostgreSQL so at least the previous week remains visible
--- after a pod replacement. Admin requests remain queued here until a polling
--- worker claims them, and a replacement pod can resume abandoned work. The
--- cleanup child stores its exact deletion receipt in safety_report in the same
--- transaction as the DELETEs, before the parent process reports stage success.
+-- The web app runs the nightly sync -> orphan report -> retire routine and lets
+-- admins start it (or one of the first two stages) by hand. Every run keeps its
+-- complete log here, never deleted, so the history survives pod replacement and
+-- a move to another server. Admin requests remain queued here until a polling
+-- worker claims them, and a replacement pod can resume abandoned work.
+-- 'cleanup' remains in the CHECK only for the history of runs of the orphan
+-- cleanup stage, which was removed on 2026-09-30.
 CREATE TABLE IF NOT EXISTS extractor_maintenance_runs (
     run_id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     trigger         TEXT        NOT NULL
@@ -1955,10 +1956,10 @@ CREATE TABLE IF NOT EXISTS extractor_maintenance_runs (
     -- attempts therefore block downstream manual stages after a process restart.
     stage_status    JSONB       NOT NULL DEFAULT '{}'::jsonb,
     -- Also carries run-scoped Part 1/2 completion flags, source_sync/find_run_id
-    -- links, the atomic cleanup_receipt, and archive_file/archive_sha256 of Part 1
-    -- imported. Cleanup deletes only when the file it just read hashes to that
-    -- recorded digest: a run ID alone would let a replacement pod holding an
-    -- older CSV pass the gate and delete rows imported from a newer snapshot.
+    -- links, the retire summary, per-stage durations, and archive_file/
+    -- archive_sha256 of Part 1 imported. The retire stage acts only when the file
+    -- it just read hashes to that recorded digest: a run ID alone would let a
+    -- replacement pod holding an older CSV pass the gate.
     safety_report   JSONB       NOT NULL DEFAULT '{}'::jsonb,
     log_text        TEXT        NOT NULL DEFAULT ''
 );
@@ -1972,6 +1973,26 @@ CREATE INDEX IF NOT EXISTS idx_extractor_maintenance_runs_recent
 CREATE UNIQUE INDEX IF NOT EXISTS uq_extractor_maintenance_one_active
     ON extractor_maintenance_runs ((1))
     WHERE status IN ('queued', 'running');
+
+-- Every extracted.csv the sync imported, kept whole (gzip) and keyed by sha256.
+-- The removal guard compares each new CSV with the last one imported, so it needs
+-- those exact bytes. They used to live only in EXTRACTOR_DATA_DIR, which a Railway
+-- redeploy emptied: every nightly sync from 2026-09-13 to 2026-09-30 blocked with
+-- baseline_snapshot_unavailable. The database outlives the container and moves
+-- with the data, so the pipeline stores each snapshot here and restores it when
+-- the working directory has lost it. Unchanged nightly downloads add nothing.
+-- source_commit is the flora-extractor commit the CSV was read at. Only the newest
+-- EXTRACTOR_SNAPSHOTS_KEPT (default 10, ~4 MB each) are kept; every older one is
+-- still that commit in flora-extractor's git history.
+CREATE TABLE IF NOT EXISTS extractor_snapshots (
+    sha256        TEXT        PRIMARY KEY CHECK (sha256 ~ '^[0-9a-f]{64}$'),
+    archive_file  TEXT        NOT NULL,
+    source_commit TEXT,
+    byte_size     INTEGER     NOT NULL,
+    content_gzip  BYTEA       NOT NULL,
+    first_run_id  UUID,
+    stored_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()   -- last stored or re-imported
+);
 
 -- ── Auto-validation, self-approval and the admin decision log ─────────────────
 -- Two agreeing validators skip admin review when the AI sanity check agrees too

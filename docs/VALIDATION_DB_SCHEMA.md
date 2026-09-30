@@ -477,7 +477,7 @@ each run in:
 CREATE TABLE extractor_maintenance_runs (
     run_id UUID PRIMARY KEY,
     trigger TEXT,             -- scheduled | admin | cli
-    requested_stage TEXT,     -- full | sync | find | cleanup
+    requested_stage TEXT,     -- full | sync | find ('cleanup' only in old history)
     requested_by TEXT,
     status TEXT,              -- queued/running/success/warning/blocked/failed
     created_at TIMESTAMPTZ,
@@ -498,15 +498,35 @@ Manual HTTP 202 responses commit the queued row only; a ten-second dispatcher
 poll executes it, so pod shutdown after the response cannot lose the request.
 If a running worker disappears, another lock holder requeues the same run.
 
+Every snapshot a run imports is also kept, so the next run's removal guard can
+compare against it after a redeploy has emptied the working directory:
+
+```sql
+CREATE TABLE extractor_snapshots (
+    sha256 TEXT PRIMARY KEY,  -- digest of the uncompressed CSV
+    archive_file TEXT,        -- extracted_YYYYMMDDTHHMMSSZ_<run-id>.csv
+    source_commit TEXT,       -- flora-extractor commit it was read at
+    byte_size INTEGER,
+    content_gzip BYTEA,
+    first_run_id UUID,
+    stored_at TIMESTAMPTZ
+);
+```
+
+Only the newest `EXTRACTOR_SNAPSHOTS_KEPT` (10) are kept; every older one is still
+its commit in flora-extractor's history.
+
 For a routine `full` run (the nightly job and the primary admin action):
 
-1. Fetches from `https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/data/extracted.csv`
+1. Resolves `GITHUB_BRANCH` to a commit and fetches
+   `https://raw.githubusercontent.com/{GITHUB_REPO}/<commit>/data/extracted.csv`
 2. Exclusively archives to
    `data/extracted_YYYYMMDDTHHMMSSZ_<run-id>.csv` (collision suffixes preserve
    every same-second retry)
 3. Compares unique resolved IDs against the baseline the orchestrator names from
-   run history — the previous run's archive, verified by sha256 — and blocks when
-   that baseline is missing or stale while `unvalidated` is populated
+   run history — the previous run's archive, verified by sha256, restored from
+   `extractor_snapshots` when the directory lost it — and blocks when that
+   baseline cannot be found while `unvalidated` is populated
 4. Blocks an empty/zero-resolved candidate as an extractor error
 5. Blocks when removed resolved IDs are more than 10% of the previous set
    (`EXTRACTOR_MAX_REMOVAL_PERCENT` overrides the threshold and must be finite
@@ -515,27 +535,26 @@ For a routine `full` run (the nightly job and the primary admin action):
 7. Calls `csv_to_db.run_import()` to insert/refresh/re-key rows
 8. Atomically promotes the candidate only after import succeeds, verifies the
    promoted bytes, reads the archive back to record `archive_file`/`archive_sha256`,
-   and records all Part 1 completion flags for that `run_id`
-9. Runs read-only orphan reporting against that exact archived snapshot and stops.
+   and records all Part 1 completion flags for that `run_id`, then stores the
+   archive in `extractor_snapshots`
+9. Runs the read-only orphan report against that exact archived snapshot
+   (counts by status in `safety_report.orphan_report`)
+10. Retires the pairs flora-extractor names in `data/retired_pairs.csv` at the same
+    commit (`EXTRACTOR_AUTO_RETIRE`, on by default): untouched records are archived
+    whole in `retired_records`, then deleted; touched ones are flagged in
+    `admin_notes`. The summary is `safety_report.retire`.
 
-Routine and scheduled runs never select `cleanup_orphans.py`, even when the
-omission is below the 10% synchronization threshold. Deletion requires a separate
-manual `cleanup` request with explicit confirmation. That request rechecks the
-persisted Part 1/2 run IDs and archive digest, then writes exact deleted identities
-and per-table counts to `safety_report.cleanup_receipt` in the same transaction as
-the DELETE statements. Crash recovery can therefore finalize a committed cleanup
-without repeating it.
-
-Any sync failure or safety block skips orphan reporting, so the old latest CSV
-cannot become a mass-deletion baseline. Admins can launch the non-destructive
-Sync + Report operation or each individual stage from the Extractor Pipeline tab
-and inspect the complete retained log.
-Standalone Part 2/3 requests are linked through `safety_report.source_sync_run_id`
-and `source_find_run_id`. They use only the newest prerequisite attempt and block
-when it is incomplete, even if an older run succeeded. The run IDs are paired with
-`safety_report.archive_file` and `archive_sha256`: the stage resolves that archive
-on `EXTRACTOR_DATA_DIR` and verifies its digest before reading it, so a pod without
-the shared volume blocks rather than acting on a different snapshot.
+Nothing is deleted for mere absence from the CSV; the retire stage is the only
+route. Any sync failure or safety block skips the report and the retire stage.
+Admins can start the full routine, or the sync or the report alone, from the
+Extractor Pipeline tab and read each run's complete log there.
+A standalone report is linked through `safety_report.source_sync_run_id`. It uses
+only the newest sync attempt and blocks when that is incomplete, even if an older
+run succeeded. The run IDs are paired with `safety_report.archive_file` and
+`archive_sha256`: each stage resolves that archive (restoring it from
+`extractor_snapshots` if needed) and verifies its digest before reading it, so a
+pod never acts on a different snapshot. `safety_report.stage_seconds` holds each
+stage's duration.
 
 ---
 

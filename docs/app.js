@@ -5359,10 +5359,6 @@ function enterAdminScreen() {
   fetchAdminEntries();
   // Populate the Restricted-access badge proactively so admins see the count.
   adminApi("/restricted").then(d => _updateRestrictedBadge(d.records || [])).catch(() => {});
-  // Pipeline failures and safety warnings should be visible before opening the tab.
-  adminApi("/maintenance/runs?days=7&limit=100")
-    .then(updateMaintenanceBadge)
-    .catch(() => {});
 }
 
 async function signOutAdmin() {
@@ -6820,156 +6816,352 @@ function switchAdminTab(tab) {
   if (tab === "messages")   fetchAdminMessages();
 }
 
-/* ---------- Admin: Extractor maintenance ---------- */
+/* ---------- Admin: Extractor pipeline ---------- */
 let _maintenancePollTimer = null;
+// Complete logs fetched this session, by run id, as { text, version }. A running
+// run writes its log after each stage, so a copy is current only while the run's
+// version (status and stage states) is unchanged.
+const _maintenanceLogs = new Map();
+const _openMaintenanceLogs = new Set();
+const _maintenanceRunsById = new Map();
 
-function updateMaintenanceBadge(data) {
-  const badge = $("#admin-maintenance-badge");
-  if (!badge) return;
-  const count = Number(data.attention_count || 0);
-  badge.textContent = count;
-  badge.classList.toggle("hidden", count === 0);
+function _maintenanceRunVersion(run) {
+  return run ? `${run.status}|${run.finished_at || ""}|${JSON.stringify(run.stage_status || {})}` : "";
+}
+
+function _maintenanceLogIsCurrent(runId) {
+  const cached = _maintenanceLogs.get(runId);
+  return Boolean(cached) && cached.version === _maintenanceRunVersion(_maintenanceRunsById.get(runId));
+}
+
+const PIPELINE_STAGE_ORDER = ["sync_csv", "find_orphans", "retire_superseded", "cleanup_orphans"];
+const PIPELINE_STAGE_LABELS = {
+  pipeline: "Run",
+  sync_csv: "Download & import",
+  backfill_oa_work_ids: "OpenAlex enrichment",
+  find_orphans: "Orphan report",
+  retire_superseded: "Retire withdrawn",
+  snapshot: "Snapshot copy",
+  cleanup_orphans: "Orphan cleanup",   // runs recorded before the stage was removed
+};
+const PIPELINE_RUN_LABELS = {
+  success: "Completed", warning: "Completed with notes", blocked: "Stopped by a safety check",
+  failed: "Failed", running: "Running", queued: "Queued",
+};
+const PIPELINE_REQUEST_LABELS = {
+  full: "Full sync", sync: "Download and import", find: "Report only", cleanup: "Orphan cleanup",
+};
+// Warnings that describe a normal run rather than something to act on.
+const PIPELINE_INFO_WARNINGS = new Set(["new_resolved_pair_ids"]);
+const PIPELINE_STATE_CLASS = {
+  SUCCESS: "done", COMMITTED: "done", DRY_RUN: "done", FAILED: "failed",
+  BLOCKED: "blocked", SKIPPED: "skipped", PENDING: "pending",
+};
+const PIPELINE_STATE_ICON = {
+  done: "✓", failed: "✕", blocked: "!", warning: "!", skipped: "–", pending: "·", running: "…",
+  unknown: "?", info: "·",
+};
+
+function _pipelineCount(value) {
+  return Number(value || 0).toLocaleString();
 }
 
 function maintenanceDate(value) {
   if (!value) return "Not started";
   return new Date(value).toLocaleString("en-GB", {
     day: "2-digit", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour: "2-digit", minute: "2-digit",
   });
+}
+
+function _pipelineSeconds(seconds) {
+  if (seconds === undefined || seconds === null || Number.isNaN(Number(seconds))) return "";
+  const total = Math.round(Number(seconds));
+  if (total < 60) return `${total}s`;
+  const minutes = Math.floor(total / 60);
+  if (minutes < 60) return `${minutes}m ${total % 60}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
 function maintenanceDuration(run) {
   if (!run.started_at) return "";
   const end = run.finished_at ? new Date(run.finished_at) : new Date();
-  const seconds = Math.max(0, Math.round((end - new Date(run.started_at)) / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  return _pipelineSeconds(Math.max(0, (end - new Date(run.started_at)) / 1000));
+}
+
+function maintenanceDisplayStatus(run) {
+  const codes = (run.safety_report || {}).warning_codes || [];
+  if (run.status === "warning" && codes.length && codes.every(code => PIPELINE_INFO_WARNINGS.has(code))) {
+    return "success";
+  }
+  return run.status;
+}
+
+function maintenanceHeadline(run) {
+  const report = run.safety_report || {};
+  if (run.status === "queued") return "Waiting to start.";
+  if (report.candidate_resolved_count === undefined || report.candidate_resolved_count === null) {
+    return run.status === "running" ? "Downloading and checking the extractor's CSV…" : "";
+  }
+  const added = Number(report.added_count || 0);
+  const removed = Number(report.removed_count || 0);
+  const candidate = _pipelineCount(report.candidate_resolved_count);
+  // The comparison is written before the import, so a blocked or failed run
+  // carries these counts too; only a finished import imported anything.
+  if (report.import_completed !== true) {
+    if (run.status === "running") return `Importing: the new CSV lists ${candidate} pairs.`;
+    return `Nothing was imported. The new CSV lists ${candidate} pairs `
+      + `(${_pipelineCount(added)} new, ${_pipelineCount(removed)} no longer listed).`;
+  }
+  const parts = [];
+  if (report.previous_resolved_count === null || report.previous_resolved_count === undefined) {
+    parts.push(`First import: ${candidate} pairs`);
+  } else if (added || removed) {
+    parts.push(`${_pipelineCount(added)} new pair${added === 1 ? "" : "s"} imported`);
+    if (removed) parts.push(`${_pipelineCount(removed)} no longer listed`);
+  } else {
+    parts.push("No change in the extractor's CSV");
+  }
+  const retire = report.retire;
+  if (retire && retire.status === "applied") {
+    parts.push(`${_pipelineCount(retire.retire)} retired`);
+    if (retire.flag) parts.push(`${_pipelineCount(retire.flag)} flagged for review`);
+  }
+  return parts.join(" · ") + ".";
+}
+
+function maintenanceStats(run) {
+  const report = run.safety_report || {};
+  const tiles = [];
+  if (report.candidate_resolved_count !== undefined && report.candidate_resolved_count !== null) {
+    tiles.push({ label: "Pairs in CSV", value: _pipelineCount(report.candidate_resolved_count) });
+    tiles.push({ label: "New", value: `+${_pipelineCount(report.added_count)}`, tone: "added" });
+    const percent = Number(report.removed_percent || 0);
+    tiles.push({
+      label: "No longer listed", value: `−${_pipelineCount(report.removed_count)}`, tone: "removed",
+      note: percent ? `${percent.toFixed(1)}% of the last import` : "",
+    });
+  }
+  const retire = report.retire;
+  if (retire && retire.status === "applied") {
+    tiles.push({ label: "Retired", value: _pipelineCount(retire.retire), note: "saved in retired_records" });
+    tiles.push({ label: "Flagged", value: _pipelineCount(retire.flag), tone: retire.flag ? "flagged" : "", note: "left for an admin" });
+  }
+  const orphans = report.orphan_report;
+  if (orphans && !(retire && retire.status === "applied")) {
+    tiles.push({ label: "Not in the CSV", value: _pipelineCount(orphans.orphan_count), note: `${_pipelineCount(orphans.unvalidated_count)} still unvalidated` });
+  }
+  if (!tiles.length) return "";
+  return `<dl class="pipeline-stats">${tiles.map(tile => `
+    <div class="pipeline-stat${tile.tone ? ` is-${tile.tone}` : ""}">
+      <dt>${escapeHtml(tile.label)}</dt><dd>${escapeHtml(tile.value)}</dd>
+      ${tile.note ? `<small>${escapeHtml(tile.note)}</small>` : ""}
+    </div>`).join("")}</dl>`;
+}
+
+function maintenanceTimeline(run) {
+  const statuses = run.stage_status || {};
+  const seconds = (run.safety_report || {}).stage_seconds || {};
+  const names = PIPELINE_STAGE_ORDER.filter(name => name in statuses);
+  Object.keys(statuses).forEach(name => { if (!names.includes(name)) names.push(name); });
+  if (!names.length) return "";
+  let runningShown = false;
+  return `<ol class="pipeline-timeline">${names.map(name => {
+    let state = PIPELINE_STATE_CLASS[String(statuses[name] || "PENDING").toUpperCase()] || "pending";
+    if (state === "pending" && run.status === "running" && !runningShown) {
+      state = "running";
+      runningShown = true;
+    }
+    const label = PIPELINE_STAGE_LABELS[name] || name.replaceAll("_", " ");
+    // A report-only run inherits the sync it read; it did not run one itself.
+    const inherited = name === "sync_csv" && run.requested_stage === "find";
+    const time = inherited ? "earlier run"
+      : seconds[name] !== undefined ? _pipelineSeconds(seconds[name])
+        : state === "skipped" ? "skipped" : state === "running" ? "in progress" : "";
+    return `<li class="pipeline-tl-${state}">
+      <span class="pipeline-tl-icon" aria-hidden="true">${PIPELINE_STATE_ICON[state]}</span>
+      <span class="pipeline-tl-label">${escapeHtml(label)}</span>
+      ${time ? `<small>${escapeHtml(time)}</small>` : ""}
+    </li>`;
+  }).join("")}</ol>`;
 }
 
 function maintenanceNotice(run) {
   const report = run.safety_report || {};
-  if (report.error_code === "empty_resolved_snapshot") {
-    return `<div class="pipeline-alert pipeline-alert-blocked"><b>Extractor pipeline error:</b> the candidate contained zero resolved pair IDs. The previous CSV remains active; orphan reporting did not run and this attempt cannot authorize cleanup.</div>`;
+  const codes = report.warning_codes || [];
+  const notes = [];
+  const add = (level, title, text) =>
+    notes.push(`<div class="pipeline-alert pipeline-alert-${level}"><b>${title}</b> ${text}</div>`);
+  switch (report.error_code) {
+    case "empty_resolved_snapshot":
+      add("blocked", "The extractor's CSV was empty.",
+        "It had no importable pairs, so nothing was imported and the previous import stays in place.");
+      break;
+    case "excessive_resolved_removal":
+      add("blocked", "Too many pairs disappeared at once.",
+        `${_pipelineCount(report.removed_count)} of ${_pipelineCount(report.previous_resolved_count)} pairs `
+        + `(${Number(report.removed_percent || 0).toFixed(2)}%) are missing from the new CSV, above the removal `
+        + "limit. Nothing was imported. If the drop is expected, raise EXTRACTOR_MAX_REMOVAL_PERCENT for one run.");
+      break;
+    case "invalid_removal_percent_configuration":
+      add("blocked", "The removal limit is misconfigured.",
+        `${escapeHtml(report.message || "EXTRACTOR_MAX_REMOVAL_PERCENT must be a number from 0 to 100.")} Nothing was downloaded or changed.`);
+      break;
+    case "baseline_snapshot_unavailable":
+    case "missing_local_baseline":
+      add("blocked", "The last import's CSV could not be found.",
+        "The run compares against it to count disappeared pairs, and it was not on the server, in the "
+        + "database copy or in the extractor's history. Nothing was imported.");
+      break;
+    case "part1_completion_unverified":
+      add("blocked", "The import could not be confirmed.",
+        "The sync did not prove that the import and its checks all finished, so the later steps did not run.");
+      break;
+    case "prerequisite_stage_incomplete":
+      add("blocked", "There is no finished import to report on.",
+        escapeHtml(report.message || "Run a full sync first."));
+      break;
+    case "snapshot_archive_unavailable":
+    case "snapshot_archive_mismatch":
+    case "snapshot_archive_unrecorded":
+    case "snapshot_digest_missing":
+      add("blocked", "The imported CSV could not be verified.",
+        `${escapeHtml(report.message || "")} The later steps did not run.`);
+      break;
+    case "extractor_pipeline_error":
+      add("failed", "The download or import failed.",
+        "The log shows the error. A GitHub 403 or 404 there usually means GITHUB_TOKEN was refused.");
+      break;
+    default:
+      break;
   }
-  if (report.error_code === "excessive_resolved_removal") {
-    return `<div class="pipeline-alert pipeline-alert-blocked"><b>Deletion guard stopped this run:</b> ${Number(report.removed_count || 0).toLocaleString()} of ${Number(report.previous_resolved_count || 0).toLocaleString()} resolved IDs disappeared (${Number(report.removed_percent || 0).toFixed(2)}%). The candidate was not promoted.</div>`;
+  if (codes.includes("retire_cap_exceeded")) {
+    const retire = report.retire;
+    if (retire && retire.status === "blocked") {
+      add("warning", "Retire refused: too many records.",
+        `The extractor listed ${_pipelineCount(retire.retire)} records to retire, above the cap of `
+        + `${_pipelineCount(retire.retire_limit)} (EXTRACTOR_MAX_RETIRE_PERCENT). The import stands; nothing was retired.`);
+    } else {
+      // The cap is re-checked per batch; a later batch can stop an apply that began.
+      add("warning", "Retire stopped at its cap.",
+        "More records became retirable while it ran than EXTRACTOR_MAX_RETIRE_PERCENT allows. "
+        + "Batches before that point may already be retired; the log lists them. The import stands.");
+    }
   }
-  if (report.error_code === "invalid_removal_percent_configuration") {
-    return `<div class="pipeline-alert pipeline-alert-blocked"><b>Invalid removal guard configuration:</b> ${escapeHtml(report.message || "EXTRACTOR_MAX_REMOVAL_PERCENT must be a finite value from 0 through 100.")} Nothing was downloaded, imported, promoted, or deleted.</div>`;
+  if (codes.includes("retire_failed")) {
+    add("warning", "The retire step failed.", "The import stands. The “Retire withdrawn” part of the log shows why.");
   }
-  if (report.error_code === "part1_completion_unverified") {
-    return `<div class="pipeline-alert pipeline-alert-blocked"><b>Part 1 was not verified:</b> the database import, CSV promotion, and post-promotion check did not all complete for this run. Orphan reporting was not allowed to start, and this attempt cannot authorize cleanup.</div>`;
+  if (codes.includes("retire_source_commit_unknown")) {
+    add("warning", "The retire step was skipped.",
+      "The sync could not tell which extractor commit it downloaded (check GITHUB_TOKEN), so the list of "
+      + "withdrawn pairs could not be matched to it. The import stands.");
   }
-  if (report.error_code === "prerequisite_stage_incomplete") {
-    return `<div class="pipeline-alert pipeline-alert-blocked"><b>Prerequisite gate stopped this operation:</b> ${escapeHtml(report.message || "Run the required earlier pipeline stage successfully, then retry.")}</div>`;
+  if (codes.includes("openalex_backfill_failed")) {
+    add("warning", "OpenAlex enrichment failed.", "The import stands; the enrichment runs again next night.");
   }
-  if (report.error_code === "missing_local_baseline" || report.error_code === "baseline_snapshot_unavailable") {
-    return `<div class="pipeline-alert pipeline-alert-blocked"><b>No trustworthy comparison baseline:</b> the snapshot this run had to compare against is missing or has been altered on this host, so the deletion guard could not be applied. Nothing was imported or deleted. Check that the extractor data directory is on shared, durable storage.</div>`;
+  if (codes.includes("snapshot_store_failed")) {
+    add("warning", "The CSV could not be saved in the database.",
+      "The import stands. Until a copy is saved, a redeploy makes the next run look for it in the extractor's history.");
   }
-  if (report.error_code === "snapshot_archive_unavailable" || report.error_code === "snapshot_archive_mismatch" || report.error_code === "snapshot_archive_unrecorded" || report.error_code === "snapshot_digest_missing") {
-    return `<div class="pipeline-alert pipeline-alert-blocked"><b>Snapshot could not be verified:</b> the archived CSV that Part 1 imported is not readable on this host, so orphan reporting was stopped and manual cleanup remains unavailable. Check that the extractor data directory is on shared, durable storage, then re-run Sync + Report.</div>`;
+  if (!notes.length && run.status === "failed") {
+    add("failed", "The run failed.", "Open the log to see the first failed step.");
   }
-  if ((report.warning_codes || []).includes("retire_cap_exceeded")) {
-    return `<div class="pipeline-alert pipeline-alert-blocked"><b>Automatic retire refused:</b> the extractor's manifest would retire ${Number((report.retire || {}).retire || 0).toLocaleString()} records, above the EXTRACTOR_MAX_RETIRE_PERCENT cap (${Number((report.retire || {}).retire_limit || 0).toLocaleString()}). The import stands; nothing was retired. Review with <code>csv_to_db.py --retire github</code>.</div>`;
+  if (!notes.length && run.status === "blocked") {
+    add("blocked", "A safety check stopped this run.", escapeHtml(report.message || "Open the log for details."));
   }
-  if ((report.warning_codes || []).includes("retire_failed") || (report.warning_codes || []).includes("retire_source_commit_unknown")) {
-    return `<div class="pipeline-alert pipeline-alert-warning"><b>Automatic retire did not run to completion:</b> the import stands; see the retire_superseded stage in the log below.</div>`;
+  return notes.join("");
+}
+
+function renderMaintenanceRun(run) {
+  const display = maintenanceDisplayStatus(run);
+  const id = escapeHtml(run.run_id);
+  const who = run.trigger === "scheduled" ? "Nightly run" : `Started by ${run.requested_by || run.trigger}`;
+  const duration = maintenanceDuration(run);
+  const headline = maintenanceHeadline(run);
+  const logOpen = _openMaintenanceLogs.has(run.run_id);
+  const logPlaceholder = logOpen && !_maintenanceLogs.has(run.run_id)
+    ? '<p class="admin-loading">Loading the complete log…</p>' : "";
+  return `<article class="pipeline-run-card pipeline-run-${escapeHtml(display)}" data-run-id="${id}">
+    <div class="pipeline-run-head">
+      <span class="pipeline-status pipeline-status-${escapeHtml(display)}">${escapeHtml(PIPELINE_RUN_LABELS[display] || display)}</span>
+      <div class="pipeline-run-meta">
+        <b>${escapeHtml(PIPELINE_REQUEST_LABELS[run.requested_stage] || run.requested_stage)}</b>
+        <small>${escapeHtml(who)} · ${escapeHtml(maintenanceDate(run.created_at))}${duration ? ` · ${escapeHtml(duration)}` : ""}</small>
+      </div>
+      <code title="Run ID">${escapeHtml(run.run_id.slice(0, 8))}</code>
+    </div>
+    ${headline ? `<p class="pipeline-run-headline">${escapeHtml(headline)}</p>` : ""}
+    ${maintenanceStats(run)}
+    ${maintenanceTimeline(run)}
+    ${maintenanceNotice(run)}
+    <div class="pipeline-log-actions">
+      <button class="ghost-btn pipeline-log-btn" type="button" data-run-id="${id}" aria-expanded="${logOpen}">${logOpen ? "Hide log" : "View log"}</button>
+    </div>
+    <div class="pipeline-log-panel${logOpen ? "" : " hidden"}" data-run-id="${id}">${logPlaceholder}</div>
+  </article>`;
+}
+
+function renderPipelineSettings(data) {
+  const settings = $("#pipeline-settings");
+  const limit = data.max_removal_percent;
+  const limitLabel = limit === null || limit === undefined ? "invalid" : `${Number(limit).toLocaleString()}%`;
+  $("#pipeline-removal-limit").textContent = limitLabel === "invalid" ? "an invalid threshold" : limitLabel;
+  const retireLabel = !data.auto_retire ? "Automatic retire <b>off</b> (EXTRACTOR_AUTO_RETIRE)"
+    : data.max_retire_percent === null || data.max_retire_percent === undefined
+      ? "Automatic retire <b>on</b>, cap invalid"
+      : `Automatic retire <b>on</b>, at most <b>${Number(data.max_retire_percent).toLocaleString()}%</b> of records per run`;
+  if (settings) settings.innerHTML = `Removal limit <b>${escapeHtml(limitLabel)}</b> · ${retireLabel}`;
+  $("#pipeline-retire-policy")?.closest(".pipeline-step")?.classList.toggle("is-off", !data.auto_retire);
+  const configAlert = $("#pipeline-config-alert");
+  const errors = data.config_errors || [];
+  if (configAlert) {
+    configAlert.textContent = errors.join(" ");
+    configAlert.classList.toggle("hidden", !errors.length);
   }
-  if ((report.warning_codes || []).includes("new_resolved_pair_ids")) {
-    const sample = (report.added_pair_ids || []).slice(0, 8).map(escapeHtml).join(", ");
-    return `<div class="pipeline-alert pipeline-alert-warning"><b>New resolved identifiers:</b> ${Number(report.added_count || 0).toLocaleString()} pair ID(s) were added.${sample ? `<span class="pipeline-id-sample">${sample}${report.added_ids_truncated ? ", ..." : ""}</span>` : ""}</div>`;
-  }
-  if (run.status === "failed") {
-    return `<div class="pipeline-alert pipeline-alert-failed"><b>Pipeline failure:</b> inspect the retained log below for the first failed stage.</div>`;
-  }
-  if (run.status === "blocked") {
-    // A safety block always has a reason; never leave one unexplained here.
-    return `<div class="pipeline-alert pipeline-alert-blocked"><b>Safety guard stopped this run:</b> ${escapeHtml(report.message || "Inspect the retained log below.")}</div>`;
-  }
-  return "";
 }
 
 function renderMaintenanceRuns(data) {
   const body = $("#pipeline-history");
   if (!body) return;
   const runs = data.runs || [];
-  updateMaintenanceBadge(data);
-  const configAlert = $("#pipeline-config-alert");
-  if (data.removal_config_error) {
-    $("#pipeline-removal-limit").textContent = "an invalid threshold";
-    if (configAlert) {
-      configAlert.textContent = data.removal_config_error + " Sync is blocked until this setting is corrected.";
-      configAlert.classList.remove("hidden");
-    }
-  } else {
-    $("#pipeline-removal-limit").textContent = `${Number(data.max_removal_percent).toLocaleString()}%`;
-    if (configAlert) {
-      configAlert.textContent = "";
-      configAlert.classList.add("hidden");
-    }
-  }
-  $("#pipeline-history-count").textContent = `${runs.length} run${runs.length === 1 ? "" : "s"} retained`;
+  renderPipelineSettings(data);
+  $("#pipeline-history-count").textContent =
+    `${runs.length} run${runs.length === 1 ? "" : "s"} in the last ${data.days || 7} days`;
 
   const active = runs.some(run => run.status === "queued" || run.status === "running");
   document.querySelectorAll(".pipeline-run-btn").forEach(btn => { btn.disabled = active; });
   const live = $("#pipeline-live-status");
   if (active) {
     const run = runs.find(item => item.status === "running") || runs.find(item => item.status === "queued");
+    const kind = (PIPELINE_REQUEST_LABELS[run.requested_stage] || run.requested_stage).toLowerCase();
+    const who = run.trigger === "scheduled" ? "the nightly schedule" : (run.requested_by || run.trigger);
     live.className = "pipeline-live-status";
-    live.innerHTML = `<span class="pipeline-live-dot"></span><b>${escapeHtml(run.status === "queued" ? "Queued" : "Running")}</b> ${escapeHtml(run.requested_stage)} operation requested by ${escapeHtml(run.requested_by || run.trigger)}. This page refreshes automatically.`;
+    live.innerHTML = `<span class="pipeline-live-dot"></span><span><b>${escapeHtml(run.status === "queued" ? "Queued:" : "Running:")}</b> `
+      + `${escapeHtml(kind)} started by ${escapeHtml(who)}. This page updates by itself.</span>`;
   } else {
     live.classList.add("hidden");
   }
 
   if (!runs.length) {
-    body.innerHTML = `<div class="pipeline-empty"><b>No retained runs yet.</b><span>The first scheduled or manual operation will appear here with its complete log.</span></div>`;
+    body.innerHTML = `<div class="pipeline-empty"><b>No runs in this period.</b><span>The next nightly run, or one you start above, will appear here with its complete log.</span></div>`;
     return active;
   }
-
-  body.innerHTML = runs.map((run) => {
-    const stages = Object.entries(run.stage_status || {}).map(([name, status]) =>
-      `<span class="pipeline-stage-state pipeline-stage-${String(status).toLowerCase()}">${escapeHtml(name.replaceAll("_", " "))}: ${escapeHtml(status)}</span>`
-    ).join("");
-    const report = run.safety_report || {};
-    const receipt = report.cleanup_receipt || null;
-    const comparison = report.candidate_resolved_count !== undefined
-      ? `<div class="pipeline-count-strip">
-           <span><b>${Number(report.previous_resolved_count || 0).toLocaleString()}</b> previous</span>
-           <span><b>${Number(report.candidate_resolved_count || 0).toLocaleString()}</b> candidate</span>
-           <span class="count-added"><b>+${Number(report.added_count || 0).toLocaleString()}</b> added</span>
-           <span class="count-removed"><b>-${Number(report.removed_count || 0).toLocaleString()}</b> removed</span>
-         </div>`
-      : "";
-    const cleanupReceipt = receipt?.committed
-      ? `<div class="pipeline-count-strip pipeline-cleanup-receipt">
-           <span><b>${Number(receipt.deleted_counts?.unvalidated || 0).toLocaleString()}</b> records deleted</span>
-           <span><b>${Number(receipt.kept_count || 0).toLocaleString()}</b> protected orphans kept</span>
-           <span><b>Atomic</b> cleanup receipt</span>
-         </div>`
-      : "";
-    return `<article class="pipeline-run-card pipeline-run-${escapeHtml(run.status)}">
-      <div class="pipeline-run-topline">
-        <span class="pipeline-status pipeline-status-${escapeHtml(run.status)}">${escapeHtml(run.status)}</span>
-        <span class="pipeline-run-stage">${escapeHtml(run.requested_stage)}</span>
-        <time>${escapeHtml(maintenanceDate(run.created_at))}</time>
-        <span>${escapeHtml(maintenanceDuration(run))}</span>
-      </div>
-      <div class="pipeline-run-title">
-        <div><b>${escapeHtml(run.trigger === "scheduled" ? "Scheduled maintenance" : "Manual maintenance")}</b><small>Requested by ${escapeHtml(run.requested_by || run.trigger)}</small></div>
-        <code>${escapeHtml(run.run_id.slice(0, 8))}</code>
-      </div>
-      ${maintenanceNotice(run)}
-      ${comparison}
-      ${cleanupReceipt}
-      <div class="pipeline-stage-states">${stages || '<span class="pipeline-stage-state">Waiting for stage output</span>'}</div>
-      <details class="pipeline-log-details" data-run-id="${escapeHtml(run.run_id)}">
-        <summary>Read run log</summary>
-        <pre>${escapeHtml(run.log_tail || "Log output will appear when the run starts.")}</pre>
-        <button class="ghost-btn pipeline-full-log-btn" type="button" data-run-id="${escapeHtml(run.run_id)}">Load complete log</button>
-      </details>
-    </article>`;
-  }).join("");
+  // An open log keeps its own panel across the refresh, so its view (plain text,
+  // open sections, scroll position) is not reset every few seconds.
+  const keptPanels = new Map();
+  body.querySelectorAll(".pipeline-log-panel").forEach(panel => {
+    if (_openMaintenanceLogs.has(panel.dataset.runId)) keptPanels.set(panel.dataset.runId, panel);
+  });
+  runs.forEach(run => _maintenanceRunsById.set(run.run_id, run));
+  body.innerHTML = runs.map(renderMaintenanceRun).join("");
+  runs.forEach(run => {
+    if (!_openMaintenanceLogs.has(run.run_id)) return;
+    const kept = keptPanels.get(run.run_id);
+    if (kept) _maintenanceLogPanel(run.run_id)?.replaceWith(kept);
+    // A run that moved on has written more log since the copy shown was fetched.
+    if (!_maintenanceLogIsCurrent(run.run_id)) _loadMaintenanceLog(run.run_id);
+    else if (!kept) _renderMaintenanceLog(run.run_id);
+  });
   return active;
 }
 
@@ -6994,22 +7186,192 @@ async function fetchMaintenanceRuns() {
 }
 
 async function startMaintenanceRun(stage) {
-  const includesCleanup = stage === "cleanup";
-  if (includesCleanup) {
-    const message = "Permanently delete eligible orphan records now? Excluded, fully validated, and once-judged records are retained. Review the latest orphan report before continuing.";
-    if (!window.confirm(message)) return;
-  }
   document.querySelectorAll(".pipeline-run-btn").forEach(btn => { btn.disabled = true; });
   try {
-    const result = await adminApi("/maintenance/run", "POST", {
-      stage,
-      confirm_cleanup: includesCleanup,
-    });
-    showToast(`${stage === "full" ? "Sync + report" : stage} queued (${result.run_id.slice(0, 8)}).`);
+    const result = await adminApi("/maintenance/run", "POST", { stage });
+    showToast(`${PIPELINE_REQUEST_LABELS[stage] || stage} queued (${result.run_id.slice(0, 8)}).`);
     await fetchMaintenanceRuns();
   } catch (e) {
-    showToast("Could not start maintenance: " + e.message);
+    showToast("Could not start the run: " + e.message);
     await fetchMaintenanceRuns();
+  }
+}
+
+/* The complete log, grouped by step. Each step's lines run from its START line
+   to its SUCCESS/FAILED line; notes a stage writes after finishing (snapshot
+   bound, snapshot stored) stay with it, and everything else belongs to "Run". */
+const _LOG_STAMPED = /^\[(\d{4}-\d{2}-\d{2}T[\d:]+Z)\] \[([a-z_0-9]+)\] (.*)$/;
+const _LOG_PROGRESS = /^\s*… imported [\d,]+ records\s*$/;
+const _LOG_PLAN = /^\s+(RETIRE|FLAG)\s/;
+
+function parseRunLog(text, finished = true) {
+  const sections = [];
+  let current = null;
+  const open = (stage, status) => {
+    current = { stage, status, seconds: null, lines: [] };
+    sections.push(current);
+  };
+  for (const line of String(text || "").split(/\r?\n/)) {
+    if (/^=+$/.test(line)) continue;   // the separator between runs in the combined file
+    const stamped = line.match(_LOG_STAMPED);
+    if (stamped) {
+      const [, , stage, rest] = stamped;
+      if (stage !== "pipeline" && /^START\b/.test(rest)) {
+        open(stage, "running");
+        current.lines.push(line);
+        continue;
+      }
+      if (/^SKIPPED\b/.test(rest)) {
+        open(stage, "skipped");
+        current.lines.push(line);
+        current = null;
+        continue;
+      }
+      if (current && current.stage === stage && /^(SUCCESS|FAILED)\b/.test(rest)) {
+        current.lines.push(line);
+        current.status = rest.startsWith("SUCCESS") ? "done" : "failed";
+        const seconds = rest.match(/\(([\d.]+)s\)\s*$/);
+        if (seconds) current.seconds = Number(seconds[1]);
+        current = null;
+        continue;
+      }
+      const last = sections[sections.length - 1];
+      if (!current && last && last.stage !== "pipeline" && (stage === last.stage || stage === "snapshot")) {
+        last.lines.push(line);
+        // The orchestrator can still fail a stage whose child exited cleanly
+        // (an unverified import, an unreadable archive): match the timeline.
+        if (/^BLOCKED\b/.test(rest) && last.status !== "failed") last.status = "blocked";
+        else if (/WARNING/.test(rest) && last.status === "done") last.status = "warning";
+        continue;
+      }
+      if (current && current.stage !== stage && stage === "pipeline") {
+        current = null;   // the orchestrator speaks between steps
+      }
+    }
+    if (!line.trim() && !current) continue;
+    if (!current) open("pipeline", "info");
+    current.lines.push(line);
+  }
+  for (const section of sections) {
+    // A step with no end line in a finished run was cut off (a pod exit).
+    if (finished && section.status === "running") section.status = "unknown";
+    if (section.stage !== "pipeline") continue;
+    if (section.lines.some(line => /\[pipeline\] (FAILED|BLOCKED)/.test(line))) section.status = "failed";
+    else if (section.lines.some(line => /\[pipeline\] WARNING/.test(line))) section.status = "warning";
+  }
+  return sections;
+}
+
+function _renderLogLine(line) {
+  const tone = /Traceback|\bERROR\b|FAILED|Error:|Exception\b/.test(line) ? " is-error"
+    : /WARNING|BLOCKED|could not|refused/i.test(line) ? " is-warn"
+      : /SUCCESS|verified|recovered|restored|stored in the database|PASSED/.test(line) ? " is-ok" : "";
+  const stamped = line.match(/^(\[[^\]]+Z\] )(\[[a-z_0-9]+\] )?(.*)$/);
+  const content = stamped
+    ? `<span class="log-ts">${escapeHtml(stamped[1])}</span>${stamped[2] ? `<span class="log-tag">${escapeHtml(stamped[2])}</span>` : ""}${escapeHtml(stamped[3])}`
+    : escapeHtml(line) || "&nbsp;";
+  return `<div class="log-line${tone}">${content}</div>`;
+}
+
+function _renderLogLines(lines) {
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (_LOG_PROGRESS.test(lines[i])) {
+      let j = i;
+      while (j < lines.length && _LOG_PROGRESS.test(lines[j])) j += 1;
+      out.push(`<div class="log-line log-fold">${escapeHtml(lines[j - 1].trim())}`
+        + `<span>${(j - i).toLocaleString()} progress line${j - i === 1 ? "" : "s"} folded</span></div>`);
+      i = j;
+      continue;
+    }
+    if (_LOG_PLAN.test(lines[i])) {
+      let j = i;
+      while (j < lines.length && _LOG_PLAN.test(lines[j])) j += 1;
+      if (j - i > 8) {
+        const group = lines.slice(i, j);
+        const retire = group.filter(line => /^\s+RETIRE\s/.test(line)).length;
+        out.push(`<details class="log-group"><summary>${group.length.toLocaleString()} plan lines: `
+          + `${retire.toLocaleString()} retire, ${(group.length - retire).toLocaleString()} flag</summary>`
+          + `${group.map(_renderLogLine).join("")}</details>`);
+        i = j;
+        continue;
+      }
+    }
+    out.push(_renderLogLine(lines[i]));
+    i += 1;
+  }
+  return out.join("");
+}
+
+// Runs whose log is shown as plain text, and logs being fetched right now.
+const _maintenanceLogRaw = new Set();
+const _maintenanceLogLoading = new Set();
+
+function _maintenanceLogPanel(runId) {
+  return document.querySelector(`.pipeline-log-panel[data-run-id="${CSS.escape(runId)}"]`);
+}
+
+function _renderMaintenanceLog(runId) {
+  const panel = _maintenanceLogPanel(runId);
+  const cached = _maintenanceLogs.get(runId);
+  if (!panel || !cached) return;
+  const text = cached.text;
+  const run = _maintenanceRunsById.get(runId);
+  const finished = !run || !["queued", "running"].includes(run.status);
+  const sections = parseRunLog(text, finished);
+  const lineCount = text ? text.replace(/\n+$/, "").split(/\r?\n/).length : 0;
+  const onlyOne = sections.length === 1;
+  const raw = _maintenanceLogRaw.has(runId);
+  panel.innerHTML = `
+    <div class="pipeline-log-toolbar">
+      <span>${lineCount.toLocaleString()} line${lineCount === 1 ? "" : "s"}${finished ? "" : " so far"}</span>
+      <button class="ghost-btn" type="button" data-log-action="copy">Copy</button>
+      <button class="ghost-btn" type="button" data-log-action="download">Download .log</button>
+      <button class="ghost-btn" type="button" data-log-action="raw" aria-pressed="${raw}">${raw ? "Grouped view" : "Plain text"}</button>
+      <button class="ghost-btn" type="button" data-log-action="reload">Reload</button>
+    </div>
+    <div class="pipeline-log-sections${raw ? " hidden" : ""}">${sections.length ? sections.map(section => {
+      const expanded = onlyOne || ["failed", "blocked", "warning", "skipped", "running", "unknown"].includes(section.status)
+        || section.stage === "pipeline";
+      const icon = PIPELINE_STATE_ICON[section.status] || PIPELINE_STATE_ICON.info;
+      const label = PIPELINE_STAGE_LABELS[section.stage] || section.stage.replaceAll("_", " ");
+      const meta = [
+        section.seconds !== null ? _pipelineSeconds(section.seconds) : "",
+        section.status === "running" ? "in progress" : section.status === "unknown" ? "did not finish" : "",
+        `${section.lines.length.toLocaleString()} line${section.lines.length === 1 ? "" : "s"}`,
+      ].filter(Boolean).join(" · ");
+      return `<details class="log-section log-section-${section.status}"${expanded ? " open" : ""}>
+        <summary><span class="log-section-icon" aria-hidden="true">${icon}</span><b>${escapeHtml(label)}</b><small>${escapeHtml(meta)}</small></summary>
+        <div class="log-lines">${_renderLogLines(section.lines)}</div>
+      </details>`;
+    }).join("") : '<p class="pipeline-log-empty">No log output yet. A running run writes its log after each step.</p>'}</div>
+    <pre class="pipeline-log-raw${raw ? "" : " hidden"}">${escapeHtml(text || "No log output yet.")}</pre>`;
+}
+
+async function _loadMaintenanceLog(runId) {
+  if (_maintenanceLogLoading.has(runId)) return;
+  _maintenanceLogLoading.add(runId);
+  // Keep showing an older copy while a newer one loads.
+  if (!_maintenanceLogs.has(runId)) {
+    const panel = _maintenanceLogPanel(runId);
+    if (panel) panel.innerHTML = '<p class="admin-loading">Loading the complete log…</p>';
+  }
+  try {
+    const run = await adminApi(`/maintenance/runs/${runId}`);
+    _maintenanceLogs.set(runId, { text: run.log_text || "", version: _maintenanceRunVersion(run) });
+    // The cards may have been redrawn while this was loading: find the panel again.
+    _renderMaintenanceLog(runId);
+  } catch (error) {
+    const panel = _maintenanceLogPanel(runId);
+    if (panel && !_maintenanceLogs.has(runId)) {
+      panel.innerHTML = `<p class="faq-error">Could not load the log (${escapeHtml(error.message)}). `
+        + '<button class="ghost-btn" type="button" data-log-action="reload">Try again</button></p>';
+    } else {
+      showToast("Could not refresh the log: " + error.message);
+    }
+  } finally {
+    _maintenanceLogLoading.delete(runId);
   }
 }
 
@@ -7021,18 +7383,52 @@ $("#pipeline-actions")?.addEventListener("click", (e) => {
 $("#pipeline-refresh-btn")?.addEventListener("click", fetchMaintenanceRuns);
 
 $("#pipeline-history")?.addEventListener("click", async (e) => {
-  const button = e.target.closest(".pipeline-full-log-btn");
-  if (!button) return;
-  button.disabled = true;
-  button.textContent = "Loading...";
-  try {
-    const run = await adminApi(`/maintenance/runs/${button.dataset.runId}`);
-    button.closest("details").querySelector("pre").textContent = run.log_text || "No log output.";
-    button.remove();
-  } catch (error) {
-    button.disabled = false;
-    button.textContent = "Retry complete log";
-    showToast("Could not load complete log: " + error.message);
+  const toggle = e.target.closest(".pipeline-log-btn");
+  if (toggle) {
+    const runId = toggle.dataset.runId;
+    const opening = !_openMaintenanceLogs.has(runId);
+    if (opening) _openMaintenanceLogs.add(runId);
+    else _openMaintenanceLogs.delete(runId);
+    _maintenanceLogPanel(runId)?.classList.toggle("hidden", !opening);
+    toggle.setAttribute("aria-expanded", String(opening));
+    toggle.textContent = opening ? "Hide log" : "View log";
+    if (opening) {
+      if (_maintenanceLogs.has(runId)) _renderMaintenanceLog(runId);
+      if (!_maintenanceLogIsCurrent(runId)) await _loadMaintenanceLog(runId);
+    }
+    return;
+  }
+  const action = e.target.closest("[data-log-action]");
+  if (!action) return;
+  const panel = action.closest(".pipeline-log-panel");
+  const runId = panel?.dataset.runId;
+  if (!runId) return;
+  const text = _maintenanceLogs.get(runId)?.text || "";
+  if (action.dataset.logAction === "copy") {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast("Log copied.");
+    } catch {
+      showToast("Could not copy; use Download instead.");
+    }
+  } else if (action.dataset.logAction === "download") {
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+    link.download = `extractor-run-${runId.slice(0, 8)}.log`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  } else if (action.dataset.logAction === "raw") {
+    const showRaw = !_maintenanceLogRaw.has(runId);
+    if (showRaw) _maintenanceLogRaw.add(runId);
+    else _maintenanceLogRaw.delete(runId);
+    action.setAttribute("aria-pressed", String(showRaw));
+    action.textContent = showRaw ? "Grouped view" : "Plain text";
+    panel.querySelector(".pipeline-log-sections")?.classList.toggle("hidden", showRaw);
+    panel.querySelector(".pipeline-log-raw")?.classList.toggle("hidden", !showRaw);
+  } else if (action.dataset.logAction === "reload") {
+    await _loadMaintenanceLog(runId);
   }
 });
 

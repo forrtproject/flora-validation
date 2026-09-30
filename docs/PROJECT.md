@@ -842,7 +842,7 @@ GET    /api/admin/messages · /thread/{id} · POST /thread/{id}/reply · /messag
 ```
 GET  /api/admin/maintenance/runs
 GET  /api/admin/maintenance/runs/{run_id}
-POST /api/admin/maintenance/run              full | sync | find | cleanup
+POST /api/admin/maintenance/run              full | sync | find
 ```
 
 ### Source Records
@@ -873,7 +873,7 @@ saving changes do not alter these times.
 
 | Job | Schedule | What |
 |---|---|---|
-| `extractor_maintenance.run_scheduled` | 02:00 UTC | Under one lock: sync/import, OpenAlex enrichment, then read-only orphan reporting; never deletion |
+| `extractor_maintenance.run_scheduled` | 02:00 UTC | Under one lock: sync/import, OpenAlex enrichment, read-only orphan report, then retire of the pairs flora-extractor withdrew |
 | `extractor_maintenance.run_queued` | every 10 seconds | Claim durable admin requests and recover work after pod termination |
 | `_retry_tiebreakers` | 00:22 UTC | Re-run consensus on records whose LLM call errored |
 | `_reap_stale_slots` | every 2 min | Release queue slots claimed but abandoned, so records return to circulation |
@@ -881,26 +881,29 @@ saving changes do not alter these times.
 The reaper matters: without it, a validator who closes the tab mid-record would lock
 that record indefinitely.
 
-The 02:00 extractor job is a fail-fast, non-destructive sync-and-report operation
-with OpenAlex enrichment sequenced inside the same process lock. A failed CSV sync
-marks orphan reporting `SKIPPED`. Child output and stage statuses append to
-`logs/extractor_maintenance.log` (configurable through
+The 02:00 extractor job is a fail-fast sync → report → retire operation with
+OpenAlex enrichment sequenced inside the same process lock. A failed CSV sync
+marks the orphan report and the retire stage `SKIPPED`. Child output and stage
+statuses append to `logs/extractor_maintenance.log` (configurable through
 `EXTRACTOR_MAINTENANCE_LOG`) and are mirrored to stdout. It is a nightly poll, not
-an immediate cross-repository upload trigger. It never selects the cleanup stage.
+an immediate cross-repository upload trigger. Records leave the database only
+through the retire stage, for the pairs flora-extractor names in
+`data/retired_pairs.csv` that nobody has worked on, each archived in
+`retired_records` first; nothing is deleted for mere absence from the CSV.
 Each stage transition is also committed to `extractor_maintenance_runs`. Part 1 is
 complete only after import, CSV promotion, an exact post-promotion byte check, and
-a verified archive digest for the same run. Standalone Part 2 and manual Part 3
-operations must inherit the newest verified source run IDs, and cleanup rechecks
-those persisted prerequisites before applying deletions. A failed newer sync
-therefore cannot fall back to an older success.
+a verified archive digest for the same run. A standalone report must inherit the
+newest verified sync run ID, so a failed newer sync cannot fall back to an older
+success.
 
 Run IDs alone are not enough under pod replacement, so the run history also stores
 the `archive_file`/`archive_sha256` of the snapshot Part 1 imported. The orphan
-report and cleanup read that immutable archive from `EXTRACTOR_DATA_DIR` — which
-must be shared durable storage — and verify its sha256 first; cleanup additionally
-requires the digest it read to equal the one PostgreSQL recorded for the run. A
-replacement pod holding an older bundled CSV is blocked instead of deleting rows
-that a different pod imported.
+report and the retire stage read that immutable archive and verify its sha256
+first; the retire stage additionally requires the digest it read to equal the one
+PostgreSQL recorded for the run. Every imported snapshot is also kept in the
+database (`extractor_snapshots`), so a pod whose `EXTRACTOR_DATA_DIR` lost the
+archive, or the baseline the removal guard compares against, restores it from
+there instead of blocking.
 
 Before import, resolved pair IDs are compared with the baseline named by run
 history (the previous run's archive, verified by digest). Zero resolved IDs or
@@ -913,21 +916,18 @@ The threshold must parse as a finite value from 0 through 100; malformed,
 `extractor_maintenance_runs` retains complete logs and structured counts for the
 admin Extractor Pipeline tab. A session-level PostgreSQL advisory lock prevents
 overlapping live processes across web workers, while a partial unique index
-prevents duplicate active reservations. The admin's **Sync + report** action is
-non-destructive; cleanup is a separate manually confirmed request.
+prevents duplicate active reservations. The admin's **Run full sync** action
+starts the same routine as the nightly run.
 
 Manual HTTP 202 responses persist only a durable `queued` row; they do not rely on
 an in-process web callback. Any pod may poll the row, but the advisory lock elects
 one executor. A replacement pod requeues an abandoned running job immediately
-after proving the former session lock is gone. Cleanup stores exact deleted record
-identities and per-table counts in `safety_report.cleanup_receipt` in the same
-transaction as deletion, so recovery can finalize a committed cleanup without
-running it again.
-Apply-mode cleanup takes a short `EXCLUSIVE NOWAIT` lock on `unvalidated`,
+after proving the former session lock is gone; repeating a run is safe.
+Each retire batch takes a short `EXCLUSIVE NOWAIT` lock on `unvalidated`,
 `validation_queue`, `validated`, `validation_skips`, `submission_failure_releases`,
-`record_metadata`, `assignments`, and `validator_messages` before its safety scan.
-This prevents concurrent validation/audit writes from invalidating the delete list; if
-validation is already writing, cleanup aborts immediately and the failure is logged.
+`record_metadata`, `assignments`, and `validator_messages` and re-plans under it.
+This prevents concurrent validation/audit writes from invalidating the plan; if
+validation is already writing, the batch aborts immediately and the failure is logged.
 
 ### GitHub Actions
 
@@ -947,7 +947,7 @@ Both need the `DATABASE_URL` secret. The hour gap is deliberate so they never co
 | `csv_to_db.py` | Import `extracted.csv` → `unvalidated` + `record_metadata` + 3 queue slots. `--dry-run` supported |
 | `export_validated.py` | `validated` → `data/validated_export.csv`, plus `needs_manual_refs.csv` listing entries whose identifiers CrossRef/DataCite cannot resolve. Replaces references with OpenAlex data where available, cached in `oa_ref_cache.json` |
 | `sync_csv.py` | Fetch `extracted.csv` from the extractor repo (nightly job calls `sync_once`) |
-| `extractor_maintenance.py` | Locked sync → orphan report routine plus a separate, manually requested guarded-cleanup stage, with one combined log |
+| `extractor_maintenance.py` | Locked sync → orphan report → retire routine, with a database copy of each imported snapshot and one combined log |
 | `sync_sources.py` | Entry-sheet ingest → `source_records` |
 | `transform_sources.py` | `source_records` → FLoRA column set |
 | `backfill_oa_work_ids.py` | Fill `oa_work_id_o/_r` from DOIs via OpenAlex |
@@ -955,8 +955,7 @@ Both need the `DATABASE_URL` secret. The hour gap is deliberate so they never co
 | `fetch_oa.py` | Unpaywall open-access status for every DOI |
 | `update_originals.py` | Refresh original-study references on existing rows |
 | `update_outcomes.py` | Update outcome classification from a newer `extracted.csv` |
-| `find_orphans.py` | Diagnose rows in the DB no longer present in the CSV |
-| `cleanup_orphans.py` | Manually delete CSV orphans only from the sha256-verified Part 1 archive; excluded, once-judged, and fully validated records remain, while assignments/skips/notes/access flags alone do not protect |
+| `find_orphans.py` | Read-only summary of rows in the DB no longer present in the CSV |
 | `build_static.py` | Generate `docs/pairs.json`, `hard_pairs.json`, `onboarding.json` for the static GitHub Pages demo |
 | `db_migrate.py` | Migrate an older schema forward |
 | `db_reset.py` | **Destructive** — wipes everything except `validators` |

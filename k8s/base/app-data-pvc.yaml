@@ -1,8 +1,8 @@
-# Holds EXTRACTOR_DATA_DIR: extracted_latest.csv plus the immutable per-run
-# snapshot archives. Must be ReadWriteMany (manilabronze) — see the comment on
-# EXTRACTOR_DATA_DIR in .env.example: a pod-local directory makes orphan
-# cleanup block after every pod replacement, and Parts 2/3 of the sync
-# pipeline re-read the exact archive Part 1 wrote, by sha256.
+# Holds EXTRACTOR_DATA_DIR: extracted_latest.csv plus the per-run snapshot
+# archives the orphan report and retire stage re-read, by sha256. The database
+# keeps a copy of every imported snapshot (extractor_snapshots), so losing this
+# volume no longer blocks the sync; keeping it saves re-reading that copy after
+# every pod replacement. ReadWriteMany (manilabronze) so any replica can run it.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

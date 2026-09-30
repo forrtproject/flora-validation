@@ -55,7 +55,7 @@ def test_current_and_retired_methods_are_disjoint():
 
 
 def test_resolved_methods_includes_retired_ones():
-    """data/ holds CSV snapshots back to May; find_orphans and cleanup_orphans
+    """data/ holds CSV snapshots back to May; find_orphans and the retire stage
     read whichever is passed to --input. Dropping retired names would make every
     record in an archived replay look like an orphan."""
     assert RETIRED_METHODS <= RESOLVED_METHODS

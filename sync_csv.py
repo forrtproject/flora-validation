@@ -4,7 +4,8 @@ sync_csv.py — Nightly sync of extracted.csv from the flora-extractor GitHub re
 Downloads the latest extracted.csv, creates an immutable UTC/run-ID archive, imports a staged
 candidate, then atomically promotes it to extracted_latest.csv on success. The
 archive and its sha256 are reported to the caller: they, not the mutable
-extracted_latest.csv, are what the orphan report and cleanup stages are bound to.
+extracted_latest.csv, are what the orphan report and retire stages are bound to,
+and the caller keeps a copy of the archive in the database.
 
 Run as the first stage of the APScheduler extractor-maintenance job (see
 ``extractor_maintenance.py`` and ``app.py``). The command-line entry point
@@ -12,7 +13,7 @@ routes standalone requests through that audited orchestrator as well:
     python sync_csv.py
 
 The standalone command exits non-zero when download/import fails so the
-extractor maintenance pipeline can stop before orphan reporting or deletion.
+extractor maintenance pipeline can stop before the orphan report and retire stage.
 """
 import argparse
 import json
@@ -110,7 +111,7 @@ class SnapshotComparison:
 
 
 class SnapshotSafetyError(RuntimeError):
-    """Candidate is readable but unsafe to promote as the cleanup baseline."""
+    """Candidate is readable but unsafe to import and promote as the new baseline."""
 
     def __init__(self, code: str, message: str, details: dict | None = None):
         super().__init__(message)

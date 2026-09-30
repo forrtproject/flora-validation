@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
-from cleanup_orphans import _is_deletable_orphan
+from csv_to_db import _is_retirable
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -13,7 +13,8 @@ SCHEMA = (ROOT / "db_schema.sql").read_text(encoding="utf-8")
 JS = (ROOT / "docs" / "app.js").read_text(encoding="utf-8")
 HTML = (ROOT / "docs" / "index.html").read_text(encoding="utf-8")
 CSS = (ROOT / "docs" / "style.css").read_text(encoding="utf-8")
-CLEANUP = (ROOT / "cleanup_orphans.py").read_text(encoding="utf-8")
+# The only code that removes source records: csv_to_db.py --retire.
+RETIRE = (ROOT / "csv_to_db.py").read_text(encoding="utf-8")
 
 
 def _function_body(source: str, name: str, next_name: str) -> str:
@@ -101,44 +102,45 @@ def test_admin_detail_returns_named_skip_history_and_summary():
     assert '"submission_failure_history": submission_failure_history' in body
 
 
-def test_orphan_retention_matches_admin_decisions_judgements_and_final_rows():
-    assert _is_deletable_orphan("unvalidated", False) is True
-    assert _is_deletable_orphan("unvalidated", True) is False
+def test_only_untouched_records_can_be_retired():
+    untouched = {"validation_status": "unvalidated", "has_activity": False,
+                 "in_validated": False, "assigned": False}
+    assert _is_retirable(untouched) is True
     # The admin UI calls the rejected state "Excluded".
-    assert _is_deletable_orphan("rejected", False) is False
-    assert _is_deletable_orphan("excluded", False) is False
-    assert _is_deletable_orphan("validated", False) is False
-    assert _is_deletable_orphan("unvalidated", False, True) is False
-    # An assignment can set this workflow status without a submitted judgement;
-    # assignment alone is explicitly not a retention decision.
-    assert _is_deletable_orphan("validation_inprogress", False) is True
-    assert _is_deletable_orphan("validation_inprogress", True) is False
-    assert "OR u.validator_1 IS NOT NULL" in CLEANUP
-    assert "OR u.validator_2 IS NOT NULL" in CLEANUP
-    assert "SELECT 1 FROM validated v" in CLEANUP
-    assert "has_validated_record" in CLEANUP
+    for status in ("rejected", "validated", "validation_inprogress", "need_review"):
+        assert _is_retirable({**untouched, "validation_status": status}) is False
+    assert _is_retirable({**untouched, "has_activity": True}) is False
+    assert _is_retirable({**untouched, "in_validated": True}) is False
+    assert _is_retirable({**untouched, "assigned": True}) is False
+    # A validator's name, a shown or judged slot, or a merge counts as activity.
+    assert "u.validator_1 IS NOT NULL OR u.validator_2 IS NOT NULL" in RETIRE
+    assert "(q.is_shown OR q.is_validated)" in RETIRE
+    assert "SELECT 1 FROM validated v" in RETIRE
 
 
-def test_skips_alone_do_not_protect_an_orphan_and_are_deleted_first():
-    assert "FROM validation_skips s" in CLEANUP
-    assert "and not skip_count" not in CLEANUP
-    assert "DELETE FROM validation_skips WHERE record_id" in CLEANUP
-    assert "DELETE FROM assignments WHERE record_id" in CLEANUP
-    assert "DELETE FROM validator_messages vm" in CLEANUP
-    assert CLEANUP.index("DELETE FROM validation_skips WHERE record_id") < CLEANUP.index(
+def test_a_retired_records_dependents_are_deleted_first():
+    removal = RETIRE.split("def delete_source_records(", 1)[1].split("\ndef ", 1)[0]
+    assert "DELETE FROM validation_skips WHERE record_id" in removal
+    assert "DELETE FROM assignments WHERE record_id" in removal
+    assert "DELETE FROM validator_messages vm" in removal
+    assert removal.index("DELETE FROM validation_skips WHERE record_id") < removal.index(
         "DELETE FROM validation_queue WHERE record_id"
+    )
+    assert removal.index("DELETE FROM validation_queue WHERE record_id") < removal.index(
+        "DELETE FROM unvalidated WHERE record_id"
     )
 
 
-def test_apply_cleanup_freezes_validation_writes_before_safety_check():
-    assert "LOCK TABLE unvalidated, validation_queue" in CLEANUP
-    assert "validation_queue, validated" in CLEANUP
-    assert "validation_skips, submission_failure_releases" in CLEANUP
-    assert "record_metadata" in CLEANUP
-    assert "assignments, validator_messages" in CLEANUP
-    assert "IN EXCLUSIVE MODE NOWAIT" in CLEANUP
-    assert CLEANUP.index("LOCK TABLE unvalidated") < CLEANUP.index(
-        "SELECT u.record_id, u.pair_id"
+def test_retire_freezes_validation_writes_before_it_replans_a_batch():
+    assert "LOCK TABLE unvalidated, validation_queue" in RETIRE
+    assert "validation_queue, validated" in RETIRE
+    assert "validation_skips, submission_failure_releases" in RETIRE
+    assert "record_metadata" in RETIRE
+    assert "assignments, validator_messages" in RETIRE
+    assert "IN EXCLUSIVE MODE NOWAIT" in RETIRE
+    run_retire = RETIRE.split("def run_retire(", 1)[1]
+    assert run_retire.index("cur.execute(WRITE_SURFACE_LOCK_SQL)") < run_retire.index(
+        "# Re-read under the lock"
     )
 
 
