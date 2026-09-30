@@ -1,8 +1,8 @@
 """
 extractor_vocab.py — the flora-extractor CSV's value vocabularies, in one place.
 
-These sets used to be copy-pasted into csv_to_db.py, find_orphans.py and
-cleanup_orphans.py. They drifted: the extractor renamed every link_method value,
+These sets used to be copy-pasted into csv_to_db.py, find_orphans.py and a
+since-removed orphan cleanup script. They drifted: the extractor renamed every link_method value,
 the three copies were never updated, and because run_import treats an
 unrecognised value exactly like "not yet resolved", the nightly import quietly
 took 31 of 1890 eligible rows instead of failing. Nothing surfaced for five weeks.
@@ -14,8 +14,8 @@ Two rules follow from that:
      next upstream rename fails the import loudly instead of shrinking it.
 
 Retired values are kept beside current ones rather than deleted. data/ holds
-dated CSV snapshots back to May, and find_orphans/cleanup_orphans read whichever
-one is passed to --input; a retired value costs nothing (it simply never matches
+dated CSV snapshots back to May, and find_orphans and the retire stage read
+whichever one is passed to --input; a retired value costs nothing (it simply never matches
 a current CSV) and keeps those replays honest.
 
 Messages raised from here stay ASCII: they surface through sync_csv.py's

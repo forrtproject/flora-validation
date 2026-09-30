@@ -932,6 +932,128 @@ class RetireManifestError(ValueError):
     """The retirement manifest cannot be read safely."""
 
 
+# The write surface validation and record removal share. Taken before a batch is
+# re-planned so a concurrent claim/skip/judgement cannot change the decision
+# halfway through; NOWAIT aborts instead of risking a lock-order deadlock.
+WRITE_SURFACE_LOCK_SQL = """
+    LOCK TABLE unvalidated, validation_queue, validated,
+               validation_skips, submission_failure_releases,
+               record_metadata,
+               assignments, validator_messages
+    IN EXCLUSIVE MODE NOWAIT
+"""
+
+
+def current_resolved_pair_ids(csv_path: Path) -> set:
+    """The pair ids *csv_path* ships as importable (resolved) rows."""
+    df = pd.read_csv(csv_path, dtype=str, encoding="utf-8-sig").fillna("")
+    # Refuse a CSV we can't fully read: an unrecognised link_method would shrink
+    # the "still shipped" set and turn live records into apparent retirements.
+    check_csv_vocabulary(df)
+    resolved = df[_resolved_mask(df)]
+    return {p.strip() for p in resolved["pair_id"] if p.strip()}
+
+
+def delete_source_records(cur, ids: list) -> dict:
+    """Delete source records and every dependent row, children first.
+
+    The caller owns the transaction, the write-surface lock and the decision that
+    each id is safe to remove; this only knows the foreign-key order. Returns the
+    per-table row counts.
+    """
+    counts = {}
+    # Messages point at queue rows and may form parent/reply threads. Remove the
+    # complete thread whenever any member belongs to a deleted record's slot.
+    cur.execute(
+        """
+        WITH target_threads AS (
+            SELECT DISTINCT COALESCE(vm.parent_id, vm.id) AS root_id
+            FROM validator_messages vm
+            JOIN validation_queue q ON q.queue_id = vm.queue_id
+            WHERE q.record_id = ANY(%s::uuid[])
+        )
+        DELETE FROM validator_messages vm
+        USING target_threads t
+        WHERE vm.id = t.root_id OR vm.parent_id = t.root_id
+        """,
+        (ids,),
+    )
+    counts["validator_messages"] = cur.rowcount
+    for table, statement in (
+        ("submission_failure_releases",
+         "DELETE FROM submission_failure_releases WHERE record_id = ANY(%s::uuid[])"),
+        ("validation_skips",
+         "DELETE FROM validation_skips WHERE record_id = ANY(%s::uuid[])"),
+        ("assignments", "DELETE FROM assignments WHERE record_id = ANY(%s::uuid[])"),
+        ("validation_queue",
+         "DELETE FROM validation_queue WHERE record_id = ANY(%s::uuid[])"),
+        ("record_metadata",
+         "DELETE FROM record_metadata WHERE record_id = ANY(%s::uuid[])"),
+        ("unvalidated", "DELETE FROM unvalidated WHERE record_id = ANY(%s::uuid[])"),
+    ):
+        cur.execute(statement, (ids,))
+        counts[table] = cur.rowcount
+    return counts
+
+
+def require_maintenance_gate(cur, maintenance_run_id: "str | None",
+                             snapshot_sha256: "str | None" = None) -> None:
+    """Allow the automatic retire only inside a run whose Parts 1 and 2 committed.
+
+    The run ID proves that a sync and report succeeded *somewhere*; it says
+    nothing about which bytes this process just read. PostgreSQL therefore also
+    stores the archive digest of that run, and the retire proceeds only when the
+    file on this host is that exact archive.
+    """
+    if not maintenance_run_id:
+        raise RuntimeError("an automatic retire requires an audited maintenance run")
+    if not snapshot_sha256:
+        raise RuntimeError("an automatic retire requires the digest of the archived "
+                           "snapshot imported by Part 1 of this maintenance run")
+    cur.execute(
+        """
+        SELECT status, stage_status, safety_report
+        FROM extractor_maintenance_runs
+        WHERE run_id = %s
+        """,
+        (maintenance_run_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        raise RuntimeError(f"maintenance run {maintenance_run_id} does not exist")
+    status, stage_status, safety_report = row
+    stage_status = stage_status if isinstance(stage_status, dict) else {}
+    safety_report = safety_report if isinstance(safety_report, dict) else {}
+    recorded_sha256 = str(safety_report.get("archive_sha256") or "")
+    approved = (
+        status == "running"
+        and stage_status.get("sync_csv") == "SUCCESS"
+        and stage_status.get("find_orphans") == "SUCCESS"
+        and safety_report.get("part1_completed") is True
+        and safety_report.get("part2_completed") is True
+        and bool(safety_report.get("source_sync_run_id"))
+        and bool(safety_report.get("source_find_run_id"))
+        and bool(recorded_sha256)
+    )
+    if not approved:
+        raise RuntimeError(
+            "retire blocked: Parts 1 and 2 are not verified for this "
+            f"maintenance run ({maintenance_run_id})"
+        )
+    if recorded_sha256 != snapshot_sha256:
+        raise RuntimeError(
+            "retire blocked: this host read a different snapshot than "
+            f"maintenance run {maintenance_run_id} imported "
+            f"(recorded sha256={recorded_sha256}, read {snapshot_sha256})"
+        )
+    print(
+        "Maintenance gate verified: "
+        f"sync={safety_report['source_sync_run_id']} "
+        f"find={safety_report['source_find_run_id']} "
+        f"snapshot sha256={recorded_sha256}"
+    )
+
+
 def load_retire_manifest(path: Path) -> dict:
     """pair_id -> manifest entry (the latest line wins)."""
     df = pd.read_csv(path, dtype=str, encoding="utf-8-sig").fillna("")
@@ -1031,9 +1153,7 @@ def _retire_note(step: dict) -> str:
 
 def _apply_retire_batch(cur, plan: list, manifest: dict) -> dict:
     """Archive-then-delete the retirable records, note the flagged ones."""
-    from cleanup_orphans import delete_source_records
-
-    retire = [step for step in plan if step["action"] == "retire"]
+    retire =[step for step in plan if step["action"] == "retire"]
     for step in retire:
         entry = manifest[step["pair_id"]]
         cur.execute(
@@ -1171,10 +1291,9 @@ def _require_retire_gate(cur, maintenance_run_id: str, csv_path: Path,
     proves that run imported exactly *csv_path* (Parts 1 and 2 verified, same
     sha256) and read it at *source_commit*, the commit the manifest came from.
     """
-    from cleanup_orphans import _require_maintenance_gate
     from extractor_storage import sha256_file
 
-    _require_maintenance_gate(cur, maintenance_run_id, sha256_file(csv_path))
+    require_maintenance_gate(cur, maintenance_run_id, sha256_file(csv_path))
     cur.execute("SELECT safety_report->>'source_commit' FROM extractor_maintenance_runs "
                 "WHERE run_id = %s", (maintenance_run_id,))
     recorded = (cur.fetchone() or [None])[0]
@@ -1209,10 +1328,8 @@ def run_retire(manifest_path: Path, csv_path: Path, apply: bool = False,
         raise RuntimeError("--apply requires --expect-retire N, the retire count of "
                            "the dry run that was reviewed")
     cap_percent = max_retire_percent() if apply and automatic else None
-    from cleanup_orphans import _current_resolved_pair_ids
-
     manifest = load_retire_manifest(manifest_path)
-    current = _current_resolved_pair_ids(csv_path)
+    current = current_resolved_pair_ids(csv_path)
     print(f"Retirement manifest {manifest_path}: {len(manifest)} pair id(s); "
           f"{csv_path} ships {len(current)} resolved pair id(s)")
 
@@ -1279,7 +1396,6 @@ def run_retire(manifest_path: Path, csv_path: Path, apply: bool = False,
                 batch = {n: manifest[n] for n in names[start:start + RETIRE_BATCH_SIZE]}
                 with conn:  # one transaction per batch
                     with conn.cursor() as cur:
-                        from cleanup_orphans import WRITE_SURFACE_LOCK_SQL
                         cur.execute(WRITE_SURFACE_LOCK_SQL)
                         # Re-read under the lock: the preview may be minutes old.
                         plan = plan_retirements(batch, current,

@@ -232,7 +232,7 @@ def test_success_report_marks_every_part1_step_for_the_same_run(tmp_path):
 
 
 def test_promotion_failure_records_committed_import_but_not_part1_completion(tmp_path):
-    """A DB/file split is persisted as a failed Part 1 and cannot unlock cleanup."""
+    """A DB/file split is persisted as a failed Part 1 and cannot unlock later stages."""
     from sync_csv import sync_once
 
     previous = _snapshot("abc")
@@ -406,7 +406,7 @@ def test_archive_digest_is_read_back_from_disk_and_reported(tmp_path):
     assert report["archive_bytes"] == len(FAKE_CSV_CONTENT)
 
 
-def test_truncated_archive_write_fails_part1_instead_of_unlocking_cleanup(tmp_path):
+def test_truncated_archive_write_fails_part1_instead_of_unlocking_later_stages(tmp_path):
     """A silently short write must not be reported as a verified snapshot."""
     from sync_csv import sync_once
 

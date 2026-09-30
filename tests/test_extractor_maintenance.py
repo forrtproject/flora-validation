@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import os
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -21,10 +20,33 @@ from extractor_maintenance import (
     run_scheduled,
 )
 from extractor_storage import SnapshotIntegrityError
-from cleanup_orphans import _record_cleanup_receipt, _require_maintenance_gate
+from csv_to_db import require_maintenance_gate
 
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture(autouse=True)
+def _no_snapshot_database(monkeypatch):
+    """The snapshot copy talks to PostgreSQL; unit tests record the calls instead."""
+    import extractor_maintenance as em
+
+    calls = {"store": [], "restore": [], "prune": []}
+    monkeypatch.setattr(
+        em, "store_snapshot",
+        lambda url, path, sha, **kw: calls["store"].append((Path(path).name, sha, kw)) or True,
+    )
+    monkeypatch.setattr(
+        em, "restore_snapshot",
+        lambda url, sha, dest: calls["restore"].append((sha, Path(dest).name)) or False,
+    )
+    monkeypatch.setattr(
+        em, "prune_snapshots",
+        lambda url, keep, protect=(): calls["prune"].append((keep, protect)) or 0,
+    )
+    return calls
+
+
 SNAPSHOT_BYTES = (
     b"pair_id,paper_type,link_method,doi_r\n"
     b"abc,replication,llm_references,10.1/x\n"
@@ -217,99 +239,102 @@ def test_scheduled_dispatch_preserves_the_sequenced_backfill(tmp_path):
         assert dispatch_queued_run("postgresql://test", data_dir=tmp_path) is True
 
     assert calls[0]["run_openalex_backfill"] is True
-    assert calls[0]["apply_cleanup"] is False
+    assert "apply_cleanup" not in calls[0]
 
 
 def test_run_scheduled_requests_backfill_inside_the_locked_pipeline():
     with patch("extractor_maintenance.run_pipeline", return_value=True) as pipeline:
         run_scheduled("postgresql://test")
     assert pipeline.call_args.kwargs["run_openalex_backfill"] is True
-    assert pipeline.call_args.kwargs["apply_cleanup"] is False
 
 
-def test_routine_full_stage_cannot_select_destructive_cleanup():
+def test_orphan_cleanup_is_gone_from_every_layer():
+    """Records leave only through the retire stage; nothing deletes by absence."""
     import extractor_maintenance as em
 
-    assert em._STAGES_BY_REQUEST["full"] == ["sync_csv", "find_orphans"]
-    assert em._STAGES_BY_REQUEST["cleanup"] == ["cleanup_orphans"]
+    assert not (ROOT / "cleanup_orphans.py").exists()
+    assert em._STAGES_BY_REQUEST == {
+        "full": ["sync_csv", "find_orphans"],
+        "sync": ["sync_csv"],
+        "find": ["find_orphans"],
+    }
+    with pytest.raises(ValueError, match="unknown maintenance stage"):
+        em.queue_maintenance_run("postgresql://test", "cleanup", trigger="admin")
+    with pytest.raises(ValueError, match="unknown maintenance stage"):
+        run_pipeline(requested_stage="cleanup")
 
     app_source = (ROOT / "app.py").read_text(encoding="utf-8")
-    route = app_source.split("def admin_start_maintenance(", 1)[1].split(
-        "# ---------------------------------------------------------------------------\n"
-        "# Nightly CSV sync scheduler",
-        1,
-    )[0]
-    assert 'req.stage == "cleanup"' in route
-    assert 'req.stage in {"full", "cleanup"}' not in route
-
-    frontend = (ROOT / "docs" / "app.js").read_text(encoding="utf-8")
-    start = frontend.split("async function startMaintenanceRun(stage)", 1)[1].split(
-        '$("#pipeline-actions")', 1
-    )[0]
-    assert 'const includesCleanup = stage === "cleanup"' in start
+    assert 'stage: Literal["full", "sync", "find"] = "full"' in app_source
+    assert "confirm_cleanup" not in app_source
+    for path in ("docs/app.js", "docs/index.html"):
+        frontend = (ROOT / path).read_text(encoding="utf-8")
+        assert 'data-stage="cleanup"' not in frontend
+        assert "confirm_cleanup" not in frontend
+        assert "admin-maintenance-badge" not in frontend
 
 
-def test_recovery_finalizes_an_atomic_cleanup_receipt_without_rerunning():
-    receipt = {"committed": True, "deleted_counts": {"unvalidated": 4}}
+class _RecoveryCursor:
+    rowcount = 1
 
-    class Cursor:
-        rowcount = 1
+    def __init__(self, row):
+        self.calls = []
+        self._row = row
 
-        def __init__(self):
-            self.calls = []
-            self._select = True
+    def __enter__(self):
+        return self
 
-        def __enter__(self):
-            return self
+    def __exit__(self, *_args):
+        return False
 
-        def __exit__(self, *_args):
-            return False
+    def execute(self, sql, params=None):
+        self.calls.append((sql, params))
 
-        def execute(self, sql, params=None):
-            self.calls.append((sql, params))
+    def fetchone(self):
+        row, self._row = self._row, None
+        return row
 
-        def fetchone(self):
-            if not self._select:
-                return None
-            self._select = False
-            return (
-                "crashed-run",
-                "admin",
-                "full",
-                "hamid",
-                "running",
-                {
-                    "sync_csv": "SUCCESS",
-                    "find_orphans": "SUCCESS",
-                    "cleanup_orphans": "COMMITTED",
-                },
-                {"cleanup_receipt": receipt, "warning_codes": []},
-            )
 
-    class Connection:
-        def __init__(self):
-            self.cur = Cursor()
-            self.commits = 0
+class _RecoveryConnection:
+    def __init__(self, row):
+        self.cur = _RecoveryCursor(row)
+        self.commits = 0
 
-        def cursor(self):
-            return self.cur
+    def cursor(self):
+        return self.cur
 
-        def commit(self):
-            self.commits += 1
+    def commit(self):
+        self.commits += 1
 
-    connection = Connection()
+
+def test_recovery_requeues_a_run_whose_worker_disappeared():
+    connection = _RecoveryConnection(("crashed-run", "admin", "full", "hamid", "running"))
     with patch(
         "extractor_maintenance._acquire_pipeline_lock", return_value=connection
     ), patch("extractor_maintenance._release_pipeline_lock") as release:
         selected = _prepare_durable_run("postgresql://test")
 
+    assert selected == PendingRun("crashed-run", "admin", "full", "hamid")
+    update_sql, update_params = connection.cur.calls[1]
+    assert "status = 'queued'" in update_sql
+    assert json.loads(update_params[0]) == {"recovered_after_worker_exit": True}
+    release.assert_called_once_with(connection)
+
+
+def test_recovery_closes_a_queued_run_of_the_removed_cleanup_stage():
+    """A cleanup request queued before the upgrade would otherwise block every run."""
+    connection = _RecoveryConnection(("old-cleanup", "admin", "cleanup", "hamid", "queued"))
+    with patch(
+        "extractor_maintenance._acquire_pipeline_lock", return_value=connection
+    ), patch("extractor_maintenance._release_pipeline_lock"):
+        selected = _prepare_durable_run("postgresql://test")
+
     assert selected is None
     update_sql, update_params = connection.cur.calls[1]
-    assert "cleanup receipt" not in update_sql.lower()  # text belongs in params
-    assert update_params[0] == "success"
-    assert json.loads(update_params[1])["cleanup_orphans"] == "SUCCESS"
-    assert json.loads(update_params[2])["recovered_after_cleanup_commit"] is True
-    release.assert_called_once_with(connection)
+    # Closed as failed, unless an old cleanup had already committed its deletions.
+    assert "cleanup_receipt'->>'committed' = 'true'" in update_sql
+    assert "ELSE 'failed'" in update_sql
+    assert "no longer exists" in update_params[0]
+    assert update_params[1] == "old-cleanup"
 
 
 def test_routine_full_run_stops_after_sync_and_read_only_report(tmp_path):
@@ -378,11 +403,11 @@ def test_sync_failure_skips_the_read_only_orphan_report_and_logs_why(tmp_path):
     assert _script_order(runner) == ["sync_csv.py"]
     log = log_path.read_text(encoding="utf-8")
     assert "[find_orphans] SKIPPED — Part 1 failed or was not fully verified" in log
-    assert "cleanup_orphans" not in log
+    assert "retire_superseded] START" not in log
     assert "sync_csv=FAILED find_orphans=SKIPPED" in log
 
 
-def test_orphan_report_failure_is_logged_without_invoking_cleanup(tmp_path):
+def test_orphan_report_failure_is_logged_and_stops_the_run(tmp_path):
     runner = ScriptedRunner(
         {
             "sync_csv.py": (0, "sync complete\n"),
@@ -400,67 +425,8 @@ def test_orphan_report_failure_is_logged_without_invoking_cleanup(tmp_path):
     assert succeeded is False
     assert _script_order(runner) == ["sync_csv.py", "find_orphans.py"]
     log = log_path.read_text(encoding="utf-8")
-    assert "cleanup_orphans" not in log
+    assert "retire_superseded] START" not in log
     assert "sync_csv=SUCCESS find_orphans=FAILED" in log
-
-
-def test_dry_run_mode_does_not_pass_apply_to_cleanup(tmp_path):
-    runner = ScriptedRunner({"cleanup_orphans.py": (0, "dry run\n")})
-    write_snapshot(tmp_path / "data" / "extracted_latest.csv")
-
-    succeeded = run_pipeline(
-        data_dir=tmp_path / "data",
-        log_path=tmp_path / "maintenance.log",
-        apply_cleanup=False,
-        requested_stage="cleanup",
-        runner=runner,
-    )
-
-    assert succeeded is True
-    assert _script_order(runner) == ["cleanup_orphans.py"]
-    assert "--apply" not in runner.commands[0]
-    log = (tmp_path / "maintenance.log").read_text(encoding="utf-8")
-    assert "cleanup_orphans=DRY_RUN" in log
-    assert "PREVIEW ONLY" in log
-
-
-def test_scheduled_trigger_forces_cleanup_to_preview_even_if_apply_is_requested(tmp_path):
-    runner = ScriptedRunner({"cleanup_orphans.py": (0, "scheduled preview\n")})
-    write_snapshot(tmp_path / "data" / "extracted_latest.csv")
-
-    succeeded = run_pipeline(
-        data_dir=tmp_path / "data",
-        log_path=tmp_path / "maintenance.log",
-        requested_stage="cleanup",
-        trigger="scheduled",
-        apply_cleanup=True,
-        runner=runner,
-    )
-
-    assert succeeded is True
-    assert "--apply" not in runner.commands[0]
-    log = (tmp_path / "maintenance.log").read_text(encoding="utf-8")
-    assert "cleanup_orphans=DRY_RUN" in log
-    assert "no rows were deleted" in log
-
-
-def test_cleanup_failure_is_reported_as_pipeline_failure(tmp_path):
-    runner = ScriptedRunner({"cleanup_orphans.py": (1, "could not obtain lock\n")})
-    write_snapshot(tmp_path / "data" / "extracted_latest.csv")
-    log_path = tmp_path / "maintenance.log"
-
-    succeeded = run_pipeline(
-        data_dir=tmp_path / "data",
-        log_path=log_path,
-        requested_stage="cleanup",
-        runner=runner,
-    )
-
-    assert succeeded is False
-    assert _script_order(runner) == ["cleanup_orphans.py"]
-    log = log_path.read_text(encoding="utf-8")
-    assert "could not obtain lock" in log
-    assert "cleanup_orphans=FAILED" in log
 
 
 @pytest.mark.parametrize(
@@ -468,12 +434,11 @@ def test_cleanup_failure_is_reported_as_pipeline_failure(tmp_path):
     [
         ("sync", "sync_csv.py"),
         ("find", "find_orphans.py"),
-        ("cleanup", "cleanup_orphans.py"),
     ],
 )
 def test_admin_can_run_each_stage_individually(tmp_path, requested_stage, expected_script):
     runner = ScriptedRunner({expected_script: (0, "stage complete\n")})
-    # Parts 2/3 are always bound to a snapshot; unaudited runs use the
+    # The report is always bound to a snapshot; unaudited runs use the
     # promoted CSV and still hand its digest to the child process.
     write_snapshot(tmp_path / "data" / "extracted_latest.csv")
 
@@ -525,53 +490,19 @@ def test_manual_find_uses_the_newest_part1_attempt_and_rejects_incomplete_promot
         "extractor_maintenance._latest_stage_attempt",
         return_value=newest_failed,
     ), pytest.raises(MaintenancePrerequisiteError, match="newest Part 1"):
-        _load_prerequisites("postgresql://test", "find")
+        _load_prerequisites("postgresql://test")
 
 
-def test_manual_cleanup_requires_part2_from_the_same_verified_part1():
-    sync_attempt = _verified_sync_attempt()
-    mismatched_find = StageAttempt(
-        run_id="find-old",
-        status="success",
-        stage_status={"find_orphans": "SUCCESS"},
-        safety_report={
-            "source_sync_run_id": "older-sync",
-            "archive_sha256": SNAPSHOT_SHA256,
-            "part2_completed": True,
-        },
-    )
-
+def test_manual_find_inherits_the_verified_sync_and_its_snapshot():
     with patch(
         "extractor_maintenance._latest_stage_attempt",
-        side_effect=[sync_attempt, mismatched_find],
-    ), pytest.raises(MaintenancePrerequisiteError, match="newest Part 2"):
-        _load_prerequisites("postgresql://test", "cleanup")
-
-
-def test_manual_cleanup_inherits_verified_part1_and_part2_lineage():
-    sync_attempt = _verified_sync_attempt()
-    find_attempt = StageAttempt(
-        run_id="find-good",
-        status="success",
-        stage_status={"find_orphans": "SUCCESS"},
-        safety_report={
-            "source_sync_run_id": sync_attempt.run_id,
-            "archive_sha256": SNAPSHOT_SHA256,
-            "part2_completed": True,
-        },
-    )
-
-    with patch(
-        "extractor_maintenance._latest_stage_attempt",
-        side_effect=[sync_attempt, find_attempt],
+        return_value=_verified_sync_attempt(),
     ):
-        statuses, gate = _load_prerequisites("postgresql://test", "cleanup")
+        statuses, gate = _load_prerequisites("postgresql://test")
 
-    assert statuses == {"sync_csv": "SUCCESS", "find_orphans": "SUCCESS"}
+    assert statuses == {"sync_csv": "SUCCESS"}
     assert gate["source_sync_run_id"] == "sync-good"
-    assert gate["source_find_run_id"] == "find-good"
     assert gate["part1_completed"] is True
-    assert gate["part2_completed"] is True
     assert gate["archive_sha256"] == SNAPSHOT_SHA256
 
 
@@ -611,7 +542,7 @@ def test_pipeline_does_not_run_manual_find_when_prerequisite_gate_blocks(tmp_pat
     assert finished[0]["stage_status"] == {"find_orphans": "BLOCKED"}
 
 
-def test_zero_exit_without_run_scoped_part1_proof_still_blocks_cleanup(tmp_path):
+def test_zero_exit_without_run_scoped_part1_proof_still_blocks_later_stages(tmp_path):
     runner = ReportingRunner(
         {"sync_csv.py": (0, "claimed success\n")},
         {"promotion_verified": False, "part1_completed": False},
@@ -628,78 +559,40 @@ def test_zero_exit_without_run_scoped_part1_proof_still_blocks_cleanup(tmp_path)
     log = (tmp_path / "maintenance.log").read_text(encoding="utf-8")
     assert "part1_completion_unverified" in log
     assert "find_orphans=SKIPPED" in log
-    assert "cleanup_orphans" not in log
+    assert "retire_superseded] START" not in log
 
 
-def test_apply_cleanup_rechecks_persisted_part1_and_part2_gate():
-    class Cursor:
-        def execute(self, *_args):
-            pass
+class _GateCursor:
+    """One extractor_maintenance_runs row, as the retire gate reads it."""
 
-        def fetchone(self):
-            return (
-                "running",
-                {
-                    "sync_csv": "SUCCESS",
-                    "find_orphans": "SUCCESS",
-                    "cleanup_orphans": "PENDING",
-                },
-                {
-                    "part1_completed": True,
-                    "part2_completed": True,
-                    "source_sync_run_id": "sync-good",
-                    "source_find_run_id": "find-good",
-                    "archive_sha256": SNAPSHOT_SHA256,
-                },
-            )
+    def __init__(self, report):
+        self.report = report
 
-    _require_maintenance_gate(Cursor(), "cleanup-current", SNAPSHOT_SHA256)
+    def execute(self, *_args):
+        pass
+
+    def fetchone(self):
+        return ("running", {"sync_csv": "SUCCESS", "find_orphans": "SUCCESS"}, self.report)
 
 
-def test_cleanup_receipt_contains_exact_deletions_and_updates_the_run_atomically():
-    class Cursor:
-        rowcount = 1
-
-        def __init__(self):
-            self.calls = []
-
-        def execute(self, sql, params):
-            self.calls.append((sql, params))
-
-    cur = Cursor()
-    deleted_records = [
-        {
-            "record_id": "11111111-1111-1111-1111-111111111111",
-            "pair_id": "pair-a",
-            "doi_r": "10.1/a",
-            "skip_count": 1,
-        }
-    ]
-    receipt = _record_cleanup_receipt(
-        cur,
-        "22222222-2222-2222-2222-222222222222",
-        SNAPSHOT_SHA256,
-        orphan_count=3,
-        kept_count=2,
-        deleted_records=deleted_records,
-        deleted_counts={"unvalidated": 1, "record_metadata": 1},
-    )
-
-    sql, params = cur.calls[0]
-    persisted = json.loads(params[0])
-    assert "stage_status = jsonb_set" in sql
-    assert "safety_report = safety_report ||" in sql
-    assert persisted["part3_completed"] is True
-    assert persisted["cleanup_receipt"] == receipt
-    assert receipt["deleted_records"] == deleted_records
-    assert receipt["delete_candidate_count"] == 1
+_VERIFIED_RUN = {
+    "part1_completed": True,
+    "part2_completed": True,
+    "source_sync_run_id": "sync-good",
+    "source_find_run_id": "find-good",
+    "archive_sha256": SNAPSHOT_SHA256,
+}
 
 
-def test_parent_history_updates_merge_without_erasing_atomic_cleanup_receipt():
+def test_the_retire_gate_accepts_its_own_verified_run():
+    require_maintenance_gate(_GateCursor(dict(_VERIFIED_RUN)), "run-current", SNAPSHOT_SHA256)
+
+
+def test_parent_history_updates_merge_instead_of_replacing_the_report():
     source = (ROOT / "extractor_maintenance.py").read_text(encoding="utf-8")
     for function_name, following in (
         ("_update_run_progress", "_latest_stage_attempt"),
-        ("_finish_run", "_load_cleanup_receipt"),
+        ("_finish_run", "_prepare_durable_run"),
     ):
         body = source.split(f"def {function_name}(", 1)[1].split(
             f"def {following}(", 1
@@ -707,60 +600,27 @@ def test_parent_history_updates_merge_without_erasing_atomic_cleanup_receipt():
         assert "safety_report = safety_report || %s::jsonb" in body
 
 
-def test_apply_cleanup_rejects_a_snapshot_the_run_never_imported(tmp_path):
+def test_the_retire_gate_rejects_a_snapshot_the_run_never_imported():
     """The run-ID gate passes; the bytes this pod read are still the wrong ones."""
-
-    class Cursor:
-        def execute(self, *_args):
-            pass
-
-        def fetchone(self):
-            return (
-                "running",
-                {"sync_csv": "SUCCESS", "find_orphans": "SUCCESS"},
-                {
-                    "part1_completed": True,
-                    "part2_completed": True,
-                    "source_sync_run_id": "sync-good",
-                    "source_find_run_id": "find-good",
-                    "archive_sha256": SNAPSHOT_SHA256,
-                },
-            )
-
     stale_sha256 = hashlib.sha256(b"an older bundled CSV").hexdigest()
     with pytest.raises(RuntimeError, match="different snapshot"):
-        _require_maintenance_gate(Cursor(), "cleanup-current", stale_sha256)
+        require_maintenance_gate(_GateCursor(dict(_VERIFIED_RUN)), "run-current", stale_sha256)
 
 
-def test_apply_cleanup_rejects_a_run_with_no_recorded_snapshot():
-    class Cursor:
-        def execute(self, *_args):
-            pass
-
-        def fetchone(self):
-            return (
-                "running",
-                {"sync_csv": "SUCCESS", "find_orphans": "SUCCESS"},
-                {
-                    "part1_completed": True,
-                    "part2_completed": True,
-                    "source_sync_run_id": "sync-good",
-                    "source_find_run_id": "find-good",
-                },
-            )
-
+def test_the_retire_gate_rejects_a_run_with_no_recorded_snapshot():
+    report = {key: value for key, value in _VERIFIED_RUN.items() if key != "archive_sha256"}
     with pytest.raises(RuntimeError, match="Parts 1 and 2 are not verified"):
-        _require_maintenance_gate(Cursor(), "cleanup-current", SNAPSHOT_SHA256)
+        require_maintenance_gate(_GateCursor(report), "run-current", SNAPSHOT_SHA256)
 
 
-def test_apply_cleanup_rejects_missing_audited_run():
+def test_the_retire_gate_rejects_a_missing_audited_run():
     with pytest.raises(RuntimeError, match="audited maintenance run"):
-        _require_maintenance_gate(None, None, SNAPSHOT_SHA256)
+        require_maintenance_gate(None, None, SNAPSHOT_SHA256)
 
 
-def test_apply_cleanup_rejects_a_run_without_a_verified_snapshot_digest():
-    with pytest.raises(RuntimeError, match="--expect-sha256"):
-        _require_maintenance_gate(None, "cleanup-current", None)
+def test_the_retire_gate_rejects_a_run_without_a_snapshot_digest():
+    with pytest.raises(RuntimeError, match="digest"):
+        require_maintenance_gate(None, "run-current", None)
 
 
 def test_snapshot_safety_block_skips_the_orphan_report(tmp_path):
@@ -789,7 +649,7 @@ def test_snapshot_safety_block_skips_the_orphan_report(tmp_path):
     log = log_path.read_text(encoding="utf-8")
     assert "[pipeline] BLOCKED" in log
     assert "find_orphans=SKIPPED" in log
-    assert "cleanup_orphans" not in log
+    assert "retire_superseded] START" not in log
 
 
 def test_new_pair_id_warning_does_not_stop_later_stages(tmp_path):
@@ -904,7 +764,7 @@ def test_stage_timeout_fails_fast_and_skips_later_stages(tmp_path, monkeypatch):
     log = log_path.read_text(encoding="utf-8")
     assert "FAILED timeout=17s" in log
     assert "find_orphans=SKIPPED" in log
-    assert "cleanup_orphans" not in log
+    assert "retire_superseded] START" not in log
 
 
 def test_setup_failure_marks_history_failed_before_releasing_process_lock(tmp_path):
@@ -968,7 +828,6 @@ def test_durable_recovery_occurs_only_while_advisory_lock_is_held():
     assert recovery_body.index("_acquire_pipeline_lock") < recovery_body.index(
         "status == \"running\""
     )
-    assert "cleanup_receipt" in recovery_body
     assert "status = 'queued'" in recovery_body
     assert "pg_try_advisory_lock" in source
     assert "pg_advisory_unlock" in source
@@ -1019,27 +878,25 @@ def test_reserved_run_retries_a_brief_advisory_lock_race():
     sleep.assert_called_once()
 
 
-def _cleanup_gate_patches(gate):
-    """Patch out every database round-trip a manual cleanup run makes."""
+def _find_gate_patches(gate):
+    """Patch out every database round-trip a manual report run makes."""
     return (
         patch("extractor_maintenance._acquire_pipeline_lock", return_value=object()),
         patch("extractor_maintenance._mark_run_started"),
         patch("extractor_maintenance._update_run_progress"),
         patch("extractor_maintenance._release_pipeline_lock"),
         patch("extractor_maintenance._load_prerequisites", return_value=(
-            {"sync_csv": "SUCCESS", "find_orphans": "SUCCESS"},
+            {"sync_csv": "SUCCESS"},
             gate,
         )),
     )
 
 
-def _verified_cleanup_gate(archive_file):
+def _verified_find_gate(archive_file):
     return {
         "prerequisite_gate": "passed",
         "source_sync_run_id": "sync-good",
-        "source_find_run_id": "find-good",
         "part1_completed": True,
-        "part2_completed": True,
         "archive_file": archive_file,
         "archive_sha256": SNAPSHOT_SHA256,
     }
@@ -1072,16 +929,18 @@ def test_orphan_stages_read_the_archived_snapshot_not_the_promoted_csv(tmp_path)
         assert Path(stage_input).read_bytes() == SNAPSHOT_BYTES
 
 
-def test_replacement_pod_without_the_archive_cannot_run_cleanup(tmp_path):
+def test_replacement_pod_without_the_archive_or_a_database_copy_cannot_report(
+        tmp_path, _no_snapshot_database):
     """The reviewer's Pod A/Pod B case: the run-ID gate passes, the bytes are gone."""
-    runner = ScriptedRunner({"cleanup_orphans.py": (0, "must not run\n")})
+    runner = ScriptedRunner({"find_orphans.py": (0, "must not run\n")})
     data_dir = tmp_path / "data"
+    archive_file = "extracted_20260901T000000Z_poda0001.csv"
     # Pod B has an older bundled CSV but not Pod A's archive.
     write_snapshot(data_dir / "extracted_latest.csv")
     finished = []
 
-    acquire, started, progress, release, prerequisites = _cleanup_gate_patches(
-        _verified_cleanup_gate("extracted_20260901T000000Z_poda0001.csv"),
+    acquire, started, progress, release, prerequisites = _find_gate_patches(
+        _verified_find_gate(archive_file),
     )
     with acquire, started, progress, release, prerequisites, patch(
         "extractor_maintenance._finish_run",
@@ -1090,31 +949,71 @@ def test_replacement_pod_without_the_archive_cannot_run_cleanup(tmp_path):
         succeeded = run_pipeline(
             data_dir=data_dir,
             log_path=tmp_path / "maintenance.log",
-            requested_stage="cleanup",
+            requested_stage="find",
             runner=runner,
             database_url="postgresql://test",
-            run_id="cleanup-current",
+            run_id="find-current",
         )
 
     assert succeeded is False
     assert runner.commands == []
+    # It asked the database first, and the database had nothing.
+    assert _no_snapshot_database["restore"] == [(SNAPSHOT_SHA256, archive_file)]
     assert finished[0]["status"] == "blocked"
     assert finished[0]["safety_report"]["error_code"] == "snapshot_archive_unavailable"
     log = (tmp_path / "maintenance.log").read_text(encoding="utf-8")
-    assert "shared durable storage" in log
+    assert "database holds no copy" in log
 
 
-def test_archive_with_different_bytes_cannot_run_cleanup(tmp_path):
-    """A same-named archive holding other content is still the wrong snapshot."""
-    runner = ScriptedRunner({"cleanup_orphans.py": (0, "must not run\n")})
+def test_replacement_pod_restores_the_archive_from_the_database(tmp_path, monkeypatch):
+    import extractor_maintenance as em
+
+    runner = ScriptedRunner({"find_orphans.py": (0, "report\n")})
+    data_dir = tmp_path / "data"
+    archive_file = "extracted_20260901T000000Z_poda0001.csv"
+
+    def restore(_url, sha256, dest):
+        assert sha256 == SNAPSHOT_SHA256
+        write_snapshot(dest)
+        return True
+
+    monkeypatch.setattr(em, "restore_snapshot", restore)
+    finished = []
+    acquire, started, progress, release, prerequisites = _find_gate_patches(
+        _verified_find_gate(archive_file),
+    )
+    with acquire, started, progress, release, prerequisites, patch(
+        "extractor_maintenance._finish_run",
+        side_effect=lambda *_args, **kwargs: finished.append(kwargs),
+    ):
+        succeeded = run_pipeline(
+            data_dir=data_dir,
+            log_path=tmp_path / "maintenance.log",
+            requested_stage="find",
+            runner=runner,
+            database_url="postgresql://test",
+            run_id="find-current",
+        )
+
+    assert succeeded is True
+    stage_input, expected_sha256 = _stage_input(runner, "find_orphans.py")
+    assert Path(stage_input).name == archive_file
+    assert expected_sha256 == SNAPSHOT_SHA256
+    assert finished[0]["stage_status"] == {"sync_csv": "SUCCESS", "find_orphans": "SUCCESS"}
+
+
+def test_archive_with_different_bytes_cannot_be_reported_on(tmp_path, _no_snapshot_database):
+    """A same-named archive holding other content is still the wrong snapshot,
+    and the database copy never overwrites it."""
+    runner = ScriptedRunner({"find_orphans.py": (0, "must not run\n")})
     data_dir = tmp_path / "data"
     archive_file = "extracted_20260901T000000Z_poda0001.csv"
     data_dir.mkdir(parents=True, exist_ok=True)
     (data_dir / archive_file).write_bytes(b"pair_id\ndifferent\n")
     finished = []
 
-    acquire, started, progress, release, prerequisites = _cleanup_gate_patches(
-        _verified_cleanup_gate(archive_file),
+    acquire, started, progress, release, prerequisites = _find_gate_patches(
+        _verified_find_gate(archive_file),
     )
     with acquire, started, progress, release, prerequisites, patch(
         "extractor_maintenance._finish_run",
@@ -1123,14 +1022,15 @@ def test_archive_with_different_bytes_cannot_run_cleanup(tmp_path):
         succeeded = run_pipeline(
             data_dir=data_dir,
             log_path=tmp_path / "maintenance.log",
-            requested_stage="cleanup",
+            requested_stage="find",
             runner=runner,
             database_url="postgresql://test",
-            run_id="cleanup-current",
+            run_id="find-current",
         )
 
     assert succeeded is False
     assert runner.commands == []
+    assert _no_snapshot_database["restore"] == []
     assert finished[0]["safety_report"]["error_code"] == "snapshot_archive_mismatch"
 
 
@@ -1151,7 +1051,7 @@ def test_part1_without_a_recorded_archive_never_reaches_the_orphan_stages(tmp_pa
     log = (tmp_path / "maintenance.log").read_text(encoding="utf-8")
     assert "part1_completion_unverified" in log
     assert "find_orphans=SKIPPED" in log
-    assert "cleanup_orphans" not in log
+    assert "retire_superseded] START" not in log
 
 
 def test_sync_receives_the_recorded_baseline_from_run_history(tmp_path):
@@ -1200,31 +1100,12 @@ def test_snapshot_verification_rejects_a_file_that_changed_underneath_it(tmp_pat
     assert raised.value.code == "snapshot_archive_unavailable"
 
 
-def test_cleanup_refuses_to_apply_without_the_part1_digest(tmp_path):
-    """Deletion is unavailable to anyone who cannot name the imported snapshot."""
-    import cleanup_orphans
-
-    snapshot = write_snapshot(tmp_path / "extracted_latest.csv")
-    with patch.dict(os.environ, {"DATABASE_URL": "postgresql://test"}):
-        with pytest.raises(RuntimeError, match="--expect-sha256"):
-            cleanup_orphans.main(snapshot, apply=True, maintenance_run_id="run-1")
-
-        with pytest.raises(SnapshotIntegrityError) as raised:
-            cleanup_orphans.main(
-                snapshot,
-                apply=True,
-                maintenance_run_id="run-1",
-                expect_sha256=hashlib.sha256(b"another snapshot").hexdigest(),
-            )
-    assert raised.value.code == "snapshot_archive_mismatch"
-
-
 def test_sync_report_satisfies_the_orchestrator_gate_it_feeds(tmp_path):
     """The two modules must agree on the report keys the gate reads.
 
     sync_csv.py writes the report and extractor_maintenance.py verifies it; a
     renamed key on either side would silently downgrade Part 1 to FAILED, or
-    worse, pass an unverified snapshot to cleanup.
+    worse, pass an unverified snapshot to the retire stage.
     """
     from unittest.mock import MagicMock
     from extractor_maintenance import _part1_report_is_verified, _resolve_run_snapshot
@@ -1256,7 +1137,7 @@ def test_sync_report_satisfies_the_orchestrator_gate_it_feeds(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Manual stage chaining: Sync -> Find -> Cleanup, one stage at a time
+# Manual stage chaining: Sync -> Find, one stage at a time
 # ---------------------------------------------------------------------------
 
 def test_a_find_run_cannot_be_mistaken_for_the_newest_sync():
@@ -1265,14 +1146,16 @@ def test_a_find_run_cannot_be_mistaken_for_the_newest_sync():
     A manual Find inherits "sync_csv": "SUCCESS" from the sync it was gated
     against. Searching for the newest run whose stage_status merely mentions
     sync_csv therefore found the Find run, whose safety_report carries no
-    maintenance_run_id of its own — so every following Cleanup was refused with
-    "the newest Part 1 attempt did not complete import and verified promotion".
+    maintenance_run_id of its own — so the next stage that needed the newest
+    sync was refused with "the newest Part 1 attempt did not complete import
+    and verified promotion".
     """
     import extractor_maintenance as em
 
-    assert em._REQUESTS_PERFORMING["sync_csv"] == ("full", "sync")
-    assert em._REQUESTS_PERFORMING["find_orphans"] == ("full", "find")
-    assert em._REQUESTS_PERFORMING["cleanup_orphans"] == ("cleanup",)
+    assert em._REQUESTS_PERFORMING == {
+        "sync_csv": ("full", "sync"),
+        "find_orphans": ("full", "find"),
+    }
 
     source = (ROOT / "extractor_maintenance.py").read_text(encoding="utf-8")
     lookup = source.split("def _latest_stage_attempt(", 1)[1].split("\ndef ", 1)[0]
@@ -1379,3 +1262,156 @@ def test_off_switch_and_single_stage_requests_never_retire(tmp_path, monkeypatch
     monkeypatch.setenv("EXTRACTOR_AUTO_RETIRE", "off")
     assert _audited_run(tmp_path, runner, finished) is True
     assert "csv_to_db.py" not in _script_order(runner)
+
+
+# ---------------------------------------------------------------------------
+# The database copy of each imported snapshot (extractor_snapshots)
+# ---------------------------------------------------------------------------
+
+def test_a_successful_sync_keeps_its_snapshot_in_the_database(tmp_path, _no_snapshot_database):
+    runner = ScriptedRunner({"sync_csv.py": (0, ""), "find_orphans.py": (0, ""),
+                             "csv_to_db.py": (0, "")})
+    finished = {}
+    assert _audited_run(tmp_path, runner, finished) is True
+
+    (name, sha256, extra), = _no_snapshot_database["store"]
+    assert name.startswith("extracted_20260901T000000Z_")
+    assert sha256 == SNAPSHOT_SHA256
+    assert extra == {"source_commit": SOURCE_COMMIT, "run_id": "run-1"}
+    # Pruning never takes the snapshot this run just imported.
+    assert _no_snapshot_database["prune"] == [(10, (SNAPSHOT_SHA256,))]
+    assert "snapshot_store_failed" not in (finished["safety_report"].get("warning_codes") or [])
+
+
+def test_a_failed_snapshot_copy_is_a_warning_not_a_failed_sync(tmp_path, monkeypatch):
+    import extractor_maintenance as em
+
+    def refuse(*_args, **_kwargs):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(em, "store_snapshot", refuse)
+    runner = ScriptedRunner({"sync_csv.py": (0, ""), "find_orphans.py": (0, ""),
+                             "csv_to_db.py": (0, "")})
+    finished = {}
+    assert _audited_run(tmp_path, runner, finished) is True
+    assert finished["stage_status"]["retire_superseded"] == "SUCCESS"
+    assert "snapshot_store_failed" in finished["safety_report"]["warning_codes"]
+    assert finished["status"] == "warning"
+
+
+def test_a_failed_sync_stores_nothing(tmp_path, _no_snapshot_database):
+    finished = {}
+    assert _audited_run(tmp_path, ScriptedRunner({"sync_csv.py": (1, "")}), finished) is False
+    assert _no_snapshot_database["store"] == []
+
+
+def test_the_baseline_is_restored_from_the_database_before_the_sync(tmp_path, monkeypatch):
+    """A redeploy emptied the directory; the database copy puts the baseline back
+    where the sync looks for it, before the sync starts."""
+    import extractor_maintenance as em
+
+    baseline_file = "extracted_20260831T000000Z_prev0001.csv"
+    events = []
+
+    def restore(_url, sha256, dest):
+        events.append(("restore", Path(dest).name))
+        write_snapshot(dest)
+        return True
+
+    class OrderedRunner(ScriptedRunner):
+        def __call__(self, command, **kwargs):
+            events.append(("run", Path(command[1]).name))
+            if Path(command[1]).name == "sync_csv.py":
+                assert (tmp_path / "data" / baseline_file).read_bytes() == SNAPSHOT_BYTES
+            return super().__call__(command, **kwargs)
+
+    monkeypatch.setattr(em, "restore_snapshot", restore)
+    with patch("extractor_maintenance._acquire_pipeline_lock", return_value=object()), \
+         patch("extractor_maintenance._mark_run_started"), \
+         patch("extractor_maintenance._update_run_progress"), \
+         patch("extractor_maintenance._finish_run"), \
+         patch("extractor_maintenance._release_pipeline_lock"), \
+         patch("extractor_maintenance._baseline_expectation", return_value={
+             "baseline_file": baseline_file,
+             "baseline_sha256": SNAPSHOT_SHA256,
+             "require_baseline": True,
+         }):
+        run_pipeline(data_dir=tmp_path / "data", log_path=tmp_path / "m.log",
+                     requested_stage="sync", runner=OrderedRunner({"sync_csv.py": (0, "")}),
+                     database_url="postgresql://test", run_id="sync-current")
+
+    assert events[:2] == [("restore", baseline_file), ("run", "sync_csv.py")]
+    assert "restored the last import" in (tmp_path / "m.log").read_text(encoding="utf-8")
+
+
+def test_a_baseline_already_on_disk_is_not_fetched_again(tmp_path, _no_snapshot_database):
+    baseline_file = "extracted_20260831T000000Z_prev0001.csv"
+    write_snapshot(tmp_path / "data" / baseline_file)
+    with patch("extractor_maintenance._acquire_pipeline_lock", return_value=object()), \
+         patch("extractor_maintenance._mark_run_started"), \
+         patch("extractor_maintenance._update_run_progress"), \
+         patch("extractor_maintenance._finish_run"), \
+         patch("extractor_maintenance._release_pipeline_lock"), \
+         patch("extractor_maintenance._baseline_expectation", return_value={
+             "baseline_file": baseline_file, "baseline_sha256": SNAPSHOT_SHA256,
+         }):
+        run_pipeline(data_dir=tmp_path / "data", log_path=tmp_path / "m.log",
+                     requested_stage="sync", runner=ScriptedRunner({"sync_csv.py": (0, "")}),
+                     database_url="postgresql://test", run_id="sync-current")
+    assert _no_snapshot_database["restore"] == []
+
+
+# ---------------------------------------------------------------------------
+# What the admin panel reads: stage durations and the orphan summary
+# ---------------------------------------------------------------------------
+
+class SummaryRunner(ScriptedRunner):
+    def __call__(self, command, **kwargs):
+        if Path(command[1]).name == "find_orphans.py":
+            summary = Path(command[command.index("--summary-json") + 1])
+            summary.write_text(json.dumps({"orphan_count": 7, "unvalidated_count": 2}),
+                               encoding="utf-8")
+        return super().__call__(command, **kwargs)
+
+
+def test_the_run_records_stage_durations_and_the_orphan_summary(tmp_path):
+    runner = SummaryRunner({"sync_csv.py": (0, ""), "find_orphans.py": (0, ""),
+                            "csv_to_db.py": (0, "")})
+    finished = {}
+    assert _audited_run(tmp_path, runner, finished) is True
+    report = finished["safety_report"]
+    assert set(report["stage_seconds"]) == {"sync_csv", "find_orphans", "retire_superseded"}
+    assert all(isinstance(value, float) for value in report["stage_seconds"].values())
+    assert report["orphan_report"] == {"orphan_count": 7, "unvalidated_count": 2}
+    # The scratch summary file does not outlive the run.
+    summary_path = Path(runner.commands[1][runner.commands[1].index("--summary-json") + 1])
+    assert not summary_path.exists()
+
+
+def test_a_failed_orphan_report_skips_the_retire_stage(tmp_path):
+    """The retire gate needs the report's success; without it nothing is retired."""
+    runner = ScriptedRunner({"sync_csv.py": (0, ""), "find_orphans.py": (2, "database down\n")})
+    finished = {}
+    assert _audited_run(tmp_path, runner, finished) is False
+    assert _script_order(runner) == ["sync_csv.py", "find_orphans.py"]
+    assert finished["stage_status"]["find_orphans"] == "FAILED"
+    assert finished["stage_status"]["retire_superseded"] == "SKIPPED"
+    assert finished["status"] == "failed"
+
+
+def test_a_failed_database_restore_names_its_cause(tmp_path, monkeypatch):
+    import extractor_maintenance as em
+
+    def broken(*_args):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(em, "restore_snapshot", broken)
+    gate = _verified_find_gate("extracted_20260901T000000Z_poda0001.csv")
+    with pytest.raises(SnapshotIntegrityError) as raised:
+        em._resolve_run_snapshot(tmp_path, gate, "postgresql://test")
+    assert raised.value.code == "snapshot_archive_unavailable"
+    assert "restoring it from the database failed: connection refused" in str(raised.value)
+    # Without a database, nothing claims the database was asked.
+    with pytest.raises(SnapshotIntegrityError) as raised:
+        em._resolve_run_snapshot(tmp_path, gate)
+    assert str(raised.value).endswith("is not present on this host")

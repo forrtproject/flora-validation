@@ -858,10 +858,7 @@ class ServingConfigRequest(BaseModel):
 
 
 class MaintenanceRunRequest(BaseModel):
-    stage: Literal["full", "sync", "find", "cleanup"] = "full"
-    # Deletion is deliberately isolated to the cleanup stage. Require explicit
-    # acknowledgement even when a caller bypasses the browser confirmation.
-    confirm_cleanup: bool = False
+    stage: Literal["full", "sync", "find"] = "full"
 
 
 def _requested_title(req, side: str) -> str | None:
@@ -6230,7 +6227,12 @@ def admin_maintenance_runs(
     limit: int = 100,
     admin: dict = Depends(current_admin),
 ):
-    """Return at least one week of run summaries for the admin operations tab."""
+    """Return at least one week of run summaries for the admin operations tab.
+
+    The tab polls this every few seconds while a run is active, so it carries
+    only what the run cards show: no log (the detail route below returns it)
+    and no pair-id samples.
+    """
     days = max(7, min(days, 90))
     limit = max(1, min(limit, 250))
     with db() as cur:
@@ -6238,8 +6240,8 @@ def admin_maintenance_runs(
             """
             SELECT run_id::text, trigger, requested_stage, requested_by, status,
                    created_at, started_at, finished_at, stage_status,
-                   (safety_report #- '{cleanup_receipt,deleted_records}') AS safety_report,
-                   RIGHT(log_text, 2000) AS log_tail
+                   (safety_report - 'added_pair_ids' - 'removed_pair_ids'
+                                  #- '{orphan_report,unvalidated_sample}') AS safety_report
             FROM extractor_maintenance_runs
             WHERE created_at >= NOW() - make_interval(days => %s)
             ORDER BY created_at DESC
@@ -6248,34 +6250,33 @@ def admin_maintenance_runs(
             (days, limit),
         )
         runs = [dict(row) for row in cur.fetchall()]
-        cur.execute(
-            """
-            SELECT COUNT(*) FILTER (
-                       WHERE status IN ('warning', 'blocked', 'failed')
-                   ) AS attention_count,
-                   COUNT(*) AS run_count
-            FROM extractor_maintenance_runs
-            WHERE created_at >= NOW() - make_interval(days => %s)
-            """,
-            (days,),
-        )
-        totals = dict(cur.fetchone())
+    from csv_to_db import max_retire_percent
+    from extractor_maintenance import _auto_retire_enabled
     from sync_csv import RemovalPercentConfigurationError, parse_max_removal_percent
 
-    removal_config_error = None
+    config_errors = []
     try:
         removal_limit = parse_max_removal_percent()
     except RemovalPercentConfigurationError as exc:
         # Never display a plausible fallback that the sync process will not
         # actually use. The same parser is authoritative in both places.
         removal_limit = None
-        removal_config_error = str(exc)
+        config_errors.append(str(exc) + " The sync is blocked until this is corrected.")
+    auto_retire = _auto_retire_enabled()
+    try:
+        retire_limit = max_retire_percent()
+    except ValueError as exc:
+        retire_limit = None
+        if auto_retire:
+            config_errors.append(str(exc) + " The retire stage fails until this is "
+                                 "corrected; the import is unaffected.")
     return {
         "days": days,
         "runs": runs,
         "max_removal_percent": removal_limit,
-        "removal_config_error": removal_config_error,
-        **totals,
+        "auto_retire": auto_retire,
+        "max_retire_percent": retire_limit,
+        "config_errors": config_errors,
     }
 
 
@@ -6308,14 +6309,8 @@ def admin_start_maintenance(
     request: Request,
     admin: dict = Depends(current_admin),
 ):
-    """Queue the non-destructive full routine or one explicit maintenance stage."""
+    """Queue the full routine (the nightly run, now) or the sync or report alone."""
     admin_handle = admin["handle"]
-    if req.stage == "cleanup" and not req.confirm_cleanup:
-        raise HTTPException(
-            400,
-            "Explicit cleanup confirmation is required for cleanup runs",
-        )
-
     from extractor_maintenance import (
         MaintenanceRunConflict,
         queue_maintenance_run,
@@ -6340,7 +6335,7 @@ def admin_start_maintenance(
     with db() as cur:
         _audit(cur, security_events.MAINTENANCE_STARTED, request, actor=admin,
                target_kind="maintenance_run", target_id=run_id,
-               detail={"stage": req.stage, "confirm_cleanup": req.confirm_cleanup})
+               detail={"stage": req.stage})
     return {"run_id": run_id, "status": "queued", "stage": req.stage}
 
 

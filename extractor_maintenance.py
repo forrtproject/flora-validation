@@ -1,30 +1,30 @@
-"""Run extractor synchronization and orphan maintenance under one audit system.
+"""Run extractor synchronization and record retirement under one audit system.
 
 Maintenance is deliberately sequenced:
 
 1. ``sync_csv.py`` downloads, validates, imports, and promotes the candidate CSV.
+   The snapshot it imported is then kept in the database (``extractor_snapshots``)
+   so the next run's removal guard can compare against it after a redeploy.
 2. Scheduled full runs enrich missing OpenAlex IDs while the same lock is held.
-3. ``find_orphans.py`` writes a complete read-only orphan report.
+3. ``find_orphans.py`` writes a read-only summary of the records the CSV no
+   longer ships.
 4. ``csv_to_db.py --retire`` (full runs, EXTRACTOR_AUTO_RETIRE, on by default)
    retires the records flora-extractor names in data/retired_pairs.csv, read at
    the commit the sync imported: untouched records are archived in
    retired_records then deleted, touched ones only flagged, under a
-   EXTRACTOR_MAX_RETIRE_PERCENT cap. It is the one stage an unattended run may
-   delete in, because it acts on what the extractor stated, not on absence.
-5. ``cleanup_orphans.py --apply`` is a separate, explicitly requested manual
-   stage. Routine full/nightly runs never run it.
+   EXTRACTOR_MAX_RETIRE_PERCENT cap. It acts on what the extractor stated, never
+   on mere absence from the CSV, and it is the only stage that deletes.
 
-The orphan report and cleanup read the immutable archive the sync imported —
-identified by sha256, not by the mutable ``extracted_latest.csv`` — so a pod
-carrying an older CSV cannot satisfy the run-ID gate and then delete against
+The orphan report and the retire stage read the immutable archive the sync
+imported — identified by sha256, not by the mutable ``extracted_latest.csv`` — so
+a pod carrying an older CSV cannot satisfy the run-ID gate and then act on
 different bytes.
 
-A failed maintenance stage prevents every later destructive stage from running;
-OpenAlex enrichment is non-destructive and becomes a warning on failure. Admins
-may also launch one stage at a time, but standalone orphan report/cleanup requests
-require the newest persisted prerequisite completion. Every run is appended to
-one UTF-8 file and, when a database URL is supplied, retained in
-``extractor_maintenance_runs`` for the admin panel.
+A failed stage prevents every later stage from running; OpenAlex enrichment is
+non-destructive and becomes a warning on failure. Admins may also launch the
+sync or the report alone, but a standalone report requires the newest persisted
+sync completion. Every run is appended to one UTF-8 file and, when a database URL
+is supplied, retained in ``extractor_maintenance_runs`` for the admin panel.
 """
 
 from __future__ import annotations
@@ -52,9 +52,14 @@ import db_pool
 from console_encoding import use_utf8_output
 from extractor_storage import (
     SnapshotIntegrityError,
+    matches,
+    prune_snapshots,
     require_snapshot,
     resolve_data_dir,
+    restore_snapshot,
     sha256_file,
+    snapshots_kept,
+    store_snapshot,
 )
 
 
@@ -71,17 +76,16 @@ PIPELINE_ADVISORY_LOCK_ID = 7_342_025_091
 DEFAULT_STAGE_TIMEOUT_SECONDS = 2 * 60 * 60
 DEFAULT_LOCK_WAIT_SECONDS = 15
 
-RequestedStage = Literal["full", "sync", "find", "cleanup"]
+RequestedStage = Literal["full", "sync", "find"]
+REQUESTED_STAGES: tuple[RequestedStage, ...] = ("full", "sync", "find")
 StageRunner = Callable[..., subprocess.CompletedProcess[str]]
 
 _STAGES_BY_REQUEST: dict[RequestedStage, list[str]] = {
-    # "full" means the complete routine refresh. Destructive cleanup is kept
-    # out of this bundle so neither cron nor a convenient admin button can turn
-    # a sequence of small upstream omissions into automatic cumulative loss.
+    # "full" is the complete routine refresh; run_pipeline appends the retire
+    # stage to it when EXTRACTOR_AUTO_RETIRE is on.
     "full": ["sync_csv", "find_orphans"],
     "sync": ["sync_csv"],
     "find": ["find_orphans"],
-    "cleanup": ["cleanup_orphans"],
 }
 
 # Which requests actually RUN a given stage. stage_status cannot answer this on
@@ -92,7 +96,7 @@ _STAGES_BY_REQUEST: dict[RequestedStage, list[str]] = {
 _REQUESTS_PERFORMING: dict[str, tuple[RequestedStage, ...]] = {
     stage: tuple(request for request, stages in _STAGES_BY_REQUEST.items()
                  if stage in stages)
-    for stage in ("sync_csv", "find_orphans", "cleanup_orphans")
+    for stage in ("sync_csv", "find_orphans")
 }
 
 
@@ -101,6 +105,7 @@ class StageResult:
     success: bool
     returncode: int
     output: str
+    seconds: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -258,13 +263,13 @@ def _run_stage(
             f"[{_timestamp()}] [{stage}] FAILED timeout="
             f"{timeout_seconds}s ({elapsed:.1f}s)",
         )
-        return StageResult(False, 124, output)
+        return StageResult(False, 124, output, elapsed)
     except Exception:
         output = traceback.format_exc().rstrip()
         _emit(log_file, output)
         elapsed = time.monotonic() - started
         _emit(log_file, f"[{_timestamp()}] [{stage}] FAILED to start ({elapsed:.1f}s)")
-        return StageResult(False, -1, output)
+        return StageResult(False, -1, output, elapsed)
 
     output = completed.stdout or ""
     if output:
@@ -273,13 +278,13 @@ def _run_stage(
     elapsed = time.monotonic() - started
     if completed.returncode == 0:
         _emit(log_file, f"[{_timestamp()}] [{stage}] SUCCESS ({elapsed:.1f}s)")
-        return StageResult(True, completed.returncode, output)
+        return StageResult(True, completed.returncode, output, elapsed)
 
     _emit(
         log_file,
         f"[{_timestamp()}] [{stage}] FAILED exit_code={completed.returncode} ({elapsed:.1f}s)",
     )
-    return StageResult(False, completed.returncode, output)
+    return StageResult(False, completed.returncode, output, elapsed)
 
 
 def _mark_skipped(log_file: IO[str], stage: str, reason: str) -> None:
@@ -354,7 +359,7 @@ def queue_maintenance_run(
     requested_by: str | None = None,
 ) -> str:
     """Reserve one run only while the process-level advisory mutex is free."""
-    if requested_stage not in {"full", "sync", "find", "cleanup"}:
+    if requested_stage not in REQUESTED_STAGES:
         raise ValueError(f"unknown maintenance stage: {requested_stage}")
 
     # Reserve while holding the same lock used by the actual pipeline. Existing
@@ -425,10 +430,9 @@ def _update_run_progress(
                 """
                 UPDATE extractor_maintenance_runs
                 SET stage_status = %s::jsonb,
-                    -- cleanup_orphans may have committed its receipt in the
-                    -- deletion transaction between parent progress writes.
-                    -- Merge instead of replacing so that receipt can never be
-                    -- erased by the parent process's older in-memory report.
+                    -- Merge instead of replacing: a key written earlier (the
+                    -- prerequisite gate of a manual run, for one) is never
+                    -- erased by a later, narrower in-memory report.
                     safety_report = safety_report || %s::jsonb,
                     log_text = %s
                 WHERE run_id = %s AND status = 'running'
@@ -458,7 +462,7 @@ def _latest_stage_attempt(
     Restricted to runs that were ASKED to perform this stage. A manual Find
     inherits the gating sync's "sync_csv": "SUCCESS" into its own stage_status,
     so matching on that key alone made the Find run look like the newest sync
-    and blocked every subsequent cleanup.
+    and blocked the stage that depended on it.
     """
     performed_by = list(_REQUESTS_PERFORMING[stage])
     conn = psycopg2.connect(database_url)
@@ -510,8 +514,8 @@ def _part1_report_is_verified(report: dict, run_id: str) -> bool:
         "import_completed",
         "promotion_completed",
         "promotion_verified",
-        # Without a verified archive there is nothing for Parts 2/3 to bind to,
-        # so an otherwise complete Part 1 still cannot approve deletion.
+        # Without a verified archive there is nothing for the report and the
+        # retire stage to bind to, so an otherwise complete Part 1 still fails.
         "archive_verified",
         "part1_completed",
     )
@@ -523,12 +527,18 @@ def _part1_report_is_verified(report: dict, run_id: str) -> bool:
     )
 
 
-def _resolve_run_snapshot(data_dir: Path, report: dict) -> tuple[Path, str]:
-    """Return the archived Part 1 snapshot the orphan stages must read.
+def _resolve_run_snapshot(
+    data_dir: Path,
+    report: dict,
+    database_url: str | None = None,
+    log_file: IO[str] | None = None,
+) -> tuple[Path, str]:
+    """Return the archived Part 1 snapshot the later stages must read.
 
     The run history names the archive and its digest; this proves the file is
-    actually here and unchanged. A replacement pod without the shared volume
-    fails here instead of silently falling back to its own extracted_latest.csv.
+    actually here and unchanged. A replacement pod whose working directory lost
+    the archive gets it back from the database copy first; without one it fails
+    here instead of silently falling back to its own extracted_latest.csv.
     """
     archive_file = str(report.get("archive_file") or "")
     archive_sha256 = str(report.get("archive_sha256") or "")
@@ -536,11 +546,28 @@ def _resolve_run_snapshot(data_dir: Path, report: dict) -> tuple[Path, str]:
         raise SnapshotIntegrityError(
             "snapshot_archive_unrecorded",
             "the maintenance run recorded no archived snapshot for Part 1; "
-            "orphan reporting and cleanup have nothing to bind to",
+            "the orphan report and the retire stage have nothing to bind to",
             {"archive_file": archive_file or None, "archive_sha256": archive_sha256 or None},
         )
     snapshot_path = data_dir / Path(archive_file).name
-    require_snapshot(snapshot_path, archive_sha256, stage="orphan maintenance")
+    restore_note = ""
+    if database_url and not snapshot_path.exists():
+        try:
+            if restore_snapshot(database_url, archive_sha256, snapshot_path):
+                if log_file is not None:
+                    _emit(log_file, f"[{_timestamp()}] [snapshot] restored {snapshot_path.name} "
+                                    "from the database")
+            else:
+                restore_note = "the database holds no copy of it"
+        except Exception as exc:
+            restore_note = f"restoring it from the database failed: {exc}"
+    try:
+        require_snapshot(snapshot_path, archive_sha256, stage="orphan maintenance")
+    except SnapshotIntegrityError as exc:
+        if restore_note and exc.code == "snapshot_archive_unavailable":
+            raise SnapshotIntegrityError(exc.code, f"{exc}, and {restore_note}",
+                                         exc.details) from None
+        raise
     return snapshot_path, archive_sha256
 
 
@@ -622,26 +649,8 @@ def _part1_is_verified(attempt: StageAttempt) -> bool:
     )
 
 
-def _part2_is_verified(
-    attempt: StageAttempt,
-    source_sync_run_id: str,
-    archive_sha256: str,
-) -> bool:
-    report = attempt.safety_report
-    return (
-        attempt.stage_status.get("find_orphans") == "SUCCESS"
-        and report.get("part2_completed") is True
-        and str(report.get("source_sync_run_id") or "") == source_sync_run_id
-        # The admin approved deletion after reading a report about THESE bytes.
-        and str(report.get("archive_sha256") or "") == archive_sha256
-    )
-
-
-def _load_prerequisites(
-    database_url: str,
-    requested_stage: Literal["find", "cleanup"],
-) -> tuple[dict[str, str], dict]:
-    """Load verified upstream stages for an individually requested stage."""
+def _load_prerequisites(database_url: str) -> tuple[dict[str, str], dict]:
+    """Load the verified sync a standalone orphan report must read."""
     sync_attempt = _latest_stage_attempt(database_url, "sync_csv")
     if sync_attempt is None:
         raise MaintenancePrerequisiteError(
@@ -670,38 +679,6 @@ def _load_prerequisites(
         "archive_file": sync_attempt.safety_report.get("archive_file"),
         "archive_sha256": archive_sha256,
     }
-    if requested_stage == "find":
-        return inherited, gate
-
-    find_attempt = _latest_stage_attempt(
-        database_url,
-        "find_orphans",
-        source_sync_run_id=sync_attempt.run_id,
-    )
-    if find_attempt is None:
-        raise MaintenancePrerequisiteError(
-            "Part 2 has not completed for the newest verified CSV synchronization",
-            {
-                **gate,
-                "required_stage": "find_orphans",
-                "latest_run_id": None,
-            },
-        )
-    if not _part2_is_verified(find_attempt, sync_attempt.run_id, archive_sha256):
-        raise MaintenancePrerequisiteError(
-            "the newest Part 2 attempt for this CSV baseline was not successful",
-            {
-                **gate,
-                "required_stage": "find_orphans",
-                "latest_run_id": find_attempt.run_id,
-                "latest_run_status": find_attempt.status,
-                "latest_stage_status": find_attempt.stage_status.get("find_orphans"),
-            },
-        )
-
-    inherited["find_orphans"] = "SUCCESS"
-    gate["source_find_run_id"] = find_attempt.run_id
-    gate["part2_completed"] = True
     return inherited, gate
 
 
@@ -744,36 +721,14 @@ def _finish_run(
         conn.close()
 
 
-def _load_cleanup_receipt(database_url: str, run_id: str) -> dict | None:
-    """Return the receipt cleanup committed atomically with its deletions."""
-    conn = psycopg2.connect(database_url)
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT safety_report->'cleanup_receipt'
-                FROM extractor_maintenance_runs
-                WHERE run_id = %s AND status = 'running'
-                """,
-                (run_id,),
-            )
-            row = cur.fetchone()
-        conn.commit()
-    finally:
-        conn.close()
-    if not row or not isinstance(row[0], dict):
-        return None
-    return row[0]
-
-
 def _prepare_durable_run(database_url: str) -> PendingRun | None:
     """Select queued work and recover a run whose worker process disappeared.
 
     A ``running`` row alone is not evidence that work is alive. The session-level
     advisory lock is: PostgreSQL releases it when a process, connection, or pod
     dies. This function therefore changes a running row only while it owns that
-    lock. If cleanup already committed its atomic receipt, recovery finalizes the
-    row instead of repeating deletion; otherwise the same run is safely requeued.
+    lock, and requeues the same run. Repeating it is safe: the import refreshes
+    in place, and a pair the retire stage already removed is a no-op next time.
     """
     try:
         conn = _acquire_pipeline_lock(database_url)
@@ -784,8 +739,7 @@ def _prepare_durable_run(database_url: str) -> PendingRun | None:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT run_id::text, trigger, requested_stage, requested_by,
-                       status, stage_status, safety_report
+                SELECT run_id::text, trigger, requested_stage, requested_by, status
                 FROM extractor_maintenance_runs
                 WHERE status IN ('queued', 'running')
                 ORDER BY created_at ASC
@@ -798,46 +752,33 @@ def _prepare_durable_run(database_url: str) -> PendingRun | None:
                 conn.commit()
                 return None
 
-            run_id, trigger, requested_stage, requested_by, status = row[:5]
-            stage_status = row[5] if isinstance(row[5], dict) else {}
-            safety_report = row[6] if isinstance(row[6], dict) else {}
+            run_id, trigger, requested_stage, requested_by, status = row
+
+            if requested_stage not in REQUESTED_STAGES:
+                # A run of a stage this version no longer has (the removed
+                # orphan cleanup) cannot be executed; close it instead of
+                # leaving it to block every later reservation. One whose
+                # deletions had already committed their receipt did finish.
+                cur.execute(
+                    """
+                    UPDATE extractor_maintenance_runs
+                    SET status = CASE
+                            WHEN safety_report->'cleanup_receipt'->>'committed' = 'true'
+                            THEN 'success' ELSE 'failed' END,
+                        finished_at = NOW(),
+                        log_text = log_text || %s
+                    WHERE run_id = %s
+                    """,
+                    (
+                        f"\n[{_timestamp()}] [pipeline] CLOSED - the "
+                        f"'{requested_stage}' stage no longer exists; nothing was run\n",
+                        run_id,
+                    ),
+                )
+                conn.commit()
+                return None
 
             if status == "running":
-                receipt = safety_report.get("cleanup_receipt")
-                if isinstance(receipt, dict) and receipt.get("committed") is True:
-                    # The destructive transaction is authoritative. A crash in
-                    # the tiny parent-finalization gap must not rerun it or lose
-                    # the report that proves what was deleted.
-                    recovered_stages = dict(stage_status)
-                    recovered_stages["cleanup_orphans"] = "SUCCESS"
-                    warning_codes = safety_report.get("warning_codes") or []
-                    recovered_status = "warning" if warning_codes else "success"
-                    recovery_patch = {
-                        "part3_completed": True,
-                        "recovered_after_cleanup_commit": True,
-                    }
-                    cur.execute(
-                        """
-                        UPDATE extractor_maintenance_runs
-                        SET status = %s,
-                            finished_at = NOW(),
-                            stage_status = %s::jsonb,
-                            safety_report = safety_report || %s::jsonb,
-                            log_text = log_text || %s
-                        WHERE run_id = %s AND status = 'running'
-                        """,
-                        (
-                            recovered_status,
-                            json.dumps(recovered_stages),
-                            json.dumps(recovery_patch),
-                            f"\n[{_timestamp()}] [pipeline] RECOVERED - cleanup receipt "
-                            "was already committed; no stage was repeated\n",
-                            run_id,
-                        ),
-                    )
-                    conn.commit()
-                    return None
-
                 cur.execute(
                     """
                     UPDATE extractor_maintenance_runs
@@ -851,7 +792,7 @@ def _prepare_durable_run(database_url: str) -> PendingRun | None:
                     (
                         json.dumps({"recovered_after_worker_exit": True}),
                         f"\n[{_timestamp()}] [pipeline] RECOVERED - previous worker "
-                        "exited without a committed cleanup receipt; run requeued\n",
+                        "exited before finishing; run requeued\n",
                         run_id,
                     ),
                 )
@@ -891,9 +832,8 @@ def dispatch_queued_run(
             database_url=database_url,
             run_id=pending.run_id,
             # A scheduled reservation may be claimed by this durable dispatcher
-            # instead of the Cron callback that created it. Preserve the same
-            # non-destructive policy on both execution paths.
-            apply_cleanup=pending.trigger != "scheduled",
+            # instead of the Cron callback that created it; keep the nightly
+            # enrichment on both execution paths.
             run_openalex_backfill=(
                 pending.trigger == "scheduled" and pending.requested_stage == "full"
             ),
@@ -945,11 +885,95 @@ def _read_safety_report(path: Path) -> dict:
     return {}
 
 
+def _restore_baseline_from_database(
+    database_url: str,
+    data_dir: Path,
+    baseline: dict,
+    log_file: IO[str],
+) -> None:
+    """Put the last import's snapshot back before the sync compares against it.
+
+    A redeploy that emptied the working directory would otherwise block the
+    removal guard (baseline_snapshot_unavailable). Best effort: without a
+    database copy the sync still tries the extractor's git history.
+    """
+    baseline_file = baseline.get("baseline_file")
+    baseline_sha256 = baseline.get("baseline_sha256")
+    if not baseline_file or not baseline_sha256:
+        return
+    dest = data_dir / Path(str(baseline_file)).name
+    if dest.exists():
+        return
+    try:
+        restored = restore_snapshot(database_url, str(baseline_sha256), dest)
+    except Exception as exc:
+        _emit(log_file, f"[{_timestamp()}] [snapshot] could not read {dest.name} from "
+                        f"the database: {exc}")
+        return
+    if restored:
+        _emit(log_file, f"[{_timestamp()}] [snapshot] restored the last import "
+                        f"{dest.name} from the database")
+    else:
+        _emit(log_file, f"[{_timestamp()}] [snapshot] the database has no copy of "
+                        f"{dest.name}; the sync will look in the extractor's history")
+
+
+def _keep_snapshots_in_database(
+    database_url: str,
+    run_id: str,
+    data_dir: Path,
+    report: dict,
+    log_file: IO[str],
+) -> bool:
+    """Store the snapshot this run imported, and the baseline it compared with.
+
+    The baseline is stored too so a database that predates this table fills
+    itself. Older snapshots beyond EXTRACTOR_SNAPSHOTS_KEPT are then pruned.
+    Returns False when a copy could not be stored.
+    """
+    candidates = (
+        (report.get("archive_file"), report.get("archive_sha256"),
+         report.get("source_commit")),
+        (report.get("baseline_file"), report.get("baseline_sha256"), None),
+    )
+    kept = True
+    protected = []
+    for name, sha256, commit in candidates:
+        if not name or not sha256:
+            continue
+        path = data_dir / Path(str(name)).name
+        # extracted_latest.csv now holds the promoted candidate, not the baseline.
+        if not matches(path, str(sha256)):
+            continue
+        try:
+            stored = store_snapshot(database_url, path, str(sha256),
+                                    source_commit=commit, run_id=run_id)
+        except Exception as exc:
+            kept = False
+            _emit(log_file, f"[{_timestamp()}] [snapshot] WARNING could not store "
+                            f"{path.name} in the database: {exc}")
+            continue
+        protected.append(str(sha256))
+        _emit(log_file, f"[{_timestamp()}] [snapshot] {path.name} "
+                        + ("stored in the database" if stored
+                           else "is already in the database"))
+    if protected:
+        try:
+            pruned = prune_snapshots(database_url, snapshots_kept(), tuple(protected))
+        except Exception as exc:  # the copies are stored; pruning can wait a night
+            _emit(log_file, f"[{_timestamp()}] [snapshot] could not prune older "
+                            f"snapshots: {exc}")
+        else:
+            if pruned:
+                _emit(log_file, f"[{_timestamp()}] [snapshot] pruned {pruned} older "
+                                "snapshot(s) from the database")
+    return kept
+
+
 def run_pipeline(
     data_dir: Path = DEFAULT_DATA_DIR,
     log_path: Path | None = None,
     *,
-    apply_cleanup: bool = True,
     runner: StageRunner | None = None,
     requested_stage: RequestedStage = "full",
     trigger: Literal["scheduled", "admin", "cli"] = "cli",
@@ -959,28 +983,34 @@ def run_pipeline(
     run_openalex_backfill: bool = False,
 ) -> bool:
     """Run a full or individual maintenance stage and return its success."""
-    if requested_stage not in {"full", "sync", "find", "cleanup"}:
+    if requested_stage not in REQUESTED_STAGES:
         raise ValueError(f"unknown maintenance stage: {requested_stage}")
-
-    # This is the final invariant, independent of which scheduler/dispatcher
-    # entry point invoked us: unattended work may report orphan candidates but
-    # can never pass --apply to cleanup. (The retire stage below is the one
-    # exception, bounded by the extractor's manifest and its own cap.)
-    if trigger == "scheduled":
-        apply_cleanup = False
 
     selected = _STAGES_BY_REQUEST[requested_stage]
     statuses = _initial_stage_status(requested_stage)
     safety_report: dict = {}
+    # Seconds per stage, for the admin panel's timeline.
+    stage_seconds: dict[str, float] = {}
     final_status: Literal["success", "warning", "blocked", "failed"] = "failed"
     succeeded = False
     run_log: _RunLog | None = None
     report_path: Path | None = None
     retire_summary_path: Path | None = None
+    orphan_summary_path: Path | None = None
     snapshot_bound: tuple[Path, str] | None = None
     lock_conn = None
     history_owned = False
     setup_error = "pipeline failed before logging started"
+
+    def add_warning(code: str) -> None:
+        warning_codes = list(safety_report.get("warning_codes") or [])
+        if code not in warning_codes:
+            warning_codes.append(code)
+        safety_report["warning_codes"] = warning_codes
+
+    def timed(stage: str, result: StageResult) -> StageResult:
+        stage_seconds[stage] = round(result.seconds, 1)
+        return result
 
     try:
         runner = runner or subprocess.run
@@ -1046,6 +1076,7 @@ def run_pipeline(
             summary_handle.close()
             retire_summary_path = Path(summary_handle.name)
 
+        baseline: dict = {}
         if "sync_csv" in selected:
             baseline = _baseline_expectation(database_url)
             if baseline.get("baseline_file"):
@@ -1056,13 +1087,17 @@ def run_pipeline(
                 sync_command.append("--require-baseline")
 
         # Built only once a snapshot has been resolved and verified, so no code
-        # path can hand the orphan stages an unbound file.
+        # path can hand the report or the retire stage an unbound file.
         find_command: list[str] | None = None
-        cleanup_command: list[str] | None = None
         backfill_command = [sys.executable, str(ROOT / "backfill_oa_work_ids.py")]
 
-        def bind_orphan_stages(snapshot_path: Path, snapshot_sha256: str) -> None:
-            nonlocal find_command, cleanup_command, snapshot_bound
+        def bind_snapshot(snapshot_path: Path, snapshot_sha256: str) -> None:
+            nonlocal find_command, snapshot_bound, orphan_summary_path
+            summary_handle = tempfile.NamedTemporaryFile(
+                prefix="flora_orphans_", suffix=".json", delete=False
+            )
+            summary_handle.close()
+            orphan_summary_path = Path(summary_handle.name)
             find_command = [
                 sys.executable,
                 str(ROOT / "find_orphans.py"),
@@ -1070,39 +1105,25 @@ def run_pipeline(
                 str(snapshot_path),
                 "--expect-sha256",
                 snapshot_sha256,
+                "--summary-json",
+                str(orphan_summary_path),
             ]
-            cleanup_command = [
-                sys.executable,
-                str(ROOT / "cleanup_orphans.py"),
-                "--input",
-                str(snapshot_path),
-                "--expect-sha256",
-                snapshot_sha256,
-                "--maintenance-run-id",
-                str(run_id),
-            ]
-            if apply_cleanup:
-                cleanup_command.append("--apply")
             snapshot_bound = (snapshot_path, snapshot_sha256)
 
         succeeded = True
         with log_path.open("a", encoding="utf-8", newline="") as combined_log:
             run_log = _RunLog(combined_log)
-            cleanup_mode = (
-                "not-selected"
-                if "cleanup_orphans" not in selected
-                else "apply" if apply_cleanup else "preview"
-            )
             _emit(run_log, "=" * 88)
             _emit(
                 run_log,
                 f"[{_timestamp()}] [pipeline] START run_id={run_id} trigger={trigger} "
                 f"requested_stage={requested_stage} data_dir={data_dir} "
-                f"cleanup_mode={cleanup_mode}",
+                f"auto_retire={'on' if auto_retire else 'off'}",
             )
 
             def persist_progress() -> None:
                 if database_url and history_owned:
+                    safety_report["stage_seconds"] = dict(stage_seconds)
                     _update_run_progress(
                         database_url,
                         str(run_id),
@@ -1111,38 +1132,32 @@ def run_pipeline(
                         log_text=run_log.getvalue(),
                     )
 
-            # Individually requested Part 2/3 operations inherit only verified
-            # prerequisites. The newest attempt wins: an incomplete new sync
-            # cannot be bypassed by falling back to an older successful one.
-            if requested_stage in {"find", "cleanup"}:
+            # A standalone report inherits only a verified sync. The newest
+            # attempt wins: an incomplete new sync cannot be bypassed by falling
+            # back to an older successful one.
+            if requested_stage == "find":
                 gate: dict = {}
                 try:
                     if database_url:
-                        inherited, gate = _load_prerequisites(
-                            database_url,
-                            requested_stage,
-                        )
+                        inherited, gate = _load_prerequisites(database_url)
                         statuses = {**inherited, **statuses}
                         snapshot_path, snapshot_sha256 = _resolve_run_snapshot(
                             data_dir,
                             gate,
+                            database_url,
+                            run_log,
                         )
                     else:
                         snapshot_path, snapshot_sha256 = _resolve_unaudited_snapshot(
                             data_dir
                         )
-                    bind_orphan_stages(snapshot_path, snapshot_sha256)
+                    bind_snapshot(snapshot_path, snapshot_sha256)
                     safety_report.update(gate)
                     _emit(
                         run_log,
                         f"[{_timestamp()}] [pipeline] prerequisite gate PASSED "
-                        f"source_sync_run_id={gate.get('source_sync_run_id')}"
-                        + (
-                            f" source_find_run_id={gate['source_find_run_id']}"
-                            if gate.get("source_find_run_id")
-                            else ""
-                        )
-                        + f" snapshot={snapshot_path.name} sha256={snapshot_sha256}",
+                        f"source_sync_run_id={gate.get('source_sync_run_id')} "
+                        f"snapshot={snapshot_path.name} sha256={snapshot_sha256}",
                     )
                     persist_progress()
                 except (MaintenancePrerequisiteError, SnapshotIntegrityError) as exc:
@@ -1172,7 +1187,13 @@ def run_pipeline(
                     persist_progress()
 
             if succeeded and "sync_csv" in selected:
-                result = _run_stage(run_log, "sync_csv", sync_command, runner)
+                if database_url and history_owned:
+                    _restore_baseline_from_database(
+                        database_url, data_dir, baseline, run_log
+                    )
+                result = timed(
+                    "sync_csv", _run_stage(run_log, "sync_csv", sync_command, runner)
+                )
                 safety_report = _read_safety_report(report_path)
                 sync_completed = result.success and _part1_report_is_verified(
                     safety_report,
@@ -1181,13 +1202,13 @@ def run_pipeline(
                 if sync_completed:
                     # Resolve the archive before Part 1 counts as SUCCESS: an
                     # import whose snapshot is unreadable here cannot authorise
-                    # deletion, however cleanly the child process exited.
+                    # the later stages, however cleanly the child process exited.
                     try:
                         snapshot_path, snapshot_sha256 = _resolve_run_snapshot(
                             data_dir,
                             safety_report,
                         )
-                        bind_orphan_stages(snapshot_path, snapshot_sha256)
+                        bind_snapshot(snapshot_path, snapshot_sha256)
                         _emit(
                             run_log,
                             f"[{_timestamp()}] [sync_csv] snapshot bound "
@@ -1212,6 +1233,11 @@ def run_pipeline(
                 statuses["sync_csv"] = "SUCCESS" if sync_completed else "FAILED"
                 if sync_completed:
                     safety_report["source_sync_run_id"] = str(run_id)
+                    if database_url and history_owned:
+                        if not _keep_snapshots_in_database(
+                            database_url, str(run_id), data_dir, safety_report, run_log
+                        ):
+                            add_warning("snapshot_store_failed")
                 else:
                     succeeded = False
                     if result.success and safety_report.get("error_code") is None:
@@ -1234,39 +1260,28 @@ def run_pipeline(
                             "part1_completion_unverified",
                         )
                     if "find_orphans" in selected:
-                        reason = (
-                            "Part 1 failed or was not fully verified; import and CSV "
-                            "promotion are not an approved cleanup baseline"
-                        )
                         statuses["find_orphans"] = "SKIPPED"
-                        _mark_skipped(run_log, "find_orphans", reason)
-                        if "cleanup_orphans" in selected:
-                            statuses["cleanup_orphans"] = "SKIPPED"
-                            _mark_skipped(
-                                run_log,
-                                "cleanup_orphans",
-                                reason + "; no deletion was attempted",
-                            )
+                        _mark_skipped(
+                            run_log,
+                            "find_orphans",
+                            "Part 1 failed or was not fully verified; there is no "
+                            "imported snapshot to report on",
+                        )
                 persist_progress()
 
             # The nightly OpenAlex enrichment used to run from an independent
             # 02:30 scheduler entry and could overlap a slow extractor pipeline.
             # It is now sequenced inside the same PostgreSQL-locked operation.
             # A lookup failure is non-destructive and remains a visible warning;
-            # it does not invalidate the CSV snapshot or orphan calculation.
+            # it does not invalidate the CSV snapshot or the later stages.
             if succeeded and run_openalex_backfill and requested_stage == "full":
-                result = _run_stage(
-                    run_log,
+                result = timed(
                     "backfill_oa_work_ids",
-                    backfill_command,
-                    runner,
+                    _run_stage(run_log, "backfill_oa_work_ids", backfill_command, runner),
                 )
                 safety_report["openalex_backfill_completed"] = result.success
                 if not result.success:
-                    warning_codes = list(safety_report.get("warning_codes") or [])
-                    if "openalex_backfill_failed" not in warning_codes:
-                        warning_codes.append("openalex_backfill_failed")
-                    safety_report["warning_codes"] = warning_codes
+                    add_warning("openalex_backfill_failed")
                     _emit(
                         run_log,
                         f"[{_timestamp()}] [backfill_oa_work_ids] WARNING - "
@@ -1279,29 +1294,28 @@ def run_pipeline(
                     raise RuntimeError(
                         "orphan reporting was never bound to a verified snapshot"
                     )
-                result = _run_stage(run_log, "find_orphans", find_command, runner)
+                result = timed(
+                    "find_orphans", _run_stage(run_log, "find_orphans", find_command, runner)
+                )
                 statuses["find_orphans"] = "SUCCESS" if result.success else "FAILED"
                 safety_report["part2_completed"] = result.success
+                if orphan_summary_path is not None:
+                    orphan_summary = _read_safety_report(orphan_summary_path)
+                    if orphan_summary:
+                        safety_report["orphan_report"] = orphan_summary
                 if result.success:
                     safety_report["source_find_run_id"] = str(run_id)
                 else:
                     succeeded = False
-                    if "cleanup_orphans" in selected:
-                        statuses["cleanup_orphans"] = "SKIPPED"
-                        _mark_skipped(
-                            run_log,
-                            "cleanup_orphans",
-                            "find_orphans failed; no deletion was attempted",
-                        )
                 persist_progress()
 
-            # Retire what the extractor withdrew — the one stage an unattended run
-            # may delete in, and only within csv_to_db.run_retire's limits: the
-            # manifest's pair ids, untouched records only (archived first), a
-            # cap on the count, and the manifest read at the commit this run's
-            # CSV came from. It runs inside this run's lock (the child proves it
-            # through the run history rather than taking the lock again). Its
-            # outcome is a warning, never a failed sync: the import stands.
+            # Retire what the extractor withdrew — the only stage that deletes,
+            # and only within csv_to_db.run_retire's limits: the manifest's pair
+            # ids, untouched records only (archived first), a cap on the count,
+            # and the manifest read at the commit this run's CSV came from. It
+            # runs inside this run's lock (the child proves it through the run
+            # history rather than taking the lock again). Its outcome is a
+            # warning, never a failed sync: the import stands.
             if auto_retire:
                 retire_warning = None
                 source_commit = safety_report.get("source_commit")
@@ -1329,8 +1343,10 @@ def run_pipeline(
                         "--maintenance-run-id", str(run_id),
                         "--retire-summary-json", str(retire_summary_path),
                     ]
-                    result = _run_stage(run_log, "retire_superseded", retire_command,
-                                        runner)
+                    result = timed(
+                        "retire_superseded",
+                        _run_stage(run_log, "retire_superseded", retire_command, runner),
+                    )
                     try:
                         summary = json.loads(
                             retire_summary_path.read_text(encoding="utf-8"))
@@ -1346,75 +1362,7 @@ def run_pipeline(
                         statuses["retire_superseded"] = "FAILED"
                         retire_warning = "retire_failed"
                 if retire_warning:
-                    warning_codes = list(safety_report.get("warning_codes") or [])
-                    if retire_warning not in warning_codes:
-                        warning_codes.append(retire_warning)
-                    safety_report["warning_codes"] = warning_codes
-                persist_progress()
-
-            if succeeded and "cleanup_orphans" in selected:
-                if cleanup_command is None:
-                    raise RuntimeError(
-                        "orphan cleanup was never bound to a verified snapshot"
-                    )
-                result = _run_stage(run_log, "cleanup_orphans", cleanup_command, runner)
-                cleanup_succeeded = result.success
-                if database_url and history_owned and apply_cleanup:
-                    receipt = _load_cleanup_receipt(database_url, str(run_id))
-                    receipt_committed = bool(
-                        isinstance(receipt, dict) and receipt.get("committed") is True
-                    )
-                    if receipt_committed:
-                        safety_report["cleanup_receipt"] = receipt
-                        cleanup_succeeded = True
-                        if not result.success:
-                            warning_codes = list(safety_report.get("warning_codes") or [])
-                            if "cleanup_child_exit_after_commit" not in warning_codes:
-                                warning_codes.append("cleanup_child_exit_after_commit")
-                            safety_report["warning_codes"] = warning_codes
-                            _emit(
-                                run_log,
-                                f"[{_timestamp()}] [cleanup_orphans] WARNING - child "
-                                "reported failure after PostgreSQL committed the deletion receipt",
-                            )
-                    else:
-                        cleanup_succeeded = False
-                        safety_report.update(
-                            {
-                                "success": False,
-                                "status": "error",
-                                "error_code": "cleanup_receipt_missing",
-                                "message": (
-                                    "cleanup exited without an atomic PostgreSQL receipt; "
-                                    "deletion is not recorded as complete"
-                                ),
-                            }
-                        )
-                        _emit(
-                            run_log,
-                            f"[{_timestamp()}] [cleanup_orphans] FAILED - atomic "
-                            "cleanup receipt is missing",
-                        )
-                if apply_cleanup:
-                    statuses["cleanup_orphans"] = (
-                        "SUCCESS" if cleanup_succeeded else "FAILED"
-                    )
-                    safety_report["part3_completed"] = cleanup_succeeded
-                else:
-                    statuses["cleanup_orphans"] = (
-                        "DRY_RUN" if cleanup_succeeded else "FAILED"
-                    )
-                    safety_report["part3_completed"] = False
-                    safety_report["cleanup_preview_completed"] = cleanup_succeeded
-                    safety_report["cleanup_requires_manual_start"] = True
-                    if cleanup_succeeded:
-                        _emit(
-                            run_log,
-                            f"[{_timestamp()}] [cleanup_orphans] PREVIEW ONLY - "
-                            "no rows were deleted; an admin must start and confirm "
-                            "a manual cleanup run",
-                        )
-                succeeded = cleanup_succeeded
+                    add_warning(retire_warning)
                 persist_progress()
 
             warning_codes = safety_report.get("warning_codes") or []
@@ -1450,12 +1398,12 @@ def run_pipeline(
         else:
             sys.stderr.write(setup_error + "\n")
     finally:
-        if report_path is not None:
-            report_path.unlink(missing_ok=True)
-        if retire_summary_path is not None:
-            retire_summary_path.unlink(missing_ok=True)
+        for scratch in (report_path, retire_summary_path, orphan_summary_path):
+            if scratch is not None:
+                scratch.unlink(missing_ok=True)
         try:
             if database_url and history_owned:
+                safety_report["stage_seconds"] = dict(stage_seconds)
                 try:
                     _finish_run(
                         database_url,
@@ -1484,7 +1432,6 @@ def run_scheduled(database_url: str | None = None) -> None:
         succeeded = run_pipeline(
             trigger="scheduled",
             database_url=database_url,
-            apply_cleanup=False,
             run_openalex_backfill=True,
         )
     except MaintenanceRunConflict as exc:
@@ -1499,25 +1446,20 @@ def run_scheduled(database_url: str | None = None) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description=(
-            "Run the non-destructive CSV sync/report routine or explicitly select "
-            "the separate guarded-cleanup stage"
+            "Run the routine sync -> orphan report -> retire pipeline, or the sync "
+            "or the report alone"
         )
     )
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--log", type=Path, default=None)
     parser.add_argument(
         "--stage",
-        choices=("full", "sync", "find", "cleanup"),
+        choices=REQUESTED_STAGES,
         default="full",
         help=(
-            "Run routine sync+report ('full') or one stage; only 'cleanup' can "
-            "delete records"
+            "'full' runs the whole routine (the retire stage only when "
+            "EXTRACTOR_AUTO_RETIRE is on); 'sync' and 'find' run one stage"
         ),
-    )
-    parser.add_argument(
-        "--dry-run-cleanup",
-        action="store_true",
-        help="With --stage cleanup, preview without --apply",
     )
     args = parser.parse_args()
     database_url = os.environ.get("DATABASE_URL")
@@ -1526,7 +1468,6 @@ if __name__ == "__main__":
     succeeded = run_pipeline(
         data_dir=args.data_dir,
         log_path=args.log,
-        apply_cleanup=not args.dry_run_cleanup,
         requested_stage=args.stage,
         database_url=database_url,
     )

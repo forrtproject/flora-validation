@@ -272,7 +272,7 @@
       <button class="admin-tab-btn" data-tab="admins">Admins</button>
       <button class="admin-tab-btn" data-tab="dashboard">Dashboard</button>
       <button class="admin-tab-btn" data-tab="priority">Pool Priority</button>
-      <button class="admin-tab-btn" data-tab="maintenance">Extractor Pipeline <span id="admin-maintenance-badge" class="inbox-badge hidden" style="position:relative;top:-1px;right:auto;margin-left:4px">0</span></button>
+      <button class="admin-tab-btn" data-tab="maintenance">Extractor Pipeline</button>
       <button class="admin-tab-btn" data-tab="restricted">Restricted access <span id="admin-restricted-badge" class="inbox-badge hidden" style="position:relative;top:-1px;right:auto;margin-left:4px">0</span></button>
       <button class="admin-tab-btn" data-tab="messages">Messages <span id="admin-msg-badge" class="inbox-badge hidden" style="position:relative;top:-1px;right:auto;margin-left:4px">0</span></button>
     </div>
@@ -474,49 +474,63 @@
       <section class="pipeline-console" aria-labelledby="pipeline-title">
         <header class="pipeline-hero">
           <div>
-            <p class="pipeline-kicker">Extractor operations</p>
-            <h2 id="pipeline-title">Snapshot safety &amp; maintenance</h2>
-            <p>Routine and nightly runs stop after the read-only orphan report. Deletion is a separate, explicitly confirmed admin action.</p>
+            <p class="pipeline-kicker">Extractor pipeline</p>
+            <h2 id="pipeline-title">Extractor sync</h2>
+            <p>Every night at 02:00 UTC the app downloads flora-extractor's latest
+              <code>extracted.csv</code> and brings the validation records up to date.
+              You can also start the same run now.</p>
           </div>
           <button id="pipeline-refresh-btn" class="ghost-btn" type="button">Refresh</button>
         </header>
 
-        <div class="pipeline-policy-grid">
-          <article class="pipeline-policy-card">
-            <span class="pipeline-policy-index">01</span>
-            <strong>Empty snapshot</strong>
-            <p>Zero resolved pair IDs is treated as an extractor pipeline error.</p>
-          </article>
-          <article class="pipeline-policy-card">
-            <span class="pipeline-policy-index">02</span>
-            <strong>Removal guard</strong>
-            <p>More than <span id="pipeline-removal-limit">10%</span> removed IDs blocks promotion. Cleanup is always manual.</p>
-          </article>
-          <article class="pipeline-policy-card">
-            <span class="pipeline-policy-index">03</span>
-            <strong>New identifiers</strong>
-            <p>New resolved pair IDs are imported but leave a visible warning for review.</p>
-          </article>
-        </div>
+        <ol class="pipeline-steps" aria-label="What a run does">
+          <li class="pipeline-step">
+            <span class="pipeline-step-index" aria-hidden="true">1</span>
+            <div>
+              <strong>Download and check</strong>
+              <p>Fetches the CSV and compares it with the last import. If more than
+                <b id="pipeline-removal-limit">10%</b> of pairs disappear at once, the run
+                stops before anything changes.</p>
+            </div>
+          </li>
+          <li class="pipeline-step">
+            <span class="pipeline-step-index" aria-hidden="true">2</span>
+            <div>
+              <strong>Import and report</strong>
+              <p>New pairs become records to validate and changed ones are updated.
+                A read-only report counts the records the CSV no longer lists.</p>
+            </div>
+          </li>
+          <li class="pipeline-step">
+            <span class="pipeline-step-index" aria-hidden="true">3</span>
+            <div>
+              <strong>Retire withdrawn records</strong>
+              <p id="pipeline-retire-policy">Records the extractor lists as withdrawn are
+                removed if nobody has worked on them, after a copy is saved in
+                <code>retired_records</code>. Anything a validator touched is only flagged.</p>
+            </div>
+          </li>
+        </ol>
         <div id="pipeline-config-alert" class="pipeline-alert pipeline-alert-blocked hidden" role="alert"></div>
 
-        <div class="pipeline-actions" id="pipeline-actions">
-          <div class="pipeline-action-primary">
-            <span class="pipeline-action-label">Recommended safe operation</span>
-            <h3>Sync and inspect</h3>
-            <p>Import the current CSV and produce the read-only orphan report. This operation never deletes records.</p>
-            <button class="btn-primary pipeline-run-btn" data-stage="full" type="button">Run sync + report</button>
+        <div class="pipeline-run-panel" id="pipeline-actions">
+          <div class="pipeline-run-copy">
+            <h3>Run it now</h3>
+            <p>The same run as the nightly one. A large import can take half an hour;
+              you can leave this page and come back.</p>
+            <p id="pipeline-settings" class="pipeline-settings"></p>
           </div>
-          <div class="pipeline-action-stack">
-            <button class="pipeline-stage-btn pipeline-run-btn" data-stage="sync" type="button">
-              <span><b>1</b> CSV sync</span><small>Download, safety-check, import &amp; promote</small>
-            </button>
-            <button class="pipeline-stage-btn pipeline-run-btn" data-stage="find" type="button">
-              <span><b>2</b> Orphan report</span><small>Read-only comparison against latest CSV</small>
-            </button>
-            <button class="pipeline-stage-btn pipeline-run-btn pipeline-stage-danger" data-stage="cleanup" type="button">
-              <span><b>3</b> Manual guarded cleanup</span><small>Explicitly confirm permanent orphan deletion</small>
-            </button>
+          <div class="pipeline-run-controls">
+            <button class="btn-primary pipeline-run-btn" data-stage="full" type="button">Run full sync</button>
+            <details class="pipeline-advanced">
+              <summary>Run one step only</summary>
+              <button class="pipeline-stage-btn pipeline-run-btn" data-stage="sync" type="button">
+                <b>Download and import</b><small>No report, nothing retired</small>
+              </button>
+              <button class="pipeline-stage-btn pipeline-run-btn" data-stage="find" type="button">
+                <b>Report only</b><small>Recount against the last import; changes nothing</small>
+              </button>
+            </details>
           </div>
         </div>
 
@@ -524,8 +538,8 @@
 
         <div class="pipeline-history-head">
           <div>
-            <p class="pipeline-kicker">Audit trail</p>
-            <h3>Last seven days</h3>
+            <p class="pipeline-kicker">History</p>
+            <h3>Recent runs</h3>
           </div>
           <span id="pipeline-history-count" class="pipeline-history-count"></span>
         </div>

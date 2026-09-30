@@ -206,9 +206,7 @@ def test_an_unusable_retire_cap_refuses(value):
 
 
 def test_the_gate_refuses_a_manifest_from_another_commit(_files, monkeypatch):
-    import cleanup_orphans
-
-    monkeypatch.setattr(cleanup_orphans, "_require_maintenance_gate", lambda *a: None)
+    monkeypatch.setattr(csv_to_db, "require_maintenance_gate", lambda *a: None)
 
     class Cur:
         def execute(self, sql, params=None):

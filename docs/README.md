@@ -103,9 +103,9 @@ flora-extractor/data/extracted.csv
         v
 extractor_maintenance.py
         |
-        +-> sync_csv.py -> csv_to_db.py
-        +-> find_orphans.py                 (nightly/read-only)
-        +-> cleanup_orphans.py --apply      (separate manual action)
+        +-> sync_csv.py -> csv_to_db.py     (snapshot kept in extractor_snapshots)
+        +-> find_orphans.py                 (read-only summary)
+        +-> csv_to_db.py --retire           (pairs named in retired_pairs.csv)
         |
         v
 unvalidated + record_metadata + validation_queue
@@ -228,10 +228,13 @@ Use a disposable database for development unless you intend those actions to run
 | `GITHUB_TOKEN` | No for a public source repository | empty | Authorization header for nightly extractor CSV download |
 | `GITHUB_REPO` | No | `forrtproject/flora-extractor` | Extractor source repository |
 | `GITHUB_BRANCH` | No | `main` | Extractor source branch |
-| `EXTRACTOR_DATA_DIR` | No, but shared durable storage is required in Kubernetes | `data/` | Directory holding `extracted_latest.csv` and the immutable per-run snapshot archives that Parts 2 and 3 verify by sha256 |
-| `EXTRACTOR_MAINTENANCE_LOG` | No | `logs/extractor_maintenance.log` | Combined audit log for nightly sync/report and manually requested cleanup |
+| `EXTRACTOR_DATA_DIR` | No | `data/` | Working directory for `extracted_latest.csv` and the per-run snapshot archives the later stages verify by sha256; need not survive a redeploy, because each imported snapshot is also kept in `extractor_snapshots` |
+| `EXTRACTOR_SNAPSHOTS_KEPT` | No | `10` | Imported snapshots kept in the database (~4 MB each, minimum 2); older ones remain commits in flora-extractor's history |
+| `EXTRACTOR_AUTO_RETIRE` | No | `1` | Run the retire stage at the end of each full sync; `0`/`off` disables it |
+| `EXTRACTOR_MAX_RETIRE_PERCENT` | No | `15` | Cap on one automatic retire, as a percentage of `unvalidated`; over it nothing is retired |
+| `EXTRACTOR_MAINTENANCE_LOG` | No | `logs/extractor_maintenance.log` | Combined log file for the extractor pipeline; each run's complete log is also kept in `extractor_maintenance_runs` |
 | `EXTRACTOR_MAX_REMOVAL_PERCENT` | No | `10` | Finite threshold from `0` through `100`; invalid, `NaN`, infinite, or out-of-range values block sync before download/import |
-| `EXTRACTOR_STAGE_TIMEOUT_SECONDS` | No | `7200` | Maximum runtime for each sync/report/cleanup subprocess |
+| `EXTRACTOR_STAGE_TIMEOUT_SECONDS` | No | `7200` | Maximum runtime for each sync/report/retire subprocess |
 | `EXTRACTOR_LOCK_WAIT_SECONDS` | No | `15` | Brief advisory-lock retry for an already-reserved run |
 | `SUBMISSION_FAILURE_STAMP_TTL_MINUTES` | No | `30` | Lifetime of a one-time automatic-release capability issued after a server-observed judgement failure |
 | `OPENALEX_MAILTO` | No | maintainer email embedded in code | OpenAlex work-ID backfill polite-pool contact |
@@ -313,8 +316,8 @@ the downloaded candidate before Part 1 is marked complete.
 `sync_csv.py` command routes through `extractor_maintenance.py`, so it receives the
 same PostgreSQL lock, durable run history, completion gate, and non-zero failure
 exit as scheduled/admin synchronization. Therefore a committed import followed by
-a failed promotion is retained as an incomplete newest Part 1 and blocks orphan
-analysis/deletion.
+a failed promotion is retained as an incomplete newest Part 1 and blocks the
+orphan report and the retire stage.
 
 ### Eligibility rules
 
@@ -1255,27 +1258,32 @@ stale survivor is rejected.
 
 ### Extractor pipeline operations
 
-The **Extractor Pipeline** tab exposes the routine two-stage operation and the
-destructive maintenance action separately:
+The **Extractor Pipeline** tab explains what the nightly run does, in three steps:
 
-1. CSV download, safety validation, database import, promotion, and byte
-   verification;
-2. read-only orphan reporting; and
-3. manually confirmed, guarded orphan cleanup.
+1. download and check: CSV download, the removal guard, and the byte checks;
+2. import and report: database import, promotion, and a read-only summary of the
+   records the CSV no longer lists; and
+3. retire withdrawn records: the pairs flora-extractor names in
+   `data/retired_pairs.csv` are removed when nobody has worked on them, after a
+   copy is saved in `retired_records`; touched records are only flagged.
 
-The routine **Sync + report** operation never selects Part 3. Only a dedicated
-cleanup request can delete, and it requires explicit confirmation. Only one
-maintenance run can be queued or running across all workers/pods. The tab shows
-the previous/candidate/add/remove counts, safety warnings, per-stage states,
-requester, duration, and retained output. It always returns at least the latest
-seven days (up to 90 when requested); summaries include a log tail and each run's
-detail endpoint returns the complete database-retained log.
+**Run full sync** starts the same run now; **Run one step only** offers the sync
+or the report alone. Nothing deletes records by their absence from the CSV: the
+retire stage is the only route, and `EXTRACTOR_AUTO_RETIRE=0` turns it off. Only
+one maintenance run can be queued or running across all workers/pods.
+
+Each run is a card: its status in words, a one-line summary, the counts (pairs in
+the CSV, new, no longer listed, retired, flagged), a timeline of the steps with
+their durations, and plain-language notes for anything that went wrong. **View
+log** loads the complete log, grouped by step (failed steps open), with import
+progress lines and long retire plans folded, and Copy / Download / Plain text.
+The tab shows the latest seven days (up to 90 through the API). There is no
+attention badge on the tab.
 
 Manual requests persist their `queued` row before returning HTTP 202. They are
 then claimed by the database-backed dispatcher rather than a process-local
 background callback, so a web response or pod shutdown cannot silently discard
-the job. The same page shows queued/running recovery state and the atomic cleanup
-receipt retained after a destructive run.
+the job.
 
 ### Admin metrics and communication
 
@@ -1543,9 +1551,9 @@ the caller. State-changing requests are refused unless they originate from
 | POST | `/api/admin/entries/{record_id}/note` | Save persistent admin note |
 | POST | `/api/admin/entries/{record_id}/resolve` | Correct and accept/reject a record; a confirmed `merge_into_record_id` performs an explicit audited duplicate merge |
 | POST | `/api/admin/queue/{queue_id}/flag` | Toggle judgement flag and optionally message validator |
-| GET | `/api/admin/maintenance/runs` | At least seven days of pipeline summaries and warnings |
+| GET | `/api/admin/maintenance/runs` | At least seven days of run summaries, plus the removal limit and retire settings |
 | GET | `/api/admin/maintenance/runs/{run_id}` | Complete retained log for one run |
-| POST | `/api/admin/maintenance/run` | Queue the non-destructive full sync/report routine or one explicit stage; cleanup requires confirmation |
+| POST | `/api/admin/maintenance/run` | Queue the full routine (`full`) or the sync (`sync`) or report (`find`) alone |
 
 ### Admin messaging routes
 
@@ -1580,7 +1588,7 @@ so values such as `export.csv` and `duplicates` are not parsed as UUIDs.
 | UTC schedule | Function | Effect |
 | --- | --- | --- |
 | 00:22 daily | `_retry_tiebreakers()` | Retries only failed Gemini tiebreakers |
-| 02:00 daily | `extractor_maintenance.run_scheduled()` | Locked sync/import → OpenAlex enrichment → read-only orphan report; never deletion |
+| 02:00 daily | `extractor_maintenance.run_scheduled()` | Locked sync/import → OpenAlex enrichment → read-only orphan report → retire of the pairs flora-extractor withdrew |
 | Every 10 seconds | `extractor_maintenance.run_queued()` | Claims a durable manual request or recovers work abandoned by a terminated pod |
 | Every 2 minutes | `_reap_stale_slots()` | Releases 45-minute buffered and five-day started claims; marks elapsed failure stamps `expired` |
 
@@ -1598,8 +1606,8 @@ A zero-resolved candidate is an extractor error. A candidate removing more than
 `EXTRACTOR_MAX_REMOVAL_PERCENT` (10% by default) is blocked. So is a missing or
 stale baseline on a database that already holds records: an empty volume is
 reported as `missing_local_baseline`, never treated as a first deployment. In
-every case the known-good CSV stays active and the orphan report is logged as
-`SKIPPED`. Cleanup is not part of a routine run at all.
+every case the known-good CSV stays active and the orphan report and the retire
+stage are logged as `SKIPPED`.
 New resolved IDs are a visible non-blocking warning. Every scheduled or manual
 run is retained in `extractor_maintenance_runs` for the admin **Extractor
 Pipeline** tab; output also appends to the configured text log and stdout. A new
@@ -1615,45 +1623,53 @@ indefinitely.
 
 The OpenAlex backfill is no longer an independent 02:30 job. The 02:00 run
 executes it inside the same advisory-lock lifetime after a successful import, so
-it cannot overlap a slow sync or a manually started cleanup. Every cron trigger declares `UTC`
+it cannot overlap a slow sync or a manually started run. Every cron trigger declares `UTC`
 explicitly; the host or pod timezone cannot shift execution at daylight-saving
 boundaries.
 
 Manual `202 Accepted` responses are durable queue acknowledgements, not
 in-process FastAPI callbacks. The request row is committed before the response;
 all pods poll it, but the advisory lock elects one executor. If that pod exits,
-a replacement requeues the same run. If cleanup had already committed its
-receipt, recovery finalizes the run without repeating deletion.
+a replacement requeues the same run. Repeating it is safe: the import refreshes
+in place, and a pair the retire stage already removed is a no-op the next time.
 
 Stage progression uses the durable run record, not only subprocess exit codes.
 Part 1 becomes `SUCCESS` only after download, validation, database import, atomic
 promotion, an exact post-promotion byte comparison, and a verified archive digest
-all complete for that `run_id`. Part 2 starts only from that verified state. Part
-3 is never chained automatically: a separately confirmed cleanup request starts
-only after Part 2 has been committed as `SUCCESS`. Individually launched Part 2/3
-runs inherit the newest verified prerequisite run IDs; the newest failed or
-incomplete sync blocks them instead of falling back to an older success.
+all complete for that `run_id`. The report starts only from that verified state,
+and the retire stage only after the report has been committed as `SUCCESS` in the
+same run. A standalone report inherits the newest verified sync run ID; the
+newest failed or incomplete sync blocks it instead of falling back to an older
+success.
 
 Run-scoped completion markers are paired with the snapshot's `archive_sha256`,
-because a run ID proves only that some pod finished a sync. Both orphan stages
-receive the archive path and `--expect-sha256` and verify the file before reading
-it, and cleanup also compares that digest with the one PostgreSQL recorded for the
-run. A pod whose `EXTRACTOR_DATA_DIR` lacks the archive blocks with
-`snapshot_archive_unavailable`; one holding different bytes under the same name
-blocks with `snapshot_archive_mismatch`.
+because a run ID proves only that some pod finished a sync. The report and the
+retire stage receive the archive path and verify the file before reading it, and
+the retire stage also compares that digest with the one PostgreSQL recorded for
+the run. A pod whose `EXTRACTOR_DATA_DIR` lacks the archive restores it from
+`extractor_snapshots` first; with no copy there it blocks with
+`snapshot_archive_unavailable`, and one holding different bytes under the same
+name blocks with `snapshot_archive_mismatch` (a restore never overwrites a file).
 
-Apply-mode orphan cleanup briefly requests `EXCLUSIVE NOWAIT` locks on all eight
-affected tables (`unvalidated`, `validated`, queue, skip and automatic-failure audit,
-metadata, assignments, and messages) before its safety scan. If validation is already writing, cleanup
-fails and is logged instead of waiting; after the locks are acquired, new validation
-writes wait. Skip history therefore cannot appear between classification and
-deletion and abort the whole batch.
+Each retire batch briefly requests `EXCLUSIVE NOWAIT` locks on all eight affected
+tables (`unvalidated`, `validated`, queue, skip and automatic-failure audit,
+metadata, assignments, and messages) and re-plans under them. If validation is
+already writing, the batch fails and is logged instead of waiting; after the locks
+are acquired, new validation writes wait. A record cannot therefore be claimed or
+judged between the decision that it is untouched and its removal. Every removed
+record is first archived whole in `retired_records` in the same transaction.
 
-The cleanup child writes `safety_report.cleanup_receipt` and marks Part 3
-`COMMITTED` in the **same transaction** as its DELETE statements. The receipt
-contains exact record identities and per-table deletion counts. Parent progress
-updates merge JSON rather than replacing it, so a crash after deletion cannot
-erase the audit evidence.
+Every snapshot the sync imports is also kept in `extractor_snapshots` (gzip,
+keyed by sha256, with the flora-extractor commit it was read at). Before a sync
+the orchestrator restores the previous import from there if the working
+directory lost it, so a redeploy no longer blocks the removal guard (as it did
+nightly from 2026-09-13 to 2026-09-30); the extractor's git history remains the
+second fallback. Only the newest `EXTRACTOR_SNAPSHOTS_KEPT` are kept.
+
+Every run's status, stage results and durations, counts, orphan and retire
+summaries, and complete log live in `extractor_maintenance_runs`, which is never
+pruned: `GET /api/admin/maintenance/runs/{run_id}` returns one log, and the admin
+tab shows it. Parent progress updates merge JSON rather than replacing it.
 
 ### GitHub Actions
 
@@ -1724,22 +1740,19 @@ python csv_to_db.py --input data/extracted_latest.csv
 # Download from configured extractor branch and import through the audited runner
 python sync_csv.py
 
-# Run the complete routine pipeline (sync + read-only orphan report; no deletion)
+# Run the complete routine pipeline (sync, orphan report, retire)
 python extractor_maintenance.py
 
 # Run one stage from the command line (admins can do the same in the UI)
 python extractor_maintenance.py --stage sync
 python extractor_maintenance.py --stage find
-python extractor_maintenance.py --stage cleanup
 
-# Find database rows missing from the current eligible CSV
+# Summarise database rows missing from the current eligible CSV (read-only)
 python find_orphans.py --input data/extracted_latest.csv
 
-# Preview orphan deletion using the current retention rules
-python cleanup_orphans.py --input data/extracted_latest.csv
-
-# Apply cleanup through the prerequisite-gated maintenance runner
-python extractor_maintenance.py --stage cleanup
+# Preview, then apply, the retirement of the pairs flora-extractor withdrew
+python csv_to_db.py --input data/extracted_latest.csv --retire github
+python csv_to_db.py --input data/extracted_latest.csv --retire github --apply --expect-retire N
 
 # Refresh raw original-study fields for existing pair_ids
 python update_originals.py data/extracted_latest.csv
@@ -1844,7 +1857,7 @@ against a database you have not backed up.
 | File | Role |
 | --- | --- |
 | `sync_csv.py` | Staged extractor download, immutable archive, snapshot safety comparison, import, atomic promotion, and verification |
-| `extractor_maintenance.py` | Locked CSV sync/report routine, separately requested guarded cleanup, and unified audit log |
+| `extractor_maintenance.py` | Locked sync → orphan report → retire routine, database copy of each imported snapshot, and unified audit log |
 | `sync_sources.py` | Gated insert-only Google entry-sheet synchronization |
 | `transform_sources.py` | Source Records cleaning/dedup/projection CSV transform |
 | `export_validated.py` | Validated CSV and manual-reference report, OpenAlex citation cache |
@@ -1852,8 +1865,7 @@ against a database you have not backed up.
 | `backfill_quote_source.py` | Dry-by-default quote-source classification on `validated` |
 | `update_originals.py` | Dry-by-default raw original-reference refresh by `pair_id` |
 | `update_outcomes.py` | Outcome/type/quote refresh for untouched rows |
-| `find_orphans.py` | Read-only report of database records absent from the current resolved CSV |
-| `cleanup_orphans.py` | Dry-by-default deletion of untouched stale rows |
+| `find_orphans.py` | Read-only summary of database records absent from the current resolved CSV |
 | `db_migrate.py` | Legacy `pairs/coders/judgements` copier |
 | `db_reset.py` | Interactive destructive truncate utility |
 | `fetch_oa.py` | Unpaywall cache refresh for static/open-access links |
@@ -1919,7 +1931,7 @@ work; inspect them separately from source changes.
 | `tests/test_reproduction_judgement.py`, `test_reproduction_axes.py` | Browser/API/schema reproduction-axis contract, evidence, type conversion, and history rendering |
 | `tests/test_integrity_fixes.py`, `test_validated_identity.py` | Concurrent completion guards, migration mapping/status, explicit validated duplicate merge, source constraints, and export/backfill integrity |
 | `tests/test_skip_history.py` | Skip audit/escalation, modal behavior, draft preservation, server-issued failure stamps, and automatic-release isolation |
-| `tests/test_sync_csv.py`, `test_extractor_maintenance.py` | Download/archive safety, snapshot thresholds, promotion verification, stage gates, fail-fast behavior, advisory locks, timeout, logs, and cleanup authorization |
+| `tests/test_sync_csv.py`, `test_extractor_maintenance.py`, `test_extractor_snapshots.py` | Download/archive safety, snapshot thresholds, promotion verification, stage gates, fail-fast behavior, advisory locks, timeout, logs, the retire gate, and the database copy of each snapshot |
 | `tests/test_llm_validator.py`, `test_quote_source.py` | Structured LLM responses, canonical vocabularies, uncertainty, malformed/error retry, and quote-source normalization |
 | `tests/test_audit_regressions.py`, `test_extractor_vocab.py`, `test_console_encoding.py`, `test_transform_outcomes.py` | Cross-file regression contracts, shared vocabulary/schema parity, Windows console safety, and Source Records transformation |
 | `tests/__init__.py` | Empty package marker |
@@ -2236,16 +2248,12 @@ matching missing IDs into existing `validated` rows in the same transaction; if
 an export remains blank, verify that the validated DOI still matches the paper
 identity used for the backfill.
 
-### Manual destructive cleanup
+### Removing records
 
-Run `find_orphans.py` first, then `cleanup_orphans.py` without `--apply`. The
-cleanup utility preserves every admin-excluded row and any row with at least one
-submitted judgement. It also preserves every fully validated row, checked both by
-status and by presence in `validated`. An assignment-only
-`validation_inprogress` status, skips, admin notes/checks, and restricted-access
-state do not protect an otherwise untouched orphan; their dependent operational
-rows are removed in the same cleanup transaction. Cleanup is never launched by
-the nightly or routine full operation; an admin must start the dedicated cleanup
-stage and confirm it. Avoid
+Records are removed only by the retire stage, and only those flora-extractor lists
+in `data/retired_pairs.csv` that nobody has worked on; each is archived whole in
+`retired_records` first, so it can be restored. Nothing is deleted because it is
+merely absent from the CSV: most such records are validated work the extractor
+withholds on purpose. `find_orphans.py` summarises them read-only. Avoid
 `db_reset.py` unless the entire validation dataset and validator accounts are
 intended to be truncated and a verified backup exists.
