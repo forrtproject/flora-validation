@@ -134,6 +134,37 @@ def _fetch_csv(url: str) -> bytes:
     return response.content
 
 
+_COMMIT_SHA = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _resolve_source_commit() -> str | None:
+    """The commit the branch points at now, so the CSV and the retire manifest
+    (``csv_to_db.py --retire``) are read from the same one.
+
+    Best effort: without it the sync downloads the branch as it always did, and
+    the retire stage, which needs the pair, refuses to run.
+    """
+    token = os.environ.get("GITHUB_TOKEN", "")
+    headers = {"Accept": "application/vnd.github.sha"}
+    if token:
+        headers["Authorization"] = f"token {token}"
+    try:
+        response = requests.get(
+            f"https://api.github.com/repos/{_GITHUB_REPO}/commits/{_GITHUB_BRANCH}",
+            headers=headers,
+            timeout=60,
+        )
+    except requests.RequestException as exc:
+        print(f"[sync_csv] could not resolve {_GITHUB_BRANCH} to a commit: {exc}")
+        return None
+    sha = response.text.strip() if isinstance(response.text, str) else ""
+    if response.status_code != 200 or not _COMMIT_SHA.match(sha):
+        print(f"[sync_csv] could not resolve {_GITHUB_BRANCH} to a commit "
+              f"(HTTP {response.status_code})")
+        return None
+    return sha
+
+
 def _archive_token(maintenance_run_id: str | None) -> str:
     normalized = re.sub(r"[^A-Za-z0-9]", "", maintenance_run_id or "")
     return normalized[:8] or uuid4().hex[:8]
@@ -212,6 +243,95 @@ def _verify_archive(archive_path: Path, content: bytes) -> str:
     return actual
 
 
+_ARCHIVE_TIMESTAMP = re.compile(r"extracted_(\d{8}T\d{6}Z)_")
+_BASELINE_HISTORY_COMMITS = 10
+
+
+def _baseline_from_history(
+    baseline_file: str | None,
+    baseline_sha256: str,
+) -> tuple[bytes, str] | None:
+    """Fetch the recorded baseline's bytes back out of the extractor's git history.
+
+    The sync downloads ``data/extracted.csv`` from a branch, so every snapshot it
+    ever imported is a committed blob. The newest commits touching the file up to
+    the archive's own timestamp are tried in turn; only bytes whose sha256 equals
+    the recorded digest are accepted, so the source need not be trusted.
+    """
+    params: dict = {
+        "path": _CSV_FILE_PATH,
+        "sha": _GITHUB_BRANCH,
+        "per_page": _BASELINE_HISTORY_COMMITS,
+    }
+    stamp = _ARCHIVE_TIMESTAMP.search(baseline_file or "")
+    if stamp:
+        archived_at = datetime.strptime(stamp.group(1), "%Y%m%dT%H%M%SZ")
+        params["until"] = archived_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+    token = os.environ.get("GITHUB_TOKEN", "")
+    headers = {"Accept": "application/vnd.github+json"}
+    if token:
+        headers["Authorization"] = f"token {token}"
+    response = requests.get(
+        f"https://api.github.com/repos/{_GITHUB_REPO}/commits",
+        headers=headers,
+        params=params,
+        timeout=60,
+    )
+    if response.status_code != 200:
+        print(f"[sync_csv] baseline recovery: GitHub returned {response.status_code}")
+        return None
+    commits = response.json()
+    if not isinstance(commits, list):
+        return None
+    for commit in commits[:_BASELINE_HISTORY_COMMITS]:
+        sha = commit.get("sha") if isinstance(commit, dict) else None
+        if not isinstance(sha, str) or not sha:
+            continue
+        content = _fetch_csv(_build_url(_GITHUB_REPO, sha, _CSV_FILE_PATH))
+        if sha256_bytes(content) == baseline_sha256:
+            return content, sha
+    return None
+
+
+def _recover_baseline(
+    data_dir: Path,
+    baseline_file: str | None,
+    baseline_sha256: str,
+) -> Path | None:
+    """Find the recorded baseline's exact bytes when its archive file is gone.
+
+    A pod-local data directory loses every archive on redeploy, and the guard
+    then blocked every night from 2026-09-13 although the snapshot it needed was
+    (a) re-downloaded, byte-identical, under a new archive name by the blocked
+    runs themselves and (b) a commit in the extractor's history. Neither weakens
+    the guard: it still compares against exactly the recorded digest.
+    """
+    for path in sorted(data_dir.glob("extracted_*.csv")):
+        if matches(path, baseline_sha256):
+            print(f"[sync_csv] baseline recovered from archive {path.name}")
+            return path
+    try:
+        found = _baseline_from_history(baseline_file, baseline_sha256)
+    except Exception as exc:  # recovery is best effort; the caller still blocks
+        print(f"[sync_csv] baseline recovery from GitHub failed: {exc}")
+        return None
+    if found is None:
+        return None
+    content, commit = found
+    restored = data_dir / f"extracted_baseline_{baseline_sha256[:16]}.csv"
+    if not matches(restored, baseline_sha256):
+        tmp = restored.with_suffix(".tmp")
+        tmp.write_bytes(content)
+        os.replace(tmp, restored)
+    if not matches(restored, baseline_sha256):
+        return None
+    print(
+        f"[sync_csv] baseline recovered from {_GITHUB_REPO}@{commit} "
+        f"(sha256={baseline_sha256}) → {restored.name}"
+    )
+    return restored
+
+
 def _resolve_baseline(
     data_dir: Path,
     baseline_file: str | None,
@@ -233,11 +353,16 @@ def _resolve_baseline(
         for candidate in (archive_path, latest_path):
             if matches(candidate, baseline_sha256):
                 return candidate
+        recovered = _recover_baseline(data_dir, baseline_file, baseline_sha256)
+        if recovered is not None:
+            return recovered
         raise SnapshotSafetyError(
             "baseline_snapshot_unavailable",
             "the archived snapshot of the last verified sync is not readable on "
             f"this host (expected {baseline_file or '<unrecorded file>'} "
-            f"sha256={baseline_sha256}); refusing to re-baseline the removal guard",
+            f"sha256={baseline_sha256}), no other archive here carries those "
+            "bytes and the extractor's history did not yield them; refusing to "
+            "re-baseline the removal guard",
             {
                 "expected_baseline_file": baseline_file,
                 "expected_baseline_sha256": baseline_sha256,
@@ -345,7 +470,6 @@ def sync_once(
     as a background job; callers that need fail-fast behavior can inspect the
     return value (the command-line entry point converts it to an exit code).
     """
-    url = _build_url(_GITHUB_REPO, _GITHUB_BRANCH, _CSV_FILE_PATH)
     candidate_path = None
     report = {
         "success": False,
@@ -372,10 +496,16 @@ def sync_once(
         "promotion_verified": False,
         "part1_completed": False,
         "max_removal_percent": None,
+        # The flora-extractor commit the CSV was read at; the retire stage reads
+        # data/retired_pairs.csv at the same one.
+        "source_commit": None,
     }
     try:
         max_removal_percent = parse_max_removal_percent()
         report["max_removal_percent"] = max_removal_percent
+        source_commit = _resolve_source_commit()
+        report["source_commit"] = source_commit
+        url = _build_url(_GITHUB_REPO, source_commit or _GITHUB_BRANCH, _CSV_FILE_PATH)
         print(f"[sync_csv] Fetching {url} …")
         content = _fetch_csv(url)
         report["download_completed"] = True

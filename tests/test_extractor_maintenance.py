@@ -30,6 +30,7 @@ SNAPSHOT_BYTES = (
     b"abc,replication,llm_references,10.1/x\n"
 )
 SNAPSHOT_SHA256 = hashlib.sha256(SNAPSHOT_BYTES).hexdigest()
+SOURCE_COMMIT = "d7f55d98b7994109a12701c935b21fcc9dd14968"
 
 
 class ScriptedRunner:
@@ -67,10 +68,15 @@ class ScriptedRunner:
                             "promotion_completed": succeeded,
                             "promotion_verified": succeeded,
                             "part1_completed": succeeded,
+                            "source_commit": SOURCE_COMMIT if succeeded else None,
                         }
                     ),
                     encoding="utf-8",
                 )
+        if script == "csv_to_db.py" and returncode == 0:
+            summary = Path(command[command.index("--retire-summary-json") + 1])
+            summary.write_text(json.dumps({"status": "applied", "retire": 2,
+                                           "flag": 1}), encoding="utf-8")
         return subprocess.CompletedProcess(command, returncode, stdout=output)
 
 
@@ -827,6 +833,7 @@ def test_postgres_process_lock_is_held_until_every_stage_and_history_finish(tmp_
         {
             "sync_csv.py": (0, "ok\n"),
             "find_orphans.py": (0, "ok\n"),
+            "csv_to_db.py": (0, "ok\n"),
         }
     )
     lock_connection = object()
@@ -868,6 +875,9 @@ def test_postgres_process_lock_is_held_until_every_stage_and_history_finish(tmp_
         "sync_csv.py",
         "progress",
         "find_orphans.py",
+        "progress",
+        # The automatic retire applies inside the same lock, never beside it.
+        "csv_to_db.py",
         "progress",
         "finished",
         "released",
@@ -1286,3 +1296,86 @@ def test_the_performing_map_is_derived_from_the_stage_table():
         for request, stages in em._STAGES_BY_REQUEST.items():
             if stage in stages:
                 assert request in requests, f"{request} runs {stage} but is missing"
+
+
+def _audited_run(tmp_path, runner, finished, **kwargs):
+    """run_pipeline with durable history stubbed; *finished* receives _finish_run's kwargs."""
+    with patch("extractor_maintenance.queue_maintenance_run", return_value="run-1"), \
+         patch("extractor_maintenance._baseline_expectation", return_value={}), \
+         patch("extractor_maintenance._acquire_pipeline_lock", return_value=object()), \
+         patch("extractor_maintenance._mark_run_started"), \
+         patch("extractor_maintenance._update_run_progress"), \
+         patch("extractor_maintenance._finish_run",
+               side_effect=lambda *_a, **kw: finished.update(kw)), \
+         patch("extractor_maintenance._release_pipeline_lock"):
+        return run_pipeline(data_dir=tmp_path / "data", log_path=tmp_path / "m.log",
+                            runner=runner, database_url="postgresql://test", **kwargs)
+
+
+def test_auto_retire_is_on_unless_switched_off(monkeypatch):
+    from extractor_maintenance import _auto_retire_enabled
+
+    monkeypatch.delenv("EXTRACTOR_AUTO_RETIRE", raising=False)
+    assert _auto_retire_enabled() is True
+    monkeypatch.setenv("EXTRACTOR_AUTO_RETIRE", "0")
+    assert _auto_retire_enabled() is False
+
+
+def test_the_scheduled_retire_applies_the_manifest_of_the_imported_commit(tmp_path):
+    runner = ScriptedRunner({"sync_csv.py": (0, ""), "find_orphans.py": (0, ""),
+                             "csv_to_db.py": (0, "")})
+    finished = {}
+    assert _audited_run(tmp_path, runner, finished, trigger="scheduled") is True
+
+    retire = runner.commands[-1]
+    assert Path(retire[1]).name == "csv_to_db.py"
+    find_input, _ = _stage_input(runner, "find_orphans.py")
+    assert retire[retire.index("--input") + 1] == find_input
+    assert retire[retire.index("--retire-commit") + 1] == SOURCE_COMMIT
+    assert retire[retire.index("--maintenance-run-id") + 1] == "run-1"
+    assert "--apply" in retire
+    assert finished["stage_status"]["retire_superseded"] == "SUCCESS"
+    assert finished["safety_report"]["retire"]["retire"] == 2
+
+
+@pytest.mark.parametrize(("exit_code", "stage", "warning"), [
+    (3, "BLOCKED", "retire_cap_exceeded"),
+    (1, "FAILED", "retire_failed"),
+])
+def test_a_refused_or_failed_retire_is_a_warning_not_a_failed_sync(
+        tmp_path, exit_code, stage, warning):
+    runner = ScriptedRunner({"sync_csv.py": (0, ""), "find_orphans.py": (0, ""),
+                             "csv_to_db.py": (exit_code, "")})
+    finished = {}
+    assert _audited_run(tmp_path, runner, finished) is True
+    assert finished["stage_status"]["retire_superseded"] == stage
+    assert warning in finished["safety_report"]["warning_codes"]
+    assert finished["status"] == "warning"
+
+
+def test_no_retire_without_the_commit_the_csv_was_read_at(tmp_path):
+    runner = ReportingRunner({"sync_csv.py": (0, ""), "find_orphans.py": (0, "")},
+                             {"source_commit": None})
+    finished = {}
+    assert _audited_run(tmp_path, runner, finished) is True
+    assert _script_order(runner) == ["sync_csv.py", "find_orphans.py"]
+    assert finished["stage_status"]["retire_superseded"] == "SKIPPED"
+    assert "retire_source_commit_unknown" in finished["safety_report"]["warning_codes"]
+
+
+def test_no_retire_after_a_failed_sync(tmp_path):
+    runner = ScriptedRunner({"sync_csv.py": (1, "")})
+    finished = {}
+    assert _audited_run(tmp_path, runner, finished) is False
+    assert _script_order(runner) == ["sync_csv.py"]
+    assert finished["stage_status"]["retire_superseded"] == "SKIPPED"
+
+
+def test_off_switch_and_single_stage_requests_never_retire(tmp_path, monkeypatch):
+    runner = ScriptedRunner({"sync_csv.py": (0, ""), "find_orphans.py": (0, "")})
+    finished = {}
+    assert _audited_run(tmp_path, runner, finished, requested_stage="sync") is True
+    assert "retire_superseded" not in finished["stage_status"]
+    monkeypatch.setenv("EXTRACTOR_AUTO_RETIRE", "off")
+    assert _audited_run(tmp_path, runner, finished) is True
+    assert "csv_to_db.py" not in _script_order(runner)
