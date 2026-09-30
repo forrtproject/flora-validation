@@ -67,7 +67,7 @@ was converted unverified, and leaving out any an admin has already checked,
 overridden, or sent back for review. --reevaluate re-runs consensus for exactly
 those. That makes the LLM sanity-check call a fresh agreement makes (one per
 record, needs GEMINI_API_KEY) and can move a record to consensus_reached, or to
-validated when a senior validator took part.
+validated when an auto-validation rule applies (consensus_engine.auto_validation_rule).
 
 Usage:
     python backfill_outcome_agreement.py                        # dry run: count and list
@@ -432,15 +432,16 @@ def reevaluation_backup(cur, record_ids) -> dict:
     return {"records_before_reevaluation": saved}
 
 
-def write_backup(payload: dict) -> Path:
+def write_backup(payload: dict, prefix: str = "outcome_agreement") -> Path:
     """Save what this run is about to change to a new file — raising, before
-    anything is written to the database, if it cannot."""
+    anything is written to the database, if it cannot. Also used by
+    auto_validate_waiting.py."""
     folder = Path(os.environ.get("OUTCOME_BACKFILL_BACKUP_DIR")
                   or Path(__file__).resolve().parent / "backups")
     folder.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     for n in range(1000):
-        path = folder / f"outcome_agreement_{stamp}{f'_{n}' if n else ''}.json"
+        path = folder / f"{prefix}_{stamp}{f'_{n}' if n else ''}.json"
         try:
             with path.open("x", encoding="utf-8") as handle:     # never overwrite one
                 json.dump(payload, handle, indent=1, default=str)

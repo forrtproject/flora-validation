@@ -193,10 +193,10 @@ def dois_in_product(cur) -> list:
         """
         SELECT DISTINCT doi FROM (
             SELECT doi_o AS doi FROM source_records
-             WHERE duplicate_status IS DISTINCT FROM 'duplicate'
+             WHERE duplicate_status IS DISTINCT FROM 'duplicate' AND deleted_at IS NULL
             UNION ALL
             SELECT doi_r FROM source_records
-             WHERE duplicate_status IS DISTINCT FROM 'duplicate'
+             WHERE duplicate_status IS DISTINCT FROM 'duplicate' AND deleted_at IS NULL
         ) t
         WHERE doi IS NOT NULL AND btrim(doi) <> ''
         """
@@ -345,11 +345,11 @@ def work_ids_in_product(cur) -> list:
         """
         SELECT DISTINCT url FROM (
             SELECT url_o AS url FROM source_records
-             WHERE duplicate_status IS DISTINCT FROM 'duplicate'
+             WHERE duplicate_status IS DISTINCT FROM 'duplicate' AND deleted_at IS NULL
                AND (doi_o IS NULL OR btrim(doi_o) = '')
             UNION ALL
             SELECT url_r FROM source_records
-             WHERE duplicate_status IS DISTINCT FROM 'duplicate'
+             WHERE duplicate_status IS DISTINCT FROM 'duplicate' AND deleted_at IS NULL
                AND (doi_r IS NULL OR btrim(doi_r) = '')
         ) t
         WHERE url ~* 'openalex\\.org/W[0-9]+'
@@ -511,7 +511,7 @@ def reference_keys_in_product(cur) -> list:
     """Both paper sides, including URL-only reports and manual DUMMY keys."""
     cur.execute("""
         SELECT doi_o, doi_r, url_o, url_r FROM source_records
-        WHERE duplicate_status IS DISTINCT FROM 'duplicate'
+        WHERE duplicate_status IS DISTINCT FROM 'duplicate' AND deleted_at IS NULL
     """)
     wanted = []
     seen = set()

@@ -223,12 +223,12 @@ def test_consensus_records_flags_without_gating_on_them():
 
 def test_every_terminal_branch_of_consensus_records_flags():
     """_update_status is the single point every branch reaches, so passing the
-    record there covers all of them — including the senior auto-validate path
-    that writes straight to `validated` with no admin in the loop."""
+    record there covers all of them — including the auto-validation path that
+    writes straight to `validated` with no admin in the loop."""
     evaluated = CONSENSUS.split("def evaluate_consensus(", 1)[1]
     calls = [ln for ln in evaluated.splitlines() if "_update_status(cur, record_id" in ln]
     assert len(calls) >= 12
-    assert all(ln.rstrip().endswith(", record)") for ln in calls), calls
+    assert all(ln.rstrip().endswith((", record)", ", record, auto_rule=rule)")) for ln in calls), calls
 
 
 def test_the_backfill_never_changes_validation_status():

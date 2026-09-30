@@ -410,7 +410,8 @@ def strip_redundant_url(row):
 
 
 def load(cur):
-    """Reviewer-edited rows. Anything ruled a duplicate is left behind here."""
+    """Reviewer-edited rows. Anything ruled a duplicate is left behind here, and so
+    is a row marked deleted (a record no longer validated)."""
     cur.execute(
         """
         SELECT record_id::text AS record_id, display_id, source, type,
@@ -423,6 +424,7 @@ def load(cur):
                validation_status, reviewed_by, duplicate_status
         FROM source_records
         WHERE duplicate_status IS DISTINCT FROM 'duplicate'
+          AND deleted_at IS NULL
         ORDER BY display_id
         """
     )
@@ -467,6 +469,7 @@ def load_cross_type_duplicates(cur):
         FROM source_records d
         JOIN source_records s ON s.record_id = d.duplicate_of
         WHERE d.duplicate_status = 'duplicate' AND d.type IS DISTINCT FROM s.type
+          AND d.deleted_at IS NULL AND s.deleted_at IS NULL
         ORDER BY d.display_id
         """
     )

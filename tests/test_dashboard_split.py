@@ -231,8 +231,9 @@ def admin_api(local_database, monkeypatch):
 
 
 def test_the_approval_card_counts_what_the_validators_table_counts(admin_api, local_database):
-    """16 approved · 1 🚩 for a validator with 55 submissions, in miniature: three
-    judgements, one on a record an admin approved, one flagged."""
+    """16 approved · 1 🚩 for a validator with 55 submissions, in miniature: four
+    judgements, one on a record an admin approved, one flagged, and one on a record
+    auto-validated without an admin — not an approval."""
     with local_database, local_database.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("INSERT INTO validators (handle, total_judgements) VALUES ('m.sparhuber', 3) "
                     "RETURNING id")
@@ -241,10 +242,13 @@ def test_the_approval_card_counts_what_the_validators_table_counts(admin_api, lo
                               "type_check": "correct", "original_check": "correct",
                               "outcome_check": "correct"})
         ids = []
-        for status, flagged in (("validated", False), ("need_review", True), ("consensus_reached", False)):
-            cur.execute("INSERT INTO unvalidated (doi_r, type, outcome, validation_status, validator_1) "
-                        "VALUES ('10.9/r', 'replication', 'failed', %s, %s) RETURNING record_id::text AS id",
-                        (status, summary))
+        for status, flagged, by_admin in (("validated", False, True), ("need_review", True, False),
+                                          ("consensus_reached", False, False),
+                                          ("validated", False, False)):
+            cur.execute("INSERT INTO unvalidated (doi_r, type, outcome, validation_status, validator_1, "
+                        "admin_checked) VALUES ('10.9/r', 'replication', 'failed', %s, %s, %s) "
+                        "RETURNING record_id::text AS id",
+                        (status, summary, by_admin))
             record_id = cur.fetchone()["id"]
             ids.append(record_id)
             cur.execute("INSERT INTO validation_queue (record_id, validator_slot, is_shown, is_validated, "

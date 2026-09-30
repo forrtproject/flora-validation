@@ -1972,3 +1972,72 @@ CREATE INDEX IF NOT EXISTS idx_extractor_maintenance_runs_recent
 CREATE UNIQUE INDEX IF NOT EXISTS uq_extractor_maintenance_one_active
     ON extractor_maintenance_runs ((1))
     WHERE status IN ('queued', 'running');
+
+-- ── Auto-validation, self-approval and the admin decision log ─────────────────
+-- Two agreeing validators skip admin review when the AI sanity check agrees too
+-- and one of them is Trusted or Senior, or both are experienced (see
+-- consensus_engine.auto_validation_rule). The rule that let a record through is
+-- kept with it, so auto-validated records can be listed, reported and sent back.
+-- A validated record an admin never checked is auto-validated. Before these rules
+-- consensus did that too (at first for every agreement, later only a Senior's),
+-- without the AI check; those records have no rule recorded.
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS auto_validated_rule TEXT;
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS auto_validated_at   TIMESTAMPTZ;
+
+-- The validator account of the person behind an admin account. An admin who
+-- validated an entry may decide it only when the other validator agreed with
+-- them; without this link nobody can tell. Two admin accounts may share one.
+ALTER TABLE admins ADD COLUMN IF NOT EXISTS validator_id INTEGER
+    REFERENCES validators(id) ON DELETE SET NULL;
+
+-- Every admin decision on an entry: who, when, and which stored values it
+-- changed ({column: [before, after]}). Approving and editing used to overwrite the
+-- values the validators agreed on without a trace. No foreign key: the log
+-- outlives the record.
+CREATE TABLE IF NOT EXISTS admin_decisions (
+    decision_id   BIGSERIAL   PRIMARY KEY,
+    record_id     UUID        NOT NULL,
+    decided_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    admin_id      INTEGER,
+    admin_handle  TEXT,
+    action        TEXT        NOT NULL,
+    status_before TEXT,
+    status_after  TEXT,
+    changes       JSONB       NOT NULL DEFAULT '{}'::jsonb
+);
+CREATE INDEX IF NOT EXISTS idx_admin_decisions_record
+    ON admin_decisions (record_id, decided_at DESC);
+
+-- ── Source Records: rows of records that are no longer validated ──────────────
+-- A validated record that leaves the validated set (sent back, rejected, merged)
+-- is not removed from Source Records but marked deleted: it stops feeding the
+-- FLoRA build (transform_sources.load), and its row and display id stay, reserved,
+-- as a record of what was there. sync_validated.py also marks a row deleted when
+-- the record was validated again under a new row (every admin edit replaces the
+-- validated row), naming the row that replaced it.
+ALTER TABLE source_records ADD COLUMN IF NOT EXISTS deleted_at     TIMESTAMPTZ;
+ALTER TABLE source_records ADD COLUMN IF NOT EXISTS deleted_reason TEXT;
+
+CREATE OR REPLACE FUNCTION retire_validated_source_row() RETURNS trigger AS $$
+BEGIN
+    -- Run at commit: an edit deletes the validated row and inserts a new one in
+    -- the same transaction, and only a record left with none has gone.
+    IF NOT EXISTS (SELECT 1 FROM validated WHERE record_id = OLD.record_id) THEN
+        UPDATE source_records
+           SET deleted_at = NOW(),
+               deleted_reason = 'The record is no longer validated.',
+               version = version + 1,
+               updated_at = NOW()
+         WHERE source = 'validated'
+           AND sheet_row_id = OLD.validated_record_id::text
+           AND deleted_at IS NULL;
+    END IF;
+    RETURN NULL;
+END
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_retire_validated_source_row ON validated;
+CREATE CONSTRAINT TRIGGER trg_retire_validated_source_row
+    AFTER DELETE ON validated
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION retire_validated_source_row();

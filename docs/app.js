@@ -5284,6 +5284,7 @@ onBackdropClick($("#faq-modal"), closeFaq);
 
 let _adminFilter    = "all";
 let _adminSearch    = "";
+let _adminHideMine  = false;     // "Hide entries I validated"
 let _adminPage      = 1;
 let _adminSort      = "";        // column key, "" = default ordering
 let _adminSortDir   = "desc";    // "asc" | "desc"
@@ -5383,9 +5384,12 @@ async function fetchAdminEntries(resetState = true) {
   try {
     const searchParam = _adminSearch ? `&search=${encodeURIComponent(_adminSearch)}` : "";
     const sortParam   = _adminSort ? `&sort=${_adminSort}&dir=${_adminSortDir}` : "";
+    const mineParam   = _adminHideMine ? "&hide_mine=true" : "";
     const data = await adminApi(
-      `/entries?filter=${_adminFilter}&page=${_adminPage}&per_page=${ADMIN_PER_PAGE}${searchParam}${sortParam}`
+      `/entries?filter=${_adminFilter}&page=${_adminPage}&per_page=${ADMIN_PER_PAGE}${searchParam}${sortParam}${mineParam}`
     );
+    // "Hide entries I validated" needs this admin account linked to its validator one.
+    $("#admin-hide-mine-wrap")?.classList.toggle("hidden", !data.viewer_linked);
     renderAdminCounts(data.counts);
     renderAdminTable(data.entries, data.total);
     _updateSortIndicators();
@@ -5424,9 +5428,27 @@ function renderAdminCounts(counts) {
   const fcQuality = $("#fc-quality-flagged");
   if (fcQuality) fcQuality.textContent = counts.quality_flagged ?? 0;
   $("#fc-validated").textContent        = counts.validated;
+  const fcAuto = $("#fc-auto-validated");
+  if (fcAuto) fcAuto.textContent = counts.auto_validated ?? 0;
   $("#fc-rejected").textContent         = counts.rejected ?? 0;
   const _fcAdminChecked = $("#fc-admin-checked");
   if (_fcAdminChecked) _fcAdminChecked.textContent = counts.admin_checked;
+}
+
+// How an entry was validated without an admin: the rule consensus recorded. An
+// entry with none was validated automatically before these rules (at first every
+// agreement was, later only a Senior's), without the AI check.
+const AUTO_RULE_LABELS = {
+  trusted: "a ⭐ Trusted validator",
+  experienced: "two experienced validators",
+};
+function _autoRuleLabel(rule) {
+  return AUTO_RULE_LABELS[rule] || "an earlier automatic rule";
+}
+function _autoValidatedHow(rule) {
+  return rule
+    ? `the validators and the AI check agreed, with ${_autoRuleLabel(rule)}`
+    : "it was validated automatically before the current rules";
 }
 
 const STATUS_LABELS = {
@@ -5450,7 +5472,9 @@ function renderAdminTable(entries, total) {
 
   const offset = (_adminPage - 1) * ADMIN_PER_PAGE;
   body.innerHTML = entries.map((e, i) => {
-    const s      = STATUS_LABELS[e.validation_status] || { text: e.validation_status, cls: "" };
+    const s      = e.auto_validated
+      ? { text: "Auto-validated", cls: "status-auto" }
+      : STATUS_LABELS[e.validation_status] || { text: e.validation_status, cls: "" };
     const qf = Number(e.quality_flag_count) || 0;
     const flags  = [
       // Advisory flags do not change validation_status, so the row is the only
@@ -5459,6 +5483,7 @@ function renderAdminTable(entries, total) {
       e.has_llm_error  ? '<span class="admin-flag flag-llm" title="LLM error">LLM</span>' : "",
       e.is_tiebreaker  ? '<span class="admin-flag flag-tie" title="Tiebreaker">TIE</span>' : "",
       e.admin_checked  ? '<span class="admin-flag flag-admin" title="Admin checked">✓</span>' : "",
+      e.mine           ? '<span class="admin-flag flag-mine" title="You validated this entry">YOU</span>' : "",
     ].join("");
     const validators = [
       e.has_v1  ? `<span class="val-badge" title="${escapeHtml(e.v1_handle || "Validator 1")}">V1</span>` : `<span class="val-badge val-badge-empty">—</span>`,
@@ -5505,7 +5530,7 @@ function renderAdminTable(entries, total) {
       <td class="admin-cell-study" title="${(e.final_title_r || e.title_r || "").replace(/"/g, "&quot;")}">${escapeHtml(study)}${e.study_r ? ` <span class="chk-na-note">Study ${escapeHtml(e.study_r)}</span>` : ""}${flags}${trustBadge}${needsAttentionFlag}${noteFlag}</td>
       <td>${escapeHtml(e.final_type || e.type || "—")}</td>
       <td>${escapeHtml(fmtOutcome(e.final_outcome || e.outcome) || "—")}</td>
-      <td><span class="admin-status ${s.cls}">${s.text}</span></td>
+      <td><span class="admin-status ${s.cls}"${e.auto_validated ? ` title="No admin reviewed it: ${escapeHtml(_autoValidatedHow(e.auto_validated_rule))}"` : ""}>${s.text}</span></td>
       <td class="admin-cell-validators">${validators}</td>
       <td class="admin-skip-cell">${skipCell}</td>
       <td class="admin-cell-agree">${agreeCell}</td>
@@ -6193,7 +6218,51 @@ function renderAdminDetail(data) {
     .filter(Boolean).join(" and ");
 
   $("#admin-detail-title").textContent = (rec.title_r || rec.doi_r || "Entry Review").substring(0, 80);
+  // Validated without an admin: say so first, and offer the way back to review.
+  const autoValidated = rec.validation_status === "validated" && !rec.admin_checked;
+  const autoWho = [rec.validator_1?.validator_name, rec.validator_2?.validator_name]
+    .filter(Boolean).map(escapeHtml).join(" and ") || "the two validators";
+  const autoBanner = autoValidated
+    ? `<div class="admin-auto-banner">
+         <div><strong>Auto-validated</strong>${rec.auto_validated_at ? ` on ${escapeHtml(fmtDate(rec.auto_validated_at))}` : ""}
+         — no admin reviewed this entry. ${rec.auto_validated_rule
+           ? `${autoWho} agreed, the AI check agreed, and ${escapeHtml(_autoRuleLabel(rec.auto_validated_rule))} took part.`
+           : "It was validated automatically before the current rules, without the AI check."}</div>
+         <button id="admin-send-back-btn" class="btn-outline" data-id="${rec.record_id}">↩ Send back for review</button>
+       </div>`
+    : "";
+  // The self-approval rule: an admin who validated this entry decides it only when
+  // the other validator agreed with them. The server enforces it; this explains it.
+  const selfApproval = data.self_approval || {};
+  const selfBanner = selfApproval.mine
+    ? (selfApproval.allowed
+        ? `<div class="admin-self-banner admin-self-ok"><strong>You validated this entry.</strong>
+             The other validator agreed with you, so you may decide it.</div>`
+        : `<div class="admin-self-banner"><strong>${escapeHtml(selfApproval.reason ||
+             "You validated this entry, so another admin needs to decide it.")}</strong></div>`)
+    : "";
+  const DECISION_LABELS = {
+    approved: "Approved", resolved: "Resolved", rejected: "Rejected — not in FLoRA",
+    merged: "Merged into another entry", flagged_for_review: "Flagged for review",
+    sent_back: "Sent back for review (was auto-validated)",
+  };
+  const decisions = Array.isArray(data.decisions) ? data.decisions : [];
+  const decisionsCard = decisions.length
+    ? `<details class="admin-decisions">
+         <summary>Admin decisions (${decisions.length})</summary>
+         <ul>${decisions.map((d) => {
+           const changed = Object.keys(d.changes || {})
+             .map((f) => f.replace(/^final_/, "").replace(/_/g, " "));
+           return `<li><strong>${escapeHtml(DECISION_LABELS[d.action] || d.action)}</strong>
+             by ${escapeHtml(d.admin_handle || "an admin")} · ${escapeHtml(fmtDate(d.decided_at))}
+             ${changed.length ? `<span class="chk-na-note">changed ${escapeHtml(changed.join(", "))}</span>` : ""}</li>`;
+         }).join("")}</ul>
+       </details>`
+    : "";
+
   $("#admin-detail-body").innerHTML = `
+    ${autoBanner}
+    ${selfBanner}
     ${qualityBanner}
     ${abstractBanner}
     ${quoteBanner}
@@ -6201,6 +6270,7 @@ function renderAdminDetail(data) {
     ${overrideBanner}
     ${skipHistoryCard}
     ${submissionFailureCard}
+    ${decisionsCard}
     <div class="admin-detail-cols">
       <!-- Left: final preview + validator cards -->
       <div class="admin-detail-pair">
@@ -6490,6 +6560,33 @@ function renderAdminDetail(data) {
         btn.disabled = false;
       }
     });
+  });
+
+  // The decision is another admin's: keep the decision buttons, but disabled with
+  // the reason, so nobody wonders where they went.
+  if (selfApproval.mine && !selfApproval.allowed) {
+    ["#admin-resolve-btn", "#admin-reject-btn"].forEach((sel) => {
+      const btn = $(sel);
+      if (btn) { btn.disabled = true; btn.title = selfApproval.reason || ""; }
+    });
+  }
+  $("#admin-send-back-btn")?.addEventListener("click", async () => {
+    const btn = $("#admin-send-back-btn");
+    const sure = await showConfirm(
+      "Send this entry back for review? It stops counting as validated, and stops feeding FLoRA, until an admin decides it.");
+    if (!sure) return;
+    const notes = $("#admin-note-text")?.value.trim() || null;
+    btn.disabled = true;
+    btn.textContent = "Sending back…";
+    try {
+      await adminApi(`/entries/${btn.dataset.id}/flag-review`, "POST", notes ? { admin_notes: notes } : {});
+      showToast("Sent back for review.");
+      await advanceToNextAdminEntry();
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = "↩ Send back for review";
+      await showAlert("Error: " + e.message);
+    }
   });
 
   const _flagReviewBtn = $("#admin-flag-review-btn");
@@ -7219,6 +7316,11 @@ function renderAdminDashboard(d) {
           <span class="dash-card-label">Validated</span>
           <span class="dash-card-sub">${pct(p.validated, p.total)}</span>
         </div>
+        <div class="dash-card dash-card-neutral" title="Validated without an admin review: by the auto-validation rules (the validators and the AI check agreed, with a Trusted validator or two experienced ones), or automatically before them">
+          <span class="dash-card-val">${p.auto_validated ?? 0}</span>
+          <span class="dash-card-label">Auto-validated</span>
+          <span class="dash-card-sub">${pct(p.auto_validated ?? 0, p.validated)} of validated</span>
+        </div>
         <div class="dash-card dash-card-muted">
           <span class="dash-card-val">${p.rejected}</span>
           <span class="dash-card-label">Excluded</span>
@@ -7757,14 +7859,17 @@ async function fetchAdminAdmins() {
   const list = $("#admin-admins-list");
   list.innerHTML = '<p class="admin-loading">Loading…</p>';
   try {
-    const data = await adminApi("/admins");
-    renderAdminAdmins(data.admins);
+    const [data, vdata] = await Promise.all([
+      adminApi("/admins"),
+      _adminTrusted ? adminApi("/validators") : Promise.resolve({ validators: [] }),
+    ]);
+    renderAdminAdmins(data.admins, vdata.validators || []);
   } catch (e) {
     list.innerHTML = `<p class="admin-loading">Error: ${e.message}</p>`;
   }
 }
 
-function renderAdminAdmins(admins) {
+function renderAdminAdmins(admins, validators = []) {
   const list = $("#admin-admins-list");
   if (!admins.length) {
     list.innerHTML = '<p class="admin-loading">No admin accounts found.</p>';
@@ -7772,7 +7877,7 @@ function renderAdminAdmins(admins) {
   }
   list.innerHTML = `
     <table class="admin-table">
-      <thead><tr><th>#</th><th>Handle</th><th>Trusted <span class="col-help" title="Trusted admins can add and remove other admin accounts.">?</span></th><th>Created</th><th></th></tr></thead>
+      <thead><tr><th>#</th><th>Handle</th><th>Trusted <span class="col-help" title="Trusted admins can add and remove other admin accounts.">?</span></th><th>Validator account <span class="col-help" title="The same person's validator account. An admin who validated an entry may decide it only when the other validator agreed with them; unlinked accounts can't be checked.">?</span></th><th>Created</th><th></th></tr></thead>
       <tbody>
         ${admins.map((a, i) => {
           const isYou = a.handle === _adminHandle;
@@ -7786,10 +7891,28 @@ function renderAdminAdmins(admins) {
           const actions = _adminTrusted && !isYou
             ? `<button class="ghost-btn admin-delete-admin-btn" data-id="${a.id}" style="color:var(--muted);font-size:0.8rem">Remove</button>`
             : "";
+          // Nobody sets the link on their own account: another trusted admin does
+          // (the server refuses it too), so nobody can lift the rule from themselves.
+          const current = a.validator_handle
+            ? `<span class="admin-link-current">${escapeHtml(a.validator_handle)}</span>`
+            : '<span class="admin-link-none">not linked</span>';
+          const canLink = _adminTrusted && validators.length && !isYou;
+          const selected = a.validator_id ?? a.suggested_validator_id ?? "";
+          const linkCell = canLink
+            ? `<div class="admin-link-controls">${current}
+               <select class="admin-select admin-link-select" id="admin-link-sel-${a.id}" aria-label="Validator account for ${escapeHtml(a.handle)}">
+                 <option value="">— none —</option>
+                 ${validators.map((v) => `<option value="${v.id}" ${String(v.id) === String(selected) ? "selected" : ""}>${escapeHtml(v.handle)}</option>`).join("")}
+               </select>
+               <button class="ghost-btn admin-link-save-btn" data-id="${a.id}">${a.validator_id ? "Change" : "Link"}</button>
+               ${!a.validator_id && a.suggested_validator_handle ? `<span class="chk-na-note">suggested: ${escapeHtml(a.suggested_validator_handle)}</span>` : ""}</div>`
+            : current + (!a.validator_id && a.suggested_validator_handle
+                ? ` <span class="chk-na-note">likely ${escapeHtml(a.suggested_validator_handle)}</span>` : "");
           return `<tr>
             <td class="admin-cell-num">${i + 1}</td>
             <td><strong>${a.handle}</strong>${isYou ? ' <span style="color:var(--muted);font-size:0.8rem">(you)</span>' : ""}</td>
             <td>${trustedCell}</td>
+            <td class="admin-link-cell">${linkCell}</td>
             <td style="color:var(--muted);font-size:0.8rem">${a.joined || "—"}</td>
             <td>${actions}</td>
           </tr>`;
@@ -7797,6 +7920,24 @@ function renderAdminAdmins(admins) {
       </tbody>
     </table>
   `;
+
+  list.querySelectorAll(".admin-link-save-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      const value = $(`#admin-link-sel-${btn.dataset.id}`)?.value || "";
+      btn.disabled = true;
+      try {
+        const data = await adminApi(`/admins/${btn.dataset.id}/validator`, "POST",
+                                    { validator_id: value ? Number(value) : null });
+        showToast(data.validator_handle
+          ? `${data.handle} linked to validator ${data.validator_handle}.`
+          : `${data.handle} is no longer linked to a validator account.`);
+        fetchAdminAdmins();
+      } catch (e) {
+        btn.disabled = false;
+        await showAlert("Error: " + e.message);
+      }
+    };
+  });
 
   list.querySelectorAll(".admin-toggle-trusted-btn").forEach((btn) => {
     btn.onclick = async () => {
@@ -8089,6 +8230,12 @@ function _updateSortIndicators() {
 }
 
 /* ---------- Admin search ---------- */
+$("#admin-hide-mine")?.addEventListener("change", (e) => {
+  _adminHideMine = e.target.checked;
+  _adminPage = 1;
+  fetchAdminEntries();
+});
+
 let _adminSearchTimer = null;
 document.addEventListener("input", (e) => {
   if (e.target.id !== "admin-search-input") return;
@@ -8182,6 +8329,8 @@ function srcQueryParams() {
   // Our own validated records, projected into the grid by sync_validated.py. A
   // registry key rather than a paper type, since it holds both kinds.
   if (_srcFilter === "validated")  p.source   = "validated";
+  // Rows of records no longer validated: kept, marked deleted, out of FLoRA.
+  if (_srcFilter === "deleted")    p.deleted  = "only";
   if (_srcStatus) p.status = _srcStatus;
   if (_srcSearch) p.search = _srcSearch;
   if (_srcSort)   { p.sort = _srcSort; p.dir = _srcSortDir; }
@@ -8238,6 +8387,7 @@ function renderSourceRecords(data) {
   set("#sfc-unreviewed", c.unreviewed);
   set("#sfc-flagged", c.flagged);
   set("#sfc-validated", c.validated);
+  set("#sfc-deleted", c.deleted);
 
   const body  = $("#src-table-body");
   const empty = $("#src-empty");
@@ -8252,8 +8402,13 @@ function renderSourceRecords(data) {
       ? escapeHtml(r.reviewed_by) + '<br><span class="src-dim2">' +
         new Date(r.reviewed_at).toLocaleDateString() + "</span>"
       : "—";
-    return '<tr class="src-row' + (r.reviewed_at ? " src-reviewed" : "") + '" data-id="' + r.record_id + '">' +
-      '<td class="src-id">' + escapeHtml(r.display_id || "") + flag + "</td>" +
+    const deleted = r.deleted_at
+      ? ' <span class="src-deleted-badge" title="' + escapeHtml(r.deleted_reason || "Deleted") +
+        ' It no longer feeds FLoRA.">deleted</span>'
+      : "";
+    return '<tr class="src-row' + (r.reviewed_at ? " src-reviewed" : "") +
+      (r.deleted_at ? " src-deleted" : "") + '" data-id="' + r.record_id + '">' +
+      '<td class="src-id">' + escapeHtml(r.display_id || "") + flag + deleted + "</td>" +
       '<td><span class="src-type-badge src-type-' + r.type + '">' +
         (r.type === "reproduction" ? "repro" : "repl") + "</span></td>" +
       "<td>" + srcShorten(r.ref_o) + "</td>" +
@@ -9303,7 +9458,17 @@ function renderSourceRecord(r) {
       new Date(r.reviewed_at).toLocaleString()
     : "Not yet reviewed";
 
+  // A deleted row is kept as a record only: say why, and offer no save.
+  const deletedBanner = r.deleted_at
+    ? '<div class="src-deleted-banner"><strong>Deleted</strong> on ' +
+      escapeHtml(new Date(r.deleted_at).toLocaleString()) + " — " +
+      escapeHtml(r.deleted_reason || "its record is no longer validated.") +
+      " It no longer feeds FLoRA; the row and its id " + escapeHtml(r.display_id || "") +
+      " are kept.</div>"
+    : "";
+
   $("#src-detail-body").innerHTML =
+    deletedBanner +
     '<div class="src-detail-meta">' +
       '<span class="src-type-badge src-type-' + r.type + '">' + escapeHtml(r.type) + "</span> " +
       '<span class="src-dim2">' + escapeHtml(r.source) + " · sheet id " +
@@ -9315,14 +9480,19 @@ function renderSourceRecord(r) {
       g[1].map(field).join("") + "</div>"
     ).join("") +
     history +
+    (r.deleted_at ? "" :
     '<div class="src-save-bar">' +
       '<input id="src-note" class="src-input src-note" type="text" placeholder="Note (optional)">' +
       '<span id="src-save-msg" class="src-dim2">' + reviewed + "</span>" +
       '<button id="src-save-btn" class="btn-primary">Save</button>' +
       '<button id="src-save-next-btn" class="btn-primary" ' +
         (n.next_id ? "" : "disabled") + ">Save &amp; next</button>" +
-    "</div>";
+    "</div>");
 
+  if (r.deleted_at) {
+    $("#src-detail-body").querySelectorAll("[data-field]").forEach((el) => { el.disabled = true; });
+    return;
+  }
   $("#src-save-btn").onclick      = () => saveSourceRecord(false);
   $("#src-save-next-btn").onclick = () => saveSourceRecord(true);
 }

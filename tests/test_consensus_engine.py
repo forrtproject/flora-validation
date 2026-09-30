@@ -69,15 +69,18 @@ LLM_ERROR = {
 }
 
 
-def _make_cur(human_rows, record, senior_count=0, senior_reject=0):
+def _make_cur(human_rows, record, senior_count=0, senior_reject=0, experienced_count=0):
     cur = MagicMock()
     cur.fetchall.return_value = human_rows
-    # evaluate_consensus calls fetchone three times in order: the unvalidated
-    # record, the senior-reject-guard COUNT(*), then the senior-validator COUNT(*).
+    # evaluate_consensus calls fetchone in order: the unvalidated record, the
+    # senior-reject-guard COUNT(*), the auto-validation stats (how many of the two
+    # are Trusted/Senior, how many experienced), and — only when a rule applies —
+    # the duplicate check (None: no other validated entry has this identity).
     cur.fetchone.side_effect = [
         record,
         {"n": senior_reject},
-        {"senior_count": senior_count},
+        {"trusted_count": senior_count, "experienced_count": experienced_count},
+        None,
     ]
     return cur
 
@@ -329,6 +332,96 @@ def test_senior_agreement_auto_validates():
     calls_str = str(cur.execute.call_args_list)
     assert "INSERT INTO validated" in calls_str   # success path inserts the validated row
     assert "need_review" not in calls_str
+    assert "auto_validated_rule = %s" in calls_str and "'trusted'" in calls_str
+
+
+def _status_of(cur):
+    """The validation_status the evaluation wrote."""
+    for call in cur.execute.call_args_list:
+        sql, *rest = call.args
+        if sql.startswith("UPDATE unvalidated SET validation_status"):
+            return rest[0][0]
+    return None
+
+
+def test_one_trusted_validator_auto_validates():
+    from consensus_engine import evaluate_consensus
+    cur = _make_cur([H1_AGREE, H2_AGREE], BASE_RECORD, senior_count=1)
+    with patch("consensus_engine.run_llm_validation", return_value=LLM_AGREE_ALL):
+        evaluate_consensus(cur, "rec-001")
+    assert _status_of(cur) == "validated"
+
+
+def test_two_experienced_validators_auto_validate_one_does_not():
+    from consensus_engine import evaluate_consensus
+    for experienced, status in ((2, "validated"), (1, "consensus_reached")):
+        cur = _make_cur([H1_AGREE, H2_AGREE], BASE_RECORD, experienced_count=experienced)
+        with patch("consensus_engine.run_llm_validation", return_value=LLM_AGREE_ALL):
+            evaluate_consensus(cur, "rec-001")
+        assert _status_of(cur) == status, experienced
+
+
+@pytest.mark.parametrize("llm", [LLM_ERROR, {**LLM_AGREE_ALL, "outcome_check": "incorrect"},
+                                 {**LLM_AGREE_ALL, "outcome_check": "uncertain"}])
+def test_no_auto_validation_unless_the_ai_check_agrees(llm):
+    """Even a Senior's agreement waits for an admin when the AI check failed or
+    disagrees (the old Senior shortcut ignored it)."""
+    from consensus_engine import evaluate_consensus
+    cur = _make_cur([H1_AGREE, H2_AGREE], BASE_RECORD, senior_count=2, experienced_count=2)
+    with patch("consensus_engine.run_llm_validation", return_value=llm):
+        evaluate_consensus(cur, "rec-001")
+    assert _status_of(cur) == "consensus_reached"
+    assert "INSERT INTO validated" not in str(cur.execute.call_args_list)
+
+
+@pytest.mark.parametrize("fix", [
+    {},                                              # nothing supplied: the wrong original
+    {"corrected_doi_o": "10.1000/right"},            # keeps the wrong paper's title
+    {"corrected_title_o": "The right original"},     # keeps the wrong paper's DOI and work
+])
+def test_a_disputed_original_always_waits_for_an_admin(fix):
+    """Consensus fills in only what the validators supplied and keeps the rest of
+    the original both said is wrong."""
+    from consensus_engine import evaluate_consensus
+    wrong = {"original_check": "incorrect", **fix}
+    llm = {**LLM_AGREE_ALL, "original_check": "incorrect"}
+    cur = _make_cur([{**H1_AGREE, **wrong}, {**H2_AGREE, **wrong}], BASE_RECORD, senior_count=2)
+    with patch("consensus_engine.run_llm_validation", return_value=llm):
+        evaluate_consensus(cur, "rec-001")
+    assert _status_of(cur) == "consensus_reached"
+
+
+def test_a_duplicate_of_a_validated_entry_waits_for_an_admin():
+    """Publishing it would take over the other entry's row; an admin merges them."""
+    from consensus_engine import evaluate_consensus
+    cur = _make_cur([H1_AGREE, H2_AGREE], BASE_RECORD, senior_count=2)
+    cur.fetchone.side_effect = [BASE_RECORD, {"n": 0},
+                                {"trusted_count": 2, "experienced_count": 0},
+                                {"record_id": "rec-other"}]
+    with patch("consensus_engine.run_llm_validation", return_value=LLM_AGREE_ALL):
+        evaluate_consensus(cur, "rec-001")
+    assert _status_of(cur) == "consensus_reached"
+    assert "INSERT INTO validated" not in str(cur.execute.call_args_list)
+
+
+@pytest.mark.parametrize("change", [
+    {"additional_checks": {"was_unsure_outcome": True}},
+    {"additional_checks": {"quote_not_in_abstract": True}},
+    {"additional_checks": {"senior_reject": True}},
+    {"outcome_check": "incorrect", "corrected_outcome": "failure"},     # disagree
+])
+def test_the_rule_applies_to_plain_agreement_only(change):
+    from consensus_engine import auto_validation_rule
+    assert auto_validation_rule(H1_AGREE, H2_AGREE, LLM_AGREE_ALL, 1, 2) == "trusted"
+    assert auto_validation_rule(H1_AGREE, {**H2_AGREE, **change}, LLM_AGREE_ALL, 1, 2) is None
+
+
+def test_neither_type_is_never_auto_validated():
+    from consensus_engine import auto_validation_rule
+    neither = {"type_check": "incorrect", "corrected_type": "not_validation"}
+    h1, h2 = {**H1_AGREE, **neither}, {**H2_AGREE, **neither}
+    llm = {**LLM_AGREE_ALL, "type_check": "incorrect"}
+    assert auto_validation_rule(h1, h2, llm, 2, 2) is None
 
 
 # ---------------------------------------------------------------------------
