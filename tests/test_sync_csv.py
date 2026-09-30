@@ -497,3 +497,119 @@ def test_recorded_archive_is_preferred_over_the_mutable_promoted_csv(tmp_path):
     assert report["baseline_file"] == archive.name
     assert report["error_code"] == "excessive_resolved_removal"
     assert report["removed_count"] == 2
+
+
+def test_a_lost_baseline_is_recovered_from_a_byte_identical_archive(tmp_path):
+    """The blocked runs of 2026-09-13..21 re-downloaded the baseline's own bytes."""
+    from sync_csv import sync_once
+
+    previous = _snapshot(*(f"p{i}" for i in range(10)))
+    report_path = tmp_path / "report.json"
+    response = MagicMock(status_code=200, content=previous)
+    with patch("sync_csv.requests.get", return_value=response), \
+         patch("sync_csv.run_import") as mock_import:
+        succeeded = sync_once(
+            data_dir=tmp_path,
+            report_path=report_path,
+            maintenance_run_id="run-identical",
+            baseline_file="extracted_20260912T142657Z_88d4c0c8.csv",
+            baseline_sha256=hashlib.sha256(previous).hexdigest(),
+            require_baseline=True,
+        )
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert succeeded is True
+    assert mock_import.call_count == 1
+    assert report["baseline_file"] == report["archive_file"]
+    assert report["removed_count"] == 0
+
+
+def _github(history: dict, candidate: bytes, commits_seen: list):
+    """requests.get stand-in: the branch file, the commit list, blobs by commit."""
+    def get(url, headers=None, params=None, timeout=None):
+        if url.startswith("https://api.github.com/"):
+            commits_seen.append(params)
+            return MagicMock(status_code=200,
+                             json=MagicMock(return_value=[{"sha": s} for s in history]))
+        for sha, content in history.items():
+            if f"/{sha}/" in url:
+                return MagicMock(status_code=200, content=content)
+        return MagicMock(status_code=200, content=candidate)
+    return get
+
+
+def test_a_lost_baseline_is_recovered_from_the_extractor_history_by_digest(tmp_path):
+    from sync_csv import sync_once
+
+    previous = _snapshot(*(f"p{i}" for i in range(10)))
+    candidate = _snapshot(*(f"p{i}" for i in range(10)), "p10")
+    commits_seen: list = []
+    history = {"newer": _snapshot("unrelated"), "d7f55d9": previous}
+    report_path = tmp_path / "report.json"
+    with patch("sync_csv.requests.get", side_effect=_github(history, candidate, commits_seen)), \
+         patch("sync_csv.run_import") as mock_import:
+        succeeded = sync_once(
+            data_dir=tmp_path,
+            report_path=report_path,
+            maintenance_run_id="run-history",
+            baseline_file="extracted_20260912T142657Z_88d4c0c8.csv",
+            baseline_sha256=hashlib.sha256(previous).hexdigest(),
+            require_baseline=True,
+        )
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert succeeded is True
+    assert mock_import.call_count == 1
+    history_queries = [params for params in commits_seen if params]
+    assert history_queries[0]["until"] == "2026-09-12T14:26:57Z"
+    restored = tmp_path / report["baseline_file"]
+    assert hashlib.sha256(restored.read_bytes()).hexdigest() == report["baseline_sha256"]
+    assert report["added_count"] == 1 and report["removed_count"] == 0
+
+
+def test_history_without_the_recorded_bytes_still_blocks(tmp_path):
+    """Recovery never substitutes a near miss: only the recorded digest will do."""
+    from sync_csv import sync_once
+
+    previous = _snapshot(*(f"p{i}" for i in range(10)))
+    candidate = _snapshot(*(f"p{i}" for i in range(9)))
+    history = {"a": _snapshot("p0"), "b": candidate}
+    report_path = tmp_path / "report.json"
+    with patch("sync_csv.requests.get", side_effect=_github(history, candidate, [])), \
+         patch("sync_csv.run_import") as mock_import:
+        succeeded = sync_once(
+            data_dir=tmp_path,
+            report_path=report_path,
+            maintenance_run_id="run-history-miss",
+            baseline_file="extracted_20260912T142657Z_88d4c0c8.csv",
+            baseline_sha256=hashlib.sha256(previous).hexdigest(),
+            require_baseline=True,
+        )
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert succeeded is False
+    assert mock_import.call_count == 0
+    assert report["error_code"] == "baseline_snapshot_unavailable"
+
+
+def test_the_csv_is_read_at_a_resolved_commit_which_the_report_records(tmp_path):
+    """The retire stage reads the manifest at this commit, never the moving branch."""
+    from sync_csv import sync_once
+
+    sha = "d7f55d98b7994109a12701c935b21fcc9dd14968"
+    urls = []
+
+    def get(url, headers=None, params=None, timeout=None):
+        urls.append(url)
+        if url.startswith("https://api.github.com/"):
+            return MagicMock(status_code=200, text=sha + "\n")
+        return MagicMock(status_code=200, content=FAKE_CSV_CONTENT)
+
+    report_path = tmp_path / "report.json"
+    with patch("sync_csv.requests.get", side_effect=get), \
+         patch("sync_csv.run_import"):
+        assert sync_once(data_dir=tmp_path, report_path=report_path,
+                         maintenance_run_id="run-pinned") is True
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["source_commit"] == sha
+    assert urls[-1].endswith(f"/{sha}/data/extracted.csv")

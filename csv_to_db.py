@@ -25,6 +25,13 @@ validator/final decisions.
 
 Usage:
     python csv_to_db.py --input data/extracted.csv
+    python csv_to_db.py --input data/extracted.csv --retire retired_pairs.csv   # dry run
+    python csv_to_db.py --input data/extracted.csv --retire retired_pairs.csv \
+        --apply --expect-retire N
+
+--retire removes the records flora-extractor stopped shipping (see the section of
+that name below): untouched ones are archived in retired_records and deleted,
+touched ones are flagged in admin_notes and left alone.
 
 Required environment variables:
     DATABASE_URL — PostgreSQL connection string
@@ -502,21 +509,8 @@ def _note_ambiguous_original(cur, record_id: str, reason: str) -> None:
     """Append the flag to admin_notes so it surfaces on the admin review screen
     (the import runs unattended — a console line alone is easy to miss). Appends
     rather than overwrites, and won't duplicate itself on a re-run."""
-    note = f"{_AMBIGUOUS_NOTE_PREFIX} {reason} — please verify before resolving."
-    cur.execute(
-        """
-        UPDATE unvalidated
-        SET admin_notes = CASE
-                WHEN admin_notes IS NULL OR admin_notes = '' THEN %s
-                WHEN position(%s in admin_notes) > 0 THEN admin_notes
-                ELSE admin_notes || E'\n' || %s
-            END,
-            note_saved_by = COALESCE(note_saved_by, 'import'),
-            note_saved_at = NOW()
-        WHERE record_id = %s
-        """,
-        (note, note, note, record_id),
-    )
+    _note_admin(cur, record_id,
+                f"{_AMBIGUOUS_NOTE_PREFIX} {reason} — please verify before resolving.")
 
 
 def _insert_queue_slots(cur, record_id: str) -> None:
@@ -596,6 +590,20 @@ def _validate_source_slots(resolved: pd.DataFrame) -> None:
             f"{len(collisions)} replication-work/original-rank slot collision(s): "
             f"{sample}. Refusing to guess which pair_id owns a source slot."
         )
+
+
+def _rekey_candidates(slot_records: list, incoming_pair_ids: set,
+                      rekeyed_record_ids: set) -> list:
+    """The existing records a new pair_id may take over at its (work, rank) slot.
+
+    A record whose pair_id this same CSV still ships is not superseded — its
+    original only moved to another rank — and re-keying it would leave that
+    pair without a record (or chain the re-key onward). Nor may one record be
+    re-keyed twice in a run: the slot map is loaded once, before any re-key.
+    """
+    return [record for record in slot_records
+            if record["pair_id"] not in incoming_pair_ids
+            and record["record_id"] not in rekeyed_record_ids]
 
 
 def _refresh_rekeyed_record(cur, existing: dict, incoming: dict) -> None:
@@ -807,6 +815,8 @@ def run_import(csv_path: Path, dry_run: bool = False, release_id: str = "",
                     for _, r in resolved.iterrows()
                 ])
 
+                incoming_pair_ids = {_s(p) for p in resolved["pair_id"] if _s(p)}
+                rekeyed_record_ids: set = set()
                 inserted = 0
                 rekeyed = 0
                 skipped_dup = 0
@@ -828,7 +838,11 @@ def run_import(csv_path: Path, dry_run: bool = False, release_id: str = "",
                         continue
 
                     source_slot = _source_slot_key(row)
-                    slot_matches = existing_source_slots.get(source_slot, []) if source_slot else []
+                    slot_matches = _rekey_candidates(
+                        existing_source_slots.get(source_slot, []) if source_slot else [],
+                        incoming_pair_ids,
+                        rekeyed_record_ids,
+                    )
                     if len(slot_matches) == 1:
                         existing = slot_matches[0]
                         incoming = _build_unvalidated_row(
@@ -843,6 +857,7 @@ def run_import(csv_path: Path, dry_run: bool = False, release_id: str = "",
                         )
                         existing_pair_ids.pop(existing["pair_id"], None)
                         existing_pair_ids[pair_id] = existing["record_id"]
+                        rekeyed_record_ids.add(existing["record_id"])
                         rekeyed += 1
                         continue
                     if len(slot_matches) > 1:
@@ -884,6 +899,452 @@ def run_import(csv_path: Path, dry_run: bool = False, release_id: str = "",
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# --retire: remove the records flora-extractor stopped shipping
+# ---------------------------------------------------------------------------
+# The import keys a record on pair_id = md5(doi_r|doi_o) and never deletes. When
+# the extractor changes a row's original, sets a work aside or routing drops it,
+# the old record stays in the queue. The re-key above repairs the commonest case in
+# place (same work, same original_rank); everything else is named by the extractor
+# in its append-only data/retired_pairs.csv (extract/export.py), and this retires
+# exactly those pair ids — never "whatever the CSV lacks", which would also take
+# the legacy records the extractor withholds because they are already here.
+#
+# Only an untouched record is removed, and it is archived whole in
+# retired_records first. Anything a person has touched is flagged in admin_notes
+# and left exactly as it is. Dry run by default, in a read-only session.
+
+RETIRE_BATCH_SIZE = 200
+_RETIRED_NOTE_PREFIX = "⚠ Retired upstream:"
+
+# extract/export.py RETIRE_REASONS. 'unexplained' means no current extractor
+# verdict speaks for the work, so it is held unless --include-unexplained.
+RETIRE_REASONS = frozenset({
+    "superseded", "set_aside", "unresolved", "not_admitted", "screen_discarded",
+    "in_flora", "unexplained",
+})
+# The actions a plan can contain; only the first two write.
+RETIRE_ACTIONS = ("retire", "flag", "already_excluded", "held_unexplained",
+                  "still_shipped", "absent")
+
+
+class RetireManifestError(ValueError):
+    """The retirement manifest cannot be read safely."""
+
+
+def load_retire_manifest(path: Path) -> dict:
+    """pair_id -> manifest entry (the latest line wins)."""
+    df = pd.read_csv(path, dtype=str, encoding="utf-8-sig").fillna("")
+    missing = {"pair_id", "reason"} - set(df.columns)
+    if missing:
+        raise RetireManifestError(f"{path} lacks column(s): {', '.join(sorted(missing))}")
+    unknown = sorted(set(df["reason"].map(_s)) - RETIRE_REASONS)
+    if unknown:
+        # Same rule as check_csv_vocabulary: a reason we have never seen is a
+        # refusal, not a guess about whether it means "delete".
+        raise RetireManifestError(f"{path} carries unknown reason(s): {unknown}")
+    return {_s(row["pair_id"]): {k: _s(v) for k, v in row.items()}
+            for row in df.to_dict("records") if _s(row["pair_id"])}
+
+
+def _retire_state(cur, pair_ids: list) -> dict:
+    """What the database says about each named pair id. SELECT only."""
+    cur.execute(
+        """
+        SELECT u.record_id::text, u.pair_id, u.validation_status,
+               (u.validator_1 IS NOT NULL OR u.validator_2 IS NOT NULL
+                OR EXISTS (SELECT 1 FROM validation_queue q
+                           WHERE q.record_id = u.record_id
+                             AND (q.is_shown OR q.is_validated))
+                OR EXISTS (SELECT 1 FROM validated_record_merges mg
+                           WHERE u.record_id IN (mg.duplicate_record_id,
+                                                 mg.survivor_record_id)))
+                   AS has_activity,
+               EXISTS (SELECT 1 FROM validated v
+                       WHERE v.record_id = u.record_id) AS in_validated,
+               EXISTS (SELECT 1 FROM assignments a
+                       WHERE a.record_id = u.record_id) AS assigned
+        FROM unvalidated u
+        WHERE u.pair_id = ANY(%s)
+        """,
+        (list(pair_ids),),
+    )
+    return {
+        pair_id: {"record_id": record_id, "validation_status": status,
+                  "has_activity": bool(active), "in_validated": bool(in_validated),
+                  "assigned": bool(assigned)}
+        for record_id, pair_id, status, active, in_validated, assigned in cur.fetchall()
+    }
+
+
+def _is_retirable(record: dict) -> bool:
+    """Untouched: nobody has seen, judged, been assigned or finalised it."""
+    return (record["validation_status"] == "unvalidated"
+            and not record["has_activity"]
+            and not record["in_validated"]
+            and not record["assigned"])
+
+
+def plan_retirements(manifest: dict, current_pair_ids: set, state: dict,
+                     include_unexplained: bool = False) -> list:
+    """One action per manifest pair id. Pure — the dry run and the apply share it.
+
+    Order matters: a pair id the imported CSV still carries is never touched
+    whatever the manifest says (it shipped again), and an absent one is a no-op,
+    which is what makes a second run idempotent.
+    """
+    plan = []
+    for pair_id, entry in sorted(manifest.items()):
+        record = state.get(pair_id)
+        if pair_id in current_pair_ids:
+            action = "still_shipped"
+        elif record is None:
+            action = "absent"
+        elif entry.get("reason") == "unexplained" and not include_unexplained:
+            action = "held_unexplained"
+        elif record["validation_status"] == "rejected":
+            action = "already_excluded"
+        elif _is_retirable(record):
+            action = "retire"
+        else:
+            action = "flag"
+        plan.append({
+            "pair_id": pair_id, "action": action,
+            "record_id": (record or {}).get("record_id", ""),
+            "validation_status": (record or {}).get("validation_status", ""),
+            "reason": entry.get("reason", ""), "detail": entry.get("detail", ""),
+            "superseded_by": entry.get("superseded_by", ""),
+            "doi_r": entry.get("doi_r", ""), "doi_o": entry.get("doi_o", ""),
+            "doi_o_now": entry.get("doi_o_now", ""),
+        })
+    return plan
+
+
+def _retire_note(step: dict) -> str:
+    why = step["reason"] + (f" ({step['detail']})" if step["detail"] else "")
+    successor = (f"; now {step['doi_o_now']} as pair {step['superseded_by']}"
+                 if step["superseded_by"] else "")
+    return (f"{_RETIRED_NOTE_PREFIX} flora-extractor no longer ships pair "
+            f"{step['pair_id']} — {why}{successor}. Review before resolving; the "
+            "record was left as it is because a validator or admin has touched it.")
+
+
+def _apply_retire_batch(cur, plan: list, manifest: dict) -> dict:
+    """Archive-then-delete the retirable records, note the flagged ones."""
+    from cleanup_orphans import delete_source_records
+
+    retire = [step for step in plan if step["action"] == "retire"]
+    for step in retire:
+        entry = manifest[step["pair_id"]]
+        cur.execute(
+            """
+            INSERT INTO retired_records (
+                record_id, pair_id, reason, detail, superseded_by,
+                manifest_retired_at, manifest_release,
+                unvalidated_row, metadata_row, queue_rows, skip_rows)
+            SELECT u.record_id, u.pair_id, %s, %s, %s, %s, %s, to_jsonb(u),
+                   (SELECT to_jsonb(m) FROM record_metadata m
+                     WHERE m.record_id = u.record_id),
+                   COALESCE((SELECT jsonb_agg(to_jsonb(q)) FROM validation_queue q
+                              WHERE q.record_id = u.record_id), '[]'::jsonb),
+                   COALESCE((SELECT jsonb_agg(to_jsonb(s)) FROM validation_skips s
+                              WHERE s.record_id = u.record_id), '[]'::jsonb)
+            FROM unvalidated u WHERE u.record_id = %s
+            """,
+            (step["reason"], step["detail"], step["superseded_by"],
+             entry.get("retired_at", ""), entry.get("release", ""), step["record_id"]),
+        )
+        if cur.rowcount != 1:
+            raise RuntimeError(f"could not archive {step['record_id']}; rolling back")
+    counts = delete_source_records(cur, [step["record_id"] for step in retire])
+    if counts["unvalidated"] != len(retire):
+        raise RuntimeError(
+            f"batch selected {len(retire)} records but deleted "
+            f"{counts['unvalidated']}; rolling back")
+    for step in plan:
+        if step["action"] == "flag":
+            _note_admin(cur, step["record_id"], _retire_note(step))
+    return counts
+
+
+def _note_admin(cur, record_id: str, note: str) -> None:
+    """Append *note* to admin_notes once (the same idiom as the ambiguity flag)."""
+    cur.execute(
+        """
+        UPDATE unvalidated
+        SET admin_notes = CASE
+                WHEN admin_notes IS NULL OR admin_notes = '' THEN %s
+                WHEN position(%s in admin_notes) > 0 THEN admin_notes
+                ELSE admin_notes || E'\n' || %s
+            END,
+            note_saved_by = COALESCE(note_saved_by, 'import'),
+            note_saved_at = NOW()
+        WHERE record_id = %s
+        """,
+        (note, note, note, record_id),
+    )
+
+
+def _print_retire_plan(plan: list) -> None:
+    table = {}
+    for step in plan:
+        table.setdefault(step["action"], {}).setdefault(step["reason"], 0)
+        table[step["action"]][step["reason"]] += 1
+    print(f"  Manifest pair ids: {len(plan)}")
+    for action in RETIRE_ACTIONS:
+        by_reason = table.get(action, {})
+        if by_reason:
+            detail = ", ".join(f"{r} {n}" for r, n in sorted(by_reason.items()))
+            print(f"    {action:<18} {sum(by_reason.values()):>6}   ({detail})")
+    for step in plan:
+        if step["action"] in ("retire", "flag"):
+            print(f"  {step['action'].upper():<6} {step['record_id']}  "
+                  f"status={step['validation_status']}  {step['reason']}"
+                  f"{' ' + step['detail'] if step['detail'] else ''}  "
+                  f"pair_id={step['pair_id']}  {step['doi_r']} -> {step['doi_o']}")
+
+
+RETIRE_MANIFEST_REPO_PATH = "data/retired_pairs.csv"
+
+
+def fetch_retire_manifest(dest: Path, commit: "str | None" = None) -> "Path | None":
+    """Download flora-extractor's manifest the way sync_csv downloads the CSV.
+
+    Same repository and token. *commit* pins it to the commit the imported CSV
+    was read at (the sync records it as ``source_commit``) — the automatic stage
+    always passes it, so the CSV and the manifest can never come from different
+    commits; without it the branch is read. Returns None when the commit carries
+    no manifest (HTTP 404): nothing is named, so nothing is retired.
+    """
+    import requests
+    from sync_csv import _GITHUB_BRANCH, _GITHUB_REPO, _build_url
+
+    url = _build_url(_GITHUB_REPO, commit or _GITHUB_BRANCH, RETIRE_MANIFEST_REPO_PATH)
+    print(f"Fetching {url} …")
+    token = os.environ.get("GITHUB_TOKEN", "")
+    response = requests.get(url, headers={"Authorization": f"token {token}"} if token
+                            else {}, timeout=60)
+    if response.status_code == 404:
+        return None
+    if response.status_code != 200:
+        raise RuntimeError(f"GitHub returned {response.status_code} for {url}")
+    dest.write_bytes(response.content)
+    return dest
+
+
+class RetireCapExceeded(RuntimeError):
+    """The automatic retire would remove more records than its cap allows."""
+
+
+_MAX_RETIRE_PERCENT_ENV = "EXTRACTOR_MAX_RETIRE_PERCENT"
+# Of the records in `unvalidated` when the plan is made. The first run after the
+# 2026-09-24 export retires ~539 of ~4,800 (~11%); routine nightly runs retire a
+# handful. 15 lets that first run through with headroom while a manifest that
+# names most of the table — a truncated render, a routing bug — stops cold.
+_DEFAULT_MAX_RETIRE_PERCENT = 15.0
+
+
+def max_retire_percent(value: object = None) -> float:
+    """The automatic retire cap, read at call time; an unusable value refuses."""
+    import math
+
+    configured = (os.environ.get(_MAX_RETIRE_PERCENT_ENV, str(_DEFAULT_MAX_RETIRE_PERCENT))
+                  if value is None else value)
+    try:
+        percent = float(configured)
+    except (TypeError, ValueError):
+        percent = float("nan")
+    if isinstance(configured, bool) or not math.isfinite(percent) \
+            or not 0.0 <= percent <= 100.0:
+        raise ValueError(f"{_MAX_RETIRE_PERCENT_ENV} must be a finite number from 0 "
+                         f"through 100; got {configured!r}")
+    return percent
+
+
+def _require_retire_gate(cur, maintenance_run_id: str, csv_path: Path,
+                         source_commit: str) -> None:
+    """The automatic retire runs inside a live maintenance run, never beside one.
+
+    The parent holds the pipeline's advisory lock for as long as the run is
+    'running', which is why this child does not take the lock again (it could
+    not: the lock is session-level and the parent's session owns it). The gate
+    proves that run imported exactly *csv_path* (Parts 1 and 2 verified, same
+    sha256) and read it at *source_commit*, the commit the manifest came from.
+    """
+    from cleanup_orphans import _require_maintenance_gate
+    from extractor_storage import sha256_file
+
+    _require_maintenance_gate(cur, maintenance_run_id, sha256_file(csv_path))
+    cur.execute("SELECT safety_report->>'source_commit' FROM extractor_maintenance_runs "
+                "WHERE run_id = %s", (maintenance_run_id,))
+    recorded = (cur.fetchone() or [None])[0]
+    if not source_commit or recorded != source_commit:
+        raise RuntimeError(
+            f"retire blocked: the manifest was read at {source_commit or '<no commit>'} "
+            f"but run {maintenance_run_id} imported the CSV at {recorded or '<no commit>'}")
+
+
+def run_retire(manifest_path: Path, csv_path: Path, apply: bool = False,
+               expect_retire: "int | None" = None, include_unexplained: bool = False,
+               report_path: "Path | None" = None,
+               summary_path: "Path | None" = None,
+               maintenance_run_id: "str | None" = None,
+               source_commit: "str | None" = None) -> list:
+    """Plan (and with *apply*, carry out) the retirement of the manifest's pair ids.
+
+    *csv_path* is the extracted.csv the database was last imported from: a pair id
+    it still carries is never retired. Two ways to apply:
+
+    * manual — *expect_retire* binds the apply to the dry run a person approved,
+      and the pipeline's advisory lock is taken so no maintenance run overlaps;
+    * automatic — *maintenance_run_id* (extractor_maintenance.py's retire stage):
+      runs inside that run's lock, behind _require_retire_gate, and the reviewed
+      count is replaced by a cap, EXTRACTOR_MAX_RETIRE_PERCENT of `unvalidated`.
+    """
+    database_url = os.environ.get("DATABASE_URL", "")
+    if not database_url:
+        raise EnvironmentError("DATABASE_URL must be set in environment or .env")
+    automatic = maintenance_run_id is not None
+    if apply and not automatic and expect_retire is None:
+        raise RuntimeError("--apply requires --expect-retire N, the retire count of "
+                           "the dry run that was reviewed")
+    cap_percent = max_retire_percent() if apply and automatic else None
+    from cleanup_orphans import _current_resolved_pair_ids
+
+    manifest = load_retire_manifest(manifest_path)
+    current = _current_resolved_pair_ids(csv_path)
+    print(f"Retirement manifest {manifest_path}: {len(manifest)} pair id(s); "
+          f"{csv_path} ships {len(current)} resolved pair id(s)")
+
+    conn = psycopg2.connect(database_url)
+    try:
+        if not apply:
+            # Postgres itself refuses any write in this session.
+            conn.set_session(readonly=True)
+            with conn.cursor() as cur:
+                plan = plan_retirements(manifest, current,
+                                        _retire_state(cur, list(manifest)),
+                                        include_unexplained)
+            conn.rollback()
+            _print_retire_plan(plan)
+            _write_retire_report(report_path, plan)
+            _write_retire_summary(summary_path, manifest_path, csv_path, plan)
+            print("\n[dry-run] Nothing written. To apply this plan: --apply "
+                  f"--expect-retire {sum(s['action'] == 'retire' for s in plan)}")
+            return plan
+
+        from extractor_maintenance import PIPELINE_ADVISORY_LOCK_ID
+        took_lock = False
+        with conn.cursor() as cur:
+            cur.execute("SELECT to_regclass('public.retired_records') IS NOT NULL")
+            if not cur.fetchone()[0]:
+                raise RuntimeError("table retired_records is missing — apply the "
+                                   "db_schema.sql migration first")
+            if automatic:
+                _require_retire_gate(cur, maintenance_run_id, csv_path, source_commit)
+            else:
+                cur.execute("SELECT pg_try_advisory_lock(%s)",
+                            (PIPELINE_ADVISORY_LOCK_ID,))
+                if not cur.fetchone()[0]:
+                    raise RuntimeError("extractor maintenance is running; retry later")
+                took_lock = True
+        conn.commit()
+        try:
+            with conn.cursor() as cur:
+                preview = plan_retirements(manifest, current,
+                                           _retire_state(cur, list(manifest)),
+                                           include_unexplained)
+                cur.execute("SELECT COUNT(*) FROM unvalidated")
+                total_records = cur.fetchone()[0]
+            conn.commit()
+            planned = sum(step["action"] == "retire" for step in preview)
+            if automatic:
+                limit = int(total_records * cap_percent / 100.0)
+                if planned > limit:
+                    _write_retire_summary(summary_path, manifest_path, csv_path, preview,
+                                          status="blocked", limit=limit,
+                                          total_records=total_records)
+                    raise RetireCapExceeded(
+                        f"the plan retires {planned} of {total_records} records, above "
+                        f"the {cap_percent:g}% cap ({limit}); nothing was written")
+            else:
+                limit = expect_retire
+                if planned != expect_retire:
+                    raise RuntimeError(
+                        f"the plan now retires {planned} record(s), not the "
+                        f"{expect_retire} that were reviewed; re-run the dry run")
+            done, totals, retired = [], {}, 0
+            names = sorted(manifest)
+            for start in range(0, len(names), RETIRE_BATCH_SIZE):
+                batch = {n: manifest[n] for n in names[start:start + RETIRE_BATCH_SIZE]}
+                with conn:  # one transaction per batch
+                    with conn.cursor() as cur:
+                        from cleanup_orphans import WRITE_SURFACE_LOCK_SQL
+                        cur.execute(WRITE_SURFACE_LOCK_SQL)
+                        # Re-read under the lock: the preview may be minutes old.
+                        plan = plan_retirements(batch, current,
+                                                _retire_state(cur, list(batch)),
+                                                include_unexplained)
+                        retired += sum(step["action"] == "retire" for step in plan)
+                        if retired > limit:
+                            # Raising inside `with conn` rolls this batch back.
+                            raise RetireCapExceeded(
+                                f"records became retirable while the plan ran "
+                                f"({retired} > {limit}); stopped before this batch")
+                        for table, n in _apply_retire_batch(cur, plan, batch).items():
+                            totals[table] = totals.get(table, 0) + n
+                done.extend(plan)
+        finally:
+            if took_lock:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT pg_advisory_unlock(%s)",
+                                (PIPELINE_ADVISORY_LOCK_ID,))
+                conn.commit()
+        _print_retire_plan(done)
+        _write_retire_report(report_path, done)
+        _write_retire_summary(summary_path, manifest_path, csv_path, done,
+                              status="applied", limit=limit,
+                              total_records=total_records)
+        print(f"\nRetired and archived: {totals.get('unvalidated', 0)} record(s); "
+              f"deleted rows by table: {totals}; flagged: "
+              f"{sum(s['action'] == 'flag' for s in done)}")
+        return done
+    finally:
+        conn.close()
+
+
+def _write_retire_summary(path: "Path | None", manifest_path: Path, csv_path: Path,
+                          plan: list, status: str = "planned", limit: "int | None" = None,
+                          total_records: "int | None" = None) -> None:
+    """Counts only, for the maintenance run history (extractor_maintenance.py)."""
+    if path is None:
+        return
+    import json
+    from extractor_storage import sha256_file
+
+    actions: dict = {}
+    for step in plan:
+        actions[step["action"]] = actions.get(step["action"], 0) + 1
+    Path(path).write_text(json.dumps({
+        "manifest_sha256": sha256_file(manifest_path),
+        "input_sha256": sha256_file(csv_path),
+        "manifest_pairs": len(plan),
+        "actions": actions,
+        "retire": actions.get("retire", 0),
+        "flag": actions.get("flag", 0),
+        "status": status,
+        "retire_limit": limit,
+        "unvalidated_records": total_records,
+    }, sort_keys=True), encoding="utf-8")
+
+
+def _write_retire_report(path: "Path | None", plan: list) -> None:
+    if path is None:
+        return
+    pd.DataFrame(plan).to_csv(path, index=False, encoding="utf-8-sig")
+    print(f"  Plan written to {path}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Import extracted.csv into validation DB")
     parser.add_argument(
@@ -902,10 +1363,60 @@ if __name__ == "__main__":
         "--allow-legacy-schema", action="store_true",
         help="Allow archived CSV headers that predate the current extractor contract.",
     )
+    parser.add_argument(
+        "--retire", default=None, metavar="MANIFEST",
+        help="Retire the records flora-extractor stopped shipping, named in its "
+             "data/retired_pairs.csv (a path, or 'github' to fetch it the way the "
+             "sync fetches the CSV). Dry run (read-only) unless --apply. --input "
+             "must be the CSV the database was last imported from.",
+    )
+    parser.add_argument("--apply", action="store_true",
+                        help="With --retire: carry the plan out.")
+    parser.add_argument("--expect-retire", type=int, default=None,
+                        help="With --retire --apply: the retire count the reviewed "
+                             "dry run printed; a different plan refuses.")
+    parser.add_argument("--include-unexplained", action="store_true",
+                        help="With --retire: also act on 'unexplained' entries.")
+    parser.add_argument("--retire-report", type=Path, default=None,
+                        help="With --retire: write the plan as a CSV.")
+    parser.add_argument("--retire-summary-json", type=Path, default=None,
+                        help=argparse.SUPPRESS)  # extractor_maintenance.py's stage
+    parser.add_argument("--retire-commit", default=None,
+                        help="With --retire github: read the manifest at this "
+                             "flora-extractor commit instead of the branch.")
+    # extractor_maintenance.py's automatic stage: apply inside that run's lock.
+    parser.add_argument("--maintenance-run-id", default=None, help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     if not args.input.exists():
         raise FileNotFoundError(f"Input file not found: {args.input}")
+
+    if args.retire is not None:
+        import json
+        import tempfile
+        with tempfile.TemporaryDirectory() as scratch:
+            manifest = (fetch_retire_manifest(Path(scratch) / "retired_pairs.csv",
+                                              args.retire_commit)
+                        if args.retire == "github" else Path(args.retire))
+            if manifest is None:
+                print("No data/retired_pairs.csv at that commit; nothing to retire.")
+                if args.retire_summary_json:
+                    args.retire_summary_json.write_text(
+                        json.dumps({"status": "no_manifest", "retire": 0, "flag": 0}),
+                        encoding="utf-8")
+                raise SystemExit(0)
+            try:
+                run_retire(manifest, args.input, apply=args.apply,
+                           expect_retire=args.expect_retire,
+                           include_unexplained=args.include_unexplained,
+                           report_path=args.retire_report,
+                           summary_path=args.retire_summary_json,
+                           maintenance_run_id=args.maintenance_run_id,
+                           source_commit=args.retire_commit)
+            except RetireCapExceeded as exc:
+                print(f"BLOCKED retire_cap_exceeded: {exc}")
+                raise SystemExit(3)
+        raise SystemExit(0)
 
     run_import(
         args.input,

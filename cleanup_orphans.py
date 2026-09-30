@@ -57,6 +57,19 @@ from extractor_vocab import check_csv_vocabulary, resolved_mask as _resolved_mas
 load_dotenv()
 
 
+# The write surface validation and source-record removal share. Taken before a
+# delete list is computed so a concurrent claim/skip/judgement cannot change the
+# decision halfway through; NOWAIT aborts instead of risking a lock-order deadlock.
+# Shared with csv_to_db.py --retire, which removes records by the same route.
+WRITE_SURFACE_LOCK_SQL = """
+    LOCK TABLE unvalidated, validation_queue, validated,
+               validation_skips, submission_failure_releases,
+               record_metadata,
+               assignments, validator_messages
+    IN EXCLUSIVE MODE NOWAIT
+"""
+
+
 def _current_resolved_pair_ids(csv_path: Path) -> set:
     df = pd.read_csv(csv_path, dtype=str, encoding="utf-8-sig").fillna("")
     # Refuse to compute a delete list from a CSV we can't fully read: an
@@ -87,6 +100,49 @@ def _is_deletable_orphan(
         or bool(has_judgement)
         or bool(has_validated_record)
     )
+
+
+def delete_source_records(cur, ids: list[str]) -> dict[str, int]:
+    """Delete source records and every dependent row, children first.
+
+    The caller owns the transaction, the write-surface lock and the decision that
+    each id is safe to remove; this only knows the foreign-key order. Returns the
+    per-table row counts for the caller's receipt.
+    """
+    counts = {}
+    # Messages point at queue rows and may form parent/reply threads.
+    # Remove the complete thread whenever any member belongs to a
+    # queue slot for a deleted record.
+    cur.execute(
+        """
+        WITH target_threads AS (
+            SELECT DISTINCT COALESCE(vm.parent_id, vm.id) AS root_id
+            FROM validator_messages vm
+            JOIN validation_queue q ON q.queue_id = vm.queue_id
+            WHERE q.record_id = ANY(%s::uuid[])
+        )
+        DELETE FROM validator_messages vm
+        USING target_threads t
+        WHERE vm.id = t.root_id OR vm.parent_id = t.root_id
+        """,
+        (ids,),
+    )
+    counts["validator_messages"] = cur.rowcount
+    for table, statement in (
+        ("submission_failure_releases",
+         "DELETE FROM submission_failure_releases WHERE record_id = ANY(%s::uuid[])"),
+        ("validation_skips",
+         "DELETE FROM validation_skips WHERE record_id = ANY(%s::uuid[])"),
+        ("assignments", "DELETE FROM assignments WHERE record_id = ANY(%s::uuid[])"),
+        ("validation_queue",
+         "DELETE FROM validation_queue WHERE record_id = ANY(%s::uuid[])"),
+        ("record_metadata",
+         "DELETE FROM record_metadata WHERE record_id = ANY(%s::uuid[])"),
+        ("unvalidated", "DELETE FROM unvalidated WHERE record_id = ANY(%s::uuid[])"),
+    ):
+        cur.execute(statement, (ids,))
+        counts[table] = cur.rowcount
+    return counts
 
 
 def _require_maintenance_gate(
@@ -250,15 +306,7 @@ def main(
                     # back the whole cleanup. NOWAIT makes an already-active
                     # validator abort this maintenance run instead of risking a
                     # lock-order deadlock; new writes wait once all locks are held.
-                    cur.execute(
-                        """
-                        LOCK TABLE unvalidated, validation_queue, validated,
-                                   validation_skips, submission_failure_releases,
-                                   record_metadata,
-                                   assignments, validator_messages
-                        IN EXCLUSIVE MODE NOWAIT
-                        """
-                    )
+                    cur.execute(WRITE_SURFACE_LOCK_SQL)
                 cur.execute(
                     """
                     SELECT u.record_id, u.pair_id, u.doi_r, u.validation_status,
@@ -364,45 +412,14 @@ def main(
                     return
 
                 ids = [str(rec_id) for rec_id, _, _, _ in safe]
-                # Messages point at queue rows and may form parent/reply threads.
-                # Remove the complete thread whenever any member belongs to a
-                # queue slot for a deletable orphan.
-                cur.execute(
-                    """
-                    WITH target_threads AS (
-                        SELECT DISTINCT COALESCE(vm.parent_id, vm.id) AS root_id
-                        FROM validator_messages vm
-                        JOIN validation_queue q ON q.queue_id = vm.queue_id
-                        WHERE q.record_id = ANY(%s::uuid[])
-                    )
-                    DELETE FROM validator_messages vm
-                    USING target_threads t
-                    WHERE vm.id = t.root_id OR vm.parent_id = t.root_id
-                    """,
-                    (ids,),
-                )
-                messages_deleted = cur.rowcount
-                cur.execute(
-                    "DELETE FROM submission_failure_releases WHERE record_id = ANY(%s::uuid[])",
-                    (ids,),
-                )
-                submission_failures_deleted = cur.rowcount
-                cur.execute(
-                    "DELETE FROM validation_skips WHERE record_id = ANY(%s::uuid[])",
-                    (ids,),
-                )
-                skips_deleted = cur.rowcount
-                cur.execute(
-                    "DELETE FROM assignments WHERE record_id = ANY(%s::uuid[])",
-                    (ids,),
-                )
-                assignments_deleted = cur.rowcount
-                cur.execute("DELETE FROM validation_queue WHERE record_id = ANY(%s::uuid[])", (ids,))
-                q_deleted = cur.rowcount
-                cur.execute("DELETE FROM record_metadata WHERE record_id = ANY(%s::uuid[])", (ids,))
-                m_deleted = cur.rowcount
-                cur.execute("DELETE FROM unvalidated WHERE record_id = ANY(%s::uuid[])", (ids,))
-                u_deleted = cur.rowcount
+                counts = delete_source_records(cur, ids)
+                messages_deleted = counts["validator_messages"]
+                submission_failures_deleted = counts["submission_failure_releases"]
+                skips_deleted = counts["validation_skips"]
+                assignments_deleted = counts["assignments"]
+                q_deleted = counts["validation_queue"]
+                m_deleted = counts["record_metadata"]
+                u_deleted = counts["unvalidated"]
                 if u_deleted != len(safe):
                     raise RuntimeError(
                         f"cleanup selected {len(safe)} records but deleted {u_deleted}; "
