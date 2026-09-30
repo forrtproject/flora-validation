@@ -7659,7 +7659,7 @@ function renderServingConfig(cfg) {
     if (ratio) ratio.textContent = `At ${v}%, ≈ ${Math.round(v / 10)} of every 10 served will be priority`;
   });
   $("#admin-priority-body").querySelectorAll('input[name="sp-outcome"], #sp-ymin, #sp-ymax')
-    .forEach(el => el.addEventListener("input", _refreshPriorityPreview));
+    .forEach(el => el.addEventListener("input", () => _refreshPriorityPreview()));
   $("#sp-save").addEventListener("click", _saveServingConfig);
   $("#sp-reset").addEventListener("click", () => renderServingConfig(PRIORITY_DEFAULTS));
   _refreshPriorityPreview();
@@ -7677,28 +7677,48 @@ function _readPriorityForm() {
   };
 }
 
-function _refreshPriorityPreview() {
+let _priorityPreviewSeq = 0;
+
+// The counts are live when fetched but do not follow the pool afterwards, so the
+// box says when they were counted and offers a refresh. A refresh recounts with
+// the form as it is now, without discarding unsaved changes.
+function _refreshPriorityPreview(delay = 250) {
   clearTimeout(_priorityPreviewTimer);
   _priorityPreviewTimer = setTimeout(async () => {
     const box = $("#sp-preview");
     if (!box) return;   // panel was replaced/navigated away before the debounce fired
     const f = _readPriorityForm();
     if (!f.priority_outcome) { box.innerHTML = `<p class="sp-hint">Pick an outcome to see how the pool would split.</p>`; return; }
+    const seq = ++_priorityPreviewSeq;
+    const btn = $("#sp-preview-refresh");
+    if (btn) { btn.disabled = true; btn.textContent = "Counting…"; }
     try {
       const qs = new URLSearchParams({ outcome: f.priority_outcome });
       if (f.priority_year_min != null) qs.set("year_min", f.priority_year_min);
       if (f.priority_year_max != null) qs.set("year_max", f.priority_year_max);
       const p = await adminApi(`/serving-config/preview?${qs.toString()}`);
+      if (seq !== _priorityPreviewSeq || !document.body.contains(box)) return;   // a newer count won
       const yr = (f.priority_year_min != null && f.priority_year_max != null) ? ` · ${f.priority_year_min}–${f.priority_year_max}` : "";
+      const counted = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      const share = +$("#sp-share").value;
       box.innerHTML = `<ul class="sp-preview-list">
-        <li><strong>${p.priority_match}</strong> records match (${escapeHtml(f.priority_outcome)}${yr})</li>
-        <li><strong>${p.rest}</strong> in the rest of the servable pool</li>
-        <li id="sp-ratio">At ${f.priority_share}%, ≈ ${Math.round(f.priority_share / 10)} of every 10 served will be priority</li>
-      </ul>`;
+        <li><strong>${Number(p.priority_match).toLocaleString()}</strong> waiting records match (${escapeHtml(f.priority_outcome)}${yr})</li>
+        <li><strong>${Number(p.rest).toLocaleString()}</strong> other waiting records</li>
+        <li id="sp-ratio">At ${share}%, ≈ ${Math.round(share / 10)} of every 10 served will be priority</li>
+      </ul>
+      <p class="sp-hint">Waiting = a validator can be given it now: not restricted, and a reviewer slot is still free.</p>
+      <div class="sp-preview-foot">
+        <span>Counted at ${escapeHtml(counted)}</span>
+        <button type="button" class="ghost-btn" id="sp-preview-refresh">Refresh counts</button>
+      </div>`;
+      $("#sp-preview-refresh").addEventListener("click", () => _refreshPriorityPreview(0));
     } catch (e) {
-      box.innerHTML = `<p class="sp-hint">Preview unavailable: ${escapeHtml(e.message)}</p>`;
+      if (seq !== _priorityPreviewSeq) return;
+      box.innerHTML = `<p class="sp-hint">Preview unavailable: ${escapeHtml(e.message)}</p>
+        <div class="sp-preview-foot"><button type="button" class="ghost-btn" id="sp-preview-refresh">Try again</button></div>`;
+      $("#sp-preview-refresh").addEventListener("click", () => _refreshPriorityPreview(0));
     }
-  }, 250);
+  }, delay);
 }
 
 async function _saveServingConfig() {

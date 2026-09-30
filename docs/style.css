@@ -5942,6 +5942,22 @@ body.has-maint-banner #admin-screen {
 #sp-share { width: 100%; margin-top: 0.2rem; }
 .sp-preview { margin-top: 1.3rem; padding: 0.85rem 1rem; background: var(--bg); border: 1px solid var(--rule); border-radius: 8px; }
 .sp-preview-list { margin: 0; padding-left: 1.1rem; font-size: 0.85rem; line-height: 1.7; }
+.sp-preview .sp-hint { margin-top: 0.5rem; }
+.sp-preview-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.7rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+/* The phone layout hides every .ghost-btn (a game-screen rule); keep this one. */
+.sp-preview-foot .ghost-btn { display: inline-flex; align-items: center; margin-left: 0; }
+.sp-preview-foot .ghost-btn:disabled { cursor: wait; opacity: 0.6; }
 .sp-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 1.4rem; }
 .sp-saved { color: var(--green); font-size: 0.85rem; font-weight: 600; }
 .sp-meta { font-size: 0.78rem; color: var(--muted); margin-top: 0.9rem; }
