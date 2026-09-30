@@ -39,7 +39,7 @@ const blocked = {
   safety_report: { error_code: "baseline_snapshot_unavailable", warning_codes: [] },
 };
 const history = {
-  days: 7, runs: [completed, failed, blocked], max_removal_percent: 17,
+  days: 7, runs: [completed, failed, blocked],
   auto_retire: true, max_retire_percent: 15, config_errors: [],
 };
 const LIVE_ID = "77777777-0000-0000-0000-000000000000";
@@ -129,9 +129,27 @@ const LOG = [
     assert.equal(await page.locator('.admin-tab-btn[data-tab="maintenance"]').innerText(), "Extractor Pipeline");
 
     // Settings shown in words.
-    assert.equal(await page.locator("#pipeline-removal-limit").innerText(), "17%");
-    assert.match(await page.locator("#pipeline-settings").innerText(), /Removal limit 17% · Automatic retire on, at most 15% of records per run/);
+    assert.equal(await page.locator("#pipeline-settings").innerText(), "Automatic retire on, at most 15% of records per run");
+    // One way to run it from the page: the whole routine.
+    assert.deepEqual(await page.locator(".pipeline-run-btn").evaluateAll(buttons => buttons.map(b => b.dataset.stage)), ["full"]);
+    assert.equal(await page.locator("#pipeline-actions details").count(), 0);
+    // No removal limit any more: a drop in the CSV never stops a run.
+    const steps = await page.locator(".pipeline-step").allInnerTexts();
+    assert.match(steps[0], /^1\s+Download and compare/);
+    assert.match(steps[0], /A dropped pair is not deleted here/);
+    assert.doesNotMatch(steps.join(" "), /stops before anything changes|removal limit/i);
     assert.equal(await page.locator("#pipeline-config-alert").isHidden(), true);
+
+    // The heading says what Refresh does and when the list was last loaded.
+    assert.match(await page.locator("#pipeline-next-run").innerText(), /^02:00 UTC/);
+    assert.match(await page.locator("#pipeline-updated").innerText(), /\d{2}:\d{2}:\d{2}\s+Press Refresh history/);
+    assert.match(await page.locator("#pipeline-refresh-hint").innerText(), /Reloads the runs listed below/);
+    const listRequests = () => requests.filter(r => r === "GET /api/admin/maintenance/runs").length;
+    const before = listRequests();
+    await page.locator("#pipeline-refresh-btn").click();
+    await page.waitForFunction(() => !document.querySelector("#pipeline-refresh-btn").disabled);
+    assert.equal(listRequests(), before + 1);
+    assert.equal((await page.locator("#pipeline-refresh-btn").textContent()).trim(), "Refresh history");
 
     // A run whose only warning is "new pairs arrived" reads as completed.
     const card = page.locator(`.pipeline-run-card[data-run-id="${RUN_ID}"]`);
@@ -237,10 +255,14 @@ const LOG = [
       maintenanceHeadline({ status: "success", safety_report: {
         candidate_resolved_count: 30000, added_count: 0, removed_count: 0, previous_resolved_count: null,
         import_completed: true } }),
+      maintenanceHeadline({ status: "warning", safety_report: {
+        candidate_resolved_count: 3653, previous_resolved_count: null, warning_codes: ["baseline_unavailable"],
+        import_completed: true } }),
     ]);
     assert.deepEqual(headlines, [
       "Nothing was imported. The new CSV lists 80 pairs (2 new, 20 no longer listed).",
-      "First import: 30,000 pairs.",
+      "Imported 30,000 pairs; there was no earlier import to compare with.",
+      "Imported 3,653 pairs, with no comparison to the last import.",
     ]);
     // Log sections agree with the timeline, and a cut-off step says so.
     const states = await page.evaluate(() => [
@@ -253,7 +275,7 @@ const LOG = [
 
     // Automatic retire switched off, and a misconfigured cap, are both visible.
     await page.evaluate(data => renderMaintenanceRuns(data),
-      { ...history, auto_retire: false, config_errors: ["EXTRACTOR_MAX_REMOVAL_PERCENT must be a finite number."] });
+      { ...history, auto_retire: false, config_errors: ["EXTRACTOR_MAX_RETIRE_PERCENT must be a finite number."] });
     assert.match(await page.locator("#pipeline-settings").innerText(), /Automatic retire off/);
     assert.equal(await page.locator(".pipeline-step.is-off").count(), 1);
     assert.equal(await page.locator("#pipeline-config-alert").isVisible(), true);

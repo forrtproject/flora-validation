@@ -6849,7 +6849,7 @@ const PIPELINE_RUN_LABELS = {
   failed: "Failed", running: "Running", queued: "Queued",
 };
 const PIPELINE_REQUEST_LABELS = {
-  full: "Full sync", sync: "Download and import", find: "Report only", cleanup: "Orphan cleanup",
+  full: "Full sync", sync: "Import without retiring", find: "Recount only", cleanup: "Orphan cleanup",
 };
 // Warnings that describe a normal run rather than something to act on.
 const PIPELINE_INFO_WARNINGS = new Set(["new_resolved_pair_ids"]);
@@ -6915,7 +6915,10 @@ function maintenanceHeadline(run) {
   }
   const parts = [];
   if (report.previous_resolved_count === null || report.previous_resolved_count === undefined) {
-    parts.push(`First import: ${candidate} pairs`);
+    // No earlier CSV to count against: a first import, or one that could not be found.
+    parts.push((report.warning_codes || []).includes("baseline_unavailable")
+      ? `Imported ${candidate} pairs, with no comparison to the last import`
+      : `Imported ${candidate} pairs; there was no earlier import to compare with`);
   } else if (added || removed) {
     parts.push(`${_pipelineCount(added)} new pair${added === 1 ? "" : "s"} imported`);
     if (removed) parts.push(`${_pipelineCount(removed)} no longer listed`);
@@ -6935,12 +6938,15 @@ function maintenanceStats(run) {
   const tiles = [];
   if (report.candidate_resolved_count !== undefined && report.candidate_resolved_count !== null) {
     tiles.push({ label: "Pairs in CSV", value: _pipelineCount(report.candidate_resolved_count) });
-    tiles.push({ label: "New", value: `+${_pipelineCount(report.added_count)}`, tone: "added" });
-    const percent = Number(report.removed_percent || 0);
-    tiles.push({
-      label: "No longer listed", value: `−${_pipelineCount(report.removed_count)}`, tone: "removed",
-      note: percent ? `${percent.toFixed(1)}% of the last import` : "",
-    });
+    // Added/dropped only mean something against an earlier CSV.
+    if (report.previous_resolved_count !== null && report.previous_resolved_count !== undefined) {
+      tiles.push({ label: "New", value: `+${_pipelineCount(report.added_count)}`, tone: "added" });
+      const percent = Number(report.removed_percent || 0);
+      tiles.push({
+        label: "No longer listed", value: `−${_pipelineCount(report.removed_count)}`, tone: "removed",
+        note: percent ? `${percent.toFixed(1)}% of the last import` : "",
+      });
+    }
   }
   const retire = report.retire;
   if (retire && retire.status === "applied") {
@@ -6997,21 +7003,22 @@ function maintenanceNotice(run) {
       add("blocked", "The extractor's CSV was empty.",
         "It had no importable pairs, so nothing was imported and the previous import stays in place.");
       break;
+    // The next three stop reasons belong to the removal guard, which no longer
+    // exists; they only appear on runs from before it was removed.
     case "excessive_resolved_removal":
-      add("blocked", "Too many pairs disappeared at once.",
+      add("blocked", "Stopped by the old removal limit.",
         `${_pipelineCount(report.removed_count)} of ${_pipelineCount(report.previous_resolved_count)} pairs `
-        + `(${Number(report.removed_percent || 0).toFixed(2)}%) are missing from the new CSV, above the removal `
-        + "limit. Nothing was imported. If the drop is expected, raise EXTRACTOR_MAX_REMOVAL_PERCENT for one run.");
+        + `(${Number(report.removed_percent || 0).toFixed(2)}%) were missing from the new CSV. Nothing was `
+        + "imported. Runs no longer stop for this.");
       break;
     case "invalid_removal_percent_configuration":
-      add("blocked", "The removal limit is misconfigured.",
-        `${escapeHtml(report.message || "EXTRACTOR_MAX_REMOVAL_PERCENT must be a number from 0 to 100.")} Nothing was downloaded or changed.`);
+      add("blocked", "Stopped by a removal-limit setting.",
+        "EXTRACTOR_MAX_REMOVAL_PERCENT was invalid, so nothing was downloaded. That setting no longer exists.");
       break;
     case "baseline_snapshot_unavailable":
     case "missing_local_baseline":
-      add("blocked", "The last import's CSV could not be found.",
-        "The run compares against it to count disappeared pairs, and it was not on the server, in the "
-        + "database copy or in the extractor's history. Nothing was imported.");
+      add("blocked", "Stopped: the last import's CSV could not be found.",
+        "Nothing was imported. Runs no longer stop for this; they import and only go without the added/dropped counts.");
       break;
     case "part1_completion_unverified":
       add("blocked", "The import could not be confirmed.",
@@ -7059,6 +7066,11 @@ function maintenanceNotice(run) {
   if (codes.includes("openalex_backfill_failed")) {
     add("warning", "OpenAlex enrichment failed.", "The import stands; the enrichment runs again next night.");
   }
+  if (codes.includes("baseline_unavailable")) {
+    add("warning", "No added/dropped counts.",
+      "The last import's CSV was not on the server, in the database copy or in the extractor's history, "
+      + "so this run could not compare against it. The import itself went ahead.");
+  }
   if (codes.includes("snapshot_store_failed")) {
     add("warning", "The CSV could not be saved in the database.",
       "The import stands. Until a copy is saved, a redeploy makes the next run look for it in the extractor's history.");
@@ -7103,14 +7115,11 @@ function renderMaintenanceRun(run) {
 
 function renderPipelineSettings(data) {
   const settings = $("#pipeline-settings");
-  const limit = data.max_removal_percent;
-  const limitLabel = limit === null || limit === undefined ? "invalid" : `${Number(limit).toLocaleString()}%`;
-  $("#pipeline-removal-limit").textContent = limitLabel === "invalid" ? "an invalid threshold" : limitLabel;
   const retireLabel = !data.auto_retire ? "Automatic retire <b>off</b> (EXTRACTOR_AUTO_RETIRE)"
     : data.max_retire_percent === null || data.max_retire_percent === undefined
       ? "Automatic retire <b>on</b>, cap invalid"
       : `Automatic retire <b>on</b>, at most <b>${Number(data.max_retire_percent).toLocaleString()}%</b> of records per run`;
-  if (settings) settings.innerHTML = `Removal limit <b>${escapeHtml(limitLabel)}</b> · ${retireLabel}`;
+  if (settings) settings.innerHTML = retireLabel;
   $("#pipeline-retire-policy")?.closest(".pipeline-step")?.classList.toggle("is-off", !data.auto_retire);
   const configAlert = $("#pipeline-config-alert");
   const errors = data.config_errors || [];
@@ -7178,10 +7187,49 @@ async function fetchMaintenanceRuns() {
   try {
     const data = await adminApi("/maintenance/runs?days=7&limit=100");
     const active = renderMaintenanceRuns(data);
+    _renderPipelineClock(active);
     clearTimeout(_maintenancePollTimer);
     _maintenancePollTimer = active ? setTimeout(fetchMaintenanceRuns, 3000) : null;
   } catch (e) {
     body.innerHTML = `<p class="faq-error">Could not load pipeline history (${escapeHtml(e.message)}).</p>`;
+    const updated = $("#pipeline-updated");
+    if (updated) updated.innerHTML = "Could not refresh<small>Try again in a moment.</small>";
+  }
+}
+
+/* The heading's status panel: when the next nightly run starts, in UTC and in the
+   viewer's own time, and when the history below was last loaded. */
+function _renderPipelineClock(active) {
+  const now = new Date();
+  const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 2, 0, 0));
+  if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
+  const local = next.toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const nextRun = $("#pipeline-next-run");
+  if (nextRun) {
+    nextRun.innerHTML = `02:00 UTC${now.getTimezoneOffset() ? `<small>${escapeHtml(local)} your time</small>` : ""}`;
+  }
+  const updated = $("#pipeline-updated");
+  if (updated) {
+    const time = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    updated.innerHTML = `${escapeHtml(time)}<small>${active
+      ? "A run is going; updating every few seconds."
+      : "Press Refresh history to check again."}</small>`;
+  }
+}
+
+async function refreshMaintenanceRuns() {
+  const button = $("#pipeline-refresh-btn");
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Refreshing…";
+  }
+  try {
+    await fetchMaintenanceRuns();
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Refresh history";
+    }
   }
 }
 
@@ -7380,7 +7428,7 @@ $("#pipeline-actions")?.addEventListener("click", (e) => {
   if (button) startMaintenanceRun(button.dataset.stage);
 });
 
-$("#pipeline-refresh-btn")?.addEventListener("click", fetchMaintenanceRuns);
+$("#pipeline-refresh-btn")?.addEventListener("click", refreshMaintenanceRuns);
 
 $("#pipeline-history")?.addEventListener("click", async (e) => {
   const toggle = e.target.closest(".pipeline-log-btn");

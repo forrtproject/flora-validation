@@ -902,17 +902,15 @@ report and the retire stage read that immutable archive and verify its sha256
 first; the retire stage additionally requires the digest it read to equal the one
 PostgreSQL recorded for the run. Every imported snapshot is also kept in the
 database (`extractor_snapshots`), so a pod whose `EXTRACTOR_DATA_DIR` lost the
-archive, or the baseline the removal guard compares against, restores it from
-there instead of blocking.
+archive, or the previous import the counts compare against, restores it from
+there.
 
-Before import, resolved pair IDs are compared with the baseline named by run
-history (the previous run's archive, verified by digest). Zero resolved IDs or
-removal above `EXTRACTOR_MAX_REMOVAL_PERCENT` blocks the run and leaves the
-known-good CSV untouched; additions produce a non-blocking warning. A missing or
-stale baseline while `unvalidated` is populated also blocks, rather than being
-read as a first deployment with no comparison to make.
-The threshold must parse as a finite value from 0 through 100; malformed,
-`NaN`, infinite, and out-of-range configuration blocks Part 1 before download.
+Before import, the resolved pair IDs the candidate adds and drops are counted
+against the baseline named by run history (the previous run's archive, verified
+by digest). The counts never stop a run: nothing is deleted by absence, so the
+old removal limit (`EXTRACTOR_MAX_REMOVAL_PERCENT`) was removed on 2026-10-01. A
+baseline that cannot be found only loses the counts. Zero resolved IDs still
+blocks the run and leaves the known-good CSV untouched.
 `extractor_maintenance_runs` retains complete logs and structured counts for the
 admin Extractor Pipeline tab. A session-level PostgreSQL advisory lock prevents
 overlapping live processes across web workers, while a partial unique index

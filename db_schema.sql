@@ -1975,12 +1975,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_extractor_maintenance_one_active
     WHERE status IN ('queued', 'running');
 
 -- Every extracted.csv the sync imported, kept whole (gzip) and keyed by sha256.
--- The removal guard compares each new CSV with the last one imported, so it needs
--- those exact bytes. They used to live only in EXTRACTOR_DATA_DIR, which a Railway
--- redeploy emptied: every nightly sync from 2026-09-13 to 2026-09-30 blocked with
--- baseline_snapshot_unavailable. The database outlives the container and moves
--- with the data, so the pipeline stores each snapshot here and restores it when
--- the working directory has lost it. Unchanged nightly downloads add nothing.
+-- The orphan report and the retire stage read the exact bytes a run imported, and
+-- each run counts what the new CSV added and dropped against the last one. They
+-- used to live only in EXTRACTOR_DATA_DIR, which a Railway redeploy emptied: every
+-- nightly sync from 2026-09-13 to 2026-09-30 blocked (a removal limit, since
+-- removed, needed them). The database outlives the container and moves with the
+-- data, so the pipeline stores each snapshot here and restores it when the
+-- working directory has lost it. Unchanged nightly downloads add nothing.
 -- source_commit is the flora-extractor commit the CSV was read at. Only the newest
 -- EXTRACTOR_SNAPSHOTS_KEPT (default 10, ~4 MB each) are kept; every older one is
 -- still that commit in flora-extractor's git history.

@@ -498,8 +498,9 @@ Manual HTTP 202 responses commit the queued row only; a ten-second dispatcher
 poll executes it, so pod shutdown after the response cannot lose the request.
 If a running worker disappears, another lock holder requeues the same run.
 
-Every snapshot a run imports is also kept, so the next run's removal guard can
-compare against it after a redeploy has emptied the working directory:
+Every snapshot a run imports is also kept, so the later stages and the next
+run's added/dropped counts can read it after a redeploy has emptied the working
+directory:
 
 ```sql
 CREATE TABLE extractor_snapshots (
@@ -523,15 +524,14 @@ For a routine `full` run (the nightly job and the primary admin action):
 2. Exclusively archives to
    `data/extracted_YYYYMMDDTHHMMSSZ_<run-id>.csv` (collision suffixes preserve
    every same-second retry)
-3. Compares unique resolved IDs against the baseline the orchestrator names from
-   run history — the previous run's archive, verified by sha256, restored from
-   `extractor_snapshots` when the directory lost it — and blocks when that
-   baseline cannot be found while `unvalidated` is populated
+3. Counts the resolved IDs the candidate adds and drops against the baseline the
+   orchestrator names from run history — the previous run's archive, verified by
+   sha256, restored from `extractor_snapshots` when the directory lost it. The
+   counts never block (the 10% removal limit was removed on 2026-10-01); without
+   a baseline the run goes on without them (warning `baseline_unavailable`)
 4. Blocks an empty/zero-resolved candidate as an extractor error
-5. Blocks when removed resolved IDs are more than 10% of the previous set
-   (`EXTRACTOR_MAX_REMOVAL_PERCENT` overrides the threshold and must be finite
-   and within 0 through 100)
-6. Records newly added resolved IDs as a warning but allows the import
+5. (removed: the removal limit)
+6. Records newly added resolved IDs as a note and imports them
 7. Calls `csv_to_db.run_import()` to insert/refresh/re-key rows
 8. Atomically promotes the candidate only after import succeeds, verifies the
    promoted bytes, reads the archive back to record `archive_file`/`archive_sha256`,

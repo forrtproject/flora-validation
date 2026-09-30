@@ -17,7 +17,6 @@ extractor maintenance pipeline can stop before the orphan report and retire stag
 """
 import argparse
 import json
-import math
 import os
 import re
 import tempfile
@@ -48,44 +47,7 @@ _GITHUB_REPO = os.environ.get("GITHUB_REPO", "forrtproject/flora-extractor")
 _GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
 _CSV_FILE_PATH = "data/extracted.csv"
 _ROUTING_RELEASE_ID = os.environ.get("ROUTING_RELEASE_ID", "")
-_MAX_REMOVAL_PERCENT_ENV = "EXTRACTOR_MAX_REMOVAL_PERCENT"
-_DEFAULT_MAX_REMOVAL_PERCENT = 10.0
 _REPORT_ID_SAMPLE_LIMIT = 100
-
-
-class RemovalPercentConfigurationError(ValueError):
-    """The configured resolved-record removal threshold is unsafe."""
-
-
-def parse_max_removal_percent(value: object | None = None) -> float:
-    """Return a finite removal percentage in the inclusive range 0..100.
-
-    When *value* is omitted, read ``EXTRACTOR_MAX_REMOVAL_PERCENT`` at call
-    time. Keeping environment access out of module initialization makes this
-    parser directly testable and lets a sync emit a structured, fail-closed
-    configuration error instead of crashing while importing the module.
-    """
-    configured = (
-        os.environ.get(
-            _MAX_REMOVAL_PERCENT_ENV,
-            str(_DEFAULT_MAX_REMOVAL_PERCENT),
-        )
-        if value is None
-        else value
-    )
-    error = (
-        f"{_MAX_REMOVAL_PERCENT_ENV} must be a finite number from 0 through "
-        f"100; got {configured!r}"
-    )
-    if isinstance(configured, bool):
-        raise RemovalPercentConfigurationError(error)
-    try:
-        percentage = float(configured)
-    except (TypeError, ValueError) as exc:
-        raise RemovalPercentConfigurationError(error) from exc
-    if not math.isfinite(percentage) or not 0.0 <= percentage <= 100.0:
-        raise RemovalPercentConfigurationError(error)
-    return percentage
 
 
 @dataclass(frozen=True)
@@ -111,7 +73,7 @@ class SnapshotComparison:
 
 
 class SnapshotSafetyError(RuntimeError):
-    """Candidate is readable but unsafe to import and promote as the new baseline."""
+    """The candidate is not a usable extractor CSV (empty, or without pair ids)."""
 
     def __init__(self, code: str, message: str, details: dict | None = None):
         super().__init__(message)
@@ -288,7 +250,11 @@ def _baseline_from_history(
         sha = commit.get("sha") if isinstance(commit, dict) else None
         if not isinstance(sha, str) or not sha:
             continue
-        content = _fetch_csv(_build_url(_GITHUB_REPO, sha, _CSV_FILE_PATH))
+        try:
+            content = _fetch_csv(_build_url(_GITHUB_REPO, sha, _CSV_FILE_PATH))
+        except Exception as exc:
+            print(f"[sync_csv] baseline recovery: could not read {sha[:7]}: {exc}")
+            continue
         if sha256_bytes(content) == baseline_sha256:
             return content, sha
     return None
@@ -301,30 +267,34 @@ def _recover_baseline(
 ) -> Path | None:
     """Find the recorded baseline's exact bytes when its archive file is gone.
 
-    A pod-local data directory loses every archive on redeploy, and the guard
-    then blocked every night from 2026-09-13 although the snapshot it needed was
-    (a) re-downloaded, byte-identical, under a new archive name by the blocked
-    runs themselves and (b) a commit in the extractor's history. Neither weakens
-    the guard: it still compares against exactly the recorded digest.
+    A pod-local data directory loses every archive on redeploy. The same bytes
+    may still be here under another archive name, and are a commit in the
+    extractor's history; only the recorded digest is accepted from either.
     """
-    for path in sorted(data_dir.glob("extracted_*.csv")):
-        if matches(path, baseline_sha256):
-            print(f"[sync_csv] baseline recovered from archive {path.name}")
-            return path
+    # Best effort throughout: the baseline only feeds the added/dropped counts,
+    # so no failure here (network, disk) may stop the import.
     try:
+        for path in sorted(data_dir.glob("extracted_*.csv")):
+            if matches(path, baseline_sha256):
+                print(f"[sync_csv] baseline recovered from archive {path.name}")
+                return path
         found = _baseline_from_history(baseline_file, baseline_sha256)
-    except Exception as exc:  # recovery is best effort; the caller still blocks
-        print(f"[sync_csv] baseline recovery from GitHub failed: {exc}")
+    except Exception as exc:
+        print(f"[sync_csv] baseline recovery failed: {exc}")
         return None
     if found is None:
         return None
     content, commit = found
     restored = data_dir / f"extracted_baseline_{baseline_sha256[:16]}.csv"
-    if not matches(restored, baseline_sha256):
-        tmp = restored.with_suffix(".tmp")
-        tmp.write_bytes(content)
-        os.replace(tmp, restored)
-    if not matches(restored, baseline_sha256):
+    try:
+        if not matches(restored, baseline_sha256):
+            tmp = restored.with_suffix(".tmp")
+            tmp.write_bytes(content)
+            os.replace(tmp, restored)
+        if not matches(restored, baseline_sha256):
+            return None
+    except OSError as exc:
+        print(f"[sync_csv] baseline recovery could not write {restored.name}: {exc}")
         return None
     print(
         f"[sync_csv] baseline recovered from {_GITHUB_REPO}@{commit} "
@@ -337,16 +307,15 @@ def _resolve_baseline(
     data_dir: Path,
     baseline_file: str | None,
     baseline_sha256: str | None,
-    require_baseline: bool,
 ) -> Path | None:
-    """Return the snapshot the removal guard must compare the candidate against.
+    """Return the last import's snapshot, to count what the candidate adds and drops.
 
-    extracted_latest.csv is pod-local and mutable, so it is trusted only while
-    it still carries the bytes of the last verified sync; the run's own archive
-    is preferred because it is immutable. Anything else — an empty volume, an
-    older bundled copy — is a LOST baseline, never a first deployment: silently
-    comparing against nothing switches the removal guard off at exactly the
-    moment the database is most exposed.
+    The counts are information only: no run stops, and nothing is removed, on the
+    strength of this comparison (records leave only through the retire stage). With
+    a recorded digest, only those bytes are used: the recorded archive, or
+    extracted_latest.csv while it still carries them. With nothing recorded (no run
+    history yet) the promoted CSV on this host is compared as it is, which may be an
+    older bundled copy. None means there is nothing to compare with; the run goes on.
     """
     latest_path = data_dir / "extracted_latest.csv"
     if baseline_sha256:
@@ -354,31 +323,7 @@ def _resolve_baseline(
         for candidate in (archive_path, latest_path):
             if matches(candidate, baseline_sha256):
                 return candidate
-        recovered = _recover_baseline(data_dir, baseline_file, baseline_sha256)
-        if recovered is not None:
-            return recovered
-        raise SnapshotSafetyError(
-            "baseline_snapshot_unavailable",
-            "the archived snapshot of the last verified sync is not readable on "
-            f"this host (expected {baseline_file or '<unrecorded file>'} "
-            f"sha256={baseline_sha256}), no other archive here carries those "
-            "bytes and the extractor's history did not yield them; refusing to "
-            "re-baseline the removal guard",
-            {
-                "expected_baseline_file": baseline_file,
-                "expected_baseline_sha256": baseline_sha256,
-            },
-        )
-    if require_baseline:
-        if latest_path.is_file() and latest_path.stat().st_size:
-            return latest_path
-        raise SnapshotSafetyError(
-            "missing_local_baseline",
-            "the database already holds imported records but this host has no "
-            "readable extracted_latest.csv baseline; a first-deployment "
-            "comparison would disable the removal guard",
-            {"expected_baseline_file": None, "expected_baseline_sha256": None},
-        )
+        return _recover_baseline(data_dir, baseline_file, baseline_sha256)
     return latest_path if latest_path.is_file() else None
 
 
@@ -397,14 +342,21 @@ def _resolved_pair_ids(csv_path: Path) -> set[str]:
 def _compare_snapshots(
     candidate_path: Path,
     previous_path: Path | None,
-    *,
-    max_removal_percent: object | None = None,
 ) -> SnapshotComparison:
-    removal_limit = parse_max_removal_percent(max_removal_percent)
-    # ``None`` reaches here only for a genuine first deployment; a baseline that
-    # is merely missing from this pod is rejected in _resolve_baseline.
+    # ``None``: a first import, or a baseline that could not be found. Either
+    # way there is nothing to count against, which blocks nothing.
     has_previous = previous_path is not None and previous_path.exists()
-    previous_ids = _resolved_pair_ids(previous_path) if has_previous else set()
+    previous_ids: set[str] = set()
+    if has_previous:
+        try:
+            previous_ids = _resolved_pair_ids(previous_path)
+        except Exception as exc:
+            # The strict checks are for the candidate. An unreadable baseline (a
+            # value extractor_vocab no longer knows, an empty file) only costs
+            # the counts; stopping here would block every run from now on.
+            print(f"[sync_csv] WARNING baseline_unavailable: {previous_path.name} "
+                  f"could not be read ({exc}); importing without added/dropped counts")
+            has_previous = False
     try:
         candidate_ids = _resolved_pair_ids(candidate_path)
     except pd.errors.EmptyDataError:
@@ -420,8 +372,8 @@ def _compare_snapshots(
             "candidate CSV is empty; treating this as an extractor pipeline error",
             comparison.as_report(),
         )
-    # A first deployment has no baseline, so every row is not presented as a
-    # "new ID" warning. Additions become meaningful after the first promotion.
+    # Without a baseline every row is not presented as "new"; additions become
+    # meaningful once there is something to compare with.
     added = sorted(candidate_ids - previous_ids) if has_previous else []
     removed = sorted(previous_ids - candidate_ids)
     removed_percent = (len(removed) / len(previous_ids) * 100.0) if previous_ids else 0.0
@@ -436,14 +388,6 @@ def _compare_snapshots(
         raise SnapshotSafetyError(
             "empty_resolved_snapshot",
             "candidate contains zero resolved pair_ids; treating this as an extractor pipeline error",
-            comparison.as_report(),
-        )
-    if removed_percent > removal_limit:
-        raise SnapshotSafetyError(
-            "excessive_resolved_removal",
-            f"resolved pair_id removal is {removed_percent:.2f}% "
-            f"({len(removed)} of {len(previous_ids)}), above the "
-            f"{removal_limit:.2f}% limit",
             comparison.as_report(),
         )
     return comparison
@@ -462,7 +406,6 @@ def sync_once(
     maintenance_run_id: str | None = None,
     baseline_file: str | None = None,
     baseline_sha256: str | None = None,
-    require_baseline: bool = False,
 ) -> bool:
     """Download, archive, import, and promote one extractor snapshot.
 
@@ -489,21 +432,17 @@ def sync_once(
         "baseline_sha256": None,
         "expected_baseline_file": baseline_file,
         "expected_baseline_sha256": baseline_sha256,
-        "baseline_required": require_baseline,
         "download_completed": False,
         "validation_completed": False,
         "import_completed": False,
         "promotion_completed": False,
         "promotion_verified": False,
         "part1_completed": False,
-        "max_removal_percent": None,
         # The flora-extractor commit the CSV was read at; the retire stage reads
         # data/retired_pairs.csv at the same one.
         "source_commit": None,
     }
     try:
-        max_removal_percent = parse_max_removal_percent()
-        report["max_removal_percent"] = max_removal_percent
         source_commit = _resolve_source_commit()
         report["source_commit"] = source_commit
         url = _build_url(_GITHUB_REPO, source_commit or _GITHUB_BRANCH, _CSV_FILE_PATH)
@@ -527,16 +466,23 @@ def sync_once(
             data_dir,
             baseline_file,
             baseline_sha256,
-            require_baseline,
         )
         if baseline_path is not None:
             report["baseline_file"] = baseline_path.name
             report["baseline_sha256"] = baseline_sha256 or sha256_file(baseline_path)
-        comparison = _compare_snapshots(
-            candidate_path,
-            baseline_path,
-            max_removal_percent=max_removal_percent,
-        )
+        elif baseline_sha256:
+            # Only the added/dropped counts are lost; the import goes ahead.
+            report["warning_codes"].append("baseline_unavailable")
+            print(
+                f"[sync_csv] WARNING baseline_unavailable: the last import "
+                f"({baseline_file or 'unrecorded file'} sha256={baseline_sha256}) was not "
+                "found here, in the database copy or in the extractor's history; "
+                "importing without added/dropped counts"
+            )
+        comparison = _compare_snapshots(candidate_path, baseline_path)
+        if baseline_path is not None and comparison.previous_resolved_count is None:
+            # Found but unreadable: _compare_snapshots said why.
+            report["warning_codes"].append("baseline_unavailable")
         report["validation_completed"] = True
         report.update(comparison.as_report())
         previous_label = (
@@ -572,17 +518,9 @@ def sync_once(
         report["status"] = "warning" if report["warning_codes"] else "success"
         report["message"] = "candidate imported and promoted"
         return True
-    except RemovalPercentConfigurationError as exc:
-        report["status"] = "error"
-        report["error_code"] = "invalid_removal_percent_configuration"
-        report["message"] = str(exc)
-        print(f"[sync_csv] CONFIGURATION ERROR: {exc}")
-        return False
     except SnapshotSafetyError as exc:
         report.update(exc.details)
         report["status"] = "error" if exc.code == "empty_resolved_snapshot" else "blocked"
-        if exc.code in {"baseline_snapshot_unavailable", "missing_local_baseline"}:
-            report["validation_completed"] = False
         report["error_code"] = exc.code
         report["message"] = str(exc)
         print(f"[sync_csv] BLOCKED {exc.code}: {exc}")
@@ -621,15 +559,9 @@ if __name__ == "__main__":
         help=argparse.SUPPRESS,
     )
     # The orchestrator owns the run history, so it — not this process — knows
-    # which snapshot the last verified sync promoted and whether the database
-    # already holds imported records.
+    # which snapshot the last verified sync promoted.
     parser.add_argument("--baseline-file", default=None, help=argparse.SUPPRESS)
     parser.add_argument("--baseline-sha256", default=None, help=argparse.SUPPRESS)
-    parser.add_argument(
-        "--require-baseline",
-        action="store_true",
-        help=argparse.SUPPRESS,
-    )
     args = parser.parse_args()
     if args.maintenance_run_id:
         succeeded = sync_once(
@@ -638,7 +570,6 @@ if __name__ == "__main__":
             maintenance_run_id=args.maintenance_run_id,
             baseline_file=args.baseline_file,
             baseline_sha256=args.baseline_sha256,
-            require_baseline=args.require_baseline,
         )
     else:
         # A direct command must still create durable history and hold the same

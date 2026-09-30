@@ -1,8 +1,9 @@
 """The database copy of each imported extractor CSV, and the orphan summary.
 
 A Railway redeploy emptied EXTRACTOR_DATA_DIR and every nightly sync blocked
-from 2026-09-13 to 2026-09-30, because the removal guard could no longer read
-the last import's CSV. extractor_snapshots keeps it in the database instead.
+from 2026-09-13 to 2026-09-30, because a removal limit (since removed) could no
+longer read the last import's CSV. extractor_snapshots keeps each one in the
+database, for the later stages and the added/dropped counts.
 """
 import gzip
 import hashlib

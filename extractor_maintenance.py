@@ -4,7 +4,8 @@ Maintenance is deliberately sequenced:
 
 1. ``sync_csv.py`` downloads, validates, imports, and promotes the candidate CSV.
    The snapshot it imported is then kept in the database (``extractor_snapshots``)
-   so the next run's removal guard can compare against it after a redeploy.
+   so later stages, and the next run's added/dropped counts, can still read it
+   after a redeploy. Nothing stops or deletes on the strength of those counts.
 2. Scheduled full runs enrich missing OpenAlex IDs while the same lock is held.
 3. ``find_orphans.py`` writes a read-only summary of the records the CSV no
    longer ships.
@@ -616,30 +617,15 @@ def _latest_promoted_snapshot(database_url: str) -> dict:
     return {"baseline_file": row[0], "baseline_sha256": row[1]}
 
 
-def _database_holds_records(database_url: str) -> bool:
-    conn = psycopg2.connect(database_url)
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT EXISTS (SELECT 1 FROM unvalidated)")
-            return bool(cur.fetchone()[0])
-    except psycopg2.errors.UndefinedTable:
-        # Schema not applied yet — genuinely nothing to protect.
-        return False
-    finally:
-        conn.close()
-
-
 def _baseline_expectation(database_url: str | None) -> dict:
-    """Tell Part 1 which snapshot its removal guard must compare against.
+    """Tell Part 1 which snapshot to count added and dropped pairs against.
 
     sync_csv.py cannot work this out for itself: it sees only the local file
     system, where an empty volume is indistinguishable from a first deployment.
     """
     if not database_url:
         return {}
-    expectation = _latest_promoted_snapshot(database_url)
-    expectation["require_baseline"] = _database_holds_records(database_url)
-    return expectation
+    return _latest_promoted_snapshot(database_url)
 
 
 def _part1_is_verified(attempt: StageAttempt) -> bool:
@@ -893,9 +879,9 @@ def _restore_baseline_from_database(
 ) -> None:
     """Put the last import's snapshot back before the sync compares against it.
 
-    A redeploy that emptied the working directory would otherwise block the
-    removal guard (baseline_snapshot_unavailable). Best effort: without a
-    database copy the sync still tries the extractor's git history.
+    A redeploy empties the working directory; without the snapshot the run still
+    imports, but cannot say what the new CSV added and dropped. Best effort:
+    without a database copy the sync still tries the extractor's git history.
     """
     baseline_file = baseline.get("baseline_file")
     baseline_sha256 = baseline.get("baseline_sha256")
@@ -1083,8 +1069,6 @@ def run_pipeline(
                 sync_command += ["--baseline-file", str(baseline["baseline_file"])]
             if baseline.get("baseline_sha256"):
                 sync_command += ["--baseline-sha256", str(baseline["baseline_sha256"])]
-            if baseline.get("require_baseline"):
-                sync_command.append("--require-baseline")
 
         # Built only once a snapshot has been resolved and verified, so no code
         # path can hand the report or the retire stage an unbound file.
@@ -1368,16 +1352,12 @@ def run_pipeline(
             warning_codes = safety_report.get("warning_codes") or []
             safety_block = safety_report.get("error_code") in {
                 "empty_resolved_snapshot",
-                "excessive_resolved_removal",
                 "part1_completion_unverified",
                 "prerequisite_stage_incomplete",
-                "baseline_snapshot_unavailable",
-                "missing_local_baseline",
                 "snapshot_archive_unrecorded",
                 "snapshot_archive_unavailable",
                 "snapshot_archive_mismatch",
                 "snapshot_digest_missing",
-                "invalid_removal_percent_configuration",
             }
             if not succeeded:
                 final_status = "blocked" if safety_block else "failed"

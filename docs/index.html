@@ -472,25 +472,34 @@
 
     <div id="admin-tab-maintenance" class="hidden">
       <section class="pipeline-console" aria-labelledby="pipeline-title">
-        <header class="pipeline-hero">
-          <div>
+        <div class="pipeline-hero">
+          <div class="pipeline-hero-copy">
             <p class="pipeline-kicker">Extractor pipeline</p>
             <h2 id="pipeline-title">Extractor sync</h2>
             <p>Every night at 02:00 UTC the app downloads flora-extractor's latest
               <code>extracted.csv</code> and brings the validation records up to date.
               You can also start the same run now.</p>
           </div>
-          <button id="pipeline-refresh-btn" class="ghost-btn" type="button">Refresh</button>
-        </header>
+          <aside class="pipeline-hero-status" aria-label="Run history">
+            <dl>
+              <div><dt>Next nightly run</dt><dd id="pipeline-next-run">02:00 UTC</dd></div>
+              <div><dt>History updated</dt><dd id="pipeline-updated">Not yet loaded</dd></div>
+            </dl>
+            <button id="pipeline-refresh-btn" class="ghost-btn" type="button"
+              aria-describedby="pipeline-refresh-hint">Refresh history</button>
+            <p id="pipeline-refresh-hint">Reloads the runs listed below. While a run is going,
+              the list also updates by itself every few seconds.</p>
+          </aside>
+        </div>
 
         <ol class="pipeline-steps" aria-label="What a run does">
           <li class="pipeline-step">
             <span class="pipeline-step-index" aria-hidden="true">1</span>
             <div>
-              <strong>Download and check</strong>
-              <p>Fetches the CSV and compares it with the last import. If more than
-                <b id="pipeline-removal-limit">10%</b> of pairs disappear at once, the run
-                stops before anything changes.</p>
+              <strong>Download and compare</strong>
+              <p>Fetches the CSV from the extractor's latest commit and counts the pairs
+                it adds and drops since the last import. A dropped pair is not deleted
+                here: only step 3 removes records, and only those the extractor lists.</p>
             </div>
           </li>
           <li class="pipeline-step">
@@ -516,21 +525,12 @@
         <div class="pipeline-run-panel" id="pipeline-actions">
           <div class="pipeline-run-copy">
             <h3>Run it now</h3>
-            <p>The same run as the nightly one. A large import can take half an hour;
-              you can leave this page and come back.</p>
+            <p><b>Run full sync</b> does the same three steps as the nightly run. A large
+              import can take half an hour; you can leave this page and come back.</p>
             <p id="pipeline-settings" class="pipeline-settings"></p>
           </div>
           <div class="pipeline-run-controls">
             <button class="btn-primary pipeline-run-btn" data-stage="full" type="button">Run full sync</button>
-            <details class="pipeline-advanced">
-              <summary>Run one step only</summary>
-              <button class="pipeline-stage-btn pipeline-run-btn" data-stage="sync" type="button">
-                <b>Download and import</b><small>No report, nothing retired</small>
-              </button>
-              <button class="pipeline-stage-btn pipeline-run-btn" data-stage="find" type="button">
-                <b>Report only</b><small>Recount against the last import; changes nothing</small>
-              </button>
-            </details>
           </div>
         </div>
 
