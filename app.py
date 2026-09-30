@@ -1747,6 +1747,21 @@ def _priority_predicate(cfg: dict):
     return f"(({' AND '.join(clauses)}) IS TRUE)", params
 
 
+# Servable (over alias u): open for validation, not restricted, and a human slot is
+# still free. Shared by serving and the Pool Priority preview so the preview counts
+# exactly the records a validator can be given.
+_SERVABLE_SQL = """
+    u.validation_status IN ('unvalidated', 'validation_inprogress')
+    AND u.restricted_access IS NOT TRUE
+    AND EXISTS (
+        SELECT 1 FROM validation_queue vq
+        WHERE vq.record_id = u.record_id
+          AND vq.validator_slot IN ('human_1', 'human_2')
+          AND vq.validator_id IS NULL
+    )
+"""
+
+
 def _select_pair_candidate(cur, coder_id: int, mode: str, extra_where: str = "", extra_params: tuple = ()):
     """Pick one servable record for this validator, optionally narrowed by extra_where."""
     cur.execute(
@@ -1754,18 +1769,11 @@ def _select_pair_candidate(cur, coder_id: int, mode: str, extra_where: str = "",
         SELECT {_PAIR_SELECT}
         FROM unvalidated u
         LEFT JOIN record_metadata rm ON rm.record_id = u.record_id
-        WHERE u.validation_status IN ('unvalidated', 'validation_inprogress')
-          AND u.restricted_access IS NOT TRUE
+        WHERE {_SERVABLE_SQL}
           AND {_mode_sql(mode)}
           {extra_where}
           AND u.record_id NOT IN (
               SELECT record_id FROM validation_queue WHERE validator_id = %s
-          )
-          AND EXISTS (
-              SELECT 1 FROM validation_queue vq
-              WHERE vq.record_id = u.record_id
-                AND vq.validator_slot IN ('human_1', 'human_2')
-                AND vq.validator_id IS NULL
           )
         ORDER BY judge_count DESC, RANDOM()
         LIMIT 1
@@ -3704,9 +3712,12 @@ def put_serving_config(req: ServingConfigRequest, admin: dict = Depends(current_
 @app.get("/api/admin/serving-config/preview")
 def preview_serving_config(outcome: str = "", year_min: int | None = None,
                            year_max: int | None = None, admin: dict = Depends(current_admin)):
-    """Count how the proposed rule would split the currently-servable pool."""
-    base = ("FROM unvalidated u WHERE u.validation_status IN ('unvalidated', 'validation_inprogress') "
-            "AND u.restricted_access IS NOT TRUE")
+    """Count how the proposed rule would split the currently-servable pool.
+
+    Servable means what serving itself draws from (_SERVABLE_SQL): a record whose
+    two human slots are both claimed is being worked on, not waiting, so it is
+    not counted. Counted live on every call."""
+    base = f"FROM unvalidated u WHERE {_SERVABLE_SQL}"
     pred = _priority_predicate({
         "enabled": True, "priority_outcome": outcome or None,
         "priority_year_min": year_min, "priority_year_max": year_max, "priority_share": 70,
