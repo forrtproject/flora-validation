@@ -233,7 +233,6 @@ Use a disposable database for development unless you intend those actions to run
 | `EXTRACTOR_AUTO_RETIRE` | No | `1` | Run the retire stage at the end of each full sync; `0`/`off` disables it |
 | `EXTRACTOR_MAX_RETIRE_PERCENT` | No | `15` | Cap on one automatic retire, as a percentage of `unvalidated`; over it nothing is retired |
 | `EXTRACTOR_MAINTENANCE_LOG` | No | `logs/extractor_maintenance.log` | Combined log file for the extractor pipeline; each run's complete log is also kept in `extractor_maintenance_runs` |
-| `EXTRACTOR_MAX_REMOVAL_PERCENT` | No | `10` | Finite threshold from `0` through `100`; invalid, `NaN`, infinite, or out-of-range values block sync before download/import |
 | `EXTRACTOR_STAGE_TIMEOUT_SECONDS` | No | `7200` | Maximum runtime for each sync/report/retire subprocess |
 | `EXTRACTOR_LOCK_WAIT_SECONDS` | No | `15` | Brief advisory-lock retry for an already-reserved run |
 | `SUBMISSION_FAILURE_STAMP_TTL_MINUTES` | No | `30` | Lifetime of a one-time automatic-release capability issued after a server-observed judgement failure |
@@ -1260,15 +1259,19 @@ stale survivor is rejected.
 
 The **Extractor Pipeline** tab explains what the nightly run does, in three steps:
 
-1. download and check: CSV download, the removal guard, and the byte checks;
+1. download and compare: CSV download at the extractor's latest commit, the byte
+   checks, and counts of the pairs added and dropped since the last import (a
+   dropped pair is only counted, never deleted, and never stops the run);
 2. import and report: database import, promotion, and a read-only summary of the
    records the CSV no longer lists; and
 3. retire withdrawn records: the pairs flora-extractor names in
    `data/retired_pairs.csv` are removed when nobody has worked on them, after a
    copy is saved in `retired_records`; touched records are only flagged.
 
-**Run full sync** starts the same run now; **Run one step only** offers the sync
-or the report alone. Nothing deletes records by their absence from the CSV: the
+**Run full sync** starts the same run now (all three steps); it is the tab's only
+run button. A single stage can still be run from the command line for
+troubleshooting (`python extractor_maintenance.py --stage sync` or `--stage find`),
+and `EXTRACTOR_AUTO_RETIRE=0` makes the full run import without retiring. Nothing deletes records by their absence from the CSV: the
 retire stage is the only route, and `EXTRACTOR_AUTO_RETIRE=0` turns it off. Only
 one maintenance run can be queued or running across all workers/pods.
 
@@ -1551,7 +1554,7 @@ the caller. State-changing requests are refused unless they originate from
 | POST | `/api/admin/entries/{record_id}/note` | Save persistent admin note |
 | POST | `/api/admin/entries/{record_id}/resolve` | Correct and accept/reject a record; a confirmed `merge_into_record_id` performs an explicit audited duplicate merge |
 | POST | `/api/admin/queue/{queue_id}/flag` | Toggle judgement flag and optionally message validator |
-| GET | `/api/admin/maintenance/runs` | At least seven days of run summaries, plus the removal limit and retire settings |
+| GET | `/api/admin/maintenance/runs` | At least seven days of run summaries, plus the retire settings |
 | GET | `/api/admin/maintenance/runs/{run_id}` | Complete retained log for one run |
 | POST | `/api/admin/maintenance/run` | Queue the full routine (`full`) or the sync (`sync`) or report (`find`) alone |
 
@@ -1598,17 +1601,18 @@ In the same write transaction it synchronizes matching missing IDs into existing
 `validated` rows, including records filled by older backfill runs, so exports do
 not wait for a later schema execution.
 
-The extractor pipeline is fail-fast. Before import, it compares unique resolved
-`pair_id`s with the baseline the orchestrator names from run history — the
-previous run's immutable archive, verified by sha256, falling back to
-`data/extracted_latest.csv` only while that file still holds those exact bytes.
-A zero-resolved candidate is an extractor error. A candidate removing more than
-`EXTRACTOR_MAX_REMOVAL_PERCENT` (10% by default) is blocked. So is a missing or
-stale baseline on a database that already holds records: an empty volume is
-reported as `missing_local_baseline`, never treated as a first deployment. In
-every case the known-good CSV stays active and the orphan report and the retire
-stage are logged as `SKIPPED`.
-New resolved IDs are a visible non-blocking warning. Every scheduled or manual
+The extractor pipeline is fail-fast. Before import, it counts the unique resolved
+`pair_id`s the candidate adds and drops against the baseline the orchestrator
+names from run history — the previous run's immutable archive, verified by
+sha256, falling back to `data/extracted_latest.csv` only while that file still
+holds those exact bytes. The counts never stop a run, whatever the share of
+dropped pairs: nothing is deleted by absence, and the retire stage removes only
+the pairs flora-extractor lists. (A removal limit, `EXTRACTOR_MAX_REMOVAL_PERCENT`,
+used to block large drops; it was removed on 2026-10-01.) A baseline that cannot
+be found only loses the counts (warning `baseline_unavailable`). A zero-resolved
+candidate is still an extractor error: the known-good CSV stays active and the
+orphan report and the retire stage are logged as `SKIPPED`.
+New resolved IDs are a visible non-blocking note. Every scheduled or manual
 run is retained in `extractor_maintenance_runs` for the admin **Extractor
 Pipeline** tab; output also appends to the configured text log and stdout. A new
 extractor commit is picked up at the next 02:00 UTC run, not through a webhook.
@@ -1662,9 +1666,9 @@ record is first archived whole in `retired_records` in the same transaction.
 Every snapshot the sync imports is also kept in `extractor_snapshots` (gzip,
 keyed by sha256, with the flora-extractor commit it was read at). Before a sync
 the orchestrator restores the previous import from there if the working
-directory lost it, so a redeploy no longer blocks the removal guard (as it did
-nightly from 2026-09-13 to 2026-09-30); the extractor's git history remains the
-second fallback. Only the newest `EXTRACTOR_SNAPSHOTS_KEPT` are kept.
+directory lost it (a redeploy blocked every night from 2026-09-13 to 2026-09-30
+while a removal limit, since removed, needed it); the extractor's git history
+remains the second fallback. Only the newest `EXTRACTOR_SNAPSHOTS_KEPT` are kept.
 
 Every run's status, stage results and durations, counts, orphan and retire
 summaries, and complete log live in `extractor_maintenance_runs`, which is never
@@ -2138,7 +2142,7 @@ gone — and a trusted admin can create and delete other admins.
   unless those auxiliary schedules are externalized.
 - Running `csv_to_db.py` directly validates one file but does not compare it with
   the previous snapshot. Use `sync_csv.py` or `extractor_maintenance.py` for the
-  guarded recurring sync/report workflow; deletion remains a separate manual stage.
+  audited recurring workflow (sync, report, retire).
 
 ### Coverage and operations
 

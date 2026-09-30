@@ -153,10 +153,11 @@ fail-fast. Records leave the database only through the retire stage, which acts
 on what flora-extractor states it withdrew, never on mere absence from the CSV.
 (An orphan-cleanup stage that deleted by absence was removed on 2026-09-30.)
 
-Before import or promotion, `sync_csv.py` compares unique resolved `pair_id`s
-with the snapshot of the last import. Zero resolved IDs is an extractor error;
-removal above 10% (configurable) blocks the run; newly added IDs produce a
-non-blocking note.
+Before import or promotion, `sync_csv.py` counts the unique resolved `pair_id`s
+the candidate adds and drops against the snapshot of the last import. The counts
+are information only: a large drop never stops a run, because nothing is deleted
+by absence (a removal limit, `EXTRACTOR_MAX_REMOVAL_PERCENT`, did this until
+2026-10-01). Zero resolved IDs is still an extractor error that stops the run.
 
 1. Resolves `GITHUB_BRANCH` to a commit and fetches `extracted.csv` at that commit
    from `GITHUB_REPO` (`source_commit` in the safety report)
@@ -221,17 +222,15 @@ name with different bytes, or finds no copy, is blocked
 (`snapshot_archive_mismatch` / `snapshot_archive_unavailable`). A restore never
 overwrites a file that is already there.
 
-For the same reason, Part 1 is told which baseline its removal guard must compare
-against: the orchestrator passes the previous run's recorded archive, and
-`--require-baseline` whenever `unvalidated` is non-empty. Before the sync starts,
-the orchestrator restores that archive from the database if the directory has
-lost it. Failing that, `sync_csv.py` looks for the same bytes in any other archive
-on the host, then in the newest extractor commits touching `data/extracted.csv` up
-to the archive's timestamp. Only bytes matching the recorded digest are accepted.
-Otherwise the run blocks with `baseline_snapshot_unavailable` rather than being
-silently treated as a first deployment, which would switch the removal guard off
-exactly when the database is most exposed. (A Railway redeploy emptied the data
-directory on 2026-09-12 and every nightly run blocked this way until 2026-09-30.)
+Part 1 is told which baseline to count against: the orchestrator passes the
+previous run's recorded archive, and restores it from the database first if the
+directory has lost it. Failing that, `sync_csv.py` looks for the same bytes in any
+other archive on the host, then in the newest extractor commits touching
+`data/extracted.csv` up to the archive's timestamp. Only bytes matching the
+recorded digest are accepted. Without them the run still imports; it only goes
+without the added/dropped counts (warning `baseline_unavailable`). (When a
+removal limit still depended on this, a Railway redeploy on 2026-09-12 blocked
+every nightly run until 2026-09-30.)
 
 To run the complete routine manually: `python extractor_maintenance.py`; one
 stage: `--stage sync` or `--stage find`.
@@ -241,8 +240,8 @@ snapshot counts, orphan and retire summaries, warnings, and complete output in
 `extractor_maintenance_runs`. A PostgreSQL session advisory lock permits only one
 live operation across Kubernetes workers; the partial unique index separately
 prevents duplicate history reservations. The admin **Extractor Pipeline** tab
-explains the three steps, offers **Run full sync** (with the sync or the report
-alone under "Run one step only"), and shows the last seven days as run cards
+explains the three steps, offers one **Run full sync** button (single stages
+remain a command-line option), and shows the last seven days as run cards
 (counts, a step timeline, plain-language notes) with the complete log grouped by
 step.
 
@@ -270,7 +269,6 @@ blocking later runs.
 | `EXTRACTOR_AUTO_RETIRE` | No | Run the retire stage after each full sync (default on; `0`/`off` disables) |
 | `EXTRACTOR_MAX_RETIRE_PERCENT` | No | Cap on one automatic retire, % of `unvalidated` (default `15`) |
 | `EXTRACTOR_MAINTENANCE_LOG` | No | Combined pipeline log path (default `logs/extractor_maintenance.log`) |
-| `EXTRACTOR_MAX_REMOVAL_PERCENT` | No | Finite resolved-ID removal threshold from 0 through 100 (default `10`); invalid/NaN/infinite values block sync |
 | `EXTRACTOR_STAGE_TIMEOUT_SECONDS` | No | Per-child timeout; default 7200 seconds |
 | `EXTRACTOR_LOCK_WAIT_SECONDS` | No | Advisory-lock retry for a reserved run; default 15 seconds |
 | `SUBMISSION_FAILURE_STAMP_TTL_MINUTES` | No | One-time automatic-release capability lifetime; default 30 minutes |

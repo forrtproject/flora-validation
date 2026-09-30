@@ -625,14 +625,14 @@ def test_the_retire_gate_rejects_a_run_without_a_snapshot_digest():
 
 def test_snapshot_safety_block_skips_the_orphan_report(tmp_path):
     runner = ReportingRunner(
-        {"sync_csv.py": (1, "BLOCKED excessive_resolved_removal\n")},
+        {"sync_csv.py": (1, "BLOCKED empty_resolved_snapshot\n")},
         {
-            "status": "blocked",
-            "error_code": "excessive_resolved_removal",
+            "status": "error",
+            "error_code": "empty_resolved_snapshot",
             "previous_resolved_count": 100,
-            "candidate_resolved_count": 80,
-            "removed_count": 20,
-            "removed_percent": 20,
+            "candidate_resolved_count": 0,
+            "removed_count": 100,
+            "removed_percent": 100,
             "warning_codes": [],
         },
     )
@@ -1063,7 +1063,6 @@ def test_sync_receives_the_recorded_baseline_from_run_history(tmp_path):
              return_value={
                  "baseline_file": "extracted_20260831T000000Z_prev0001.csv",
                  "baseline_sha256": SNAPSHOT_SHA256,
-                 "require_baseline": True,
              },
          ):
         run_pipeline(
@@ -1080,7 +1079,8 @@ def test_sync_receives_the_recorded_baseline_from_run_history(tmp_path):
         "extracted_20260831T000000Z_prev0001.csv"
     )
     assert command[command.index("--baseline-sha256") + 1] == SNAPSHOT_SHA256
-    assert "--require-baseline" in command
+    # The baseline only feeds the added/dropped counts; nothing requires it.
+    assert "--require-baseline" not in command
 
 
 def test_snapshot_verification_rejects_a_file_that_changed_underneath_it(tmp_path):
@@ -1334,7 +1334,6 @@ def test_the_baseline_is_restored_from_the_database_before_the_sync(tmp_path, mo
          patch("extractor_maintenance._baseline_expectation", return_value={
              "baseline_file": baseline_file,
              "baseline_sha256": SNAPSHOT_SHA256,
-             "require_baseline": True,
          }):
         run_pipeline(data_dir=tmp_path / "data", log_path=tmp_path / "m.log",
                      requested_stage="sync", runner=OrderedRunner({"sync_csv.py": (0, "")}),

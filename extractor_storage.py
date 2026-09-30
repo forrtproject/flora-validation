@@ -12,7 +12,7 @@ Three rules follow, and all live here so no stage can drift from them:
   * the archive is written to a working directory (``EXTRACTOR_DATA_DIR``),
   * every snapshot the sync imports is also kept in the database
     (``extractor_snapshots``), because a redeploy can wipe that directory and
-    the removal guard needs the last import's exact bytes, and
+    later stages need the exact bytes a run imported, and
   * every stage addresses a snapshot by content digest, never by filename.
 """
 
@@ -111,8 +111,8 @@ def require_snapshot(path: Path, expected_sha256: str | None, *, stage: str) -> 
 # The database copy: extractor_snapshots (db_schema.sql)
 # ---------------------------------------------------------------------------
 # A redeploy that replaces the container empties EXTRACTOR_DATA_DIR; on Railway
-# that blocked every nightly sync from 2026-09-13 to 2026-09-30, because the
-# removal guard could no longer read the snapshot it had to compare against.
+# that blocked every nightly sync from 2026-09-13 to 2026-09-30, because a
+# removal limit (since removed) could no longer read the snapshot it compared with.
 # The database outlives the container and moves with the data to a new server,
 # so every imported snapshot is kept there as well, gzip-compressed and keyed by
 # its sha256. Both directions verify the digest, so neither copy is trusted

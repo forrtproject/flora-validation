@@ -3534,13 +3534,53 @@ details[open] > .chk-collapsible-summary::before { transform: rotate(90deg); }
 }
 .pipeline-console code { font: 0.86em/1 var(--pipe-mono); }
 
+/* The tab's heading: what the pipeline is, and beside it the state of the run
+   history with the one control that reloads it. */
 .pipeline-hero {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   justify-content: space-between;
   gap: 2rem;
-  padding: 1.6rem 0 1.35rem;
-  border-bottom: 2px solid var(--pipe-ink);
+  margin-top: 0.5rem;
+  padding: 1.6rem 1.75rem;
+  border: 1px solid var(--pipe-rule);
+  border-top: 3px solid var(--accent);
+  border-radius: 14px 14px 0 0;
+  background: var(--pipe-paper);
+  box-shadow: 0 2px 14px rgba(38, 38, 16, 0.05);
+}
+.pipeline-hero-copy { flex: 1; min-width: 0; }
+.pipeline-hero-status {
+  display: flex;
+  flex: 0 0 260px;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-left: 1.75rem;
+  border-left: 1px solid var(--pipe-rule);
+}
+.pipeline-hero-status dl { display: grid; gap: 0.55rem; margin: 0; }
+.pipeline-hero-status dt {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.pipeline-hero-status dd { margin: 0.15rem 0 0; font: 600 0.86rem/1.35 var(--pipe-mono); }
+.pipeline-hero-status dd small {
+  display: block;
+  margin-top: 0.1rem;
+  color: var(--muted);
+  font: 400 0.74rem/1.4 'Inter Tight', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+/* Sized here, not by the phone rules that shrink other ghost buttons. */
+.pipeline-hero-status .ghost-btn { align-self: flex-start; padding: 0.45rem 0.95rem; font-size: 0.68rem; }
+.pipeline-hero-status .ghost-btn:disabled { cursor: wait; opacity: 0.6; }
+.pipeline-hero-status p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.5;
 }
 .pipeline-kicker {
   margin: 0 0 0.35rem;
@@ -3557,7 +3597,7 @@ details[open] > .chk-collapsible-summary::before { transform: rotate(90deg); }
   font-weight: 500;
   letter-spacing: -0.025em;
 }
-.pipeline-hero p:not(.pipeline-kicker) {
+.pipeline-hero-copy p:not(.pipeline-kicker) {
   max-width: 700px;
   margin: 0.55rem 0 0;
   color: var(--muted);
@@ -3625,36 +3665,10 @@ details[open] > .chk-collapsible-summary::before { transform: rotate(90deg); }
 .pipeline-run-copy p { margin: 0; max-width: 560px; color: #cfc6bb; font-size: 0.86rem; line-height: 1.55; }
 .pipeline-run-copy .pipeline-settings { margin-top: 0.7rem; color: #b9ada0; font-size: 0.78rem; }
 .pipeline-settings b { color: #f7f0e6; }
-.pipeline-run-controls { display: flex; flex-direction: column; align-items: flex-end; gap: 0.6rem; min-width: 250px; }
+.pipeline-run-controls { display: flex; align-items: center; flex-shrink: 0; }
 .pipeline-run-controls .btn-primary { background: #d86536; border-color: #d86536; white-space: nowrap; }
 .pipeline-run-btn:disabled { cursor: not-allowed; opacity: 0.52; }
-.pipeline-advanced { width: 100%; }
-.pipeline-advanced summary {
-  width: max-content;
-  margin-left: auto;
-  color: #d9af7a;
-  font-size: 0.76rem;
-  cursor: pointer;
-}
-.pipeline-advanced[open] summary { margin-bottom: 0.5rem; }
-.pipeline-stage-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.15rem;
-  width: 100%;
-  margin-top: 0.4rem;
-  padding: 0.6rem 0.8rem;
-  border: 1px solid #5a5148;
-  background: transparent;
-  color: #f7f0e6;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 130ms ease, background 130ms ease;
-}
-.pipeline-stage-btn:hover:not(:disabled) { border-color: #d9af7a; background: rgba(255, 255, 255, 0.04); }
-.pipeline-stage-btn b { font-size: 0.84rem; }
-.pipeline-stage-btn small { color: #b9ada0; font-size: 0.72rem; }
+.pipeline-run-copy p b { color: #f7f0e6; }
 
 .pipeline-live-status {
   display: flex;
@@ -3890,11 +3904,14 @@ details[open] > .chk-collapsible-summary::before { transform: rotate(90deg); }
 }
 
 @media (max-width: 850px) {
+  .pipeline-hero { flex-direction: column; gap: 1.2rem; padding: 1.25rem 1.1rem; }
+  .pipeline-hero-status { flex-basis: auto; padding: 1rem 0 0; border-left: 0; border-top: 1px solid var(--pipe-rule); }
+  .pipeline-hero-status dl { grid-template-columns: 1fr 1fr; }
   .pipeline-steps { grid-template-columns: 1fr; }
   .pipeline-step + .pipeline-step { border-left: 0; border-top: 1px solid var(--pipe-rule); }
   .pipeline-run-panel { flex-direction: column; }
-  .pipeline-run-controls { align-items: stretch; min-width: 0; width: 100%; }
-  .pipeline-advanced summary { margin-left: 0; }
+  .pipeline-run-controls { width: 100%; }
+  .pipeline-run-controls .btn-primary { width: 100%; }
   .pipeline-run-head { flex-wrap: wrap; }
   .pipeline-run-head code { display: none; }
   .pipeline-stat + .pipeline-stat { border-left: 0; }

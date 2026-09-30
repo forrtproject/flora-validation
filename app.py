@@ -6252,20 +6252,13 @@ def admin_maintenance_runs(
         runs = [dict(row) for row in cur.fetchall()]
     from csv_to_db import max_retire_percent
     from extractor_maintenance import _auto_retire_enabled
-    from sync_csv import RemovalPercentConfigurationError, parse_max_removal_percent
 
     config_errors = []
-    try:
-        removal_limit = parse_max_removal_percent()
-    except RemovalPercentConfigurationError as exc:
-        # Never display a plausible fallback that the sync process will not
-        # actually use. The same parser is authoritative in both places.
-        removal_limit = None
-        config_errors.append(str(exc) + " The sync is blocked until this is corrected.")
     auto_retire = _auto_retire_enabled()
     try:
         retire_limit = max_retire_percent()
     except ValueError as exc:
+        # Never display a plausible fallback the retire stage will not use.
         retire_limit = None
         if auto_retire:
             config_errors.append(str(exc) + " The retire stage fails until this is "
@@ -6273,7 +6266,6 @@ def admin_maintenance_runs(
     return {
         "days": days,
         "runs": runs,
-        "max_removal_percent": removal_limit,
         "auto_retire": auto_retire,
         "max_retire_percent": retire_limit,
         "config_errors": config_errors,

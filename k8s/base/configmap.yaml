@@ -11,13 +11,11 @@ data:
   EMAIL_FROM: "Flora Validator <noreply@forrt.org>"
   GITHUB_REPO: "forrtproject/flora-extractor"
   GITHUB_BRANCH: "main"
-  # Shared durable storage (see app-data-pvc.yaml) — required because the
-  # extractor pipeline addresses snapshot archives by content digest and
-  # refuses to run if a pod replacement loses the file (see
-  # extractor_storage.py resolve_data_dir()).
+  # Shared storage (see app-data-pvc.yaml). The database keeps a copy of every
+  # imported snapshot, so losing this volume no longer stops a run; keeping it
+  # saves restoring that copy after each pod replacement.
   EXTRACTOR_DATA_DIR: "/app/data"
   EXTRACTOR_MAINTENANCE_LOG: "/app/logs/extractor_maintenance.log"
-  EXTRACTOR_MAX_REMOVAL_PERCENT: "10"
   EXTRACTOR_STAGE_TIMEOUT_SECONDS: "7200"
   EXTRACTOR_LOCK_WAIT_SECONDS: "15"
   SUBMISSION_FAILURE_STAMP_TTL_MINUTES: "30"

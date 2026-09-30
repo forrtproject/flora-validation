@@ -10,97 +10,18 @@ FAKE_CSV_CONTENT = (
 )
 
 
-@pytest.mark.parametrize(
-    "configured",
-    [
-        "",
-        "ten percent",
-        "NaN",
-        "nan",
-        "Infinity",
-        "+inf",
-        "-Infinity",
-        float("nan"),
-        float("inf"),
-        float("-inf"),
-        "-0.01",
-        "100.01",
-        -1,
-        101,
-        True,
-    ],
-)
-def test_parse_max_removal_percent_rejects_unsafe_values(configured):
-    from sync_csv import (
-        RemovalPercentConfigurationError,
-        parse_max_removal_percent,
-    )
-
-    with pytest.raises(
-        RemovalPercentConfigurationError,
-        match="EXTRACTOR_MAX_REMOVAL_PERCENT must be a finite number",
-    ):
-        parse_max_removal_percent(configured)
-
-
-@pytest.mark.parametrize(
-    ("configured", "expected"),
-    [
-        ("0", 0.0),
-        ("0.25", 0.25),
-        (10, 10.0),
-        (" 42.5 ", 42.5),
-        (100.0, 100.0),
-    ],
-)
-def test_parse_max_removal_percent_accepts_finite_values_in_range(
-    configured,
-    expected,
-):
-    from sync_csv import parse_max_removal_percent
-
-    assert parse_max_removal_percent(configured) == expected
-
-
-def test_invalid_removal_configuration_fails_closed_before_download(
-    tmp_path,
-    monkeypatch,
-    capsys,
-):
+def test_the_removal_limit_is_gone(tmp_path, monkeypatch):
+    """A drop in the extractor's CSV never stops a run: nothing is deleted by
+    absence, and the retire stage removes only the pairs the extractor lists."""
+    import sync_csv
     from sync_csv import sync_once
 
+    assert not hasattr(sync_csv, "parse_max_removal_percent")
+    # The old setting, even an invalid value, changes nothing.
     monkeypatch.setenv("EXTRACTOR_MAX_REMOVAL_PERCENT", "NaN")
+    (tmp_path / "extracted_latest.csv").write_bytes(_snapshot(*(f"p{i}" for i in range(10))))
     report_path = tmp_path / "report.json"
-    with patch("sync_csv._fetch_csv") as mock_fetch, \
-         patch("sync_csv.run_import") as mock_import:
-        succeeded = sync_once(data_dir=tmp_path, report_path=report_path)
-
-    report = json.loads(report_path.read_text(encoding="utf-8"))
-    assert succeeded is False
-    mock_fetch.assert_not_called()
-    mock_import.assert_not_called()
-    assert report["success"] is False
-    assert report["status"] == "error"
-    assert report["error_code"] == "invalid_removal_percent_configuration"
-    assert report["max_removal_percent"] is None
-    assert "finite number from 0 through 100" in report["message"]
-    assert "CONFIGURATION ERROR" in capsys.readouterr().out
-
-
-def test_sync_report_and_comparison_use_same_runtime_validated_limit(
-    tmp_path,
-    monkeypatch,
-):
-    from sync_csv import sync_once
-
-    monkeypatch.setenv("EXTRACTOR_MAX_REMOVAL_PERCENT", "12.5")
-    previous = _snapshot(*(f"p{i}" for i in range(10)))
-    (tmp_path / "extracted_latest.csv").write_bytes(previous)
-    report_path = tmp_path / "report.json"
-    response = MagicMock(
-        status_code=200,
-        content=_snapshot(*(f"p{i}" for i in range(9))),
-    )
+    response = MagicMock(status_code=200, content=_snapshot("p0"))
 
     with patch("sync_csv.requests.get", return_value=response), \
          patch("sync_csv.run_import") as mock_import:
@@ -109,8 +30,10 @@ def test_sync_report_and_comparison_use_same_runtime_validated_limit(
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert succeeded is True
     assert mock_import.call_count == 1
-    assert report["max_removal_percent"] == 12.5
-    assert report["removed_percent"] == 10.0
+    assert "max_removal_percent" not in report
+    assert report["removed_count"] == 9
+    assert report["removed_percent"] == 90.0
+    assert (tmp_path / "extracted_latest.csv").read_bytes() == _snapshot("p0")
 
 
 def test_fetch_csv_returns_bytes_on_200():
@@ -320,23 +243,18 @@ def test_zero_resolved_snapshot_is_blocked_with_structured_counts(tmp_path):
     assert raised.value.details["removed_count"] == 2
 
 
-def test_more_than_ten_percent_removed_is_blocked_but_exactly_ten_is_allowed(tmp_path):
-    from sync_csv import SnapshotSafetyError, _compare_snapshots
+def test_dropped_pairs_are_counted_whatever_their_share(tmp_path):
+    from sync_csv import _compare_snapshots
 
     previous = tmp_path / "extracted_latest.csv"
     previous.write_bytes(_snapshot(*(f"p{i}" for i in range(10))))
     candidate = tmp_path / "candidate.csv"
-    candidate.write_bytes(_snapshot(*(f"p{i}" for i in range(9))))
+    candidate.write_bytes(_snapshot("p0", "p1", "new"))
 
-    allowed = _compare_snapshots(candidate, previous)
-    assert allowed.removed_percent == 10
-
-    candidate.write_bytes(_snapshot(*(f"p{i}" for i in range(8))))
-    with pytest.raises(SnapshotSafetyError) as raised:
-        _compare_snapshots(candidate, previous)
-    assert raised.value.code == "excessive_resolved_removal"
-    assert raised.value.details["removed_count"] == 2
-    assert raised.value.details["removed_percent"] == 20
+    comparison = _compare_snapshots(candidate, previous)
+    assert comparison.removed_percent == 80
+    assert comparison.removed_pair_ids == [f"p{i}" for i in range(2, 10)]
+    assert comparison.added_pair_ids == ["new"]
 
 
 def test_new_resolved_pair_ids_are_promoted_with_a_nonblocking_warning(tmp_path):
@@ -362,14 +280,15 @@ def test_new_resolved_pair_ids_are_promoted_with_a_nonblocking_warning(tmp_path)
     assert report["added_pair_ids"] == ["new-pair"]
 
 
-def test_excessive_removal_preserves_latest_and_reports_why(tmp_path):
+def test_an_empty_csv_is_still_refused(tmp_path):
+    """Zero importable pairs is a broken extractor file, not a large drop."""
     from sync_csv import sync_once
 
     previous = _snapshot(*(f"p{i}" for i in range(10)))
     latest = tmp_path / "extracted_latest.csv"
     latest.write_bytes(previous)
     report_path = tmp_path / "report.json"
-    response = MagicMock(status_code=200, content=_snapshot("p0"))
+    response = MagicMock(status_code=200, content=b"pair_id,paper_type,link_method,doi_r\n")
 
     with patch("sync_csv.requests.get", return_value=response), \
          patch("sync_csv.run_import") as mock_import:
@@ -379,9 +298,7 @@ def test_excessive_removal_preserves_latest_and_reports_why(tmp_path):
     assert succeeded is False
     assert mock_import.call_count == 0
     assert latest.read_bytes() == previous
-    assert report["status"] == "blocked"
-    assert report["error_code"] == "excessive_resolved_removal"
-    assert report["removed_count"] == 9
+    assert report["error_code"] == "empty_resolved_snapshot"
 
 
 def test_archive_digest_is_read_back_from_disk_and_reported(tmp_path):
@@ -426,30 +343,30 @@ def test_truncated_archive_write_fails_part1_instead_of_unlocking_later_stages(t
     assert report["part1_completed"] is False
 
 
-def test_missing_baseline_blocks_instead_of_posing_as_a_first_deployment(tmp_path):
-    """An empty volume must not silently switch the removal guard off."""
+def test_an_empty_volume_imports_as_a_first_import(tmp_path):
+    """With nothing to compare against, the import goes ahead without counts."""
     from sync_csv import sync_once
 
     report_path = tmp_path / "report.json"
     response = MagicMock(status_code=200, content=_snapshot("p0"))
-    with patch("sync_csv.requests.get", return_value=response),          patch("sync_csv.run_import") as mock_import:
+    with patch("sync_csv.requests.get", return_value=response), \
+         patch("sync_csv.run_import") as mock_import:
         succeeded = sync_once(
             data_dir=tmp_path,
             report_path=report_path,
             maintenance_run_id="run-no-baseline",
-            require_baseline=True,
         )
 
     report = json.loads(report_path.read_text(encoding="utf-8"))
-    assert succeeded is False
-    assert mock_import.call_count == 0
-    assert report["status"] == "blocked"
-    assert report["error_code"] == "missing_local_baseline"
-    assert not (tmp_path / "extracted_latest.csv").exists()
+    assert succeeded is True
+    assert mock_import.call_count == 1
+    assert report["previous_resolved_count"] is None
+    assert "baseline_unavailable" not in report["warning_codes"]
 
 
 def test_stale_local_csv_cannot_stand_in_for_the_recorded_baseline(tmp_path):
-    """A replacement pod's older bundled CSV is not a baseline."""
+    """A replacement pod's older bundled CSV is not what the counts compare with;
+    without the recorded bytes the run imports and says it could not compare."""
     from sync_csv import sync_once
 
     (tmp_path / "extracted_latest.csv").write_bytes(_snapshot("stale"))
@@ -465,13 +382,15 @@ def test_stale_local_csv_cannot_stand_in_for_the_recorded_baseline(tmp_path):
         )
 
     report = json.loads(report_path.read_text(encoding="utf-8"))
-    assert succeeded is False
-    assert mock_import.call_count == 0
-    assert report["error_code"] == "baseline_snapshot_unavailable"
+    assert succeeded is True
+    assert mock_import.call_count == 1
+    assert report["baseline_file"] is None
+    assert report["previous_resolved_count"] is None
+    assert "baseline_unavailable" in report["warning_codes"]
 
 
 def test_recorded_archive_is_preferred_over_the_mutable_promoted_csv(tmp_path):
-    """The removal guard compares against the last verified sync's own bytes."""
+    """The counts compare against the last verified sync's own bytes."""
     from sync_csv import sync_once
 
     previous = _snapshot(*(f"p{i}" for i in range(10)))
@@ -492,10 +411,9 @@ def test_recorded_archive_is_preferred_over_the_mutable_promoted_csv(tmp_path):
         )
 
     report = json.loads(report_path.read_text(encoding="utf-8"))
-    assert succeeded is False
-    assert mock_import.call_count == 0
+    assert succeeded is True
+    assert mock_import.call_count == 1
     assert report["baseline_file"] == archive.name
-    assert report["error_code"] == "excessive_resolved_removal"
     assert report["removed_count"] == 2
 
 
@@ -514,7 +432,6 @@ def test_a_lost_baseline_is_recovered_from_a_byte_identical_archive(tmp_path):
             maintenance_run_id="run-identical",
             baseline_file="extracted_20260912T142657Z_88d4c0c8.csv",
             baseline_sha256=hashlib.sha256(previous).hexdigest(),
-            require_baseline=True,
         )
 
     report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -554,7 +471,6 @@ def test_a_lost_baseline_is_recovered_from_the_extractor_history_by_digest(tmp_p
             maintenance_run_id="run-history",
             baseline_file="extracted_20260912T142657Z_88d4c0c8.csv",
             baseline_sha256=hashlib.sha256(previous).hexdigest(),
-            require_baseline=True,
         )
 
     report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -567,8 +483,9 @@ def test_a_lost_baseline_is_recovered_from_the_extractor_history_by_digest(tmp_p
     assert report["added_count"] == 1 and report["removed_count"] == 0
 
 
-def test_history_without_the_recorded_bytes_still_blocks(tmp_path):
-    """Recovery never substitutes a near miss: only the recorded digest will do."""
+def test_history_without_the_recorded_bytes_gives_no_counts(tmp_path):
+    """Recovery never substitutes a near miss: only the recorded digest will do.
+    Without it the import still goes ahead, just without added/dropped counts."""
     from sync_csv import sync_once
 
     previous = _snapshot(*(f"p{i}" for i in range(10)))
@@ -583,13 +500,13 @@ def test_history_without_the_recorded_bytes_still_blocks(tmp_path):
             maintenance_run_id="run-history-miss",
             baseline_file="extracted_20260912T142657Z_88d4c0c8.csv",
             baseline_sha256=hashlib.sha256(previous).hexdigest(),
-            require_baseline=True,
         )
 
     report = json.loads(report_path.read_text(encoding="utf-8"))
-    assert succeeded is False
-    assert mock_import.call_count == 0
-    assert report["error_code"] == "baseline_snapshot_unavailable"
+    assert succeeded is True
+    assert mock_import.call_count == 1
+    assert report["baseline_file"] is None
+    assert "baseline_unavailable" in report["warning_codes"]
 
 
 def test_the_csv_is_read_at_a_resolved_commit_which_the_report_records(tmp_path):
@@ -613,3 +530,80 @@ def test_the_csv_is_read_at_a_resolved_commit_which_the_report_records(tmp_path)
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert report["source_commit"] == sha
     assert urls[-1].endswith(f"/{sha}/data/extracted.csv")
+
+
+@pytest.mark.parametrize("baseline_bytes", [
+    b"pair_id,paper_type,link_method,doi_r\nabc,replication,a_method_nobody_knows,10.1/x\n",
+    b"doi_r\n10.1/x\n",
+    b"",
+])
+def test_an_unreadable_baseline_costs_the_counts_not_the_import(tmp_path, baseline_bytes):
+    """Only the candidate is checked strictly: a last import that no longer reads
+    (a vocabulary change, a damaged file) must not stop every run from then on."""
+    from sync_csv import sync_once
+
+    archive = tmp_path / "extracted_20260930T191256Z_cd9302ef.csv"
+    archive.write_bytes(baseline_bytes)
+    report_path = tmp_path / "report.json"
+    response = MagicMock(status_code=200, content=_snapshot("p0", "p1"))
+    with patch("sync_csv.requests.get", return_value=response), \
+         patch("sync_csv.run_import") as mock_import:
+        succeeded = sync_once(
+            data_dir=tmp_path,
+            report_path=report_path,
+            maintenance_run_id="run-bad-baseline",
+            baseline_file=archive.name,
+            baseline_sha256=hashlib.sha256(baseline_bytes).hexdigest(),
+        )
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert succeeded is True
+    assert mock_import.call_count == 1
+    assert report["part1_completed"] is True
+    assert report["previous_resolved_count"] is None
+    assert report["warning_codes"].count("baseline_unavailable") == 1
+
+
+def test_a_recovery_that_cannot_write_its_file_does_not_stop_the_import(tmp_path):
+    from sync_csv import sync_once
+
+    previous = _snapshot(*(f"p{i}" for i in range(10)))
+    sha256 = hashlib.sha256(previous).hexdigest()
+    # The recovered copy cannot be written: a directory sits where its file goes.
+    (tmp_path / f"extracted_baseline_{sha256[:16]}.tmp").mkdir()
+    report_path = tmp_path / "report.json"
+    response = MagicMock(status_code=200, content=_snapshot("p0"))
+    with patch("sync_csv.requests.get", return_value=response), \
+         patch("sync_csv._baseline_from_history", return_value=(previous, "d7f55d9")), \
+         patch("sync_csv.run_import") as mock_import:
+        succeeded = sync_once(
+            data_dir=tmp_path,
+            report_path=report_path,
+            maintenance_run_id="run-full-disk",
+            baseline_file="extracted_20260912T142657Z_88d4c0c8.csv",
+            baseline_sha256=sha256,
+        )
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert succeeded is True
+    assert mock_import.call_count == 1
+    assert "baseline_unavailable" in report["warning_codes"]
+
+
+def test_one_unreachable_commit_does_not_end_the_history_search(tmp_path):
+    from sync_csv import _baseline_from_history
+
+    previous = _snapshot(*(f"p{i}" for i in range(10)))
+
+    def get(url, headers=None, params=None, timeout=None):
+        if url.startswith("https://api.github.com/"):
+            return MagicMock(status_code=200,
+                             json=MagicMock(return_value=[{"sha": "gone"}, {"sha": "d7f55d9"}]))
+        if "/gone/" in url:
+            return MagicMock(status_code=404, text="not found")
+        return MagicMock(status_code=200, content=previous)
+
+    with patch("sync_csv.requests.get", side_effect=get):
+        found = _baseline_from_history("extracted_20260912T142657Z_88d4c0c8.csv",
+                                       hashlib.sha256(previous).hexdigest())
+    assert found == (previous, "d7f55d9")
