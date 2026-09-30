@@ -2875,6 +2875,9 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
 .status-validated    { background: #eaf2e8; color: var(--green); border: 1px solid var(--green); }
 .status-review       { background: #fde8e8; color: var(--red);   border: 1px solid var(--red); }
 .status-rejected     { background: #f3f4f6; color: #6b7280;      border: 1px solid #9ca3af; }
+/* Validated with no admin review: its own colour, dashed, so it never reads as
+   an admin approval. */
+.status-auto         { background: #f1ebf8; color: #6a4a9a;      border: 1px dashed #6a4a9a; }
 
 /* Flags */
 .admin-flag {
@@ -2889,6 +2892,7 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
 .flag-llm   { background: #fde8e8; color: var(--red); }
 .flag-tie   { background: #fdf3e0; color: var(--amber); }
 .flag-admin { background: #eaf2e8; color: var(--green); }
+.flag-mine  { background: #e8f0fe; color: #1a56db; }
 
 /* Pagination */
 .admin-pagination {
@@ -6392,4 +6396,78 @@ body.has-maint-banner #admin-screen {
   .flora-actions { width: 100%; }
   .flora-actions button { flex: 1; }
   .flora-stats .flora-when { margin-left: 0; flex-basis: 100%; }
+}
+
+/* ---------- Auto-validation and self-approval (admin panel) ---------- */
+.admin-auto-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: #f1ebf8;
+  border: 1px dashed #6a4a9a;
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+.admin-auto-banner > div { flex: 1 1 22rem; }
+.admin-auto-banner strong { color: #6a4a9a; }
+.admin-self-banner {
+  background: #fde8e8;
+  border: 1px solid var(--red);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+.admin-self-banner strong { color: var(--red); }
+.admin-self-banner.admin-self-ok { background: #eaf2e8; border-color: var(--green); }
+.admin-self-banner.admin-self-ok strong { color: var(--green); }
+.admin-decisions {
+  margin-bottom: 1.25rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.admin-decisions summary { cursor: pointer; font-weight: 600; }
+.admin-decisions ul { margin: 0.4rem 0 0; padding-left: 1.2rem; }
+.admin-decisions li { margin: 0.2rem 0; }
+.admin-hide-mine {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: -0.4rem 0 1rem;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.admin-link-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.5rem; }
+.admin-link-controls .admin-select { width: auto; max-width: 11rem; margin: 0; padding: 0.25rem 0.5rem; }
+.admin-link-none { color: var(--muted); font-style: italic; }
+
+/* ---------- Source Records: rows of records no longer validated ---------- */
+.src-row.src-deleted td { opacity: 0.55; text-decoration: line-through; text-decoration-color: var(--muted); }
+.src-row.src-deleted td.src-id { text-decoration: none; }
+.src-deleted-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  margin-left: 0.3rem;
+  background: #f3f4f6;
+  color: #6b7280;
+  border: 1px solid #9ca3af;
+}
+.src-deleted-banner {
+  background: #f3f4f6;
+  border: 1px solid #9ca3af;
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
 }

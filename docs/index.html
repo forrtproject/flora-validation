@@ -286,6 +286,7 @@
       <button class="admin-filter-btn" data-filter="admin_comments" title="Show entries with a saved admin note">Admin comments <span class="filter-count" id="fc-admin-comments">—</span></button>
       <button class="admin-filter-btn" data-filter="quality_flagged" title="Records with row-local data-quality problems — these may need excluding">Data quality <span class="filter-count" id="fc-quality-flagged">—</span></button>
       <button class="admin-filter-btn" data-filter="validated">Validated <span class="filter-count" id="fc-validated">—</span></button>
+      <button class="admin-filter-btn" data-filter="auto_validated" title="Validated by an auto-validation rule — no admin has reviewed these">Auto-validated <span class="filter-count" id="fc-auto-validated">—</span></button>
       <button class="admin-filter-btn" data-filter="rejected">Excluded <span class="filter-count" id="fc-rejected">—</span></button>
       <button class="admin-filter-btn" data-filter="admin_checked" style="display:none">Admin Checked <span class="filter-count" id="fc-admin-checked">—</span></button>
     </div>
@@ -293,6 +294,9 @@
     <div id="admin-search-bar" class="admin-search-bar">
       <input id="admin-search-input" type="search" class="admin-search-input" placeholder="Search by title or DOI…">
     </div>
+    <label id="admin-hide-mine-wrap" class="admin-hide-mine hidden" title="Leave out entries you were a validator on — those are for another admin to decide">
+      <input id="admin-hide-mine" type="checkbox"> Hide entries I validated
+    </label>
 
     <div class="admin-table-wrap">
       <table class="admin-table">
@@ -363,6 +367,7 @@
         <button class="admin-filter-btn" data-filter="unreviewed">Not reviewed <span class="filter-count" id="sfc-unreviewed">—</span></button>
         <button class="admin-filter-btn" data-filter="reviewed">Reviewed <span class="filter-count" id="sfc-reviewed">—</span></button>
         <button class="admin-filter-btn" data-filter="flagged">Duplicates <span class="filter-count" id="sfc-flagged">—</span></button>
+        <button class="admin-filter-btn" data-filter="deleted" title="Rows of records that are no longer validated: kept with their ids, but no longer feeding FLoRA">Deleted <span class="filter-count" id="sfc-deleted">—</span></button>
       </div>
 
       <div class="admin-search-bar src-toolbar">

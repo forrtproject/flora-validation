@@ -31,6 +31,8 @@ LIST_COLUMNS = [
     "reviewed_at",
     "version",
     "content_fingerprint",
+    "deleted_at",
+    "deleted_reason",
 ]
 
 # Whitelist — never interpolate a caller-supplied sort into SQL.
@@ -75,6 +77,7 @@ DETAIL_COLUMNS = [
     "content_fingerprint",
     "reviewed_by", "reviewed_at", "version",
     "first_seen_at", "updated_at",
+    "deleted_at", "deleted_reason",
     "raw",
 ]
 
@@ -114,8 +117,14 @@ class VersionConflict(Exception):
 
 def _build_where(filters: dict):
     """Return (where_sql, params). Shared by the list, count and export paths so
-    they can never disagree about what a filter means."""
+    they can never disagree about what a filter means.
+
+    Rows marked deleted (a record no longer validated) are listed only under the
+    `deleted` filter; every other view, and the export, shows live rows."""
     clauses, params = [], []
+
+    clauses.append("deleted_at IS NOT NULL" if filters.get("deleted") == "only"
+                   else "deleted_at IS NULL")
 
     if filters.get("type"):
         clauses.append("type = %s")
@@ -151,7 +160,7 @@ def _build_where(filters: dict):
         clauses.append(
             """content_fingerprint IN (
                    SELECT content_fingerprint FROM source_records
-                   WHERE content_fingerprint IS NOT NULL
+                   WHERE content_fingerprint IS NOT NULL AND deleted_at IS NULL
                    GROUP BY content_fingerprint HAVING COUNT(*) > 1
                )"""
         )
@@ -206,14 +215,14 @@ def list_records(cur, filters: dict, sort: str = "", direction: str = "asc",
         cur.execute(
             """
             SELECT content_fingerprint FROM source_records
-            WHERE content_fingerprint = ANY(%s)
+            WHERE content_fingerprint = ANY(%s) AND deleted_at IS NULL
             GROUP BY content_fingerprint HAVING COUNT(*) > 1
             """,
             (fingerprints,),
         )
         flagged = {r["content_fingerprint"] for r in cur.fetchall()}
     for r in rows:
-        r["is_duplicate"] = r["content_fingerprint"] in flagged
+        r["is_duplicate"] = r["deleted_at"] is None and r["content_fingerprint"] in flagged
 
     return {
         "records": rows,
@@ -228,12 +237,13 @@ def _counts(cur) -> dict:
     cur.execute(
         """
         SELECT
-            COUNT(*)                                        AS all_records,
-            COUNT(*) FILTER (WHERE type = 'replication')    AS replications,
-            COUNT(*) FILTER (WHERE type = 'reproduction')   AS reproductions,
-            COUNT(*) FILTER (WHERE reviewed_at IS NOT NULL) AS reviewed,
-            COUNT(*) FILTER (WHERE reviewed_at IS NULL)     AS unreviewed,
-            COUNT(*) FILTER (WHERE source = 'validated')    AS validated
+            COUNT(*) FILTER (WHERE deleted_at IS NULL)                          AS all_records,
+            COUNT(*) FILTER (WHERE deleted_at IS NULL AND type = 'replication')  AS replications,
+            COUNT(*) FILTER (WHERE deleted_at IS NULL AND type = 'reproduction') AS reproductions,
+            COUNT(*) FILTER (WHERE deleted_at IS NULL AND reviewed_at IS NOT NULL) AS reviewed,
+            COUNT(*) FILTER (WHERE deleted_at IS NULL AND reviewed_at IS NULL)  AS unreviewed,
+            COUNT(*) FILTER (WHERE deleted_at IS NULL AND source = 'validated') AS validated,
+            COUNT(*) FILTER (WHERE deleted_at IS NOT NULL)                      AS deleted
         FROM source_records
         """
     )
@@ -243,7 +253,7 @@ def _counts(cur) -> dict:
         """
         SELECT COALESCE(SUM(n), 0) AS flagged FROM (
             SELECT COUNT(*) AS n FROM source_records
-            WHERE content_fingerprint IS NOT NULL
+            WHERE content_fingerprint IS NOT NULL AND deleted_at IS NULL
             GROUP BY content_fingerprint HAVING COUNT(*) > 1
         ) t
         """
@@ -406,6 +416,9 @@ def update_record(cur, record_id: str, fields: dict, version: int,
 
     if int(version) != int(current["version"]):
         raise VersionConflict(current)
+    if current.get("deleted_at") is not None:
+        raise ValueError("This row is deleted: its record is no longer validated, so it "
+                         "no longer feeds FLoRA and is kept only as a record.")
 
     unknown = [k for k in fields if k not in EDITABLE_FIELDS]
     if unknown:
@@ -478,7 +491,7 @@ def duplicate_groups(cur, unresolved_only: bool = True) -> dict:
     cur.execute(
         f"""
         SELECT content_fingerprint FROM source_records
-        WHERE content_fingerprint IS NOT NULL
+        WHERE content_fingerprint IS NOT NULL AND deleted_at IS NULL
         GROUP BY content_fingerprint {having}
         ORDER BY MIN(display_id)
         """
@@ -496,7 +509,7 @@ def duplicate_groups(cur, unresolved_only: bool = True) -> dict:
                duplicate_status, duplicate_of::text AS duplicate_of,
                duplicate_reviewed_by, duplicate_reviewed_at
         FROM source_records
-        WHERE content_fingerprint = ANY(%s)
+        WHERE content_fingerprint = ANY(%s) AND deleted_at IS NULL
         ORDER BY content_fingerprint, display_id
         """,
         (fingerprints,),
@@ -559,19 +572,27 @@ def resolve_duplicate(cur, record_id: str, status: str, admin_handle: str,
         raise ValueError("A record cannot be a duplicate of itself")
 
     _check_uuid(record_id)
-    cur.execute("SELECT 1 FROM source_records WHERE record_id = %s", (record_id,))
-    if not cur.fetchone():
+    cur.execute("SELECT deleted_at FROM source_records WHERE record_id = %s", (record_id,))
+    row = cur.fetchone()
+    if not row:
         raise RecordNotFound(record_id)
+    if row["deleted_at"] is not None:
+        raise ValueError("This row is deleted: it no longer feeds FLoRA, so there is "
+                         "no duplicate to rule on.")
 
     if status == "duplicate":
         _check_uuid(duplicate_of)
         cur.execute(
-            "SELECT display_id, duplicate_status FROM source_records WHERE record_id = %s",
+            "SELECT display_id, duplicate_status, deleted_at FROM source_records "
+            "WHERE record_id = %s",
             (duplicate_of,),
         )
         survivor = cur.fetchone()
         if not survivor:
             raise RecordNotFound(duplicate_of)
+        if survivor["deleted_at"] is not None:
+            raise ValueError(f"{survivor['display_id']} is deleted and no longer feeds "
+                             "FLoRA, so it cannot be the copy that is kept.")
         # Otherwise both rows end up 'duplicate' (the survivor auto-mark below is
         # guarded by IS NULL and would silently no-op), and the transform drops
         # the paper entirely because it excludes every 'duplicate' row.

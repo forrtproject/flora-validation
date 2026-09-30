@@ -650,6 +650,63 @@ rejected shows the same "↻ It's a reproduction", which opens its edit panel as
 reproduction. The senior fast-reject reads "Reject — neither a replication nor a
 reproduction".
 
+### Auto-validation, self-approval and the decision log
+
+Two agreeing validators skip admin review (`consensus_engine.auto_validation_rule`)
+when the AI sanity check agrees too and either:
+
+- **trusted**: one of them is ⭐ Trusted or ★★ Senior, or
+- **experienced**: both have had more than 19 entries approved by an admin and
+  fewer than 3 judgements flagged, ever.
+
+Only a plain agreement qualifies: never "Can't tell", a quote not found in the
+abstract, a senior reject, "neither type", a tiebreaker, or a disputed original
+(consensus keeps part of the wrong one), and never a duplicate of an entry already
+validated (an admin merges those). "Approved" counts admin approvals only (`APPROVED_BY_ADMIN_SQL`, also
+the validators table and the approval card), so the rules never feed themselves.
+This replaces the Senior shortcut, which ignored the AI check. A look-back over
+every past agreement found the admin review changed no type, outcome or original
+study on any entry these rules would have let through.
+
+An auto-validated entry records its rule (`auto_validated_rule`,
+`auto_validated_at`). The admin list shows it as "Auto-validated" under its own
+filter, the dashboard counts it, and its panel says so and offers "Send back for
+review", which takes it out of the validated table until an admin decides it; its
+Source Records row is then marked deleted (see below). Entries validated without
+an admin before these rules have no rule recorded and are labelled as such.
+`auto_validate_waiting.py` applies the rules once to entries that were already
+waiting for approval, using the sanity check each already had and publishing what
+an admin approval would (`consensus_engine.approval_values`); it is a dry run
+unless given `--apply`, and saves the entries to `backups/` first. Admin approval
+now also refuses to publish a duplicate of an entry already validated (409):
+resolving it offers the merge.
+
+An admin who validated an entry may decide it (approve, resolve, reject) only when
+the other validator agreed with them; the server refuses otherwise, and the panel
+says why. That needs each admin account linked to the person's validator account
+(`admins.validator_id`), which trusted admins set in the Admins tab (a matching
+email or handle is suggested). Nobody sets the link on their own account; another
+trusted admin does. The two judgements must come from two different people who
+agree — except a senior reject, which fills both slots with the senior's own
+reject by design: that senior may carry it through. "Hide entries I validated"
+leaves those out of the list.
+
+Every admin decision is logged in `admin_decisions` — who, when, the status before
+and after, and each published value it changed (a `final_*` decision, else the
+extracted value it stands in for) — and listed on the entry's panel.
+
+### Source Records rows of records no longer validated
+
+`sync_validated.py` copies every validated record into Source Records (source
+`validated`, `VAL-` ids), which feeds the FLoRA build. When a record leaves the
+validated set — sent back, rejected, merged — its row is never removed: it is
+marked deleted (`deleted_at`, `deleted_reason`) at the commit that took it out
+(trigger `retire_validated_source_row`), and keeps its row and display id. Every
+admin edit writes a new validated row, so the sync also marks the row it replaced
+deleted, naming the new one. A deleted row no longer feeds FLoRA
+(`transform_sources.load`), is left out of enrichment and duplicate detection,
+cannot be edited, and is listed in the grid only under "Deleted".
+
 ### Reproduction outcome UI
 
 When the effective type is `reproduction`, the frontend replaces the single

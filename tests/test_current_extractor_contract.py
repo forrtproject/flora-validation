@@ -80,9 +80,14 @@ def test_consensus_rederives_reproduction_outcome_after_axis_correction():
 
 def test_manual_resolution_paths_rederive_and_persist_reproduction_axes():
     # Assignment, queued judgement, and admin resolution all use the same strict
-    # validator; one-click approval independently re-derives before export.
+    # validator; one-click approval independently re-derives before export, in
+    # consensus_engine.approval_values (shared with auto_validate_waiting.py).
     assert APP.count("_validated_outcome_request(") >= 4
-    assert APP.count("derive_reproduction_outcome(") >= 2
+    assert APP.count("derive_reproduction_outcome(") >= 1
+    assert "approved = approval_values(rec)" in APP
+    consensus = (ROOT / "consensus_engine.py").read_text(encoding="utf-8")
+    approval = consensus.split("def approval_values(", 1)[1].split("\ndef ", 1)[0]
+    assert "derive_reproduction_outcome(computation, robustness)" in approval
     for field in (
         "final_outcome_computation  = %s",
         "final_computational_quote  = %s",

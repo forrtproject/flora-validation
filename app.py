@@ -272,7 +272,7 @@ def _principal(request: Request, kind: str) -> dict | None:
             )
         else:
             cur.execute(
-                "SELECT id, handle, trusted FROM admins WHERE id = %s",
+                "SELECT id, handle, trusted, validator_id FROM admins WHERE id = %s",
                 (session["principal_id"],),
             )
         return cur.fetchone()
@@ -3280,16 +3280,140 @@ def forgot_handle(req: ForgotHandleRequest):
 # Admin endpoints
 # ---------------------------------------------------------------------------
 
-# How many records a validator (alias `v`) judged that an admin has since approved
-# (validation_status 'validated'). One definition for the validators table's
-# "approved" column and the approval card's track record, so the two agree.
-_APPROVED_COUNT_SQL = """(SELECT COUNT(DISTINCT aq.record_id)
-                 FROM validation_queue aq
-                 JOIN unvalidated au ON au.record_id = aq.record_id
-                 WHERE aq.validator_id   = v.id
-                   AND aq.is_validated   = TRUE
-                   AND aq.validator_slot IN ('human_1', 'human_2')
-                   AND au.validation_status = 'validated')"""
+# How many records a validator (alias `v`) judged that an admin has since approved.
+# One definition for the validators table's "approved" column, the approval card's
+# track record and the auto-validation rules, so the three agree. Auto-validated
+# records are not approvals: counting them would let the rules feed themselves.
+from consensus_engine import APPROVED_BY_ADMIN_SQL as _APPROVED_COUNT_SQL  # noqa: E402
+
+
+# ── Self-approval ─────────────────────────────────────────────────────────────
+# An admin who validated an entry may decide it only when the other validator
+# agreed with them (the consensus test): otherwise the decision is a second vote
+# for their own judgement. Another admin decides those. Known only for an admin
+# account linked to the person's validator account (admins.validator_id).
+SELF_APPROVAL_MESSAGE = (
+    "You validated this entry, and the other validator did not agree with you "
+    "(or nobody else validated it), so another admin needs to decide it."
+)
+
+
+def _self_approval(cur, record_id: str, admin: dict) -> dict:
+    """Did the signed-in admin validate this entry, and may they decide it?"""
+    validator_id = admin.get("validator_id")
+    if not validator_id:
+        return {"linked": False, "mine": False, "allowed": True, "reason": None}
+    cur.execute(
+        """
+        SELECT validator_id, type_check, original_check, outcome_check,
+               corrected_doi_o, corrected_title_o, corrected_outcome, corrected_type,
+               corrected_title_r, corrected_url_r, corrected_abstract,
+               corrected_outcome_computation, corrected_outcome_robustness,
+               doi_r_published, additional_checks
+        FROM validation_queue
+        WHERE record_id = %s AND is_validated = TRUE
+          AND validator_slot IN ('human_1', 'human_2')
+        ORDER BY validator_slot
+        """,
+        (record_id,),
+    )
+    humans = [dict(r) for r in cur.fetchall()]
+    # An assignment judgement has no queue row; its copy on the record names it.
+    cur.execute(
+        "SELECT validator_1->>'validator_id' AS v1, validator_2->>'validator_id' AS v2 "
+        "FROM unvalidated WHERE record_id = %s",
+        (record_id,),
+    )
+    copies = cur.fetchone() or {}
+    in_queue = any(h["validator_id"] == validator_id for h in humans)
+    if not in_queue and str(validator_id) not in (copies.get("v1"), copies.get("v2")):
+        return {"linked": True, "mine": False, "allowed": True, "reason": None}
+    from consensus_engine import _additional_checks, _checks_agree, _corrections_agree
+    # A senior reject fills both slots with the senior's own reject: by design one
+    # person's authoritative decision, which that senior may carry through. Any
+    # other pair must be two different people who agree.
+    one_person = len({h["validator_id"] for h in humans}) == 1
+    senior_reject = one_person and any(_additional_checks(h).get("senior_reject")
+                                       for h in humans)
+    agreed = len(humans) == 2 and in_queue and (
+        senior_reject
+        or (not one_person and _checks_agree(*humans) and _corrections_agree(*humans)))
+    return {"linked": True, "mine": True, "allowed": agreed,
+            "reason": None if agreed else SELF_APPROVAL_MESSAGE}
+
+
+def _require_may_decide(cur, record_id: str, admin: dict) -> None:
+    decision = _self_approval(cur, record_id, admin)
+    if not decision["allowed"]:
+        raise HTTPException(403, decision["reason"])
+
+
+# ── The admin decision log ────────────────────────────────────────────────────
+# What an admin decision can change on the record, as (name in the log, final_*
+# column, extracted column it stands in for). Compared as published: the final
+# value, else the extracted one — so a first resolve that copies unchanged values
+# into final_* records no change. Before this log, approving and editing
+# overwrote the values the validators agreed on without a trace.
+_DECISION_FIELDS = (
+    ("type", "final_type", "type"),
+    ("outcome", "final_outcome", "outcome"),
+    ("outcome_computation", "final_outcome_computation", "outcome_computation"),
+    ("outcome_robustness", "final_outcome_robustness", "outcome_robustness"),
+    ("doi_o", "final_doi_o", "doi_o"),
+    ("title_o", "final_title_o", "title_o"),
+    ("title_r", "final_title_r", "title_r"),
+    ("doi_r", "final_doi_r", "doi_r"),
+    ("url_r", "final_url_r", "url_r"),
+    ("abstract_r", "final_abstract_r", "abstract_r"),
+    ("outcome_quote", "final_outcome_quote", "outcome_quote"),
+    ("outcome_quote_source", "final_out_quote_source", "out_quote_source"),
+    ("computational_quote", "final_computational_quote", "outcome_computational_quote"),
+    ("computational_source", "final_computational_source", "out_quote_computational_source"),
+    ("robustness_quote", "final_robustness_quote", "outcome_robustness_quote"),
+    ("robustness_source", "final_robustness_source", "out_quote_robust_source"),
+    ("doi_r_published", None, "doi_r_published"),
+    ("alt_identifier_r", None, "alt_identifier_r"),
+    ("admin_override", None, "admin_override"),
+    ("admin_notes", None, "admin_notes"),
+)
+
+
+def _published(row: dict, final: str | None, raw: str):
+    """A value as published: the final_* decision, else the extracted value. The
+    original DOI's final value may be a deliberate blank, as everywhere else."""
+    if final is None:
+        return row.get(raw)
+    value = row.get(final)
+    if final == "final_doi_o":
+        return value if value is not None else row.get(raw)
+    return value or row.get(raw)
+
+
+def _log_decision(cur, record_id: str, admin: dict, action: str, before: dict) -> None:
+    """Record an admin decision: who, what, and every published value it changed.
+    `before` is the record as read before the decision, in the same transaction."""
+    columns = {"validation_status"} | {c for _, final, raw in _DECISION_FIELDS
+                                       for c in (final, raw) if c}
+    cur.execute(
+        f"SELECT {', '.join(sorted(columns))} FROM unvalidated WHERE record_id = %s",
+        (record_id,),
+    )
+    after = dict(cur.fetchone() or {})
+    changes = {}
+    for name, final, raw in _DECISION_FIELDS:
+        old, new = _published(before, final, raw), _published(after, final, raw)
+        if old != new:
+            changes[name] = [old, new]
+    cur.execute(
+        """
+        INSERT INTO admin_decisions (record_id, admin_id, admin_handle, action,
+                                     status_before, status_after, changes)
+        VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
+        """,
+        (record_id, admin.get("id"), admin.get("handle"), action,
+         before.get("validation_status"), after.get("validation_status"),
+         json.dumps(changes, default=str)),
+    )
 
 
 @app.get("/api/admin/stats")
@@ -3616,7 +3740,9 @@ def admin_dashboard(admin: dict = Depends(current_admin)):
                 COUNT(*) FILTER (WHERE validation_status = 'validated')              AS validated,
                 COUNT(*) FILTER (WHERE validation_status = 'rejected')               AS rejected,
                 COUNT(*) FILTER (WHERE is_tiebreaker = TRUE)                         AS tiebreakers,
-                COUNT(*) FILTER (WHERE admin_override = TRUE)                        AS admin_overrides
+                COUNT(*) FILTER (WHERE admin_override = TRUE)                        AS admin_overrides,
+                COUNT(*) FILTER (WHERE validation_status = 'validated'
+                                   AND NOT admin_checked)                            AS auto_validated
             FROM unvalidated
         """)
         pipeline = dict(cur.fetchone())
@@ -3994,8 +4120,68 @@ def admin_security_events(
 @app.get("/api/admin/admins")
 def list_admins(admin: dict = Depends(current_admin)):
     with db() as cur:
-        cur.execute("SELECT id, handle, trusted, created_at::date AS joined FROM admins ORDER BY id")
+        # validator_*: the person's validator account, for the self-approval rule.
+        # suggested_*: an unlinked account's likely match — same email, else the
+        # same handle — offered for a trusted admin to confirm, never applied.
+        cur.execute(
+            """
+            SELECT a.id, a.handle, a.trusted, a.created_at::date AS joined,
+                   a.validator_id, v.handle AS validator_handle,
+                   s.id AS suggested_validator_id, s.handle AS suggested_validator_handle
+            FROM admins a
+            LEFT JOIN validators v ON v.id = a.validator_id
+            LEFT JOIN LATERAL (
+                SELECT sv.id, sv.handle FROM validators sv
+                WHERE a.validator_id IS NULL
+                  AND ((a.email IS NOT NULL AND lower(sv.email) = lower(a.email))
+                       OR lower(sv.handle) = lower(a.handle))
+                ORDER BY COALESCE(a.email IS NOT NULL AND lower(sv.email) = lower(a.email),
+                                  FALSE) DESC, sv.id
+                LIMIT 1
+            ) s ON TRUE
+            ORDER BY a.id
+            """
+        )
         return {"admins": [dict(r) for r in cur.fetchall()]}
+
+
+class AdminValidatorLinkRequest(BaseModel):
+    validator_id: int | None = None
+
+
+@app.post("/api/admin/admins/{admin_id}/validator")
+def link_admin_validator(admin_id: int, req: AdminValidatorLinkRequest, request: Request,
+                         admin: dict = Depends(current_admin)):
+    """Link an admin account to the person's validator account, or unlink it.
+
+    Trusted admins only, and never on their own account: unlinking yourself, or
+    linking yourself to someone else's validator account, would lift the
+    self-approval rule from your own entries. Another trusted admin sets it."""
+    if not admin["trusted"]:
+        raise HTTPException(403, "Only trusted admins can manage admin accounts")
+    with db() as cur:
+        cur.execute("SELECT handle, validator_id FROM admins WHERE id = %s", (admin_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Admin not found")
+        if admin_id == admin["id"]:
+            raise HTTPException(400, "Another trusted admin must set the validator account "
+                                     "linked to your own admin account")
+        validator = None
+        if req.validator_id is not None:
+            cur.execute("SELECT id, handle FROM validators WHERE id = %s", (req.validator_id,))
+            validator = cur.fetchone()
+            if not validator:
+                raise HTTPException(404, "Validator not found")
+        cur.execute("UPDATE admins SET validator_id = %s WHERE id = %s",
+                    (req.validator_id, admin_id))
+        _audit(cur, security_events.ADMIN_VALIDATOR_LINKED, request, actor=admin,
+               target_kind="admin", target_id=admin_id, target_label=row["handle"],
+               detail={"validator_id": req.validator_id,
+                       "validator_handle": validator["handle"] if validator else None,
+                       "previous_validator_id": row["validator_id"]})
+    return {"handle": row["handle"], "validator_id": req.validator_id,
+            "validator_handle": validator["handle"] if validator else None}
 
 
 class AdminCreateRequest(BaseModel):
@@ -4400,6 +4586,11 @@ _ENTRIES_SORT = {
 }
 
 
+# Validated without an admin: by an auto-validation rule, or by the Senior shortcut
+# the rules replaced (those records have no rule recorded).
+_AUTO_VALIDATED_SQL = "(u.validation_status = 'validated' AND NOT u.admin_checked)"
+
+
 @app.get("/api/admin/entries")
 def admin_entries(
     filter: str = "all",
@@ -4408,8 +4599,24 @@ def admin_entries(
     search: str = "",
     sort: str = "",
     dir: str = "desc",
+    hide_mine: bool = False,
     admin: dict = Depends(current_admin),
 ):
+
+    # Entries the signed-in admin validated (their linked validator account), as
+    # SQL. The id is an integer read from the admins table, never request input.
+    my_id = admin.get("validator_id")
+    # COALESCE: a record with no stored copy compares NULL, which NOT would keep
+    # NULL and the filter would drop.
+    mine_sql = (
+        f"""COALESCE(EXISTS (SELECT 1 FROM validation_queue mq
+                     WHERE mq.record_id = u.record_id AND mq.validator_id = {int(my_id)}
+                       AND mq.is_validated = TRUE
+                       AND mq.validator_slot IN ('human_1', 'human_2'))
+             OR u.validator_1->>'validator_id' = '{int(my_id)}'
+             OR u.validator_2->>'validator_id' = '{int(my_id)}', FALSE)"""
+        if my_id else "FALSE"
+    )
 
     sort_col = _ENTRIES_SORT.get(sort)
     direction = "ASC" if str(dir).lower() == "asc" else "DESC"
@@ -4437,12 +4644,18 @@ def admin_entries(
         "skipped":          f"WHERE {_SKIP_PANEL_SQL}",
         "llm_errors":       "WHERE u.llm_validator IS NOT NULL AND (u.llm_validator)::jsonb ? 'error'",
         "validated":        "WHERE u.validation_status = 'validated'",
+        # Validated by an auto-validation rule (or the earlier Senior shortcut):
+        # no admin has looked at these.
+        "auto_validated":   f"WHERE {_AUTO_VALIDATED_SQL}",
         "rejected":         "WHERE u.validation_status = 'rejected'",
         "admin_checked":    "WHERE u.admin_checked = TRUE",
         # Advisory flags never change validation_status, so without a filter a
         # flagged record is invisible until someone happens to open it.
         "quality_flagged":  "WHERE jsonb_array_length(COALESCE(u.quality_flags, '[]'::jsonb)) > 0",
     }.get(filter, "")
+
+    if hide_mine and my_id:
+        base_where = f"{base_where} {'AND' if base_where else 'WHERE'} NOT {mine_sql}"
 
     search = search.strip()
     if search:
@@ -4480,6 +4693,9 @@ def admin_entries(
                 u.admin_name,
                 u.admin_notes,
                 u.note_saved_by,
+                {_AUTO_VALIDATED_SQL} AS auto_validated,
+                u.auto_validated_rule,
+                {mine_sql} AS mine,
                 (u.validator_1 IS NOT NULL)::boolean AS has_v1,
                 (u.validator_2 IS NOT NULL)::boolean AS has_v2,
                 (u.llm_validator IS NOT NULL)::boolean AS has_llm,
@@ -4541,6 +4757,8 @@ def admin_entries(
         c_llm = cur.fetchone()["n"]
         cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE validation_status = 'validated'")
         c_validated = cur.fetchone()["n"]
+        cur.execute(f"SELECT COUNT(*) AS n FROM unvalidated u WHERE {_AUTO_VALIDATED_SQL}")
+        c_auto = cur.fetchone()["n"]
         cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE admin_checked = TRUE")
         c_admin = cur.fetchone()["n"]
         cur.execute("SELECT COUNT(*) AS n FROM unvalidated WHERE validation_status = 'rejected'")
@@ -4554,6 +4772,8 @@ def admin_entries(
         "total": total,
         "page": page,
         "per_page": per_page,
+        # Whether "You validated this" can be known for this admin at all.
+        "viewer_linked": bool(my_id),
         "counts": {
             "all": c_all,
             "pending_approval": c_pending,
@@ -4562,6 +4782,7 @@ def admin_entries(
             "skipped": c_skipped,
             "llm_errors": c_llm,
             "validated": c_validated,
+            "auto_validated": c_auto,
             "rejected": c_rejected,
             "admin_checked": c_admin,
             "quality_flagged": c_quality,
@@ -4589,6 +4810,14 @@ def admin_entry_detail(record_id: str, admin: dict = Depends(current_admin)):
             val = record.get(field)
             if isinstance(val, str):
                 record[field] = json.loads(val)
+
+        self_approval = _self_approval(cur, record_id, admin)
+        cur.execute(
+            "SELECT decided_at, admin_handle, action, status_before, status_after, changes "
+            "FROM admin_decisions WHERE record_id = %s ORDER BY decided_at",
+            (record_id,),
+        )
+        decisions = [{**dict(r), "decided_at": r["decided_at"].isoformat()} for r in cur.fetchall()]
 
         cur.execute(
             "SELECT * FROM validation_queue WHERE record_id = %s ORDER BY validator_slot",
@@ -4720,6 +4949,8 @@ def admin_entry_detail(record_id: str, admin: dict = Depends(current_admin)):
     )
 
     return {"record": record, "queue_slots": queue_slots,
+            "self_approval": self_approval,
+            "decisions": decisions,
             "abstract_only_conflict": abstract_only_conflict,
             "validator_stats": validator_stats,
             "duplicate_merge": duplicate_merge,
@@ -5042,6 +5273,7 @@ def admin_approve(record_id: str, admin: dict = Depends(current_admin)):
         if not row:
             raise HTTPException(404, "Record not found or not awaiting approval")
         rec = dict(row)
+        _require_may_decide(cur, record_id, admin)
 
         cur.execute(
             """
@@ -5060,44 +5292,29 @@ def admin_approve(record_id: str, admin: dict = Depends(current_admin)):
         cur.execute("SELECT oa_work_id_o, oa_work_id_r FROM unvalidated WHERE record_id = %s", (record_id,))
         _wid = cur.fetchone() or {}
 
-        approved_type = rec.get("final_type") or rec["type"]
-        if approved_type == "reproduction":
-            try:
-                approved_computation = normalize_axis_value(
-                    "outcome_computation",
-                    rec.get("final_outcome_computation") or rec.get("outcome_computation"),
-                )
-                approved_robustness = normalize_axis_value(
-                    "outcome_robustness",
-                    rec.get("final_outcome_robustness") or rec.get("outcome_robustness"),
-                )
-            except ValueError as exc:
-                raise HTTPException(400, str(exc)) from exc
-            if not approved_computation or not approved_robustness:
-                raise HTTPException(400, "Resolve both reproduction axes before approval")
-            approved_outcome = derive_reproduction_outcome(
-                approved_computation, approved_robustness
-            )
-            approved_computational_quote = (
-                rec.get("final_computational_quote") or rec.get("outcome_computational_quote")
-            )
-            approved_computational_source = (
-                rec.get("final_computational_source") or rec.get("out_quote_computational_source")
-            )
-            approved_robustness_quote = (
-                rec.get("final_robustness_quote") or rec.get("outcome_robustness_quote")
-            )
-            approved_robustness_source = (
-                rec.get("final_robustness_source") or rec.get("out_quote_robust_source")
-            )
-        else:
-            approved_outcome = normalize_outcome(rec.get("final_outcome") or rec["outcome"])
-            if approved_type != "replication" or approved_outcome not in REPLICATION_OUTCOMES \
-                    or approved_outcome == "not_a_replication":
-                raise HTTPException(400, "Resolve a valid replication outcome before approval")
-            approved_computation = approved_robustness = None
-            approved_computational_quote = approved_computational_source = None
-            approved_robustness_quote = approved_robustness_source = None
+        # What approving publishes — also what auto_validate_waiting.py publishes.
+        try:
+            approved = approval_values(rec)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        approved_type, approved_outcome = approved["type"], approved["outcome"]
+        approved_computation = approved["outcome_computation"]
+        approved_computational_quote = approved["outcome_computational_quote"]
+        approved_computational_source = approved["out_quote_computational_source"]
+        approved_robustness = approved["outcome_robustness"]
+        approved_robustness_quote = approved["outcome_robustness_quote"]
+        approved_robustness_source = approved["out_quote_robust_source"]
+
+        # The upsert below would take over another entry's row with the same
+        # identity, unpublishing it. Resolving offers the duplicate merge instead.
+        if _validated_identity_conflict(
+            cur, record_id, doi_r=rec["doi_r"], study_r=rec["study_r"],
+            title_r=approved["title_r"], doi_o=approved["doi_o"],
+            oa_work_id_o=_wid.get("oa_work_id_o"), study_o=rec["study_o"],
+            title_o=approved["title_o"],
+        ):
+            raise HTTPException(409, "This entry matches one that is already validated. "
+                                     "Open it and use Mark as Resolved to merge the two.")
 
         # Drop any prior row for this record (the natural key is mutable, so a
         # correction could otherwise leave a stale duplicate under the old key).
@@ -5171,21 +5388,30 @@ def admin_approve(record_id: str, admin: dict = Depends(current_admin)):
                 rec.get("doi_r_published"), rec.get("alt_identifier_r"),
             ),
         )
+        _log_decision(cur, record_id, admin, "approved", rec)
 
     return {"approved": True, "record_id": record_id}
 
 
 @app.post("/api/admin/entries/{record_id}/flag-review")
 def admin_flag_review(record_id: str, req: dict = Body(default={}), admin: dict = Depends(current_admin)):
-    """Move a consensus_reached record back to need_review for further scrutiny."""
+    """Move a record back to need_review for further scrutiny: one awaiting
+    approval, or one validated without an admin (an auto-validation rule). That one
+    leaves the validated table until an admin decides it, and its Source Records
+    row is marked deleted at commit (retire_validated_source_row), so it stops
+    feeding FLoRA."""
     admin_handle = admin["handle"]
     with db() as cur:
-        cur.execute("SELECT validation_status FROM unvalidated WHERE record_id = %s", (record_id,))
+        cur.execute("SELECT * FROM unvalidated WHERE record_id = %s FOR UPDATE", (record_id,))
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "Record not found")
-        if row["validation_status"] not in ("consensus_reached", "need_review"):
-            raise HTTPException(400, "Only pending-approval records can be flagged for review")
+        rec = dict(row)
+        auto_validated = rec["validation_status"] == "validated" and not rec["admin_checked"]
+        if rec["validation_status"] not in ("consensus_reached", "need_review") and not auto_validated:
+            raise HTTPException(400, "Only pending-approval or auto-validated records can be flagged for review")
+        if auto_validated:
+            cur.execute("DELETE FROM validated WHERE record_id = %s", (record_id,))
 
         notes = (req.get("admin_notes") or "").strip() or None
         cur.execute(
@@ -5199,6 +5425,8 @@ def admin_flag_review(record_id: str, req: dict = Body(default={}), admin: dict 
             """,
             (admin_handle, notes, record_id),
         )
+        _log_decision(cur, record_id, admin,
+                      "sent_back" if auto_validated else "flagged_for_review", rec)
 
     return {"flagged": True, "record_id": record_id}
 
@@ -5228,33 +5456,10 @@ def admin_save_note(record_id: str, req: AdminNoteRequest, admin: dict = Depends
     return {"saved": True}
 
 
-def _validated_identity_conflict(
-    cur, record_id: str, *, doi_r, study_r, title_r,
-    doi_o, oa_work_id_o, study_o, title_o,
-):
-    """Lock and return the other validated row with this proposed identity."""
-    candidate_original_key = (doi_o if doi_o not in (None, "") else oa_work_id_o) or ""
-    cur.execute(
-        """
-        SELECT v.record_id::text AS record_id,
-               v.doi_r, v.study_r, v.title_r,
-               v.doi_o, v.original_key, v.study_o, v.title_o,
-               v.type, v.outcome
-        FROM validated v
-        WHERE v.record_id <> %s
-          AND v.doi_r IS NOT DISTINCT FROM %s
-          AND v.study_r IS NOT DISTINCT FROM %s
-          AND v.title_r IS NOT DISTINCT FROM %s
-          AND v.original_key IS NOT DISTINCT FROM %s
-          AND v.study_o IS NOT DISTINCT FROM %s
-          AND v.title_o IS NOT DISTINCT FROM %s
-        LIMIT 1
-        FOR UPDATE OF v
-        """,
-        (record_id, doi_r, study_r, title_r, candidate_original_key, study_o, title_o),
-    )
-    row = cur.fetchone()
-    return dict(row) if row else None
+# One identity check for admin approval, resolution and auto-validation.
+from consensus_engine import (  # noqa: E402
+    approval_values, validated_identity_conflict as _validated_identity_conflict,
+)
 
 
 def _validated_duplicate_detail(record_id: str, conflict: dict) -> dict:
@@ -5296,6 +5501,7 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
         if not row:
             raise HTTPException(404, "Record not found")
         rec = dict(row)
+        _require_may_decide(cur, record_id, admin)
 
         # A merged duplicate is retained in unvalidated for provenance. Prevent a
         # later resolve request from accidentally reviving it as another validated
@@ -5435,6 +5641,7 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
             )
             # Rejected → must not remain in the authoritative export table.
             cur.execute("DELETE FROM validated WHERE record_id = %s", (record_id,))
+            _log_decision(cur, record_id, admin, "rejected", rec)
             return {"resolved": True, "rejected": True, "record_id": record_id}
 
         was_rejected = rec["validation_status"] == "rejected"
@@ -5552,6 +5759,7 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
                 """,
                 (record_id,),
             )
+            _log_decision(cur, record_id, admin, "merged", rec)
             return {
                 "resolved": True, "merged": True,
                 "record_id": record_id, "survivor_record_id": conflict_id,
@@ -5617,6 +5825,7 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
             raise HTTPException(
                 409, "The validated identity changed concurrently; retry the resolution."
             )
+        _log_decision(cur, record_id, admin, "resolved", rec)
 
     return {"resolved": True, "rejected": False, "record_id": record_id}
 
@@ -5631,12 +5840,12 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
 def _source_filters(
     type: str = "", status: str = "", outcome: str = "",
     search: str = "", reviewed: str = "", flagged: bool = False,
-    source: str = "",
+    source: str = "", deleted: str = "",
 ) -> dict:
     return {
         "type": type, "status": status, "outcome": outcome,
         "search": search, "reviewed": reviewed, "flagged": flagged,
-        "source": source,
+        "source": source, "deleted": deleted,
     }
 
 
@@ -5644,12 +5853,12 @@ def _source_filters(
 def admin_source_records(
     type: str = "", status: str = "", outcome: str = "",
     search: str = "", reviewed: str = "", flagged: bool = False,
-    source: str = "",
+    source: str = "", deleted: str = "",
     sort: str = "", dir: str = "asc",
     page: int = 1, per_page: int = 50,
     admin: dict = Depends(current_admin),
 ):
-    filters = _source_filters(type, status, outcome, search, reviewed, flagged, source)
+    filters = _source_filters(type, status, outcome, search, reviewed, flagged, source, deleted)
     with db() as cur:
         return source_records_service.list_records(
             cur, filters, sort=sort, direction=dir, page=page, per_page=per_page
@@ -5660,11 +5869,11 @@ def admin_source_records(
 def admin_source_records_export(
     type: str = "", status: str = "", outcome: str = "",
     search: str = "", reviewed: str = "", flagged: bool = False,
-    source: str = "",
+    source: str = "", deleted: str = "",
     admin: dict = Depends(current_admin),
 ):
     """Every row matching the current filter, not just the current page."""
-    filters = _source_filters(type, status, outcome, search, reviewed, flagged, source)
+    filters = _source_filters(type, status, outcome, search, reviewed, flagged, source, deleted)
     with db() as cur:
         columns, rows = source_records_service.export_rows(cur, filters)
 
@@ -5948,14 +6157,14 @@ def admin_source_record_update(
     req: SourceRecordUpdate,
     type: str = "", status: str = "", outcome: str = "",
     search: str = "", reviewed: str = "", flagged: bool = False,
-    source: str = "",
+    source: str = "", deleted: str = "",
     sort: str = "", dir: str = "asc",
     admin: dict = Depends(current_admin),
 ):
     """Save a review. Stamps reviewer + timestamp even when nothing changed, and
     returns the next record in the active filter so 'Save & next' is one trip."""
     handle = admin["handle"]
-    filters = _source_filters(type, status, outcome, search, reviewed, flagged, source)
+    filters = _source_filters(type, status, outcome, search, reviewed, flagged, source, deleted)
     with db() as cur:
         # Computed BEFORE the save: stamping reviewed_at can move this row out of
         # its own filter (the "not reviewed" queue is exactly that case), and then
@@ -5995,13 +6204,13 @@ def admin_source_record_detail(
     record_id: str,
     type: str = "", status: str = "", outcome: str = "",
     search: str = "", reviewed: str = "", flagged: bool = False,
-    source: str = "",
+    source: str = "", deleted: str = "",
     sort: str = "", dir: str = "asc",
     admin: dict = Depends(current_admin),
 ):
     """Full record for the review panel. The filter params are passed through so
     prev/next walk the queue the reviewer is actually looking at."""
-    filters = _source_filters(type, status, outcome, search, reviewed, flagged, source)
+    filters = _source_filters(type, status, outcome, search, reviewed, flagged, source, deleted)
     with db() as cur:
         try:
             return source_records_service.get_record(

@@ -17,6 +17,15 @@ and a validated record can legitimately change — an admin re-opens one, a merg
 resolves two records into one. A permanently stale copy in the grid would be a bug,
 not a safeguard. So this sync refreshes a row when its source record changes.
 
+ROWS WHOSE RECORD IS NO LONGER VALIDATED
+----------------------------------------
+Never deleted: marked deleted (deleted_at, deleted_reason). A marked row stops
+feeding the FLoRA build and keeps its display id, reserved. A trigger marks it the
+moment its record leaves the validated set (db_schema.sql,
+retire_validated_source_row); this sync marks the rest — above all the row an
+admin edit replaced, since every edit writes a new validated row — naming the row
+that replaced it.
+
 WHAT IT WILL NOT OVERWRITE
 --------------------------
 A row a human has reviewed in the grid (`reviewed_at IS NOT NULL`) is never updated.
@@ -151,15 +160,18 @@ def sync(cur, dry_run: bool) -> dict:
     cols = ["source", "sheet_row_id", "display_id", *SYNCED_COLUMNS]
     placeholders = ", ".join(f"%({c})s" for c in cols)
 
+    # A validated row back under its own id (a restore) brings its row back.
     upsert = f"""
         INSERT INTO source_records ({", ".join(cols)})
         VALUES ({placeholders})
         ON CONFLICT (source, sheet_row_id) DO UPDATE
            SET {set_clause},
+               deleted_at = NULL,
+               deleted_reason = NULL,
                version = source_records.version + 1,
                updated_at = NOW()
          WHERE source_records.reviewed_at IS NULL
-           AND ({differs})
+           AND ({differs} OR source_records.deleted_at IS NOT NULL)
         RETURNING (xmax = 0) AS was_insert
     """
 
@@ -193,13 +205,55 @@ def sync(cur, dry_run: bool) -> dict:
         else:
             updated += 1
 
+    deleted = retire_missing(cur, dry_run)
     return {
         "fetched": len(records),
         "inserted": inserted,
         "updated": updated,
         "unchanged": unchanged,
         "protected": protected,
+        "deleted": deleted,
     }
+
+
+# Rows of this source whose validated row no longer exists.
+_MISSING = """
+    s.source = %(source)s AND s.deleted_at IS NULL
+    AND NOT EXISTS (SELECT 1 FROM validated v
+                    WHERE v.validated_record_id::text = s.sheet_row_id)
+"""
+
+
+def retire_missing(cur, dry_run: bool) -> int:
+    """Mark deleted the rows whose validated row is gone, reviewed or not: the
+    record is no longer validated, or it was validated again under a new row. The
+    row and its display id stay; it only stops feeding the FLoRA build."""
+    if dry_run:
+        cur.execute(f"SELECT COUNT(*) AS n FROM source_records s WHERE {_MISSING}",
+                    {"source": SOURCE_KEY})
+        return cur.fetchone()["n"]
+    cur.execute(
+        f"""
+        UPDATE source_records s
+           SET deleted_at = NOW(),
+               deleted_reason = COALESCE(
+                   (SELECT 'Replaced by ' || n.display_id
+                           || ', the newer row for the same validated record.'
+                      FROM validated v2
+                      JOIN source_records n
+                        ON n.source = s.source
+                       AND n.sheet_row_id = v2.validated_record_id::text
+                     WHERE v2.record_id::text = s.raw->>'record_id'
+                     LIMIT 1),
+                   'The record is no longer validated.'),
+               version = s.version + 1,
+               updated_at = NOW()
+         WHERE {_MISSING}
+        RETURNING s.display_id
+        """,
+        {"source": SOURCE_KEY},
+    )
+    return len(cur.fetchall())
 
 
 def _record_run(cur, stats: dict, status: str = "ok", failure: str = None) -> None:

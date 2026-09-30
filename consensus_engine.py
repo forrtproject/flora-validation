@@ -2,9 +2,12 @@
 consensus_engine.py — Determines validation outcome after both human validators submit.
 
 Decision tree:
-  1. checks agree + corrections agree → LLM sanity check → validated (humans always win)
+  1. checks agree + corrections agree → LLM sanity check → consensus_reached for an
+     admin to approve, or validated straight away when an auto-validation rule
+     applies (auto_validation_rule)
   2. checks agree + corrections differ → need_review (no LLM)
-  3. checks differ → LLM tiebreaker → agrees with one human → validated, else → need_review
+  3. checks differ → LLM tiebreaker → agrees with one human → consensus_reached,
+     else → need_review
 """
 import json
 import re
@@ -40,6 +43,197 @@ _REPRO_AXES = (
     ("corrected_outcome_robustness", "corrected_robustness_quote", "corrected_robustness_source",
      "outcome_robustness", "outcome_robustness_quote", "out_quote_robust_source"),
 )
+
+
+# ── Auto-validation ───────────────────────────────────────────────────────────
+# Two agreeing validators skip admin review when the AI sanity check agrees too and
+#   "trusted":     one of them is Trusted or Senior, or
+#   "experienced": both have had more than 19 entries approved by an admin and
+#                  fewer than 3 judgements flagged, ever.
+# A look-back over every past agreement found the admin review changed no type,
+# outcome or original study on any entry these rules would have let through.
+AUTO_RULE_TRUSTED = "trusted"
+AUTO_RULE_EXPERIENCED = "experienced"
+EXPERIENCED_MIN_APPROVED = 20
+EXPERIENCED_MAX_FLAGS = 2
+
+# Entries a validator (alias `v`) judged that an admin approved. Auto-validated
+# entries do not count, or the rules would feed themselves. Also the "approved"
+# figure on the validators table and the approval card (app._APPROVED_COUNT_SQL).
+APPROVED_BY_ADMIN_SQL = """(SELECT COUNT(DISTINCT aq.record_id)
+                 FROM validation_queue aq
+                 JOIN unvalidated au ON au.record_id = aq.record_id
+                 WHERE aq.validator_id   = v.id
+                   AND aq.is_validated   = TRUE
+                   AND aq.validator_slot IN ('human_1', 'human_2')
+                   AND au.validation_status = 'validated'
+                   AND au.admin_checked  = TRUE)"""
+
+# Per record: how many of its two human validators are Trusted or Senior, and how
+# many are experienced. One row, so the rule reads it with a single fetchone.
+_AUTO_VALIDATION_STATS_SQL = f"""
+    SELECT COUNT(*) FILTER (WHERE tier >= 1) AS trusted_count,
+           COUNT(*) FILTER (WHERE approved >= {EXPERIENCED_MIN_APPROVED}
+                              AND flags <= {EXPERIENCED_MAX_FLAGS}) AS experienced_count
+    FROM (
+        SELECT v.validator_tier AS tier,
+               {APPROVED_BY_ADMIN_SQL} AS approved,
+               (SELECT COUNT(*) FROM validation_queue fq
+                WHERE fq.validator_id = v.id AND fq.flagged) AS flags
+        FROM validation_queue vq
+        JOIN validators v ON v.id = vq.validator_id
+        WHERE vq.record_id = %s
+          AND vq.is_validated = TRUE
+          AND vq.validator_slot IN ('human_1', 'human_2')
+    ) team
+"""
+
+
+def auto_validation_stats(cur, record_id: str) -> tuple[int, int]:
+    """(trusted_count, experienced_count) among the record's human validators."""
+    cur.execute(_AUTO_VALIDATION_STATS_SQL, (record_id,))
+    row = cur.fetchone()
+    if row is None:
+        return 0, 0
+    if isinstance(row, dict):
+        return int(row["trusted_count"] or 0), int(row["experienced_count"] or 0)
+    return int(row[0] or 0), int(row[1] or 0)
+
+
+def _original_disputed(h: dict) -> bool:
+    """"Wrong original": consensus fills in only what the validators supplied and
+    keeps the rest of the extracted original — its title with a corrected DOI, or
+    its DOI and OpenAlex work with a corrected title (none at all, with neither).
+    An admin puts the right original together."""
+    return h.get("original_check") == "incorrect"
+
+
+def auto_validation_rule(h1: dict, h2: dict, llm: dict | None,
+                         trusted_count: int, experienced_count: int) -> str | None:
+    """The rule that lets this pair of judgements skip admin review, or None.
+
+    Only a plain agreement qualifies: never "Can't tell", a quote the gate flagged,
+    a senior reject, "neither type" (the LLM and an admin confirm those), a wrong
+    original, a tiebreaker (the judgements disagree), or an AI sanity check that
+    failed or disagrees. Self-contained, so a caller outside evaluate_consensus
+    applies exactly the same test. Evaluated before the published row is written,
+    so callers also refuse one that would take over another entry's
+    (identity_taken)."""
+    for h in (h1, h2):
+        if _is_unsure(h) or _quote_flagged(h) or _additional_checks(h).get("senior_reject"):
+            return None
+    if not (_checks_agree(h1, h2) and _corrections_agree(h1, h2)):
+        return None
+    if _effective_corrected_type(h1) == "not_validation" or _original_disputed(h1):
+        return None
+    if not llm or not _llm_matches(llm, h1):
+        return None
+    if trusted_count >= 1:
+        return AUTO_RULE_TRUSTED
+    if experienced_count >= 2:
+        return AUTO_RULE_EXPERIENCED
+    return None
+
+
+def validated_identity_conflict(
+    cur, record_id: str, *, doi_r, study_r, title_r,
+    doi_o, oa_work_id_o, study_o, title_o, lock: bool = True,
+):
+    """Return the other validated row with this proposed identity — locked, unless
+    the caller is only looking (a dry run must not hold up admins)."""
+    candidate_original_key = (doi_o if doi_o not in (None, "") else oa_work_id_o) or ""
+    cur.execute(
+        f"""
+        SELECT v.record_id::text AS record_id,
+               v.doi_r, v.study_r, v.title_r,
+               v.doi_o, v.original_key, v.study_o, v.title_o,
+               v.type, v.outcome
+        FROM validated v
+        WHERE v.record_id <> %s
+          AND v.doi_r IS NOT DISTINCT FROM %s
+          AND v.study_r IS NOT DISTINCT FROM %s
+          AND v.title_r IS NOT DISTINCT FROM %s
+          AND v.original_key IS NOT DISTINCT FROM %s
+          AND v.study_o IS NOT DISTINCT FROM %s
+          AND v.title_o IS NOT DISTINCT FROM %s
+        LIMIT 1
+        {"FOR UPDATE OF v" if lock else ""}
+        """,
+        (record_id, doi_r, study_r, title_r, candidate_original_key, study_o, title_o),
+    )
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def identity_taken(cur, record: dict, final: dict, lock: bool = True) -> bool:
+    """Would publishing `final` (as _insert_validated would) take over another
+    entry's row in validated? Its upsert replaces a row with the same identity, so
+    a duplicate would silently unpublish the other entry. An admin merges those
+    (admin_resolve's duplicate dialog); nothing publishes one unattended."""
+    prior_doi_o = (record["final_doi_o"] if record.get("final_doi_o") is not None
+                   else record.get("doi_o"))
+    return validated_identity_conflict(
+        cur, str(record.get("record_id")),
+        doi_r=record.get("doi_r"), study_r=record.get("study_r"),
+        title_r=final.get("title_r") or record.get("title_r"),
+        doi_o=final["doi_o"],
+        oa_work_id_o=record.get("oa_work_id_o") if final["doi_o"] == prior_doi_o else None,
+        study_o=record.get("study_o"), title_o=final["title_o"], lock=lock,
+    ) is not None
+
+
+def approval_values(rec: dict) -> dict:
+    """What approving an entry that reached consensus publishes, in the shape
+    _insert_validated takes: each stored final_* value, else the extracted value it
+    stands in for. Raises ValueError for an entry an admin must resolve first.
+    One definition for admin approval (app.admin_approve) and
+    auto_validate_waiting.py, so the two publish the same thing."""
+    approved_type = rec.get("final_type") or rec.get("type")
+    axes = dict.fromkeys(("outcome_computation", "outcome_computational_quote",
+                          "out_quote_computational_source", "outcome_robustness",
+                          "outcome_robustness_quote", "out_quote_robust_source"))
+    if approved_type == "reproduction":
+        computation = normalize_axis_value(
+            "outcome_computation",
+            rec.get("final_outcome_computation") or rec.get("outcome_computation"))
+        robustness = normalize_axis_value(
+            "outcome_robustness",
+            rec.get("final_outcome_robustness") or rec.get("outcome_robustness"))
+        if not computation or not robustness:
+            raise ValueError("Resolve both reproduction axes before approval")
+        outcome = derive_reproduction_outcome(computation, robustness)
+        axes = {
+            "outcome_computation": computation,
+            "outcome_computational_quote":
+                rec.get("final_computational_quote") or rec.get("outcome_computational_quote"),
+            "out_quote_computational_source":
+                rec.get("final_computational_source") or rec.get("out_quote_computational_source"),
+            "outcome_robustness": robustness,
+            "outcome_robustness_quote":
+                rec.get("final_robustness_quote") or rec.get("outcome_robustness_quote"),
+            "out_quote_robust_source":
+                rec.get("final_robustness_source") or rec.get("out_quote_robust_source"),
+        }
+    else:
+        outcome = normalize_outcome(rec.get("final_outcome") or rec.get("outcome"))
+        if approved_type != "replication" or outcome not in REPLICATION_OUTCOMES \
+                or outcome == "not_a_replication":
+            raise ValueError("Resolve a valid replication outcome before approval")
+    final_doi_o = rec.get("final_doi_o")
+    return {
+        "type": approved_type,
+        "outcome": outcome,
+        **axes,
+        "title_r": rec.get("final_title_r") or rec.get("title_r"),
+        "url_r": rec.get("final_url_r") or rec.get("url_r"),
+        "abstract_r": rec.get("final_abstract_r") or rec.get("abstract_r"),
+        # A deliberately blank original DOI (books, chapters) stays blank.
+        "doi_o": final_doi_o if final_doi_o is not None else rec.get("doi_o"),
+        "title_o": rec.get("final_title_o") or rec.get("title_o"),
+        "outcome_quote": rec.get("final_outcome_quote") or rec.get("outcome_quote"),
+        "out_quote_source": rec.get("final_out_quote_source") or rec.get("out_quote_source"),
+        "doi_r_published": rec.get("doi_r_published"),
+    }
 
 
 def _normalize(text: str | None) -> str:
@@ -263,7 +457,7 @@ def _resolve_final(record: dict, winner: dict, other: dict | None = None) -> dic
 
 def _update_status(cur, record_id: str, status: str, is_tiebreaker: bool,
                    final: dict | None, llm_summary: dict | None,
-                   record: dict | None = None) -> None:
+                   record: dict | None = None, auto_rule: str | None = None) -> None:
     """Write the consensus outcome, and the row-local quality flags with it.
 
     Every terminal branch of evaluate_consensus() routes through here, so this is
@@ -316,6 +510,10 @@ def _update_status(cur, record_id: str, status: str, is_tiebreaker: bool,
     if llm_summary is not None:
         set_clauses.append("llm_validator = %s")
         params.append(json.dumps(llm_summary))
+
+    if auto_rule:
+        set_clauses += ["auto_validated_rule = %s", "auto_validated_at = NOW()"]
+        params.append(auto_rule)
 
     params.append(record_id)
     cur.execute(
@@ -517,21 +715,8 @@ def evaluate_consensus(cur, record_id: str) -> None:
         _update_status(cur, record_id, "need_review", False, None, None, record)
         return
 
-    # Check if both human validators are senior (bypasses admin review on agreement)
-    cur.execute(
-        """
-        SELECT COUNT(*) AS senior_count
-        FROM validation_queue vq
-        JOIN validators v ON v.id = vq.validator_id
-        WHERE vq.record_id = %s
-          AND vq.is_validated = TRUE
-          AND vq.validator_slot IN ('human_1', 'human_2')
-          AND v.validator_tier >= 2
-        """,
-        (record_id,),
-    )
-    senior_row = cur.fetchone()
-    has_senior = (senior_row["senior_count"] if isinstance(senior_row, dict) else senior_row[0]) >= 1
+    # Who the two validators are, for the auto-validation rules.
+    trusted_count, experienced_count = auto_validation_stats(cur, record_id)
 
     checks_ok = _checks_agree(h1, h2)
     corrections_ok = _corrections_agree(h1, h2)
@@ -550,9 +735,12 @@ def evaluate_consensus(cur, record_id: str) -> None:
 
         llm = run_llm_validation(record, context="sanity_check")
         final = _resolve_final(record, h1, h2)
-        if has_senior:
-            # At least one senior agreed — auto-validate, no admin review needed
-            _update_status(cur, record_id, "validated", False, final, llm, record)
+        rule = auto_validation_rule(h1, h2, llm, trusted_count, experienced_count)
+        if rule and identity_taken(cur, record, final):
+            rule = None      # a duplicate of a validated entry: an admin merges it
+        if rule:
+            # An auto-validation rule applies — validated, no admin review needed.
+            _update_status(cur, record_id, "validated", False, final, llm, record, auto_rule=rule)
             _insert_validated(cur, record, final)
         else:
             # Normal agreement — admin must approve
