@@ -1656,20 +1656,62 @@ function _histCheckChip(value, label) {
     : `<span class="hist-check incorrect" title="${label}">✗</span>`;
 }
 
-// Maps a record's validation_status → label + colour class for the validator's
-// own "My Judgements" view. Covers every lifecycle stage the validator can land in.
+// Maps a record's validation_status → label, colour class and a plain-language
+// explanation for the validator's own "My Judgements" view. Covers every lifecycle
+// stage the validator can land in. `help` is the badge tooltip and the legend text,
+// and says what the consensus engine actually does (consensus_engine.py).
 const _HIST_STATUS = {
-  unvalidated:           { text: "Awaiting second validator", short: "Pending 2nd",      cls: "hd-status-pending"   },
-  validation_inprogress: { text: "Awaiting second validator", short: "Pending 2nd",      cls: "hd-status-pending"   },
-  consensus_reached:     { text: "Pending approval",          short: "Pending approval", cls: "hd-status-validated" },
-  need_review:           { text: "Under review",              short: "In review",        cls: "hd-status-review"    },
-  validated:             { text: "Approved",                  short: "Approved",         cls: "hd-status-approved"  },
-  rejected:              { text: "Excluded",                  short: "Excluded",         cls: "hd-status-rejected"  },
+  unvalidated: {
+    text: "Waiting for the second validator", short: "Waiting for the second validator",
+    cls: "hd-status-pending",
+    help: "You've submitted. Every entry is checked by two validators independently; "
+      + "we're waiting for the second one.",
+  },
+  // Agreed entries and the ones an admin has to settle wait for the same thing,
+  // an admin, so validators see one status for both.
+  consensus_reached: {
+    text: "Awaiting admin approval", short: "Awaiting admin approval", cls: "hd-status-validated",
+    // Not "both judgements are in": an admin assignment, or an extractor change
+    // after one judgement, sends an entry here with a single judgement.
+    help: "Judging is done, and an admin checks the entry before it is final. If the "
+      + "validators disagreed, one answered “Can't tell”, or a quote needs checking, the "
+      + "admin decides. This is routine and doesn't mean you did something wrong.",
+  },
+  validated: {
+    text: "Approved", short: "Approved", cls: "hd-status-approved",
+    help: "Final. Approved by an admin, or automatically when both validators and the AI "
+      + "check agree and the validators are Trusted, Senior or experienced.",
+  },
+  rejected: {
+    text: "Not added to FLoRA", short: "Not added to FLoRA", cls: "hd-status-rejected",
+    help: "This entry won't be added to FLoRA: it isn't a replication or reproduction, "
+      + "or it duplicates an entry that is already in FLoRA.",
+  },
 };
+_HIST_STATUS.validation_inprogress = _HIST_STATUS.unvalidated;
+_HIST_STATUS.need_review = _HIST_STATUS.consensus_reached;
+// The lifecycle order the legend lists them in.
+const _HIST_STATUS_ORDER = ["unvalidated", "consensus_reached", "validated", "rejected"];
+
 function _histStatusBadge(status, { compact = false } = {}) {
   const s = _HIST_STATUS[status] || _HIST_STATUS.validation_inprogress;
   const label = compact ? s.short : s.text;
-  return `<span class="hd-status-badge${compact ? " hist-status-compact" : ""} ${s.cls}">${label}</span>`;
+  return `<span class="hd-status-badge${compact ? " hist-status-compact" : ""} ${s.cls}"`
+    + ` title="${escapeHtml(s.help)}">${label}</span>`;
+}
+
+// Every status the validator can see, what it means, in lifecycle order. Collapsed
+// by default so it does not push the list down; tooltips give the same text.
+function _histStatusLegend() {
+  const rows = _HIST_STATUS_ORDER.map(key => {
+    const s = _HIST_STATUS[key];
+    return `<dt><span class="hd-status-badge hist-status-compact ${s.cls}">${s.short}</span></dt>`
+      + `<dd>${escapeHtml(s.help)}</dd>`;
+  }).join("");
+  return `<details class="hist-legend">
+    <summary>What do the statuses mean?</summary>
+    <dl>${rows}</dl>
+  </details>`;
 }
 
 function renderHistory() {
@@ -1687,7 +1729,7 @@ function renderHistory() {
     return new Date(b.validated_at) - new Date(a.validated_at);
   });
 
-  body.innerHTML = sorted.map((j, idx) => {
+  body.innerHTML = _histStatusLegend() + sorted.map((j, idx) => {
     const num   = sorted.length - idx;  // newest = highest number
     const title = escapeHtml(j.title_r || j.doi_r || "Unknown record");
     const year  = j.year_r ? ` (${fmtYear(j.year_r)})` : "";
@@ -1871,13 +1913,10 @@ function renderHistDetail(d) {
   // ---- LEFT COLUMN: saved record ----
   // Prefer the record's real lifecycle status (covers under-review / rejected);
   // fall back to the validated-table flags only if status is missing.
-  const statusBadge = d.validation_status
-    ? _histStatusBadge(d.validation_status)
-    : (d.has_validated
-        ? (d.val_admin_approved
-            ? `<span class="hd-status-badge hd-status-approved">Approved</span>`
-            : `<span class="hd-status-badge hd-status-validated">Consensus reached</span>`)
-        : `<span class="hd-status-badge hd-status-pending">Awaiting second validator</span>`);
+  const statusBadge = _histStatusBadge(
+    d.validation_status
+      || (d.has_validated ? (d.val_admin_approved ? "validated" : "consensus_reached") : "unvalidated")
+  );
 
   const abstractHtml = rec.abstract_r
     ? `<div class="hd-lsection">
