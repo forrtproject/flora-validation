@@ -5396,6 +5396,8 @@ function enterAdminScreen() {
   if (badge) badge.textContent = _adminHandle ? `Signed in as ${_adminHandle}` : "";
   startMaintenanceSystem();
   fetchAdminEntries();
+  // Shows the Disagreements tab when that isolated feature is switched on.
+  window.Adjudication?.initAdmin?.();
   // Populate the Restricted-access badge proactively so admins see the count.
   adminApi("/restricted").then(d => _updateRestrictedBadge(d.records || [])).catch(() => {});
 }
@@ -6841,6 +6843,7 @@ function switchAdminTab(tab) {
   $("#admin-tab-maintenance").classList.toggle("hidden", tab !== "maintenance");
   $("#admin-tab-restricted").classList.toggle("hidden", tab !== "restricted");
   $("#admin-tab-messages").classList.toggle("hidden",   tab !== "messages");
+  $("#admin-tab-disagreements")?.classList.toggle("hidden", tab !== "disagreements");
   $("#admin-tabs").querySelectorAll(".admin-tab-btn").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === tab);
   });
@@ -6853,6 +6856,8 @@ function switchAdminTab(tab) {
   if (tab === "maintenance") fetchMaintenanceRuns();
   if (tab === "restricted") fetchAdminRestricted();
   if (tab === "messages")   fetchAdminMessages();
+  // adjudication.js is a separate, optional file; do nothing if it did not load.
+  if (tab === "disagreements") window.Adjudication?.openAdminTab?.();
 }
 
 /* ---------- Admin: Extractor pipeline ---------- */

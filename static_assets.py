@@ -19,7 +19,7 @@ from pathlib import Path
 
 # Local assets only. The CDN and font links in index.html are already versioned
 # by their own URLs and are deliberately left alone.
-FINGERPRINTED_ASSETS = ("app.js", "style.css")
+FINGERPRINTED_ASSETS = ("app.js", "style.css", "adjudication.js", "adjudication.css")
 
 # How long after its last write a file is considered settled. (mtime, size) is
 # only a safe cache key once it can no longer be ambiguous: a same-length

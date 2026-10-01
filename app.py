@@ -6542,5 +6542,25 @@ def serve_index():
 # paths are exempt from cross-site write blocking; admin routes stay protected.
 app.include_router(create_flora_api_router())
 
+# Adjudication of the FLoRA / Observatory disagreements (fred-data PR #143): an
+# isolated feature with its own PostgreSQL schema and module, switched on by
+# ADJUDICATION_ENABLED. Nothing here may stop the app from starting: setup()
+# never raises, and this block catches anything else and leaves the feature off.
+try:
+    import adjudication
+
+    _adjudication_status = adjudication.setup(DATABASE_URL)
+    app.include_router(adjudication.create_router(
+        current_admin=current_admin,
+        status=lambda: _adjudication_status,
+        cursor=db,
+    ))
+except Exception:
+    import traceback as _traceback
+
+    print("[adjudication] the feature could not be loaded; the rest of the app "
+          "is unaffected:")
+    _traceback.print_exc()
+
 # Registered last: the explicit routes above take precedence over the mount.
 app.mount("/", StaticFiles(directory=str(DOCS), html=True), name="docs")

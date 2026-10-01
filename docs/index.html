@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="icon" type="image/svg+xml" href="./favicon.svg">
 <link rel="stylesheet" href="./style.css">
+<link rel="stylesheet" href="./adjudication.css">
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -274,6 +275,8 @@
       <button class="admin-tab-btn" data-tab="priority">Pool Priority</button>
       <button class="admin-tab-btn" data-tab="maintenance">Extractor Pipeline</button>
       <button class="admin-tab-btn" data-tab="restricted">Restricted access <span id="admin-restricted-badge" class="inbox-badge hidden" style="position:relative;top:-1px;right:auto;margin-left:4px">0</span></button>
+      <!-- Shown by adjudication.js only when the feature is switched on. -->
+      <button class="admin-tab-btn hidden" data-tab="disagreements" id="admin-disagreements-tab">Disagreements</button>
       <button class="admin-tab-btn" data-tab="messages">Messages <span id="admin-msg-badge" class="inbox-badge hidden" style="position:relative;top:-1px;right:auto;margin-left:4px">0</span></button>
     </div>
 
@@ -658,6 +661,9 @@
         <p class="admin-loading">Loading…</p>
       </div>
     </div>
+
+    <!-- The Observatory disagreements (fred-data PR #143); drawn by adjudication.js. -->
+    <div id="admin-tab-disagreements" class="hidden"></div>
 
     <div id="admin-tab-messages" class="hidden">
       <div class="msg-thread-layout">
@@ -1074,5 +1080,7 @@
 </div>
 
 <script src="./app.js"></script>
+<!-- An isolated feature: it may fail to load without affecting app.js. -->
+<script src="./adjudication.js"></script>
 </body>
 </html>
