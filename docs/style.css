@@ -5464,6 +5464,35 @@ body.has-maint-banner #admin-screen {
 .hd-status-rejected  { background: #fee2e2; color: #b91c1c; }
 /* Compact variant used in the My Judgements list rows */
 .hist-status-compact { font-size: 0.66rem; padding: 0.1rem 0.45rem; }
+.hd-status-badge[title] { cursor: help; }
+
+/* "What do the statuses mean?" at the top of My Judgements */
+.hist-legend {
+  margin: 0.25rem 0 0.9rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--bg-alt);
+  font-size: 0.82rem;
+}
+.hist-legend summary { color: var(--accent); font-weight: 650; cursor: pointer; }
+/* One grid of term/definition pairs, so the explanations line up whatever the
+   label length. A <dl> keeps its meaning for screen readers without display:contents. */
+.hist-legend dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.55rem 0.8rem;
+  align-items: start;
+  margin: 0.7rem 0 0.15rem;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+.hist-legend dt, .hist-legend dd { margin: 0; }
+.hist-legend dt .hd-status-badge { display: inline-block; margin-top: 0.1rem; cursor: default; }
+@media (max-width: 520px) {
+  .hist-legend dl { grid-template-columns: 1fr; gap: 0.25rem; }
+  .hist-legend dd { margin-bottom: 0.45rem; }
+}
 
 /* Classification pills */
 .hd-val-pill {
