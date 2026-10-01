@@ -10,6 +10,9 @@ flora-validation/
 ├── csv_to_db.py         Imports extracted.csv rows into the database
 ├── sync_csv.py          GitHub sync stage — downloads & imports latest CSV
 ├── extractor_maintenance.py  Locked sync → report → retire runner
+├── adjudication/        Isolated feature: the Observatory disagreements (fred-data
+│                        PR #143). Own PostgreSQL schema, own routes, docs/adjudication.*;
+│                        switched by ADJUDICATION_ENABLED, off when its setup fails
 ├── db_schema.sql        DDL for fresh deployments (idempotent)
 ├── db_migrate.py        Migrates old pairs/coders/judgements schema to new schema
 ├── data/                extracted_latest.csv + immutable UTC/run-ID archives

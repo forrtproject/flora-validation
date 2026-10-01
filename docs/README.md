@@ -235,6 +235,7 @@ Use a disposable database for development unless you intend those actions to run
 | `EXTRACTOR_MAINTENANCE_LOG` | No | `logs/extractor_maintenance.log` | Combined log file for the extractor pipeline; each run's complete log is also kept in `extractor_maintenance_runs` |
 | `EXTRACTOR_STAGE_TIMEOUT_SECONDS` | No | `7200` | Maximum runtime for each sync/report/retire subprocess |
 | `EXTRACTOR_LOCK_WAIT_SECONDS` | No | `15` | Brief advisory-lock retry for an already-reserved run |
+| `ADJUDICATION_ENABLED` | No | `0` | Switches on the Observatory-disagreements feature (`adjudication/`, its own PostgreSQL schema `adjudication`); a failed setup leaves it off and the app unaffected |
 | `SUBMISSION_FAILURE_STAMP_TTL_MINUTES` | No | `30` | Lifetime of a one-time automatic-release capability issued after a server-observed judgement failure |
 | `OPENALEX_MAILTO` | No | maintainer email embedded in code | OpenAlex work-ID backfill polite-pool contact |
 | `PORT` | Provided by many hosts | none | Expanded by the `Procfile`, not read in Python |

@@ -1,0 +1,59 @@
+/* Adjudication of the FLoRA / Observatory disagreements — its own stylesheet, so
+   the feature can be removed without touching style.css. Uses the site tokens. */
+
+#admin-tab-disagreements { max-width: 1180px; }
+
+.adj-head { padding: 1.4rem 0 1.1rem; border-bottom: 1px solid var(--rule); margin-bottom: 1.1rem; }
+.adj-kicker {
+  margin: 0 0 0.3rem;
+  color: var(--accent);
+  font-size: 0.71rem;
+  font-weight: 750;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.adj-head h2 { margin: 0; font: 500 clamp(1.5rem, 3vw, 2.1rem)/1.15 Georgia, "Times New Roman", serif; }
+.adj-head p:not(.adj-kicker) { max-width: 760px; margin: 0.5rem 0 0; color: var(--muted); line-height: 1.6; }
+
+.adj-card {
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--bg-alt);
+}
+.adj-card p { margin: 0; }
+.adj-card-failed { border-color: #e2b4a9; background: #fff1ed; color: #6e2d23; }
+.adj-card-failed p { margin-top: 0.35rem; }
+.adj-card-failed pre {
+  margin: 0.7rem 0 0;
+  padding: 0.6rem 0.75rem;
+  background: rgba(0, 0, 0, 0.04);
+  font: 0.75rem/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.adj-ready { display: flex; align-items: center; gap: 0.5rem; font-weight: 650; }
+.adj-dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--green); }
+
+.adj-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0;
+  margin: 0.9rem 0 0;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+}
+.adj-stats > div { padding: 0.65rem 0.85rem; }
+.adj-stats > div + div { border-left: 1px solid var(--rule); }
+.adj-stats dt { color: var(--muted); font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; }
+.adj-stats dd { margin: 0.2rem 0 0; font: 600 1.25rem/1.1 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.adj-stats small { display: block; margin-top: 0.2rem; color: var(--muted); font-size: 0.7rem; }
+.adj-meta { margin-top: 0.75rem !important; color: var(--muted); font-size: 0.8rem; }
+.adj-next { margin-top: 0.4rem !important; font-size: 0.85rem; }
+
+@media (max-width: 700px) {
+  .adj-stats { grid-template-columns: 1fr 1fr; }
+  .adj-stats > div + div { border-left: 0; }
+  .adj-stats > div { border-top: 1px solid var(--rule); }
+}

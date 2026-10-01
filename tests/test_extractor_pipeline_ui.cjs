@@ -93,7 +93,7 @@ const LOG = [
     const url = new URL(route.request().url());
     requests.push(`${route.request().method()} ${url.pathname}`);
     if (url.hostname !== "flora.test") return route.fulfill({ status: 200, body: "" });
-    const files = { "/": "index.html", "/app.js": "app.js", "/style.css": "style.css", "/favicon.svg": "favicon.svg" };
+    const files = { "/": "index.html", "/app.js": "app.js", "/style.css": "style.css", "/favicon.svg": "favicon.svg", "/adjudication.js": "adjudication.js", "/adjudication.css": "adjudication.css" };
     if (files[url.pathname]) {
       const type = url.pathname.endsWith(".js") ? "text/javascript" : url.pathname.endsWith(".css") ? "text/css" : "text/html";
       return route.fulfill({ status: 200, contentType: type, body: await fs.readFile(path.join(root, "docs", files[url.pathname])) });
