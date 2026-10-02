@@ -12,7 +12,14 @@ flora-validation/
 ├── extractor_maintenance.py  Locked sync → report → retire runner
 ├── adjudication/        Isolated feature: the Observatory disagreements (fred-data
 │                        PR #143). Own PostgreSQL schema, own routes, docs/adjudication.*;
-│                        switched by ADJUDICATION_ENABLED, off when its setup fails
+│                        switched by ADJUDICATION_ENABLED, off when its setup fails.
+│                        importer.py reads PR #143's CSV at a fixed commit, adds
+│                        abstracts/titles (OpenAlex, then Europe PMC), never
+│                        changes a judged row and never deletes; judging.py:
+│                        Trusted/Senior validators judge each row twice (normal
+│                        points); review.py: admins approve, publish to Source
+│                        Records (source `adjudicated`, ADJ-) or withdraw;
+│                        export.py: final and analysis CSVs
 ├── db_schema.sql        DDL for fresh deployments (idempotent)
 ├── db_migrate.py        Migrates old pairs/coders/judgements schema to new schema
 ├── data/                extracted_latest.csv + immutable UTC/run-ID archives

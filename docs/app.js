@@ -1238,6 +1238,7 @@ async function enterGame() {
   _processSubmitQueue();       // resume sending them
   refreshAssignments();        // show the Assignments button if any are open
   startAssignmentsPoll();      // near-real-time updates while the app is open
+  window.Adjudication?.initValidator?.();   // ⚖ Disagreements: Trusted and Senior only
   await refreshAll();
   fetchMessages(); // after refreshAll so resume dialog (if any) fires first
 }

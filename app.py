@@ -6549,10 +6549,12 @@ app.include_router(create_flora_api_router())
 try:
     import adjudication
 
-    _adjudication_status = adjudication.setup(DATABASE_URL)
+    # Sets the feature up now, and retries a failed setup once a minute later.
+    _adjudication = adjudication.Feature(DATABASE_URL)
     app.include_router(adjudication.create_router(
         current_admin=current_admin,
-        status=lambda: _adjudication_status,
+        current_validator=current_validator,
+        status=_adjudication.status,
         cursor=db,
     ))
 except Exception:

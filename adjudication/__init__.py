@@ -17,6 +17,6 @@ An isolated feature, so that it can fail without taking the app with it:
 """
 
 from .api import create_router
-from .bootstrap import SetupStatus, feature_enabled, setup
+from .bootstrap import Feature, SetupStatus, feature_enabled, setup
 
-__all__ = ["SetupStatus", "create_router", "feature_enabled", "setup"]
+__all__ = ["Feature", "SetupStatus", "create_router", "feature_enabled", "setup"]
