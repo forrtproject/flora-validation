@@ -51,6 +51,9 @@ VALID_SOURCES = {
     "fred_replication_success", "score_2025", "validated",
     "COS", "SCORE", "replications", "reproductions",
     "openalex", "openalex_snapshot", "i4r",
+    # Answers settled in the app's adjudication of the Observatory disagreements
+    # (adjudication/review.py publishes them to Source Records under this key).
+    "adjudicated",
 }
 VALID_TYPES = {"replication", "reproduction"}
 URL_COLUMNS = ["url_r", "oa_url_o", "oa_url_r", "url_o"]

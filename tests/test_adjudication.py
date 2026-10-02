@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 
 import adjudication
 from adjudication import bootstrap
+from tests.test_preparation_database import local_database  # noqa: F401
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = (ROOT / "adjudication" / "schema.sql").read_text(encoding="utf-8")
@@ -83,10 +84,72 @@ def test_setup_bounds_its_waits_and_serialises_across_pods(monkeypatch):
     conn.close.assert_called_once()
 
 
-def test_its_lock_is_not_one_the_app_already_uses():
-    used = {int(n.replace("_", "")) for n in re.findall(r"7_342_025_\d{3}", "".join(
-        p.read_text(encoding="utf-8") for p in ROOT.glob("*.py")))}
-    assert bootstrap.ADVISORY_LOCK_ID not in used
+class _Clock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+def test_a_failed_setup_is_retried_once_a_minute_without_a_restart():
+    clock, results = _Clock(), [adjudication.SetupStatus(True, False, "LockNotAvailable"),
+                                adjudication.SetupStatus(True, True)]
+    calls = []
+
+    def run_setup(url):
+        calls.append(url)
+        return results[len(calls) - 1]
+
+    feature = adjudication.Feature("postgresql://x", run_setup=run_setup, clock=clock,
+                                   spawn=lambda work: work())
+    assert feature.status().ready is False and len(calls) == 1
+    clock.now += 59
+    assert feature.status().ready is False and len(calls) == 1      # not yet
+    clock.now += 1
+    assert feature.status().ready is True and len(calls) == 2       # retried, recovered
+    clock.now += 3600
+    assert feature.status().ready is True and len(calls) == 2       # ready: never again
+
+
+def test_a_switched_off_feature_is_never_set_up_again():
+    clock, calls = _Clock(), []
+    feature = adjudication.Feature("postgresql://x", clock=clock,
+                                   run_setup=lambda url: calls.append(url) or adjudication.SetupStatus(False, False))
+    clock.now += 10_000
+    assert feature.status().enabled is False and len(calls) == 1
+
+
+def test_the_retry_runs_in_the_background_and_only_once_at_a_time():
+    clock, calls, spawned = _Clock(), [], []
+    feature = adjudication.Feature("postgresql://x", clock=clock, spawn=spawned.append,
+                                   run_setup=lambda url: calls.append(url) or adjudication.SetupStatus(True, False, "x"))
+    clock.now += 60
+    # The request that finds a retry due answers at once, with the last state.
+    assert feature.status().error == "x" and len(spawned) == 1 and len(calls) == 1
+    clock.now += 120
+    assert feature.status().error == "x" and len(spawned) == 1, "one retry at a time"
+    spawned[0]()                             # the background retry runs and fails again
+    assert len(calls) == 2
+    assert feature.status().error == "x" and len(spawned) == 2, "due again, retried again"
+
+
+def test_setup_gives_up_on_a_database_it_cannot_reach_quickly(monkeypatch):
+    monkeypatch.setenv("ADJUDICATION_ENABLED", "1")
+    connect = MagicMock(side_effect=OSError("timeout expired"))
+    assert adjudication.setup("postgresql://x", connect=connect).ready is False
+    assert connect.call_args.kwargs == {"connect_timeout": bootstrap.CONNECT_TIMEOUT}
+
+
+def test_its_locks_are_not_ones_the_app_already_uses():
+    from adjudication import importer, judging
+    skip = {".venv", "node_modules", "adjudication", "tests", ".git"}
+    sources = [p for p in ROOT.rglob("*.py") if not skip & set(p.relative_to(ROOT).parts)]
+    used = {int(n.replace("_", "")) for p in sources
+            for n in re.findall(r"\b\d{1,3}(?:_\d{3})+\b", p.read_text(encoding="utf-8", errors="ignore"))}
+    assert 7_342_025_093 in used, "the scan finds the app's own locks"
+    mine = {bootstrap.ADVISORY_LOCK_ID, importer.IMPORT_LOCK_ID, judging.JUDGING_LOCK_ID}
+    assert len(mine) == 3 and not mine & used
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +166,10 @@ def test_every_object_it_creates_is_in_the_adjudication_schema():
     assert statements[0] == "CREATE SCHEMA IF NOT EXISTS adjudication"
     for statement in statements[1:]:
         head = " ".join(statement.split()[:8])
+        # Later phases upgrade the live tables in place: ADD COLUMN IF NOT EXISTS.
+        if head.startswith("ALTER TABLE"):
+            assert re.match(r"ALTER TABLE adjudication\.\w+ ADD COLUMN IF NOT EXISTS ", head + " "), head
+            continue
         assert re.match(r"CREATE (TABLE|INDEX) IF NOT EXISTS \S+ ", head + " "), head
         target = re.search(r"(?:TABLE IF NOT EXISTS|ON) (\S+)", statement).group(1)
         assert target.startswith("adjudication."), head
@@ -110,10 +177,12 @@ def test_every_object_it_creates_is_in_the_adjudication_schema():
 
 def test_it_never_alters_drops_or_references_the_main_tables():
     body = re.sub(r"--[^\n]*", "", SCHEMA)
-    # The only DELETE allowed is the in-schema cascade of a foreign key.
-    without_cascades = body.replace("ON DELETE CASCADE", "")
+    # The only DELETE allowed is the in-schema cascade of a foreign key, and the
+    # only ALTER an in-place upgrade of one of the feature's own tables.
+    allowed = re.sub(r"ALTER TABLE adjudication\.\w+ ADD COLUMN IF NOT EXISTS", "",
+                     body.replace("ON DELETE CASCADE", ""))
     assert not re.search(r"\b(ALTER|DROP|TRUNCATE|DELETE|UPDATE|INSERT|GRANT)\b",
-                         without_cascades, re.I)
+                         allowed, re.I)
     for target in re.findall(r"REFERENCES\s+(\S+)", body):
         assert target.startswith("adjudication."), f"a link out of the schema: {target}"
 
@@ -132,7 +201,8 @@ def test_app_py_loads_it_inside_one_safety_net_before_the_static_mount():
     block = block.split('app.mount("/", StaticFiles', 1)[0]
     assert "\ntry:\n" in block
     assert "import adjudication" in block.split("except Exception:", 1)[0]
-    assert "adjudication.setup(DATABASE_URL)" in block
+    assert "adjudication.Feature(DATABASE_URL)" in block
+    assert "status=_adjudication.status" in block
     assert "except Exception:" in block
     assert APP.index("import adjudication") > APP.index("\ninit_db()\n")
 
@@ -166,8 +236,8 @@ print("STARTED", "/api/me" in paths, "/api/admin/disagreements/status" in paths)
 
 
 @pytest.mark.parametrize(("breakage", "route_expected"), [
-    # setup() is documented never to raise; if it did anyway.
-    ("import adjudication\nadjudication.setup = lambda *a, **k: 1 / 0", False),
+    # setup() is documented never to raise; if setting up failed anyway.
+    ("import adjudication\nadjudication.Feature = lambda *a, **k: 1 / 0", False),
     # The package cannot even be imported (a broken deploy, a syntax error).
     ("sys.modules['adjudication'] = None", False),
     # The router cannot be built.
@@ -196,7 +266,8 @@ def _client(status, cursor=None, signed_in=True):
 
     app = FastAPI()
     app.include_router(adjudication.create_router(
-        current_admin=current_admin, status=lambda: status,
+        current_admin=current_admin, current_validator=lambda: {"coder_id": 7, "validator_tier": 1},
+        status=lambda: status,
         cursor=cursor or (lambda: (_ for _ in ()).throw(AssertionError("no query expected")))))
     return TestClient(app)
 
@@ -216,11 +287,15 @@ class _Cursor:
 
     def execute(self, sql):
         assert "adjudication.records" in sql
+        self.last = sql
         if self.error:
             raise self.error
 
     def fetchone(self):
         return self.row
+
+    def fetchall(self):
+        return [{"kind": "different original", "n": 50}, {"kind": "we found no original", "n": 54}]
 
 
 def test_status_needs_an_admin():
@@ -231,7 +306,9 @@ def test_status_needs_an_admin():
 
 def test_status_when_switched_off_does_not_query():
     body = _client(adjudication.SetupStatus(False, False)).get("/api/admin/disagreements/status").json()
-    assert body == {"enabled": False, "ready": False, "error": None, "counts": None}
+    assert {k: body[k] for k in ("enabled", "ready", "error", "counts")} == \
+        {"enabled": False, "ready": False, "error": None, "counts": None}
+    assert body["source"].startswith("forrtproject/fred-data@55d6f04:")
 
 
 def test_status_when_ready_counts_the_work():
@@ -240,6 +317,8 @@ def test_status_when_ready_counts_the_work():
     body = _client(adjudication.SetupStatus(True, True), _Cursor(row)).get(
         "/api/admin/disagreements/status").json()
     assert body["ready"] is True and body["counts"] == row
+    assert body["by_kind"] == {"different original": 50, "we found no original": 54}
+    assert body["source_url"].startswith("https://raw.githubusercontent.com/forrtproject/fred-data/55d6f04")
 
 
 def test_status_when_the_tables_cannot_be_read_says_so():
@@ -252,19 +331,20 @@ def test_status_when_the_tables_cannot_be_read_says_so():
 def test_status_reports_a_failed_setup():
     body = _client(adjudication.SetupStatus(True, False, "LockNotAvailable: timeout")).get(
         "/api/admin/disagreements/status").json()
-    assert body == {"enabled": True, "ready": False, "error": "LockNotAvailable: timeout", "counts": None}
+    assert {k: body[k] for k in ("enabled", "ready", "error", "counts")} == \
+        {"enabled": True, "ready": False, "error": "LockNotAvailable: timeout", "counts": None}
 
 
 # ---------------------------------------------------------------------------
 # Against a real PostgreSQL, when one is offered (FLORA_TEST_DATABASE_URL)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skipif(not os.environ.get("FLORA_TEST_DATABASE_URL"),
-                    reason="set FLORA_TEST_DATABASE_URL to a throwaway database")
-def test_the_schema_applies_twice_and_drops_cleanly_on_postgres(monkeypatch):
+def test_the_schema_applies_twice_and_drops_cleanly_on_postgres(local_database, monkeypatch):  # noqa: F811
+    """On a throwaway database of its own (local_database: localhost only), never
+    on whatever FLORA_TEST_DATABASE_URL names: it drops the schema."""
     import psycopg2
 
-    url = os.environ["FLORA_TEST_DATABASE_URL"]
+    url = os.environ["DATABASE_URL"]
     monkeypatch.setenv("ADJUDICATION_ENABLED", "1")
     assert adjudication.setup(url).ready
     assert adjudication.setup(url).ready

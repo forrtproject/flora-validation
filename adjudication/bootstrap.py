@@ -9,6 +9,8 @@ stays off and the rest of the app starts as if it did not exist.
 from __future__ import annotations
 
 import os
+import threading
+import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +27,7 @@ ADVISORY_LOCK_ID = 7_342_025_094
 # statement and leave the feature off instead.
 LOCK_TIMEOUT = "5s"
 STATEMENT_TIMEOUT = "30s"
+CONNECT_TIMEOUT = 10      # seconds
 _ERROR_LIMIT = 300
 
 
@@ -54,7 +57,7 @@ def setup(database_url: str, *, connect: Callable = psycopg2.connect) -> SetupSt
         return SetupStatus(enabled=False, ready=False)
     try:
         sql = SCHEMA_PATH.read_text(encoding="utf-8")
-        conn = connect(database_url)
+        conn = connect(database_url, connect_timeout=CONNECT_TIMEOUT)
     except Exception as exc:
         return _failed(exc)
     try:
@@ -76,3 +79,52 @@ def setup(database_url: str, *, connect: Callable = psycopg2.connect) -> SetupSt
             conn.close()
         except Exception:
             pass
+
+
+def _in_background(work: Callable[[], None]) -> None:
+    threading.Thread(target=work, name="adjudication-setup", daemon=True).start()
+
+
+class Feature:
+    """The feature's setup state for the life of the process.
+
+    A setup that failed (a brief database outage at start, a lock held during a
+    deploy) is tried again when the feature is next asked about, at most once a
+    minute, so the feature recovers without a restart. The retry runs in the
+    background: the request that notices it is due answers at once with the last
+    known state. A feature that is switched off, or already ready, is never set
+    up again.
+    """
+
+    RETRY_SECONDS = 60
+
+    def __init__(self, database_url: str, *, run_setup: Callable = setup,
+                 clock: Callable[[], float] = time.monotonic,
+                 spawn: Callable[[Callable[[], None]], None] = _in_background):
+        self._database_url = database_url
+        self._run_setup = run_setup
+        self._clock = clock
+        self._spawn = spawn
+        self._lock = threading.Lock()
+        self._retrying = False
+        self._status = run_setup(database_url)
+        self._tried_at = clock()
+
+    def status(self) -> SetupStatus:
+        state = self._status
+        if not state.enabled or state.ready:
+            return state
+        with self._lock:
+            if self._retrying or self._clock() - self._tried_at < self.RETRY_SECONDS:
+                return self._status
+            self._retrying = True
+            self._tried_at = self._clock()
+        self._spawn(self._retry)
+        return self._status
+
+    def _retry(self) -> None:
+        try:
+            self._status = self._run_setup(self._database_url)
+        finally:
+            with self._lock:
+                self._retrying = False

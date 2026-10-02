@@ -61,6 +61,11 @@ CREATE TABLE IF NOT EXISTS adjudication.records (
 );
 CREATE INDEX IF NOT EXISTS records_status_idx ON adjudication.records (status);
 CREATE INDEX IF NOT EXISTS records_doi_r_idx  ON adjudication.records (lower(doi_r));
+-- Added after phase 1 shipped, so an upgrade rather than a CREATE TABLE edit.
+-- The admin who ran the import (adjudication/importer.py), or 'cli'.
+ALTER TABLE adjudication.records ADD COLUMN IF NOT EXISTS imported_by TEXT;
+-- Where abstract_r came from: 'openalex' or 'europepmc'.
+ALTER TABLE adjudication.records ADD COLUMN IF NOT EXISTS abstract_source TEXT;
 
 -- One validator's work on one record: claimed, then submitted or skipped. Two
 -- submitted judgements per record, from two different validators (Trusted or
@@ -116,3 +121,6 @@ CREATE TABLE IF NOT EXISTS adjudication.final (
     published_record_id   TEXT,                     -- the Source Records row it became
     withdrawn_at          TIMESTAMPTZ
 );
+-- Who published and who withdrew it (adjudication/review.py).
+ALTER TABLE adjudication.final ADD COLUMN IF NOT EXISTS published_by TEXT;
+ALTER TABLE adjudication.final ADD COLUMN IF NOT EXISTS withdrawn_by TEXT;

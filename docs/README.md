@@ -57,6 +57,7 @@ described here is the source of truth.
 - [Human validation workflow](#human-validation-workflow)
 - [Consensus and Gemini validation](#consensus-and-gemini-validation)
 - [Administrator workflow](#administrator-workflow)
+- [Observatory disagreements (adjudication)](#observatory-disagreements-adjudication)
 - [Source Records pipeline](#source-records-pipeline)
 - [Database reference](#database-reference)
 - [API reference](#api-reference)
@@ -235,7 +236,7 @@ Use a disposable database for development unless you intend those actions to run
 | `EXTRACTOR_MAINTENANCE_LOG` | No | `logs/extractor_maintenance.log` | Combined log file for the extractor pipeline; each run's complete log is also kept in `extractor_maintenance_runs` |
 | `EXTRACTOR_STAGE_TIMEOUT_SECONDS` | No | `7200` | Maximum runtime for each sync/report/retire subprocess |
 | `EXTRACTOR_LOCK_WAIT_SECONDS` | No | `15` | Brief advisory-lock retry for an already-reserved run |
-| `ADJUDICATION_ENABLED` | No | `0` | Switches on the Observatory-disagreements feature (`adjudication/`, its own PostgreSQL schema `adjudication`); a failed setup leaves it off and the app unaffected |
+| `ADJUDICATION_ENABLED` | No | `0` | Switches on the Observatory-disagreements feature (`adjudication/`, its own PostgreSQL schema `adjudication`); a failed setup leaves it off, is retried once a minute, and never affects the app. See [Observatory disagreements](#observatory-disagreements-adjudication) |
 | `SUBMISSION_FAILURE_STAMP_TTL_MINUTES` | No | `30` | Lifetime of a one-time automatic-release capability issued after a server-observed judgement failure |
 | `OPENALEX_MAILTO` | No | maintainer email embedded in code | OpenAlex work-ID backfill polite-pool contact |
 | `PORT` | Provided by many hosts | none | Expanded by the `Procfile`, not read in Python |
@@ -1301,6 +1302,74 @@ creates a linked validator message. Messaging supports per-validator messages,
 broadcasts, threads, read state, and inbox badges. A public site banner is stored
 as a single row and returned without admin authentication at `/api/banner`.
 
+## Observatory disagreements (adjudication)
+
+fred-data PR #143 lists 159 rows where FLoRA's pipeline and the Metascience
+Observatory give different answers about the same replication. The `adjudication/`
+package settles them inside the app. It is an isolated feature: its tables live in
+their own PostgreSQL schema, `adjudication` (records, judgements, final), applied by
+`adjudication/bootstrap.py` and never by `db_schema.sql`; nothing there references a
+main table; and `ADJUDICATION_ENABLED` switches it on. A setup that fails leaves the
+feature off, is retried in the background once a minute, and never stops the app;
+its error text is shown to admins only.
+
+1. **Import** (admin, Disagreements tab, or `python -m adjudication.importer
+   [--apply]`): the CSV is read at a fixed commit; OpenAlex and Europe PMC add the
+   replication's abstract and the originals' titles. A cell with a note after its
+   DOI ("10.1017/… (case conflict 1)") is reduced to the DOI; the full cell stays
+   in the row's raw copy and keeps such rows apart. The import waits for judging's
+   lock, so a judged row is never changed, and nothing is deleted.
+2. **Judging** (Trusted and Senior validators): a bar at the top of their work
+   area ("⚖ 12 Observatory disagreements left for you to judge") opens the judging
+   window; it is not a header button, because the header has no room left. The
+   window shows the replication,
+   then FLoRA's answer (with its outcome quote and why it linked that original) and
+   the Observatory's, labelled by source. The validator says which original is
+   right (FLoRA's, the Observatory's, both, neither with a suggested DOI, or can't
+   tell; a side without an original reads "We couldn't find the original. Suggest
+   one") and what the outcome is, in FLoRA's vocabulary. Each row gets two
+   judgements from two different validators, who never see each other's answers.
+   Opening a row claims one of its two places for 60 minutes; claims and
+   submissions are serialised by one advisory lock. A submission earns normal
+   points: the validator's `vote_score`, +2 for a decided original, +2 for a
+   decided outcome, +1 for a note. The second submission moves the row to
+   "awaiting approval". A skip is never served to that validator again.
+3. **Approval** (any admin): the Review list shows both judges by name and whether
+   they agree. The admin approves the final original and outcome, prefilled with
+   what the judges agreed on, edited where needed; this is a row in
+   `adjudication.final`, with whose answer it was (`basis`: FLoRA, the Observatory,
+   or the admin's own). It can be undone until it has been in FLoRA, and changed
+   whenever it is not in FLoRA. While a row waits for its second judgement, admins
+   see who judged it but not the answer, and an admin account linked to one of
+   the judges cannot approve that row.
+4. **Publishing to FLoRA**: an approved answer becomes a Source Records row, source
+   `adjudicated`, display id `ADJ-000001`, which the FLoRA build takes like any
+   other source. Before publishing, the outcome is checked against
+   `outcome_alias`: the build refuses the whole export for a replication outcome
+   that table does not map, so such an answer (today `cannot_be_determined` and
+   `not_a_replication`) can be approved but not published. A reproduction is
+   published on its two axes. Where the replication is already in Source Records
+   (8 of the 136 papers), the review window lists those rows; publishing adds a
+   separate row, and Source Records' duplicate review decides which FLoRA keeps.
+   When a live row holds the very same replication–original pair, the window says
+   so before publishing: the build keeps one row per pair, and a row from the
+   website (`validated`) imposes its outcome on the one it keeps, so one of the two
+   should be ruled a duplicate. Entry-sheet rows are never edited. A row reviewed
+   in Source Records is never overwritten or withdrawn from here. **Withdraw**
+   marks the row deleted (never removed) and returns the answer to "approved";
+   publishing again brings back the same display id. `validate_flora.py` knows the
+   source `adjudicated`.
+5. **Exports**: *Final answers (CSV)* has one row per approved answer, in the
+   column order of the FLoRA build's input (`transform_sources.FLORA_COLUMNS`) and
+   then the adjudication's own columns; *All judgements (CSV)* has every row with
+   both answers, both judges by name and their answers, agreement, and the final
+   answer, for the analysis (a first answer stays blank until the second is in).
+   Notes people typed are escaped so a spreadsheet cannot run them as formulas.
+
+Removing the feature: switch it off, then `DROP SCHEMA adjudication CASCADE`. Rows
+already published stay in Source Records under source `adjudicated` until they
+are withdrawn.
+
 ## Source Records pipeline
 
 The Source Records subsystem is separate from human validation. Its detailed
@@ -1527,6 +1596,10 @@ the caller. State-changing requests are refused unless they originate from
 | GET | `/api/messages` | Validator message list |
 | POST | `/api/messages/{msg_id}/read` | Mark owned message read |
 | POST | `/api/messages/{parent_id}/reply` | Reply to an owned outbound root message |
+| GET | `/api/disagreements/summary` | Whether this validator judges the Observatory disagreements, and how many are left (Trusted and Senior; never fails) |
+| POST | `/api/disagreements/next` | The validator's current disagreement, or the next one, claimed for them |
+| POST | `/api/disagreements/{record_id}/submit` | Submit which original is right and the outcome; awards normal points |
+| POST | `/api/disagreements/{record_id}/skip` | Pass on a disagreement; it is not served to them again |
 
 ### Admin validation and account routes
 
@@ -1558,6 +1631,23 @@ the caller. State-changing requests are refused unless they originate from
 | GET | `/api/admin/maintenance/runs` | At least seven days of run summaries, plus the retire settings |
 | GET | `/api/admin/maintenance/runs/{run_id}` | Complete retained log for one run |
 | POST | `/api/admin/maintenance/run` | Queue the full routine (`full`) or the sync (`sync`) or report (`find`) alone |
+
+### Admin adjudication routes
+
+All answer 503 while the feature is switched off or not set up.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/admin/disagreements/status` | Whether the feature is on and set up; counts per status and kind |
+| POST | `/api/admin/disagreements/import` | Preview (`apply: false`, read-only) or run the import of PR #143's rows |
+| GET | `/api/admin/disagreements/records` | Every record with both judges' answers; `?status=` filters |
+| GET | `/api/admin/disagreements/records/{record_id}` | Both answers, both judgements, the final answer, what FLoRA already holds |
+| POST | `/api/admin/disagreements/records/{record_id}/approve` | Approve or change the final original and outcome |
+| POST | `/api/admin/disagreements/records/{record_id}/undo` | Undo an unpublished approval |
+| POST | `/api/admin/disagreements/records/{record_id}/publish` | Add the approved answer to Source Records (source `adjudicated`) |
+| POST | `/api/admin/disagreements/records/{record_id}/withdraw` | Mark that Source Records row deleted |
+| GET | `/api/admin/disagreements/export/final.csv` | Approved answers in FLoRA's column order |
+| GET | `/api/admin/disagreements/export/judgements.csv` | Every record with both judges' answers, for the analysis |
 
 ### Admin messaging routes
 
