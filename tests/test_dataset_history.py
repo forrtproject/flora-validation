@@ -324,14 +324,17 @@ def test_the_charts_share_one_y_axis():
 
 
 def test_both_series_are_labelled_in_a_legend():
-    """Identity is never carried by colour alone."""
+    """Identity is never carried by colour alone. The legend is HTML above the plot
+    rather than drawn on the canvas, so it must name both series itself."""
     html = (ROOT / "docs" / "dataset.html").read_text(encoding="utf-8")
-    assert "legend:" in html and "display: false" not in html.split("legend:")[1][:200]
+    legend = html[html.index('<ul class="legend"'):]
+    legend = legend[:legend.index("</ul>")]
+    assert "FLoRA dataset" in legend and "Source records" in legend
 
 
-def test_the_footer_date_is_rendered_in_utc():
+def test_the_updated_date_is_rendered_in_utc():
     """Every date on this page is a UTC calendar day printed verbatim; generated_at
-    is an instant. Letting the browser localise just that one put the footer a day
+    is an instant. Letting the browser localise just that one put the stamp a day
     AHEAD of the newest row in the table for every reader east of UTC — one payload
     showing two different "today"s."""
     html = (ROOT / "docs" / "dataset.html").read_text(encoding="utf-8")

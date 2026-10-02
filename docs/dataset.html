@@ -5,11 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FLoRA dataset growth</title>
 <meta name="description" content="How the FORRT FLoRA replication dataset has grown over time. Open to everyone, no sign-in.">
+<meta name="theme-color" content="#f4efe6">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="icon" type="image/svg+xml" href="./favicon.svg">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<!-- Deferred so the figures paint before the chart library arrives. If it never
+     arrives (blocked CDN), the summary and the table still render. -->
+<script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <style>
   /* Standalone rather than reusing style.css: this page is served to people who are
      not signed in and has to render on its own, with no app shell around it. */
@@ -25,13 +28,15 @@
     --accent: #b54614;
     --rule: #c8c0ad;
     --rule-soft: #ddd6c6;
-    /* The two data series. Validated against the #f4efe6 surface: both sit in the
-       lightness band, clear the chroma floor, and stay separable under all three CVD
-       simulations as well as normal vision. The app's own warm tokens (accent, green,
-       amber) FAIL that separation check - they are a near-monochrome family - so the
-       charts carry their own pair. */
-    --series-source: #2a78d6;
+    /* The two data series. Validated against the #fffdf8 chart surface: both sit in
+       the lightness band, clear the chroma floor, and stay separable under all three
+       CVD simulations as well as normal vision. The app's own warm tokens (accent,
+       green, amber) FAIL that separation check - they are a near-monochrome family -
+       so the charts carry their own pair. */
     --series-flora: #d95926;
+    --series-source: #2a78d6;
+    --radius: 12px;
+    --shadow: 0 1px 2px rgba(38, 38, 16, 0.04), 0 10px 28px -18px rgba(38, 38, 16, 0.22);
   }
 
   html { -webkit-text-size-adjust: 100%; }
@@ -45,7 +50,26 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  .wrap { max-width: 1040px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  [hidden] { display: none !important; }
+  a { color: inherit; }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+  }
+
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 2rem 1.25rem 3.5rem; }
+  @media (max-width: 640px) { .wrap { padding: 1.25rem 1rem 2.5rem; } }
+
+  /* Small mono caps: section labels, table heads, tags. */
+  .eyebrow, .controls-label, thead th, .tag, footer {
+    font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+  .eyebrow { font-size: 0.62rem; letter-spacing: 0.14em; color: var(--muted); }
 
   /* ---- masthead ---- */
   .masthead {
@@ -53,8 +77,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    flex-wrap: wrap;
-    padding-bottom: 1.5rem;
+    padding-bottom: 1.25rem;
     border-bottom: 1px solid var(--rule);
   }
   .masthead a.back {
@@ -66,204 +89,369 @@
     text-decoration: none;
     border: 1px solid var(--rule);
     border-radius: 999px;
-    padding: 0.3rem 0.8rem;
+    padding: 0.4rem 0.9rem;
     transition: border-color 0.15s, color 0.15s;
   }
   .masthead a.back:hover { border-color: var(--ink); color: var(--ink); }
 
+  /* ---- intro ---- */
+  .intro { padding: 2.25rem 0 1.75rem; }
   h1 {
     font-family: 'Fraunces', Georgia, serif;
     font-weight: 600;
-    font-size: clamp(1.6rem, 3.4vw, 2.4rem);
-    line-height: 1.1;
-    letter-spacing: -0.01em;
-    margin-top: 2rem;
+    font-size: clamp(1.75rem, 4vw, 2.6rem);
+    line-height: 1.08;
+    letter-spacing: -0.015em;
+    margin-top: 0.7rem;
   }
   h1 em { font-style: italic; font-weight: 400; color: var(--accent); }
+  .tagline { color: var(--muted); max-width: 58ch; margin-top: 0.6rem; font-size: 0.98rem; }
+  .updated { margin-top: 0.9rem; font-size: 0.8rem; color: var(--muted); }
 
-  .tagline {
-    color: var(--muted);
-    max-width: 60ch;
-    margin-top: 0.6rem;
-    font-size: 0.95rem;
-  }
-
-  /* ---- stat tiles ---- */
-  .tiles {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 1px;
-    background: var(--rule-soft);
-    border: 1px solid var(--rule-soft);
-    border-radius: 10px;
-    overflow: hidden;
-    margin-top: 2rem;
-  }
-  .tile { background: var(--surface); padding: 1.1rem 1.2rem; }
-  .tile .label {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.6rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-  .tile .value {
+  h2 {
     font-family: 'Fraunces', Georgia, serif;
-    font-size: 1.9rem;
+    font-size: 1.2rem;
     font-weight: 600;
-    line-height: 1.15;
-    margin-top: 0.35rem;
-    font-variant-numeric: tabular-nums;
+    line-height: 1.25;
   }
-  .tile .sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.1rem; }
-  .tile.is-source .value { color: var(--series-source); }
-  .tile.is-flora .value { color: var(--series-flora); }
+  .note { font-size: 0.82rem; color: var(--muted); margin-top: 0.15rem; }
 
-  /* ---- chart figures ---- */
-  figure {
+  .card {
     background: var(--surface);
     border: 1px solid var(--rule-soft);
-    border-radius: 10px;
-    padding: 1.4rem 1.4rem 1.1rem;
-    margin-top: 1.75rem;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
   }
-  figure figcaption { margin-bottom: 1rem; }
-  figcaption .title {
-    font-family: 'Fraunces', Georgia, serif;
-    font-size: 1.15rem;
+
+  /* A short stroke in the series colour: the line chart's own mark, reused wherever
+     a figure belongs to one of the two series. */
+  .key {
+    display: inline-block;
+    flex: none;
+    width: 14px;
+    height: 3px;
+    border-radius: 2px;
+    vertical-align: middle;
+  }
+  .key-flora { background: var(--series-flora); }
+  .key-source { background: var(--series-source); }
+
+  /* ---- summary ---- */
+  .summary { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
+  .summary > div { padding: 1.75rem 2rem; }
+  .ledger { border-left: 1px solid var(--rule-soft); }
+  @media (max-width: 780px) {
+    .summary { grid-template-columns: minmax(0, 1fr); }
+    .summary > div { padding: 1.35rem 1.25rem; }
+    .ledger { border-left: 0; border-top: 1px solid var(--rule-soft); }
+  }
+
+  .hero-value {
+    font-size: clamp(3rem, 9vw, 4.5rem);
     font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.035em;
+    margin-top: 0.7rem;
   }
-  figcaption .note { font-size: 0.8rem; color: var(--muted); margin-top: 0.15rem; }
-  .plot { position: relative; height: 320px; }
-  @media (max-width: 640px) { .plot { height: 260px; } }
+  .delta { margin-top: 0.65rem; font-size: 0.88rem; color: var(--muted); min-height: 1.4em; }
+  .delta strong { color: var(--ink); font-weight: 600; }
 
-  /* ---- provenance note ---- */
-  .provenance {
-    margin-top: 1.75rem;
-    padding: 1.1rem 1.25rem;
-    background: var(--bg-alt);
-    border-left: 3px solid var(--accent);
-    border-radius: 0 8px 8px 0;
-    font-size: 0.87rem;
-    color: var(--ink-soft);
+  .split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    margin-top: 1.5rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid var(--rule-soft);
   }
-  .provenance strong { font-weight: 600; }
-  .provenance p + p { margin-top: 0.6rem; }
+  .split > div + div { border-left: 1px solid var(--rule-soft); padding-left: 1.25rem; }
+  .split-value { display: block; font-size: 1.55rem; font-weight: 600; line-height: 1.15; letter-spacing: -0.02em; }
+  .split-label { font-size: 0.84rem; color: var(--muted); }
+  .share { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--muted); margin-left: 0.3rem; }
 
-  /* ---- table view ---- */
-  .table-head {
-    display: flex;
+  .ledger dl { margin-top: 0.6rem; }
+  .ledger-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 1rem;
     align-items: baseline;
-    justify-content: space-between;
-    gap: 1rem;
-    margin-top: 2.5rem;
-    flex-wrap: wrap;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--rule-soft);
   }
-  .table-head h2 {
-    font-family: 'Fraunces', Georgia, serif;
-    font-size: 1.15rem;
-    font-weight: 600;
+  .ledger-row dt { display: flex; align-items: center; gap: 0.55rem; font-size: 0.92rem; }
+  .ledger-row dd.value { font-size: 1.05rem; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+  .ledger-row dd.why {
+    grid-column: 1 / -1;
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-top: 0.1rem;
+    padding-left: calc(14px + 0.55rem);
   }
-  button.toggle {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.62rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
+  .ledger-row .gap { width: 14px; flex: none; }
+  .ledger-row.is-removed dd.value { color: var(--muted); font-weight: 500; }
+  .ledger-row.is-total { border-bottom: 0; border-top: 1.5px solid var(--ink); margin-top: -1px; }
+  .ledger-row.is-total dt { font-weight: 600; }
+
+  /* ---- period filter: scopes the chart and the table below it ---- */
+  .controls { display: flex; align-items: center; gap: 0.75rem; margin-top: 2.25rem; flex-wrap: wrap; }
+  .controls-label { font-size: 0.62rem; letter-spacing: 0.14em; color: var(--muted); }
+  .segmented {
+    display: inline-flex;
+    padding: 3px;
+    background: var(--bg-alt);
+    border: 1px solid var(--rule-soft);
+    border-radius: 999px;
+  }
+  .segmented button {
+    font-size: 0.82rem;
+    font-weight: 500;
     color: var(--muted);
     background: none;
+    border: 0;
+    border-radius: 999px;
+    padding: 0.4rem 0.95rem;
+    min-height: 32px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .segmented button:hover { color: var(--ink); }
+  .segmented button[aria-pressed="true"] {
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: 0 1px 2px rgba(38, 38, 16, 0.14);
+  }
+
+  /* ---- chart ---- */
+  .chart-card { margin-top: 0.9rem; padding: 1.5rem 1.5rem 1.1rem; }
+  .card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem 1.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+  }
+  .legend {
+    list-style: none;
+    display: flex;
+    gap: 0.4rem 1.1rem;
+    flex-wrap: wrap;
+    font-size: 0.82rem;
+    color: var(--ink-soft);
+    padding-top: 0.3rem;
+  }
+  .legend li { display: flex; align-items: center; gap: 0.45rem; }
+
+  /* Sized to include the x-axis band: Chart.js draws its axes inside this box. */
+  .plot { position: relative; height: 340px; }
+  .plot canvas { border-radius: 4px; }
+  .plot canvas:focus-visible { outline-offset: 6px; }
+  .chart-fallback {
+    padding: 2.5rem 1rem;
+    text-align: center;
+    font-size: 0.86rem;
+    color: var(--muted);
+    background: var(--bg);
+    border-radius: 8px;
+  }
+  .footnote {
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-top: 0.9rem;
+    padding-top: 0.8rem;
+    border-top: 1px solid var(--rule-soft);
+  }
+  @media (max-width: 640px) {
+    .chart-card { padding: 1.15rem 1rem 0.9rem; }
+    .plot { height: 270px; }
+  }
+
+  .tip {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 2;
+    pointer-events: none;
+    min-width: 176px;
+    padding: 0.6rem 0.75rem 0.65rem;
+    background: var(--ink);
+    color: #f4efe6;
+    border-radius: 8px;
+    box-shadow: 0 8px 22px -10px rgba(0, 0, 0, 0.45);
+    font-size: 0.78rem;
+    line-height: 1.35;
+  }
+  .tip-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #cfc6b4;
+    margin-bottom: 0.45rem;
+  }
+  .tip-row { display: grid; grid-template-columns: 14px auto 1fr; column-gap: 0.5rem; align-items: center; }
+  .tip-row + .tip-row { margin-top: 0.3rem; }
+  .tip-value { font-weight: 600; font-size: 0.92rem; font-variant-numeric: tabular-nums; }
+  .tip-label { color: #cfc6b4; }
+  .tip-sub { grid-column: 2 / -1; font-size: 0.7rem; color: #cfc6b4; }
+
+  /* ---- daily figures ---- */
+  .table-card { margin-top: 1.25rem; padding: 1.5rem; }
+  .table-tools { display: flex; align-items: center; gap: 0.5rem 1rem; flex-wrap: wrap; }
+  .check {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 34px;
+    font-size: 0.82rem;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .check input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 34px;
+    padding: 0.35rem 0.9rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    background: var(--surface);
     border: 1px solid var(--rule);
     border-radius: 999px;
-    padding: 0.3rem 0.8rem;
     cursor: pointer;
-    transition: border-color 0.15s, color 0.15s;
+    text-decoration: none;
+    transition: border-color 0.15s;
   }
-  button.toggle:hover { border-color: var(--ink); color: var(--ink); }
+  .btn:hover { border-color: var(--ink); }
+  .btn svg { width: 14px; height: 14px; }
 
-  .table-scroll {
-    margin-top: 0.9rem;
-    overflow-x: auto;
-    border: 1px solid var(--rule-soft);
-    border-radius: 10px;
-    background: var(--surface);
-  }
-  table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+  .table-scroll { margin-top: 1rem; overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
   th, td {
-    text-align: right;
-    padding: 0.5rem 0.9rem;
+    padding: 0.6rem 0.75rem;
     border-bottom: 1px solid var(--rule-soft);
-    font-variant-numeric: tabular-nums;
+    text-align: right;
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
-  th:first-child, td:first-child { text-align: left; }
+  th:first-child, td:first-child { padding-left: 0; text-align: left; }
+  th:last-child, td:last-child { padding-right: 0; }
   thead th {
-    font-family: 'JetBrains Mono', monospace;
     font-size: 0.6rem;
     letter-spacing: 0.1em;
-    text-transform: uppercase;
     color: var(--muted);
-    font-weight: 500;
-    background: var(--bg-alt);
+    border-bottom-color: var(--rule);
   }
-  tbody tr:last-child td { border-bottom: none; }
-  th .swatch {
+  thead th .key { margin-right: 0.45rem; }
+  /* Figure columns hold their width and sit together at the right, where the eye
+     compares them; the date takes the remaining room. */
+  @media (min-width: 641px) { thead th + th { width: 12rem; } }
+  tbody th { font-weight: 500; }
+  tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
+  td.empty { text-align: center; color: var(--muted); padding: 1.5rem 0; white-space: normal; }
+  /* The change sits in a fixed slot beside each figure so the figures align. */
+  .chg {
     display: inline-block;
-    width: 8px; height: 8px;
-    border-radius: 2px;
-    margin-right: 0.4rem;
-  }
-  td.null { color: var(--muted); }
-  .carried, td .carried {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.58rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--muted);
-    border: 1px solid var(--rule-soft);
-    border-radius: 999px;
-    padding: 0.05rem 0.4rem;
+    min-width: 4.6em;
     margin-left: 0.5rem;
-    white-space: nowrap;
-  }
-  .table-note {
-    margin-top: 0.7rem;
+    text-align: right;
     font-size: 0.78rem;
     color: var(--muted);
   }
+  .chg.up { color: var(--ink-soft); }
+  td.none { color: var(--muted); cursor: help; }
+  .tag {
+    font-size: 0.56rem;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    padding: 0.08rem 0.4rem;
+    cursor: help;
+  }
+  .more {
+    display: block;
+    width: 100%;
+    margin-top: 0.4rem;
+    padding: 0.6rem;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--accent);
+    background: none;
+    border: 0;
+    border-top: 1px solid var(--rule-soft);
+    cursor: pointer;
+  }
+  .more:hover { text-decoration: underline; }
+  .table-note { margin-top: 0.9rem; font-size: 0.78rem; color: var(--muted); }
+  .table-note .tag { cursor: default; margin-right: 0.2rem; }
+  @media (max-width: 640px) {
+    .table-card { padding: 1.15rem 1rem; }
+    table { font-size: 0.82rem; }
+    th, td { padding: 0.55rem 0.35rem; }
+    .chg { min-width: 3.9em; margin-left: 0.3rem; }
+  }
+
+  /* ---- about ---- */
+  .about { margin-top: 2.75rem; }
+  .defs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.4rem 2.5rem;
+    margin-top: 1.1rem;
+  }
+  .defs dt { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; font-size: 0.92rem; }
+  .defs dd { margin-top: 0.3rem; font-size: 0.87rem; color: var(--ink-soft); max-width: 60ch; }
+  @media (max-width: 700px) { .defs { grid-template-columns: minmax(0, 1fr); } }
 
   /* ---- states ---- */
-  .state {
-    margin-top: 2rem;
-    padding: 2.5rem 1.25rem;
-    text-align: center;
-    color: var(--muted);
-    background: var(--surface);
-    border: 1px solid var(--rule-soft);
-    border-radius: 10px;
-    font-size: 0.9rem;
+  .state { margin-top: 0.5rem; padding: 2.5rem 1.5rem; text-align: center; }
+  .state p { margin: 0.4rem auto 1.1rem; max-width: 48ch; font-size: 0.9rem; color: var(--muted); }
+
+  .is-loading [data-skeleton] {
+    display: inline-block;
+    min-width: 3.5em;
+    color: transparent;
+    border-radius: 6px;
+    background: linear-gradient(90deg, var(--bg-alt) 25%, #f6f1e7 50%, var(--bg-alt) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
+  .is-loading .hero-value[data-skeleton] { min-width: 3.2ch; }
+  @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+  .reveal { animation: rise 0.45s ease-out both; }
+  .reveal:nth-child(2) { animation-delay: 0.05s; }
+  .reveal:nth-child(3) { animation-delay: 0.1s; }
+  .reveal:nth-child(4) { animation-delay: 0.15s; }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reveal, .is-loading [data-skeleton] { animation: none; }
   }
 
   footer {
     margin-top: 3rem;
     padding-top: 1.5rem;
     border-top: 1px solid var(--rule);
-    font-family: 'JetBrains Mono', monospace;
     font-size: 0.62rem;
     letter-spacing: 0.12em;
-    text-transform: uppercase;
     color: var(--muted);
     display: flex;
     justify-content: space-between;
     gap: 1rem;
     flex-wrap: wrap;
   }
+  footer a { text-decoration: none; border-bottom: 1px solid var(--rule); }
+  footer a:hover { color: var(--ink); border-color: var(--ink); }
 </style>
 </head>
-<body>
+<body class="is-loading">
 
 <div class="wrap">
 
-  <div class="masthead">
-    <svg height="34" viewBox="0 0 210 50" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="FORRT Validator">
+  <header class="masthead">
+    <svg height="34" viewBox="0 0 210 50" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="FORRT Validator">
       <path d="M0,13 L0,0 L10,0 L10,7 L16,7 L16,0 L26,0 L26,7 L32,7 L32,0 L42,0 L42,50 L0,50 Z" fill="#b54614"/>
       <rect x="12" y="13" width="18" height="10" fill="white"/>
       <rect x="15" y="36" width="12" height="14" fill="#ebe4d2"/>
@@ -272,97 +460,186 @@
       <text x="56" y="42" font-family="Georgia,serif" font-size="13" font-style="italic" fill="#b54614">Validator</text>
     </svg>
     <a class="back" href="./index.html">Sign in &rarr;</a>
-  </div>
+  </header>
 
-  <h1>FLoRA dataset <em>growth</em></h1>
-  <p class="tagline">
-    How many replication and reproduction records the collection holds, and how that has
-    changed. Updated after every pipeline run. Open to everyone &mdash; no account needed.
-  </p>
-
-  <div id="tiles" class="tiles" hidden>
-    <div class="tile is-source">
-      <div class="label">Source records</div>
-      <div class="value" id="t-source">&mdash;</div>
-      <div class="sub">everything ingested</div>
-    </div>
-    <div class="tile is-flora">
-      <div class="label">FLoRA dataset</div>
-      <div class="value" id="t-total">&mdash;</div>
-      <div class="sub">after exclusions &amp; deduplication</div>
-    </div>
-    <div class="tile">
-      <div class="label">Replications</div>
-      <div class="value" id="t-rep">&mdash;</div>
-    </div>
-    <div class="tile">
-      <div class="label">Reproductions</div>
-      <div class="value" id="t-repro">&mdash;</div>
-    </div>
-  </div>
-
-  <div id="loading" class="state">Loading&hellip;</div>
-  <div id="error" class="state" hidden>
-    The dataset figures are not available right now. Please try again shortly.
-  </div>
-
-  <div id="charts" hidden>
-    <figure>
-      <figcaption>
-        <div class="title">All-time</div>
-        <div class="note">Where each month finished. Hover a point for the exact counts.</div>
-      </figcaption>
-      <div class="plot"><canvas id="chart-all" role="img" aria-label="Line chart of dataset size at each month end"></canvas></div>
-    </figure>
-
-    <figure>
-      <figcaption>
-        <div class="title">Last 30 days</div>
-        <div class="note">One point per day. A day with no new records keeps the previous total.</div>
-      </figcaption>
-      <div class="plot"><canvas id="chart-30" role="img" aria-label="Line chart of dataset size on each of the last 30 days"></canvas></div>
-    </figure>
-
-    <div class="provenance">
-      <p>
-        <strong>Source records</strong> is every row ingested from the entry sheets and from the
-        records this project has validated itself. That table is insert-only and each row keeps
-        the date it first arrived, so this line is real history.
-      </p>
-      <p>
-        <strong>FLoRA dataset</strong> is what survives the exclusion list and duplicate
-        resolution. The published dataset only changes when the pipeline regenerates it, so on
-        a day with no run the figure is the one the last run produced. It begins on the first
-        day the pipeline recorded it and is not extended backwards: applying today&rsquo;s rules
-        to an older set of rows would produce a number that was never true on that day.
-      </p>
-    </div>
-
-    <div class="table-head">
-      <h2>Table view</h2>
-      <button class="toggle" id="table-toggle" aria-expanded="false" aria-controls="table-wrap">Show</button>
-    </div>
-    <div class="table-scroll" id="table-wrap" hidden>
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Date</th>
-            <th scope="col"><span class="swatch" style="background:#2a78d6"></span>Source records</th>
-            <th scope="col"><span class="swatch" style="background:#d95926"></span>FLoRA dataset</th>
-          </tr>
-        </thead>
-        <tbody id="table-body"></tbody>
-      </table>
-    </div>
-    <p class="table-note">
-      Most recent day first. A date marked <span class="carried">carried</span> is a day the
-      pipeline did not run, so the dataset still held the figure beside it.
+  <section class="intro">
+    <p class="eyebrow">Open data &middot; no sign-in needed</p>
+    <h1>FLoRA dataset <em>growth</em></h1>
+    <p class="tagline">
+      How many replication and reproduction records the FLoRA collection holds, and how
+      that has changed over time.
     </p>
+    <p class="updated" id="updated">&nbsp;</p>
+  </section>
+
+  <main id="report" aria-busy="true">
+
+    <section class="card summary reveal" aria-label="Current figures">
+      <div class="hero">
+        <div class="eyebrow">Records in the FLoRA dataset</div>
+        <div class="hero-value" id="t-total" data-skeleton>&mdash;</div>
+        <p class="delta" id="d-total"></p>
+        <div class="split">
+          <div>
+            <span class="split-value" id="t-rep" data-skeleton>&mdash;</span>
+            <span class="split-label">replications</span><span class="share" id="s-rep"></span>
+          </div>
+          <div>
+            <span class="split-value" id="t-repro" data-skeleton>&mdash;</span>
+            <span class="split-label">reproductions</span><span class="share" id="s-repro"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="ledger">
+        <div class="eyebrow">From source to dataset</div>
+        <dl>
+          <div class="ledger-row">
+            <dt><span class="key key-source"></span>Source records ingested</dt>
+            <dd class="value" id="l-source" data-skeleton>&mdash;</dd>
+            <dd class="why" id="d-source"></dd>
+          </div>
+          <div class="ledger-row is-removed">
+            <dt><span class="gap"></span>Left out in preparation</dt>
+            <dd class="value" id="l-removed" data-skeleton>&mdash;</dd>
+            <dd class="why">Duplicates merged, exclusions applied, incomplete entries dropped</dd>
+          </div>
+          <div class="ledger-row is-total">
+            <dt><span class="key key-flora"></span>FLoRA dataset</dt>
+            <dd class="value" id="l-total" data-skeleton>&mdash;</dd>
+          </div>
+        </dl>
+      </div>
+    </section>
+
+    <div class="controls" id="controls" hidden>
+      <span class="controls-label" id="period-label">Period</span>
+      <div class="segmented" role="group" aria-labelledby="period-label">
+        <button type="button" data-range="30" aria-pressed="false">30 days</button>
+        <button type="button" data-range="90" aria-pressed="false">90 days</button>
+        <button type="button" data-range="all" aria-pressed="true">All time</button>
+      </div>
+    </div>
+
+    <figure class="card chart-card reveal">
+      <figcaption class="card-head">
+        <div>
+          <h2>Records over time</h2>
+          <p class="note">The count at the end of each day.</p>
+        </div>
+        <ul class="legend" aria-label="Legend">
+          <li><span class="key key-flora"></span>FLoRA dataset</li>
+          <li><span class="key key-source"></span>Source records</li>
+        </ul>
+      </figcaption>
+      <div class="plot" id="plot">
+        <canvas id="chart" tabindex="0" role="img" aria-label="Line chart of the dataset size over time" aria-describedby="chart-hint"></canvas>
+        <div class="tip" id="tip" hidden></div>
+      </div>
+      <p class="chart-fallback" id="chart-fallback" hidden>
+        The chart could not be loaded. Every figure it would show is in the table below.
+      </p>
+      <p class="sr-only" id="chart-hint">Use the left and right arrow keys to read each day.</p>
+      <p class="sr-only" id="chart-live" aria-live="polite"></p>
+      <p class="footnote" id="chart-footnote" hidden></p>
+    </figure>
+
+    <section class="card table-card reveal" aria-labelledby="table-title">
+      <div class="card-head">
+        <div>
+          <h2 id="table-title">Daily figures</h2>
+          <p class="note" id="table-summary">Days on which a figure changed, most recent first.</p>
+        </div>
+        <div class="table-tools">
+          <label class="check"><input type="checkbox" id="all-days"> Include days with no change</label>
+          <button type="button" class="btn" id="download">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"/></svg>
+            Download CSV
+          </button>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col"><span class="key key-flora"></span>FLoRA dataset</th>
+              <th scope="col"><span class="key key-source"></span>Source records</th>
+            </tr>
+          </thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+      <button type="button" class="more" id="table-more" hidden></button>
+      <p class="table-note">
+        Each figure is followed by its change from the day before.
+        <span class="tag">carried</span> the pipeline did not run that day, so the dataset
+        still held its previous figure. A dash marks a day before the pipeline first
+        measured the dataset.
+      </p>
+    </section>
+
+    <section class="about" aria-labelledby="about-title">
+      <h2 id="about-title">About these numbers</h2>
+      <dl class="defs">
+        <div>
+          <dt><span class="key key-flora"></span>FLoRA dataset</dt>
+          <dd>
+            The published collection: what remains of the source records once duplicates
+            are merged, the exclusion list is applied and incomplete entries are dropped.
+          </dd>
+        </div>
+        <div>
+          <dt><span class="key key-source"></span>Source records</dt>
+          <dd>
+            Every record ingested, from the entry sheets and from records this project has
+            validated itself. Each keeps the date it first arrived, so this line is exact
+            history rather than an estimate.
+          </dd>
+        </div>
+        <div>
+          <dt>Replications and reproductions</dt>
+          <dd>
+            A replication repeats a study with new data. A reproduction re-analyses the
+            original study&rsquo;s data.
+          </dd>
+        </div>
+        <div>
+          <dt>Days without a pipeline run</dt>
+          <dd>
+            The dataset only changes when the pipeline regenerates it. On a day with no run,
+            the figure from the last run is carried forward, and the table marks that day.
+          </dd>
+        </div>
+        <div>
+          <dt>Before the first measurement</dt>
+          <dd>
+            The dataset line begins on the first day the pipeline recorded it. It is not
+            extended backwards: applying today&rsquo;s rules to an older set of records would
+            produce a number that was never true on that day.
+          </dd>
+        </div>
+        <div>
+          <dt>Dates</dt>
+          <dd>
+            Every date is a UTC calendar day, and each day shows the count at its end.
+            Today&rsquo;s figures are the latest available.
+          </dd>
+        </div>
+      </dl>
+    </section>
+
+  </main>
+
+  <div id="error" class="card state" role="alert" hidden>
+    <h2>Figures unavailable</h2>
+    <p id="error-message">The dataset figures could not be loaded right now. Please try again shortly.</p>
+    <button type="button" class="btn" id="retry">Try again</button>
   </div>
 
   <footer>
     <span>FORRT &middot; FLoRA</span>
-    <span id="generated"></span>
+    <a href="/api/flora/history">Raw data (JSON)</a>
   </footer>
 
 </div>
@@ -371,219 +648,699 @@
 (function () {
   "use strict";
 
-  var SOURCE_COLOR = "#2a78d6";
+  // Mirrors the :root tokens: the canvas cannot read CSS variables as it draws.
   var FLORA_COLOR  = "#d95926";
+  var SOURCE_COLOR = "#2a78d6";
   var INK          = "#262610";
   var MUTED        = "#6b6157";
   var GRID         = "#ddd6c6";
+  var RULE         = "#c8c0ad";
   var SURFACE      = "#fffdf8";
+  var SANS         = "'Inter Tight', sans-serif";
+  var MONO         = "'JetBrains Mono', monospace";
 
   var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  var WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   var EMDASH = "—";
+  var MINUS = "−";
+  var DAY_MS = 86400000;
+  var PREVIEW_ROWS = 8;
+  var REDUCED_MOTION = !!(window.matchMedia &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+  var state = {
+    data: null,
+    rows: [],       // one per day in the payload, with its change from the day before
+    points: [],     // what the chart currently plots
+    range: "all",
+    chart: null,
+    focus: null,    // index the keyboard is reading, if any
+    allDays: false,
+    expanded: false
+  };
+
+  function $(id) { return document.getElementById(id); }
+
+  // Text goes in through textContent only.
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = text;
+    return node;
+  }
 
   function fmt(n) {
     return (n === null || n === undefined) ? EMDASH : n.toLocaleString("en-US");
   }
 
-  function monthLabel(ym) {
-    var parts = ym.split("-");
-    return MONTHS[parseInt(parts[1], 10) - 1] + " " + parts[0];
+  function signed(n) {
+    return (n > 0 ? "+" : n < 0 ? MINUS : "") + Math.abs(n).toLocaleString("en-US");
   }
 
-  function dayLabel(iso) {
-    var parts = iso.split("-");
-    return MONTHS[parseInt(parts[1], 10) - 1] + " " + parseInt(parts[2], 10);
+  // Series dates are UTC calendar days ("2026-09-13") and are printed as they are;
+  // none of them passes through the reader's time zone.
+  function ymd(iso) {
+    var p = iso.split("-");
+    return [parseInt(p[0], 10), parseInt(p[1], 10), parseInt(p[2], 10)];
+  }
+  function dayNumber(iso) { var p = ymd(iso); return Date.UTC(p[0], p[1] - 1, p[2]) / DAY_MS; }
+  function isoOf(day) { return new Date(day * DAY_MS).toISOString().slice(0, 10); }
+  function shortDate(iso) { var p = ymd(iso); return p[2] + " " + MONTHS[p[1] - 1]; }
+  function longDate(iso) { return shortDate(iso) + " " + ymd(iso)[0]; }
+  function monthYear(iso) { var p = ymd(iso); return MONTHS[p[1] - 1] + " " + p[0]; }
+  function weekday(iso) { return WEEKDAYS[new Date(dayNumber(iso) * DAY_MS).getUTCDay()]; }
+
+  // ---- data ------------------------------------------------------------------
+
+  // The chart, the table and the CSV all read these rows, so they cannot disagree.
+  function buildRows(daily) {
+    var rows = [];
+    var measuredOn = null;
+    daily.forEach(function (d, i) {
+      var prev = daily[i - 1];
+      if (d.measured) measuredOn = d.date;
+      rows.push({
+        date: d.date,
+        flora: d.total_rows,
+        source: d.source_rows,
+        measured: d.measured,
+        measuredOn: d.total_rows === null ? null : measuredOn,
+        floraFirst: !!prev && prev.total_rows === null && d.total_rows !== null,
+        floraChange: (prev && prev.total_rows !== null && d.total_rows !== null)
+          ? d.total_rows - prev.total_rows : null,
+        sourceChange: prev ? d.source_rows - prev.source_rows : null
+      });
+    });
+    return rows;
   }
 
-  // Both series are the same measure (rows), so they share ONE y-axis. A second
-  // scale would make two differently-sized series look identically sized.
-  function lineChart(canvasId, labels, source, flora, measured) {
-    function series(label, data, color) {
+  function rowsInRange() {
+    return state.range === "all" ? state.rows : state.rows.slice(-state.range);
+  }
+
+  // `daily` is capped server-side. All time reaches past it with the month-end
+  // series; the x-axis is real time, so the two granularities sit at true spacing.
+  function pointsFor(range) {
+    if (range !== "all") return state.rows.slice(-range);
+    var first = state.rows[0].date;
+    return state.data.monthly
+      .filter(function (m) { return m.date < first; })
+      .map(function (m) {
+        return { date: m.date, flora: m.total_rows, source: m.source_rows,
+                 measured: m.measured, measuredOn: null, monthEnd: true };
+      })
+      .concat(state.rows);
+  }
+
+  // Against the value 30 days ago, or against the first reading when the series
+  // starts inside that window.
+  function describeChange(key) {
+    var rows = state.rows;
+    var n = rows.length;
+    var last = rows[n - 1][key];
+    if (last === null) return null;
+    var i = Math.max(0, n - 31);
+    while (rows[i][key] === null) i++;
+    var period;
+    if (i === n - 31) period = "in the last 30 days";
+    else if (i > 0 && rows[i - 1][key] === null) period = "since it was first measured on " + shortDate(rows[i].date);
+    else period = "since " + longDate(rows[i].date);
+    return { delta: last - rows[i][key], period: period };
+  }
+
+  // ---- summary ---------------------------------------------------------------
+
+  function writeChange(node, key) {
+    var change = describeChange(key);
+    node.replaceChildren();
+    if (!change) return;
+    if (change.delta === 0) {
+      node.textContent = "No change " + change.period;
+      return;
+    }
+    node.appendChild(el("strong", null, signed(change.delta)));
+    node.appendChild(document.createTextNode(" " + change.period));
+  }
+
+  function share(part, total) {
+    return total ? Math.round(part / total * 100) + "%" : "";
+  }
+
+  function renderSummary(data) {
+    var l = data.latest;
+    var total = l.total_rows;
+    var measured = total !== null;
+
+    $("t-total").textContent = fmt(total);
+    $("t-rep").textContent = measured ? fmt(l.replications) : EMDASH;
+    $("t-repro").textContent = measured ? fmt(l.reproductions) : EMDASH;
+    $("s-rep").textContent = share(l.replications, total);
+    $("s-repro").textContent = share(l.reproductions, total);
+    writeChange($("d-total"), "flora");
+
+    $("l-source").textContent = fmt(l.source_rows);
+    $("l-removed").textContent = measured ? signed(total - l.source_rows) : EMDASH;
+    $("l-total").textContent = fmt(total);
+    writeChange($("d-source"), "source");
+
+    // Rendered in UTC, like every other date on this page. generated_at is an
+    // instant; the series are UTC calendar days printed verbatim. Letting the
+    // browser convert this one to local time put the stamp a day AHEAD of the
+    // newest row in the table for every reader east of UTC — one payload showing
+    // two different "today"s.
+    var when = new Date(data.generated_at);
+    var stamp = when.toLocaleDateString("en-GB",
+      { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+    var clock = String(when.getUTCHours()).padStart(2, "0") + ":" +
+                String(when.getUTCMinutes()).padStart(2, "0");
+    var text = "Updated " + stamp + ", " + clock + " UTC";
+    if (l.measured_on && l.measured_on !== l.date) {
+      text += " · dataset figure from the pipeline run on " + longDate(l.measured_on);
+    }
+    $("updated").textContent = text;
+  }
+
+  // ---- chart -----------------------------------------------------------------
+
+  // Counted back from the newest day, so the latest date is always labelled and
+  // the spacing reads as whole weeks. Spans past five months tick on month starts.
+  function dayTicks(min, max, most) {
+    var ticks = [];
+    var step, i;
+    if (max - min > 150) {
+      var start = new Date(min * DAY_MS);
+      var year = start.getUTCFullYear();
+      var month = start.getUTCMonth() + (start.getUTCDate() === 1 ? 0 : 1);
+      var starts = [];
+      for (var day = Date.UTC(year, month, 1) / DAY_MS; day <= max;
+           day = Date.UTC(year, ++month, 1) / DAY_MS) {
+        starts.push(day);
+      }
+      step = Math.ceil(starts.length / most);
+      for (i = starts.length - 1; i >= 0; i -= step) ticks.unshift(starts[i]);
+      return ticks;
+    }
+    var steps = [1, 2, 7, 14, 28, 56];
+    step = steps[steps.length - 1];
+    for (i = 0; i < steps.length; i++) {
+      if (Math.floor((max - min) / steps[i]) + 1 <= most) { step = steps[i]; break; }
+    }
+    for (var d = max; d >= min; d -= step) ticks.unshift(d);
+    return ticks;
+  }
+
+  // A vertical hairline at the day being read.
+  var crosshair = {
+    id: "crosshair",
+    beforeDatasetsDraw: function (chart) {
+      var active = chart.tooltip ? chart.tooltip.getActiveElements() : [];
+      if (!active.length) return;
+      var x = Math.round(active[0].element.x) + 0.5;
+      var area = chart.chartArea;
+      var ctx = chart.ctx;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(x, area.top);
+      ctx.lineTo(x, area.bottom);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = RULE;
+      ctx.stroke();
+      ctx.restore();
+    }
+  };
+
+  // The newest value of each line, marked and labelled at its end. When the two
+  // ends are too close to tell apart the labels step aside rather than stack; the
+  // legend and the tooltip still name both.
+  var endMarkers = {
+    id: "endMarkers",
+    afterDatasetsDraw: function (chart) {
+      var ends = [];
+      chart.data.datasets.forEach(function (ds, i) {
+        var meta = chart.getDatasetMeta(i);
+        for (var j = ds.data.length - 1; j >= 0; j--) {
+          if (ds.data[j].y !== null) {
+            ends.push({ point: meta.data[j], color: ds.borderColor, value: ds.data[j].y });
+            break;
+          }
+        }
+      });
+      var labelled = ends.length < 2 || Math.abs(ends[0].point.y - ends[1].point.y) >= 16;
+      var ctx = chart.ctx;
+      ctx.save();
+      ends.forEach(function (end) {
+        var x = end.point.x;
+        var y = end.point.y;
+        // A ring in the surface colour keeps the marker legible on top of the line.
+        ctx.beginPath();
+        ctx.arc(x, y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = SURFACE;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = end.color;
+        ctx.fill();
+        if (labelled) {
+          ctx.fillStyle = INK;
+          ctx.font = "600 12px " + SANS;
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          ctx.fillText(fmt(end.value), x + 10, y);
+        }
+      });
+      ctx.restore();
+    }
+  };
+
+  function pointTitle(p) {
+    return p.monthEnd ? "End of " + monthYear(p.date) : weekday(p.date) + " " + longDate(p.date);
+  }
+
+  function floraNote(p) {
+    if (p.flora === null) return "Not measured yet";
+    if (!p.measured) return "carried forward" + (p.measuredOn ? " from " + shortDate(p.measuredOn) : "");
+    return null;
+  }
+
+  function fillReadout(tip, p) {
+    tip.replaceChildren(el("div", "tip-title", pointTitle(p)));
+    [
+      ["FLoRA dataset", p.flora, "key-flora", floraNote(p)],
+      ["Source records", p.source, "key-source", null]
+    ].forEach(function (s) {
+      var row = el("div", "tip-row");
+      row.appendChild(el("span", "key " + s[2]));
+      // No figure: the name takes the value's place, with the reason beneath it,
+      // rather than a dash that reads as a second line key.
+      if (s[1] !== null) row.appendChild(el("span", "tip-value", fmt(s[1])));
+      row.appendChild(el("span", "tip-label", s[0]));
+      if (s[3]) row.appendChild(el("span", "tip-sub", s[3]));
+      tip.appendChild(row);
+    });
+  }
+
+  // One readout listing both series at the hovered day. Reads the point by index,
+  // so a day with no dataset figure still shows the source count beside "not
+  // measured yet".
+  function renderTip(context) {
+    var tip = $("tip");
+    var t = context.tooltip;
+    if (!t.opacity || !t.dataPoints || !t.dataPoints.length) {
+      tip.hidden = true;
+      return;
+    }
+    fillReadout(tip, state.points[t.dataPoints[0].dataIndex]);
+    tip.hidden = false;
+    var chart = context.chart;
+    var x = t.dataPoints[0].element.x;
+    var width = tip.offsetWidth;
+    var left = (x + 14 + width > chart.width) ? x - 14 - width : x + 14;
+    tip.style.left = Math.max(0, Math.round(left)) + "px";
+    tip.style.top = Math.round(chart.chartArea.top) + "px";
+  }
+
+  function describeChart(points) {
+    var first = points[0];
+    var last = points[points.length - 1];
+    var firstFlora = null;
+    for (var i = 0; i < points.length; i++) {
+      if (points[i].flora !== null) { firstFlora = points[i]; break; }
+    }
+
+    var label = "Line chart of records from " + longDate(first.date) + " to " + longDate(last.date) + ". ";
+    label += firstFlora
+      ? "FLoRA dataset went from " + fmt(firstFlora.flora) + " on " + longDate(firstFlora.date) +
+        " to " + fmt(last.flora) + ". "
+      : "FLoRA dataset not measured yet. ";
+    label += "Source records went from " + fmt(first.source) + " to " + fmt(last.source) + ".";
+    $("chart").setAttribute("aria-label", label);
+
+    var notes = [];
+    if (first.monthEnd) {
+      var firstDay = points.filter(function (p) { return !p.monthEnd; })[0];
+      notes.push("Before " + longDate(firstDay.date) + ", one point per month end.");
+    }
+    if (firstFlora && firstFlora !== first) {
+      notes.push("The FLoRA dataset line starts on " + longDate(firstFlora.date) +
+                 ", the first day the pipeline measured it; earlier sizes are not reconstructed.");
+    }
+    var footnote = $("chart-footnote");
+    footnote.textContent = notes.join(" ");
+    footnote.hidden = !notes.length;
+  }
+
+  function renderChart() {
+    var points = pointsFor(state.range);
+    state.points = points;
+    state.focus = null;
+    $("tip").hidden = true;
+    describeChart(points);
+
+    if (typeof Chart === "undefined") {
+      $("plot").hidden = true;
+      $("chart-fallback").hidden = false;
+      return;
+    }
+    if (state.chart) state.chart.destroy();
+
+    var xs = points.map(function (p) { return dayNumber(p.date); });
+    var min = xs[0];
+    var max = xs.length > 1 ? xs[xs.length - 1] : min + 1;
+    var byMonth = max - min > 150;
+    var narrow = $("plot").clientWidth < 520;
+
+    function line(label, key, color) {
       return {
         label: label,
-        data: data,
+        data: points.map(function (p, i) { return { x: xs[i], y: p[key] }; }),
         borderColor: color,
         backgroundColor: color,
-        pointBackgroundColor: color,
-        // A ring in the surface colour keeps two points readable where the lines
-        // cross instead of merging them into one blob.
-        pointBorderColor: SURFACE,
-        pointBorderWidth: 2,
         borderWidth: 2,
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        tension: 0.25,
-        spanGaps: false
+        borderCapStyle: "round",
+        borderJoinStyle: "round",
+        // Straight segments: a curve through cumulative counts invents values
+        // between the days, overshooting the real total at every step.
+        tension: 0,
+        spanGaps: false,
+        pointRadius: 0,
+        pointHitRadius: 12,
+        pointHoverRadius: 5,
+        pointHoverBackgroundColor: color,
+        pointHoverBorderColor: SURFACE,
+        pointHoverBorderWidth: 2
       };
     }
 
-    return new Chart(document.getElementById(canvasId), {
+    // Both series are the same measure (records), so they share ONE y-axis. A second
+    // scale would make two differently-sized series look identically sized.
+    state.chart = new Chart($("chart"), {
       type: "line",
       data: {
-        labels: labels,
         datasets: [
-          series("Source records", source, SOURCE_COLOR),
-          series("FLoRA dataset", flora, FLORA_COLOR)
+          line("FLoRA dataset", "flora", FLORA_COLOR),
+          line("Source records", "source", SOURCE_COLOR)
         ]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: REDUCED_MOTION ? false : { duration: 350 },
         // Crosshair behaviour: hovering anywhere in a column reads every series at
-        // that x, so the lines can be compared without having to hit a 4px dot.
-        interaction: { mode: "index", intersect: false },
-        layout: { padding: { top: 4, right: 8 } },
+        // that day, so the lines can be compared without hitting a 2px stroke.
+        interaction: { mode: "index", intersect: false, axis: "x" },
+        layout: { padding: { top: 10, right: narrow ? 46 : 56 } },
         plugins: {
-          legend: {
-            position: "top",
-            align: "end",
-            labels: {
-              boxWidth: 8,
-              boxHeight: 8,
-              usePointStyle: true,
-              pointStyle: "circle",
-              color: MUTED,
-              font: { family: "'Inter Tight', sans-serif", size: 12 },
-              padding: 16
-            }
-          },
-          tooltip: {
-            backgroundColor: INK,
-            titleColor: "#f4efe6",
-            bodyColor: "#f4efe6",
-            borderWidth: 0,
-            padding: 10,
-            cornerRadius: 6,
-            usePointStyle: true,
-            titleFont: { family: "'Inter Tight', sans-serif", size: 12, weight: "600" },
-            bodyFont: { family: "'Inter Tight', sans-serif", size: 12 },
-            callbacks: {
-              label: function (ctx) {
-                if (ctx.parsed.y === null) return ctx.dataset.label + ": not recorded";
-                var text = ctx.dataset.label + ": " + fmt(ctx.parsed.y) + " rows";
-                // Only the FLoRA series is ever carried: source records are counted
-                // exactly for every day from the date each row arrived.
-                if (ctx.datasetIndex === 1 && measured && !measured[ctx.dataIndex]) {
-                  text += " (carried forward)";
-                }
-                return text;
-              }
-            }
-          }
+          // The HTML legend above the plot names both series and keys the summary
+          // and the table too, which a canvas legend could not.
+          legend: { display: false },
+          tooltip: { enabled: false, external: renderTip }
         },
         scales: {
           x: {
+            type: "linear",
+            min: min,
+            max: max,
             grid: { display: false },
             border: { color: GRID },
+            afterBuildTicks: function (axis) {
+              axis.ticks = dayTicks(axis.min, axis.max, Math.max(2, Math.min(8, Math.floor(axis.width / 54))))
+                .map(function (v) { return { value: v }; });
+            },
             ticks: {
-              color: MUTED,
-              font: { family: "'JetBrains Mono', monospace", size: 10 },
+              autoSkip: false,
               maxRotation: 0,
-              autoSkipPadding: 12
+              padding: 8,
+              color: MUTED,
+              font: { family: MONO, size: 10 },
+              callback: function (v) { return byMonth ? monthYear(isoOf(v)) : shortDate(isoOf(v)); }
             }
           },
           y: {
             beginAtZero: true,
-            title: {
-              display: true,
-              text: "Total rows",
-              color: MUTED,
-              font: { family: "'Inter Tight', sans-serif", size: 11 }
-            },
             grid: { color: GRID, lineWidth: 1, drawTicks: false },
             border: { display: false },
             ticks: {
-              color: MUTED,
-              font: { family: "'JetBrains Mono', monospace", size: 10 },
+              maxTicksLimit: 6,
               padding: 8,
+              color: MUTED,
+              font: { family: MONO, size: 10 },
               callback: function (v) { return fmt(v); }
             }
           }
         }
-      }
+      },
+      plugins: [crosshair, endMarkers]
     });
   }
 
-  function renderTable(daily) {
-    var rows = [];
-    for (var i = daily.length - 1; i >= 0; i--) {
-      var d = daily[i];
-      var total = (d.total_rows === null)
-        ? '<td class="null">not recorded</td>'
-        : "<td>" + fmt(d.total_rows)
-          + (d.measured ? "" : '<span class="carried">carried</span>') + "</td>";
-      rows.push("<tr><td>" + d.date + "</td><td>" + fmt(d.source_rows) + "</td>" + total + "</tr>");
-    }
-    document.getElementById("table-body").innerHTML = rows.join("");
+  // Keyboard reading: the same readout as hover, one day per arrow key.
+  function activate(i) {
+    var chart = state.chart;
+    if (!chart) return;
+    state.focus = i;
+    var active = [];
+    chart.data.datasets.forEach(function (ds, d) {
+      if (ds.data[i].y !== null) active.push({ datasetIndex: d, index: i });
+    });
+    var at = chart.getDatasetMeta(active[0].datasetIndex).data[i];
+    chart.setActiveElements(active);
+    chart.tooltip.setActiveElements(active, { x: at.x, y: at.y });
+    chart.update("none");
+    var p = state.points[i];
+    $("chart-live").textContent = pointTitle(p) + ": FLoRA dataset " +
+      (p.flora === null ? "not measured yet" : fmt(p.flora)) +
+      ", source records " + fmt(p.source) + ".";
   }
 
-  function render(data) {
-    document.getElementById("loading").hidden = true;
-
-    if (!data.latest || !data.daily.length) {
-      document.getElementById("error").hidden = false;
-      return;
-    }
-
-    var l = data.latest;
-    document.getElementById("t-source").textContent = fmt(l.source_rows);
-    document.getElementById("t-total").textContent  = fmt(l.total_rows);
-    document.getElementById("t-rep").textContent    = fmt(l.replications);
-    document.getElementById("t-repro").textContent  = fmt(l.reproductions);
-    document.getElementById("tiles").hidden  = false;
-    document.getElementById("charts").hidden = false;
-
-    var monthly = data.monthly;
-    lineChart(
-      "chart-all",
-      monthly.map(function (m) { return monthLabel(m.month); }),
-      monthly.map(function (m) { return m.source_rows; }),
-      monthly.map(function (m) { return m.total_rows; }),
-      monthly.map(function (m) { return m.measured; })
-    );
-
-    var last30 = data.daily.slice(-30);
-    lineChart(
-      "chart-30",
-      last30.map(function (d) { return dayLabel(d.date); }),
-      last30.map(function (d) { return d.source_rows; }),
-      last30.map(function (d) { return d.total_rows; }),
-      last30.map(function (d) { return d.measured; })
-    );
-
-    renderTable(data.daily);
-
-    // Rendered in UTC, like every other date on this page. generated_at is an
-    // instant; the series are UTC calendar days printed verbatim. Letting the
-    // browser convert this one to local time put the footer a day AHEAD of the
-    // newest row in the table for every reader east of UTC — one payload showing
-    // two different "today"s.
-    var when = new Date(data.generated_at);
-    document.getElementById("generated").textContent =
-      "Updated " + when.toLocaleDateString("en-GB",
-        { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  function deactivate() {
+    var chart = state.chart;
+    state.focus = null;
+    if (!chart) return;
+    chart.setActiveElements([]);
+    chart.tooltip.setActiveElements([], { x: 0, y: 0 });
+    chart.update("none");
   }
 
-  var toggle = document.getElementById("table-toggle");
-  toggle.addEventListener("click", function () {
-    var wrap = document.getElementById("table-wrap");
-    wrap.hidden = !wrap.hidden;
-    toggle.textContent = wrap.hidden ? "Show" : "Hide";
-    toggle.setAttribute("aria-expanded", String(!wrap.hidden));
+  // ---- table -----------------------------------------------------------------
+
+  function changed(r) {
+    return r.floraFirst || !!r.floraChange || !!r.sourceChange;
+  }
+
+  function tag(text, title) {
+    var node = el("span", "tag", text);
+    node.title = title;
+    return node;
+  }
+
+  function valueCell(value, change, badge) {
+    var td = el("td");
+    if (value === null) {
+      td.className = "none";
+      td.title = "Not measured: before the pipeline first measured the dataset";
+    }
+    td.appendChild(el("span", "val", fmt(value)));
+    var slot = el("span", "chg");
+    if (badge) {
+      slot.appendChild(badge);
+    } else if (change) {
+      slot.textContent = signed(change);
+      slot.classList.add(change > 0 ? "up" : "down");
+    }
+    td.appendChild(slot);
+    return td;
+  }
+
+  function floraBadge(r) {
+    if (r.flora === null) return null;
+    if (r.floraFirst) return tag("first", "The first day the pipeline measured the dataset");
+    if (!r.measured) {
+      return tag("carried", "No pipeline run this day: the figure is carried forward" +
+        (r.measuredOn ? " from " + longDate(r.measuredOn) : " from the last run"));
+    }
+    return null;
+  }
+
+  function renderTable() {
+    var rows = rowsInRange().slice().reverse();
+    if (!state.allDays) rows = rows.filter(changed);
+    var total = rows.length;
+    if (!state.expanded && total > PREVIEW_ROWS) rows = rows.slice(0, PREVIEW_ROWS);
+
+    var body = $("table-body");
+    body.replaceChildren();
+    if (!total) {
+      var empty = el("td", "empty", "No figure changed in this period.");
+      empty.colSpan = 3;
+      var tr = el("tr");
+      tr.appendChild(empty);
+      body.appendChild(tr);
+    }
+    rows.forEach(function (r) {
+      var tr = el("tr");
+      var th = el("th", null, longDate(r.date));
+      th.scope = "row";
+      tr.appendChild(th);
+      tr.appendChild(valueCell(r.flora, r.floraChange, floraBadge(r)));
+      tr.appendChild(valueCell(r.source, r.sourceChange, null));
+      body.appendChild(tr);
+    });
+
+    var more = $("table-more");
+    more.hidden = state.expanded || total <= PREVIEW_ROWS;
+    more.textContent = "Show all " + total + (state.allDays ? " days" : " days with a change");
+
+    var summary = state.allDays
+      ? "Every day in the period, most recent first."
+      : "Days on which a figure changed, most recent first.";
+    if (state.range === "all" && state.points.length && state.points[0].monthEnd) {
+      summary += " Daily figures cover the last " + state.rows.length + " days.";
+    }
+    $("table-summary").textContent = summary;
+  }
+
+  function downloadCsv() {
+    var lines = ["date,flora_dataset,flora_measured,source_records"];
+    rowsInRange().forEach(function (r) {
+      lines.push([r.date,
+                  r.flora === null ? "" : r.flora,
+                  r.flora === null ? "" : r.measured,
+                  r.source].join(","));
+    });
+    var url = URL.createObjectURL(new Blob([lines.join("\n") + "\n"], { type: "text/csv;charset=utf-8" }));
+    var link = el("a");
+    link.href = url;
+    link.download = "flora-dataset-growth-" + state.data.latest.date + ".csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  // ---- period ----------------------------------------------------------------
+
+  var rangeButtons = Array.prototype.slice.call(document.querySelectorAll("[data-range]"));
+
+  // A window as wide as the whole history would only repeat All time.
+  function offerRanges() {
+    var all = pointsFor("all");
+    var span = dayNumber(all[all.length - 1].date) - dayNumber(all[0].date);
+    var offered = 0;
+    rangeButtons.forEach(function (b) {
+      var r = b.getAttribute("data-range");
+      b.hidden = r !== "all" && span <= parseInt(r, 10);
+      if (!b.hidden) offered++;
+      if (b.hidden && state.range === parseInt(r, 10)) state.range = "all";
+    });
+    $("controls").hidden = offered < 2;
+    pressRange();
+  }
+
+  function pressRange() {
+    rangeButtons.forEach(function (b) {
+      var r = b.getAttribute("data-range");
+      b.setAttribute("aria-pressed", String(String(state.range) === r));
+    });
+  }
+
+  rangeButtons.forEach(function (b) {
+    b.addEventListener("click", function () {
+      var r = b.getAttribute("data-range");
+      state.range = r === "all" ? "all" : parseInt(r, 10);
+      state.expanded = false;
+      pressRange();
+      renderChart();
+      renderTable();
+    });
   });
 
-  fetch("/api/flora/history")
-    .then(function (r) {
+  // ---- wiring ----------------------------------------------------------------
+
+  var canvas = $("chart");
+  canvas.addEventListener("keydown", function (e) {
+    if (!state.chart) return;
+    var last = state.points.length - 1;
+    var i = state.focus === null ? last : state.focus;
+    if (e.key === "ArrowLeft") i -= 1;
+    else if (e.key === "ArrowRight") i += 1;
+    else if (e.key === "Home") i = 0;
+    else if (e.key === "End") i = last;
+    else if (e.key === "Escape") { deactivate(); return; }
+    else return;
+    e.preventDefault();
+    activate(Math.max(0, Math.min(last, i)));
+  });
+  canvas.addEventListener("focus", function () {
+    var keyboard = true;
+    try { keyboard = canvas.matches(":focus-visible"); } catch (err) { /* older engines */ }
+    if (keyboard && state.chart) activate(state.points.length - 1);
+  });
+  canvas.addEventListener("blur", deactivate);
+
+  $("all-days").addEventListener("change", function (e) {
+    state.allDays = e.target.checked;
+    state.expanded = false;
+    renderTable();
+  });
+  $("table-more").addEventListener("click", function () {
+    state.expanded = true;
+    renderTable();
+  });
+  $("download").addEventListener("click", downloadCsv);
+  $("retry").addEventListener("click", load);
+
+  function render(data) {
+    if (!data || !data.latest || !data.daily || !data.daily.length) {
+      fail("No figures have been recorded yet.");
+      return;
+    }
+    state.data = data;
+    state.rows = buildRows(data.daily);
+    renderSummary(data);
+    offerRanges();
+    renderChart();
+    renderTable();
+    document.body.classList.remove("is-loading");
+    $("report").setAttribute("aria-busy", "false");
+    // Canvas text is drawn once, in whatever font is ready at the time.
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(function () { if (state.chart) state.chart.update("none"); });
+    }
+  }
+
+  function fail(message) {
+    document.body.classList.remove("is-loading");
+    $("report").hidden = true;
+    $("error-message").textContent = message ||
+      "The dataset figures could not be loaded right now. Please try again shortly.";
+    $("error").hidden = false;
+  }
+
+  // The deferred chart library has run (or failed) by DOMContentLoaded.
+  var ready = new Promise(function (resolve) {
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", resolve);
+    else resolve();
+  });
+
+  function load() {
+    $("error").hidden = true;
+    $("report").hidden = false;
+    document.body.classList.add("is-loading");
+    var data = fetch("/api/flora/history").then(function (r) {
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
-    })
-    .then(render)
-    .catch(function () {
-      document.getElementById("loading").hidden = true;
-      document.getElementById("error").hidden = false;
     });
+    Promise.all([data, ready])
+      .then(function (results) { render(results[0]); })
+      .catch(function (err) {
+        if (window.console) console.error(err);
+        fail();
+      });
+  }
+
+  load();
 })();
 </script>
 
