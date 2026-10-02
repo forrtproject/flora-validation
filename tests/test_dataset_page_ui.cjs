@@ -16,23 +16,31 @@ const iso = ms => new Date(ms).toISOString().slice(0, 10);
 
 // Ten months of history: source records grow by 5 every fourth day, the pipeline
 // first measures the dataset on 1 Jul 2026, and skips the 15th of each month after
-// that (a carried day). The server caps `daily` at 120 days; earlier months come
-// only from `monthly`.
+// that (a carried day). Reproductions gain one every tenth day, the rest are
+// replications. The server caps `daily` at 120 days; earlier months come only from
+// `monthly`.
 function makeHistory() {
   const start = Date.parse("2025-12-01T00:00:00Z");
   const end = Date.parse("2026-10-02T00:00:00Z");
   const all = [];
   let source = 1000;
   let flora = null;
+  let repros = null;
   for (let ms = start, i = 0; ms <= end; ms += DAY, i++) {
     const date = iso(ms);
     if (i % 4 === 0) source += 5;
     let measured = false;
     if (date >= "2026-07-01" && !date.endsWith("-15")) {
       flora = source - 50;
+      repros = 40 + Math.floor(i / 10);
       measured = true;
     }
-    all.push({ date, total_rows: date >= "2026-07-01" ? flora : null, source_rows: source, measured });
+    const known = date >= "2026-07-01";
+    all.push({
+      date, total_rows: known ? flora : null,
+      replications: known ? flora - repros : null, reproductions: known ? repros : null,
+      source_rows: source, measured,
+    });
   }
   const byMonth = {};
   for (const point of all) byMonth[point.date.slice(0, 7)] = point;
@@ -40,8 +48,8 @@ function makeHistory() {
   return {
     generated_at: "2026-10-02T10:07:31+00:00",
     latest: {
-      date: last.date, total_rows: last.total_rows, replications: last.total_rows - 40,
-      reproductions: 40, source_rows: last.source_rows, measured_on: last.date,
+      date: last.date, total_rows: last.total_rows, replications: last.replications,
+      reproductions: last.reproductions, source_rows: last.source_rows, measured_on: last.date,
     },
     daily: all.slice(-120),
     monthly: Object.keys(byMonth).sort().map(month => ({ month, ...byMonth[month] })),
@@ -86,12 +94,13 @@ async function openPage(browser, history, { viewport, blockChart, failFirst } = 
   return { page, errors };
 }
 
-const lastChart = page => page.evaluate(() => {
-  const chart = window.__charts[window.__charts.length - 1];
+// The newest chart drawn for a series: every period change redraws all three.
+const lastChart = (page, label = "FLoRA dataset") => page.evaluate(label => {
+  const chart = window.__charts.filter(c => c.data.datasets[0].label === label).pop();
   const sets = chart.data.datasets;
   return {
-    count: window.__charts.length,
     labels: sets.map(s => s.label),
+    values: sets[0].data.map(p => p.y),
     points: sets[0].data.length,
     tension: sets.map(s => s.tension),
     axes: Object.keys(chart.options.scales),
@@ -99,7 +108,7 @@ const lastChart = page => page.evaluate(() => {
     lastX: sets[0].data[sets[0].data.length - 1].x,
     firstX: sets[0].data[0].x,
   };
-});
+}, label);
 
 (async () => {
   const history = makeHistory();
@@ -115,7 +124,6 @@ const lastChart = page => page.evaluate(() => {
     await page.locator("body:not(.is-loading)").waitFor();
 
     assert.equal(await page.locator("#t-total").innerText(), latest.total_rows.toLocaleString("en-US"));
-    assert.equal(await page.locator("#t-repro").innerText(), "40");
     const thirtyAgo = daily[daily.length - 31];
     const delta = latest.total_rows - thirtyAgo.total_rows;
     assert.equal(await page.locator("#d-total").innerText(), `+${delta} in the last 30 days`);
@@ -141,21 +149,47 @@ const lastChart = page => page.evaluate(() => {
     assert.match(footnote, /starts on 1 Jul 2026, the first day the pipeline measured it/);
     assert.equal(await page.locator('[data-range="all"]').getAttribute("aria-pressed"), "true");
 
-    // ── the period filter scopes the chart and the table ───────────────────
+    // ── replications and reproductions: a figure and a chart each ──────────
+    const firstRun = daily.findIndex(d => d.total_rows !== null);
+    const firstRunDay = daily[firstRun];
+    for (const [id, label, key] of [["rep", "Replications", "replications"],
+                                    ["repro", "Reproductions", "reproductions"]]) {
+      assert.equal(await page.locator(`#${id}-value`).innerText(), latest[key].toLocaleString("en-US"));
+      assert.equal(await page.locator(`#${id}-share`).innerText(),
+        `${Math.round(latest[key] / latest.total_rows * 100)}% of the dataset`.toUpperCase());
+      assert.equal(await page.locator(`#${id}-delta`).innerText(),
+        `+${latest[key] - firstRunDay[key]} since it was first measured on 1 Jul`,
+        "All time measures the change from the first reading");
+      const typed = await lastChart(page, label);
+      assert.deepEqual(typed.labels, [label], "one series, on its own scale");
+      assert.equal(typed.points, daily.length - firstRun,
+        "starts at the first measurement instead of a blank stretch before it");
+      assert.equal(typed.values[0], firstRunDay[key]);
+      assert.equal(typed.values[typed.values.length - 1], latest[key]);
+    }
+    assert.equal(await page.locator("#types-note").innerText(),
+      "Both charts start on 1 Jul 2026, the first day the pipeline measured the dataset.");
+
+    // ── the period filter scopes the charts and the table ──────────────────
     await page.click('[data-range="30"]');
     chart = await lastChart(page);
     assert.equal(chart.points, 30);
     assert.equal(await page.locator('[data-range="30"]').getAttribute("aria-pressed"), "true");
     assert(await page.locator("#chart-footnote").isHidden(), "nothing to footnote inside the last 30 days");
+    assert.equal((await lastChart(page, "Reproductions")).points, 30);
+    assert.equal(await page.locator("#repro-delta").innerText(),
+      `+${latest.reproductions - thirtyAgo.reproductions} in the last 30 days`);
+    assert(await page.locator("#types-note").isHidden());
     await page.click('[data-range="90"]');
     assert.equal((await lastChart(page)).points, 90);
+    assert.equal((await lastChart(page, "Replications")).points, 90);
 
     // ── table: changed days by default, eight at a time ────────────────────
     await page.click('[data-range="30"]');
     const window30 = daily.slice(-30);
     const changedDays = window30.filter((d, i) => {
       const prev = i ? window30[i - 1] : daily[daily.length - 31];
-      return d.source_rows !== prev.source_rows || d.total_rows !== prev.total_rows;
+      return ["source_rows", "total_rows", "replications", "reproductions"].some(k => d[k] !== prev[k]);
     });
     assert.equal(await page.locator("#table-body tr").count(), Math.min(8, changedDays.length));
     assert.equal(await page.locator("#table-more").innerText(), `Show all ${changedDays.length} days with a change`);
@@ -187,9 +221,26 @@ const lastChart = page => page.evaluate(() => {
     const [download] = await Promise.all([page.waitForEvent("download"), page.click("#download")]);
     assert.equal(download.suggestedFilename(), "flora-dataset-growth-2026-10-02.csv");
     const csv = (await fs.readFile(await download.path(), "utf8")).trim().split("\n");
-    assert.equal(csv[0], "date,flora_dataset,flora_measured,source_records");
+    assert.equal(csv[0], "date,flora_dataset,replications,reproductions,flora_measured,source_records");
     assert.equal(csv.length, 31);
-    assert.equal(csv[csv.length - 1], `2026-10-02,${latest.total_rows},true,${latest.source_rows}`);
+    assert.equal(csv[csv.length - 1], [
+      "2026-10-02", latest.total_rows, latest.replications, latest.reproductions, true, latest.source_rows,
+    ].join(","));
+    assert.deepEqual(errors, []);
+    await page.close();
+
+    // ── an older server with no per-day split: figures stay, no invented zeros ─
+    const strip = point => {
+      const { replications, reproductions, ...rest } = point;
+      return rest;
+    };
+    const older = { ...history, daily: daily.map(strip), monthly: history.monthly.map(strip) };
+    ({ page, errors } = await openPage(browser, older));
+    await page.locator("body:not(.is-loading)").waitFor();
+    assert.equal(await page.locator("#rep-value").innerText(), latest.replications.toLocaleString("en-US"));
+    assert(await page.locator("#plot-rep").isHidden());
+    assert.equal(await page.locator("#fallback-rep").innerText(), "No history has been recorded for this figure yet.");
+    assert.equal(await page.locator("#rep-delta").innerText(), "");
     assert.deepEqual(errors, []);
     await page.close();
 
@@ -204,8 +255,13 @@ const lastChart = page => page.evaluate(() => {
     // ── a blocked chart library still leaves every figure readable ──────────
     ({ page, errors } = await openPage(browser, history, { blockChart: true }));
     await page.locator("body:not(.is-loading)").waitFor();
-    assert(await page.locator("#chart-fallback").isVisible());
-    assert(await page.locator("#plot").isHidden());
+    for (const [plot, fallback] of [["#plot", "#chart-fallback"], ["#plot-rep", "#fallback-rep"],
+                                    ["#plot-repro", "#fallback-repro"]]) {
+      assert(await page.locator(fallback).isVisible());
+      assert(await page.locator(plot).isHidden());
+    }
+    assert.match(await page.locator("#fallback-repro").innerText(), /figure it would show is in the table/);
+    assert.equal(await page.locator("#repro-value").innerText(), latest.reproductions.toLocaleString("en-US"));
     assert.equal(await page.locator("#table-body tr").count(), 8);
     await page.close();
 

@@ -154,6 +154,24 @@ def test_the_breakdown_is_carried_with_the_total():
     assert _history(rows)["latest"]["replications"] == 6
 
 
+def test_every_day_carries_its_own_breakdown():
+    """The page charts replications and reproductions separately, so each day needs
+    its split — carried with the total on a day without a run."""
+    rows = [_row(1, 10), _row(2, 10, total_rows=8, reps=6, repros=2), _row(3, 12)]
+    daily = _history(rows)["daily"]
+    assert [(d["replications"], d["reproductions"]) for d in daily] == [
+        (None, None), (6, 2), (6, 2)]
+
+
+def test_a_seeded_day_reports_no_breakdown():
+    """The columns are NOT NULL DEFAULT 0, so a seeded day comes back as 0 rather
+    than NULL. Publishing that would say the collection held no replications on a
+    day nothing was measured."""
+    seeded = {**_row(1, 10), "replications": 0, "reproductions": 0}
+    point = _history([seeded])["daily"][0]
+    assert point["replications"] is None and point["reproductions"] is None
+
+
 # ── month-end ─────────────────────────────────────────────────────────────────
 
 def test_a_month_reports_the_value_it_finished_at():
@@ -162,7 +180,9 @@ def test_a_month_reports_the_value_it_finished_at():
     rows = [_row(1, 10), _row(15, 50), _row(31, 90)]
     out = _history(rows)
     assert out["monthly"] == [{"month": "2026-08", "date": "2026-08-31",
-                               "source_rows": 90, "total_rows": None, "measured": False}]
+                               "source_rows": 90, "total_rows": None,
+                               "replications": None, "reproductions": None,
+                               "measured": False}]
 
 
 def test_each_month_gets_exactly_one_point():
