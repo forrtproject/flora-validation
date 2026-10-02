@@ -414,6 +414,9 @@ def history(cur, window_days: int = 120) -> dict:
                    today's exclusion and deduplication rules did not exist then, and
                    applying them to an older set of rows would produce a number that
                    was never true on that day.
+
+    `replications` / `reproductions` are recorded with the total at every run, and
+                   are carried and withheld exactly as it is.
     """
     cur.execute(
         """
@@ -470,6 +473,11 @@ def history(cur, window_days: int = 120) -> dict:
     series = [{
         "date": str(r["day"]),
         "total_rows": r["total_rows"],
+        # The split exists exactly where the total does. A seeded day reads 0 here,
+        # not NULL (the columns are NOT NULL DEFAULT 0), and "0 replications" on a
+        # day nothing was measured is a figure that was never true.
+        "replications": r["replications"] if r["total_rows"] is not None else None,
+        "reproductions": r["reproductions"] if r["total_rows"] is not None else None,
         "source_rows": r["source_rows"],
         # The chart draws every day; the table marks which of them is a reading
         # rather than a day the previous reading still stood for.

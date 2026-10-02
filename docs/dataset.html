@@ -146,6 +146,10 @@
     .ledger { border-left: 0; border-top: 1px solid var(--rule-soft); }
   }
 
+  /* The figure sits on the card's floor, level with the ledger's total, which is
+     the same number reached the long way round. */
+  .hero { display: flex; flex-direction: column; }
+  .hero .hero-value { margin-top: auto; padding-top: 1.25rem; }
   .hero-value {
     font-size: clamp(3rem, 9vw, 4.5rem);
     font-weight: 600;
@@ -155,18 +159,6 @@
   }
   .delta { margin-top: 0.65rem; font-size: 0.88rem; color: var(--muted); min-height: 1.4em; }
   .delta strong { color: var(--ink); font-weight: 600; }
-
-  .split {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    margin-top: 1.5rem;
-    padding-top: 1.1rem;
-    border-top: 1px solid var(--rule-soft);
-  }
-  .split > div + div { border-left: 1px solid var(--rule-soft); padding-left: 1.25rem; }
-  .split-value { display: block; font-size: 1.55rem; font-weight: 600; line-height: 1.15; letter-spacing: -0.02em; }
-  .split-label { font-size: 0.84rem; color: var(--muted); }
-  .share { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--muted); margin-left: 0.3rem; }
 
   .ledger dl { margin-top: 0.6rem; }
   .ledger-row {
@@ -265,6 +257,40 @@
     .plot { height: 270px; }
   }
 
+  /* ---- replications and reproductions: a figure and its own chart each ---- */
+  .types {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
+    margin-top: 1.25rem;
+  }
+  .type-card { padding: 1.4rem 1.5rem 1.1rem; }
+  .type-head { margin-bottom: 0.9rem; }
+  .type-title { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+  .type-share {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .type-value {
+    font-size: 2.5rem;
+    font-weight: 600;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    margin-top: 0.45rem;
+  }
+  .type-card .delta { margin-top: 0.35rem; }
+  .plot-sm { height: 210px; }
+  .types-note { margin-top: 0.7rem; font-size: 0.78rem; color: var(--muted); }
+  @media (max-width: 780px) { .types { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 640px) {
+    .type-card { padding: 1.15rem 1rem 0.9rem; }
+    .plot-sm { height: 190px; }
+  }
+
   .tip {
     position: absolute;
     top: 0;
@@ -345,7 +371,13 @@
   thead th .key { margin-right: 0.45rem; }
   /* Figure columns hold their width and sit together at the right, where the eye
      compares them; the date takes the remaining room. */
-  @media (min-width: 641px) { thead th + th { width: 12rem; } }
+  @media (min-width: 641px) { thead th + th { width: 10rem; } }
+  /* Five columns outgrow a phone: the table scrolls sideways inside its card and
+     the date stays put so each row can still be read. */
+  thead th:first-child, tbody th { position: sticky; left: 0; z-index: 1; background: var(--surface); }
+  @media (max-width: 640px) {
+    tbody th, thead th:first-child { padding-right: 0.6rem; box-shadow: 1px 0 0 var(--rule-soft); }
+  }
   tbody th { font-weight: 500; }
   tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
   td.empty { text-align: center; color: var(--muted); padding: 1.5rem 0; white-space: normal; }
@@ -479,16 +511,6 @@
         <div class="eyebrow">Records in the FLoRA dataset</div>
         <div class="hero-value" id="t-total" data-skeleton>&mdash;</div>
         <p class="delta" id="d-total"></p>
-        <div class="split">
-          <div>
-            <span class="split-value" id="t-rep" data-skeleton>&mdash;</span>
-            <span class="split-label">replications</span><span class="share" id="s-rep"></span>
-          </div>
-          <div>
-            <span class="split-value" id="t-repro" data-skeleton>&mdash;</span>
-            <span class="split-label">reproductions</span><span class="share" id="s-repro"></span>
-          </div>
-        </div>
       </div>
 
       <div class="ledger">
@@ -536,13 +558,48 @@
         <canvas id="chart" tabindex="0" role="img" aria-label="Line chart of the dataset size over time" aria-describedby="chart-hint"></canvas>
         <div class="tip" id="tip" hidden></div>
       </div>
-      <p class="chart-fallback" id="chart-fallback" hidden>
-        The chart could not be loaded. Every figure it would show is in the table below.
-      </p>
+      <p class="chart-fallback" id="chart-fallback" hidden></p>
       <p class="sr-only" id="chart-hint">Use the left and right arrow keys to read each day.</p>
       <p class="sr-only" id="chart-live" aria-live="polite"></p>
       <p class="footnote" id="chart-footnote" hidden></p>
     </figure>
+
+    <!-- Separate charts, not two lines on one: reproductions are a fraction of
+         replications, and on a shared scale their line would lie flat on the axis. -->
+    <section class="types" aria-label="Replications and reproductions">
+      <figure class="card type-card reveal">
+        <figcaption class="type-head">
+          <div class="type-title">
+            <h2>Replications</h2>
+            <span class="type-share" id="rep-share"></span>
+          </div>
+          <div class="type-value" id="rep-value" data-skeleton>&mdash;</div>
+          <p class="delta" id="rep-delta"></p>
+        </figcaption>
+        <div class="plot plot-sm" id="plot-rep">
+          <canvas id="chart-rep" tabindex="0" role="img" aria-label="Line chart of replications over time" aria-describedby="chart-hint"></canvas>
+          <div class="tip" id="tip-rep" hidden></div>
+        </div>
+        <p class="chart-fallback" id="fallback-rep" hidden></p>
+      </figure>
+
+      <figure class="card type-card reveal">
+        <figcaption class="type-head">
+          <div class="type-title">
+            <h2>Reproductions</h2>
+            <span class="type-share" id="repro-share"></span>
+          </div>
+          <div class="type-value" id="repro-value" data-skeleton>&mdash;</div>
+          <p class="delta" id="repro-delta"></p>
+        </figcaption>
+        <div class="plot plot-sm" id="plot-repro">
+          <canvas id="chart-repro" tabindex="0" role="img" aria-label="Line chart of reproductions over time" aria-describedby="chart-hint"></canvas>
+          <div class="tip" id="tip-repro" hidden></div>
+        </div>
+        <p class="chart-fallback" id="fallback-repro" hidden></p>
+      </figure>
+    </section>
+    <p class="types-note" id="types-note" hidden></p>
 
     <section class="card table-card reveal" aria-labelledby="table-title">
       <div class="card-head">
@@ -564,6 +621,8 @@
             <tr>
               <th scope="col">Date</th>
               <th scope="col"><span class="key key-flora"></span>FLoRA dataset</th>
+              <th scope="col">Replications</th>
+              <th scope="col">Reproductions</th>
               <th scope="col"><span class="key key-source"></span>Source records</th>
             </tr>
           </thead>
@@ -601,7 +660,8 @@
           <dt>Replications and reproductions</dt>
           <dd>
             A replication repeats a study with new data. A reproduction re-analyses the
-            original study&rsquo;s data.
+            original study&rsquo;s data. Both counts are recorded with the dataset at every
+            pipeline run, so each has its own history from the first measurement.
           </dd>
         </div>
         <div>
@@ -667,19 +727,43 @@
   var MINUS = "−";
   var DAY_MS = 86400000;
   var PREVIEW_ROWS = 8;
+  var NO_CHART = "The chart could not be loaded. Every figure it would show is in the table below.";
   var REDUCED_MOTION = !!(window.matchMedia &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
   var state = {
     data: null,
     rows: [],       // one per day in the payload, with its change from the day before
-    points: [],     // what the chart currently plots
     range: "all",
-    chart: null,
-    focus: null,    // index the keyboard is reading, if any
     allDays: false,
     expanded: false
   };
+
+  // Every chart on the page. A `dataset` series is measured by the pipeline, so it
+  // can be missing before the first run and carried on a day the pipeline skipped.
+  var VIEWS = {
+    main: {
+      canvas: "chart", tip: "tip", plot: "plot", fallback: "chart-fallback",
+      series: [
+        { label: "FLoRA dataset", key: "flora", color: FLORA_COLOR, dataset: true },
+        { label: "Source records", key: "source", color: SOURCE_COLOR }
+      ]
+    },
+    rep: {
+      canvas: "chart-rep", tip: "tip-rep", plot: "plot-rep", fallback: "fallback-rep",
+      series: [{ label: "Replications", key: "rep", color: FLORA_COLOR, dataset: true }]
+    },
+    repro: {
+      canvas: "chart-repro", tip: "tip-repro", plot: "plot-repro", fallback: "fallback-repro",
+      series: [{ label: "Reproductions", key: "repro", color: FLORA_COLOR, dataset: true }]
+    }
+  };
+  var VIEW_LIST = [VIEWS.main, VIEWS.rep, VIEWS.repro];
+  VIEW_LIST.forEach(function (view) {
+    view.chart = null;
+    view.points = [];
+    view.focus = null;   // index the keyboard is reading, if any
+  });
 
   function $(id) { return document.getElementById(id); }
 
@@ -699,6 +783,14 @@
     return (n > 0 ? "+" : n < 0 ? MINUS : "") + Math.abs(n).toLocaleString("en-US");
   }
 
+  // A field an older server does not send reads as "not measured", never as 0.
+  function given(value) { return value === undefined ? null : value; }
+
+  function firstWith(points, key) {
+    for (var i = 0; i < points.length; i++) if (points[i][key] !== null) return i;
+    return -1;
+  }
+
   // Series dates are UTC calendar days ("2026-09-13") and are printed as they are;
   // none of them passes through the reader's time zone.
   function ymd(iso) {
@@ -712,26 +804,38 @@
   function monthYear(iso) { var p = ymd(iso); return MONTHS[p[1] - 1] + " " + p[0]; }
   function weekday(iso) { return WEEKDAYS[new Date(dayNumber(iso) * DAY_MS).getUTCDay()]; }
 
+  // "on 13 Sep 2026", or for a month-end point, which only says where the month
+  // finished, "at the end of Jul 2026".
+  function when(point) {
+    return point.monthEnd ? "at the end of " + monthYear(point.date) : "on " + longDate(point.date);
+  }
+
   // ---- data ------------------------------------------------------------------
 
-  // The chart, the table and the CSV all read these rows, so they cannot disagree.
+  var KEYS = ["flora", "rep", "repro", "source"];
+
+  // The charts, the table and the CSV all read these rows, so they cannot disagree.
   function buildRows(daily) {
     var rows = [];
     var measuredOn = null;
     daily.forEach(function (d, i) {
-      var prev = daily[i - 1];
+      var prev = rows[i - 1];
       if (d.measured) measuredOn = d.date;
-      rows.push({
+      var row = {
         date: d.date,
         flora: d.total_rows,
+        rep: d.total_rows === null ? null : given(d.replications),
+        repro: d.total_rows === null ? null : given(d.reproductions),
         source: d.source_rows,
         measured: d.measured,
         measuredOn: d.total_rows === null ? null : measuredOn,
-        floraFirst: !!prev && prev.total_rows === null && d.total_rows !== null,
-        floraChange: (prev && prev.total_rows !== null && d.total_rows !== null)
-          ? d.total_rows - prev.total_rows : null,
-        sourceChange: prev ? d.source_rows - prev.source_rows : null
+        floraFirst: !!prev && prev.flora === null && d.total_rows !== null
+      };
+      KEYS.forEach(function (key) {
+        row[key + "Change"] = (prev && prev[key] !== null && row[key] !== null)
+          ? row[key] - prev[key] : null;
       });
+      rows.push(row);
     });
     return rows;
   }
@@ -748,15 +852,18 @@
     return state.data.monthly
       .filter(function (m) { return m.date < first; })
       .map(function (m) {
-        return { date: m.date, flora: m.total_rows, source: m.source_rows,
-                 measured: m.measured, measuredOn: null, monthEnd: true };
+        var measured = m.total_rows !== null;
+        return { date: m.date, flora: m.total_rows,
+                 rep: measured ? given(m.replications) : null,
+                 repro: measured ? given(m.reproductions) : null,
+                 source: m.source_rows, measured: m.measured, measuredOn: null, monthEnd: true };
       })
       .concat(state.rows);
   }
 
-  // Against the value 30 days ago, or against the first reading when the series
-  // starts inside that window.
-  function describeChange(key) {
+  // The summary's change: against the value 30 days ago, or against the first
+  // reading when the series starts inside that window.
+  function changeOver30(key) {
     var rows = state.rows;
     var n = rows.length;
     var last = rows[n - 1][key];
@@ -770,10 +877,27 @@
     return { delta: last - rows[i][key], period: period };
   }
 
-  // ---- summary ---------------------------------------------------------------
+  // A chart card's change: across the period on screen, from the day before it
+  // began when that day has a figure, otherwise from the first figure inside it.
+  function changeInPeriod(key) {
+    var points = pointsFor(state.range);
+    var last = points[points.length - 1][key];
+    if (last === null) return null;
+    var before = state.range === "all" ? null : state.rows[state.rows.length - state.range - 1];
+    if (before && before[key] !== null) {
+      return { delta: last - before[key], period: "in the last " + state.range + " days" };
+    }
+    var i = firstWith(points, key);
+    var start = points[i];
+    var firstReading = !start.monthEnd && (i > 0 || (before && before[key] === null));
+    return {
+      delta: last - start[key],
+      period: firstReading ? "since it was first measured on " + shortDate(start.date)
+                           : "since " + longDate(start.date)
+    };
+  }
 
-  function writeChange(node, key) {
-    var change = describeChange(key);
+  function writeChange(node, change) {
     node.replaceChildren();
     if (!change) return;
     if (change.delta === 0) {
@@ -788,33 +912,31 @@
     return total ? Math.round(part / total * 100) + "%" : "";
   }
 
+  // ---- summary ---------------------------------------------------------------
+
   function renderSummary(data) {
     var l = data.latest;
     var total = l.total_rows;
     var measured = total !== null;
 
     $("t-total").textContent = fmt(total);
-    $("t-rep").textContent = measured ? fmt(l.replications) : EMDASH;
-    $("t-repro").textContent = measured ? fmt(l.reproductions) : EMDASH;
-    $("s-rep").textContent = share(l.replications, total);
-    $("s-repro").textContent = share(l.reproductions, total);
-    writeChange($("d-total"), "flora");
+    writeChange($("d-total"), changeOver30("flora"));
 
     $("l-source").textContent = fmt(l.source_rows);
     $("l-removed").textContent = measured ? signed(total - l.source_rows) : EMDASH;
     $("l-total").textContent = fmt(total);
-    writeChange($("d-source"), "source");
+    writeChange($("d-source"), changeOver30("source"));
 
     // Rendered in UTC, like every other date on this page. generated_at is an
     // instant; the series are UTC calendar days printed verbatim. Letting the
     // browser convert this one to local time put the stamp a day AHEAD of the
     // newest row in the table for every reader east of UTC — one payload showing
     // two different "today"s.
-    var when = new Date(data.generated_at);
-    var stamp = when.toLocaleDateString("en-GB",
+    var at = new Date(data.generated_at);
+    var stamp = at.toLocaleDateString("en-GB",
       { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-    var clock = String(when.getUTCHours()).padStart(2, "0") + ":" +
-                String(when.getUTCMinutes()).padStart(2, "0");
+    var clock = String(at.getUTCHours()).padStart(2, "0") + ":" +
+                String(at.getUTCMinutes()).padStart(2, "0");
     var text = "Updated " + stamp + ", " + clock + " UTC";
     if (l.measured_on && l.measured_on !== l.date) {
       text += " · dataset figure from the pipeline run on " + longDate(l.measured_on);
@@ -822,7 +944,7 @@
     $("updated").textContent = text;
   }
 
-  // ---- chart -----------------------------------------------------------------
+  // ---- charts ----------------------------------------------------------------
 
   // Counted back from the newest day, so the latest date is always labelled and
   // the spacing reads as whole weeks. Spans past five months tick on month starts.
@@ -871,8 +993,8 @@
     }
   };
 
-  // The newest value of each line, marked and labelled at its end. When the two
-  // ends are too close to tell apart the labels step aside rather than stack; the
+  // The newest value of each line, marked and labelled at its end. When two ends
+  // are too close to tell apart the labels step aside rather than stack; the
   // legend and the tooltip still name both.
   var endMarkers = {
     id: "endMarkers",
@@ -918,40 +1040,40 @@
     return p.monthEnd ? "End of " + monthYear(p.date) : weekday(p.date) + " " + longDate(p.date);
   }
 
-  function floraNote(p) {
-    if (p.flora === null) return "Not measured yet";
+  function datasetNote(p, key) {
+    if (p[key] === null) return "Not measured yet";
     if (!p.measured) return "carried forward" + (p.measuredOn ? " from " + shortDate(p.measuredOn) : "");
     return null;
   }
 
-  function fillReadout(tip, p) {
+  function fillReadout(tip, p, series) {
     tip.replaceChildren(el("div", "tip-title", pointTitle(p)));
-    [
-      ["FLoRA dataset", p.flora, "key-flora", floraNote(p)],
-      ["Source records", p.source, "key-source", null]
-    ].forEach(function (s) {
+    series.forEach(function (s) {
       var row = el("div", "tip-row");
-      row.appendChild(el("span", "key " + s[2]));
+      var key = el("span", "key");
+      key.style.background = s.color;
+      row.appendChild(key);
       // No figure: the name takes the value's place, with the reason beneath it,
       // rather than a dash that reads as a second line key.
-      if (s[1] !== null) row.appendChild(el("span", "tip-value", fmt(s[1])));
-      row.appendChild(el("span", "tip-label", s[0]));
-      if (s[3]) row.appendChild(el("span", "tip-sub", s[3]));
+      if (p[s.key] !== null) row.appendChild(el("span", "tip-value", fmt(p[s.key])));
+      row.appendChild(el("span", "tip-label", s.label));
+      var note = s.dataset ? datasetNote(p, s.key) : null;
+      if (note) row.appendChild(el("span", "tip-sub", note));
       tip.appendChild(row);
     });
   }
 
-  // One readout listing both series at the hovered day. Reads the point by index,
+  // One readout listing every series at the hovered day. Reads the point by index,
   // so a day with no dataset figure still shows the source count beside "not
   // measured yet".
-  function renderTip(context) {
-    var tip = $("tip");
+  function renderTip(view, context) {
+    var tip = $(view.tip);
     var t = context.tooltip;
     if (!t.opacity || !t.dataPoints || !t.dataPoints.length) {
       tip.hidden = true;
       return;
     }
-    fillReadout(tip, state.points[t.dataPoints[0].dataIndex]);
+    fillReadout(tip, view.points[t.dataPoints[0].dataIndex], view.series);
     tip.hidden = false;
     var chart = context.chart;
     var x = t.dataPoints[0].element.x;
@@ -961,62 +1083,51 @@
     tip.style.top = Math.round(chart.chartArea.top) + "px";
   }
 
-  function describeChart(points) {
+  function describeChart(view) {
+    var points = view.points;
     var first = points[0];
     var last = points[points.length - 1];
-    var firstFlora = null;
-    for (var i = 0; i < points.length; i++) {
-      if (points[i].flora !== null) { firstFlora = points[i]; break; }
-    }
-
-    var label = "Line chart of records from " + longDate(first.date) + " to " + longDate(last.date) + ". ";
-    label += firstFlora
-      ? "FLoRA dataset went from " + fmt(firstFlora.flora) + " on " + longDate(firstFlora.date) +
-        " to " + fmt(last.flora) + ". "
-      : "FLoRA dataset not measured yet. ";
-    label += "Source records went from " + fmt(first.source) + " to " + fmt(last.source) + ".";
-    $("chart").setAttribute("aria-label", label);
-
-    var notes = [];
-    if (first.monthEnd) {
-      var firstDay = points.filter(function (p) { return !p.monthEnd; })[0];
-      notes.push("Before " + longDate(firstDay.date) + ", one point per month end.");
-    }
-    if (firstFlora && firstFlora !== first) {
-      notes.push("The FLoRA dataset line starts on " + longDate(firstFlora.date) +
-                 ", the first day the pipeline measured it; earlier sizes are not reconstructed.");
-    }
-    var footnote = $("chart-footnote");
-    footnote.textContent = notes.join(" ");
-    footnote.hidden = !notes.length;
+    var parts = ["Line chart from " + longDate(first.date) + " to " + longDate(last.date) + "."];
+    view.series.forEach(function (s) {
+      var start = points[firstWith(points, s.key)];
+      parts.push(start
+        ? s.label + " went from " + fmt(start[s.key]) + " " + when(start) + " to " + fmt(last[s.key]) + "."
+        : s.label + " not measured yet.");
+    });
+    $(view.canvas).setAttribute("aria-label", parts.join(" "));
   }
 
-  function renderChart() {
-    var points = pointsFor(state.range);
-    state.points = points;
-    state.focus = null;
-    $("tip").hidden = true;
-    describeChart(points);
-
-    if (typeof Chart === "undefined") {
-      $("plot").hidden = true;
-      $("chart-fallback").hidden = false;
+  function drawChart(view, points, emptyMessage) {
+    view.points = points;
+    view.focus = null;
+    $(view.tip).hidden = true;
+    if (view.chart) {
+      view.chart.destroy();
+      view.chart = null;
+    }
+    var fallback = $(view.fallback);
+    if (!points.length || typeof Chart === "undefined") {
+      $(view.plot).hidden = true;
+      fallback.textContent = points.length ? NO_CHART : emptyMessage;
+      fallback.hidden = false;
       return;
     }
-    if (state.chart) state.chart.destroy();
+    $(view.plot).hidden = false;
+    fallback.hidden = true;
+    describeChart(view);
 
     var xs = points.map(function (p) { return dayNumber(p.date); });
     var min = xs[0];
     var max = xs.length > 1 ? xs[xs.length - 1] : min + 1;
     var byMonth = max - min > 150;
-    var narrow = $("plot").clientWidth < 520;
+    var narrow = $(view.plot).clientWidth < 520;
 
-    function line(label, key, color) {
+    function line(s) {
       return {
-        label: label,
-        data: points.map(function (p, i) { return { x: xs[i], y: p[key] }; }),
-        borderColor: color,
-        backgroundColor: color,
+        label: s.label,
+        data: points.map(function (p, i) { return { x: xs[i], y: p[s.key] }; }),
+        borderColor: s.color,
+        backgroundColor: s.color,
         borderWidth: 2,
         borderCapStyle: "round",
         borderJoinStyle: "round",
@@ -1027,22 +1138,18 @@
         pointRadius: 0,
         pointHitRadius: 12,
         pointHoverRadius: 5,
-        pointHoverBackgroundColor: color,
+        pointHoverBackgroundColor: s.color,
         pointHoverBorderColor: SURFACE,
         pointHoverBorderWidth: 2
       };
     }
 
-    // Both series are the same measure (records), so they share ONE y-axis. A second
-    // scale would make two differently-sized series look identically sized.
-    state.chart = new Chart($("chart"), {
+    // Every series on a chart is the same measure (records), so a chart has ONE
+    // y-axis. A second scale would make differently-sized series look the same
+    // size; series of very different size get a chart each instead.
+    view.chart = new Chart($(view.canvas), {
       type: "line",
-      data: {
-        datasets: [
-          line("FLoRA dataset", "flora", FLORA_COLOR),
-          line("Source records", "source", SOURCE_COLOR)
-        ]
-      },
+      data: { datasets: view.series.map(line) },
       options: {
         responsive: true,
         maintainAspectRatio: false,
@@ -1052,10 +1159,11 @@
         interaction: { mode: "index", intersect: false, axis: "x" },
         layout: { padding: { top: 10, right: narrow ? 46 : 56 } },
         plugins: {
-          // The HTML legend above the plot names both series and keys the summary
-          // and the table too, which a canvas legend could not.
+          // The HTML legend above the main plot names its series and keys the
+          // summary and the table too, which a canvas legend could not. A chart
+          // with one series is named by its title.
           legend: { display: false },
-          tooltip: { enabled: false, external: renderTip }
+          tooltip: { enabled: false, external: function (context) { renderTip(view, context); } }
         },
         scales: {
           x: {
@@ -1095,28 +1203,82 @@
     });
   }
 
+  function mainFootnote(points) {
+    var notes = [];
+    if (points[0].monthEnd) {
+      var firstDay = points.filter(function (p) { return !p.monthEnd; })[0];
+      notes.push("Before " + longDate(firstDay.date) + ", one point per month end.");
+    }
+    var i = firstWith(points, "flora");
+    if (i > 0) {
+      var start = points[i];
+      notes.push(start.monthEnd
+        ? "The FLoRA dataset line starts at the end of " + monthYear(start.date) +
+          ", the month the pipeline first measured it; earlier sizes are not reconstructed."
+        : "The FLoRA dataset line starts on " + longDate(start.date) +
+          ", the first day the pipeline measured it; earlier sizes are not reconstructed.");
+    }
+    var footnote = $("chart-footnote");
+    footnote.textContent = notes.join(" ");
+    footnote.hidden = !notes.length;
+  }
+
+  // Each card: today's figure, its change across the period, its share of the
+  // dataset, and its own chart from the first day it was measured.
+  function renderTypes(points) {
+    var l = state.data.latest;
+    var measured = l.total_rows !== null;
+    var start = null;
+    [
+      { key: "rep", view: VIEWS.rep, value: l.replications },
+      { key: "repro", view: VIEWS.repro, value: l.reproductions }
+    ].forEach(function (t) {
+      $(t.key + "-value").textContent = measured ? fmt(t.value) : EMDASH;
+      $(t.key + "-share").textContent = measured && l.total_rows ? share(t.value, l.total_rows) + " of the dataset" : "";
+      writeChange($(t.key + "-delta"), changeInPeriod(t.key));
+      var first = firstWith(points, t.key);
+      if (first > 0) start = points[first];
+      drawChart(t.view, first < 0 ? [] : points.slice(first),
+                "No history has been recorded for this figure yet.");
+    });
+    var note = $("types-note");
+    note.textContent = !start ? "" : start.monthEnd
+      ? "Both charts start at the end of " + monthYear(start.date) + ", the month the pipeline first measured the dataset."
+      : "Both charts start on " + longDate(start.date) + ", the first day the pipeline measured the dataset.";
+    note.hidden = !start;
+  }
+
+  function renderCharts() {
+    var points = pointsFor(state.range);
+    drawChart(VIEWS.main, points, "No figures have been recorded yet.");
+    mainFootnote(points);
+    renderTypes(points);
+  }
+
   // Keyboard reading: the same readout as hover, one day per arrow key.
-  function activate(i) {
-    var chart = state.chart;
+  function activate(view, i) {
+    var chart = view.chart;
     if (!chart) return;
-    state.focus = i;
+    view.focus = i;
     var active = [];
     chart.data.datasets.forEach(function (ds, d) {
       if (ds.data[i].y !== null) active.push({ datasetIndex: d, index: i });
     });
-    var at = chart.getDatasetMeta(active[0].datasetIndex).data[i];
-    chart.setActiveElements(active);
-    chart.tooltip.setActiveElements(active, { x: at.x, y: at.y });
-    chart.update("none");
-    var p = state.points[i];
-    $("chart-live").textContent = pointTitle(p) + ": FLoRA dataset " +
-      (p.flora === null ? "not measured yet" : fmt(p.flora)) +
-      ", source records " + fmt(p.source) + ".";
+    if (active.length) {
+      var at = chart.getDatasetMeta(active[0].datasetIndex).data[i];
+      chart.setActiveElements(active);
+      chart.tooltip.setActiveElements(active, { x: at.x, y: at.y });
+      chart.update("none");
+    }
+    var p = view.points[i];
+    $("chart-live").textContent = pointTitle(p) + ": " + view.series.map(function (s) {
+      return s.label + " " + (p[s.key] === null ? "not measured yet" : fmt(p[s.key]));
+    }).join(", ") + ".";
   }
 
-  function deactivate() {
-    var chart = state.chart;
-    state.focus = null;
+  function deactivate(view) {
+    var chart = view.chart;
+    view.focus = null;
     if (!chart) return;
     chart.setActiveElements([]);
     chart.tooltip.setActiveElements([], { x: 0, y: 0 });
@@ -1126,7 +1288,7 @@
   // ---- table -----------------------------------------------------------------
 
   function changed(r) {
-    return r.floraFirst || !!r.floraChange || !!r.sourceChange;
+    return r.floraFirst || KEYS.some(function (key) { return !!r[key + "Change"]; });
   }
 
   function tag(text, title) {
@@ -1173,7 +1335,7 @@
     body.replaceChildren();
     if (!total) {
       var empty = el("td", "empty", "No figure changed in this period.");
-      empty.colSpan = 3;
+      empty.colSpan = KEYS.length + 1;
       var tr = el("tr");
       tr.appendChild(empty);
       body.appendChild(tr);
@@ -1183,8 +1345,9 @@
       var th = el("th", null, longDate(r.date));
       th.scope = "row";
       tr.appendChild(th);
-      tr.appendChild(valueCell(r.flora, r.floraChange, floraBadge(r)));
-      tr.appendChild(valueCell(r.source, r.sourceChange, null));
+      KEYS.forEach(function (key) {
+        tr.appendChild(valueCell(r[key], r[key + "Change"], key === "flora" ? floraBadge(r) : null));
+      });
       body.appendChild(tr);
     });
 
@@ -1195,19 +1358,18 @@
     var summary = state.allDays
       ? "Every day in the period, most recent first."
       : "Days on which a figure changed, most recent first.";
-    if (state.range === "all" && state.points.length && state.points[0].monthEnd) {
+    if (state.range === "all" && state.data.monthly.some(function (m) { return m.date < state.rows[0].date; })) {
       summary += " Daily figures cover the last " + state.rows.length + " days.";
     }
     $("table-summary").textContent = summary;
   }
 
   function downloadCsv() {
-    var lines = ["date,flora_dataset,flora_measured,source_records"];
+    function cell(v) { return v === null ? "" : v; }
+    var lines = ["date,flora_dataset,replications,reproductions,flora_measured,source_records"];
     rowsInRange().forEach(function (r) {
-      lines.push([r.date,
-                  r.flora === null ? "" : r.flora,
-                  r.flora === null ? "" : r.measured,
-                  r.source].join(","));
+      lines.push([r.date, cell(r.flora), cell(r.rep), cell(r.repro),
+                  r.flora === null ? "" : r.measured, r.source].join(","));
     });
     var url = URL.createObjectURL(new Blob([lines.join("\n") + "\n"], { type: "text/csv;charset=utf-8" }));
     var link = el("a");
@@ -1251,33 +1413,35 @@
       state.range = r === "all" ? "all" : parseInt(r, 10);
       state.expanded = false;
       pressRange();
-      renderChart();
+      renderCharts();
       renderTable();
     });
   });
 
   // ---- wiring ----------------------------------------------------------------
 
-  var canvas = $("chart");
-  canvas.addEventListener("keydown", function (e) {
-    if (!state.chart) return;
-    var last = state.points.length - 1;
-    var i = state.focus === null ? last : state.focus;
-    if (e.key === "ArrowLeft") i -= 1;
-    else if (e.key === "ArrowRight") i += 1;
-    else if (e.key === "Home") i = 0;
-    else if (e.key === "End") i = last;
-    else if (e.key === "Escape") { deactivate(); return; }
-    else return;
-    e.preventDefault();
-    activate(Math.max(0, Math.min(last, i)));
+  VIEW_LIST.forEach(function (view) {
+    var canvas = $(view.canvas);
+    canvas.addEventListener("keydown", function (e) {
+      if (!view.chart) return;
+      var last = view.points.length - 1;
+      var i = view.focus === null ? last : view.focus;
+      if (e.key === "ArrowLeft") i -= 1;
+      else if (e.key === "ArrowRight") i += 1;
+      else if (e.key === "Home") i = 0;
+      else if (e.key === "End") i = last;
+      else if (e.key === "Escape") { deactivate(view); return; }
+      else return;
+      e.preventDefault();
+      activate(view, Math.max(0, Math.min(last, i)));
+    });
+    canvas.addEventListener("focus", function () {
+      var keyboard = true;
+      try { keyboard = canvas.matches(":focus-visible"); } catch (err) { /* older engines */ }
+      if (keyboard && view.chart) activate(view, view.points.length - 1);
+    });
+    canvas.addEventListener("blur", function () { deactivate(view); });
   });
-  canvas.addEventListener("focus", function () {
-    var keyboard = true;
-    try { keyboard = canvas.matches(":focus-visible"); } catch (err) { /* older engines */ }
-    if (keyboard && state.chart) activate(state.points.length - 1);
-  });
-  canvas.addEventListener("blur", deactivate);
 
   $("all-days").addEventListener("change", function (e) {
     state.allDays = e.target.checked;
@@ -1300,13 +1464,15 @@
     state.rows = buildRows(data.daily);
     renderSummary(data);
     offerRanges();
-    renderChart();
+    renderCharts();
     renderTable();
     document.body.classList.remove("is-loading");
     $("report").setAttribute("aria-busy", "false");
     // Canvas text is drawn once, in whatever font is ready at the time.
     if (document.fonts && document.fonts.ready) {
-      document.fonts.ready.then(function () { if (state.chart) state.chart.update("none"); });
+      document.fonts.ready.then(function () {
+        VIEW_LIST.forEach(function (view) { if (view.chart) view.chart.update("none"); });
+      });
     }
   }
 
