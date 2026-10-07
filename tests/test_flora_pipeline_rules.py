@@ -100,7 +100,7 @@ def test_the_sheet_year_is_the_last_resort_not_the_first():
     sheet value before it would make 7b's fillna a no-op on the rows that have
     both."""
     source = (ROOT / "transform_sources.py").read_text(encoding="utf-8")
-    body = source[source.index("def build("):]
+    body = source[source.index("def join_metadata("):source.index("def build(")]
     assert body.index('("year", f"year_{side}")') < body.index("fillna(sheet_year)")
 
 

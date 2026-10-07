@@ -3256,12 +3256,15 @@ function showDialog({ icon, title, message, buttons, layout = "column", rawHtml 
       if (layout === "row") el.style.flex = "1";
       el.onclick = () => {
         $("#dialog-modal").classList.add("hidden");
-        document.body.style.overflow = "";
+        // Back to what it was: a dialog opened over another modal (the FLoRA
+        // editor's restore confirmation) must leave the page behind it locked.
+        document.body.style.overflow = overflowBefore;
         resolve(btn.value);
       };
       btnsEl.appendChild(el);
     }
 
+    const overflowBefore = document.body.style.overflow;
     $("#dialog-modal").classList.remove("hidden");
     document.body.style.overflow = "hidden";
   });
@@ -8816,30 +8819,24 @@ $("#forgot-email-input").addEventListener("keydown", (e) => { if (e.key === "Ent
 /* ============================================================
    ADMIN: SOURCE RECORDS
    The FLoRA entry sheets (replications + reproductions), ingested by
-   sync_sources.py. Insert-only upstream, so this table is authoritative once a
-   row lands — nothing edited here ever goes back to the Google Sheet.
+   sync_sources.py. Read-only: a source row stays as imported, and a correction is
+   made to the FLoRA record it feeds (FLoRA tab). The only decision taken here is a
+   duplicate ruling, which says whether a row feeds FLoRA at all.
    ============================================================ */
 
-let _srcFilter  = "all";   // all | replication | reproduction | reviewed | unreviewed | flagged
+let _srcFilter  = "all";   // all | replication | reproduction | validated | flagged | deleted
 let _srcStatus  = "";
 let _srcSearch  = "";
 let _srcPage    = 1;
 let _srcSort    = "";
 let _srcSortDir = "asc";
 let _srcNeighbours = { prev_id: null, next_id: null };
-let _srcCurrent    = null;   // record currently open in the review panel
-let _srcVocab      = {};     // field -> allowed values, fetched once per session
-// Identity and derived fields: shown for context, never editable here. oa_work_id_*
-// is re-derived from the DOI, so editing it directly would just be overwritten.
-const SRC_READONLY_FIELDS = ["oa_work_id_o", "oa_work_id_r"];
 const SRC_PER_PAGE = 50;
 
 /** Chips map onto several different query params, so translate in one place. */
 function srcQueryParams() {
   const p = { page: _srcPage, per_page: SRC_PER_PAGE };
   if (_srcFilter === "replication" || _srcFilter === "reproduction") p.type = _srcFilter;
-  if (_srcFilter === "reviewed")   p.reviewed = "yes";
-  if (_srcFilter === "unreviewed") p.reviewed = "no";
   if (_srcFilter === "flagged")    p.flagged  = "true";
   // Our own validated records, projected into the grid by sync_validated.py. A
   // registry key rather than a paper type, since it holds both kinds.
@@ -8880,9 +8877,6 @@ async function fetchSourceRecords() {
   if (!body) return;
   body.innerHTML = '<tr><td colspan="8" class="admin-loading">Loading…</td></tr>';
   try {
-    if (!Object.keys(_srcVocab).length) {
-      _srcVocab = await adminApi("/source-records/vocabularies").catch(() => ({}));
-    }
     const data = await adminApi("/source-records?" + srcQueryString());
     renderSourceRecords(data);
     fetchSourceFreshness();
@@ -8898,8 +8892,6 @@ function renderSourceRecords(data) {
   set("#sfc-all", c.all_records);
   set("#sfc-repl", c.replications);
   set("#sfc-repro", c.reproductions);
-  set("#sfc-reviewed", c.reviewed);
-  set("#sfc-unreviewed", c.unreviewed);
   set("#sfc-flagged", c.flagged);
   set("#sfc-validated", c.validated);
   set("#sfc-deleted", c.deleted);
@@ -9021,6 +9013,7 @@ function resetFloraView() {
 function floraQueryParams() {
   const p = { page: _floraPage, per_page: FLORA_PER_PAGE };
   if (_floraFilter === "replication" || _floraFilter === "reproduction") p.type = _floraFilter;
+  if (_floraFilter === "edited") p.edited = "true";
   if (_floraSource)  p.source  = _floraSource;
   if (_floraOutcome) p.outcome = _floraOutcome;
   if (_floraSearch)  p.search  = _floraSearch;
@@ -9077,6 +9070,7 @@ function renderFloraRecords(data) {
   set("#ffc-all", counts.all_records);
   set("#ffc-repl", counts.replications);
   set("#ffc-repro", counts.reproductions);
+  set("#ffc-edited", counts.edited);
   fillFloraSelects(counts);
   setFloraDedupCount(counts.preprint_pending);
 
@@ -9119,6 +9113,9 @@ function renderFloraRecords(data) {
     body.innerHTML = rows.map(r =>
       "<tr>" +
         '<td><code class="flora-id">' + escapeHtml(r.flora_id || "unassigned") + "</code>" +
+          (r.edited_fields
+            ? ' <span class="flora-edited-badge" title="Corrected here: ' +
+              escapeHtml(r.edited_fields.split(" ").join(", ")) + '">corrected</span>' : "") +
           (r.export_id && r.export_id !== r.flora_id
             ? '<br><small title="Permanent ID in the CSV">CSV: ' + escapeHtml(r.export_id) + '</small>' : '') + "</td>" +
         // The id IS the source record's display_id for almost every row, so repeating
@@ -9136,7 +9133,7 @@ function renderFloraRecords(data) {
           '<br><small>' + srcShorten(r.ref_r, 58) + "</small></td>" +
         "<td>" + floraOutcomeCell(r) + "</td>" +
         '<td><button class="ghost-btn flora-view-btn" type="button" data-flora-id="' +
-          escapeHtml(r.flora_id || "") + '">View</button></td>' +
+          escapeHtml(r.flora_id || "") + '"' + (r.flora_id ? "" : " disabled") + ">Open</button></td>" +
       "</tr>"
     ).join("");
   }
@@ -9273,47 +9270,362 @@ $("#flora-export-all-btn")?.addEventListener("click", (event) => {
   downloadAdminArtifact("/flora/export.csv", "flora.csv", event.currentTarget);
 });
 
-$("#flora-table-body")?.addEventListener("click", async (e) => {
+$("#flora-table-body")?.addEventListener("click", (e) => {
   const btn = e.target.closest(".flora-view-btn");
   if (!btn || !btn.dataset.floraId) return;
-  btn.disabled = true;
-  try {
-    const rec = await adminApi("/flora/" + encodeURIComponent(btn.dataset.floraId));
-    showFloraDetail(rec);
-  } catch (err) {
-    showToast("Could not load record: " + err.message);
-  } finally {
-    btn.disabled = false;
-  }
+  openFloraRecord(btn.dataset.floraId);
 });
 
-function showFloraDetail(rec) {
-  const skip = new Set(["flora_id", "source_display_id", "source_record_id",
-                        "merged_display_ids", "merged_sources"]);
-  const rows = Object.keys(rec)
-    .filter(k => !skip.has(k) && rec[k] !== null && rec[k] !== "")
-    .map(k => '<tr><th>' + escapeHtml(k) + "</th><td>" + escapeHtml(String(rec[k])) + "</td></tr>")
-    .join("");
-  const body = $("#admin-detail-body");
-  if (!body) return;
-  body.innerHTML =
-    '<h3 class="flora-detail-title"><code>' + escapeHtml(rec.flora_id || "unassigned") + "</code></h3>" +
+/* ---------- FLoRA: record editor ----------
+   Records are corrected here, never in Source Records. A correction is stored
+   against the FLoRA record (flora_edits.py) and applied on top of every build, so
+   a later sync cannot undo it; the source rows stay as imported. */
+
+let _floraCurrent = null;   // record open in the editor, as the server sent it
+// Moves on every open and close. A load, a save's reload or a 409's retry that comes
+// back after the editor moved on is dropped rather than reopening or replacing it.
+let _floraOpenSeq = 0;
+
+// Shown as context, never edited: identity, provenance and values the build
+// derives from other fields (the DOI hashes, work ids, author overlap).
+const FLORA_DETAIL_SKIP = new Set(["flora_id", "source_display_id", "source_record_id",
+  "merged_display_ids", "merged_sources", "editing", "edited_fields"]);
+
+/** Open (or reload) the editor. `notice` is shown in the save bar once it renders:
+ *  the outcome of the save or restore that caused the reload. */
+async function openFloraRecord(floraId, notice) {
+  const seq = ++_floraOpenSeq;
+  const modal = $("#flora-detail-modal");
+  const body = $("#flora-detail-body");
+  modal.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+  body.innerHTML = '<p class="admin-loading">Loading…</p>';
+  try {
+    const rec = await adminApi("/flora/" + encodeURIComponent(floraId));
+    if (seq !== _floraOpenSeq) return;
+    renderFloraRecord(rec);
+    if (notice) $("#flora-save-msg").innerHTML = notice;
+  } catch (err) {
+    if (seq !== _floraOpenSeq) return;
+    body.innerHTML = '<p class="admin-loading">Error: ' + escapeHtml(err.message) + "</p>";
+  }
+}
+
+function closeFloraRecord() {
+  _floraOpenSeq++;
+  _floraCurrent = null;
+  $("#flora-detail-modal").classList.add("hidden");
+  document.body.style.overflow = "";
+}
+
+/** Line breaks as a browser writes them in a form control: a textarea turns \r\n
+ *  and \r into \n. Compared this way, an untouched field never reads as changed. */
+function floraLines(v) {
+  return (floraBlank(v) ? "" : String(v)).replace(/\r\n?/g, "\n");
+}
+
+function floraBlank(v) {
+  return v === null || v === undefined || v === "";
+}
+
+function floraFieldControl(f) {
+  const v = floraBlank(f.value) ? "" : String(f.value);
+  const name = escapeHtml(f.field);
+  if (f.choices) {
+    // The current value stays selectable even off the list, so opening a record
+    // can never change it.
+    const opts = f.choices.slice();
+    if (v && opts.indexOf(v) === -1) opts.unshift(v);
+    return '<select class="src-input" data-field="' + name + '"><option value="">—</option>' +
+      opts.map((o) => '<option value="' + escapeHtml(o) + '"' + (o === v ? " selected" : "") + ">" +
+        escapeHtml(o) + "</option>").join("") + "</select>";
+  }
+  if (f.long || /[\r\n]/.test(v)) {
+    return '<textarea class="src-input src-textarea" data-field="' + name + '" rows="3">' +
+      escapeHtml(v) + "</textarea>";
+  }
+  return '<input class="src-input" type="text" data-field="' + name + '" value="' + escapeHtml(v) + '">';
+}
+
+function floraField(f) {
+  const edit = f.edit;
+  let mark = "";
+  if (edit) {
+    mark = '<div class="flora-edit-mark">Corrected by <b>' + escapeHtml(edit.edited_by) + "</b> · " +
+      escapeHtml(new Date(edit.edited_at).toLocaleString()) +
+      (edit.note ? " — <em>" + escapeHtml(edit.note) + "</em>" : "") +
+      (edit.change_id ? ' <span class="src-dim2">(change #' + edit.change_id + ")</span>" : "") +
+      '<div class="flora-derived-row"><span>Derived value:</span> <span class="flora-derived">' +
+        (floraBlank(edit.derived) ? "<i>blank</i>" : escapeHtml(String(edit.derived))) + "</span></div>" +
+      '<button type="button" class="link-btn flora-revert-btn" data-revert-field="' + escapeHtml(f.field) +
+        '" title="Drop this correction and use the derived value again">Revert to derived value</button></div>';
+  }
+  return '<div class="src-field' + (f.long ? " src-field-long" : "") + (edit ? " flora-field-edited" : "") + '">' +
+    "<label>" + escapeHtml(f.label) + (edit ? ' <span class="flora-edited-badge">corrected</span>' : "") +
+    "</label><div>" + floraFieldControl(f) + mark + "</div></div>";
+}
+
+/** One logged value, shortened for the table; the full text is its tooltip. */
+function floraChangeValue(v) {
+  if (floraBlank(v)) return '<i class="src-dim2">blank</i>';
+  const text = String(v);
+  const short = text.length > 140 ? text.slice(0, 140) + "…" : text;
+  return '<span class="flora-change-value" title="' + escapeHtml(text) + '">' + escapeHtml(short) + "</span>";
+}
+
+/** The record's change log: one row per save, newest first, closed by default.
+ *  Any row can be restored, which puts the record back as it was right after it. */
+function floraChangeLog(editing) {
+  const labels = new Map((editing.fields || []).map((f) => [f.field, f.label]));
+  const log = editing.history || [];
+  if (!log.length) return "";
+  const inForce = Object.keys(log[0].corrections || {}).length > 0;
+  const rows = log.map((c, i) => {
+    const after = c.corrections || {};
+    const what = Object.keys(c.changes || {}).map((field) => {
+      const [before, now] = c.changes[field];
+      return '<div class="flora-change-field"><code>' + escapeHtml(labels.get(field) || field) + "</code> " +
+        floraChangeValue(before) + " → " + floraChangeValue(now) +
+        (field in after ? "" : ' <span class="src-dim2">(derived value)</span>') + "</div>";
+    }).join("") || '<span class="src-dim2">no value moved</span>';
+    const kind = c.action === "restore"
+      ? '<div class="flora-change-kind">' + (c.restored_from ? "Restored to #" + c.restored_from : "Restored the original") + "</div>"
+      : "";
+    const action = i === 0
+      ? '<span class="flora-change-current">Current</span>'
+      : '<button type="button" class="ghost-btn flora-restore-btn" data-change-id="' + c.change_id +
+        '" title="Put the record back as it was right after change #' + c.change_id + '">Restore this version</button>';
+    return "<tr><td>#" + c.change_id + "</td><td>" + escapeHtml(new Date(c.changed_at).toLocaleString()) +
+      "</td><td>" + escapeHtml(c.admin_handle || "an admin") + "</td><td>" + kind + what + "</td><td>" +
+      (c.note ? escapeHtml(c.note) : '<span class="src-dim2">—</span>') + "</td><td>" + action + "</td></tr>";
+  }).join("");
+  const original = '<tr class="flora-change-original"><td>—</td><td colspan="4">Original: the values derived ' +
+    "from the source records, before any change</td><td>" +
+    (inForce
+      ? '<button type="button" class="ghost-btn flora-restore-btn" data-change-id="0" ' +
+        'title="Drop every correction and use the derived values again">Restore original</button>'
+      : '<span class="flora-change-current">Current</span>') + "</td></tr>";
+  return '<details class="flora-changes" id="flora-change-log"><summary>Changes (' + log.length + ")</summary>" +
+    '<div class="admin-table-wrap"><table class="admin-table flora-changes-table"><thead><tr>' +
+    "<th>#</th><th>When</th><th>Who</th><th>What changed</th><th>Note</th><th></th></tr></thead><tbody>" +
+    rows + original + "</tbody></table></div></details>";
+}
+
+/** Edits made to this record's source rows before changes moved here. */
+function floraSourceEdits(editing) {
+  const edits = editing.source_edits || [];
+  if (!edits.length) return "";
+  return '<details class="flora-changes"><summary>Earlier edits to its source records (' + edits.length +
+    ")</summary>" + '<p class="src-dim2">Made in Source Records before changes moved to FLoRA records. ' +
+    "They changed the source rows themselves, so they are still in force.</p>" +
+    '<div class="admin-table-wrap"><table class="admin-table flora-changes-table"><thead><tr>' +
+    "<th>When</th><th>Who</th><th>Source record</th><th>Field</th><th>Before → after</th><th>Note</th>" +
+    "</tr></thead><tbody>" + edits.map((e) =>
+      "<tr><td>" + escapeHtml(new Date(e.edited_at).toLocaleString()) + "</td><td>" + escapeHtml(e.edited_by) +
+      "</td><td><code>" + escapeHtml(e.display_id) + "</code></td><td><code>" + escapeHtml(e.field) +
+      "</code></td><td>" + floraChangeValue(e.old_value) + " → " + floraChangeValue(e.new_value) + "</td><td>" +
+      (e.note ? escapeHtml(e.note) : '<span class="src-dim2">—</span>') + "</td></tr>"
+    ).join("") + "</tbody></table></div></details>";
+}
+
+function renderFloraRecord(rec) {
+  _floraCurrent = rec;
+  const editing = rec.editing;
+  $("#flora-detail-title").textContent = rec.flora_id || "FLoRA record";
+
+  const provenance =
     '<p class="flora-detail-source">Derived from source record <b>' +
       escapeHtml(rec.source_display_id || "—") + "</b>" +
       (rec.flora_id && rec.source_display_id && rec.flora_id !== rec.source_display_id
         ? ' <span class="flora-repointed">(id pinned from the record this row was first built from)</span>'
         : "") +
+      (rec.export_id && rec.export_id !== rec.flora_id
+        ? ' · CSV id <code class="flora-doi">' + escapeHtml(rec.export_id) + "</code>" : "") +
       ((rec.merged_sources || []).length
         ? "<br>Absorbed by deduplication: " +
-          rec.merged_sources.map(m =>
-            '<code class="flora-doi">' + escapeHtml(m.display_id) + "</code>").join(", ")
+          rec.merged_sources.map((m) => '<code class="flora-doi">' + escapeHtml(m.display_id) + "</code>").join(", ")
         : "") +
-      "</p>" +
-    '<div class="admin-table-wrap"><table class="admin-table flora-detail-table"><tbody>' +
-      rows + "</tbody></table></div>";
-  $("#admin-detail-modal").classList.remove("hidden");
-  document.body.style.overflow = "hidden";
+    "</p>";
+
+  const editable = new Set(((editing && editing.fields) || []).map((f) => f.field));
+  const context = Object.keys(rec)
+    .filter((k) => !FLORA_DETAIL_SKIP.has(k) && !editable.has(k) && !floraBlank(rec[k]))
+    .map((k) => "<tr><th>" + escapeHtml(k) + "</th><td>" + escapeHtml(String(rec[k])) + "</td></tr>")
+    .join("");
+  const contextTable = context
+    ? '<div class="src-group"><h4>Identity and derived values</h4><div class="admin-table-wrap">' +
+      '<table class="admin-table flora-detail-table"><tbody>' + context + "</tbody></table></div></div>"
+    : "";
+
+  if (!editing) {
+    $("#flora-detail-body").innerHTML = provenance +
+      '<div class="src-dup-warn">This row has no FLoRA id yet, so it cannot be corrected. ' +
+      "Run the pipeline (Source Records tab) to assign one.</div>" + contextTable;
+    return;
+  }
+
+  const groups = [];
+  editing.fields.forEach((f) => {
+    let group = groups.find((g) => g.name === f.group);
+    if (!group) groups.push(group = { name: f.group, fields: [] });
+    group.fields.push(f);
+  });
+
+  $("#flora-detail-body").innerHTML =
+    provenance +
+    '<p class="flora-edit-note">A save is logged under Changes with your name and note, and rewrites this ' +
+      "record in the FLoRA table at once, so the public API shows it too. The source records stay as imported; " +
+      "every pipeline run re-applies the changes on top of them. A corrected DOI or URL also brings in the " +
+      "title, authors and journal for it: metadata not yet cached arrives with the next pipeline run.</p>" +
+    groups.map((g) =>
+      '<div class="src-group"><h4>' + escapeHtml(g.name) + "</h4>" + g.fields.map(floraField).join("") + "</div>"
+    ).join("") +
+    contextTable +
+    floraChangeLog(editing) +
+    floraSourceEdits(editing) +
+    '<div class="src-save-bar">' +
+      '<input id="flora-note" class="src-input src-note" type="text" maxlength="500" ' +
+        'placeholder="Note for the change log (optional)">' +
+      '<span id="flora-save-msg" class="src-dim2"></span>' +
+      '<button id="flora-save-btn" class="btn-primary" type="button">Save corrections</button>' +
+    "</div>";
 }
+
+/** Only what the editor changed: the server diffs again, but sending untouched
+ *  fields would make it validate values nobody meant to correct. */
+function collectFloraEdits() {
+  const specs = new Map(((_floraCurrent.editing || {}).fields || []).map((f) => [f.field, f]));
+  const fields = {};
+  const revert = [];
+  $("#flora-detail-body").querySelectorAll("[data-field]").forEach((el) => {
+    const f = specs.get(el.dataset.field);
+    if (!f) return;
+    if (el.dataset.revert === "1") { revert.push(f.field); return; }
+    if (floraLines(el.value) !== floraLines(f.value)) fields[f.field] = el.value;
+  });
+  return { fields, revert };
+}
+
+async function saveFloraRecord() {
+  const rec = _floraCurrent;
+  if (!rec || !rec.editing) return;
+  const btn = $("#flora-save-btn");
+  const msg = $("#flora-save-msg");
+  const edits = collectFloraEdits();
+  if (!Object.keys(edits.fields).length && !edits.revert.length) {
+    msg.textContent = "Nothing changed.";
+    return;
+  }
+  btn.disabled = true;
+  msg.textContent = "Saving…";
+  const seq = _floraOpenSeq;
+  try {
+    const res = await adminApi("/flora/" + encodeURIComponent(rec.flora_id), "PATCH", {
+      fields: edits.fields, revert: edits.revert, version: rec.editing.version,
+      note: ($("#flora-note") || {}).value || "",
+    });
+    const changed = (res.changed_fields || []).length;
+    const reverted = (res.reverted_fields || []).length;
+    const parts = [];
+    if (changed) parts.push(changed + " field" + (changed === 1 ? "" : "s") + " corrected");
+    if (reverted) parts.push(reverted + " reverted");
+    const outcome = res.change_id
+      ? "Saved — " + (parts.join(", ") || "logged") + ". " + floraPublishedNote(res)
+      : "Nothing changed.";
+    showToast(outcome);
+    fetchFloraRecords();
+    // Reload for the new version, values and history — unless the editor was closed
+    // or another record opened while this was saving.
+    if (seq === _floraOpenSeq) await openFloraRecord(rec.flora_id, floraNotice(outcome, res.warnings));
+  } catch (err) {
+    btn.disabled = false;
+    floraChangeFailed(err, rec, msg);
+  }
+}
+
+/** The save bar's account of a change: what happened, and any warning about it. */
+function floraNotice(outcome, warnings) {
+  return '<span class="flora-notice">' + escapeHtml(outcome) + "</span>" +
+    (warnings || []).map((w) => '<span class="flora-warning">⚠ ' + escapeHtml(w) + "</span>").join("");
+}
+
+function floraPublishedNote(res) {
+  return res.published
+    ? "The FLoRA table is updated."
+    : "It reaches the FLoRA table at the next pipeline run.";
+}
+
+function floraChangeFailed(err, rec, msg) {
+  // 409: someone else changed this record while it was open. Reloading is the only
+  // safe move; overwriting their change is what the version guards against.
+  if (err.status === 409) {
+    msg.innerHTML = '<span class="src-fresh-warn">Changed by someone else — reloading…</span>';
+    const seq = _floraOpenSeq;
+    setTimeout(() => { if (seq === _floraOpenSeq) openFloraRecord(rec.flora_id); }, 1200);
+  } else {
+    msg.innerHTML = '<span class="src-fresh-warn">' + escapeHtml(err.message) + "</span>";
+  }
+}
+
+async function restoreFloraRecord(changeId) {
+  const rec = _floraCurrent;
+  if (!rec || !rec.editing) return;
+  const msg = $("#flora-save-msg");
+  const target = changeId ? "as it was right after change #" + changeId : "to the original, derived values";
+  const ok = await showConfirm("Put " + (rec.flora_id || "this record") + " back " + target + "? " +
+    "Unsaved edits in the form are discarded. The restore is logged as a new change, so it can be undone.");
+  if (!ok) return;
+  msg.textContent = "Restoring…";
+  const seq = _floraOpenSeq;
+  try {
+    const res = await adminApi("/flora/" + encodeURIComponent(rec.flora_id) + "/restore", "POST", {
+      change_id: changeId, version: rec.editing.version, note: ($("#flora-note") || {}).value || "",
+    });
+    const outcome = res.change_id
+      ? "Restored — " + (changeId ? "the record is as it was after #" + changeId : "the original values are back") +
+        ". " + floraPublishedNote(res)
+      : "Nothing to restore: the record already has those values.";
+    showToast(outcome);
+    fetchFloraRecords();
+    if (seq === _floraOpenSeq) await openFloraRecord(rec.flora_id, floraNotice(outcome, res.warnings));
+  } catch (err) {
+    floraChangeFailed(err, rec, msg);
+  }
+}
+
+$("#flora-detail-body")?.addEventListener("click", (e) => {
+  if (e.target.closest("#flora-save-btn")) { saveFloraRecord(); return; }
+  const restore = e.target.closest(".flora-restore-btn");
+  if (restore) { restoreFloraRecord(Number(restore.dataset.changeId)); return; }
+  const revert = e.target.closest(".flora-revert-btn");
+  if (!revert || !_floraCurrent) return;
+  const name = revert.dataset.revertField;
+  const f = ((_floraCurrent.editing || {}).fields || []).find((x) => x.field === name);
+  const control = $("#flora-detail-body").querySelector('[data-field="' + CSS.escape(name) + '"]');
+  if (!f || !control || !f.edit) return;
+  // Shown now, dropped on save. Typing into the field afterwards cancels it.
+  const derived = floraBlank(f.edit.derived) ? "" : String(f.edit.derived);
+  if (control.tagName === "SELECT" && derived &&
+      ![...control.options].some((o) => o.value === derived)) {
+    control.add(new Option(derived, derived), 1);
+  }
+  control.value = derived;
+  control.dataset.revert = "1";
+  revert.textContent = "Will revert when you save";
+  revert.disabled = true;
+});
+
+$("#flora-detail-body")?.addEventListener("input", (e) => {
+  const control = e.target.closest("[data-field]");
+  if (!control || control.dataset.revert !== "1") return;
+  delete control.dataset.revert;
+  const button = $("#flora-detail-body").querySelector(
+    '[data-revert-field="' + CSS.escape(control.dataset.field) + '"]');
+  if (button) { button.textContent = "Revert to derived value"; button.disabled = false; }
+});
+
+$("#flora-detail-close")?.addEventListener("click", closeFloraRecord);
+if ($("#flora-detail-modal")) onBackdropClick($("#flora-detail-modal"), closeFloraRecord);
 
 /* ---------- FLoRA: preprint duplicate review ---------- */
 
@@ -9873,7 +10185,9 @@ $("#src-sync-log")?.addEventListener("click", async (e) => {
   }
 });
 
-/* ---------- Review panel (read-only in this phase) ---------- */
+/* ---------- Record panel (read-only) ----------
+   Shows what the source supplied. Corrections are made on the FLoRA record this
+   row feeds, which the panel links to. */
 
 const SRC_FIELD_GROUPS = {
   replication: [
@@ -9906,7 +10220,6 @@ async function openSourceRecord(recordId) {
 }
 
 function renderSourceRecord(r) {
-  _srcCurrent = r;
   $("#src-detail-title").textContent = r.display_id || "Source Record";
 
   const n = r.neighbours || {};
@@ -9919,35 +10232,26 @@ function renderSourceRecord(r) {
 
   const field = (k) => {
     const v = r[k] === null || r[k] === undefined ? "" : String(r[k]);
-    const readOnly = SRC_READONLY_FIELDS.indexOf(k) !== -1;
     const long = k.indexOf("abstract") === 0 || k.indexOf("quote") !== -1;
-    let control;
-
-    if (readOnly) {
-      control = '<div class="src-value src-value-ro">' +
-                  (v ? escapeHtml(v) : '<span class="src-dim2">—</span>') + "</div>";
-    } else if (_srcVocab[k]) {
-      // Keep the current value selectable even if it is not in the vocabulary,
-      // so opening a record can never silently change it.
-      const opts = _srcVocab[k].slice();
-      if (v && opts.indexOf(v) === -1) opts.unshift(v);
-      control = '<select class="src-input" data-field="' + k + '">' +
-                  '<option value="">—</option>' +
-                  opts.map((o) =>
-                    '<option value="' + escapeHtml(o) + '"' + (o === v ? " selected" : "") + ">" +
-                    escapeHtml(o) + "</option>").join("") +
-                "</select>";
-    } else if (long) {
-      control = '<textarea class="src-input src-textarea" data-field="' + k + '" rows="4">' +
-                  escapeHtml(v) + "</textarea>";
-    } else {
-      control = '<input class="src-input" type="text" data-field="' + k + '" value="' +
-                  escapeHtml(v) + '">';
-    }
-
     return '<div class="src-field' + (long ? " src-field-long" : "") + '">' +
-             "<label>" + escapeHtml(k) + "</label>" + control + "</div>";
+             "<label>" + escapeHtml(k) + "</label>" +
+             '<div class="src-value src-value-ro">' +
+               (v ? escapeHtml(v) : '<span class="src-dim2">—</span>') + "</div></div>";
   };
+
+  // Where this row is corrected: the FLoRA record(s) it feeds.
+  const flora = r.flora || [];
+  const floraLink = flora.length
+    ? '<div class="src-flora-link">' + flora.map((f) =>
+        "Feeds FLoRA record <code>" + escapeHtml(f.flora_id) + "</code>" +
+        (f.role === "merged" ? " (absorbed into it by deduplication)" : "") +
+        (f.retired_at ? ' <span class="src-dim2">— retired, no longer in the dataset</span>'
+          : ' <button type="button" class="ghost-btn src-flora-open" data-flora-id="' +
+            escapeHtml(f.flora_id) + '">Open in FLoRA to correct</button>')
+      ).join("<br>") +
+      '<div class="src-dim2">Source records stay as imported; corrections are made on the FLoRA record.</div></div>'
+    : '<div class="src-flora-link src-dim2">This row does not feed a FLoRA record: it is ruled a duplicate, ' +
+      "excluded, deleted, or not yet reached by the pipeline. Source records stay as imported.</div>";
 
   const dups = r.duplicates || [];
   const dupWarning = dups.length
@@ -9958,22 +10262,19 @@ function renderSourceRecord(r) {
 
   const hist = r.history || [];
   const history = hist.length
-    ? '<div class="src-group"><h4>History</h4>' + hist.map((h) =>
-        '<div class="src-history-row"><span class="src-dim2">' +
-        new Date(h.edited_at).toLocaleString() + "</span> <strong>" +
-        escapeHtml(h.edited_by) + "</strong> changed <code>" + escapeHtml(h.field) +
-        '</code><div class="src-dim2">' + escapeHtml(h.old_value || "—") + " → " +
-        escapeHtml(h.new_value || "—") +
-        (h.note ? ' <em>— ' + escapeHtml(h.note) + "</em>" : "") + "</div></div>"
-      ).join("") + "</div>"
+    ? '<details class="flora-changes"><summary>Earlier edits (' + hist.length + ")</summary>" +
+      '<p class="src-dim2">Made here before changes moved to FLoRA records, and duplicate rulings.</p>' +
+      '<div class="admin-table-wrap"><table class="admin-table flora-changes-table"><thead><tr>' +
+      "<th>When</th><th>Who</th><th>Field</th><th>Before → after</th><th>Note</th></tr></thead><tbody>" +
+      hist.map((h) =>
+        "<tr><td>" + escapeHtml(new Date(h.edited_at).toLocaleString()) + "</td><td>" +
+        escapeHtml(h.edited_by) + "</td><td><code>" + escapeHtml(h.field) + "</code></td><td>" +
+        floraChangeValue(h.old_value) + " → " + floraChangeValue(h.new_value) + "</td><td>" +
+        (h.note ? escapeHtml(h.note) : '<span class="src-dim2">—</span>') + "</td></tr>"
+      ).join("") + "</tbody></table></div></details>"
     : "";
 
-  const reviewed = r.reviewed_by
-    ? "Last reviewed by " + escapeHtml(r.reviewed_by) + " · " +
-      new Date(r.reviewed_at).toLocaleString()
-    : "Not yet reviewed";
-
-  // A deleted row is kept as a record only: say why, and offer no save.
+  // A deleted row is kept as a record only: say why.
   const deletedBanner = r.deleted_at
     ? '<div class="src-deleted-banner"><strong>Deleted</strong> on ' +
       escapeHtml(new Date(r.deleted_at).toLocaleString()) + " — " +
@@ -9990,79 +10291,12 @@ function renderSourceRecord(r) {
         escapeHtml(r.sheet_row_id || "—") + "</span>" +
     "</div>" +
     dupWarning +
+    floraLink +
     groups.map((g) =>
       '<div class="src-group"><h4>' + escapeHtml(g[0]) + "</h4>" +
       g[1].map(field).join("") + "</div>"
     ).join("") +
-    history +
-    (r.deleted_at ? "" :
-    '<div class="src-save-bar">' +
-      '<input id="src-note" class="src-input src-note" type="text" placeholder="Note (optional)">' +
-      '<span id="src-save-msg" class="src-dim2">' + reviewed + "</span>" +
-      '<button id="src-save-btn" class="btn-primary">Save</button>' +
-      '<button id="src-save-next-btn" class="btn-primary" ' +
-        (n.next_id ? "" : "disabled") + ">Save &amp; next</button>" +
-    "</div>");
-
-  if (r.deleted_at) {
-    $("#src-detail-body").querySelectorAll("[data-field]").forEach((el) => { el.disabled = true; });
-    return;
-  }
-  $("#src-save-btn").onclick      = () => saveSourceRecord(false);
-  $("#src-save-next-btn").onclick = () => saveSourceRecord(true);
-}
-
-/** Collect only what the reviewer actually touched. The server diffs again, so
- *  this is about payload size and intent, not correctness. */
-function collectSourceEdits() {
-  const out = {};
-  $("#src-detail-body").querySelectorAll("[data-field]").forEach((el) => {
-    out[el.dataset.field] = el.value;
-  });
-  return out;
-}
-
-async function saveSourceRecord(advance) {
-  const r = _srcCurrent;
-  if (!r) return;
-  const saveBtn = $("#src-save-btn");
-  const nextBtn = $("#src-save-next-btn");
-  const msg     = $("#src-save-msg");
-  saveBtn.disabled = true;
-  if (nextBtn) nextBtn.disabled = true;
-  msg.textContent = "Saving…";
-
-  const noteEl = $("#src-note");
-  try {
-    const res = await adminApi(
-      "/source-records/" + r.record_id + "?" + srcQueryString(),
-      "PATCH",
-      { fields: collectSourceEdits(), version: r.version, note: noteEl ? noteEl.value : "" }
-    );
-    const changed = res.changed_fields || [];
-    showToast(changed.length
-      ? "Saved — " + changed.length + " field" + (changed.length === 1 ? "" : "s") + " changed."
-      : "Marked as reviewed.");
-
-    const nextId = (res.neighbours || {}).next_id;
-    if (advance && nextId) {
-      openSourceRecord(nextId);
-    } else {
-      await openSourceRecord(r.record_id);   // reload for the new version + history
-    }
-    fetchSourceRecords();
-  } catch (e) {
-    saveBtn.disabled = false;
-    if (nextBtn) nextBtn.disabled = false;
-    // 409: someone else saved this row while it was open. Reloading is the only
-    // safe move — silently overwriting their edit is exactly what version guards against.
-    if (e.status === 409) {
-      msg.innerHTML = '<span class="src-fresh-warn">Changed by someone else — reloading…</span>';
-      setTimeout(() => openSourceRecord(r.record_id), 1200);
-    } else {
-      msg.innerHTML = '<span class="src-fresh-warn">' + escapeHtml(e.message) + "</span>";
-    }
-  }
+    history;
 }
 
 function closeSourceRecord() {
@@ -10129,6 +10363,13 @@ $("#src-export-btn").onclick = async () => {
 };
 
 $("#src-detail-close").onclick = closeSourceRecord;
+$("#src-detail-body").addEventListener("click", (e) => {
+  const open = e.target.closest(".src-flora-open");
+  if (!open) return;
+  closeSourceRecord();
+  switchAdminTab("flora");
+  openFloraRecord(open.dataset.floraId);
+});
 onBackdropClick($("#src-detail-modal"), closeSourceRecord);
 $("#src-prev-btn").onclick = () => { if (_srcNeighbours.prev_id) openSourceRecord(_srcNeighbours.prev_id); };
 $("#src-next-btn").onclick = () => { if (_srcNeighbours.next_id) openSourceRecord(_srcNeighbours.next_id); };

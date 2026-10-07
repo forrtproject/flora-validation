@@ -14,15 +14,23 @@ session.
 
 | Table | Purpose |
 | --- | --- |
-| `source_records` | Imported source rows and administrator review decisions |
+| `source_records` | Imported source rows, never edited by hand, and duplicate rulings |
 | `flora_records` | Permanent identity and provenance registry for transformed records |
+| `flora_record_changes` | Change log of FLoRA records: who, note, before → after; re-applied by every build ([details](SOURCE_RECORDS.md#94-correcting-a-flora-record-flora_editspy)) |
 | `flora_data` | Complete stored preparation output, including retired published records |
 | `flora_data_metadata` | Export column order and SHA-256 of the latest imported snapshot |
 
 `flora_data` has no source foreign key or cascading delete. A published record
 retains its own data and identity independently of the source review tables.
 The existing website preview remains a view of the current transformation;
-the new table changes when a complete preparation snapshot is stored.
+the new table changes when a complete preparation snapshot is stored, and when an
+admin saves a change to a FLoRA record: that rewrites the record's row at once,
+increases its `record_version` and moves `flora_data_metadata.updated_at`.
+`snapshot_sha256` then still names the last imported snapshot, which no longer
+equals the table byte for byte until the next run stores one with the change applied.
+A pipeline run notes the newest change as it starts (part of `dataset_revision`); when
+only changes have landed since, its store keeps those records' rows as they are
+instead of failing. Another snapshot stored meanwhile still fails it.
 
 ## Permanent identity and changing data
 

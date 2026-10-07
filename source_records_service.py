@@ -4,14 +4,17 @@ source_records_service.py — data layer for the entry-sheet datatable.
 Deliberately transport-agnostic: every function takes a cursor and returns plain
 dicts, with no FastAPI (or Lambda) types anywhere. app.py wraps these in thin
 routes today; the Lambda handlers planned for the next phase call the identical
-functions. Domain errors are raised as RecordNotFound / VersionConflict and
-mapped to status codes by whatever transport is in front.
+functions. Domain errors are raised as RecordNotFound and mapped to status codes
+by whatever transport is in front.
+
+Source records are read-only here: they stay as the sheets and the validated set
+supplied them. Corrections are made to the FLoRA record a row feeds (FLoRA tab,
+flora_edits.py). The only decisions taken on this tab are duplicate rulings,
+which say whether a row feeds FLoRA at all, not what it says.
 
 Cursors are expected to be psycopg2 RealDictCursor, as db() in app.py provides.
 """
 import re
-
-from extractor_vocab import normalize_axis_value
 
 # Grid columns. Kept lean — the heavy fields (abstract_r, quotes, raw) load only
 # when a single record is opened.
@@ -55,9 +58,9 @@ ACCEPTED_STATUSES = [
     "validated - unchanged",
 ]
 
-# Fields a reviewer may edit. Everything else (identity, raw, review state) is
-# writable only by the sync or by the service itself.
-EDITABLE_FIELDS = [
+# The record's content, as the sheet supplied it. Written only by the sync:
+# corrections are made to the FLoRA record this row feeds (flora_edits.py).
+RECORD_FIELDS = [
     "ref_o", "doi_o", "url_o",
     "ref_r", "doi_r", "url_r",
     "abstract_r",
@@ -72,7 +75,7 @@ EDITABLE_FIELDS = [
 DETAIL_COLUMNS = [
     "record_id::text AS record_id",
     "display_id", "source", "sheet_row_id", "type",
-    *EDITABLE_FIELDS,
+    *RECORD_FIELDS,
     "oa_work_id_o", "oa_work_id_r",
     "content_fingerprint",
     "reviewed_by", "reviewed_at", "version",
@@ -105,14 +108,6 @@ def _escape_like(term: str) -> str:
 
 class RecordNotFound(Exception):
     """No source_records row with that id (or the id isn't a UUID at all)."""
-
-
-class VersionConflict(Exception):
-    """Row changed since the caller loaded it. Carries the current row."""
-
-    def __init__(self, current: dict):
-        super().__init__("Record was modified by someone else")
-        self.current = current
 
 
 def _build_where(filters: dict):
@@ -265,9 +260,10 @@ def _counts(cur) -> dict:
 
 def get_record(cur, record_id: str, filters: dict | None = None,
                sort: str = "", direction: str = "asc") -> dict:
-    """Full record for the review panel: every field, the raw sheet row, edit
-    history, any duplicate siblings, and the neighbouring ids in the active
-    filter so 'Save & next' can walk the queue."""
+    """Full record for the read-only panel: every field, the raw sheet row, the
+    history of edits made here before corrections moved to FLoRA records, any
+    duplicate siblings, the FLoRA records this row feeds (where it is corrected),
+    and the neighbouring ids in the active filter so the panel can walk the queue."""
     _check_uuid(record_id)
     cur.execute(
         f"SELECT {', '.join(DETAIL_COLUMNS)} FROM source_records WHERE record_id = %s",
@@ -303,17 +299,29 @@ def get_record(cur, record_id: str, filters: dict | None = None,
         )
         record["duplicates"] = [dict(r) for r in cur.fetchall()]
 
+    record["flora"] = flora_records(cur, record_id)
     record["neighbours"] = neighbours(cur, record_id, filters or {}, sort, direction)
     return record
 
 
-def neighbours(cur, record_id: str, filters: dict, sort: str, direction: str) -> dict:
-    """Previous/next record id and 1-based position within the active filter.
+def flora_records(cur, record_id: str) -> list:
+    """The FLoRA records this source row feeds: as the row a record derives from,
+    or absorbed into one by deduplication. Where a correction to it is made."""
+    cur.execute(
+        """
+        SELECT flora_id, export_id, retired_at,
+               CASE WHEN primary_source_record_id = %(id)s::uuid THEN 'primary' ELSE 'merged' END AS role
+        FROM flora_records
+        WHERE primary_source_record_id = %(id)s::uuid OR %(id)s::uuid = ANY(merged_source_record_ids)
+        ORDER BY (retired_at IS NOT NULL), (primary_source_record_id <> %(id)s::uuid), flora_id
+        """,
+        {"id": record_id},
+    )
+    return [dict(r) for r in cur.fetchall()]
 
-    Must be computed BEFORE a save: stamping reviewed_at can move the row out of
-    its own filter (e.g. "not reviewed"), and then the row is absent from the
-    ordered set and there is no next id to hand back.
-    """
+
+def neighbours(cur, record_id: str, filters: dict, sort: str, direction: str) -> dict:
+    """Previous/next record id and 1-based position within the active filter."""
     _check_uuid(record_id)
     where, params = _build_where(filters)
     sort_col = SORT_COLUMNS.get(sort)
@@ -355,128 +363,6 @@ def export_rows(cur, filters: dict):
         params,
     )
     return columns, [dict(r) for r in cur.fetchall()]
-
-
-# Fields offered as a dropdown rather than free text. Options come from the data
-# itself (see field_vocabularies) so a new value appearing upstream shows up
-# without a code change.
-VOCABULARY_FIELDS = [
-    "outcome",
-    "out_quote_source",
-    "validation_status",
-    "outcome_computation",
-    "outcome_robustness",
-    "out_quote_computational_source",
-    "out_quote_robust_source",
-]
-
-
-def field_vocabularies(cur) -> dict:
-    """Distinct non-empty values per dropdown field, from the stored rows."""
-    vocab = {}
-    for field in VOCABULARY_FIELDS:
-        cur.execute(
-            f"""
-            SELECT DISTINCT {field} AS v FROM source_records
-            WHERE {field} IS NOT NULL AND {field} <> ''
-            ORDER BY v
-            """
-        )
-        vocab[field] = [r["v"] for r in cur.fetchall()]
-    return vocab
-
-
-def update_record(cur, record_id: str, fields: dict, version: int,
-                  admin_handle: str, note: str = "") -> dict:
-    """Apply a reviewer's edits and stamp the review.
-
-    Only fields in EDITABLE_FIELDS are accepted, and only fields whose value
-    actually changed are written or logged. The review stamp is applied even when
-    nothing changed — "checked and correct" is a real outcome, and without it a
-    reviewer cannot tell that apart from "not looked at yet".
-
-    Raises VersionConflict if the row moved since the caller loaded it.
-    """
-    # An absent version would silently skip the concurrency check, so require it
-    # rather than letting a caller (or a future Lambda handler) opt out.
-    if version is None:
-        raise ValueError("version is required")
-
-    # Lock the row so a concurrent save can't slip between the version check and
-    # the write.
-    _check_uuid(record_id)
-    cur.execute(
-        f"SELECT {', '.join(DETAIL_COLUMNS)} FROM source_records WHERE record_id = %s FOR UPDATE",
-        (record_id,),
-    )
-    current = cur.fetchone()
-    if not current:
-        raise RecordNotFound(record_id)
-    current = dict(current)
-
-    if int(version) != int(current["version"]):
-        raise VersionConflict(current)
-    if current.get("deleted_at") is not None:
-        raise ValueError("This row is deleted: its record is no longer validated, so it "
-                         "no longer feeds FLoRA and is kept only as a record.")
-
-    unknown = [k for k in fields if k not in EDITABLE_FIELDS]
-    if unknown:
-        raise ValueError(f"Not editable: {', '.join(sorted(unknown))}")
-
-    fields = dict(fields)
-    for axis in ("outcome_computation", "outcome_robustness"):
-        if axis in fields:
-            fields[axis] = normalize_axis_value(axis, fields[axis])
-            if current.get("type") != "reproduction" and fields[axis] is not None:
-                raise ValueError(f"{axis} is only valid on reproduction records")
-
-    def _clean(v):
-        # Empty string and None both mean "absent"; normalise so a cleared field
-        # doesn't register as a change every time it is saved.
-        if v is None:
-            return None
-        v = str(v).strip()
-        return v or None
-
-    changed = {
-        k: _clean(v) for k, v in fields.items()
-        if _clean(v) != (current.get(k) if current.get(k) is not None else None)
-    }
-
-    if changed:
-        assignments = ", ".join(f"{k} = %({k})s" for k in changed)
-        cur.execute(
-            f"""
-            UPDATE source_records
-            SET {assignments},
-                reviewed_by = %(_by)s, reviewed_at = NOW(),
-                version = version + 1, updated_at = NOW()
-            WHERE record_id = %(_id)s
-            """,
-            {**changed, "_by": admin_handle, "_id": record_id},
-        )
-        for field, new_value in changed.items():
-            cur.execute(
-                """
-                INSERT INTO source_record_edits
-                    (record_id, field, old_value, new_value, edited_by, note)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                """,
-                (record_id, field, current.get(field), new_value, admin_handle, note or None),
-            )
-    else:
-        # No field changed, but the row was still reviewed.
-        cur.execute(
-            """
-            UPDATE source_records
-            SET reviewed_by = %s, reviewed_at = NOW(), version = version + 1, updated_at = NOW()
-            WHERE record_id = %s
-            """,
-            (admin_handle, record_id),
-        )
-
-    return {"changed_fields": sorted(changed), "reviewed_by": admin_handle}
 
 
 def duplicate_groups(cur, unresolved_only: bool = True) -> dict:

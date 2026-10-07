@@ -1,7 +1,8 @@
 """Complete prepared FLoRA records with permanent IDs, ready for future APIs.
 
 The source review table and preparation preview stay separate. This table changes
-only when an entire prepared snapshot is stored successfully. No HTTP API or
+when an entire prepared snapshot is stored successfully, and when an admin saves a
+change to a FLoRA record (flora_edits.publish rewrites that one row). No HTTP API or
 public access policy is defined here.
 """
 from __future__ import annotations
@@ -33,10 +34,17 @@ UNCHECKED_REVISION = object()
 
 
 def dataset_revision(cur):
-    """Token for optimistic publication checks, including an uninitialized table."""
+    """Token for optimistic publication checks, including an uninitialized table.
+
+    (snapshot hash, last write, newest FLoRA record change). The third lets a run
+    tell its rows apart from rows an admin changed while it ran (materialize).
+    """
     cur.execute("SELECT snapshot_sha256, updated_at FROM flora_data_metadata WHERE singleton")
     row = cur.fetchone()
-    return (row["snapshot_sha256"], row["updated_at"]) if row else None
+    if not row:
+        return None
+    import flora_edits                              # local: flora_edits imports this module
+    return row["snapshot_sha256"], row["updated_at"], flora_edits.change_watermark(cur)
 
 
 def _value(value):
@@ -88,6 +96,12 @@ def materialize(cur, source, *, allow_empty=False, expected_revision=UNCHECKED_R
     Pipeline callers pass the revision captured before their build. Check it
     under the write lock so a slower run cannot overwrite a newer publication.
     Explicit standalone imports may omit the check to intentionally replace data.
+
+    A FLoRA record change saved while the run built (flora_edits) rewrites its own
+    row and moves the revision without storing a snapshot. That does not fail the
+    run: the rows of records changed since it began are kept as they are — neither
+    rewritten nor retired — and the next run stores them with the change applied.
+    Another snapshot stored meanwhile still does.
     """
     columns, incoming, digest = _snapshot(source)
     if not incoming and not allow_empty:
@@ -96,8 +110,15 @@ def materialize(cur, source, *, allow_empty=False, expected_revision=UNCHECKED_R
     # omitted for a missing title still reserve their publication positions.
     cur.execute("LOCK TABLE flora_records IN SHARE ROW EXCLUSIVE MODE")
     cur.execute("LOCK TABLE flora_data IN SHARE ROW EXCLUSIVE MODE")
-    if expected_revision is not UNCHECKED_REVISION and dataset_revision(cur) != expected_revision:
-        raise ValueError("The prepared dataset changed during this run; rerun the pipeline to build a current snapshot.")
+    preserved = set()
+    if expected_revision is not UNCHECKED_REVISION:
+        current = dataset_revision(cur)
+        if current != expected_revision:
+            if not (current and expected_revision and len(expected_revision) == 3
+                    and current[0] == expected_revision[0]):
+                raise ValueError("The prepared dataset changed during this run; rerun the pipeline to build a current snapshot.")
+            import flora_edits                      # local: flora_edits imports this module
+            preserved = flora_edits.changed_since(cur, expected_revision[2])
     cur.execute("SELECT export_id, export_position FROM flora_records WHERE export_id IS NOT NULL")
     registered = {row["export_id"]: row["export_position"] for row in cur.fetchall()}
     cur.execute("SELECT * FROM flora_data ORDER BY export_position")
@@ -118,11 +139,13 @@ def materialize(cur, source, *, allow_empty=False, expected_revision=UNCHECKED_R
         positions[position] = identifier
     last_position = max([len(reference), *positions])
     stats = {"rows": len(incoming), "inserted": 0, "updated": 0,
-             "unchanged": 0, "retired": 0, "reactivated": 0,
+             "unchanged": 0, "retired": 0, "reactivated": 0, "preserved": len(preserved),
              "table": "flora_data", "snapshot_sha256": digest}
     values = []
     for row in incoming:
         identifier = row["id"]
+        if identifier in preserved:
+            continue
         prior = existing.get(identifier)
         extras = {column: row.get(column) for column in extra_columns}
         if prior:
@@ -153,7 +176,7 @@ def materialize(cur, source, *, allow_empty=False, expected_revision=UNCHECKED_R
         execute_values(cur, f"""INSERT INTO flora_data ({', '.join(names)}) VALUES %s
             ON CONFLICT (id) DO UPDATE SET {updates}, retired_at=NULL,
                 updated_at=NOW(), record_version=flora_data.record_version + 1""", values)
-    incoming_ids = [row["id"] for row in incoming]
+    incoming_ids = [row["id"] for row in incoming] + sorted(preserved)
     cur.execute("""UPDATE flora_data SET retired_at=NOW(), updated_at=NOW(),
                        record_version=record_version + 1
                    WHERE retired_at IS NULL AND NOT (id = ANY(%s::text[]))""", (incoming_ids,))

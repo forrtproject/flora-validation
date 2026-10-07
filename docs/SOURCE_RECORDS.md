@@ -2,8 +2,9 @@
 
 The **Source Records** tab in the admin panel is a spreadsheet-like view of the FLoRA
 entry sheets, backed by a Postgres table that a nightly GitHub Action fills. Admins
-browse, search, and correct those rows in the browser; a separate script turns the
-corrected rows into the FLoRA dataset.
+browse and search those rows in the browser and rule on duplicates; a separate script
+turns them into the FLoRA dataset. Records are corrected there, in the **FLoRA** tab
+(§9.4): a source row always stays as its source supplied it.
 
 This document is the complete picture: what it does, why it is built this way, how to
 operate it, and what goes wrong.
@@ -26,6 +27,7 @@ operate it, and what goes wrong.
    - [9.1 FLoRA record ids](#91-flora-record-ids-flora_registrypy)
    - [9.2 Identifiers: what actually exists](#92-identifiers-what-actually-exists)
    - [9.3 The FLoRA tab](#93-the-flora-tab)
+   - [9.4 Correcting a FLoRA record](#94-correcting-a-flora-record-flora_editspy)
 10. [The GitHub Action](#10-the-github-action)
     - [10.1 The "Run sync now" button](#101-the-run-sync-now-button)
 11. [Common tasks](#11-common-tasks)
@@ -48,7 +50,8 @@ sheets straight from Google, filters and deduplicates them inline, and emits
 - the cleaning rules are buried in an R notebook
 
 This system puts the source rows in a database with a review UI on top. Corrections
-are made in the web app, attributed and timestamped, and they flow into every
+are made in the web app, attributed and timestamped, on the FLoRA record a row feeds.
+The source row stays as imported, and the correction is applied on top of every
 subsequent build automatically.
 
 **It does not replace the R pipeline.** It replaces the *sheet-reading front end* of
@@ -65,22 +68,28 @@ it, and produces the same column shape.
   sync_sources.py            ← nightly, 03:00 UTC
     │   6 integrity gates → filter to accepted → INSERT ONLY
     ▼
-  source_records  (Postgres, 1,653 rows)   ◄── authoritative from here on
+  source_records  (Postgres, 1,653 rows)   ◄── authoritative from here on; never edited by hand
     │
     ├─► Admin panel "Source Records" tab
-    │      browse · search · filter · review panel · duplicate review
-    │      every edit stamped with reviewer + timestamp + history
+    │      browse · search · filter · read-only record panel · duplicate review
     │
     ▼
   transform_sources.py       ← nightly, right after the sync
     │   merge outcome → clean DOIs → exclude → strip url → dedup → project
+    │   → the corrections in flora_record_changes, applied on top
     ▼
   output/flora_entry_sheets.csv  (1,590 rows × 14 FLoRA columns)
+    ▲
+    └── Admin panel "FLoRA" tab: records are corrected here; each save is a row
+        of the change log (who, when, note, before → after) and rewrites the
+        record in flora_data at once (flora_edits.py, §9.4)
 ```
 
 The single most important property: **the sync only ever inserts.** Once a row is in
 the database, the Google Sheet can never change it again. Corrections made in the web
-app are permanent and do not need to be mirrored back to the sheet.
+app are permanent and do not need to be mirrored back to the sheet. Nor do they change
+the row: they are stored against the FLoRA record, so `source_records` always shows
+what the source said.
 
 ---
 
@@ -437,6 +446,11 @@ There is deliberately **no cascading foreign key** — an audit trail whose whol
 is to outlive its record must not be deleted with it. `display_id` is denormalised so
 history stays readable even if the row is gone.
 
+**Field edits are no longer written here.** Source records stopped being editable when
+corrections moved to FLoRA records (§9.4). The field rows already here are the history
+of edits made before that, and they are still applied: they changed the row itself.
+Duplicate rulings still append here.
+
 ### `source_sync_runs`
 
 One row per source per run: status, gate failure reason, row counts, payload hash.
@@ -469,9 +483,10 @@ Sign in to the admin panel and pick **Source Records**.
 ### The grid
 
 Server-side paging at 50 rows. Columns: ID, type, original, replication, outcome,
-status, reviewed, open.
+status, reviewed, open. *Reviewed* is the stamp left by the editor this tab used to
+have; it no longer changes.
 
-- **Filter chips** — All · Replications · Reproductions · Not reviewed · Reviewed · Duplicates
+- **Filter chips** — All · Replications · Reproductions · Validated · Duplicates · Deleted
 - **Search** — reference, DOI, `display_id`, `study_o` (press Enter)
 - **Status dropdown** — the three accepted values
 - **Sortable headers** — click to sort, click again to reverse
@@ -484,33 +499,22 @@ their own grid.
 
 A `⚑` next to an ID means that paper appears under more than one sheet UUID.
 
-### The review panel
+### The record panel (read-only)
 
 Click any row. Fields are grouped in the order a reviewer checks them — Original,
-Replication (or Reproduction / Computational / Robustness), Outcome, Status.
+Replication (or Reproduction / Computational / Robustness), Outcome, Status — and
+shown exactly as the source supplied them. Nothing in the panel can be edited.
 
-- Text fields are inputs; abstracts and quotes are textareas
-- Fields with a known vocabulary are dropdowns, and the options come **from the data**,
-  so a new value appearing upstream needs no code change. The current value always
-  stays selectable even if it is not in the list
-- `oa_work_id_o/_r` are read-only — they are derived from the DOI and a manual edit
-  would be overwritten by the next enrichment pass
-- The raw sheet row is available in a collapsed section
-- Edit history is shown at the bottom, including the reviewer's note
+- At the top, the FLoRA record this row feeds, with **Open in FLoRA to correct**.
+  A row absorbed into another by deduplication names the record it was absorbed into.
+  A row ruled a duplicate, excluded or deleted feeds none, and the panel says so
+- Edits made in this panel before corrections moved to FLoRA are listed at the bottom
+- ‹ and › walk the rows of the *current filter* without returning to the grid; the
+  counter reads `412 / 1653`
 
-**Save** writes changed fields, stamps `reviewed_by` and `reviewed_at`, and appends one
-log entry per changed field.
-
-**Save also counts when nothing changed.** "I looked at this and it is correct" is a
-real review outcome and the most common one — without the stamp, a reviewer cannot tell
-*unchecked* from *checked and fine*, and would re-review the same rows forever.
-
-**Save & next** advances to the next row in the *current filter* without returning to
-the grid. So "review all 18 reproductions" is: set the type filter → open the first →
-Save & next ×18. The counter reads `412 / 1653`.
-
-If two admins open the same record and both save, the second gets a **409** and the
-panel reloads rather than silently overwriting the first.
+Why read-only: a source row is evidence of what a sheet or the validated set said.
+Editing it in place lost that, and a correction made here had no clear home once the
+row was deduplicated into another. A correction on the FLoRA record keeps both (§9.4).
 
 ### Duplicate review
 
@@ -565,9 +569,8 @@ GET   /api/admin/source-records                    list + counts (filters, sort,
 GET   /api/admin/source-records/export.csv         CSV of the current filter
 GET   /api/admin/source-records/sync-status        freshness banner
 GET   /api/admin/source-records/duplicates         grouped duplicate candidates
-GET   /api/admin/source-records/vocabularies       dropdown options
 GET   /api/admin/source-records/{record_id}        full record + raw + history + neighbours
-PATCH /api/admin/source-records/{record_id}        save a review  {fields, version, note}
+                                                   + the FLoRA records it feeds
 POST  /api/admin/source-records/{record_id}/duplicate   {status, duplicate_of}
 ```
 
@@ -945,15 +948,15 @@ export honouring the current filter.
 Nothing is materialised. [`flora_service.py`](../flora_service.py) derives the dataset
 on demand (~1s) and caches the frame until the underlying tables actually change,
 detected by a cheap signature query (row counts plus the newest `updated_at`) rather
-than a timer — so an edit in the Source Records tab shows up here immediately rather
-than after an arbitrary delay.
+than a timer — so a sync, a duplicate ruling or a correction shows up here immediately
+rather than after an arbitrary delay.
 
 | Route | Purpose |
 |---|---|
 | `GET /api/admin/flora` | One page of the grid, plus filter counts |
 | `GET /api/admin/flora/stats` | Row totals and when ids were last assigned |
 | `GET /api/admin/flora/export.csv` | Every row matching the filter, all columns |
-| `GET /api/admin/flora/{flora_id}` | One full row for the detail panel |
+| `GET /api/admin/flora/{flora_id}` | One full row for the editor (§9.4) |
 
 The export uses the same column order as the nightly artifact — `FLORA_COLUMNS` then
 `PROVENANCE_COLUMNS` — so the two files are interchangeable rather than subtly
@@ -963,6 +966,96 @@ readers of the existing export must keep working.
 The read path never writes. `attach_ids()` only joins ids that already exist, so
 opening a page cannot assign one. Rows a sync has landed but no refresh has reached
 show a blank id, and the tab says so in a banner rather than hiding it.
+
+### 9.4 Correcting a FLoRA record (`flora_edits.py`)
+
+Records are corrected here, never in Source Records. Open a row in the FLoRA tab: its
+editable fields are a form, grouped Original, Replication (or Reproduction), Outcome
+(or Computational / Robustness). Identity, provenance and the values the build computes
+from others (DOI hashes, OpenAlex work ids, author overlap) are shown beneath as context.
+
+**The change log.** Every save appends one row to `flora_record_changes`, the FLoRA
+counterpart of the website records' `admin_decisions`: who made it, when, the note, and
+each field it changed as `[before, after]`. The `before` values are the original entries.
+Each row also holds `corrections`, every correction in force once it was made (a NULL
+value is a deliberately blank field). The log is append-only; a trigger refuses updates,
+deletes and truncation. A record's newest `change_id` is its version: a save quotes the
+version it loaded, and a stale one gets a **409** and the editor reloads.
+
+The log references the record by its permanent published id — `flora_data.id`, which
+is the registry's `export_id`. Its foreign key points at the registry rather than at
+`flora_data`, because a row can be corrected before it is first published: a missing
+title is exactly what keeps a row out of the export.
+
+**The FLoRA table is rewritten at once.** A save writes what it altered into the
+record's row in `flora_data` (`flora_edits.publish()`), including what follows from it —
+the title a corrected DOI brings in, the outcome derived from corrected axes — and
+nothing else. The row's `record_version` increases, and so does the table revision
+(`flora_data_metadata.updated_at`), which the public API's cache keys on, so the API
+serves the change immediately. A pipeline run that started before the save does not
+overwrite it, and does not fail either: its store stage keeps the rows of records changed
+since the run began as they are (`preserved` in the storage report), and the next run
+stores them with the change applied. A row not yet in `flora_data` (or one the change
+leaves untitled) is published by the next pipeline run, with the change applied.
+
+**Every build re-applies the log.** The pipeline rebuilds `flora_data` from the source
+records, so each build applies the corrections of each record's newest change on top of
+what it derived; a later sync or metadata refresh cannot undo one:
+
+- `doi_o`, `doi_r`, `url_o`, `url_r` are put on the row after every duplicate step —
+  exact dedup, pair merge and preprint/publication dedup — so a correction can never
+  drop, merge or hide a record (`transform_sources.build()`, step 6c). The row is then
+  joined to the metadata again from the source's own fallbacks, so the title, authors
+  and journal follow a corrected DOI. The record is found by the source rows it claims
+  in the registry, so a correction still reaches it on the run where a duplicate ruling
+  changes which row survives. Corrected identifiers are also handed to
+  `enrich_works.py`, so metadata not yet cached is fetched at the next pipeline run.
+- Every corrected field then replaces the finished value once ids are attached
+  (`flora_edits.apply()`). Values computed from a corrected field follow it: a
+  reproduction's outcome, quote and quote source from its axes, the author overlap from
+  the authors, the DOI hash from the DOI.
+
+The FLoRA tab, its exports, `validate_flora.py` and the pipeline's `flora.csv` all read
+the frame after this step, so the row a pipeline run writes is the one the save already
+wrote.
+
+**What a corrected identifier does not do.** The duplicate steps never see it, which is
+what keeps every record in place. The cost: if a correction makes two records share
+their DOIs, both stay. The save says so — it names the other record, and the pipeline
+log lists such rows — so the decision is yours: rule a duplicate in Source Records if it
+is the same study. A correction onto an identifier on the exclusion list is refused,
+with the exclusion's reason; an exclusion added later still removes the record, as an
+exclusion does.
+
+**Validation.** DOIs are cleaned and must start with `10.`; a replication's outcome must
+be in the vocabulary; a reproduction is corrected through its two axes, whose values are
+normalised and checked; years must have four digits; URLs must start with `http(s)://`;
+structured author lists must be valid JSON. Titles, references, abstracts and quotes go
+through the same `clean_text` as the build. Fields the editor did not touch are not sent
+and not re-validated, so a record whose source is dirty can still be corrected. Line
+breaks are compared the way a browser writes them, so a stored `\r\n` never makes an
+untouched field look changed.
+
+**Seeing and restoring changes.** The editor lists the log under **Changes (n)**, a table
+closed until opened: number, when, who, each field's before → after, the note. **Restore
+this version** on any row puts the record back exactly as it was right after that
+change; **Restore original** drops every correction, so the derived values show again.
+A restore is logged as a change itself (`action = 'restore'`, `restored_from`), so it can
+be undone by restoring the row before it. *Revert to derived value* on a field drops that
+one correction; typing the derived value back does the same, since a correction identical
+to what the build produces is not kept, and a later improvement at the source flows
+through. Edits made to the record's source rows before changes moved here are listed
+under **Earlier edits to its source records**, also closed.
+
+| Route | Purpose |
+|---|---|
+| `GET /api/admin/flora/{flora_id}` | The row, plus `editing`: fields, corrections with their derived values, the change log, earlier source edits, version |
+| `PATCH /api/admin/flora/{flora_id}` | Save a change `{fields, revert, version, note}` |
+| `POST /api/admin/flora/{flora_id}/restore` | Restore the state after a change `{change_id, version, note}`; `change_id` 0 is the original |
+| `GET /api/admin/flora?edited=true` | The **Edited** chip: records with at least one correction in force |
+
+A correction on a record that later retires stops applying, and applies again if the
+record returns. A row without a FLoRA id yet cannot be corrected: run the pipeline first.
 
 ---
 
@@ -1153,7 +1246,8 @@ UPDATE source_display_counters c SET last_value = (
 
 Two different causes, and the transform now distinguishes them:
 
-- *"blank in the source sheet"* — the coder left it empty; fix it in the review panel
+- *"blank in the source sheet"* — the coder left it empty; correct it on the FLoRA
+  record (FLoRA tab)
 - *"no `reproduction_outcome_map` entry"* — add the mapping row and re-run
 
 ### The grid shows stale data
@@ -1166,7 +1260,7 @@ Check the freshness banner. If the last run says `failed`, read `failure_reason`
 ## 13. Design decisions and why
 
 **Insert-only.** The sync never updates or deletes. Once a row lands, the database is
-authoritative and edits made in the web app never need to go back to the sheet. This
+authoritative and corrections made in the web app never need to go back to the sheet. This
 removed an entire override layer, a conflict queue, and tombstone/rekey logic. The
 trade-off: a bad parse inserts *permanent* garbage, which is why the gates are strict.
 
@@ -1191,8 +1285,16 @@ union view to put them back together.
 unseen combination is a lookup-table row to add, not stored data to migrate — and the
 two-dimensional structure the coders actually recorded is never lost.
 
-**Row-level review, not inline cell editing.** Abstracts and quotes are far too long to
-edit in a grid cell, and reviewers work record by record, not cell by cell.
+**Corrections live on the FLoRA record, not the source row.** Editing source rows in
+place lost what the source said, and gave a correction no clear home once
+deduplication folded the row into another. A correction stored per field against the
+pinned `flora_id` keeps the evidence intact, records who changed what, and survives a
+re-sync, an enrichment refresh or a change of dedup survivor. Identifier corrections
+are applied before the metadata join so a fixed DOI brings its own title and authors,
+but after the dedup so a correction can never change which records exist.
+
+**Record-level editing, not inline cell editing.** Abstracts and quotes are far too long
+to edit in a grid cell, and editors work record by record, not cell by cell.
 
 **`content_fingerprint` is computed by the database.** It was originally computed in
 Python at insert and frozen forever, so a reviewer correcting a DOI left a stale
@@ -1230,10 +1332,11 @@ by deleting a good row. A trigger keeps it correct.
 | [`sources.yml`](../sources.yml) | Source registry — gids, columns, accepted statuses |
 | [`sync_sources.py`](../sync_sources.py) | Download, gates, insert-only merge |
 | [`transform_sources.py`](../transform_sources.py) | Six-operation transform to the FLoRA columns |
-| [`source_records_service.py`](../source_records_service.py) | All SQL and logic; no FastAPI types |
+| [`source_records_service.py`](../source_records_service.py) | All SQL and logic; no FastAPI types; read-only apart from duplicate rulings |
+| [`flora_edits.py`](../flora_edits.py) | Corrections to FLoRA records: validation, storage, applied on top of every build |
 | [`app.py`](../app.py) | Thin routes (search for `Source records — entry-sheet datatable`) |
 | [`db_schema.sql`](../db_schema.sql) | Tables, constraints, triggers, rule-table seeds |
 | [`docs/index.html`](index.html) | `admin-tab-sources`, `src-detail-modal` |
-| [`docs/app.js`](app.js) | Grid, review panel, duplicate view (`ADMIN: SOURCE RECORDS`) |
+| [`docs/app.js`](app.js) | Grid, read-only record panel, duplicate view (`ADMIN: SOURCE RECORDS`); FLoRA record editor (`FLoRA: record editor`) |
 | [`docs/style.css`](style.css) | `SOURCE RECORDS` sections |
 | [`.github/workflows/sync-sources.yml`](../.github/workflows/sync-sources.yml) | Nightly job |

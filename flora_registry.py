@@ -166,7 +166,13 @@ def record_history(cur, frame, verbose: bool = True) -> dict:
     Recorded here rather than in transform_sources.build() because the build is
     read-only — and because refresh() already has the complete frame, so this
     costs a single INSERT rather than a second two-second build.
+
+    Counted with the corrections made to FLoRA records applied, as the export is: a
+    row with no title of its own is published once a correction supplies one.
     """
+    if not frame.empty and "source_record_id" in frame.columns:
+        import flora_edits                          # local: flora_edits imports transform_sources
+        frame = flora_edits.apply(cur, attach_ids(cur, frame))
     frame = transform_sources.drop_untitled(frame)
     total = len(frame)
     replications = int((frame["type"] == "replication").sum()) if total else 0

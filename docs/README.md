@@ -1422,30 +1422,36 @@ with that duplicated UUID is skipped to avoid choosing one silently.
 New rows receive sequential human-readable IDs such as `REPL-000001`. The
 database trigger calculates a duplicate fingerprint from normalized original DOI
 plus replication DOI (or replication URL). The fingerprint is a review signal,
-not identity, and moves automatically when an admin edits an identifier.
+not identity.
 
-Once a source row exists, later sheet changes do not update it. The database and
-admin edit history become authoritative.
+Once a source row exists, later sheet changes do not update it, and nobody edits it
+by hand: corrections are made to the FLoRA record it feeds (below).
 
 ### Review service
 
 `source_records_service.py` contains transport-independent SQL used by FastAPI.
-The Source Records UI supports:
+The Source Records UI is read-only apart from duplicate rulings. It supports:
 
 - pagination up to 200 rows per page;
-- type, status, outcome-axis, reviewed/unreviewed, duplicate, and text filters;
+- type, status, outcome-axis, source, duplicate, deleted, and text filters;
 - whitelisted sorting;
 - CSV export of the full filtered set;
-- dynamic vocabularies from stored values;
-- full raw JSON and edit history;
-- previous/next navigation inside the active filter;
-- editable promoted fields;
-- review stamps even when no value changed; and
-- optimistic concurrency through an integer `version` plus `SELECT ... FOR UPDATE`.
+- full raw JSON, and the history of edits made before corrections moved to FLoRA;
+- the FLoRA record each row feeds, with a link to correct it there; and
+- previous/next navigation inside the active filter.
 
-A stale save receives HTTP 409 with current version/reviewer headers. Changed
-fields are appended to `source_record_edits`; an unchanged save still increments
-the version and stamps the reviewer.
+### FLoRA record corrections
+
+`flora_edits.py` logs every save to a FLoRA record as one row of the append-only
+`flora_record_changes` (who, when, note, each field as `[before, after]`, and every
+correction in force afterwards), keyed on the record's published id
+(`flora_data.id`). A save rewrites the record's row in `flora_data` at once and moves
+the table revision the public API caches on. Every build re-applies the newest
+corrections on top of what it derived: identifiers (`doi_*`, `url_*`) after
+deduplication and before the metadata join, so the title and authors follow a
+corrected DOI, and every correction after ids are attached. Saves quote the record's
+latest `change_id` as a version; a stale save receives HTTP 409. Any row of the log can
+be restored, which is logged as a change too.
 
 ### Source duplicate decisions
 
@@ -1529,8 +1535,9 @@ be reviewed as executable migration history, not only fresh-install DDL.
 
 | Table | Purpose |
 | --- | --- |
-| `source_records` | Insert-only sheet identity, promoted/raw fields, review/version state, duplicate decision |
-| `source_record_edits` | Append-oriented changed-field and duplicate-decision audit rows |
+| `source_records` | Insert-only sheet identity, promoted/raw fields, review/version state, duplicate decision; never edited by hand |
+| `source_record_edits` | Duplicate-decision audit rows, and field edits made before corrections moved to FLoRA records |
+| `flora_record_changes` | Append-only change log of FLoRA records: one row per save with who, note, `[before, after]` per field and the corrections in force; the newest row per record is re-applied by every build |
 | `source_sync_runs` | Per-source freshness, gate result, counts, and payload hash |
 | `source_display_counters` | Last sequential number handed out per source |
 | `transform_exclusions` | DOI/URL decisions omitted from transformed output |
@@ -1668,9 +1675,10 @@ All answer 503 while the feature is switched off or not set up.
 | GET | `/api/admin/source-records/sync-status` | Latest run per source |
 | GET | `/api/admin/source-records/duplicates` | Cross-table fingerprint groups |
 | POST | `/api/admin/source-records/{record_id}/duplicate` | Mark distinct/duplicate and survivor |
-| GET | `/api/admin/source-records/vocabularies` | Distinct dropdown values |
-| PATCH | `/api/admin/source-records/{record_id}` | Version-checked review/edit/save |
-| GET | `/api/admin/source-records/{record_id}` | Detail, history, duplicates, neighbors |
+| GET | `/api/admin/source-records/{record_id}` | Detail, history, duplicates, FLoRA records fed, neighbors |
+| GET | `/api/admin/flora/{flora_id}` | FLoRA record with its editable fields, corrections and history |
+| PATCH | `/api/admin/flora/{flora_id}` | Version-checked change `{fields, revert, version, note}`, written through to `flora_data` |
+| POST | `/api/admin/flora/{flora_id}/restore` | Restore the state after a logged change (`change_id` 0: the original) |
 
 Literal Source Records routes are declared before the `{record_id}` detail route
 so values such as `export.csv` and `duplicates` are not parsed as UUIDs.

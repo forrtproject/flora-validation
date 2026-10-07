@@ -2,8 +2,10 @@
 transform_sources.py — turn reviewed source_records into the FLoRA dataset.
 
 Stage 11 of the entry-sheet pipeline. source_records is a *record*: what the
-sheet said, plus what a reviewer fixed, stored dirty on purpose. This produces
+sheet said, stored dirty on purpose and never edited by hand. This produces
 the *product*: cleaned, deduplicated, narrowed to the columns FLoRA consumes.
+Corrections are made to the product, not the record: flora_edits.py stores them
+per FLoRA record and applies them on top of every build.
 
 The build() function derives the product without changing source data. Improving
 a cleaning rule and re-running applies the new behaviour to every row. Normal
@@ -250,8 +252,10 @@ def drop_untitled(frame):
     """
     if not {"title_o", "title_r"} <= set(frame.columns):
         return frame
-    return frame[frame["title_o"].map(lambda value: bool(_s(value)))
-                 & frame["title_r"].map(lambda value: bool(_s(value)))]
+    # astype(bool): mapping an EMPTY str column keeps the str dtype, and two string
+    # arrays cannot be combined with &.
+    return frame[frame["title_o"].map(lambda value: bool(_s(value))).astype(bool)
+                 & frame["title_r"].map(lambda value: bool(_s(value))).astype(bool)]
 
 
 def missing_title_report(frame):
@@ -409,9 +413,32 @@ def strip_redundant_url(row):
     return None if clean_doi(doi) == clean_doi(url) else url
 
 
+def matching_exclusion(exclusions, doi_o, doi_r, url_r):
+    """The transform_exclusions row that removes a row with these identifiers, or
+    None. The same rules as step 3: an exclusion with doi_o set matches the pair,
+    one without it matches doi_r or url_r alone."""
+    d_o, d_r, u_r = clean_doi(doi_o), clean_doi(doi_r), norm_url(url_r)
+    for exclusion in exclusions:
+        if exclusion.get("doi_o"):
+            if exclusion.get("doi_r") and (clean_doi(exclusion["doi_o"]), clean_doi(exclusion["doi_r"])) == (d_o, d_r):
+                return exclusion
+            continue
+        if exclusion.get("doi_r") and d_r and clean_doi(exclusion["doi_r"]) == d_r:
+            return exclusion
+        if exclusion.get("url_r") and u_r and norm_url(exclusion["url_r"]) == u_r:
+            return exclusion
+    return None
+
+
+def dedup_keys(df):
+    """type | doi_o | doi_r-or-url_r, as step 5 collapses on. A Series."""
+    right = df["doi_r"].apply(clean_doi).fillna(df["url_r"].apply(norm_url)).fillna("")
+    return df["type"].fillna("") + "|" + df["doi_o"].apply(clean_doi).fillna("") + "|" + right
+
+
 def load(cur):
-    """Reviewer-edited rows. Anything ruled a duplicate is left behind here, and so
-    is a row marked deleted (a record no longer validated)."""
+    """The source rows. Anything ruled a duplicate is left behind here, and so is a
+    row marked deleted (a record no longer validated)."""
     cur.execute(
         """
         SELECT record_id::text AS record_id, display_id, source, type,
@@ -568,6 +595,96 @@ def derive_quote_source(row):
         return row.get("out_quote_source")
     return _join_parts(row.get("out_quote_computational_source"),
                        row.get("out_quote_robust_source"))
+
+
+# The columns the metadata join keeps from the source where no provider resolves the
+# work: the sheet's reference, abstract and year, and the original's landing page.
+# year_o has no source value: the sheets carry only the replication's year.
+JOIN_FALLBACKS = ("ref_o", "url_o", "ref_r", "abstract_r", "year_r")
+# Everything the join writes for one side.
+JOINED_COLUMNS = {
+    side: [f"{field}_{side}" for field in ("title", "author", "journal", "volume", "issue",
+                                           "pages", "language", "oa_url", "oa_work_id",
+                                           "bibtex_ref", "year", "ref", "url")]
+          + (["abstract_r"] if side == "r" else [])
+    for side in ("o", "r")
+}
+
+
+def join_metadata(df, meta, sides=("o", "r")):
+    """Step 7: join cached bibliographic metadata onto df, in place, per side.
+
+    Keyed on each side's DOI, then on the OpenAlex work id in its url column for
+    works with no DOI. Every metadata column is replaced; the JOIN_FALLBACKS columns
+    must hold the source's values, which are kept where no provider answers.
+    """
+    from enrich_works import extract_work_id        # local: avoids an import cycle
+    from bibliographic_helpers import normalise_key
+    for side in sides:
+        doi_col = f"doi_{side}"
+        keys = df[doi_col].map(lambda d: meta.get(normalise_key(d)) if d else None)
+        for field, column in (("title", f"title_{side}"), ("authors", f"author_{side}"),
+                              ("journal", f"journal_{side}"), ("volume", f"volume_{side}"),
+                              ("issue", f"issue_{side}"), ("pages", f"pages_{side}"),
+                              ("language", f"language_{side}"), ("oa_url", f"oa_url_{side}"),
+                              ("oa_work_id", f"oa_work_id_{side}"),
+                              ("bibtex_ref", f"bibtex_ref_{side}")):
+            df[column] = keys.map(lambda m, f=field: (m or {}).get(f))
+
+        # Prefer provider-formatted citations and structured Crossref authors;
+        # retain source-sheet references when no provider can resolve the work.
+        df[f"author_{side}"] = keys.map(lambda m: (m or {}).get("authors_json")).fillna(df[f"author_{side}"])
+        df[f"ref_{side}"] = keys.map(lambda m: (m or {}).get("apa_ref")).fillna(df[f"ref_{side}"])
+        if side == "r":
+            df["abstract_r"] = df["abstract_r"].fillna(keys.map(lambda m: (m or {}).get("abstract")))
+
+        # year is the one field we may already hold: the replications sheet carries
+        # one. Metadata wins (it is the published year, the sheet's is hand-entered),
+        # but the sheet's is kept where the DOI resolved to nothing — the R pipeline
+        # drops the sheet value entirely and ends up with a blank.
+        # Held back until after 7b rather than applied here: "metadata wins" means
+        # the work-id lookup below wins too, and filling the sheet value first would
+        # make its fillna a no-op on the 17 rows that have both.
+        sheet_year = (df[f"year_{side}"].map(_sheet_year)
+                      if f"year_{side}" in df.columns else None)
+        df[f"year_{side}"] = keys.map(lambda m: (m or {}).get("year"))
+
+        # 7b ── works with no DOI, only an OpenAlex link (notebook Step 7b)
+        # Theses and working papers are recorded as https://openalex.org/W… in the
+        # url column. Keyed on the W-id, cached by enrich_works alongside the DOI
+        # rows. Only fills what the DOI join left empty, so a real DOI always wins.
+        url_column = f"url_{side}"
+        if url_column in df.columns:
+            id_keys = df[url_column].map(
+                lambda u: (meta.get(normalise_key(u)) or meta.get(extract_work_id(u))) if u else None)
+            for field, column in (("title", f"title_{side}"),
+                                  ("authors", f"author_{side}"),
+                                  ("journal", f"journal_{side}"),
+                                  ("volume", f"volume_{side}"),
+                                  ("issue", f"issue_{side}"),
+                                  ("pages", f"pages_{side}"),
+                                  ("language", f"language_{side}"),
+                                  ("oa_url", f"oa_url_{side}"),
+                                  ("oa_work_id", f"oa_work_id_{side}"),
+                                  ("bibtex_ref", f"bibtex_ref_{side}"),
+                                  ("year", f"year_{side}")):
+                from_id = id_keys.map(lambda m, f=field: (m or {}).get(f))
+                df[column] = df[column].fillna(from_id)
+            # URL-only manual entries and OSF citations apply on both sides.
+            no_doi_citation = keys.map(lambda m: not bool((m or {}).get("apa_ref")))
+            from_citation = id_keys.map(lambda m: (m or {}).get("apa_ref"))
+            df.loc[no_doi_citation, f"ref_{side}"] = from_citation[no_doi_citation].combine_first(df.loc[no_doi_citation, f"ref_{side}"])
+            from_authors = id_keys.map(lambda m: (m or {}).get("authors_json"))
+            no_doi_authors = keys.map(lambda m: not bool((m or {}).get("authors_json") or (m or {}).get("authors")))
+            df.loc[no_doi_authors, f"author_{side}"] = from_authors[no_doi_authors].fillna(df.loc[no_doi_authors, f"author_{side}"])
+
+        # …and only now the sheet's own year, for the rows neither lookup answered.
+        if sheet_year is not None:
+            df[f"year_{side}"] = df[f"year_{side}"].fillna(sheet_year)
+
+        if side == "o":
+            # R's formatted metadata includes the original DOI landing page.
+            df["url_o"] = df["url_o"].fillna(df["doi_o"].map(_doi_url))
 
 
 def build(cur, verbose: bool = True,
@@ -809,78 +926,19 @@ def build(cur, verbose: bool = True,
     # 6 ── project
     df["source"] = df["source"].replace({"replications": "entry_sheet_replications",
                                          "reproductions": "entry_sheet_reproductions"})
+
     # 7 ── bibliographic enrichment
     # Fills the half of the output contract the R notebook fetched from CrossRef,
     # OpenAlex and Unpaywall. Cached per DOI in work_metadata by enrich_works.py, so
     # this is a dictionary join, not network traffic.
     from enrich_works import load_metadata          # local: avoids an import cycle
-    from bibliographic_helpers import normalise_key
     meta = load_metadata(cur) if metadata is None else metadata
-    for side, doi_col in (("o", "doi_o"), ("r", "doi_r")):
-        keys = df[doi_col].map(lambda d: meta.get(normalise_key(d)) if d else None)
-        for field, column in (("title", f"title_{side}"), ("authors", f"author_{side}"),
-                              ("journal", f"journal_{side}"), ("volume", f"volume_{side}"),
-                              ("issue", f"issue_{side}"), ("pages", f"pages_{side}"),
-                              ("language", f"language_{side}"), ("oa_url", f"oa_url_{side}"),
-                              ("oa_work_id", f"oa_work_id_{side}"),
-                              ("bibtex_ref", f"bibtex_ref_{side}")):
-            df[column] = keys.map(lambda m, f=field: (m or {}).get(f))
-
-        # Prefer provider-formatted citations and structured Crossref authors;
-        # retain source-sheet references when no provider can resolve the work.
-        df[f"author_{side}"] = keys.map(lambda m: (m or {}).get("authors_json")).fillna(df[f"author_{side}"])
-        df[f"ref_{side}"] = keys.map(lambda m: (m or {}).get("apa_ref")).fillna(df[f"ref_{side}"])
-        if side == "r":
-            df["abstract_r"] = df["abstract_r"].fillna(keys.map(lambda m: (m or {}).get("abstract")))
-
-        # year is the one field we may already hold: the replications sheet carries
-        # one. Metadata wins (it is the published year, the sheet's is hand-entered),
-        # but the sheet's is kept where the DOI resolved to nothing — the R pipeline
-        # drops the sheet value entirely and ends up with a blank.
-        # Held back until after 7b rather than applied here: "metadata wins" means
-        # the work-id lookup below wins too, and filling the sheet value first would
-        # make its fillna a no-op on the 17 rows that have both.
-        sheet_year = (df[f"year_{side}"].map(_sheet_year)
-                      if f"year_{side}" in df.columns else None)
-        df[f"year_{side}"] = keys.map(lambda m: (m or {}).get("year"))
-
-        # 7b ── works with no DOI, only an OpenAlex link (notebook Step 7b)
-        # Theses and working papers are recorded as https://openalex.org/W… in the
-        # url column. Keyed on the W-id, cached by enrich_works alongside the DOI
-        # rows. Only fills what the DOI join left empty, so a real DOI always wins.
-        url_column = f"url_{side}"
-        if url_column in df.columns:
-            from enrich_works import extract_work_id
-            id_keys = df[url_column].map(
-                lambda u: (meta.get(normalise_key(u)) or meta.get(extract_work_id(u))) if u else None)
-            for field, column in (("title", f"title_{side}"),
-                                  ("authors", f"author_{side}"),
-                                  ("journal", f"journal_{side}"),
-                                  ("volume", f"volume_{side}"),
-                                  ("issue", f"issue_{side}"),
-                                  ("pages", f"pages_{side}"),
-                                  ("language", f"language_{side}"),
-                                  ("oa_url", f"oa_url_{side}"),
-                                  ("oa_work_id", f"oa_work_id_{side}"),
-                                  ("bibtex_ref", f"bibtex_ref_{side}"),
-                                  ("year", f"year_{side}")):
-                from_id = id_keys.map(lambda m, f=field: (m or {}).get(f))
-                df[column] = df[column].fillna(from_id)
-            # URL-only manual entries and OSF citations apply on both sides.
-            no_doi_citation = keys.map(lambda m: not bool((m or {}).get("apa_ref")))
-            from_citation = id_keys.map(lambda m: (m or {}).get("apa_ref"))
-            df.loc[no_doi_citation, f"ref_{side}"] = from_citation[no_doi_citation].combine_first(df.loc[no_doi_citation, f"ref_{side}"])
-            from_authors = id_keys.map(lambda m: (m or {}).get("authors_json"))
-            no_doi_authors = keys.map(lambda m: not bool((m or {}).get("authors_json") or (m or {}).get("authors")))
-            df.loc[no_doi_authors, f"author_{side}"] = from_authors[no_doi_authors].fillna(df.loc[no_doi_authors, f"author_{side}"])
-
-        # …and only now the sheet's own year, for the rows neither lookup answered.
-        if sheet_year is not None:
-            df[f"year_{side}"] = df[f"year_{side}"].fillna(sheet_year)
-
-        if side == "o":
-            # R's formatted metadata includes the original DOI landing page.
-            df["url_o"] = df["url_o"].fillna(df["doi_o"].map(_doi_url))
+    # What the source supplied for the columns the join falls back on, for joining
+    # again a row whose identifiers are corrected after the dedup (step 6c).
+    join_fallbacks = df.set_index("record_id")[
+        [c for c in JOIN_FALLBACKS if c in df.columns]].copy()
+    join_fallbacks = join_fallbacks[~join_fallbacks.index.duplicated()]
+    join_metadata(df, meta)
 
     enriched = int(df["title_o"].notna().sum())
     say(f"  enriched: {enriched}/{len(df)} row(s) have original-side metadata")
@@ -894,6 +952,66 @@ def build(cur, verbose: bool = True,
         df, candidates_out=None, normalise_outcome=_normalise_outcome,
         verbose=verbose, conflicts_out=conflicts, open_review_issue=review_issue,
         rulings=dedup_decisions)
+
+    # 6c ── identifiers corrected on FLoRA records (flora_edits.py)
+    # After every duplicate step — exact (5), pair merge (5b) and preprint (6b) — so
+    # a correction can never drop, merge or hide a record: those steps see the
+    # identifiers the source supplied. The corrected rows are then joined to the
+    # metadata again, from the source's own fallbacks, so the title, authors and
+    # journal follow the corrected DOI instead of describing the paper it replaced.
+    # Every other correction is applied to the finished frame, once ids are attached.
+    import flora_edits                              # local: flora_edits imports this module
+    identifier_edits = flora_edits.apply_identifiers(df, flora_edits.load_identifiers(cur))
+    if identifier_edits:
+        say(f"  identifiers corrected on FLoRA records: {len(identifier_edits)} row(s)")
+        for side in ("o", "r"):
+            corrected = [rid for rid, fields in identifier_edits.items()
+                         if fields.keys() & {f"doi_{side}", f"url_{side}"}]
+            rows = df.index[df["record_id"].isin(corrected)]
+            if not len(rows):
+                continue
+            part = df.loc[rows].copy()
+            for column in JOIN_FALLBACKS:
+                if column.endswith(f"_{side}"):
+                    fallback = part["record_id"].map(join_fallbacks[column]) \
+                        if column in join_fallbacks else None
+                    if column == f"url_{side}":
+                        # A corrected URL is the identifier itself; only the derived
+                        # landing page goes back to what the source supplied.
+                        keep = part["record_id"].map(
+                            lambda rid: f"url_{side}" in identifier_edits.get(rid, {}))
+                        fallback = part[column].where(keep, fallback)
+                    part[column] = fallback
+            if side == "o":
+                part["year_o"] = None               # the sheets carry no original year
+            join_metadata(part, meta, sides=(side,))
+            for column in JOINED_COLUMNS[side]:
+                if column not in part.columns:
+                    continue
+                if column not in df.columns:
+                    df[column] = None
+                if df[column].dtype.kind in "biufc" and part[column].dtype.kind not in "biufc":
+                    df[column] = df[column].astype(object)
+                df.loc[rows, column] = part[column]
+        # An exclusion added after a correction still removes the record: the
+        # exclusion is the decision. A save refuses a correction onto one outright.
+        excluded = pd.Series(False, index=df.index)
+        for idx in df.index[df["record_id"].isin(identifier_edits)]:
+            excluded[idx] = matching_exclusion(
+                exclusions, df.at[idx, "doi_o"], df.at[idx, "doi_r"], df.at[idx, "url_r"]) is not None
+        if excluded.any():
+            say(f"  ⚠ {int(excluded.sum())} row(s) corrected onto an excluded identifier "
+                "were left out: " + ", ".join(df.loc[excluded, "display_id"].astype(str)))
+            df = df[~excluded]
+        # The duplicate steps never see corrected identifiers, so say when a
+        # correction makes two records share their DOIs: it may be one study twice.
+        keys = dedup_keys(df)
+        shared = (df["record_id"].isin(identifier_edits) & keys.duplicated(keep=False)
+                  & keys.str.split("|", n=1).str[1].ne("|"))
+        if shared.any():
+            say(f"  ⚠ {int(shared.sum())} corrected row(s) now share their DOIs with "
+                "another record: " + ", ".join(df.loc[shared, "display_id"].astype(str))
+                + " — rule a duplicate in Source Records if it is the same study")
 
     # 8 ── text cleaning (Step 7c of the notebook)
     # After enrichment, because titles and journals arrive from OpenAlex carrying
@@ -973,6 +1091,8 @@ def build(cur, verbose: bool = True,
         for row in dedup_log.to_dict("records")
     ]
     out.attrs["cross_type_duplicates"] = cross_type
+    # The values step 6a replaced, for the editor to show beside each correction.
+    out.attrs["identifier_edits"] = identifier_edits
 
     # DUMMY_* placeholders keyed manual references upstream; they are not DOIs.
     for col in ("doi_o", "doi_r"):
@@ -1021,7 +1141,8 @@ def build(cur, verbose: bool = True,
             say(f"  INVALID: {len(invalid_axis)} reproduction axis value(s):")
             for display_id, column, raw in invalid_axis[:10]:
                 say(f"      {display_id}: {column}={raw!r}")
-            say("    correct the source_record value to a codebook category, and re-run")
+            say("    fix the value at its source (sheet or validated record) and re-sync, or add "
+                "the spelling to AXIS_VALUE_ALIASES in extractor_vocab.py, and re-run")
         problem_count = len(unknown_alias) + len(bad_alias) + len(invalid_axis)
         raise ValueError(
             f"{problem_count} outcome or axis value(s) are not recognised; "
@@ -1094,6 +1215,10 @@ def run(output: Path, stats_only: bool = False,
                 if not stats_only:
                     refresh(cur, verbose=False, frame=out)
                 out = attach_ids(cur, out)
+                # Corrections made on FLoRA records: keyed on flora_id, so only
+                # once the ids are attached.
+                import flora_edits
+                out = flora_edits.apply(cur, out)
                 if not stats_only and not out.empty:
                     if (out["export_id"].map(final_export.text).eq("").any()
                             or out["export_position"].isna().any()):

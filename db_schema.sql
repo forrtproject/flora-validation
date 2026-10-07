@@ -1670,6 +1670,48 @@ DROP TRIGGER IF EXISTS trg_source_records_no_truncate ON source_records;
 CREATE TRIGGER trg_source_records_no_truncate BEFORE TRUNCATE ON source_records
     FOR EACH STATEMENT EXECUTE FUNCTION prevent_flora_identity_deletion();
 
+-- Changes made to FLoRA records (flora_edits.py), one row per save — the FLoRA
+-- counterpart of admin_decisions for website records: who, when, the note, and each
+-- field changed as [before, after]. The `before` values are the original entries.
+-- Source records are never edited; a save rewrites the record's row in flora_data
+-- at once, and every build re-applies the corrections of each record's newest row,
+-- because the pipeline rebuilds flora_data from the source records.
+--
+-- `corrections` holds every correction in force once the row was made (field ->
+-- value; NULL is a deliberately blank field), so the record can be restored to the
+-- state of any row. A restore is itself a row (action 'restore', restored_from the
+-- change restored, or NULL for the derived values before any change).
+--
+-- Keyed on the permanent published id: flora_data.id, which is the registry's
+-- export_id. It references the registry rather than flora_data because a row can be
+-- corrected before it is first published (a missing title keeps it out). Append-only.
+CREATE TABLE IF NOT EXISTS flora_record_changes (
+    change_id     BIGSERIAL   PRIMARY KEY,
+    export_id     TEXT        NOT NULL REFERENCES flora_records(export_id),
+    changed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    admin_id      INTEGER,
+    admin_handle  TEXT        NOT NULL,
+    action        TEXT        NOT NULL CHECK (action IN ('edit', 'restore')),
+    note          TEXT,
+    changes       JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    corrections   JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    restored_from BIGINT      REFERENCES flora_record_changes(change_id)
+);
+CREATE INDEX IF NOT EXISTS idx_flora_record_changes_record
+    ON flora_record_changes (export_id, change_id DESC);
+
+CREATE OR REPLACE FUNCTION prevent_flora_change_rewrite() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'flora_record_changes is append-only: restore a change instead of editing the log';
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_flora_record_changes_append_only ON flora_record_changes;
+CREATE TRIGGER trg_flora_record_changes_append_only BEFORE UPDATE OR DELETE ON flora_record_changes
+    FOR EACH ROW EXECUTE FUNCTION prevent_flora_change_rewrite();
+DROP TRIGGER IF EXISTS trg_flora_record_changes_no_truncate ON flora_record_changes;
+CREATE TRIGGER trg_flora_record_changes_no_truncate BEFORE TRUNCATE ON flora_record_changes
+    FOR EACH STATEMENT EXECUTE FUNCTION prevent_flora_change_rewrite();
+
 CREATE TABLE IF NOT EXISTS source_sync_jobs (
     job_id       UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     trigger      TEXT        NOT NULL CHECK (trigger IN ('admin', 'cli')),

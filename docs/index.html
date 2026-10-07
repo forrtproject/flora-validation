@@ -367,8 +367,6 @@
         <button class="admin-filter-btn" data-filter="replication">Replications <span class="filter-count" id="sfc-repl">—</span></button>
         <button class="admin-filter-btn" data-filter="reproduction">Reproductions <span class="filter-count" id="sfc-repro">—</span></button>
         <button class="admin-filter-btn" data-filter="validated">Validated <span class="filter-count" id="sfc-validated">—</span></button>
-        <button class="admin-filter-btn" data-filter="unreviewed">Not reviewed <span class="filter-count" id="sfc-unreviewed">—</span></button>
-        <button class="admin-filter-btn" data-filter="reviewed">Reviewed <span class="filter-count" id="sfc-reviewed">—</span></button>
         <button class="admin-filter-btn" data-filter="flagged">Duplicates <span class="filter-count" id="sfc-flagged">—</span></button>
         <button class="admin-filter-btn" data-filter="deleted" title="Rows of records that are no longer validated: kept with their ids, but no longer feeding FLoRA">Deleted <span class="filter-count" id="sfc-deleted">—</span></button>
       </div>
@@ -563,6 +561,7 @@
           <p class="flora-blurb">Outcomes derived, DOIs cleaned, exclusions and duplicates applied.
             Each row keeps the record ID it has in Source Records &mdash; pinned when first assigned, so it
             stays put even if a duplicate ruling changes which record the row derives from.
+            Correct a record here: open it and edit its fields. Source records stay as imported.
             Downloads use the reference CSV order, with <code>id</code> and <code>id_md5</code> first.
             Download a completed pipeline run and its report from Source Records.</p>
         </div>
@@ -583,6 +582,7 @@
         <button class="admin-filter-btn active" data-filter="all">All <span class="filter-count" id="ffc-all">—</span></button>
         <button class="admin-filter-btn" data-filter="replication">Replications <span class="filter-count" id="ffc-repl">—</span></button>
         <button class="admin-filter-btn" data-filter="reproduction">Reproductions <span class="filter-count" id="ffc-repro">—</span></button>
+        <button class="admin-filter-btn" data-filter="edited" title="Records with at least one field corrected here">Edited <span class="filter-count" id="ffc-edited">—</span></button>
       </div>
 
       <div class="admin-search-bar src-toolbar">
@@ -754,6 +754,17 @@
       <button id="src-detail-close" class="faq-close" title="Close">×</button>
     </div>
     <div class="admin-detail-body" id="src-detail-body"></div>
+  </div>
+</div>
+
+<!-- ------------ FLORA RECORD EDITOR ------------ -->
+<div id="flora-detail-modal" class="faq-overlay hidden" role="dialog" aria-modal="true">
+  <div class="admin-detail-panel">
+    <div class="faq-panel-header">
+      <span class="faq-panel-title" id="flora-detail-title">FLoRA record</span>
+      <button id="flora-detail-close" class="faq-close" title="Close">×</button>
+    </div>
+    <div class="admin-detail-body" id="flora-detail-body"></div>
   </div>
 </div>
 
