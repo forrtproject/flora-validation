@@ -142,9 +142,9 @@ def test_the_grid_lists_deleted_rows_apart_and_never_edits_them(local_database):
         deleted = grid.list_records(cur, {"deleted": "only"})
         groups = grid.duplicate_groups(cur, unresolved_only=False)
         [row] = [r for r in deleted["records"]]
-        with pytest.raises(ValueError, match="deleted"):
-            grid.update_record(cur, row["record_id"], {"outcome": "successful"},
-                               row["version"], "luke")
+        # No source row is edited at all (corrections go to FLoRA records), and a
+        # deleted one cannot be ruled on either.
+        assert not hasattr(grid, "update_record")
         with pytest.raises(ValueError, match="deleted"):
             grid.resolve_duplicate(cur, row["record_id"], "distinct", "luke")
     local_database.rollback()

@@ -362,10 +362,12 @@ def load_dataset(cur):
     nobody can resolve — it is already recorded in output/flora_export_log.csv and
     counted on the FLoRA tab.
     """
+    import flora_edits
     import flora_registry
     import transform_sources
     frame = transform_sources.build(cur, verbose=False)
     frame = flora_registry.attach_ids(cur, frame)
+    frame = flora_edits.apply(cur, frame)
     return transform_sources.drop_untitled(transform_sources.to_output_shape(frame))
 
 

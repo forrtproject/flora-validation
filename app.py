@@ -5844,6 +5844,9 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
 # Routes stay thin on purpose: all SQL and business logic lives in
 # source_records_service, which has no FastAPI types in it, so the Lambda
 # handlers planned for the next phase can call the identical functions.
+#
+# Read-only apart from duplicate rulings: source records stay as imported, and a
+# correction is made to the FLoRA record a row feeds (PATCH /api/admin/flora/...).
 
 def _source_filters(
     type: str = "", status: str = "", outcome: str = "",
@@ -5910,24 +5913,26 @@ def admin_source_sync_status(admin: dict = Depends(current_admin)):
 #
 # Derived from source_records on demand by transform_sources.build(), so it can
 # never drift from what the Source Records tab shows. flora_service caches the
-# frame until the underlying tables actually change.
+# frame until the underlying tables actually change. Records are corrected here,
+# not in Source Records (flora_edits.py).
 # ---------------------------------------------------------------------------
 
 def _flora_filters(type: str = "", source: str = "", outcome: str = "",
-                   search: str = "", unregistered: bool = False) -> dict:
+                   search: str = "", unregistered: bool = False,
+                   edited: bool = False) -> dict:
     return {"type": type, "source": source, "outcome": outcome,
-            "search": search, "unregistered": unregistered}
+            "search": search, "unregistered": unregistered, "edited": edited}
 
 
 @app.get("/api/admin/flora")
 def admin_flora_records(
     type: str = "", source: str = "", outcome: str = "",
-    search: str = "", unregistered: bool = False,
+    search: str = "", unregistered: bool = False, edited: bool = False,
     sort: str = "", dir: str = "asc",
     page: int = 1, per_page: int = 50,
     admin: dict = Depends(current_admin),
 ):
-    filters = _flora_filters(type, source, outcome, search, unregistered)
+    filters = _flora_filters(type, source, outcome, search, unregistered, edited)
     with db() as cur:
         return flora_service.list_records(
             cur, filters, sort=sort, direction=dir, page=page, per_page=per_page
@@ -5944,7 +5949,7 @@ def admin_flora_stats(admin: dict = Depends(current_admin)):
 @app.get("/api/admin/flora/export.csv")
 def admin_flora_export(
     type: str = "", source: str = "", outcome: str = "",
-    search: str = "", unregistered: bool = False,
+    search: str = "", unregistered: bool = False, edited: bool = False,
     admin: dict = Depends(current_admin),
 ):
     """Current rows matching the filter, in the canonical release order.
@@ -5952,7 +5957,7 @@ def admin_flora_export(
     Omit filters for the complete dataset. Retained per-run artifacts have their
     own endpoint so later edits cannot change an earlier run's downloaded file.
     """
-    filters = _flora_filters(type, source, outcome, search, unregistered)
+    filters = _flora_filters(type, source, outcome, search, unregistered, edited)
     try:
         with db() as cur:
             body = flora_service.export_csv(cur, filters)
@@ -6022,15 +6027,68 @@ def admin_flora_preprint_undo(pair_key: str, request: Request,
 
 @app.get("/api/admin/flora/{flora_id}")
 def admin_flora_record(flora_id: str, admin: dict = Depends(current_admin)):
-    """One full row, every column, for the detail panel."""
+    """One full row, every column, for the detail panel, with what its editor needs."""
     with db() as cur:
         record = flora_service.get_record(cur, flora_id)
         if record is None:
-            raise HTTPException(404, "No such FLoRA record")
+            raise HTTPException(404, "This record is not in the current FLoRA dataset. If a "
+                                     "duplicate ruling or an exclusion changed it, the next "
+                                     "pipeline run re-points or retires it.")
         # The source rows dedup collapsed into this one. Shown so a reviewer can see
         # what was folded in rather than having to reconstruct it from the grid.
         record["merged_sources"] = flora_service.merged_sources(cur, flora_id)
+        # Editable fields, the corrections already made and their history. None
+        # for a row the registry has not reached yet.
+        record["editing"] = flora_service.editing(cur, record)
     return record
+
+
+class FloraRecordUpdate(BaseModel):
+    fields: dict = {}
+    revert: list[str] = []
+    version: int          # required: an absent version would skip the concurrency check
+    note: str = Field("", max_length=500)
+
+
+def _flora_change(change):
+    """Run a FLoRA record change, mapping its domain errors to status codes."""
+    with db() as cur:
+        try:
+            return change(cur)
+        except flora_service.RecordNotFound:
+            raise HTTPException(404, "No such FLoRA record or change")
+        except flora_service.VersionConflict as e:
+            # A plain-string detail survives the client's unwrapping; the version
+            # it should reload rides in a header.
+            raise HTTPException(409, "This record was changed by someone else.",
+                                headers={"X-Current-Version": str(e.current_version)})
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+
+@app.patch("/api/admin/flora/{flora_id}")
+def admin_flora_record_update(flora_id: str, req: FloraRecordUpdate,
+                              admin: dict = Depends(current_admin)):
+    """Change a FLoRA record: one row of its change log (who, what, the note), and
+    its row in the FLoRA table rewritten at once. The source records it derives from
+    are not changed; every build re-applies the change on top of them."""
+    return _flora_change(lambda cur: flora_service.update_record(
+        cur, flora_id, req.fields or {}, req.revert or [], req.version, admin, req.note))
+
+
+class FloraRecordRestore(BaseModel):
+    change_id: int = Field(ge=0)   # 0: as derived, before any change
+    version: int
+    note: str = Field("", max_length=500)
+
+
+@app.post("/api/admin/flora/{flora_id}/restore")
+def admin_flora_record_restore(flora_id: str, req: FloraRecordRestore,
+                               admin: dict = Depends(current_admin)):
+    """Put a FLoRA record back as it was right after one change in its log. The
+    restore is logged as a change itself, so it can be undone the same way."""
+    return _flora_change(lambda cur: flora_service.restore_record(
+        cur, flora_id, req.change_id, req.version, admin, req.note))
 
 
 # ---------------------------------------------------------------------------
@@ -6145,68 +6203,6 @@ def admin_resolve_duplicate(record_id: str, req: DuplicateResolution,
             raise HTTPException(400, str(e))
 
 
-@app.get("/api/admin/source-records/vocabularies")
-def admin_source_vocabularies(admin: dict = Depends(current_admin)):
-    """Dropdown options for the review panel, derived from the stored rows so a
-    new value appearing upstream needs no code change."""
-    with db() as cur:
-        return source_records_service.field_vocabularies(cur)
-
-
-class SourceRecordUpdate(BaseModel):
-    fields: dict = {}
-    version: int          # required: an absent version would skip the concurrency check
-    note: str = ""
-
-
-@app.patch("/api/admin/source-records/{record_id}")
-def admin_source_record_update(
-    record_id: str,
-    req: SourceRecordUpdate,
-    type: str = "", status: str = "", outcome: str = "",
-    search: str = "", reviewed: str = "", flagged: bool = False,
-    source: str = "", deleted: str = "",
-    sort: str = "", dir: str = "asc",
-    admin: dict = Depends(current_admin),
-):
-    """Save a review. Stamps reviewer + timestamp even when nothing changed, and
-    returns the next record in the active filter so 'Save & next' is one trip."""
-    handle = admin["handle"]
-    filters = _source_filters(type, status, outcome, search, reviewed, flagged, source, deleted)
-    with db() as cur:
-        # Computed BEFORE the save: stamping reviewed_at can move this row out of
-        # its own filter (the "not reviewed" queue is exactly that case), and then
-        # there would be no next id to advance to.
-        try:
-            neighbours = source_records_service.neighbours(
-                cur, record_id, filters, sort, dir
-            )
-        except source_records_service.RecordNotFound:
-            raise HTTPException(404, "Record not found")
-
-        try:
-            result = source_records_service.update_record(
-                cur, record_id, req.fields or {}, req.version, handle, req.note
-            )
-        except source_records_service.RecordNotFound:
-            raise HTTPException(404, "Record not found")
-        except source_records_service.VersionConflict as e:
-            # Detail is a plain string so it survives the client's `err.detail`
-            # unwrapping; the structured bits go in dedicated headers.
-            raise HTTPException(
-                409, "This record was changed by someone else.",
-                headers={
-                    "X-Current-Version": str(e.current.get("version") or ""),
-                    "X-Reviewed-By": str(e.current.get("reviewed_by") or ""),
-                },
-            )
-        except ValueError as e:
-            raise HTTPException(400, str(e))
-
-        result["neighbours"] = neighbours
-        return result
-
-
 @app.get("/api/admin/source-records/{record_id}")
 def admin_source_record_detail(
     record_id: str,
@@ -6216,7 +6212,7 @@ def admin_source_record_detail(
     sort: str = "", dir: str = "asc",
     admin: dict = Depends(current_admin),
 ):
-    """Full record for the review panel. The filter params are passed through so
+    """Full record for the read-only panel. The filter params are passed through so
     prev/next walk the queue the reviewer is actually looking at."""
     filters = _source_filters(type, status, outcome, search, reviewed, flagged, source, deleted)
     with db() as cur:

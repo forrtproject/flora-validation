@@ -1,9 +1,10 @@
 """flora_service.py — data layer for the FLoRA tab.
 
 The tab shows the *product*: `transform_sources.build()` output, with the stable
-`flora_id` from `flora_records` attached. Nothing is materialised — the dataset is
-derived from source_records on demand, so it can never drift from the records the
-Source Records tab shows.
+`flora_id` from `flora_records` attached and the corrections editors made to FLoRA
+records applied (flora_edits.py). Nothing is materialised — the dataset is derived
+from source_records on demand, so it can never drift from the records the Source
+Records tab shows. This tab is where records are corrected; source records are not.
 
 Transport-agnostic like source_records_service: cursors in, plain dicts out.
 
@@ -12,8 +13,8 @@ WHY A CACHE
 A build is ~0.5s in-process — fine once, wasteful on every keystroke of a search
 box and every page change. The frame is cached and reused until the underlying
 tables actually change, detected by a cheap signature query (row counts plus the
-latest updated_at) rather than a timer, so an edit in the Source Records tab shows
-up here immediately instead of after an arbitrary delay.
+latest updated_at) rather than a timer, so a correction saved here, a sync or a
+duplicate ruling shows up immediately instead of after an arbitrary delay.
 
 The build's two big inputs — every source row, and every cached work_metadata
 row with its abstract — are cached separately, each keyed on only the signature
@@ -33,6 +34,7 @@ import numpy as np
 import pandas as pd
 
 import bibliographic_helpers
+import flora_edits
 import flora_registry
 import preprint_dedup
 import transform_sources
@@ -49,6 +51,8 @@ LIST_COLUMNS = [
     "doi_o", "oa_work_id_o", "ref_o",
     "doi_r", "oa_work_id_r", "url_r", "ref_r",
     "outcome",
+    # Which fields an editor corrected on this record, if any (flora_edits.py).
+    "edited_fields",
 ]
 
 SORT_COLUMNS = {
@@ -82,6 +86,7 @@ class _Signature(NamedTuple):
     dedup_decisions: str
     source_versions: str = "None"
     metadata_versions: str = "None"
+    edits: str = "None"
 
     def rows_key(self) -> tuple:
         """What transform_sources.load() reads: source_records, nothing else."""
@@ -97,9 +102,9 @@ class _Signature(NamedTuple):
 def _signature(cur) -> _Signature:
     """Cheap 'has anything changed' probe.
 
-    Counts plus the newest updated_at. A reviewer's edit bumps updated_at, a sync
-    bumps the count, and a registry refresh bumps the flora count — so every way
-    the dataset can change moves this.
+    Counts plus the newest updated_at. A sync or a duplicate ruling bumps
+    updated_at or the count, a registry refresh bumps the flora count, and a saved
+    change grows the change log — so every way the dataset can change moves this.
 
     updated_at alone is not enough for the two big tables. NOW() is a
     transaction's START time, so a long sync that commits after a reviewer's
@@ -129,7 +134,13 @@ def _signature(cur) -> _Signature:
                -- pair the other way round changes the outcome with the same action.
                (SELECT md5(string_agg(concat_ws('|', pair_key, side, doi_1, doi_2, action),
                                       '' ORDER BY pair_key))
-                  FROM preprint_dedup_decisions) AS dedup_decisions_signature
+                  FROM preprint_dedup_decisions) AS dedup_decisions_signature,
+               -- Changes made to FLoRA records: exactly which ones are visible. A
+               -- count and the newest id are not enough, because a save rolled back
+               -- after its rebuild can leave the cache with a set of changes whose
+               -- count and maximum another committed set later has too.
+               (SELECT md5(string_agg(change_id::text, ',' ORDER BY change_id))
+                  FROM flora_record_changes) AS edits_signature
         """
     )
     row = cur.fetchone()
@@ -137,7 +148,8 @@ def _signature(cur) -> _Signature:
             row["n_flora"], row["n_excluded"],
             *(str(row.get(field)) for field in ("registry_updated", "n_metadata",
               "metadata_updated", "references_updated", "exclusions_signature", "aliases_signature",
-              "dedup_decisions_signature", "source_versions", "metadata_versions")))
+              "dedup_decisions_signature", "source_versions", "metadata_versions",
+              "edits_signature")))
 
 
 def _current(cur) -> "tuple[pd.DataFrame, list]":
@@ -165,6 +177,7 @@ def _current(cur) -> "tuple[pd.DataFrame, list]":
     dedup_log = list(frame.attrs.get("preprint_dedup_log") or [])
     frame = flora_registry.attach_ids(cur, frame)
     frame = _attach_merged_ids(cur, frame)
+    frame = flora_edits.apply(cur, frame)
     # Pinned on the cached frame too, so a caller holding the frame reads the log of
     # that same build — not whatever a concurrent build left in the cache since.
     frame.attrs["preprint_dedup_log"] = dedup_log
@@ -268,6 +281,11 @@ def _apply_filters(frame: pd.DataFrame, filters: dict) -> pd.DataFrame:
     if filters.get("unregistered"):
         out = out[out["flora_id"].isna()]
 
+    # Records an editor has corrected, to review what was changed.
+    if filters.get("edited"):
+        out = (out[out["edited_fields"].notna()] if "edited_fields" in out.columns
+               else out.iloc[0:0])
+
     search = (filters.get("search") or "").strip()
     if search:
         cols = ["flora_id", "export_id", "source_display_id", "doi_o", "doi_r", "ref_o", "ref_r",
@@ -330,22 +348,88 @@ def counts(frame: pd.DataFrame) -> dict:
         # Step 10). Counted here rather than filtered out: this grid is where
         # someone fixes them, and a row hidden here is a row nobody fixes.
         "untitled": len(frame) - len(transform_sources.drop_untitled(frame)),
+        "edited": (int(frame["edited_fields"].notna().sum())
+                   if "edited_fields" in frame.columns else 0),
         "sources": sorted(frame["source"].dropna().unique().tolist()),
         "outcomes": sorted(frame["outcome"].dropna().unique().tolist()),
     }
 
 
-def get_record(cur, flora_id: str) -> "dict | None":
-    """One full row, every column. Used by the detail panel."""
+# Raised by update_record() and restore_record(); re-exported so callers need
+# only this module.
+RecordNotFound = flora_edits.RecordNotFound
+VersionConflict = flora_edits.VersionConflict
+
+
+def _find(cur, flora_id: str) -> "tuple[dict, dict] | None":
+    """One full row by its FLoRA or CSV id, and the build's own values for the
+    fields corrected on it."""
     frame = dataset(cur)
+    if frame.empty:
+        return None
     matched = frame["flora_id"] == flora_id
     if "export_id" in frame:
         matched = matched | (frame["export_id"] == flora_id)
     match = frame[matched]
     if match.empty:
         return None
-    row = match.iloc[0]
-    return {key: _cell(value) for key, value in row.items()}
+    row = {key: _cell(value) for key, value in match.iloc[0].items()}
+    derived = (frame.attrs.get("flora_edits") or {}).get(row.get("export_id")) or {}
+    return row, derived
+
+
+def get_record(cur, flora_id: str) -> "dict | None":
+    """One full row, every column. Used by the detail panel."""
+    found = _find(cur, flora_id)
+    return found[0] if found else None
+
+
+def editing(cur, record: dict) -> "dict | None":
+    """The editor's view of a record from get_record(), or None for a row the
+    registry has not given a published id yet: changes are keyed on it."""
+    if not record.get("export_id"):
+        return None
+    found = _find(cur, record["export_id"])
+    return flora_edits.editing_info(cur, record, found[1] if found else {})
+
+
+def _changed(cur, flora_id: str, change) -> dict:
+    """Run one change against the record as the tab shows it, then write what it
+    altered through to flora_data. The source records are not touched."""
+    found = _find(cur, flora_id)
+    if found is None:
+        raise RecordNotFound(flora_id)
+    before, derived = found
+    result = change(before, derived)
+    result["published"] = False
+    result["warnings"] = []
+    if result["change_id"]:
+        # Rebuilt in this transaction, which already sees the new change, so the
+        # values that follow from it (a title brought in by a corrected DOI) are
+        # the ones written.
+        after = _find(cur, before["export_id"])
+        result["published"] = bool(after) and flora_edits.publish(cur, before, after[0])
+        moved = set(result.get("changed_fields", [])) | set(result.get("reverted_fields", []))
+        if after and moved & {"doi_o", "doi_r", "url_r"}:
+            result["warnings"] = flora_edits.duplicate_warnings(dataset(cur), after[0])
+    return result
+
+
+def update_record(cur, flora_id: str, fields: dict, revert: list, version: int,
+                  admin: dict, note: str = "") -> dict:
+    """Save an editor's changes to one FLoRA record: one row of its change log, and
+    its row in flora_data rewritten. This tab shows it at once (the change log is
+    part of the cache signature), and so does the public API."""
+    return _changed(cur, flora_id, lambda record, derived: flora_edits.save(
+        cur, record, derived, fields, revert, version, admin, note))
+
+
+def restore_record(cur, flora_id: str, change_id: int, version: int,
+                   admin: dict, note: str = "") -> dict:
+    """Put a FLoRA record back as it was right after one change in its log, or as
+    derived before any change (change_id 0)."""
+    return _changed(cur, flora_id, lambda record, derived: flora_edits.restore(
+        cur, record, derived, change_id, version, admin, note))
 
 
 def merged_sources(cur, flora_id: str) -> list:

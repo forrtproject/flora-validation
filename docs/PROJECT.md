@@ -777,6 +777,9 @@ are ambiguous.
 `source_records` · `source_record_edits` · `source_sync_runs` ·
 `source_display_counters` · `outcome_alias` · `reproduction_outcome_map` ·
 `transform_exclusions` — documented in [SOURCE_RECORDS.md](SOURCE_RECORDS.md#7-database-schema).
+Source records are never edited by hand; corrections are made to FLoRA records and
+logged in `flora_record_changes` — see
+[SOURCE_RECORDS.md §9.4](SOURCE_RECORDS.md#94-correcting-a-flora-record-flora_editspy).
 
 ### Triggers
 
@@ -852,15 +855,21 @@ GET   /api/admin/source-records                  list + counts
 GET   /api/admin/source-records/export.csv
 GET   /api/admin/source-records/sync-status
 GET   /api/admin/source-records/duplicates
-GET   /api/admin/source-records/vocabularies
 GET   /api/admin/source-records/{record_id}
-PATCH /api/admin/source-records/{record_id}
 POST  /api/admin/source-records/{record_id}/duplicate
 ```
 
-**Route ordering matters.** Literal paths (`export.csv`, `sync-status`, `duplicates`,
-`vocabularies`) are declared *before* `{record_id}`, because FastAPI matches in
-declaration order. New literal paths must go above the parameterised ones.
+Read-only apart from duplicate rulings. Records are corrected in the FLoRA tab:
+
+```
+GET   /api/admin/flora/{flora_id}             record + editable fields + corrections
+PATCH /api/admin/flora/{flora_id}             save a change {fields, revert, version, note}
+POST  /api/admin/flora/{flora_id}/restore     restore a logged change {change_id, version, note}
+```
+
+**Route ordering matters.** Literal paths (`export.csv`, `sync-status`, `duplicates`)
+are declared *before* `{record_id}`, because FastAPI matches in declaration order.
+New literal paths must go above the parameterised ones.
 
 ---
 

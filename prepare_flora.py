@@ -153,6 +153,8 @@ def record_local_history(output_dir, frame):
 
 
 def current_dataset_revision():
+    """The stored table's revision as this run starts, including the newest FLoRA
+    record change, so the store stage can keep rows an admin changes meanwhile."""
     from flora_store import dataset_revision
     connection = psycopg2.connect(os.environ["DATABASE_URL"])
     try:

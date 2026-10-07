@@ -2358,7 +2358,7 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
   font-size: 1.35rem;
   font-weight: 400;
   letter-spacing: -0.01em;
-  z-index: 100;
+  z-index: 9600;           /* above modals and their confirmations; clicks pass through */
   transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: none;
   border-bottom: 3px solid var(--accent);
@@ -6327,23 +6327,11 @@ body.has-maint-banner #admin-screen {
   white-space: pre-wrap;
 }
 
-.src-history-row {
-  font-size: 0.83rem;
-  padding: 0.4rem 0;
-  border-bottom: 1px solid var(--rule);
-}
-.src-history-row code {
-  font-size: 0.78rem;
-  background: var(--bg-alt);
-  padding: 0.05rem 0.25rem;
-  border-radius: 2px;
-}
-
 @media (max-width: 720px) {
   .src-field { grid-template-columns: 1fr; gap: 0.15rem; }
 }
 
-/* ---- Review panel: editing ---- */
+/* ---- Record panels: form controls (the FLoRA record editor) ---- */
 
 .src-input {
   width: 100%;
@@ -6383,8 +6371,85 @@ body.has-maint-banner #admin-screen {
   background: var(--bg);
 }
 .src-save-bar .src-note { flex: 0 1 240px; }
-.src-save-bar #src-save-msg { flex: 1 1 auto; text-align: right; }
+.src-save-bar #flora-save-msg { flex: 1 1 auto; text-align: right; }
 .src-save-bar .btn-primary { padding: 0.4rem 0.9rem; font-size: 0.85rem; white-space: nowrap; }
+
+/* ---- FLoRA record editor: corrections ---- */
+
+.flora-edit-note {
+  margin: 0 0 1rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.flora-edited-badge {
+  display: inline-block;
+  margin-left: 0.3rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  border: 1px solid var(--accent-soft);
+  background: rgba(181, 70, 20, 0.06);
+  vertical-align: middle;
+}
+.flora-field-edited .src-input { border-color: var(--accent-soft); }
+/* Who corrected the field, and what the build derives without the correction. */
+.flora-edit-mark {
+  margin-top: 0.3rem;
+  font-size: 0.76rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.flora-derived-row { margin-top: 0.15rem; }
+.flora-derived {
+  display: inline-block;
+  max-height: 4.5rem;
+  max-width: 100%;
+  overflow-y: auto;
+  vertical-align: top;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink-soft);
+}
+.flora-revert-btn { margin-top: 0.15rem; font-size: 0.76rem; }
+.flora-revert-btn:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+
+/* Change logs: one row per save, closed until opened, as the website records'
+   admin decisions are. */
+.flora-changes {
+  margin: 0 0 1.25rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.flora-changes summary { cursor: pointer; font-weight: 600; padding: 0.2rem 0; }
+.flora-changes[open] summary { margin-bottom: 0.5rem; }
+.flora-changes-table td { vertical-align: top; font-size: 0.8rem; }
+.flora-changes-table td:first-child { white-space: nowrap; }
+.flora-change-field { margin: 0.1rem 0; word-break: break-word; }
+.flora-change-field code { font-size: 0.74rem; }
+.flora-change-kind { font-weight: 600; margin-bottom: 0.15rem; }
+.flora-change-current { font-size: 0.74rem; font-weight: 600; color: var(--green); white-space: nowrap; }
+.flora-change-original td { color: var(--muted); font-style: italic; }
+.flora-restore-btn { padding: 0.15rem 0.55rem; font-size: 0.76rem; white-space: nowrap; }
+/* The save bar's account of the last save or restore, kept after the reload. */
+#flora-save-msg .flora-notice { color: var(--green); font-weight: 600; }
+#flora-save-msg .flora-warning { display: block; margin-top: 0.2rem; color: var(--amber); }
+
+/* Source record panel: the FLoRA record a row feeds, where it is corrected. */
+.src-flora-link {
+  margin-bottom: 1rem;
+  padding: 0.55rem 0.75rem;
+  border-left: 3px solid var(--accent-soft);
+  background: var(--bg-alt);
+  font-size: 0.85rem;
+  line-height: 1.7;
+}
+.src-flora-link code { font-size: 0.8rem; }
+.src-flora-link .ghost-btn { margin-left: 0.4rem; padding: 0.15rem 0.55rem; font-size: 0.78rem; }
 
 /* ---- Duplicate review ---- */
 
@@ -6595,7 +6660,6 @@ body.has-maint-banner #admin-screen {
 
 .flora-pageinfo { font-size: 0.8rem; color: var(--muted); }
 
-.flora-detail-title { margin: 0 0 0.25rem; font-size: 1rem; }
 .flora-detail-source { margin: 0 0 1rem; font-size: 0.82rem; color: var(--muted); }
 
 .flora-detail-table th {

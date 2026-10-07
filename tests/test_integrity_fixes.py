@@ -5,7 +5,7 @@ import pytest
 
 from backfill_oa_work_ids import _sync_validated_ids
 from db_migrate import step_migrate_pairs
-from source_records_service import update_record
+import flora_edits
 from sync_sources import _build_row
 from transform_sources import derive_outcome
 from update_outcomes import _update_value
@@ -125,28 +125,28 @@ def test_source_sync_rejects_unknown_reproduction_axis():
 
 
 class _EditCursor:
-    def __init__(self, current):
-        self.current = current
+    """Answers the editor's reads: an empty change log."""
+
+    def __init__(self):
         self.calls = []
 
     def execute(self, sql, params=None):
-        self.calls.append((sql, params))
+        self.calls.append(" ".join(sql.split()))
 
     def fetchone(self):
-        return self.current
+        return {"v": 0}
+
+    def fetchall(self):
+        return []
 
 
-def test_source_editor_rejects_unknown_reproduction_axis_before_update():
-    cur = _EditCursor({"record_id": "id", "version": 1, "type": "reproduction"})
+def test_flora_editor_rejects_unknown_reproduction_axis_before_any_write():
+    cur = _EditCursor()
+    record = {"export_id": "FLORA-000001", "type": "reproduction", "outcome_robustness": "robust"}
     with pytest.raises(ValueError, match="invalid outcome_robustness"):
-        update_record(
-            cur,
-            "e8f69cc5-0788-4d9a-8457-90e4555e1159",
-            {"outcome_robustness": "mostly robust"},
-            1,
-            "admin",
-        )
-    assert len(cur.calls) == 1
+        flora_edits.save(cur, record, {}, {"outcome_robustness": "mostly robust"}, [], 0,
+                         {"handle": "admin"})
+    assert not [sql for sql in cur.calls if sql.startswith(("INSERT", "DELETE", "UPDATE"))]
 
 
 def test_transform_flags_unknown_axis_instead_of_silently_publishing_it():

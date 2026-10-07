@@ -187,8 +187,11 @@ def dois_in_product(cur) -> list:
 
     Read from source_records rather than by running the transform: the transform is
     slower, and enrichment is keyed on the DOI alone — a row being deduplicated away
-    does not change what its DOI resolves to.
+    does not change what its DOI resolves to. DOIs corrected on FLoRA records are
+    added: the build joins metadata on those instead.
     """
+    import flora_edits                              # local: it imports transform_sources
+    corrected = flora_edits.identifier_values(cur, ("doi_o", "doi_r"))
     cur.execute(
         """
         SELECT DISTINCT doi FROM (
@@ -202,10 +205,10 @@ def dois_in_product(cur) -> list:
         """
     )
     seen, out = set(), []
-    for record in cur.fetchall():
+    for value in [record["doi"] for record in cur.fetchall()] + corrected:
         # Cleaned the same way the transform cleans, so the join keys agree.
         from transform_sources import clean_doi
-        doi = clean_doi(record["doi"])
+        doi = clean_doi(value)
         if doi and not doi.lower().startswith("dummy") and doi not in seen:
             seen.add(doi)
             out.append(doi)
@@ -339,8 +342,11 @@ def work_ids_in_product(cur) -> list:
 
     Restricted to rows with no DOI on purpose: where a DOI exists it is the better
     key — it is what the rest of the pipeline joins on — and re-fetching the same
-    work by a second identifier would only cost requests.
+    work by a second identifier would only cost requests. URLs corrected on FLoRA
+    records are added as they are.
     """
+    import flora_edits                              # local: it imports transform_sources
+    corrected = flora_edits.identifier_values(cur, ("url_o", "url_r"))
     cur.execute(
         """
         SELECT DISTINCT url FROM (
@@ -356,8 +362,8 @@ def work_ids_in_product(cur) -> list:
         """
     )
     seen, out = set(), []
-    for record in cur.fetchall():
-        work_id = extract_work_id(record["url"])
+    for url in [record["url"] for record in cur.fetchall()] + corrected:
+        work_id = extract_work_id(url)
         if work_id and work_id not in seen:
             seen.add(work_id)
             out.append(work_id)
@@ -508,20 +514,23 @@ def load_metadata(cur, include_seed: bool = True) -> dict:
 
 
 def reference_keys_in_product(cur) -> list:
-    """Both paper sides, including URL-only reports and manual DUMMY keys."""
+    """Both paper sides, including URL-only reports and manual DUMMY keys, and the
+    identifiers corrected on FLoRA records."""
+    import flora_edits                              # local: it imports transform_sources
+    corrected = flora_edits.identifier_values(cur, flora_edits.IDENTIFIER_FIELDS)
     cur.execute("""
         SELECT doi_o, doi_r, url_o, url_r FROM source_records
         WHERE duplicate_status IS DISTINCT FROM 'duplicate' AND deleted_at IS NULL
     """)
     wanted = []
     seen = set()
-    for row in cur.fetchall():
-        for side in ("o", "r"):
-            for column in (f"doi_{side}", f"url_{side}"):
-                key = references.normalise_key(row.get(column))
-                if key and key not in seen:
-                    seen.add(key)
-                    wanted.append(key)
+    values = [row.get(f"{kind}_{side}") for row in cur.fetchall()
+              for side in ("o", "r") for kind in ("doi", "url")]
+    for value in values + corrected:
+        key = references.normalise_key(value)
+        if key and key not in seen:
+            seen.add(key)
+            wanted.append(key)
     return wanted
 
 

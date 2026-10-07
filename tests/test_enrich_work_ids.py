@@ -107,11 +107,16 @@ def test_the_bibtex_key_falls_back_to_the_work_id():
 # ── which rows are looked up ──────────────────────────────────────────────────
 
 class _Cur:
+    """The source rows, and no FLoRA corrections table yet (see flora_edits)."""
+
     def __init__(self, rows=None):
         self.rows, self.sql = rows or [], None
 
     def execute(self, sql, params=None):
         self.sql = " ".join(sql.split())
+
+    def fetchone(self):
+        return {"present": False}
 
     def fetchall(self):
         return self.rows
@@ -143,6 +148,15 @@ def test_ids_come_back_deduplicated_and_bare():
                 {"url": "https://openalex.org/W2186305685"},
                 {"url": "https://openalex.org/W96171599"},
                 {"url": "https://osf.io/nope"}])
+    assert ew.work_ids_in_product(cur) == ["W2186305685", "W96171599"]
+
+
+def test_urls_corrected_on_flora_records_are_looked_up_too(monkeypatch):
+    """The build joins metadata on a corrected URL, so it has to be fetched."""
+    import flora_edits
+    monkeypatch.setattr(flora_edits, "identifier_values",
+                        lambda cur, fields: ["https://openalex.org/W96171599"] if "url_o" in fields else [])
+    cur = _Cur([{"url": "https://openalex.org/W2186305685"}])
     assert ew.work_ids_in_product(cur) == ["W2186305685", "W96171599"]
 
 
