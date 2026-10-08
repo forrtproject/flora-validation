@@ -35,6 +35,15 @@ python -m pytest -q
 node --check docs/app.js
 ```
 
+For changes under `docs/`, also run the relevant browser tests under `tests/test_*_ui.cjs`, for example:
+
+```bash
+npx playwright install chromium
+node tests/test_pipeline_ui.cjs
+```
+
+The repository vendors Playwright; the first command installs its browser once. These UI tests intercept requests and use fixtures. Pytest and `node --check` do not run them.
+
 Add regression coverage for changed behaviour using synthetic or public, minimal fixtures and mocked external services. Existing tests cover ingestion contracts, consensus, identity, source preparation, and frontend behaviour. See [Testing and verification](docs/README.md#testing-and-verification) for examples and limits.
 
 Database changes also need PostgreSQL verification in an isolated environment; SQLite does not exercise the constraints, triggers, or locking used here. `FLORA_TEST_DATABASE_URL` opts into tests that create throwaway databases and must point only to a local test server. Explain migration, concurrency, and rollback implications in the PR. For interface changes, test the affected validator/admin journey with disposable records and include screenshots with personal details removed.
