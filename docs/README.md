@@ -2053,7 +2053,7 @@ has no root `package.json`, Playwright config, or first-party Playwright test su
 Treat vendored package code as third-party. `.DS_Store` is a tracked operating
 system artifact and has no runtime role.
 
-There is no root `README.md` and no root license file in the current tree. This
+The root `README.md` provides contributor orientation; there is no root license file in the current tree. This
 file is the existing project README under `docs/`.
 
 ## Testing and verification
