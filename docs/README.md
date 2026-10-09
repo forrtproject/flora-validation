@@ -2049,11 +2049,12 @@ work; inspect them separately from source changes.
 
 Other tracked tooling includes a local `frontend-design` agent skill and
 `skills-lock.json`. `node_modules/playwright*` is vendored, but this repository
-has no root `package.json`, Playwright config, or first-party Playwright test suite.
+has no root `package.json` or Playwright config. First-party Playwright browser
+checks are in `tests/test_*_ui.cjs`.
 Treat vendored package code as third-party. `.DS_Store` is a tracked operating
 system artifact and has no runtime role.
 
-There is no root `README.md` and no root license file in the current tree. This
+The root `README.md` provides contributor orientation; there is no root license file in the current tree. This
 file is the existing project README under `docs/`.
 
 ## Testing and verification
@@ -2064,8 +2065,9 @@ Install development dependencies through the same requirements file, then run:
 python -m pytest -q
 ```
 
-The current working tree collects 509 tests across 22 test modules. They run without a live
-PostgreSQL or Gemini service by mocking cursors and external calls.
+The ordinary pytest suite uses mocked cursors and external calls rather than live
+PostgreSQL or Gemini services. Run `python -m pytest --collect-only -q` to inspect
+the current test inventory.
 
 No `.env` is needed: `tests/conftest.py` sets `DATABASE_URL` to a placeholder before
 anything is imported, so a `.env` holding the production URL is never loaded into a
@@ -2083,11 +2085,14 @@ python -m pytest -q tests/test_skip_history.py
 node --check docs/app.js
 ```
 
-The current tests do not exercise FastAPI routes end to end against a real
-PostgreSQL database, live Gemini/OpenAlex/GitHub/Google Sheets services, or a real
-browser. Most transaction, migration, importer, export, source-transform, admin,
-and frontend contracts are regression-tested with mocked cursors or source-level
-checks. A passing 328-test suite is useful evidence, not a substitute for staging
+The ordinary pytest tests do not exercise FastAPI routes end to end against a real
+PostgreSQL database or live Gemini/OpenAlex/GitHub/Google Sheets services. The
+first-party Playwright checks launch Chromium with intercepted requests and
+fixtures. Run the relevant scripts separately for frontend changes, for example
+`node tests/test_pipeline_ui.cjs`; install Chromium once with
+`npx playwright install chromium`. Most transaction, migration, importer, export,
+source-transform, and admin contracts are regression-tested with mocked cursors
+or source-level checks. Passing tests are useful evidence, not a substitute for staging
 the PostgreSQL schema and critical user journeys.
 
 For database changes, also apply `db_schema.sql` to a temporary PostgreSQL
@@ -2237,9 +2242,10 @@ gone — and a trusted admin can create and delete other admins.
 
 ### Coverage and operations
 
-- There is no live FastAPI+PostgreSQL integration suite or first-party browser
-  automation. External-service and most database behavior is mocked or checked at
-  the SQL/source-contract level.
+- The ordinary suite does not provide live FastAPI+PostgreSQL integration coverage.
+  First-party browser checks use Chromium with intercepted requests and fixtures.
+  External-service and most database behavior is mocked or checked at the
+  SQL/source-contract level.
 - Requirements use lower bounds rather than a lock file, so future installs can
   resolve materially different dependency versions.
 - `GET /api/health` does not check the database, scheduler, Gemini, Resend, GitHub,
