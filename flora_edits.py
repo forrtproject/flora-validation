@@ -3,8 +3,9 @@
 Source records are what the entry sheets and the validated set supplied, and they
 stay that way: nobody edits them by hand. A change is made to the FLoRA record a
 source row feeds. Every save appends one row to `flora_record_changes`, as the
-website records' admin_decisions does: who, when, the note, and each field it
-changed as [before, after]. The `before` values are the original entries. Each row
+website records' admin_decisions does: who, when, each field it changed as
+[before, after], and a note on each of those changes (`notes`, by field; a restore
+has one `note` for the whole). The `before` values are the original entries. Each row
 also holds every correction in force once it was made, so the record can be put
 back to the state of any row in the log (restore()).
 
@@ -103,6 +104,7 @@ CHOICES = {
     "outcome_robustness": sorted(OUTCOME_ROBUSTNESS_VALUES),
 }
 _YEAR_RE = re.compile(r"^(1[5-9]\d{2}|2\d{3})$")
+NOTE_LIMIT = 500                                    # characters, per note
 
 
 class RecordNotFound(LookupError):
@@ -405,8 +407,8 @@ def history(cur, export_id: str) -> list:
     """The record's change log, newest first."""
     cur.execute(
         """
-        SELECT change_id, changed_at, admin_handle, action, note, changes, corrections,
-               restored_from
+        SELECT change_id, changed_at, admin_handle, action, note, notes, changes,
+               corrections, restored_from
         FROM flora_record_changes WHERE export_id = %s
         ORDER BY change_id DESC
         """,
@@ -452,7 +454,8 @@ def editing_info(cur, record: dict, derived: dict) -> dict:
             last = next((change for change in log if field in (change["changes"] or {})),
                         log[0])
             spec["edit"] = {"derived": derived[field], "edited_by": last["admin_handle"],
-                            "edited_at": last["changed_at"], "note": last["note"],
+                            "edited_at": last["changed_at"],
+                            "note": (last.get("notes") or {}).get(field) or last["note"],
                             "change_id": last["change_id"]}
         fields.append(spec)
     return {"version": log[0]["change_id"] if log else 0, "fields": fields,
@@ -482,8 +485,9 @@ def _guard(cur, record: dict, expected_version) -> tuple:
 
 
 def _append(cur, export_id, record, derived, in_force, corrections, action, admin,
-            note, restored_from=None) -> dict:
-    """Append one change: every field whose value moves, as [before, after]."""
+            note=None, restored_from=None, notes=None) -> dict:
+    """Append one change: every field whose value moves, as [before, after], with
+    the note given on each of those fields (`notes`) or on the whole (`note`)."""
     def derived_value(field):
         return derived[field] if field in derived else _text(record.get(field))
 
@@ -499,30 +503,36 @@ def _append(cur, export_id, record, derived, in_force, corrections, action, admi
         if before != after or (field in in_force) != (field in corrections) \
                 or in_force.get(field) != corrections.get(field):
             changes[field] = [before, after]
+    # A note belongs to the change of its field: one on a field the save left as
+    # it was has nothing to explain.
+    notes = {field: text for field, text in ((field, _text(text))
+                                              for field, text in (notes or {}).items())
+             if field in changes and text}
     cur.execute(
         """
         INSERT INTO flora_record_changes
             (export_id, admin_id, admin_handle, action, note, changes, corrections,
-             restored_from)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+             restored_from, notes)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING change_id
         """,
-        (export_id, admin.get("id"), admin["handle"], action, (note or "").strip() or None,
-         Json(changes), Json(corrections), restored_from),
+        (export_id, admin.get("id"), admin["handle"], action, _text(note),
+         Json(changes), Json(corrections), restored_from, Json(notes)),
     )
     return {"change_id": cur.fetchone()["change_id"], "changes": changes,
             "corrections": corrections}
 
 
 def save(cur, record: dict, derived: dict, fields: dict, revert, expected_version,
-         admin: dict, note: str = "") -> dict:
+         admin: dict, notes: "dict | None" = None) -> dict:
     """Record an editor's changes to one FLoRA record as one row of its log.
 
     `record` is the record as the FLoRA tab currently shows it and `derived` the
     build's own values for the fields already corrected (apply()'s attrs).
 
     `fields` maps a field to its new value; `revert` names corrections to drop, so
-    the derived value shows again. A value equal to what is shown changes nothing.
+    the derived value shows again; `notes` maps a field to the note on its change.
+    A value equal to what is shown changes nothing.
     A value equal to what the build derives drops the correction rather than storing
     a copy of it, so a later change to the source or the metadata flows through.
 
@@ -536,6 +546,12 @@ def save(cur, record: dict, derived: dict, fields: dict, revert, expected_versio
         raise ValueError(f"Cannot be corrected on a {record_type or 'record'}: {', '.join(unknown)}")
     if set(fields) & set(revert):
         raise ValueError("A field cannot be changed and reverted in the same save")
+    notes = dict(notes or {})
+    for field, text in notes.items():
+        if not isinstance(text, str):
+            raise ValueError(f"The note on {field} must be text")
+        if len(text) > NOTE_LIMIT:
+            raise ValueError(f"The note on {field} is longer than {NOTE_LIMIT} characters")
     export_id, in_force = _guard(cur, record, expected_version)
 
     corrections = dict(in_force)
@@ -555,7 +571,7 @@ def save(cur, record: dict, derived: dict, fields: dict, revert, expected_versio
             corrections[field] = new
     _refuse_excluded(cur, record, derived, in_force, corrections)
     result = _append(cur, export_id, record, derived, in_force, corrections, "edit",
-                     admin, note)
+                     admin, notes=notes)
     return _summary(cur, export_id, result, in_force)
 
 

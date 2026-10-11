@@ -40,14 +40,17 @@ const SOURCE_ID = "6f1c2d4e-0000-4000-8000-000000000001";
         value: "@article{x,\r\n  title={y}\r}" },
     ],
     history: [
-      { change_id: 3, changed_at: "2026-10-01T10:00:00Z", admin_handle: "ana", action: "edit", note: "typo",
+      { change_id: 3, changed_at: "2026-10-01T10:00:00Z", admin_handle: "ana", action: "edit", note: null,
+        notes: { title_o: "typo" },
         changes: { title_o: ["First title", "A corrected title"] }, corrections: { title_o: "A corrected title" },
         restored_from: null },
-      { change_id: 2, changed_at: "2026-09-30T10:00:00Z", admin_handle: "luke", action: "restore", note: null,
+      { change_id: 2, changed_at: "2026-09-30T10:00:00Z", admin_handle: "luke", action: "restore",
+        note: "undo the outcome", notes: {},
         changes: { outcome: ["failed", "successful"] }, corrections: { title_o: "First title" }, restored_from: 1 },
-      { change_id: 1, changed_at: "2026-09-29T10:00:00Z", admin_handle: "luke", action: "edit", note: "from the paper",
-        changes: { title_o: ["The derived title", "First title"] }, corrections: { title_o: "First title" },
-        restored_from: null },
+      { change_id: 1, changed_at: "2026-09-29T10:00:00Z", admin_handle: "luke", action: "edit", note: null,
+        notes: { title_o: "from the paper", outcome: "per table 2" },
+        changes: { title_o: ["The derived title", "First title"], outcome: ["successful", "failed"] },
+        corrections: { title_o: "First title", outcome: "failed" }, restored_from: null },
     ],
     source_edits: [{ display_id: "REPL-000001", field: "outcome", old_value: "mixed", new_value: "successful",
                      edited_by: "kim", edited_at: "2026-09-01T10:00:00Z", note: "sheet typo" }],
@@ -141,8 +144,11 @@ const SOURCE_ID = "6f1c2d4e-0000-4000-8000-000000000001";
     const rows = log.locator("tbody tr");
     assert.equal(await rows.count(), 4);                       // three changes and the original
     assert.match(await rows.nth(0).innerText(), /#3[\s\S]*ana[\s\S]*First title → A corrected title[\s\S]*typo[\s\S]*Current/);
-    assert.match(await rows.nth(1).innerText(), /Restored to #1[\s\S]*\(derived value\)/);
-    assert.match(await rows.nth(2).innerText(), /from the paper/);
+    assert.match(await rows.nth(1).innerText(), /Restored to #1[\s\S]*undo the outcome[\s\S]*\(derived value\)/);
+    // Each field's note sits with that field's change.
+    const fieldOfFirst = name => rows.nth(2).locator(".flora-change-field", { hasText: name });
+    assert.match(await fieldOfFirst("outcome").innerText(), /successful → failed\s*per table 2/);
+    assert.match(await fieldOfFirst("title_o").innerText(), /First title\s*from the paper/);
     assert.match(await rows.nth(3).innerText(), /Original/);
     assert.equal(await rows.nth(0).locator(".flora-restore-btn").count(), 0);
     // Earlier edits to the source rows: their own table, also closed.
@@ -156,7 +162,7 @@ const SOURCE_ID = "6f1c2d4e-0000-4000-8000-000000000001";
     assert.equal(restores.length, 0);
     // Closing the confirmation leaves the page behind the open editor locked.
     assert.equal(await page.evaluate(() => document.body.style.overflow), "hidden");
-    await page.locator("#flora-note").fill("back to the paper's title");
+    await page.locator("#flora-restore-note").fill("back to the paper's title");
     await rows.nth(2).locator(".flora-restore-btn").click();
     await page.locator("#dialog-buttons button", { hasText: "Confirm" }).click();
     await page.waitForFunction(() => document.querySelector("#toast")?.textContent.includes("Restored"));
@@ -179,14 +185,25 @@ const SOURCE_ID = "6f1c2d4e-0000-4000-8000-000000000001";
     await page.locator('[data-revert-field="outcome"]').click();
     assert.equal(await page.locator('#flora-detail-body [data-field="outcome"]').inputValue(), "descriptive only");
 
-    // Only the changed field and the revert are sent, with the loaded version.
+    // A field's note box opens once the field holds a change, and closes again
+    // when the change is undone.
+    const doiNote = page.locator('[data-note-for="doi_o"]');
+    assert.equal(await doiNote.isVisible(), false);
+    await page.locator('#flora-detail-body [data-field="doi_o"]').fill("10.1/b");
+    assert.equal(await doiNote.isVisible(), true);
+    await page.locator('#flora-detail-body [data-field="doi_o"]').fill("10.1/a");
+    assert.equal(await doiNote.isVisible(), false);
+
+    // Only the changed field and the revert are sent, each with its own note.
     await page.locator('#flora-detail-body [data-field="outcome"]').selectOption("failed");
+    await page.locator('[data-note-for="outcome"]').fill("checked the paper");
     await page.locator('[data-revert-field="title_o"]').click();
     assert.equal(await page.locator('#flora-detail-body [data-field="title_o"]').inputValue(), "The derived title");
-    await page.locator("#flora-note").fill("checked the paper");
+    await page.locator('[data-note-for="title_o"]').fill("the derived title was right");
     await page.locator("#flora-save-btn").click();
     await page.waitForFunction(() => document.querySelector("#toast")?.textContent.includes("Saved"));
-    assert.deepEqual(patches[0], { fields: { outcome: "failed" }, revert: ["title_o"], version: 3, note: "checked the paper" });
+    assert.deepEqual(patches[0], { fields: { outcome: "failed" }, revert: ["title_o"], version: 3,
+                                   notes: { outcome: "checked the paper", title_o: "the derived title was right" } });
     // The outcome stays in the editor after the reload, warnings included, and the
     // toast is drawn above the editor rather than under it.
     await page.waitForFunction(() => document.querySelector("#flora-save-msg .flora-notice"));

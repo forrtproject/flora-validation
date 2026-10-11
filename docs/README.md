@@ -1443,8 +1443,8 @@ The Source Records UI is read-only apart from duplicate rulings. It supports:
 ### FLoRA record corrections
 
 `flora_edits.py` logs every save to a FLoRA record as one row of the append-only
-`flora_record_changes` (who, when, note, each field as `[before, after]`, and every
-correction in force afterwards), keyed on the record's published id
+`flora_record_changes` (who, when, each field as `[before, after]` with its own
+note, and every correction in force afterwards), keyed on the record's published id
 (`flora_data.id`). A save rewrites the record's row in `flora_data` at once and moves
 the table revision the public API caches on. Every build re-applies the newest
 corrections on top of what it derived: identifiers (`doi_*`, `url_*`) after
@@ -1677,7 +1677,7 @@ All answer 503 while the feature is switched off or not set up.
 | POST | `/api/admin/source-records/{record_id}/duplicate` | Mark distinct/duplicate and survivor |
 | GET | `/api/admin/source-records/{record_id}` | Detail, history, duplicates, FLoRA records fed, neighbors |
 | GET | `/api/admin/flora/{flora_id}` | FLoRA record with its editable fields, corrections and history |
-| PATCH | `/api/admin/flora/{flora_id}` | Version-checked change `{fields, revert, version, note}`, written through to `flora_data` |
+| PATCH | `/api/admin/flora/{flora_id}` | Version-checked change `{fields, revert, version, notes}` (a note per field), written through to `flora_data` |
 | POST | `/api/admin/flora/{flora_id}/restore` | Restore the state after a logged change (`change_id` 0: the original) |
 
 Literal Source Records routes are declared before the `{record_id}` detail route

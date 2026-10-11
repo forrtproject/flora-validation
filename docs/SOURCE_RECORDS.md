@@ -975,8 +975,12 @@ editable fields are a form, grouped Original, Replication (or Reproduction), Out
 from others (DOI hashes, OpenAlex work ids, author overlap) are shown beneath as context.
 
 **The change log.** Every save appends one row to `flora_record_changes`, the FLoRA
-counterpart of the website records' `admin_decisions`: who made it, when, the note, and
-each field it changed as `[before, after]`. The `before` values are the original entries.
+counterpart of the website records' `admin_decisions`: who made it, when, each field it
+changed as `[before, after]`, and a note on each of those changes (`notes`, by field). A
+note box opens under a field in the editor once the field is changed or marked for
+revert; a note is optional and kept only for a field the save actually changed. A
+restore carries one note for the whole (`note`). The `before` values are the original
+entries.
 Each row also holds `corrections`, every correction in force once it was made (a NULL
 value is a deliberately blank field). The log is append-only; a trigger refuses updates,
 deletes and truncation. A record's newest `change_id` is its version: a save quotes the
@@ -1037,7 +1041,8 @@ breaks are compared the way a browser writes them, so a stored `\r\n` never make
 untouched field look changed.
 
 **Seeing and restoring changes.** The editor lists the log under **Changes (n)**, a table
-closed until opened: number, when, who, each field's before → after, the note. **Restore
+closed until opened: number, when, who, and each field's before → after with its note
+underneath. **Restore
 this version** on any row puts the record back exactly as it was right after that
 change; **Restore original** drops every correction, so the derived values show again.
 A restore is logged as a change itself (`action = 'restore'`, `restored_from`), so it can
@@ -1050,7 +1055,7 @@ under **Earlier edits to its source records**, also closed.
 | Route | Purpose |
 |---|---|
 | `GET /api/admin/flora/{flora_id}` | The row, plus `editing`: fields, corrections with their derived values, the change log, earlier source edits, version |
-| `PATCH /api/admin/flora/{flora_id}` | Save a change `{fields, revert, version, note}` |
+| `PATCH /api/admin/flora/{flora_id}` | Save a change `{fields, revert, version, notes}`; `notes` maps a field to the note on its change |
 | `POST /api/admin/flora/{flora_id}/restore` | Restore the state after a change `{change_id, version, note}`; `change_id` 0 is the original |
 | `GET /api/admin/flora?edited=true` | The **Edited** chip: records with at least one correction in force |
 

@@ -1671,8 +1671,9 @@ CREATE TRIGGER trg_source_records_no_truncate BEFORE TRUNCATE ON source_records
     FOR EACH STATEMENT EXECUTE FUNCTION prevent_flora_identity_deletion();
 
 -- Changes made to FLoRA records (flora_edits.py), one row per save — the FLoRA
--- counterpart of admin_decisions for website records: who, when, the note, and each
--- field changed as [before, after]. The `before` values are the original entries.
+-- counterpart of admin_decisions for website records: who, when, each field changed
+-- as [before, after], and a note on each of those changes (`notes`, by field; a
+-- restore carries one `note`). The `before` values are the original entries.
 -- Source records are never edited; a save rewrites the record's row in flora_data
 -- at once, and every build re-applies the corrections of each record's newest row,
 -- because the pipeline rebuilds flora_data from the source records.
@@ -1695,8 +1696,13 @@ CREATE TABLE IF NOT EXISTS flora_record_changes (
     note          TEXT,
     changes       JSONB       NOT NULL DEFAULT '{}'::jsonb,
     corrections   JSONB       NOT NULL DEFAULT '{}'::jsonb,
-    restored_from BIGINT      REFERENCES flora_record_changes(change_id)
+    restored_from BIGINT      REFERENCES flora_record_changes(change_id),
+    notes         JSONB       NOT NULL DEFAULT '{}'::jsonb
 );
+-- A note on each field's change came after the table did; databases created
+-- before it get the column here.
+ALTER TABLE flora_record_changes
+    ADD COLUMN IF NOT EXISTS notes JSONB NOT NULL DEFAULT '{}'::jsonb;
 CREATE INDEX IF NOT EXISTS idx_flora_record_changes_record
     ON flora_record_changes (export_id, change_id DESC);
 

@@ -416,12 +416,12 @@ def _changed(cur, flora_id: str, change) -> dict:
 
 
 def update_record(cur, flora_id: str, fields: dict, revert: list, version: int,
-                  admin: dict, note: str = "") -> dict:
+                  admin: dict, notes: "dict | None" = None) -> dict:
     """Save an editor's changes to one FLoRA record: one row of its change log, and
     its row in flora_data rewritten. This tab shows it at once (the change log is
     part of the cache signature), and so does the public API."""
     return _changed(cur, flora_id, lambda record, derived: flora_edits.save(
-        cur, record, derived, fields, revert, version, admin, note))
+        cur, record, derived, fields, revert, version, admin, notes))
 
 
 def restore_record(cur, flora_id: str, change_id: int, version: int,

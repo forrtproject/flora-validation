@@ -6370,7 +6370,6 @@ body.has-maint-banner #admin-screen {
   border-top: 1px solid var(--rule);
   background: var(--bg);
 }
-.src-save-bar .src-note { flex: 0 1 240px; }
 .src-save-bar #flora-save-msg { flex: 1 1 auto; text-align: right; }
 .src-save-bar .btn-primary { padding: 0.4rem 0.9rem; font-size: 0.85rem; white-space: nowrap; }
 
@@ -6432,6 +6431,15 @@ body.has-maint-banner #admin-screen {
 .flora-change-field { margin: 0.1rem 0; word-break: break-word; }
 .flora-change-field code { font-size: 0.74rem; }
 .flora-change-kind { font-weight: 600; margin-bottom: 0.15rem; }
+/* The note given on one change, under it. */
+.flora-change-note { margin: 0.05rem 0 0.25rem 0.8rem; font-style: italic; color: var(--ink-soft); }
+.flora-change-note::before { content: "— "; }
+.flora-change-kind .flora-change-note { font-weight: 400; }
+.flora-restore-note { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+  margin: 0 0 0.5rem; font-size: 0.78rem; color: var(--muted); }
+.flora-restore-note .src-input { flex: 1 1 220px; max-width: 360px; }
+/* A field's own note, shown once the field holds a change. */
+.flora-field-note { margin-top: 0.3rem; font-size: 0.8rem; }
 .flora-change-current { font-size: 0.74rem; font-weight: 600; color: var(--green); white-space: nowrap; }
 .flora-change-original td { color: var(--muted); font-style: italic; }
 .flora-restore-btn { padding: 0.15rem 0.55rem; font-size: 0.76rem; white-space: nowrap; }
