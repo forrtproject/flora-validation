@@ -77,9 +77,11 @@ def _published(connection, export_id="REPL-000001"):
 
 
 def _save(connection, fields, version, revert=(), record="REPL-000001"):
+    """Every change carries its own note."""
+    notes = {field: f"checked {field} against the paper" for field in [*fields, *revert]}
     with connection, connection.cursor(cursor_factory=RealDictCursor) as cur:
         return flora_service.update_record(cur, record, fields, list(revert), version,
-                                           LUKE, "checked against the paper")
+                                           LUKE, notes)
 
 
 def _restore(connection, change_id, version):
@@ -108,17 +110,20 @@ def test_a_change_rewrites_the_flora_table_and_leaves_the_source_alone(seeded, t
     assert (stored["outcome"], stored["title_o"]) == ("failed", "A corrected title")
     assert stored["_meta"]["record_version"] == 2 and moved > revision
 
-    # The tab, and the log: who, what (before and after), the note.
+    # The tab, and the log: who, what (before and after), a note on each change.
     record, editing = _read(connection)
     assert (record["outcome"], record["edited_fields"]) == ("failed", "outcome title_o")
     [change] = editing["history"]
-    assert (change["change_id"], change["admin_handle"], change["action"], change["note"]) == \
-        (result["change_id"], "luke", "edit", "checked against the paper")
+    assert (change["change_id"], change["admin_handle"], change["action"]) == \
+        (result["change_id"], "luke", "edit")
     assert change["changes"] == {"outcome": ["successful", "failed"],
                                  "title_o": [TITLES[ORIGINAL], "A corrected title"]}
+    assert change["notes"] == {"outcome": "checked outcome against the paper",
+                               "title_o": "checked title_o against the paper"}
     assert change["corrections"] == {"outcome": "failed", "title_o": "A corrected title"}
     corrected = {f["field"]: f["edit"] for f in editing["fields"] if f.get("edit")}
     assert corrected["outcome"]["derived"] == "successful"
+    assert corrected["outcome"]["note"] == "checked outcome against the paper"
     assert editing["version"] == result["version"]
 
     with connection, connection.cursor(cursor_factory=RealDictCursor) as cur:

@@ -863,7 +863,7 @@ Read-only apart from duplicate rulings. Records are corrected in the FLoRA tab:
 
 ```
 GET   /api/admin/flora/{flora_id}             record + editable fields + corrections
-PATCH /api/admin/flora/{flora_id}             save a change {fields, revert, version, note}
+PATCH /api/admin/flora/{flora_id}             save a change {fields, revert, version, notes}
 POST  /api/admin/flora/{flora_id}/restore     restore a logged change {change_id, version, note}
 ```
 

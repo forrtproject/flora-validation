@@ -9362,7 +9362,23 @@ function floraField(f) {
   }
   return '<div class="src-field' + (f.long ? " src-field-long" : "") + (edit ? " flora-field-edited" : "") + '">' +
     "<label>" + escapeHtml(f.label) + (edit ? ' <span class="flora-edited-badge">corrected</span>' : "") +
-    "</label><div>" + floraFieldControl(f) + mark + "</div></div>";
+    "</label><div>" + floraFieldControl(f) +
+    // The note on this field's change: shown once the field is changed or marked
+    // for revert, and logged with that change alone.
+    '<input class="src-input flora-field-note hidden" type="text" maxlength="500" data-note-for="' +
+      escapeHtml(f.field) + '" placeholder="Note on this change (optional)" aria-label="Note on the change to ' +
+      escapeHtml(f.label) + '">' + mark + "</div></div>";
+}
+
+/** Show a field's note box while the field holds a change to save. */
+function floraToggleNote(control) {
+  const f = ((_floraCurrent && _floraCurrent.editing || {}).fields || [])
+    .find((x) => x.field === control.dataset.field);
+  const note = $("#flora-detail-body").querySelector(
+    '[data-note-for="' + CSS.escape(control.dataset.field) + '"]');
+  if (!f || !note) return;
+  const pending = control.dataset.revert === "1" || floraLines(control.value) !== floraLines(f.value);
+  note.classList.toggle("hidden", !pending);
 }
 
 /** One logged value, shortened for the table; the full text is its tooltip. */
@@ -9384,30 +9400,35 @@ function floraChangeLog(editing) {
     const after = c.corrections || {};
     const what = Object.keys(c.changes || {}).map((field) => {
       const [before, now] = c.changes[field];
+      const note = (c.notes || {})[field];
       return '<div class="flora-change-field"><code>' + escapeHtml(labels.get(field) || field) + "</code> " +
         floraChangeValue(before) + " → " + floraChangeValue(now) +
-        (field in after ? "" : ' <span class="src-dim2">(derived value)</span>') + "</div>";
+        (field in after ? "" : ' <span class="src-dim2">(derived value)</span>') +
+        (note ? '<div class="flora-change-note">' + escapeHtml(note) + "</div>" : "") + "</div>";
     }).join("") || '<span class="src-dim2">no value moved</span>';
     const kind = c.action === "restore"
-      ? '<div class="flora-change-kind">' + (c.restored_from ? "Restored to #" + c.restored_from : "Restored the original") + "</div>"
-      : "";
+      ? '<div class="flora-change-kind">' + (c.restored_from ? "Restored to #" + c.restored_from : "Restored the original") +
+        (c.note ? '<div class="flora-change-note">' + escapeHtml(c.note) + "</div>" : "") + "</div>"
+      : (c.note ? '<div class="flora-change-note">' + escapeHtml(c.note) + "</div>" : "");
     const action = i === 0
       ? '<span class="flora-change-current">Current</span>'
       : '<button type="button" class="ghost-btn flora-restore-btn" data-change-id="' + c.change_id +
         '" title="Put the record back as it was right after change #' + c.change_id + '">Restore this version</button>';
     return "<tr><td>#" + c.change_id + "</td><td>" + escapeHtml(new Date(c.changed_at).toLocaleString()) +
       "</td><td>" + escapeHtml(c.admin_handle || "an admin") + "</td><td>" + kind + what + "</td><td>" +
-      (c.note ? escapeHtml(c.note) : '<span class="src-dim2">—</span>') + "</td><td>" + action + "</td></tr>";
+      action + "</td></tr>";
   }).join("");
-  const original = '<tr class="flora-change-original"><td>—</td><td colspan="4">Original: the values derived ' +
+  const original = '<tr class="flora-change-original"><td>—</td><td colspan="3">Original: the values derived ' +
     "from the source records, before any change</td><td>" +
     (inForce
       ? '<button type="button" class="ghost-btn flora-restore-btn" data-change-id="0" ' +
         'title="Drop every correction and use the derived values again">Restore original</button>'
       : '<span class="flora-change-current">Current</span>') + "</td></tr>";
   return '<details class="flora-changes" id="flora-change-log"><summary>Changes (' + log.length + ")</summary>" +
+    '<label class="flora-restore-note">Note for a restore (optional) ' +
+      '<input id="flora-restore-note" class="src-input" type="text" maxlength="500"></label>' +
     '<div class="admin-table-wrap"><table class="admin-table flora-changes-table"><thead><tr>' +
-    "<th>#</th><th>When</th><th>Who</th><th>What changed</th><th>Note</th><th></th></tr></thead><tbody>" +
+    "<th>#</th><th>When</th><th>Who</th><th>What changed, and why</th><th></th></tr></thead><tbody>" +
     rows + original + "</tbody></table></div></details>";
 }
 
@@ -9473,7 +9494,8 @@ function renderFloraRecord(rec) {
 
   $("#flora-detail-body").innerHTML =
     provenance +
-    '<p class="flora-edit-note">A save is logged under Changes with your name and note, and rewrites this ' +
+    '<p class="flora-edit-note">Each change can carry its own note: a box opens under a field once you ' +
+      "change it. A save is logged under Changes with your name and those notes, and rewrites this " +
       "record in the FLoRA table at once, so the public API shows it too. The source records stay as imported; " +
       "every pipeline run re-applies the changes on top of them. A corrected DOI or URL also brings in the " +
       "title, authors and journal for it: metadata not yet cached arrives with the next pipeline run.</p>" +
@@ -9484,8 +9506,6 @@ function renderFloraRecord(rec) {
     floraChangeLog(editing) +
     floraSourceEdits(editing) +
     '<div class="src-save-bar">' +
-      '<input id="flora-note" class="src-input src-note" type="text" maxlength="500" ' +
-        'placeholder="Note for the change log (optional)">' +
       '<span id="flora-save-msg" class="src-dim2"></span>' +
       '<button id="flora-save-btn" class="btn-primary" type="button">Save corrections</button>' +
     "</div>";
@@ -9497,13 +9517,17 @@ function collectFloraEdits() {
   const specs = new Map(((_floraCurrent.editing || {}).fields || []).map((f) => [f.field, f]));
   const fields = {};
   const revert = [];
+  const notes = {};
   $("#flora-detail-body").querySelectorAll("[data-field]").forEach((el) => {
     const f = specs.get(el.dataset.field);
     if (!f) return;
-    if (el.dataset.revert === "1") { revert.push(f.field); return; }
-    if (floraLines(el.value) !== floraLines(f.value)) fields[f.field] = el.value;
+    if (el.dataset.revert === "1") revert.push(f.field);
+    else if (floraLines(el.value) !== floraLines(f.value)) fields[f.field] = el.value;
+    else return;
+    const note = $("#flora-detail-body").querySelector('[data-note-for="' + CSS.escape(f.field) + '"]');
+    if (note && note.value.trim()) notes[f.field] = note.value.trim();
   });
-  return { fields, revert };
+  return { fields, revert, notes };
 }
 
 async function saveFloraRecord() {
@@ -9521,8 +9545,7 @@ async function saveFloraRecord() {
   const seq = _floraOpenSeq;
   try {
     const res = await adminApi("/flora/" + encodeURIComponent(rec.flora_id), "PATCH", {
-      fields: edits.fields, revert: edits.revert, version: rec.editing.version,
-      note: ($("#flora-note") || {}).value || "",
+      fields: edits.fields, revert: edits.revert, version: rec.editing.version, notes: edits.notes,
     });
     const changed = (res.changed_fields || []).length;
     const reverted = (res.reverted_fields || []).length;
@@ -9579,7 +9602,8 @@ async function restoreFloraRecord(changeId) {
   const seq = _floraOpenSeq;
   try {
     const res = await adminApi("/flora/" + encodeURIComponent(rec.flora_id) + "/restore", "POST", {
-      change_id: changeId, version: rec.editing.version, note: ($("#flora-note") || {}).value || "",
+      change_id: changeId, version: rec.editing.version,
+      note: ($("#flora-restore-note") || {}).value || "",
     });
     const outcome = res.change_id
       ? "Restored — " + (changeId ? "the record is as it was after #" + changeId : "the original values are back") +
@@ -9611,14 +9635,17 @@ $("#flora-detail-body")?.addEventListener("click", (e) => {
   }
   control.value = derived;
   control.dataset.revert = "1";
+  floraToggleNote(control);
   revert.textContent = "Will revert when you save";
   revert.disabled = true;
 });
 
 $("#flora-detail-body")?.addEventListener("input", (e) => {
   const control = e.target.closest("[data-field]");
-  if (!control || control.dataset.revert !== "1") return;
+  if (!control) return;
+  if (control.dataset.revert !== "1") { floraToggleNote(control); return; }
   delete control.dataset.revert;
+  floraToggleNote(control);
   const button = $("#flora-detail-body").querySelector(
     '[data-revert-field="' + CSS.escape(control.dataset.field) + '"]');
   if (button) { button.textContent = "Revert to derived value"; button.disabled = false; }

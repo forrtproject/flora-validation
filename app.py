@@ -6047,7 +6047,7 @@ class FloraRecordUpdate(BaseModel):
     fields: dict = {}
     revert: list[str] = []
     version: int          # required: an absent version would skip the concurrency check
-    note: str = Field("", max_length=500)
+    notes: dict[str, str] = {}    # field -> the note on that field's change
 
 
 def _flora_change(change):
@@ -6073,7 +6073,7 @@ def admin_flora_record_update(flora_id: str, req: FloraRecordUpdate,
     its row in the FLoRA table rewritten at once. The source records it derives from
     are not changed; every build re-applies the change on top of them."""
     return _flora_change(lambda cur: flora_service.update_record(
-        cur, flora_id, req.fields or {}, req.revert or [], req.version, admin, req.note))
+        cur, flora_id, req.fields or {}, req.revert or [], req.version, admin, req.notes or {}))
 
 
 class FloraRecordRestore(BaseModel):

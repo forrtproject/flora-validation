@@ -250,21 +250,40 @@ RECORD = {"flora_id": "REPL-1", "export_id": "FLORA-000001", "type": "replicatio
           "doi_o": "not a doi at all"}
 
 
-def test_a_save_is_one_row_of_the_log_with_who_what_and_the_note():
+def test_a_save_is_one_row_of_the_log_with_a_note_on_each_change():
     cur = _Cur()
     result = flora_edits.save(cur, RECORD, {}, {"title_o": "Better title", "outcome": "mixed"},
-                              [], 0, ADMIN, " typo ")
+                              [], 0, ADMIN, {"title_o": " typo ", "outcome": "per the paper",
+                                             "doi_o": "a note on a field left as it was"})
     assert result == {"export_id": "FLORA-000001", "change_id": 1,
                       "changed_fields": ["outcome", "title_o"], "reverted_fields": [],
                       "version": 1}
     [row] = cur.appended()
-    export_id, admin_id, handle, action, note, changes, corrections, restored_from = row
-    assert (export_id, admin_id, handle, action, note) == ("FLORA-000001", 7, "luke", "edit", "typo")
+    export_id, admin_id, handle, action, note, changes, corrections, restored_from, notes = row
+    assert (export_id, admin_id, handle, action, note) == ("FLORA-000001", 7, "luke", "edit", None)
     assert changes.adapted == {"title_o": ["Shown title", "Better title"],
                                "outcome": ["failed", "mixed"]}
+    assert notes.adapted == {"title_o": "typo", "outcome": "per the paper"}
     assert corrections.adapted == {"title_o": "Better title", "outcome": "mixed"}
     assert restored_from is None
     assert not any("source_records" in sql for sql, _ in cur.executed)
+
+
+def test_a_change_may_go_without_a_note():
+    cur = _Cur()
+    flora_edits.save(cur, RECORD, {}, {"title_o": "Better title"}, [], 0, ADMIN)
+    assert cur.appended()[0][8].adapted == {}
+
+
+@pytest.mark.parametrize("notes, message", [
+    ({"title_o": "x" * 501}, "longer than 500"),
+    ({"title_o": 5}, "must be text"),
+])
+def test_a_note_that_cannot_be_kept_is_refused(notes, message):
+    cur = _Cur()
+    with pytest.raises(ValueError, match=message):
+        flora_edits.save(cur, RECORD, {}, {"title_o": "Better title"}, [], 0, ADMIN, notes)
+    assert cur.appended() == []
 
 
 def test_untouched_fields_are_neither_validated_nor_logged():
@@ -353,7 +372,7 @@ def test_a_restore_puts_back_the_state_right_after_that_change():
     assert result["change_id"] == 4
     assert result["changed_fields"] == ["title_o"] and result["reverted_fields"] == ["outcome"]
     [row] = cur.appended()
-    assert row[3:5] == ("restore", "wrong paper") and row[7] == 1
+    assert row[3:5] == ("restore", "wrong paper") and row[7] == 1 and row[8].adapted == {}
     assert row[5].adapted == {"title_o": ["Third", "First"], "outcome": ["mixed", "successful"]}
     assert row[6].adapted == {"title_o": "First"}
 
@@ -589,14 +608,15 @@ def test_changing_requires_an_admin(flora_api):
     flora_api.service.restore_record.assert_not_called()
 
 
-def test_a_change_is_logged_under_the_admin(flora_api):
+def test_a_change_is_logged_under_the_admin_with_a_note_per_field(flora_api):
     flora_api.service.update_record.return_value = {"changed_fields": ["title_o"]}
     response = flora_api.client.patch(URL, json={
-        "fields": {"title_o": "T"}, "revert": ["outcome"], "version": 3, "note": "n"})
+        "fields": {"title_o": "T"}, "revert": ["outcome"], "version": 3,
+        "notes": {"title_o": "typo", "outcome": "back to the sheet"}})
     assert response.status_code == 200
     flora_api.service.update_record.assert_called_once_with(
         "isolated-cursor", "REPL-000001", {"title_o": "T"}, ["outcome"], 3,
-        {"id": 7, "handle": "test-admin"}, "n")
+        {"id": 7, "handle": "test-admin"}, {"title_o": "typo", "outcome": "back to the sheet"})
 
 
 def test_a_restore_names_the_change_and_the_version(flora_api):
@@ -613,7 +633,7 @@ def test_a_change_without_its_version_is_refused(flora_api):
     assert flora_api.client.patch(URL, json={"fields": {"title_o": "T"}}).status_code == 422
     assert flora_api.client.post(URL + "/restore", json={"change_id": 1}).status_code == 422
     assert flora_api.client.patch(URL, json={"fields": {}, "version": 0,
-                                             "note": "x" * 501}).status_code == 422
+                                             "notes": {"title_o": ["not", "text"]}}).status_code == 422
     flora_api.service.update_record.assert_not_called()
 
 
