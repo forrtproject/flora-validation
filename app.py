@@ -34,6 +34,7 @@ import hmac
 import resend
 import db_pool
 import flora_service
+import flora_store
 from flora_public_api import create_router as create_flora_api_router, is_public_read_request
 import source_records_service
 import source_sync_runner
@@ -5950,17 +5951,28 @@ def admin_flora_stats(admin: dict = Depends(current_admin)):
 def admin_flora_export(
     type: str = "", source: str = "", outcome: str = "",
     search: str = "", unregistered: bool = False, edited: bool = False,
+    view: str = "",
     admin: dict = Depends(current_admin),
 ):
-    """Current rows matching the filter, in the canonical release order.
+    """Rows matching the filter, in the canonical release order.
 
-    Omit filters for the complete dataset. Retained per-run artifacts have their
-    own endpoint so later edits cannot change an earlier run's downloaded file.
+    The complete file is the stored dataset in flora_data: the flora.csv the last
+    pipeline run published (and committed to output/), with the corrections saved
+    since; the public API serves its records from the same table. view=tab, which
+    Export filtered CSV always sends, or any filter, gives the tab's own view
+    instead, which also shows rows the next run will add.
+    Retained per-run artifacts have their own endpoint so later edits cannot
+    change an earlier run's downloaded file.
     """
     filters = _flora_filters(type, source, outcome, search, unregistered, edited)
     try:
         with db() as cur:
-            body = flora_service.export_csv(cur, filters)
+            if view == "tab" or any(filters.values()):
+                body = flora_service.export_csv(cur, filters)
+            elif flora_store.has_dataset(cur):
+                body = flora_store.export_csv(cur)
+            else:
+                raise ValueError("No FLoRA dataset is stored yet: run the pipeline first.")
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
 

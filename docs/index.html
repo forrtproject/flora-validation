@@ -340,7 +340,9 @@
             <p class="src-sync-kicker">FLoRA preparation</p>
             <h3>Run the complete pipeline</h3>
             <p class="src-sync-blurb">Imports source rows, applies exclusions and validated records, fetches
-              metadata, assigns IDs, and builds the final CSV with a validation report.</p>
+              metadata, assigns IDs, and builds the final CSV with a validation report. A successful
+              run also asks GitHub to update <code>output/flora.csv</code> in the repository; the run
+              log says whether it did.</p>
           </div>
           <div class="src-sync-actions">
             <button class="btn-primary" id="src-sync-run-btn" type="button">Run pipeline + report</button>
@@ -556,8 +558,10 @@
             runs and their reports are under Source Records.</p>
         </div>
         <div class="flora-actions">
-          <button class="btn-primary" id="flora-export-all-btn" type="button">Download full CSV</button>
-          <button class="ghost-btn" id="flora-export-btn" type="button">Export filtered CSV</button>
+          <button class="btn-primary" id="flora-export-all-btn" type="button"
+                  title="The stored dataset, as the public API serves it: the last pipeline run's flora.csv with corrections saved since">Download full CSV</button>
+          <button class="ghost-btn" id="flora-export-btn" type="button"
+                  title="The rows this filter shows, including any the next pipeline run will add">Export filtered CSV</button>
           <button class="ghost-btn" id="flora-refresh-btn" type="button">Refresh</button>
           <button class="ghost-btn" id="flora-dedup-btn" type="button"
                   title="Possible preprint and publication pairs awaiting a decision">Preprint duplicates

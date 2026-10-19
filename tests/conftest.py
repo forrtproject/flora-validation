@@ -14,6 +14,9 @@ import pytest
 
 os.environ["DATABASE_URL"] = "postgresql://stub/stub"
 os.environ.setdefault("ADMIN_PASSWORD", "bootstrap-password-for-import")
+# Empty rather than unset, so load_dotenv cannot fill it in from .env either: a
+# test whose pipeline run succeeds must never start the real Publish FLoRA workflow.
+os.environ["FLORA_RELEASE_TOKEN"] = ""
 
 
 @pytest.fixture(autouse=True, scope="session")

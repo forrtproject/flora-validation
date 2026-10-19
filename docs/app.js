@@ -9258,7 +9258,9 @@ async function downloadAdminArtifact(path, filename, button) {
 }
 
 $("#flora-export-btn")?.addEventListener("click", (event) => {
-  downloadAdminArtifact("/flora/export.csv?" + floraQueryString({ page: 1 }),
+  // view=tab: the grid's own rows, also when no filter is set. Without it the
+  // server sends the stored dataset, which is Download full CSV.
+  downloadAdminArtifact("/flora/export.csv?" + floraQueryString({ page: 1, view: "tab" }),
     "flora_filtered_" + new Date().toISOString().slice(0, 10) + ".csv", event.currentTarget);
 });
 

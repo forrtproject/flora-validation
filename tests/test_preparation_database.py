@@ -6,6 +6,7 @@ No production DSN or application .env value is used as a fallback.
 import csv
 import hashlib
 import io
+import json
 import os
 import uuid
 from pathlib import Path
@@ -101,6 +102,12 @@ def test_database_migration_build_correction_append_and_download(local_database,
         web_csv = flora_service.export_csv(cur, {})
         assert web_csv.encode("utf-8") == (tmp_path / "flora.csv").read_bytes()
         assert flora_store.export_csv(cur) == web_csv
+        # The data version a racing commit compares: this store, as flora_data has it.
+        manifest = json.loads((tmp_path / "flora_release_manifest.json").read_text(encoding="utf-8"))
+        _, stored_at, watermark = flora_store.dataset_revision(cur)
+        assert manifest["data_version"] == {"stored_at": stored_at.isoformat(),
+                                            "change_watermark": watermark}
+        assert report["release"]["data_version"] == manifest["data_version"]
         job_id = source_sync_runner.queue_run(cur, "integration-test")
     connection.commit()
     source_sync_runner._persist_artifacts(connection, job_id, report, web_csv)

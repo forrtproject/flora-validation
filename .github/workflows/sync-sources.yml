@@ -8,6 +8,10 @@ on:
     - cron: "0 3 * * *"
   workflow_dispatch: {}   # also allow manual runs from the Actions tab
 
+# Needed so the job can commit the night's FLoRA release to output/.
+permissions:
+  contents: write
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -69,6 +73,9 @@ jobs:
 
       # Same final command as the website's Run pipeline button. Validation reads
       # the exact CSV snapshot, and the manifest fingerprints its downloaded bytes.
+      # Written straight into output/, where the release files are tracked. The
+      # build removes transform logs it did not write, so the logs there are
+      # always this build's.
       - name: Prepare final FLoRA CSV and reports
         id: build_dataset
         # Source refresh stages still run independently. A failure prevents a
@@ -76,32 +83,65 @@ jobs:
         if: success()
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python prepare_flora.py --output-dir output/prepared
+        run: python prepare_flora.py --output-dir output
 
+      # Only when the build ran: output/ also holds the last release's committed
+      # reports. The build writes its report first and clears the old validation
+      # reports as it starts, so even a failed build uploads only its own.
       - name: Upload validation report
-        if: always()
+        if: always() && steps.build_dataset.outcome != 'skipped'
         uses: actions/upload-artifact@v7
         with:
           name: flora-validation-${{ github.run_id }}
           path: |
-            output/prepared/flora_preparation_report.json
-            output/prepared/flora_preparation_report.md
-            output/prepared/flora_validation.md
-            output/prepared/flora_network_validation.md
+            output/flora_preparation_report.json
+            output/flora_preparation_report.md
+            output/flora_validation.md
+            output/flora_network_validation.md
           retention-days: 90
           if-no-files-found: warn
 
-      # Files remain reviewable artifacts. Sync does not publish a dataset release
-      # or create/comment on external review issues.
+      # Also kept as a reviewable artifact: the files this build wrote, not the
+      # other files kept in output/. Sync does not create or comment on external
+      # review issues.
       - name: Upload FLoRA dataset
         if: steps.build_dataset.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: flora-final-${{ github.run_id }}
           path: |
-            output/prepared/
+            output/flora.csv
+            output/flora_release_manifest.json
+            output/flora_release_notes.md
+            output/flora_history.csv
+            output/flora_dataset_summary.md
+            output/flora_preparation_report.json
+            output/flora_preparation_report.md
+            output/flora_validation.md
+            output/flora_network_validation.md
+            output/flora_network_validation.csv
+            output/flora_export_log.csv
+            output/dup_outcome_conflicts.csv
+            output/preprint_dedup_candidates.csv
+            output/cross_type_duplicate_rulings.csv
           retention-days: 90
           if-no-files-found: error
+
+      # Other repositories read FLoRA from output/flora.csv: the file this run just
+      # stored in flora_data. Download full CSV serves that table, so the two match
+      # until a correction is saved in the FLoRA tab (the table has it at once, this
+      # file at the next run). A failed build exits non-zero and commits nothing;
+      # so does a night whose flora.csv did not change. The files committed are
+      # .github/release-files.txt; the manifest's data version keeps a slower job
+      # from replacing a newer release (.github/scripts/commit_and_push.sh).
+      - name: Commit the FLoRA release to output/
+        if: steps.build_dataset.outcome == 'success'
+        env:
+          RELEASE_MANIFEST: output/flora_release_manifest.json
+        run: >-
+          bash .github/scripts/commit_and_push.sh
+          "chore: nightly FLoRA release ($(date -u +%Y-%m-%d))"
+          output/flora.csv $(cat .github/release-files.txt)
 
       # Snapshots go to artifacts rather than the repo: the payloads are several MB
       # a night and would bloat git permanently. The hash and row count live in

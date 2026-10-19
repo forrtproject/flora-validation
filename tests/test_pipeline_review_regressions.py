@@ -87,11 +87,12 @@ def test_failed_publication_restores_csv_manifest_and_history(tmp_path, monkeypa
     second = frame(id="FLO-000002", id_md5=hashlib.md5(b"FLO-000002").hexdigest())
     write_input(source, pd.concat([frame(title_o="Corrected"), second]))
     monkeypatch.setattr(prepare_flora, "current_dataset_revision", lambda: None)
+    monkeypatch.setattr(prepare_flora, "current_change_watermark", lambda: 0)
 
     def store(*args, **kwargs):
         if failure == "storage":
             raise RuntimeError("simulated database failure")
-        return {"rows": 2}
+        return {"rows": 2, "stored_at": "2026-10-19T03:00:00+00:00"}
 
     monkeypatch.setattr(prepare_flora, "store_dataset", store)
     replace = Path.replace

@@ -13,6 +13,7 @@ import transform_sources
 @pytest.fixture(autouse=True)
 def mock_revision(monkeypatch):
     monkeypatch.setattr(prepare_flora, "current_dataset_revision", lambda: None)
+    monkeypatch.setattr(prepare_flora, "current_change_watermark", lambda: 0)
 
 
 def write_candidate(path, valid=True):
@@ -30,7 +31,7 @@ def test_database_preparation_persists_checked_candidate(tmp_path, monkeypatch):
     def store(path, *, expected_revision):
         assert expected_revision is None
         saved.append(path.read_bytes())
-        return {"rows": 1, "inserted": 1}
+        return {"rows": 1, "inserted": 1, "stored_at": "2026-10-19T03:00:00+00:00"}
     monkeypatch.setattr(prepare_flora, "store_dataset", store)
     report = prepare_flora.prepare(tmp_path, network_checks="none")
     assert report["storage"]["rows"] == 1
@@ -51,7 +52,7 @@ def test_invalid_identity_never_reaches_stored_table(tmp_path, monkeypatch):
 def test_existing_csv_does_not_write_database_without_opt_in(tmp_path, monkeypatch):
     source = tmp_path / "input.csv"
     write_candidate(source)
-    store = Mock(return_value={"rows": 1})
+    store = Mock(return_value={"rows": 1, "stored_at": "2026-10-19T03:00:00+00:00"})
     monkeypatch.setattr(prepare_flora, "store_dataset", store)
     prepare_flora.prepare(tmp_path / "files", source, network_checks="none")
     store.assert_not_called()
@@ -76,7 +77,7 @@ def test_locked_csv_reports_committed_database_and_keeps_recovery_file(tmp_path,
     stored = []
     def store(path, **kwargs):
         stored.append(path.read_bytes())
-        return {"rows": 1}
+        return {"rows": 1, "stored_at": "2026-10-19T03:00:00+00:00"}
     monkeypatch.setattr(prepare_flora, "store_dataset", store)
     original_replace = Path.replace
     def replace(path, target):

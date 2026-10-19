@@ -46,6 +46,13 @@ TRANSFORM_DIAGNOSTICS = {
 DIAGNOSTIC_FILTERS = {
     "preprint_dedup_candidates.csv": preprint_dedup.unresolved,
 }
+VALIDATION_FILES = ("flora_validation.md", "flora_network_validation.md",
+                    "flora_network_validation.csv")
+# Every file a release consists of: what the nightly job uploads and commits, and
+# what the commit script treats as one job's set (.github/release-files.txt).
+RELEASE_FILES = ("flora.csv", "flora_release_manifest.json", "flora_release_notes.md",
+                 "flora_history.csv", "flora_dataset_summary.md", REPORT_JSON, REPORT_MARKDOWN,
+                 *VALIDATION_FILES, *TRANSFORM_DIAGNOSTICS)
 
 
 def timestamp():
@@ -128,6 +135,15 @@ def write_report(output_dir, report):
     (output_dir / REPORT_MARKDOWN).write_text(render_report(report), encoding="utf-8")
 
 
+def write_network_validation(output_dir, network):
+    (output_dir / "flora_network_validation.md").write_text(
+        validate_flora_network.render_validation(network), encoding="utf-8")
+    network_rows = [{"check": heading, "item": item}
+                    for heading, items in network["sections"].items() for item in items]
+    pd.DataFrame(network_rows, columns=["check", "item"]).to_csv(
+        output_dir / "flora_network_validation.csv", index=False, lineterminator="\n")
+
+
 def record_local_history(output_dir, frame):
     path = output_dir / "flora_history.csv"
     date = datetime.now(timezone.utc).date().isoformat()
@@ -160,6 +176,17 @@ def current_dataset_revision():
     try:
         with connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             return dataset_revision(cur)
+    finally:
+        connection.close()
+
+
+def current_change_watermark():
+    """The newest FLoRA record change as this run starts (flora_edits)."""
+    import flora_edits
+    connection = psycopg2.connect(os.environ["DATABASE_URL"])
+    try:
+        with connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            return flora_edits.change_watermark(cur)
     finally:
         connection.close()
 
@@ -226,6 +253,10 @@ def _prepare(output_dir, input_path, network_checks, network_limit,
               "mode": "existing_csv" if input_path else "database_pipeline",
               "status": "running", "rows": 0, "stages": [], "warnings": [], "errors": []}
     write_report(output_dir, report)
+    # An earlier run's validation reports, which a run failing before validation
+    # would otherwise leave, and the nightly job upload, as this run's.
+    for name in VALIDATION_FILES:
+        (output_dir / name).unlink(missing_ok=True)
     stage_name = "final CSV"
     release_staging = None
     try:
@@ -233,6 +264,8 @@ def _prepare(output_dir, input_path, network_checks, network_limit,
         # This covers website, scheduled, and CLI runs without holding a database
         # transaction open throughout slow external validation.
         expected_revision = current_dataset_revision() if should_store else UNCHECKED_REVISION
+        # Nothing stored yet has no revision to carry it: the newest correction now.
+        start_watermark = current_change_watermark() if should_store and expected_revision is None else 0
         previous_diagnostics = {
             name: (output_dir / name).stat().st_mtime_ns if (output_dir / name).exists() else None
             for name in TRANSFORM_DIAGNOSTICS
@@ -252,7 +285,11 @@ def _prepare(output_dir, input_path, network_checks, network_limit,
             report["diagnostics"] = {}
             for name, description in TRANSFORM_DIAGNOSTICS.items():
                 path = output_dir / name
-                if path.exists() and path.stat().st_mtime_ns != previous_diagnostics[name]:
+                if path.exists() and path.stat().st_mtime_ns == previous_diagnostics[name]:
+                    # Not written by this build: an earlier build's log, which would
+                    # otherwise be published beside this flora.csv as if current.
+                    path.unlink()
+                elif path.exists():
                     records = pd.read_csv(path, dtype=str, keep_default_na=False).to_dict("records")
                     if name in DIAGNOSTIC_FILTERS:
                         records = DIAGNOSTIC_FILTERS[name](records)
@@ -302,12 +339,7 @@ def _prepare(output_dir, input_path, network_checks, network_limit,
         if network["status"] != "passed":
             report["warnings"].append(f"Network validation: {network['status']}; "
                                        f"{network['issue_count']} finding(s).")
-        (output_dir / "flora_network_validation.md").write_text(
-            validate_flora_network.render_validation(network), encoding="utf-8")
-        network_rows = [{"check": heading, "item": item}
-                        for heading, items in network["sections"].items() for item in items]
-        pd.DataFrame(network_rows, columns=["check", "item"]).to_csv(
-            output_dir / "flora_network_validation.csv", index=False, lineterminator="\n")
+        write_network_validation(output_dir, network)
         if api_filter:
             stage_name = "optional API dataset filter"
             from filter_flora import run_filter
@@ -332,6 +364,11 @@ def _prepare(output_dir, input_path, network_checks, network_limit,
             stage_name = "store prepared FLoRA table"
             report["storage"] = store_dataset(candidate, expected_revision=expected_revision)
             report["storage"]["status"] = "committed"
+            # The corrections the build included: those saved before it began.
+            watermark = (expected_revision[2] if isinstance(expected_revision, tuple)
+                         else start_watermark)
+            release_helpers.add_data_version(staged, report["release"],
+                                             report["storage"]["stored_at"], watermark)
             report["stages"].append({"name": stage_name, "status": "passed",
                                       "detail": f"{report['storage']['rows']} active rows in flora_data"})
         stage_name = "publish CSV artifact"

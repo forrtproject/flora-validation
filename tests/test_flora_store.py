@@ -117,6 +117,19 @@ def test_search_extras_and_transaction_rollback(local_database):
         assert flora_store.get_record(cur, "NEW-b") is None
 
 
+def test_the_export_has_the_last_snapshots_columns(local_database, tmp_path):
+    """Download full CSV and output/flora.csv must be the same file, also after an
+    extra column is dropped or the extras change order."""
+    with local_database:
+        with local_database.cursor(cursor_factory=RealDictCursor) as cur:
+            flora_store.materialize(cur, snapshot("NEW-a", first="1", second="2"))
+            for frame in (snapshot("NEW-a", second="2"), snapshot("NEW-a", second="2", first="1")):
+                path = tmp_path / "snapshot.csv"
+                path.write_text(final_export.csv_text(frame), encoding="utf-8", newline="")
+                flora_store.materialize(cur, path)
+                assert flora_store.export_csv(cur).encode("utf-8") == path.read_bytes()
+
+
 def test_empty_snapshot_requires_deliberate_opt_in(local_database):
     with local_database:
         with local_database.cursor(cursor_factory=RealDictCursor) as cur:

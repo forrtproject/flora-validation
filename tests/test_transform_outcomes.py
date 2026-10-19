@@ -164,11 +164,25 @@ def test_sync_workflow_cannot_upload_a_stale_dataset_after_build_failure():
     # The shared preparation command builds a fresh candidate and promotes it
     # only after validation. Its stale-file behavior is exercised by the
     # preparation tests; CI must invoke it and upload only a completed run.
-    assert "python prepare_flora.py --output-dir output/prepared" in workflow
+    assert "python prepare_flora.py --output-dir output\n" in workflow
     assert "if: success()" in workflow
     assert "if: steps.build_dataset.outcome == 'success'" in workflow
-    assert "output/prepared/" in workflow
     assert "if-no-files-found: error" in workflow
+
+
+def test_the_nightly_release_is_committed_to_output_only_after_a_good_build():
+    """Other repositories read output/flora.csv. It must be the file the run stored,
+    published only by a successful build, and only when it changed."""
+    workflow = (Path(__file__).resolve().parent.parent / ".github" / "workflows" /
+                "sync-sources.yml").read_text(encoding="utf-8")
+    assert "contents: write" in workflow
+    step = workflow[workflow.index("- name: Commit the FLoRA release to output/"):]
+    step = step[:step.index("\n\n")]
+    assert "if: steps.build_dataset.outcome == 'success'" in step
+    # The script commits only when its trigger (flora.csv) changed, and retries a
+    # rejected push on the new tip (tests/test_commit_and_push.py).
+    assert "bash .github/scripts/commit_and_push.sh" in step
+    assert "output/flora.csv $(cat .github/release-files.txt)" in step
 
 
 def test_sync_workflow_actions_use_the_node24_generation():

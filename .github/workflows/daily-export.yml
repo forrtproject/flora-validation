@@ -32,14 +32,10 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python export_validated.py
 
+      # The nightly sync and Publish FLoRA push to this branch too; the script
+      # retries on the new tip if one of them pushed after this checkout.
       - name: Commit updated exports (if changed)
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/validated_export.csv data/needs_manual_refs.csv oa_ref_cache.json
-          if git diff --staged --quiet; then
-            echo "No changes to commit."
-          else
-            git commit -m "chore: daily validated export ($(date -u +%Y-%m-%d))"
-            git push
-          fi
+        run: >-
+          bash .github/scripts/commit_and_push.sh
+          "chore: daily validated export ($(date -u +%Y-%m-%d))" ""
+          data/validated_export.csv data/needs_manual_refs.csv oa_ref_cache.json

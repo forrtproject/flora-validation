@@ -123,10 +123,10 @@ def materialize(cur, source, *, allow_empty=False, expected_revision=UNCHECKED_R
     registered = {row["export_id"]: row["export_position"] for row in cur.fetchall()}
     cur.execute("SELECT * FROM flora_data ORDER BY export_position")
     existing = {row["id"]: dict(row) for row in cur.fetchall()}
-    cur.execute("SELECT columns FROM flora_data_metadata WHERE singleton")
-    metadata = cur.fetchone()
-    old_columns = list(metadata["columns"]) if metadata else CSV_COLUMNS
-    extra_columns = list(dict.fromkeys([*old_columns[len(CSV_COLUMNS):], *columns[len(CSV_COLUMNS):]]))
+    # The snapshot's own columns, in its order, not a union with earlier ones: a
+    # dropped or reordered extra column would otherwise make the export differ from
+    # the flora.csv this run publishes.
+    extra_columns = list(columns[len(CSV_COLUMNS):])
     output_columns = CSV_COLUMNS + extra_columns
     reference = {identity[0]: identity[1] for identity in final_export.reference_index()[0].values()}
     positions = {position: identifier for identifier, position in registered.items()}
@@ -184,7 +184,10 @@ def materialize(cur, source, *, allow_empty=False, expected_revision=UNCHECKED_R
     cur.execute("""INSERT INTO flora_data_metadata (singleton, columns, snapshot_sha256)
                    VALUES (TRUE, %s, %s) ON CONFLICT (singleton) DO UPDATE
                    SET columns=EXCLUDED.columns, snapshot_sha256=EXCLUDED.snapshot_sha256,
-                       updated_at=NOW()""", (Json(output_columns), digest))
+                       updated_at=NOW()
+                   RETURNING updated_at""", (Json(output_columns), digest))
+    # When this snapshot was stored: half of the release's data version (release_helpers).
+    stats["stored_at"] = cur.fetchone()["updated_at"].isoformat()
     return stats
 
 
@@ -236,6 +239,12 @@ def list_records(cur, *, limit=100, offset=0, include_retired=False, title=None,
                 [*params, limit, offset])
     return {"records": [_record(row) for row in cur.fetchall()], "total": total,
             "limit": limit, "offset": offset}
+
+
+def has_dataset(cur):
+    """Whether a prepared snapshot has been stored yet, by a pipeline run or an import."""
+    cur.execute("SELECT 1 FROM flora_data_metadata WHERE singleton")
+    return cur.fetchone() is not None
 
 
 def export_csv(cur, *, include_retired=False):

@@ -229,6 +229,9 @@ Use a disposable database for development unless you intend those actions to run
 | `GITHUB_TOKEN` | No for a public source repository | empty | Authorization header for nightly extractor CSV download |
 | `GITHUB_REPO` | No | `forrtproject/flora-extractor` | Extractor source repository |
 | `GITHUB_BRANCH` | No | `main` | Extractor source branch |
+| `FLORA_RELEASE_TOKEN` | No | empty | Fine-grained GitHub token with **Actions: read and write** on this repository only. After a successful **Run pipeline** the server starts the Publish FLoRA workflow with it, which commits `output/flora.csv` when it changed; it cannot push code. Unset, invalid or refused, the run still succeeds and its log says no repository copy was requested |
+| `FLORA_RELEASE_REPO` | No | `forrtproject/flora-validation` | Repository whose Publish FLoRA workflow is started |
+| `FLORA_RELEASE_BRANCH` | No | `main` | Branch the workflow runs on and commits to |
 | `EXTRACTOR_DATA_DIR` | No | `data/` | Working directory for `extracted_latest.csv` and the per-run snapshot archives the later stages verify by sha256; need not survive a redeploy, because each imported snapshot is also kept in `extractor_snapshots` |
 | `EXTRACTOR_SNAPSHOTS_KEPT` | No | `10` | Imported snapshots kept in the database (~4 MB each, minimum 2); older ones remain commits in flora-extractor's history |
 | `EXTRACTOR_AUTO_RETIRE` | No | `1` | Run the retire stage at the end of each full sync; `0`/`off` disables it |
@@ -1779,16 +1782,40 @@ tab shows it. Parent progress updates merge JSON rather than replacing it.
 `.github/workflows/sync-sources.yml` runs at 03:00 UTC and manually. It:
 
 1. installs Python 3.12 dependencies;
-2. runs `sync_sources.py`;
-3. runs `transform_sources.py` even when source sync failed; and
-4. uploads transformed output and sheet snapshots as 90-day artifacts.
+2. syncs the entry sheets, exclusions and validated records, and enriches new DOIs;
+3. assigns FLoRA ids (`flora_registry.py`) and runs `prepare_flora.py --output-dir
+   output`, which stores the dataset in `flora_data` and writes `output/flora.csv`;
+4. uploads the reports, the dataset and the sheet snapshots as 90-day artifacts; and
+5. commits the FLoRA release in `output/` (`flora.csv`, its manifest, release
+   notes, history, reports and the transform's logs) when `flora.csv` changed, so
+   other repositories can read it from the repository. A failed build commits
+   nothing. The build removes transform logs it did not write, so the committed
+   ones are always this build's.
+
+`.github/workflows/publish-flora.yml` (Publish FLoRA) runs when the website starts
+it after a successful **Run pipeline** (`repo_release.py`, `FLORA_RELEASE_TOKEN`), or by
+hand. `publish_flora.py` writes the stored dataset (`flora_data`) to `output/flora.csv`
+with its manifest, notes and history row, and the workflow commits `output/` when
+`flora.csv` changed. The run's preparation and validation reports are included only
+when that run built exactly these bytes; otherwise they, and the transform's logs,
+are removed rather than left beside a file they do not describe.
+
+All three workflows push through `.github/scripts/commit_and_push.sh`, each naming
+the files it owns: the release files listed in `.github/release-files.txt` (the same
+list as `prepare_flora.RELEASE_FILES`), or the daily export's three files. When another
+job pushed after the checkout, the push is retried on the new tip: every owned file is
+set to exactly this job's version, present or absent, so two releases' files are never
+mixed, and files the job does not own keep the tip's. Nothing is merged line by line.
+A release retry first compares the manifests' `data_version` (when `flora_data` was
+last written, and the newest correction included) and leaves a tip of newer data in
+place.
 
 `.github/workflows/daily-export.yml` runs at 04:00 UTC and manually. It:
 
 1. runs `export_validated.py` with repository secret `DATABASE_URL`;
 2. stages `data/validated_export.csv`, `data/needs_manual_refs.csv`, and
    `oa_ref_cache.json`; and
-3. commits/pushes only when those files changed.
+3. commits/pushes only when those files changed, through the same script.
 
 No workflow currently runs pytest or JavaScript syntax checks.
 
@@ -1972,6 +1999,8 @@ against a database you have not backed up.
 | `backfill_oa_work_ids.py` | Batched OpenAlex work-ID lookup for `unvalidated` with matching propagation into `validated` |
 | `backfill_quote_source.py` | Dry-by-default quote-source classification on `validated` |
 | `backfill_flora_history.py` | Dry-by-default dataset size history from published flora.csv versions |
+| `publish_flora.py` | Stored FLoRA dataset to `output/` for the repository copy (Publish FLoRA workflow) |
+| `repo_release.py` | Starts Publish FLoRA after a successful website pipeline run |
 | `update_originals.py` | Dry-by-default raw original-reference refresh by `pair_id` |
 | `update_outcomes.py` | Outcome/type/quote refresh for untouched rows |
 | `find_orphans.py` | Read-only summary of database records absent from the current resolved CSV |

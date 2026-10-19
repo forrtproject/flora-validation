@@ -369,6 +369,15 @@ def _execute(conn, job_id: str) -> None:
             (status, job_id),
         )
     conn.commit()
+    if ok:
+        # After the success is committed: Publish FLoRA reads this run's report. The
+        # dataset is stored by now, so nothing here may turn the run into a failure.
+        try:
+            import repo_release
+            outcome = repo_release.request_repo_copy(job_id)
+        except Exception as exc:
+            outcome = f"repository copy not requested: {type(exc).__name__}"
+        _append_log(conn, job_id, f"[{_timestamp()}] {outcome}\n")
     _append_log(conn, job_id, f"[{_timestamp()}] run {status}\n")
 
 
