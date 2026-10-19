@@ -44,4 +44,11 @@ def request_repo_copy(job_id: str) -> str:
     if response.status_code in (200, 204):
         return (f"repository copy requested: Publish FLoRA commits output/flora.csv "
                 f"to {repo} ({branch}) if it changed")
-    return f"repository copy not requested: GitHub answered HTTP {response.status_code}"
+    # GitHub's own reason ("Resource not accessible by personal access token", ...)
+    # says which setting to fix; its error bodies never echo the token.
+    try:
+        reason = str(response.json().get("message") or "")[:200]
+    except Exception:
+        reason = ""
+    return (f"repository copy not requested: GitHub answered HTTP {response.status_code}"
+            + (f" ({reason})" if reason else ""))

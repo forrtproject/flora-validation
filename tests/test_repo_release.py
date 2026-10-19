@@ -62,6 +62,18 @@ def test_a_refusal_is_reported_without_the_token(github, monkeypatch):
     assert TOKEN not in message
 
 
+def test_a_refusal_carries_githubs_reason(monkeypatch):
+    """403 alone does not say whether the token lacks Actions access, waits for the
+    organisation's approval, or belongs to the wrong owner. GitHub's message does."""
+    monkeypatch.setenv("FLORA_RELEASE_TOKEN", TOKEN)
+    body = {"message": "Resource not accessible by personal access token"}
+    monkeypatch.setattr(repo_release.requests, "post",
+                        lambda url, **kwargs: SimpleNamespace(status_code=403, json=lambda: body))
+    assert repo_release.request_repo_copy("job-1") == (
+        "repository copy not requested: GitHub answered HTTP 403 "
+        "(Resource not accessible by personal access token)")
+
+
 def test_a_token_that_cannot_be_sent_never_raises(monkeypatch):
     """A zero-width space pasted with the token: http.client fails to encode the
     header as latin-1, a UnicodeEncodeError, which is not a RequestException."""
