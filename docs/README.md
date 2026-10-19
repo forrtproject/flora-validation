@@ -1793,8 +1793,11 @@ tab shows it. Parent progress updates merge JSON rather than replacing it.
    ones are always this build's.
 
 `.github/workflows/publish-flora.yml` (Publish FLoRA) runs when the website starts
-it after a successful **Run pipeline** (`repo_release.py`, `FLORA_RELEASE_TOKEN`), or by
-hand. `publish_flora.py` writes the stored dataset (`flora_data`) to `output/flora.csv`
+it after a successful **Run pipeline** (`repo_release.py`, `FLORA_RELEASE_TOKEN`), once a
+day as soon as the nightly sync job finishes (succeeded or not; GitHub starts it, no token
+needed), or by hand. After a good night it finds `flora.csv` already committed and commits
+nothing; after a failed one it still publishes the stored dataset with the day's
+corrections. `publish_flora.py` writes the stored dataset (`flora_data`) to `output/flora.csv`
 with its manifest, notes and history row, and the workflow commits `output/` when
 `flora.csv` changed. The run's preparation and validation reports are included only
 when that run built exactly these bytes; otherwise they, and the transform's logs,

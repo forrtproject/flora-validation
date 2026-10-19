@@ -1094,7 +1094,8 @@ It is the file the run stored in `flora_data`, which **Download full CSV** in th
 tab also serves. A correction saved in the FLoRA tab rewrites its row in `flora_data`
 at once, so from then on the download has it and the repository file gets it at the next
 run. A successful **Run pipeline** on the website does the same through
-the Publish FLoRA workflow, when `FLORA_RELEASE_TOKEN` is set. `output/flora_entry_sheets.csv` is written only by the
+the Publish FLoRA workflow, when `FLORA_RELEASE_TOKEN` is set. Publish FLoRA also runs
+by itself after every nightly job, so even a failed night publishes the stored dataset. `output/flora_entry_sheets.csv` is written only by the
 `transform_sources.py` command line and is not part of it.
 
 ### 10.1 The "Run sync now" button
