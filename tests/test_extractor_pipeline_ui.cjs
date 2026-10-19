@@ -136,14 +136,14 @@ const LOG = [
     // No removal limit any more: a drop in the CSV never stops a run.
     const steps = await page.locator(".pipeline-step").allInnerTexts();
     assert.match(steps[0], /^1\s+Download and compare/);
-    assert.match(steps[0], /A dropped pair is not deleted here/);
+    assert.match(steps[0], /Nothing is deleted in this step/);
     assert.doesNotMatch(steps.join(" "), /stops before anything changes|removal limit/i);
     assert.equal(await page.locator("#pipeline-config-alert").isHidden(), true);
 
     // The heading says what Refresh does and when the list was last loaded.
     assert.match(await page.locator("#pipeline-next-run").innerText(), /^02:00 UTC/);
     assert.match(await page.locator("#pipeline-updated").innerText(), /\d{2}:\d{2}:\d{2}\s+Press Refresh history/);
-    assert.match(await page.locator("#pipeline-refresh-hint").innerText(), /Reloads the runs listed below/);
+    assert.match(await page.locator("#pipeline-refresh-hint").innerText(), /While a run is going, the list updates by itself/);
     const listRequests = () => requests.filter(r => r === "GET /api/admin/maintenance/runs").length;
     const before = listRequests();
     await page.locator("#pipeline-refresh-btn").click();

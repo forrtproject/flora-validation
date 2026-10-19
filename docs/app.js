@@ -833,8 +833,8 @@ async function showAuthLinkScreen(token) {
   $("#auth-link-title").textContent =
     info.purpose === "admin_invite" ? "Choose your password" : "Set a new password";
   $("#auth-link-intro").textContent =
-    `You are setting the administrator password for ${info.handle}. ` +
-    `It must be at least ${info.min_password_length} characters, and nobody else can see it.`;
+    `Administrator password for ${info.handle}. ` +
+    `Use at least ${info.min_password_length} characters.`;
 
   $("#auth-link-submit").onclick = async () => {
     const password = $("#auth-link-password").value;
@@ -2164,9 +2164,9 @@ function renderHistDetail(d) {
        4. Login reminder – shown for 30s after login, dismissible
    ============================================================ */
 
-const _MAINT_WARN_MSG   = "Scheduled maintenance starts in less than 20 minutes (at 02:00 UTC). Please save your work and plan to return after 03:00 UTC.";
-const _MAINT_ACTIVE_MSG = "Nightly maintenance is now underway. Please save your work and return after 03:00 UTC.";
-const _MAINT_LOGIN_MSG  = "A reminder: nightly maintenance runs 02:00–03:00 UTC. The app may be briefly unavailable during this window.";
+const _MAINT_WARN_MSG   = "Maintenance starts at 02:00 UTC, in under 20 minutes. Save your work; the app is back after 03:00 UTC.";
+const _MAINT_ACTIVE_MSG = "Nightly maintenance is underway. Save your work and come back after 03:00 UTC.";
+const _MAINT_LOGIN_MSG  = "Nightly maintenance runs 02:00–03:00 UTC; the app may be briefly unavailable.";
 
 const _bann = {
   phase:          "normal",   // "normal" | "warning" | "active"
@@ -4512,9 +4512,9 @@ function _applyOutcomeMode(pairBody) {
   if (q) {
     if (!q.dataset.replQuestion) q.dataset.replQuestion = q.textContent;
     q.textContent = isRepro
-      ? "How did the reproduction turn out? Judge each axis separately — they are independent."
+      ? "How did the reproduction turn out? Judge each axis on its own."
       : reclassifiedToReplication
-      ? "Choose the replication outcome. The previous reproduction-grid label cannot carry across the type change."
+      ? "Choose the replication outcome; the reproduction label does not carry over."
       : q.dataset.replQuestion;
   }
 }
@@ -4875,7 +4875,7 @@ const TOUR_STEPS = [
     sel: "#gate-2",
     also: [".pair-header"],
     title: "ii. Original check",
-    body: "The system found the original study being replicated. Confirm it's the right paper — most are correct. If it looks wrong, choose <em>Wrong paper</em> and a form will appear so you can suggest the correct DOI or title. You can also skip the suggestion if you're unsure.",
+    body: "Is this the study being replicated? Most are right. If not, choose <em>Wrong paper</em> and suggest the correct DOI or title, or press <em>Skip</em> if you're unsure.",
   },
   {
     sel: "#gate-3",
@@ -6373,8 +6373,8 @@ function renderAdminDetail(data) {
           ${hasNotValidation
             ? `<p class="admin-resolve-hint">Fill in the correct values — this will override the "neither type — not in FLoRA" call.</p>`
             : hasProposals
-            ? `<p class="admin-resolve-hint">Validators' corrections are <strong>pre-filled below</strong> and will be saved when you resolve — review and adjust as needed.</p>`
-            : `<p class="admin-resolve-hint">Edit the final values directly and mark as resolved. Changes are auto-detected.</p>`}
+            ? `<p class="admin-resolve-hint">Validators' corrections are <strong>pre-filled below</strong>; review them before resolving.</p>`
+            : `<p class="admin-resolve-hint">Edit the final values, then mark as resolved.</p>`}
 
           <label class="admin-form-label">Replication Title</label>
           <input id="ar-study-r" class="admin-input" value="${escapeHtml(finalStudyR || "")}">
@@ -7200,7 +7200,7 @@ function renderMaintenanceRuns(data) {
   }
 
   if (!runs.length) {
-    body.innerHTML = `<div class="pipeline-empty"><b>No runs in this period.</b><span>The next nightly run, or one you start above, will appear here with its complete log.</span></div>`;
+    body.innerHTML = `<div class="pipeline-empty"><b>No runs in this period.</b><span>Nightly runs and runs you start above appear here with their logs.</span></div>`;
     return active;
   }
   // An open log keeps its own panel across the refresh, so its view (plain text,
@@ -7703,8 +7703,6 @@ function renderServingConfig(cfg) {
     const v = +shareEl.value;
     $("#sp-share-label").textContent = v + "%";
     $("#sp-rest-label").textContent = (100 - v) + "%";
-    const ratio = $("#sp-ratio");
-    if (ratio) ratio.textContent = `At ${v}%, ≈ ${Math.round(v / 10)} of every 10 served will be priority`;
   });
   $("#admin-priority-body").querySelectorAll('input[name="sp-outcome"], #sp-ymin, #sp-ymax')
     .forEach(el => el.addEventListener("input", () => _refreshPriorityPreview()));
@@ -7748,11 +7746,9 @@ function _refreshPriorityPreview(delay = 250) {
       if (seq !== _priorityPreviewSeq || !document.body.contains(box)) return;   // a newer count won
       const yr = (f.priority_year_min != null && f.priority_year_max != null) ? ` · ${f.priority_year_min}–${f.priority_year_max}` : "";
       const counted = new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      const share = +$("#sp-share").value;
       box.innerHTML = `<ul class="sp-preview-list">
         <li><strong>${Number(p.priority_match).toLocaleString()}</strong> waiting records match (${escapeHtml(f.priority_outcome)}${yr})</li>
         <li><strong>${Number(p.rest).toLocaleString()}</strong> other waiting records</li>
-        <li id="sp-ratio">At ${share}%, ≈ ${Math.round(share / 10)} of every 10 served will be priority</li>
       </ul>
       <p class="sp-hint">Waiting = a validator can be given it now: not restricted, and a reviewer slot is still free.</p>
       <div class="sp-preview-foot">
@@ -7885,7 +7881,7 @@ function renderAdminDashboard(d) {
           ["Type", c.type_corrections, "Judgements that changed the record's type"],
           ["Original", c.original_corrections, "Judgements that flagged the original study as wrong (“Can't tell” not counted)"],
           ["Outcome", c.outcome_corrections, "Judgements that changed the outcome (“Can't tell” not counted)"],
-          ["Outcome quote", c.outcome_quote_corrections, "Judgements that reworded an outcome quote, whichever button went with it — including “Right outcome, better quote”. Punctuation, case or spacing alone don't count."],
+          ["Outcome quote", c.outcome_quote_corrections, "Judgements that reworded the outcome quote, including “Right outcome, better quote”. Punctuation, case or spacing alone don't count."],
           ["Title", c.title_corrections, "Judgements that corrected the replication's title"],
         ].map(([label, n, title]) => `
         <div class="dash-card dash-card-neutral" title="${escapeHtml(title)}">
@@ -8500,10 +8496,10 @@ async function fetchAdminBannerStatus() {
   try {
     const data = await (await fetch("/api/banner")).json();
     if (data.active && data.message) {
-      statusEl.innerHTML = `<span style="color:var(--red)">● Live</span> — banner is currently shown to all users`;
+      statusEl.innerHTML = `<span style="color:var(--red)">● Live</span>: shown to all users`;
       if (msgEl) msgEl.value = data.message;
     } else {
-      statusEl.innerHTML = `<span style="color:var(--muted)">○ Inactive</span> — no banner currently active`;
+      statusEl.innerHTML = `<span style="color:var(--muted)">○ Off</span>: no banner shown`;
       if (msgEl) msgEl.value = "";
     }
   } catch (_) {
@@ -9494,11 +9490,10 @@ function renderFloraRecord(rec) {
 
   $("#flora-detail-body").innerHTML =
     provenance +
-    '<p class="flora-edit-note">Each change can carry its own note: a box opens under a field once you ' +
-      "change it. A save is logged under Changes with your name and those notes, and rewrites this " +
-      "record in the FLoRA table at once, so the public API shows it too. The source records stay as imported; " +
-      "every pipeline run re-applies the changes on top of them. A corrected DOI or URL also brings in the " +
-      "title, authors and journal for it: metadata not yet cached arrives with the next pipeline run.</p>" +
+    '<p class="flora-edit-note">Change a field to add a note for it. Saving logs the changes and notes under ' +
+      "Changes and updates the FLoRA table and the public API at once. Source records stay as imported; " +
+      "each pipeline run re-applies the changes. A corrected DOI or URL also fills in its title, authors " +
+      "and journal, by the next pipeline run if they are not cached yet.</p>" +
     groups.map((g) =>
       '<div class="src-group"><h4>' + escapeHtml(g.name) + "</h4>" + g.fields.map(floraField).join("") + "</div>"
     ).join("") +
@@ -9716,10 +9711,6 @@ function tip(text) {
   return ' title="' + escapeHtml(text) + '"';
 }
 
-const FLORA_DEDUP_WHEN =
-  " Shows in this tab at once; the published CSV, the public API and the Atlas change " +
-  "at the next pipeline run (nightly, or Run pipeline in Source Records).";
-
 /** What kind of record a DOI names — the first thing to read when deciding. */
 function floraDedupKind(p) {
   if (p.is_preprint) {
@@ -9772,7 +9763,7 @@ function floraDedupChoiceTip(item, action) {
         : "Nothing is dropped: both records already stay. This confirms it and takes the " +
           "pair off this list.";
     }
-    return "Different papers. " + detail + FLORA_DEDUP_WHEN;
+    return "Different papers. " + detail;
   }
   const [kept, gone] = action === "keep_1" ? [a, b] : [b, a];
   const [keptLabel, goneLabel] = action === "keep_1" ? ["A", "B"] : ["B", "A"];
@@ -9780,7 +9771,7 @@ function floraDedupChoiceTip(item, action) {
     return "Same original paper. Every replication recorded under " + goneLabel + " (" +
       doi(gone) + ") is listed under " + keptLabel + " (" + doi(kept) + "), and " +
       goneLabel + "'s DOI is kept on those rows as an alternative identifier. No record " +
-      "is removed and no ID changes." + FLORA_DEDUP_WHEN;
+      "is removed and no ID changes.";
   }
   const identity = floraDedupSetAside(item, kept)
     // Keeping the record the rule dropped: it has no published ID of its own yet.
@@ -9792,7 +9783,7 @@ function floraDedupChoiceTip(item, action) {
       "is retired, not deleted, so existing links still resolve. ";
   return "Same paper. Keeps " + keptLabel + " (" + doi(kept) + ") and removes " + goneLabel +
     " (" + doi(gone) + ") from FLoRA; " + keptLabel + " lists " + goneLabel + "'s DOI as " +
-    "an alternative identifier. " + identity + FLORA_DEDUP_WHEN.trim();
+    "an alternative identifier. " + identity.trim();
 }
 
 function floraDedupPaper(item, p) {
@@ -9838,21 +9829,19 @@ function floraDedupGroup(item) {
   const key = escapeHtml(item.pair_key);
   const status = item.applied_action === "needs_review"
     ? '<span class="src-dup-badge src-dup-badge-warn"' +
-        tip("Both records are in FLoRA right now. The automatic rule would have dropped one, " +
-            "but it will not guess here (different first authors, or two preprints without " +
-            "a matching author), so a person has to decide.") +
+        tip("The automatic rule does not pick one here: different first authors, or two " +
+            "preprints without a matching author.") +
         ">both kept until decided — " +
         escapeHtml((item.resolution || "").replace(/^review:\s*/, "")) + "</span>"
     : floraDedupIsOriginal(item)
       ? '<span class="src-dup-badge src-dup-badge-warn"' +
           tip("The automatic rule treated the two DOIs as one original and lists all their " +
-              "replications under one of them. Nothing was removed. Nobody has confirmed " +
-              "that yet; your decision replaces the guess.") +
+              "replications under one of them. Nothing was removed. Your decision replaces " +
+              "this guess.") +
           ">merged automatically — not confirmed</span>"
       : '<span class="src-dup-badge src-dup-badge-warn"' +
           tip("The automatic rule treated these as one paper and dropped one (a preprint " +
-              "loses to a published version). Nobody has confirmed that yet; your decision " +
-              "replaces the guess.") +
+              "loses to a published version). Your decision replaces this guess.") +
           ">one dropped automatically — not confirmed</span>";
   const flags = [status];
   if (item.title_sim != null) {
@@ -9889,8 +9878,7 @@ function floraDedupGroup(item) {
       ).join("") +
       '<input class="admin-input flora-dedup-note" type="text" maxlength="500" ' +
         'placeholder="Note (optional)" aria-label="Note for this decision"' +
-        tip("Optional. Saved with your decision and shown in the decided list, so others " +
-            "can see why.") + ">" +
+        tip("Saved with your decision and shown in the decided list.") + ">" +
     "</div>" +
   "</div>";
 }
@@ -9906,8 +9894,7 @@ function floraDedupDecidedRow(d) {
     '<td><button class="ghost-btn flora-dedup-undo" type="button" data-key="' +
       escapeHtml(d.pair_key) + '"' +
       tip("Withdraw this decision. The pair goes back to the automatic rules (or to " +
-          "cache/confirmed_preprint_duplicates.csv, if the file lists it) and returns to " +
-          "the list above if it still needs a decision." + FLORA_DEDUP_WHEN) +
+          "cache/confirmed_preprint_duplicates.csv, if the file lists it).") +
       ">Undo</button></td>" +
   "</tr>";
 }
@@ -10278,7 +10265,7 @@ function renderSourceRecord(r) {
       ).join("<br>") +
       '<div class="src-dim2">Source records stay as imported; corrections are made on the FLoRA record.</div></div>'
     : '<div class="src-flora-link src-dim2">This row does not feed a FLoRA record: it is ruled a duplicate, ' +
-      "excluded, deleted, or not yet reached by the pipeline. Source records stay as imported.</div>";
+      "excluded, deleted, or not yet reached by the pipeline.</div>";
 
   const dups = r.duplicates || [];
   const dupWarning = dups.length
@@ -10518,8 +10505,7 @@ function renderSourceDuplicates(data) {
         '<div class="src-dup-actions">' +
           '<button class="ghost-btn src-dup-distinct" data-id="' + m.record_id + '"' +
             tip(m.display_id + " is its own record: it stays in FLoRA, and the automatic " +
-                "dedup will not merge it into the others. Shows in the FLoRA tab at once; " +
-                "the published data changes at the next pipeline run.") +
+                "dedup will not merge it into the others.") +
             ">Keep — distinct</button>" +
           others.map((o) =>
             '<button class="ghost-btn src-dup-dupe" data-id="' + m.record_id +
@@ -10531,15 +10517,11 @@ function renderSourceDuplicates(data) {
                 (m.type && o.type && m.type !== o.type
                   ? " These are a " + m.type + " and a " + o.type + ", so this removes the " +
                     m.type + "; you will be asked to confirm."
-                  : "") +
-                " Shows in the FLoRA tab at once; the published data changes at the next " +
-                "pipeline run.") +
+                  : "")) +
             ">Duplicate of " + escapeHtml(o.display_id) + "</button>"
           ).join("") +
         "</div>" +
-        '<button class="ghost-btn src-dup-open" data-id="' + m.record_id + '"' +
-          tip("Open this row's full review panel. Nothing is decided by opening it.") +
-          ">Open full record</button>" +
+        '<button class="ghost-btn src-dup-open" data-id="' + m.record_id + '">Open full record</button>' +
       "</div>";
     }).join("");
 

@@ -51,7 +51,6 @@ const { chromium } = require("playwright");
     const list = () => page.locator(".sp-preview-list").innerText();
     assert.match(await list(), /325 waiting records match \(failed · 2011–2021\)/);
     assert.match(await list(), /3,199 other waiting records/);
-    assert.match(await list(), /At 70%, ≈ 7 of every 10 served will be priority/);
     assert.match(await page.locator(".sp-preview-foot").innerText(), /Counted at \d{2}:\d{2}:\d{2}/);
     assert.match(await page.locator("#sp-preview").innerText(), /a reviewer slot is still free/);
 
@@ -66,7 +65,7 @@ const { chromium } = require("playwright");
     assert.equal(previews.length, before + 1);
     assert.match(previews.at(-1), /year_min=2015/);
     assert.equal(await page.locator("#sp-ymin").inputValue(), "2015");
-    assert.match(await list(), /At 40%, ≈ 4 of every 10/);
+    assert.equal(await page.locator("#sp-share-label").innerText(), "40%");
 
     // An older, slower count never overwrites a newer one.
     let release;
