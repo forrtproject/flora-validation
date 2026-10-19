@@ -1,0 +1,61 @@
+name: Publish FLoRA
+
+# Started by the website after a successful Run pipeline (repo_release.py), or by
+# hand from the Actions tab. Writes the stored FLoRA dataset to output/ and commits
+# it when flora.csv changed, so other repositories read the same file the website
+# downloads. The nightly sync commits to output/ the same way.
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: "Website pipeline run whose preparation report to include (optional)"
+        required: false
+        default: ""
+
+# Needed so the job can commit output/.
+permissions:
+  contents: write
+
+# Publishes queue behind each other. Not shared with the nightly sync: a group
+# keeps one waiting run, so a publish could cancel a waiting night. A push that
+# races another job's is retried on the new tip (.github/scripts/commit_and_push.sh).
+concurrency:
+  group: flora-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # The run id reaches the shell through the environment, never through
+      # expression substitution into the script.
+      - name: Write the stored dataset to output/
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JOB_ID: ${{ inputs.job_id }}
+        run: |
+          if [ -n "$JOB_ID" ]; then
+            python publish_flora.py --output-dir output --job "$JOB_ID"
+          else
+            python publish_flora.py --output-dir output
+          fi
+
+      - name: Commit the FLoRA release to output/
+        env:
+          RELEASE_MANIFEST: output/flora_release_manifest.json
+        run: >-
+          bash .github/scripts/commit_and_push.sh
+          "chore: FLoRA release from the website pipeline ($(date -u +%Y-%m-%d))"
+          output/flora.csv $(cat .github/release-files.txt)

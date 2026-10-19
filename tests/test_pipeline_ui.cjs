@@ -113,7 +113,8 @@ const { chromium } = require("playwright");
     const filteredDownload = page.waitForEvent("download");
     await page.locator("#flora-export-btn").click();
     await filteredDownload;
-    assert(requests.some(request => request.startsWith("/api/admin/flora/export.csv?") && request.includes("search=example")));
+    assert(requests.some(request => request.startsWith("/api/admin/flora/export.csv?")
+      && request.includes("search=example") && request.includes("view=tab")));
 
     await page.evaluate(data => {
       document.querySelector("#admin-tab-flora").classList.add("hidden");

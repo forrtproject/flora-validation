@@ -149,6 +149,36 @@ def test_unchanged_old_transform_log_is_not_reported_as_current(tmp_path, monkey
     monkeypatch.setattr(transform_sources, "run", lambda output, **kwargs: write_input(output))
     report = preparation.prepare(output_dir, network_checks="none", store_data=False)
     assert report["diagnostics"] == {}
+    assert not (output_dir / "flora_export_log.csv").exists(), \
+        "an earlier build's log is not published beside this flora.csv"
+
+
+def test_a_build_failing_before_validation_leaves_no_earlier_validation_report(tmp_path, monkeypatch):
+    """output/ holds the last release's reports; the nightly job uploads what is
+    there as the night's, so a failed build must not leave the old ones."""
+    import transform_sources
+    output_dir = tmp_path / "release"
+    output_dir.mkdir()
+    for name in preparation.VALIDATION_FILES:
+        (output_dir / name).write_text("the last release's\n", encoding="utf-8")
+
+    def broken(output, **kwargs):
+        raise RuntimeError("simulated transform failure")
+
+    monkeypatch.setattr(transform_sources, "run", broken)
+    report = preparation.prepare(output_dir, network_checks="none", store_data=False)
+    assert report["status"] == "failed"
+    assert not any((output_dir / name).exists() for name in preparation.VALIDATION_FILES)
+    assert (output_dir / preparation.REPORT_JSON).exists(), "the failure report is this run's"
+
+
+def test_an_existing_csv_run_leaves_the_build_logs_alone(tmp_path):
+    """Only a database build writes them, so only a database build replaces them."""
+    output_dir = tmp_path / "release"
+    output_dir.mkdir()
+    (output_dir / "flora_export_log.csv").write_text("doi_o,reason\nold,old\n")
+    preparation.prepare(output_dir, write_input(tmp_path / "input.csv"), network_checks="none")
+    assert (output_dir / "flora_export_log.csv").exists()
 
 
 def test_history_replaces_same_utc_day_instead_of_adding_duplicate(tmp_path):
@@ -249,6 +279,68 @@ def test_exit_zero_without_current_artifacts_is_failed(monkeypatch, tmp_path):
     csv_text, report, _, _ = saved_artifacts(conn)
     assert csv_text is None and report["status"] == "failed"
     assert any(params == ("failed", "job-2") for _, params in conn.executed)
+
+
+def test_a_successful_run_asks_for_the_repository_copy_after_saving_its_success(
+        monkeypatch, tmp_path):
+    """Publish FLoRA reads the run's report only from a run already marked success."""
+    import repo_release
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    input_path = write_input(tmp_path / "input.csv")
+
+    def run_stage(conn, job_id, name, command):
+        if name == runner.FINAL_STAGE:
+            preparation.prepare(Path(command[-1]), input_path, network_checks="none")
+        return True
+
+    conn = Connection()
+    requested = []
+
+    def request(job_id):
+        saved = any(params == ("success", job_id) for _, params in conn.executed)
+        requested.append((job_id, saved))
+        return "repository copy requested: test"
+
+    monkeypatch.setattr(runner, "_run_stage", run_stage)
+    monkeypatch.setattr(repo_release, "request_repo_copy", request)
+    runner._execute(conn, "job-4")
+    assert requested == [("job-4", True)]
+    assert any("repository copy requested: test" in str(params) for _, params in conn.executed)
+
+
+def test_a_failing_repository_request_leaves_the_run_a_success(monkeypatch, tmp_path):
+    """The dataset is stored by then: run_queued would otherwise mark the run failed
+    and overwrite its CSV and report with nothing."""
+    import repo_release
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    input_path = write_input(tmp_path / "input.csv")
+
+    def run_stage(conn, job_id, name, command):
+        if name == runner.FINAL_STAGE:
+            preparation.prepare(Path(command[-1]), input_path, network_checks="none")
+        return True
+
+    def request(job_id):
+        raise UnicodeEncodeError("latin-1", "token", 0, 1, "ordinal not in range")
+
+    monkeypatch.setattr(runner, "_run_stage", run_stage)
+    monkeypatch.setattr(repo_release, "request_repo_copy", request)
+    conn = Connection()
+    runner._execute(conn, "job-6")                          # does not raise
+    csv_text, report, _, _ = saved_artifacts(conn)
+    assert csv_text and report["status"] != "failed"
+    assert any(params == ("success", "job-6") for _, params in conn.executed)
+    assert any("repository copy not requested: UnicodeEncodeError" in str(params)
+               for _, params in conn.executed)
+
+
+def test_a_failed_run_asks_for_no_repository_copy(monkeypatch, tmp_path):
+    import repo_release
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    monkeypatch.setattr(runner, "_run_stage", lambda *a: True)     # no CSV: the run fails
+    monkeypatch.setattr(repo_release, "request_repo_copy",
+                        lambda job_id: pytest.fail("a failed run requested a repository copy"))
+    runner._execute(Connection(), "job-5")
 
 
 def test_successful_job_retains_exact_csv_and_reports_in_shared_database(monkeypatch, tmp_path):

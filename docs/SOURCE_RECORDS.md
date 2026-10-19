@@ -787,7 +787,10 @@ without it.
 | `output/cross_type_duplicate_rulings.csv` | rows ruled a duplicate of a record of the other type (only when there are any) |
 
 The logs are written beside the dataset, so in the nightly job they land in
-`output/prepared/` and are uploaded with it by the workflow.
+`output/`, are uploaded with it, and are committed with it whenever the night's
+`flora.csv` changed. A build removes the logs it did not write, so the ones in
+`output/` are always the latest build's. A Publish FLoRA release (after a website
+run) carries none: its preparation report's JSON lists their records.
 
 Preprint duplicate pairs nobody has ruled on (`needs_review`, or an unconfirmed
 `auto_keep_*`) also become a warning in the preparation report and on the pipeline
@@ -955,7 +958,7 @@ rather than after an arbitrary delay.
 |---|---|
 | `GET /api/admin/flora` | One page of the grid, plus filter counts |
 | `GET /api/admin/flora/stats` | Row totals and when ids were last assigned |
-| `GET /api/admin/flora/export.csv` | Every row matching the filter, all columns |
+| `GET /api/admin/flora/export.csv` | The stored dataset (`flora_data`); with `view=tab` (Export filtered CSV) or any filter, the matching rows of the current build |
 | `GET /api/admin/flora/{flora_id}` | One full row for the editor (§9.4) |
 
 The export uses the same column order as the nightly artifact — `FLORA_COLUMNS` then
@@ -1084,9 +1087,15 @@ The transform step carries `if: always()` — the transform reads only the datab
 temporarily unshared sheet should not also cost you the nightly dataset built from rows
 already stored.
 
-`output/flora_entry_sheets.csv` is **not committed**. It changes every night, so it is
-uploaded as a 90-day artifact instead. If the R pipeline should ever read it from a
-`raw.githubusercontent` URL the way it reads `validated_export.csv`, add a commit step.
+The night's FLoRA release is committed to `output/` (`flora.csv` with its manifest,
+release notes, history and reports) whenever `flora.csv` changed, so other repositories
+can read it from a `raw.githubusercontent` URL the way they read `validated_export.csv`.
+It is the file the run stored in `flora_data`, which **Download full CSV** in the FLoRA
+tab also serves. A correction saved in the FLoRA tab rewrites its row in `flora_data`
+at once, so from then on the download has it and the repository file gets it at the next
+run. A successful **Run pipeline** on the website does the same through
+the Publish FLoRA workflow, when `FLORA_RELEASE_TOKEN` is set. `output/flora_entry_sheets.csv` is written only by the
+`transform_sources.py` command line and is not part of it.
 
 ### 10.1 The "Run sync now" button
 
