@@ -1921,6 +1921,9 @@ python backfill_quote_source.py --recompute-all --apply
 python backfill_flora_history.py --fred-data ../fred-data
 python backfill_flora_history.py --fred-data ../fred-data --apply
 
+python backfill_author_orcids.py
+python backfill_author_orcids.py --apply
+
 python fetch_oa.py
 python build_static.py
 ```
@@ -1931,6 +1934,9 @@ cache used for UI links; `build_static.py` regenerates all three docs JSON files
 from root demo inputs. `backfill_flora_history.py` fills the dataset size history
 before the pipeline's first count from the daily flora.csv versions in a
 fred-data clone; see [Dataset size history](FLORA_DATA_TABLE.md#dataset-size-history).
+`backfill_author_orcids.py` refreshes the cached author lists (`work_metadata.authors_json`)
+from Crossref and DataCite once, so they carry the ORCIDs the cache used to drop;
+it changes only `authors` and `authors_json`.
 
 ### Source Records
 
@@ -2002,6 +2008,7 @@ against a database you have not backed up.
 | `backfill_oa_work_ids.py` | Batched OpenAlex work-ID lookup for `unvalidated` with matching propagation into `validated` |
 | `backfill_quote_source.py` | Dry-by-default quote-source classification on `validated` |
 | `backfill_flora_history.py` | Dry-by-default dataset size history from published flora.csv versions |
+| `backfill_author_orcids.py` | Dry-by-default refresh of cached author lists, with their ORCIDs |
 | `publish_flora.py` | Stored FLoRA dataset to `output/` for the repository copy (Publish FLoRA workflow) |
 | `repo_release.py` | Starts Publish FLoRA after a successful website pipeline run |
 | `update_originals.py` | Dry-by-default raw original-reference refresh by `pair_id` |

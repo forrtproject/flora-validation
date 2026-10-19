@@ -786,6 +786,15 @@ without it.
 | `output/preprint_dedup_candidates.csv` | every detected pair and the action taken |
 | `output/cross_type_duplicate_rulings.csv` | rows ruled a duplicate of a record of the other type (only when there are any) |
 
+`author_o` and `author_r` are always a JSON list in fred-data's compact form, one
+entry per author: `given`, `family` (or `name`, for an organisation), `sequence`, and
+the `ORCID` where Crossref, DataCite or OpenAlex has one. An empty part is left out,
+never written as `null`. A plain "A; B; C" value (a sheet entry, or display names)
+is turned into such a list when the CSV is written, so a search index that splits on
+commas does not read a whole author list as one name. Text read from a workbook
+(`data/manual_references.xlsx`) has its escapes decoded: `_x000D_` is a carriage
+return, as in fred-data's file.
+
 The logs are written beside the dataset, so in the nightly job they land in
 `output/`, are uploaded with it, and are committed with it whenever the night's
 `flora.csv` changed. A build removes the logs it did not write, so the ones in
