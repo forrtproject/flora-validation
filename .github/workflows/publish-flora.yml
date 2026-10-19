@@ -1,9 +1,15 @@
 name: Publish FLoRA
 
-# Started by the website after a successful Run pipeline (repo_release.py), or by
-# hand from the Actions tab. Writes the stored FLoRA dataset to output/ and commits
-# it when flora.csv changed, so other repositories read the same file the website
-# downloads. The nightly sync commits to output/ the same way.
+# Writes the stored FLoRA dataset (flora_data) to output/ and commits it when
+# flora.csv changed, so other repositories read the same file the website
+# downloads. Started three ways:
+#   - by the website, after a successful Run pipeline (repo_release.py);
+#   - once a day, as soon as the nightly "Sync entry sheets" job (03:00 UTC)
+#     finishes, whether it succeeded or not. After a good night it finds flora.csv
+#     already committed and commits nothing; after a failed one it still publishes
+#     the stored dataset with the day's corrections. GitHub starts this one itself:
+#     it needs no FLORA_RELEASE_TOKEN;
+#   - by hand from the Actions tab.
 on:
   workflow_dispatch:
     inputs:
@@ -11,6 +17,9 @@ on:
         description: "Website pipeline run whose preparation report to include (optional)"
         required: false
         default: ""
+  workflow_run:
+    workflows: ["Sync entry sheets"]
+    types: [completed]
 
 # Needed so the job can commit output/.
 permissions:
@@ -55,7 +64,8 @@ jobs:
       - name: Commit the FLoRA release to output/
         env:
           RELEASE_MANIFEST: output/flora_release_manifest.json
+          ORIGIN: ${{ github.event_name == 'workflow_run' && 'after the nightly sync' || inputs.job_id != '' && 'from the website pipeline' || 'started by hand' }}
         run: >-
           bash .github/scripts/commit_and_push.sh
-          "chore: FLoRA release from the website pipeline ($(date -u +%Y-%m-%d))"
+          "chore: FLoRA release $ORIGIN ($(date -u +%Y-%m-%d))"
           output/flora.csv $(cat .github/release-files.txt)

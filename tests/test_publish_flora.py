@@ -123,6 +123,18 @@ def test_the_workflow_commits_only_a_changed_flora_csv():
     assert "output/flora.csv $(cat .github/release-files.txt)" in workflow
 
 
+def test_it_runs_after_every_nightly_sync():
+    """Once a day without a token: GitHub starts it when the nightly job ends,
+    whatever its result, so a failed night still publishes the stored dataset."""
+    import yaml
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    triggers = workflow[True]                    # YAML 1.1 reads the key `on` as True
+    assert triggers["workflow_run"] == {"workflows": ["Sync entry sheets"], "types": ["completed"]}
+    nightly = yaml.safe_load((WORKFLOW.parent / "sync-sources.yml").read_text(encoding="utf-8"))
+    assert nightly["name"] == "Sync entry sheets", "the trigger names the nightly job by its name"
+    assert "workflow_dispatch" in triggers
+
+
 def test_the_run_id_never_reaches_the_script_through_an_expression():
     """${{ inputs.job_id }} inside `run:` would let a crafted input run shell code."""
     workflow = WORKFLOW.read_text(encoding="utf-8")
