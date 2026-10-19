@@ -1491,13 +1491,20 @@ CREATE TABLE IF NOT EXISTS flora_dataset_history (
     recorded_on   DATE PRIMARY KEY,
     -- NULL on days seeded from source_records.first_seen_at: the product's size on
     -- a past date cannot be reconstructed, because the exclusion and dedup rules
-    -- that produce it today did not exist then. Only source_rows is real history.
+    -- that produce it today did not exist then. A day before this pipeline ran can
+    -- carry the size of the flora.csv published that day instead (measured_by).
     total_rows    INTEGER,
     replications  INTEGER NOT NULL DEFAULT 0,
     reproductions INTEGER NOT NULL DEFAULT 0,
     source_rows   INTEGER NOT NULL DEFAULT 0,   -- source_records behind the product
     recorded_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Where a day's total_rows came from: this pipeline's run, or the row count of the
+-- flora.csv published that day in forrtproject/fred-data, for the days before this
+-- pipeline existed (backfill_flora_history.py). NULL on a row with a total means a
+-- pipeline run recorded before the column existed.
+ALTER TABLE flora_dataset_history ADD COLUMN IF NOT EXISTS measured_by TEXT
+    CHECK (measured_by IN ('pipeline', 'flora.csv'));
 
 CREATE TABLE IF NOT EXISTS flora_records (
     flora_record_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),

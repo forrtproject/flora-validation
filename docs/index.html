@@ -30,7 +30,7 @@
 
   <div class="login-maint-bar">
     <div class="login-maint-bar-inner">
-      🔧 Nightly maintenance 02:00–03:00 UTC — the app may be briefly unavailable during this window.
+      🔧 Nightly maintenance 02:00–03:00 UTC: the app may be briefly unavailable.
     </div>
   </div>
 
@@ -47,7 +47,7 @@
         </svg>
       </div>
       <h1>Flora<br><em>Validator</em></h1>
-      <p class="tagline">Validate replication studies. Read, judge, earn points — every call counts.</p>
+      <p class="tagline">Validate replication studies. Read, judge, earn points.</p>
     </div>
     <div class="login-left-footer">
       <span>v0.2</span>
@@ -163,8 +163,8 @@
     <div class="onb-intro" id="onb-intro">
       <div class="login-circle">
         <h2>First, a quick calibration.</h2>
-        <p>Five worked examples to get your eye in. Two are clean; three have errors of the kind FLoRA's automated pipeline tends to make. After each, you'll see whether your call was right and why.</p>
-        <p>This doesn't count toward the leaderboard. You can't proceed without finishing.</p>
+        <p>Five worked examples: two are correct, three have errors typical of FLoRA's automated pipeline. After each, you'll see whether you were right, and why.</p>
+        <p>It doesn't count toward the leaderboard, and you need to finish it to continue.</p>
         <button class="btn-primary" id="onb-start-btn">Begin →</button>
       </div>
     </div>
@@ -221,7 +221,7 @@
       <div id="pair-card" class="card"></div>
       <div id="done-screen" class="card hidden">
         <h2>All caught up.</h2>
-        <p>You've judged every available pair in this mode. Try the other mode, or sign out and let someone else have a turn.</p>
+        <p>You've judged every available pair in this mode. Try the other mode.</p>
         <div id="pending-panel" class="pending-panel hidden"></div>
       </div>
     </main>
@@ -287,9 +287,9 @@
       <button class="admin-filter-btn" data-filter="needs_review">Needs Review <span class="filter-count" id="fc-needs-review">—</span></button>
       <button class="admin-filter-btn" data-filter="skipped" title="Repeated skips or independent eligibility/data-quality reports">Skipped <span class="filter-count" id="fc-skipped">—</span></button>
       <button class="admin-filter-btn" data-filter="admin_comments" title="Show entries with a saved admin note">Admin comments <span class="filter-count" id="fc-admin-comments">—</span></button>
-      <button class="admin-filter-btn" data-filter="quality_flagged" title="Records with row-local data-quality problems — these may need excluding">Data quality <span class="filter-count" id="fc-quality-flagged">—</span></button>
+      <button class="admin-filter-btn" data-filter="quality_flagged" title="Records with data-quality problems that may need excluding">Data quality <span class="filter-count" id="fc-quality-flagged">—</span></button>
       <button class="admin-filter-btn" data-filter="validated">Validated <span class="filter-count" id="fc-validated">—</span></button>
-      <button class="admin-filter-btn" data-filter="auto_validated" title="Validated by an auto-validation rule — no admin has reviewed these">Auto-validated <span class="filter-count" id="fc-auto-validated">—</span></button>
+      <button class="admin-filter-btn" data-filter="auto_validated" title="Validated by a rule; no admin has reviewed these">Auto-validated <span class="filter-count" id="fc-auto-validated">—</span></button>
       <button class="admin-filter-btn" data-filter="rejected">Excluded <span class="filter-count" id="fc-rejected">—</span></button>
       <button class="admin-filter-btn" data-filter="admin_checked" style="display:none">Admin Checked <span class="filter-count" id="fc-admin-checked">—</span></button>
     </div>
@@ -297,7 +297,7 @@
     <div id="admin-search-bar" class="admin-search-bar">
       <input id="admin-search-input" type="search" class="admin-search-input" placeholder="Search by title or DOI…">
     </div>
-    <label id="admin-hide-mine-wrap" class="admin-hide-mine hidden" title="Leave out entries you were a validator on — those are for another admin to decide">
+    <label id="admin-hide-mine-wrap" class="admin-hide-mine hidden" title="Entries you validated are for another admin to decide">
       <input id="admin-hide-mine" type="checkbox"> Hide entries I validated
     </label>
 
@@ -311,8 +311,8 @@
             <th class="th-sort" data-sort="outcome">Outcome</th>
             <th class="th-sort" data-sort="status">Status</th>
             <th class="th-sort" data-sort="validators">Validators</th>
-            <th class="th-sort" data-sort="skips" title="Skip events and the number of distinct validators who submitted them">Skips</th>
-            <th class="th-sort" data-sort="agreement" title="Share of the 3 checks where the two human validators agree — 🤖✗ marks checks where the LLM dissents from their consensus">Agreement</th>
+            <th class="th-sort" data-sort="skips" title="Skips, and how many validators skipped">Skips</th>
+            <th class="th-sort" data-sort="agreement" title="Checks (of 3) where both validators agree. 🤖✗: the AI disagrees with them.">Agreement</th>
             <th class="th-sort" data-sort="approved_by">Approved by</th>
             <th>Approve</th>
             <th>Review</th>
@@ -339,8 +339,8 @@
           <div>
             <p class="src-sync-kicker">FLoRA preparation</p>
             <h3>Run the complete pipeline</h3>
-            <p class="src-sync-blurb">Import accepted source rows, apply exclusions and validated records,
-              enrich metadata, assign stable IDs, and prepare the final CSV with a validation report.</p>
+            <p class="src-sync-blurb">Imports source rows, applies exclusions and validated records, fetches
+              metadata, assigns IDs, and builds the final CSV with a validation report.</p>
           </div>
           <div class="src-sync-actions">
             <button class="btn-primary" id="src-sync-run-btn" type="button">Run pipeline + report</button>
@@ -350,9 +350,8 @@
         <ol class="src-sync-flow" aria-label="Pipeline sequence">
           <li>Sources &amp; exclusions</li><li>Validated records</li><li>Metadata &amp; IDs</li><li>Final CSV &amp; checks</li>
         </ol>
-        <p class="src-sync-contract">The CSV starts with <code>id</code> and <code>id_md5</code>,
-          followed by the reference columns in their original order. Existing rows keep the reference order;
-          new rows and additional columns follow at the end. Completed runs retain their own downloads below.</p>
+        <p class="src-sync-contract">The CSV starts with <code>id</code> and <code>id_md5</code>, then the
+          reference columns in order; new rows and columns go at the end. Each run keeps its downloads below.</p>
         <div id="src-sync-live" class="pipeline-live-status hidden" role="status"></div>
         <div class="src-sync-log-head">
           <span>Pipeline history &amp; downloads</span>
@@ -368,7 +367,7 @@
         <button class="admin-filter-btn" data-filter="reproduction">Reproductions <span class="filter-count" id="sfc-repro">—</span></button>
         <button class="admin-filter-btn" data-filter="validated">Validated <span class="filter-count" id="sfc-validated">—</span></button>
         <button class="admin-filter-btn" data-filter="flagged">Duplicates <span class="filter-count" id="sfc-flagged">—</span></button>
-        <button class="admin-filter-btn" data-filter="deleted" title="Rows of records that are no longer validated: kept with their ids, but no longer feeding FLoRA">Deleted <span class="filter-count" id="sfc-deleted">—</span></button>
+        <button class="admin-filter-btn" data-filter="deleted" title="Records no longer validated: kept, but left out of FLoRA">Deleted <span class="filter-count" id="sfc-deleted">—</span></button>
       </div>
 
       <div class="admin-search-bar src-toolbar">
@@ -408,25 +407,21 @@
            Shown grouped so the two rows can be compared side by side. -->
       <div id="src-dup-view" class="hidden">
         <div class="src-dup-toolbar">
-          <button id="src-dup-back" class="ghost-btn"
-                  title="Return to the Source Records grid. Nothing here is changed by leaving.">← Back to grid</button>
-          <label class="src-dup-toggle"
-                 title="Also list groups where every row already has a decision, so you can change one.">
+          <button id="src-dup-back" class="ghost-btn">← Back to grid</button>
+          <label class="src-dup-toggle" title="Include groups already decided, to change a decision">
             <input type="checkbox" id="src-dup-show-resolved"> Show resolved
           </label>
           <span id="src-dup-count" class="src-dim2"></span>
         </div>
         <dl class="flora-dedup-legend src-dup-legend">
           <dt>Keep &mdash; distinct</dt>
-          <dd>This row is its own record. It stays in FLoRA and the automatic dedup will not
-            merge it into the others.</dd>
+          <dd>A separate record. It stays in FLoRA and is never merged automatically.</dd>
           <dt>Duplicate of &hellip;</dt>
-          <dd>The same report was entered twice. This row is left out of FLoRA and the one you
-            name is kept (and marked distinct). Across a replication and a reproduction this
-            removes a real record, so it asks you to confirm.</dd>
+          <dd>The same report entered twice. This row leaves FLoRA and the one you name stays.
+            Between a replication and a reproduction you are asked to confirm.</dd>
           <dt>When it takes effect</dt>
-          <dd>The FLoRA tab shows it at once; the published CSV, the public API and the Atlas
-            change at the next pipeline run. Hover over any button or label for details.</dd>
+          <dd>In the FLoRA tab at once; in the published CSV, the public API and the Atlas at
+            the next pipeline run.</dd>
         </dl>
         <div id="src-dup-body"></div>
       </div>
@@ -440,17 +435,17 @@
             <tr>
               <th>#</th>
               <th>Validator</th>
-              <th>Level <span class="col-help" title="Regular: standard validator. Trusted (★): agreements are weighted higher. Senior (★★): when a senior agrees with any validator, the record auto-validates without admin review.">?</span></th>
-              <th>Joined <span class="col-help" title="Date the validator registered.">?</span></th>
-              <th>Records <span class="col-help" title="Total number of records this validator has judged.">?</span></th>
-              <th>Avg time <span class="col-help" title="Average time spent per record (minutes). Only counts sessions between 10 seconds and 90 minutes.">?</span></th>
-              <th>Median <span class="col-help" title="Median time per record (minutes). More robust to outliers than the average.">?</span></th>
-              <th>Min <span class="col-help" title="Fastest single record judgement (minutes).">?</span></th>
-              <th>Max <span class="col-help" title="Slowest single record judgement (minutes).">?</span></th>
-              <th>Flagged <span class="col-help" title="Number of this validator's judgements that an admin has flagged as problematic.">?</span></th>
-              <th>Approved <span class="col-help" title="Number of distinct records this validator judged that have been approved (validation status = validated).">?</span></th>
-              <th>Last Login <span class="col-help" title="Date and time the validator last signed in.">?</span></th>
-              <th>DM <span class="col-help" title="Send this validator a direct message.">?</span></th>
+              <th>Level <span class="col-help" title="Trusted (★): agreements weigh more. Senior (★★): agreeing with any validator auto-validates the record.">?</span></th>
+              <th>Joined</th>
+              <th>Records <span class="col-help" title="Records judged">?</span></th>
+              <th>Avg time <span class="col-help" title="Minutes per record, counting sessions of 10 seconds to 90 minutes">?</span></th>
+              <th>Median <span class="col-help" title="Median minutes per record">?</span></th>
+              <th>Min</th>
+              <th>Max</th>
+              <th>Flagged <span class="col-help" title="Judgements an admin flagged">?</span></th>
+              <th>Approved <span class="col-help" title="Records they judged that were approved">?</span></th>
+              <th>Last login</th>
+              <th>DM <span class="col-help" title="Direct message">?</span></th>
             </tr>
           </thead>
           <tbody id="admin-stats-body"></tbody>
@@ -477,9 +472,8 @@
           <div class="pipeline-hero-copy">
             <p class="pipeline-kicker">Extractor pipeline</p>
             <h2 id="pipeline-title">Extractor sync</h2>
-            <p>Every night at 02:00 UTC the app downloads flora-extractor's latest
-              <code>extracted.csv</code> and brings the validation records up to date.
-              You can also start the same run now.</p>
+            <p>Every night at 02:00 UTC the app imports flora-extractor's latest
+              <code>extracted.csv</code>. You can also run it now.</p>
           </div>
           <aside class="pipeline-hero-status" aria-label="Run history">
             <dl>
@@ -488,8 +482,7 @@
             </dl>
             <button id="pipeline-refresh-btn" class="ghost-btn" type="button"
               aria-describedby="pipeline-refresh-hint">Refresh history</button>
-            <p id="pipeline-refresh-hint">Reloads the runs listed below. While a run is going,
-              the list also updates by itself every few seconds.</p>
+            <p id="pipeline-refresh-hint">While a run is going, the list updates by itself.</p>
           </aside>
         </div>
 
@@ -498,9 +491,8 @@
             <span class="pipeline-step-index" aria-hidden="true">1</span>
             <div>
               <strong>Download and compare</strong>
-              <p>Fetches the CSV from the extractor's latest commit and counts the pairs
-                it adds and drops since the last import. A dropped pair is not deleted
-                here: only step 3 removes records, and only those the extractor lists.</p>
+              <p>Fetches the extractor's latest CSV and counts the pairs added and dropped
+                since the last import. Nothing is deleted in this step.</p>
             </div>
           </li>
           <li class="pipeline-step">
@@ -526,8 +518,8 @@
         <div class="pipeline-run-panel" id="pipeline-actions">
           <div class="pipeline-run-copy">
             <h3>Run it now</h3>
-            <p><b>Run full sync</b> does the same three steps as the nightly run. A large
-              import can take half an hour; you can leave this page and come back.</p>
+            <p><b>Run full sync</b> runs the same three steps. A large import can take half an
+              hour; you can leave this page.</p>
             <p id="pipeline-settings" class="pipeline-settings"></p>
           </div>
           <div class="pipeline-run-controls">
@@ -558,19 +550,17 @@
         <div>
           <p class="flora-kicker">Prepared dataset</p>
           <h3>FLoRA records</h3>
-          <p class="flora-blurb">Outcomes derived, DOIs cleaned, exclusions and duplicates applied.
-            Each row keeps the record ID it has in Source Records &mdash; pinned when first assigned, so it
-            stays put even if a duplicate ruling changes which record the row derives from.
-            Correct a record here: open it and edit its fields. Source records stay as imported.
-            Downloads use the reference CSV order, with <code>id</code> and <code>id_md5</code> first.
-            Download a completed pipeline run and its report from Source Records.</p>
+          <p class="flora-blurb">The prepared dataset: outcomes derived, DOIs cleaned, exclusions and
+            duplicates applied. Open a record to correct it; source records stay as imported. Each row
+            keeps its Source Records ID, even if a duplicate ruling later changes its source. Pipeline
+            runs and their reports are under Source Records.</p>
         </div>
         <div class="flora-actions">
           <button class="btn-primary" id="flora-export-all-btn" type="button">Download full CSV</button>
           <button class="ghost-btn" id="flora-export-btn" type="button">Export filtered CSV</button>
           <button class="ghost-btn" id="flora-refresh-btn" type="button">Refresh</button>
           <button class="ghost-btn" id="flora-dedup-btn" type="button"
-                  title="Pairs that may be one paper under two DOIs (usually a preprint and its published version), waiting for someone to decide. The number is how many are waiting.">Preprint duplicates
+                  title="Possible preprint and publication pairs awaiting a decision">Preprint duplicates
             <span class="filter-count" id="flora-dedup-count">—</span></button>
         </div>
       </section>
@@ -616,40 +606,31 @@
            read by the transform: this tab shows it at once, the CSV at the next run. -->
       <div id="flora-dedup-view" class="hidden">
         <div class="src-dup-toolbar">
-          <button id="flora-dedup-back" class="ghost-btn" type="button"
-                  title="Return to the FLoRA records grid. Nothing here is changed by leaving.">← Back to records</button>
-          <label class="src-dup-toggle"
-                 title="Also list the decisions already made, with who made them, their note and an Undo button.">
+          <button id="flora-dedup-back" class="ghost-btn" type="button">← Back to records</button>
+          <label class="src-dup-toggle" title="Include decided pairs, each with Undo">
             <input type="checkbox" id="flora-dedup-show-decided"> Show decided pairs
           </label>
           <span id="flora-dedup-summary" class="src-dim2"></span>
         </div>
-        <p class="flora-blurb flora-dedup-help">Each pair may be one paper under two DOIs
-          &mdash; usually a preprint and its published version: either two reports of the
-          same original with similar titles, or two original DOIs that look like one paper.
-          Compare the authors, years and DOIs, then choose.
-          Hover over any button or label for what it means.</p>
+        <p class="flora-blurb flora-dedup-help">Each pair may be one paper under two DOIs, usually
+          a preprint and its published version. Compare the authors, years and DOIs, then choose.</p>
         <dl class="flora-dedup-legend">
           <dt>Same paper &mdash; keep A / keep B</dt>
-          <dd>The other record is removed from FLoRA and the kept one lists the removed DOI
-            as an alternative identifier. The kept one keeps its FLoRA ID &mdash; unless it
-            was the one the automatic rule had dropped: then it comes back and gets its ID
-            at the next pipeline run. A removed record that was already published keeps its
-            ID as retired, so existing links still work.
-            For two <i>original</i> DOIs nothing is removed: the replications are listed
-            under the kept DOI, and no ID changes.</dd>
+          <dd>The other record leaves FLoRA; the kept one lists the other&rsquo;s DOI as an
+            alternative identifier and keeps its FLoRA ID. If the automatic rule had dropped
+            the kept one, it comes back at once and gets its ID at the next pipeline run. A
+            published record that leaves keeps its ID as retired, so links still work. For two
+            <i>original</i> DOIs nothing leaves: the replications move under the kept DOI.</dd>
           <dt>Different papers &mdash; keep both</dt>
-          <dd>Both stay in FLoRA. A record the automatic rule had dropped comes back and
-            gets its permanent FLoRA ID at the next pipeline run (Download full CSV waits
-            for that run). For two original DOIs, their replications go back under their
-            own DOI.</dd>
+          <dd>Both stay in FLoRA. A record the automatic rule had dropped comes back at once
+            and gets its FLoRA ID at the next pipeline run; Download full CSV waits for that
+            run. Two original DOIs each keep their replications.</dd>
           <dt>Undo</dt>
-          <dd>Under <i>Show decided pairs</i>. Withdraws a decision: the pair goes back to
-            the automatic rules and, if it still needs a decision, to this list.</dd>
+          <dd>Under <i>Show decided pairs</i>. The pair goes back to the automatic rules, and
+            to this list if it still needs a decision.</dd>
           <dt>When it takes effect</dt>
-          <dd>This tab shows your decision at once. The published CSV, the public API and
-            the Atlas change at the next pipeline run &mdash; nightly, or <i>Run pipeline</i>
-            in Source Records.</dd>
+          <dd>Here at once; in the published CSV, the public API and the Atlas at the next
+            pipeline run (nightly, or <i>Run pipeline</i> in Source Records).</dd>
         </dl>
         <div id="flora-dedup-body"></div>
         <div id="flora-dedup-decided" class="hidden"></div>
@@ -685,7 +666,7 @@
     <div id="admin-tab-admins" class="hidden">
       <div class="admin-table-wrap" style="max-width:600px">
         <h3 style="margin:0 0 1rem">Admin Accounts</h3>
-        <p style="color:var(--muted);font-size:0.88rem;margin-bottom:1.25rem">Each admin has their own handle and password. Approvals are stamped with the approving admin's handle so errors can be traced. New admins receive a single-use invitation link and choose their own password &mdash; you never see it.</p>
+        <p style="color:var(--muted);font-size:0.88rem;margin-bottom:1.25rem">Each admin has their own handle and password, and their approvals carry their handle. New admins get a single-use invitation link and set their own password.</p>
         <div id="admin-admins-list"></div>
         <hr style="margin:1.5rem 0;border:none;border-top:1px solid var(--rule)">
         <div id="admin-add-form">
@@ -707,7 +688,7 @@
         <hr style="margin:2rem 0 1.5rem;border:none;border-top:1px solid var(--rule)">
         <div id="admin-banner-section">
           <h4 style="margin:0 0 0.4rem">Broadcast Banner</h4>
-          <p style="color:var(--muted);font-size:0.88rem;margin-bottom:0.75rem">Send an urgent message to all logged-in validators. Leave the field empty and click Clear to remove it.</p>
+          <p style="color:var(--muted);font-size:0.88rem;margin-bottom:0.75rem">Show an urgent message to every signed-in validator. <b>Clear banner</b> removes it.</p>
           <div id="admin-banner-status" style="font-size:0.85rem;margin-bottom:0.75rem;min-height:1.2em"></div>
           <textarea id="admin-banner-msg" class="admin-input" rows="3" style="width:100%;resize:vertical" placeholder="e.g. Emergency maintenance in progress — please save your work and return in 30 minutes."></textarea>
           <div style="display:flex;gap:0.75rem;margin-top:0.6rem;flex-wrap:wrap">
@@ -773,7 +754,7 @@
   <div class="mobile-warning-box">
     <div style="font-size:2.5rem;margin-bottom:1rem">🖥️</div>
     <h2>Desktop only for now</h2>
-    <p>Flora Validator isn't optimised for mobile yet. For the best experience, please open this on a desktop or laptop.</p>
+    <p>Flora Validator isn't built for phones yet. Please use a desktop or laptop.</p>
     <button id="mobile-continue-btn" class="ghost-btn" style="margin-top:1.25rem;font-size:0.85rem;color:var(--muted)">Continue anyway</button>
   </div>
 </div>
@@ -802,8 +783,8 @@
     <div class="faq-body" style="padding:2.5rem 2.5rem 2rem">
       <div style="font-size:2rem;margin-bottom:1rem">🎉</div>
       <h2 style="font-family:'Fraunces',Georgia,serif;font-weight:400;font-size:1.6rem;margin-bottom:0.75rem">Welcome to the team.</h2>
-      <p style="color:var(--ink-soft);font-size:1.05rem;line-height:1.6;margin-bottom:0.5rem">Your calibration is complete — you're now part of a community working to make replication science more reliable and transparent.</p>
-      <p style="color:var(--muted);font-size:0.9rem;margin-bottom:2rem">Thank you for contributing. Take your time, trust your reading, and skip anything that feels genuinely unclear.</p>
+      <p style="color:var(--ink-soft);font-size:1.05rem;line-height:1.6;margin-bottom:0.5rem">Calibration done. You can start validating.</p>
+      <p style="color:var(--muted);font-size:0.9rem;margin-bottom:2rem">Take your time, and skip anything that's unclear.</p>
       <button id="welcome-enter-btn" class="btn-primary" style="font-size:1rem;padding:0.75rem 2rem">Enter the game →</button>
     </div>
   </div>
@@ -900,11 +881,11 @@
     </div>
     <div class="pending-recovery-body">
       <div class="pending-recovery-intro-row">
-        <p id="pending-submissions-intro">Each judgement remains on this device until it is saved, the server confirms its record was released or closed, or you explicitly discard it.</p>
+        <p id="pending-submissions-intro">Each judgement stays on this device until it is saved, its record is released or closed, or you discard it.</p>
         <span id="pending-modal-count" class="pending-modal-count" aria-live="polite"></span>
       </div>
       <div id="pending-modal-panel" class="pending-modal-panel"></div>
-      <p class="pending-recovery-note"><span aria-hidden="true">↳</span> Export JSON creates a local backup of the judgement only; it does not remove or submit anything.</p>
+      <p class="pending-recovery-note"><span aria-hidden="true">↳</span> Export JSON saves a local copy; it doesn't submit or remove anything.</p>
     </div>
   </div>
 </div>
@@ -920,7 +901,7 @@
       <button id="skip-reason-close" class="faq-close" type="button" title="Cancel">×</button>
     </div>
     <form id="skip-reason-form" class="skip-reason-form">
-      <p id="skip-reason-intro" class="skip-reason-intro">Your answer helps the review team distinguish a personal skip from an eligibility or data problem. It is not a judgement and earns no points.</p>
+      <p id="skip-reason-intro" class="skip-reason-intro">This tells the review team whether the record has a problem or you just skipped it. It earns no points.</p>
       <fieldset class="skip-reason-options">
         <legend class="sr-only">Select one reason</legend>
         <label class="skip-reason-option">
@@ -1021,9 +1002,8 @@
   <div style="max-width:460px;margin:0 auto">
     <h2 style="margin:0 0 0.5rem">Add your email address</h2>
     <p style="color:var(--muted);font-size:0.92rem;margin-bottom:1.25rem">
-      Your account was created with a personal code. Enter it once to confirm the
-      account is yours and choose the email address you will sign in with from now
-      on. Your points and history stay exactly as they are.
+      Your account was created with a personal code. Enter it once and choose the email
+      address you'll sign in with. Your points and history stay as they are.
     </p>
 
     <label class="admin-form-label" for="claim-handle">Username</label>

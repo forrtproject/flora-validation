@@ -1,9 +1,10 @@
 /* Run with: node tests/test_dataset_page_ui.cjs
  * (PW_CHANNEL=msedge or chrome to drive an installed browser instead of
  * Playwright's own Chromium.)
- * The public dataset-growth page: summary figures, the period filter, the chart
- * series it hands to Chart.js, the daily-figures table, the CSV, and the states for
- * a failed request and a blocked chart library. All requests are intercepted; Chart.js
+ * The public dataset-growth page: summary figures, the period filter, the source
+ * records switch (off by default), the chart series it hands to Chart.js, the
+ * daily-figures table, the CSV, the flora.csv counts from before the pipeline, and
+ * the states for a failed request and a blocked chart library. All requests are intercepted; Chart.js
  * is replaced by a stub that records its configuration. No server or network runs.
  */
 const assert = require("node:assert/strict");
@@ -127,26 +128,29 @@ const lastChart = (page, label = "FLoRA dataset") => page.evaluate(label => {
     const thirtyAgo = daily[daily.length - 31];
     const delta = latest.total_rows - thirtyAgo.total_rows;
     assert.equal(await page.locator("#d-total").innerText(), `+${delta} in the last 30 days`);
-    assert.equal(await page.locator("#l-source").innerText(), latest.source_rows.toLocaleString("en-US"));
-    assert.equal(await page.locator("#l-removed").innerText(), "−50", "source minus dataset, signed");
-    assert.equal(await page.locator("#l-total").innerText(), await page.locator("#t-total").innerText(),
-      "the ledger lands on the headline figure");
+    assert(await page.locator("#d-launch").isHidden(), "no launch date in this payload");
     assert.equal(await page.locator("#updated").innerText(), "Updated 2 Oct 2026, 10:07 UTC");
+    // Source records are off until asked for.
+    assert.equal(await page.locator("#show-sources").isChecked(), false);
+    for (const id of ["#ledger", "#legend-source", "#th-source", "#def-source"]) {
+      assert(await page.locator(id).isHidden(), `${id} hidden by default`);
+    }
+    assert(await page.locator("#def-earlier").isHidden(), "no flora.csv counts in this payload");
 
     // ── chart: all time reaches past the daily window with month ends ──────
     const months = history.monthly.filter(m => m.date < daily[0].date).length;
     assert.equal(months, 6);
     let chart = await lastChart(page);
-    assert.deepEqual(chart.labels, ["FLoRA dataset", "Source records"]);
+    assert.deepEqual(chart.labels, ["FLoRA dataset"], "the dataset alone by default");
     assert.equal(chart.points, months + daily.length);
-    assert.deepEqual(chart.axes, ["x", "y"], "one y-axis, shared by both series");
-    assert.deepEqual(chart.tension, [0, 0], "no curve: it would invent values between days");
+    assert.deepEqual(chart.axes, ["x", "y"]);
+    assert.deepEqual(chart.tension, [0], "no curve: it would invent values between days");
     assert.equal(chart.firstFlora, months + daily.findIndex(d => d.total_rows !== null),
       "the dataset line starts at its first measurement, not before");
     assert.equal(chart.lastX - chart.firstX, 275, "x is real time: 31 Dec 2025 to 2 Oct 2026");
     const footnote = await page.locator("#chart-footnote").innerText();
     assert.match(footnote, /Before 5 Jun 2026, one point per month end\./);
-    assert.match(footnote, /starts on 1 Jul 2026, the first day the pipeline measured it/);
+    assert.match(footnote, /The dataset line starts on 1 Jul 2026, its first count\./);
     assert.equal(await page.locator('[data-range="all"]').getAttribute("aria-pressed"), "true");
 
     // ── replications and reproductions: a figure and a chart each ──────────
@@ -168,7 +172,7 @@ const lastChart = (page, label = "FLoRA dataset") => page.evaluate(label => {
       assert.equal(typed.values[typed.values.length - 1], latest[key]);
     }
     assert.equal(await page.locator("#types-note").innerText(),
-      "Both charts start on 1 Jul 2026, the first day the pipeline measured the dataset.");
+      "Both charts start on 1 Jul 2026, the first count.");
 
     // ── the period filter scopes the charts and the table ──────────────────
     await page.click('[data-range="30"]');
@@ -189,7 +193,7 @@ const lastChart = (page, label = "FLoRA dataset") => page.evaluate(label => {
     const window30 = daily.slice(-30);
     const changedDays = window30.filter((d, i) => {
       const prev = i ? window30[i - 1] : daily[daily.length - 31];
-      return ["source_rows", "total_rows", "replications", "reproductions"].some(k => d[k] !== prev[k]);
+      return ["total_rows", "replications", "reproductions"].some(k => d[k] !== prev[k]);
     });
     assert.equal(await page.locator("#table-body tr").count(), Math.min(8, changedDays.length));
     assert.equal(await page.locator("#table-more").innerText(), `Show all ${changedDays.length} days with a change`);
@@ -221,11 +225,113 @@ const lastChart = (page, label = "FLoRA dataset") => page.evaluate(label => {
     const [download] = await Promise.all([page.waitForEvent("download"), page.click("#download")]);
     assert.equal(download.suggestedFilename(), "flora-dataset-growth-2026-10-02.csv");
     const csv = (await fs.readFile(await download.path(), "utf8")).trim().split("\n");
-    assert.equal(csv[0], "date,flora_dataset,replications,reproductions,flora_measured,source_records");
+    assert.equal(csv[0], "date,flora_dataset,replications,reproductions,flora_measured,flora_counted_by");
     assert.equal(csv.length, 31);
     assert.equal(csv[csv.length - 1], [
-      "2026-10-02", latest.total_rows, latest.replications, latest.reproductions, true, latest.source_rows,
+      "2026-10-02", latest.total_rows, latest.replications, latest.reproductions, true, "",
     ].join(","));
+
+    // ── the switch brings source records back everywhere ──────────────────
+    await page.check("#show-sources");
+    for (const id of ["#ledger", "#legend-source", "#th-source", "#def-source"]) {
+      assert(await page.locator(id).isVisible(), `${id} shown with the switch on`);
+    }
+    assert.equal(await page.locator("#l-source").innerText(), latest.source_rows.toLocaleString("en-US"));
+    assert.equal(await page.locator("#l-removed").innerText(), "−50", "source minus dataset, signed");
+    assert.equal(await page.locator("#l-total").innerText(), await page.locator("#t-total").innerText(),
+      "the ledger lands on the headline figure");
+    chart = await lastChart(page);
+    assert.deepEqual(chart.labels, ["FLoRA dataset", "Source records"]);
+    assert.deepEqual(chart.tension, [0, 0]);
+    assert.equal(await page.locator("#table-body tr").first().locator("td").count(), 4);
+    const [withSources] = await Promise.all([page.waitForEvent("download"), page.click("#download")]);
+    const csvSources = (await fs.readFile(await withSources.path(), "utf8")).trim().split("\n");
+    assert.equal(csvSources[0],
+      "date,flora_dataset,replications,reproductions,flora_measured,flora_counted_by,source_records");
+    assert(csvSources[csvSources.length - 1].endsWith("," + latest.source_rows));
+    await page.uncheck("#show-sources");
+    assert(await page.locator("#ledger").isHidden());
+    assert.deepEqual((await lastChart(page)).labels, ["FLoRA dataset"]);
+    assert.deepEqual(errors, []);
+    await page.close();
+
+    // ── flora.csv counts before the pipeline, from the validator's launch ──
+    const launched = "2026-06-10";
+    const backfilled = { ...history, latest: { ...latest, launched_on: launched } };
+    let csvCount = 900;
+    backfilled.daily = daily.map(d => {
+      if (d.date < launched) return { ...d };
+      if (d.date < "2026-07-01") {
+        csvCount += d.date.endsWith("0") ? 0 : 3;       // a day ending in 0 has no new version
+        return { ...d, total_rows: csvCount, replications: csvCount - 40, reproductions: 40,
+                 measured: !d.date.endsWith("0"), measured_by: "flora.csv" };
+      }
+      return { ...d, measured_by: d.total_rows === null ? null : "pipeline" };
+    });
+    backfilled.daily.find(d => d.date === launched).measured = true;
+    ({ page, errors } = await openPage(browser, backfilled));
+    await page.locator("body:not(.is-loading)").waitFor();
+    const atLaunch = backfilled.daily.find(d => d.date === launched).total_rows;
+    assert.equal(await page.locator("#d-launch").innerText(),
+      `+${(latest.total_rows - atLaunch).toLocaleString("en-US")} since the validator launched on 10 Jun 2026`);
+    assert.match(await page.locator("#chart-footnote").innerText(),
+      /Before 1 Jul 2026, counts of the flora\.csv published each day; since then, this site’s pipeline\./);
+    assert(await page.locator("#def-earlier").isVisible());
+    assert.equal(await page.locator("#pipeline-start").innerText(), "1 Jul 2026");
+    const [csvDownload] = await Promise.all([page.waitForEvent("download"), page.click("#download")]);
+    const csvBackfilled = (await fs.readFile(await csvDownload.path(), "utf8")).trim().split("\n");
+    assert(csvBackfilled.some(line => line.startsWith("2026-06-11,") && line.endsWith(",true,flora.csv")));
+    assert(csvBackfilled.some(line => line.startsWith("2026-07-02,") && line.endsWith(",true,pipeline")));
+    assert.deepEqual(errors, []);
+    await page.close();
+
+    // ── the launch and the handover beyond the daily window: the server's figures ──
+    const backfilledMonths = {};
+    for (const m of history.monthly) backfilledMonths[m.month] = m;
+    for (const d of backfilled.daily) backfilledMonths[d.date.slice(0, 7)] = { month: d.date.slice(0, 7), ...d };
+    const windowed = {
+      ...backfilled,
+      daily: backfilled.daily.filter(d => d.date >= "2026-08-01"),
+      monthly: Object.keys(backfilledMonths).sort().map(month => backfilledMonths[month]),
+      latest: { ...backfilled.latest, launch_total_rows: atLaunch, pipeline_from: "2026-07-01",
+                first_counted_on: launched },
+    };
+    ({ page, errors } = await openPage(browser, windowed));
+    await page.locator("body:not(.is-loading)").waitFor();
+    assert.equal(await page.locator("#d-launch").innerText(),
+      `+${(latest.total_rows - atLaunch).toLocaleString("en-US")} since the validator launched on 10 Jun 2026`);
+    assert.equal(await page.locator("#pipeline-start").innerText(), "1 Jul 2026");
+    assert(await page.locator("#def-earlier").isVisible());
+    // The line starts on a month end, which is not the day of the first count.
+    assert.match(await page.locator("#chart-footnote").innerText(),
+      /The dataset line starts at the end of Jun 2026; the first count was on 10 Jun 2026\./);
+    assert.equal(await page.locator("#types-note").innerText(),
+      "Both charts start at the end of Jun 2026; the first count was on 10 Jun 2026.");
+    await page.click("#table-more");
+    assert.equal(await page.locator("#table-body .tag", { hasText: /^first$/i }).count(), 0,
+      "the window's first row is not the first count");
+    await page.click('[data-range="30"]');
+    assert.doesNotMatch(await page.locator("#chart-footnote").innerText(), /flora\.csv/,
+      "a period wholly after the handover does not mention it");
+    assert.deepEqual(errors, []);
+    await page.close();
+
+    // ── no source records: nothing is "left out" of them ──
+    ({ page, errors } = await openPage(browser, { ...history, latest: { ...latest, source_rows: null } }));
+    await page.locator("body:not(.is-loading)").waitFor();
+    await page.check("#show-sources");
+    assert.equal(await page.locator("#l-removed").innerText(), "—");
+    assert.deepEqual(errors, []);
+    await page.close();
+
+    // ── the first count on the window's first day still reads as the first ──
+    const firstInWindow = { ...windowed, latest: { ...windowed.latest, first_counted_on: "2026-08-01" } };
+    ({ page, errors } = await openPage(browser, firstInWindow));
+    await page.locator("body:not(.is-loading)").waitFor();
+    await page.click("#table-more");
+    const firstRow = page.locator("#table-body tr")
+      .filter({ has: page.locator("th", { hasText: /^1 Aug 2026$/ }) });
+    assert.equal(await firstRow.locator(".tag").innerText(), "FIRST");
     assert.deepEqual(errors, []);
     await page.close();
 
@@ -248,7 +354,8 @@ const lastChart = (page, label = "FLoRA dataset") => page.evaluate(label => {
     const short = { ...history, daily: daily.slice(-20), monthly: history.monthly.slice(-1) };
     ({ page, errors } = await openPage(browser, short));
     await page.locator("body:not(.is-loading)").waitFor();
-    assert(await page.locator("#controls").isHidden(), "a lone All time button is no choice");
+    assert(await page.locator("#period").isHidden(), "a lone All time button is no choice");
+    assert(await page.locator("#show-sources").isVisible(), "the source switch stays");
     assert.match(await page.locator("#d-total").innerText(), /since 13 Sep 2026$/);
     await page.close();
 
@@ -269,6 +376,8 @@ const lastChart = (page, label = "FLoRA dataset") => page.evaluate(label => {
     ({ page, errors } = await openPage(browser, history, { failFirst: true }));
     await page.locator("#error").waitFor();
     assert(await page.locator("#report").isHidden());
+    assert.notEqual(await page.locator("#controls").getAttribute("hidden"), null,
+      "the controls wait for the figures: a click before them would have nothing to draw");
     await page.click("#retry");
     await page.locator("body:not(.is-loading)").waitFor();
     assert(await page.locator("#error").isHidden());

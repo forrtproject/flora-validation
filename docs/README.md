@@ -1888,6 +1888,9 @@ python backfill_quote_source.py --apply
 python backfill_quote_source.py --recompute-all
 python backfill_quote_source.py --recompute-all --apply
 
+python backfill_flora_history.py --fred-data ../fred-data
+python backfill_flora_history.py --fred-data ../fred-data --apply
+
 python fetch_oa.py
 python build_static.py
 ```
@@ -1895,7 +1898,9 @@ python build_static.py
 Quote-source backfill updates `validated` only. It never overwrites a source
 locked by a non-null `out_quote_source_by`. `fetch_oa.py` refreshes the Unpaywall
 cache used for UI links; `build_static.py` regenerates all three docs JSON files
-from root demo inputs.
+from root demo inputs. `backfill_flora_history.py` fills the dataset size history
+before the pipeline's first count from the daily flora.csv versions in a
+fred-data clone; see [Dataset size history](FLORA_DATA_TABLE.md#dataset-size-history).
 
 ### Source Records
 
@@ -1966,6 +1971,7 @@ against a database you have not backed up.
 | `export_validated.py` | Validated CSV and manual-reference report, OpenAlex citation cache |
 | `backfill_oa_work_ids.py` | Batched OpenAlex work-ID lookup for `unvalidated` with matching propagation into `validated` |
 | `backfill_quote_source.py` | Dry-by-default quote-source classification on `validated` |
+| `backfill_flora_history.py` | Dry-by-default dataset size history from published flora.csv versions |
 | `update_originals.py` | Dry-by-default raw original-reference refresh by `pair_id` |
 | `update_outcomes.py` | Outcome/type/quote refresh for untouched rows |
 | `find_orphans.py` | Read-only summary of database records absent from the current resolved CSV |
@@ -1979,6 +1985,7 @@ against a database you have not backed up.
 | File | Role |
 | --- | --- |
 | `docs/index.html` | All login, update, onboarding, game, admin, modal, history, assignment, and inbox markup |
+| `docs/dataset.html` | Public data report: FLoRA size over time, with source records behind a toggle |
 | `docs/app.js` | Online/static API adapter, state, rendering, validation gates, buffering, admin and Source Records UI |
 | `docs/style.css` | Entire responsive visual system |
 | `docs/favicon.svg` | Application icon, also referenced by email HTML |

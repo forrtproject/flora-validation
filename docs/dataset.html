@@ -138,6 +138,8 @@
 
   /* ---- summary ---- */
   .summary { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
+  /* Source records hidden: the dataset figure has the card to itself. */
+  .summary.solo { grid-template-columns: minmax(0, 1fr); }
   .summary > div { padding: 1.75rem 2rem; }
   .ledger { border-left: 1px solid var(--rule-soft); }
   @media (max-width: 780px) {
@@ -184,7 +186,9 @@
   .ledger-row.is-total dt { font-weight: 600; }
 
   /* ---- period filter: scopes the chart and the table below it ---- */
-  .controls { display: flex; align-items: center; gap: 0.75rem; margin-top: 2.25rem; flex-wrap: wrap; }
+  .controls { display: flex; align-items: center; gap: 0.75rem 1.5rem; margin-top: 2.25rem; flex-wrap: wrap; }
+  .period { display: flex; align-items: center; gap: 0.75rem; }
+  .controls .check { margin-left: auto; }
   .controls-label { font-size: 0.62rem; letter-spacing: 0.14em; color: var(--muted); }
   .segmented {
     display: inline-flex;
@@ -498,22 +502,22 @@
     <p class="eyebrow">Open data &middot; no sign-in needed</p>
     <h1>FLoRA dataset <em>growth</em></h1>
     <p class="tagline">
-      How many replication and reproduction records the FLoRA collection holds, and how
-      that has changed over time.
+      Replication and reproduction records in FLoRA, and how the count has grown.
     </p>
     <p class="updated" id="updated">&nbsp;</p>
   </section>
 
   <main id="report" aria-busy="true">
 
-    <section class="card summary reveal" aria-label="Current figures">
+    <section class="card summary solo reveal" id="summary" aria-label="Current figures">
       <div class="hero">
         <div class="eyebrow">Records in the FLoRA dataset</div>
         <div class="hero-value" id="t-total" data-skeleton>&mdash;</div>
         <p class="delta" id="d-total"></p>
+        <p class="delta" id="d-launch" hidden></p>
       </div>
 
-      <div class="ledger">
+      <div class="ledger" id="ledger" hidden>
         <div class="eyebrow">From source to dataset</div>
         <dl>
           <div class="ledger-row">
@@ -535,12 +539,15 @@
     </section>
 
     <div class="controls" id="controls" hidden>
-      <span class="controls-label" id="period-label">Period</span>
-      <div class="segmented" role="group" aria-labelledby="period-label">
-        <button type="button" data-range="30" aria-pressed="false">30 days</button>
-        <button type="button" data-range="90" aria-pressed="false">90 days</button>
-        <button type="button" data-range="all" aria-pressed="true">All time</button>
+      <div class="period" id="period" hidden>
+        <span class="controls-label" id="period-label">Period</span>
+        <div class="segmented" role="group" aria-labelledby="period-label">
+          <button type="button" data-range="30" aria-pressed="false">30 days</button>
+          <button type="button" data-range="90" aria-pressed="false">90 days</button>
+          <button type="button" data-range="all" aria-pressed="true">All time</button>
+        </div>
       </div>
+      <label class="check"><input type="checkbox" id="show-sources"> Show source records</label>
     </div>
 
     <figure class="card chart-card reveal">
@@ -551,7 +558,7 @@
         </div>
         <ul class="legend" aria-label="Legend">
           <li><span class="key key-flora"></span>FLoRA dataset</li>
-          <li><span class="key key-source"></span>Source records</li>
+          <li id="legend-source" hidden><span class="key key-source"></span>Source records</li>
         </ul>
       </figcaption>
       <div class="plot" id="plot">
@@ -623,7 +630,7 @@
               <th scope="col"><span class="key key-flora"></span>FLoRA dataset</th>
               <th scope="col">Replications</th>
               <th scope="col">Reproductions</th>
-              <th scope="col"><span class="key key-source"></span>Source records</th>
+              <th scope="col" id="th-source" hidden><span class="key key-source"></span>Source records</th>
             </tr>
           </thead>
           <tbody id="table-body"></tbody>
@@ -632,9 +639,8 @@
       <button type="button" class="more" id="table-more" hidden></button>
       <p class="table-note">
         Each figure is followed by its change from the day before.
-        <span class="tag">carried</span> the pipeline did not run that day, so the dataset
-        still held its previous figure. A dash marks a day before the pipeline first
-        measured the dataset.
+        <span class="tag">carried</span> no new count that day; the previous figure still
+        held. A dash: no count yet.
       </p>
     </section>
 
@@ -644,47 +650,49 @@
         <div>
           <dt><span class="key key-flora"></span>FLoRA dataset</dt>
           <dd>
-            The published collection: what remains of the source records once duplicates
-            are merged, the exclusion list is applied and incomplete entries are dropped.
+            The published collection: the source records once duplicates are merged,
+            exclusions applied and incomplete entries dropped.
           </dd>
         </div>
-        <div>
+        <div id="def-source" hidden>
           <dt><span class="key key-source"></span>Source records</dt>
           <dd>
-            Every record ingested, from the entry sheets and from records this project has
-            validated itself. Each keeps the date it first arrived, so this line is exact
-            history rather than an estimate.
+            Every record ingested, from the entry sheets and from records validated here.
+            Each keeps the date it arrived, so this line is exact.
           </dd>
         </div>
         <div>
           <dt>Replications and reproductions</dt>
           <dd>
             A replication repeats a study with new data. A reproduction re-analyses the
-            original study&rsquo;s data. Both counts are recorded with the dataset at every
-            pipeline run, so each has its own history from the first measurement.
+            original study&rsquo;s data.
           </dd>
         </div>
         <div>
-          <dt>Days without a pipeline run</dt>
+          <dt>Days without a new count</dt>
           <dd>
-            The dataset only changes when the pipeline regenerates it. On a day with no run,
-            the figure from the last run is carried forward, and the table marks that day.
+            The dataset changes only when it is regenerated. On other days the last
+            figure is carried forward, and the table marks the day.
           </dd>
         </div>
         <div>
-          <dt>Before the first measurement</dt>
+          <dt>Before the first count</dt>
           <dd>
-            The dataset line begins on the first day the pipeline recorded it. It is not
-            extended backwards: applying today&rsquo;s rules to an older set of records would
-            produce a number that was never true on that day.
+            The dataset line starts at its first count. Earlier days stay blank:
+            re-counting old records under today&rsquo;s rules would give a number that
+            was never true on that day.
+          </dd>
+        </div>
+        <div id="def-earlier" hidden>
+          <dt>Before <span id="pipeline-start">this site&rsquo;s pipeline</span></dt>
+          <dd>
+            The record count of the flora.csv published that day in the FReD data
+            repository, as it stood then.
           </dd>
         </div>
         <div>
           <dt>Dates</dt>
-          <dd>
-            Every date is a UTC calendar day, and each day shows the count at its end.
-            Today&rsquo;s figures are the latest available.
-          </dd>
+          <dd>UTC calendar days. Each shows the count at the end of the day.</dd>
         </div>
       </dl>
     </section>
@@ -736,18 +744,19 @@
     rows: [],       // one per day in the payload, with its change from the day before
     range: "all",
     allDays: false,
-    expanded: false
+    expanded: false,
+    showSources: false   // the page is about the dataset; source records are opt-in
   };
+
+  var FLORA_SERIES = { label: "FLoRA dataset", key: "flora", color: FLORA_COLOR, dataset: true };
+  var SOURCE_SERIES = { label: "Source records", key: "source", color: SOURCE_COLOR };
 
   // Every chart on the page. A `dataset` series is measured by the pipeline, so it
   // can be missing before the first run and carried on a day the pipeline skipped.
   var VIEWS = {
     main: {
       canvas: "chart", tip: "tip", plot: "plot", fallback: "chart-fallback",
-      series: [
-        { label: "FLoRA dataset", key: "flora", color: FLORA_COLOR, dataset: true },
-        { label: "Source records", key: "source", color: SOURCE_COLOR }
-      ]
+      series: [FLORA_SERIES]          // plus SOURCE_SERIES when source records are shown
     },
     rep: {
       canvas: "chart-rep", tip: "tip-rep", plot: "plot-rep", fallback: "fallback-rep",
@@ -814,8 +823,15 @@
 
   var KEYS = ["flora", "rep", "repro", "source"];
 
+  // The figures on screen: source records only when the reader asks for them.
+  function shownKeys() {
+    return state.showSources ? KEYS : KEYS.filter(function (key) { return key !== "source"; });
+  }
+
   // The charts, the table and the CSV all read these rows, so they cannot disagree.
-  function buildRows(daily) {
+  // `firstCounted` is the server's first day with a count; it may be the window's
+  // first row, which has nothing before it to compare with.
+  function buildRows(daily, firstCounted) {
     var rows = [];
     var measuredOn = null;
     daily.forEach(function (d, i) {
@@ -828,8 +844,11 @@
         repro: d.total_rows === null ? null : given(d.reproductions),
         source: d.source_rows,
         measured: d.measured,
+        measuredBy: d.total_rows === null ? null : given(d.measured_by),
         measuredOn: d.total_rows === null ? null : measuredOn,
-        floraFirst: !!prev && prev.flora === null && d.total_rows !== null
+        floraFirst: d.total_rows !== null && (firstCounted === undefined
+          ? !!prev && prev.flora === null
+          : d.date === firstCounted)
       };
       KEYS.forEach(function (key) {
         row[key + "Change"] = (prev && prev[key] !== null && row[key] !== null)
@@ -856,7 +875,8 @@
         return { date: m.date, flora: m.total_rows,
                  rep: measured ? given(m.replications) : null,
                  repro: measured ? given(m.reproductions) : null,
-                 source: m.source_rows, measured: m.measured, measuredOn: null, monthEnd: true };
+                 source: m.source_rows, measured: m.measured, measuredBy: given(m.measured_by),
+                 measuredOn: null, monthEnd: true };
       })
       .concat(state.rows);
   }
@@ -897,6 +917,24 @@
     };
   }
 
+  // From the count in force on the day the validator launched. Absent when no
+  // count reaches back that far. The server sends that count, since the launch
+  // day leaves the daily window in time.
+  function changeSinceLaunch() {
+    var l = state.data.latest;
+    var launched = l.launched_on;
+    var points = pointsFor("all");
+    var last = points[points.length - 1].flora;
+    if (!launched || last === null) return null;
+    var at = l.launch_total_rows;
+    if (at === undefined) {
+      at = null;
+      points.forEach(function (p) { if (p.date <= launched && p.flora !== null) at = p.flora; });
+    }
+    if (at === null) return null;
+    return { delta: last - at, period: "since the validator launched on " + longDate(launched) };
+  }
+
   function writeChange(node, change) {
     node.replaceChildren();
     if (!change) return;
@@ -921,9 +959,13 @@
 
     $("t-total").textContent = fmt(total);
     writeChange($("d-total"), changeOver30("flora"));
+    var sinceLaunch = changeSinceLaunch();
+    writeChange($("d-launch"), sinceLaunch);
+    $("d-launch").hidden = !sinceLaunch;
 
     $("l-source").textContent = fmt(l.source_rows);
-    $("l-removed").textContent = measured ? signed(total - l.source_rows) : EMDASH;
+    $("l-removed").textContent = measured && given(l.source_rows) !== null
+      ? signed(total - l.source_rows) : EMDASH;
     $("l-total").textContent = fmt(total);
     writeChange($("d-source"), changeOver30("source"));
 
@@ -939,7 +981,7 @@
                 String(at.getUTCMinutes()).padStart(2, "0");
     var text = "Updated " + stamp + ", " + clock + " UTC";
     if (l.measured_on && l.measured_on !== l.date) {
-      text += " · dataset figure from the pipeline run on " + longDate(l.measured_on);
+      text += " · dataset last counted on " + longDate(l.measured_on);
     }
     $("updated").textContent = text;
   }
@@ -1213,10 +1255,13 @@
     if (i > 0) {
       var start = points[i];
       notes.push(start.monthEnd
-        ? "The FLoRA dataset line starts at the end of " + monthYear(start.date) +
-          ", the month the pipeline first measured it; earlier sizes are not reconstructed."
-        : "The FLoRA dataset line starts on " + longDate(start.date) +
-          ", the first day the pipeline measured it; earlier sizes are not reconstructed.");
+        ? "The dataset line starts at the end of " + monthYear(start.date) + firstCountOn() + "."
+        : "The dataset line starts on " + longDate(start.date) + ", its first count.");
+    }
+    var handover = pipelineStart(points);
+    if (handover) {
+      notes.push("Before " + longDate(handover) + ", counts of the flora.csv published each day; " +
+                 "since then, this site\u2019s pipeline.");
     }
     var footnote = $("chart-footnote");
     footnote.textContent = notes.join(" ");
@@ -1225,6 +1270,27 @@
 
   // Each card: today's figure, its change across the period, its share of the
   // dataset, and its own chart from the first day it was measured.
+  // The first pipeline count after flora.csv counts, if `points` reach back
+  // before it. The server sends the day, since it leaves the daily window in time.
+  function pipelineStart(points) {
+    var from = state.data.latest.pipeline_from;
+    if (from !== undefined) return from && points[0].date < from ? from : null;
+    var sawCsv = false;
+    for (var i = 0; i < points.length; i++) {
+      if (points[i].flora === null || !points[i].measured) continue;
+      if (points[i].measuredBy === "flora.csv") sawCsv = true;
+      else if (sawCsv) return points[i].date;
+    }
+    return null;
+  }
+
+  // A month-end point only says where its month finished, not when the first
+  // count fell within it.
+  function firstCountOn() {
+    var first = state.data.latest.first_counted_on;
+    return first ? "; the first count was on " + longDate(first) : ", the month of the first count";
+  }
+
   function renderTypes(points) {
     var l = state.data.latest;
     var measured = l.total_rows !== null;
@@ -1243,12 +1309,13 @@
     });
     var note = $("types-note");
     note.textContent = !start ? "" : start.monthEnd
-      ? "Both charts start at the end of " + monthYear(start.date) + ", the month the pipeline first measured the dataset."
-      : "Both charts start on " + longDate(start.date) + ", the first day the pipeline measured the dataset.";
+      ? "Both charts start at the end of " + monthYear(start.date) + firstCountOn() + "."
+      : "Both charts start on " + longDate(start.date) + ", the first count.";
     note.hidden = !start;
   }
 
   function renderCharts() {
+    VIEWS.main.series = state.showSources ? [FLORA_SERIES, SOURCE_SERIES] : [FLORA_SERIES];
     var points = pointsFor(state.range);
     drawChart(VIEWS.main, points, "No figures have been recorded yet.");
     mainFootnote(points);
@@ -1288,7 +1355,7 @@
   // ---- table -----------------------------------------------------------------
 
   function changed(r) {
-    return r.floraFirst || KEYS.some(function (key) { return !!r[key + "Change"]; });
+    return r.floraFirst || shownKeys().some(function (key) { return !!r[key + "Change"]; });
   }
 
   function tag(text, title) {
@@ -1297,11 +1364,11 @@
     return node;
   }
 
-  function valueCell(value, change, badge) {
+  function valueCell(value, change, badge, key) {
     var td = el("td");
     if (value === null) {
       td.className = "none";
-      td.title = "Not measured: before the pipeline first measured the dataset";
+      td.title = key === "source" ? "Before source records were ingested" : "No count yet";
     }
     td.appendChild(el("span", "val", fmt(value)));
     var slot = el("span", "chg");
@@ -1317,10 +1384,10 @@
 
   function floraBadge(r) {
     if (r.flora === null) return null;
-    if (r.floraFirst) return tag("first", "The first day the pipeline measured the dataset");
+    if (r.floraFirst) return tag("first", "First recorded count");
     if (!r.measured) {
-      return tag("carried", "No pipeline run this day: the figure is carried forward" +
-        (r.measuredOn ? " from " + longDate(r.measuredOn) : " from the last run"));
+      return tag("carried", "No new count this day: carried forward" +
+        (r.measuredOn ? " from " + longDate(r.measuredOn) : " from the last count"));
     }
     return null;
   }
@@ -1335,7 +1402,7 @@
     body.replaceChildren();
     if (!total) {
       var empty = el("td", "empty", "No figure changed in this period.");
-      empty.colSpan = KEYS.length + 1;
+      empty.colSpan = shownKeys().length + 1;
       var tr = el("tr");
       tr.appendChild(empty);
       body.appendChild(tr);
@@ -1345,8 +1412,8 @@
       var th = el("th", null, longDate(r.date));
       th.scope = "row";
       tr.appendChild(th);
-      KEYS.forEach(function (key) {
-        tr.appendChild(valueCell(r[key], r[key + "Change"], key === "flora" ? floraBadge(r) : null));
+      shownKeys().forEach(function (key) {
+        tr.appendChild(valueCell(r[key], r[key + "Change"], key === "flora" ? floraBadge(r) : null, key));
       });
       body.appendChild(tr);
     });
@@ -1366,10 +1433,15 @@
 
   function downloadCsv() {
     function cell(v) { return v === null ? "" : v; }
-    var lines = ["date,flora_dataset,replications,reproductions,flora_measured,source_records"];
+    var header = ["date", "flora_dataset", "replications", "reproductions", "flora_measured",
+                  "flora_counted_by"];
+    if (state.showSources) header.push("source_records");
+    var lines = [header.join(",")];
     rowsInRange().forEach(function (r) {
-      lines.push([r.date, cell(r.flora), cell(r.rep), cell(r.repro),
-                  r.flora === null ? "" : r.measured, r.source].join(","));
+      var line = [r.date, cell(r.flora), cell(r.rep), cell(r.repro),
+                  r.flora === null ? "" : r.measured, cell(r.measuredBy || null)];
+      if (state.showSources) line.push(cell(r.source));
+      lines.push(line.join(","));
     });
     var url = URL.createObjectURL(new Blob([lines.join("\n") + "\n"], { type: "text/csv;charset=utf-8" }));
     var link = el("a");
@@ -1396,7 +1468,8 @@
       if (!b.hidden) offered++;
       if (b.hidden && state.range === parseInt(r, 10)) state.range = "all";
     });
-    $("controls").hidden = offered < 2;
+    $("period").hidden = offered < 2;
+    $("controls").hidden = false;     // hidden while loading: every control needs the figures
     pressRange();
   }
 
@@ -1443,6 +1516,24 @@
     canvas.addEventListener("blur", function () { deactivate(view); });
   });
 
+  // Source records are opt-in: the summary's ledger, the second line, the table
+  // column, the CSV column and their definition all follow the one switch.
+  function applySources() {
+    var shown = state.showSources;
+    $("summary").classList.toggle("solo", !shown);
+    ["ledger", "legend-source", "th-source", "def-source"].forEach(function (id) {
+      $(id).hidden = !shown;
+    });
+  }
+
+  $("show-sources").addEventListener("change", function (e) {
+    state.showSources = e.target.checked;
+    state.expanded = false;
+    applySources();
+    renderCharts();
+    renderTable();
+  });
+
   $("all-days").addEventListener("change", function (e) {
     state.allDays = e.target.checked;
     state.expanded = false;
@@ -1461,7 +1552,11 @@
       return;
     }
     state.data = data;
-    state.rows = buildRows(data.daily);
+    state.rows = buildRows(data.daily, data.latest.first_counted_on);
+    var handover = pipelineStart(pointsFor("all"));
+    if (handover) $("pipeline-start").textContent = longDate(handover);
+    $("def-earlier").hidden = !handover;
+    applySources();
     renderSummary(data);
     offerRanges();
     renderCharts();

@@ -304,7 +304,7 @@ def test_the_daily_count_includes_rows_titled_by_a_correction(seeded):
           record="REPL-000002")
     _pipeline(connection)
     with connection, connection.cursor() as cur:
-        cur.execute("SELECT total_rows FROM flora_dataset_history WHERE recorded_on = CURRENT_DATE")
+        cur.execute("SELECT total_rows FROM flora_dataset_history WHERE recorded_on = (NOW() AT TIME ZONE 'UTC')::date")
         assert cur.fetchone()[0] == 2
 
 

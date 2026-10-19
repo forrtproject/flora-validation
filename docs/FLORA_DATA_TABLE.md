@@ -218,6 +218,43 @@ routes build paper aggregates from the same active snapshot, while
 rows. The [API guide](FLORA_API.md) describes their distinct shapes, search
 ranking, and public field allowlist. API reads preserve the existing CSV.
 
+## Dataset size history
+
+Each pipeline run stores the day's size in `flora_dataset_history`: one row per
+UTC day with the total, replications, reproductions and source records, marked
+`measured_by = 'pipeline'`. `GET /api/flora/history` serves it and the public
+data report, [`docs/dataset.html`](dataset.html), charts it. A day without a run
+carries the previous figure forward and is marked as carried.
+
+The pipeline first counted on 13 September 2026. For the days before, from the
+validator launch (the first validator account), `backfill_flora_history.py`
+counts the `output/flora.csv` that the FReD data repository published each day
+and stores it with `measured_by = 'flora.csv'`:
+
+```bash
+git clone --no-checkout https://github.com/forrtproject/fred-data.git ../fred-data
+python backfill_flora_history.py --fred-data ../fred-data            # dry run
+python backfill_flora_history.py --fred-data ../fred-data --apply
+```
+
+These are counts of what was published on each day, not older records re-counted
+under today's rules, so the line can step where the pipeline takes over. The
+script writes nothing from the pipeline's first count on, even with `--until`, a
+re-run replaces only its own rows, and `--apply` refuses until the deployed schema
+has the `measured_by` column. The pipeline writes `measured_by` once the column
+exists and leaves it out until then, so the nightly job does not depend on the
+site being redeployed first. All days are UTC calendar days, whatever the
+database session's time zone.
+
+`latest` in the history payload carries what the page needs from beyond the
+400-day daily window: the count at the validator launch (`launch_total_rows`), the
+first count (`first_counted_on`) and the first pipeline count after flora.csv
+counts (`pipeline_from`).
+
+The data report shows FLoRA only by default. **Show source records** adds the
+source-record line, table column and CSV column. Once flora.csv days exist, the
+summary also shows the growth since the validator launched.
+
 ## Verification
 
 On 16 September 2026, the complete Python suite passed **1,268 tests**, including

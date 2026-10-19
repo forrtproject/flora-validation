@@ -471,7 +471,7 @@ def export_csv(cur, filters: dict) -> str:
     return final_export.csv_text(ordered)
 
 
-def history(cur, window_days: int = 120) -> dict:
+def history(cur, window_days: int = 400) -> dict:
     """The dataset-size series for the public page.
 
     Reads counts only — never builds the frame. This is served unauthenticated, so
@@ -489,7 +489,8 @@ def history(cur, window_days: int = 120) -> dict:
     `source_rows`  is computed for every day as the number of source records whose
                    first_seen_at falls on or before it. source_records is insert-only
                    and first_seen_at never moves, so this is exact for days no run
-                   touched — it is a count, not an interpolation.
+                   touched — it is a count, not an interpolation. NULL before the first
+                   record arrived: nothing was being ingested yet, which is not zero.
 
     `total_rows`   is carried forward from the last run. The published dataset only
                    changes when the pipeline regenerates it, so on a day with no run
@@ -501,18 +502,28 @@ def history(cur, window_days: int = 120) -> dict:
 
     `replications` / `reproductions` are recorded with the total at every run, and
                    are carried and withheld exactly as it is.
+
+    `measured_by`  says where a total came from: "pipeline" (this site's run) or
+                   "flora.csv" (the row count of the flora.csv published that day,
+                   backfilled for the days before this pipeline existed).
+
+    `latest` also names, over the whole history rather than the capped `daily`
+    window: `launched_on`, the day the validator opened (its first account), and
+    `launch_total_rows`, the dataset size in force at the end of that day;
+    `first_counted_on`, the first day with a dataset size; and `pipeline_from`, the
+    first pipeline count after flora.csv counts (None without flora.csv counts).
     """
     cur.execute(
         """
         WITH bounds AS (
             SELECT LEAST(
-                       (SELECT MIN(first_seen_at::date) FROM source_records),
+                       (SELECT MIN((first_seen_at AT TIME ZONE 'UTC')::date) FROM source_records),
                        (SELECT MIN(recorded_on) FROM flora_dataset_history),
-                       CURRENT_DATE
+                       (NOW() AT TIME ZONE 'UTC')::date
                    ) AS first_day,
                    GREATEST(
                        (SELECT MAX(recorded_on) FROM flora_dataset_history),
-                       CURRENT_DATE
+                       (NOW() AT TIME ZONE 'UTC')::date
                    ) AS last_day
         ),
         calendar AS (
@@ -520,15 +531,23 @@ def history(cur, window_days: int = 120) -> dict:
             FROM bounds
         ),
         arrivals AS (
-            SELECT first_seen_at::date AS day, COUNT(*) AS n
+            SELECT (first_seen_at AT TIME ZONE 'UTC')::date AS day, COUNT(*) AS n
             FROM source_records
             GROUP BY 1
+        ),
+        first_arrival AS (
+            SELECT MIN((first_seen_at AT TIME ZONE 'UTC')::date) AS day FROM source_records
         )
         SELECT c.day,
-               COALESCE(SUM(a.n) OVER (ORDER BY c.day), 0)::int AS source_rows,
+               CASE WHEN f.day IS NULL OR c.day < f.day THEN NULL
+                    ELSE COALESCE(SUM(a.n) OVER (ORDER BY c.day), 0)::int
+               END AS source_rows,
                h.total_rows,
                h.replications,
                h.reproductions,
+               CASE WHEN h.total_rows IS NULL THEN NULL
+                    ELSE COALESCE(h.measured_by, 'pipeline') END AS measured_by,
+               (SELECT (MIN(created_at) AT TIME ZONE 'UTC')::date FROM validators) AS launched_on,
                -- Derived from total_rows, NOT from the row existing.
                -- flora_dataset_history also holds SEEDED days: backfill_source_history
                -- writes recorded_on + source_rows, and no total, for every past day
@@ -538,6 +557,7 @@ def history(cur, window_days: int = 120) -> dict:
                -- reading, which is the one thing this page must not do.
                h.total_rows IS NOT NULL AS was_run
         FROM calendar c
+        CROSS JOIN first_arrival f
         LEFT JOIN arrivals a ON a.day = c.day
         LEFT JOIN flora_dataset_history h ON h.recorded_on = c.day
         ORDER BY c.day
@@ -553,6 +573,7 @@ def history(cur, window_days: int = 120) -> dict:
             r["total_rows"] = carried["total_rows"]
             r["replications"] = carried["replications"]
             r["reproductions"] = carried["reproductions"]
+            r["measured_by"] = carried.get("measured_by")
 
     series = [{
         "date": str(r["day"]),
@@ -566,6 +587,7 @@ def history(cur, window_days: int = 120) -> dict:
         # The chart draws every day; the table marks which of them is a reading
         # rather than a day the previous reading still stood for.
         "measured": r["was_run"],
+        "measured_by": r.get("measured_by") if r["total_rows"] is not None else None,
     } for r in rows]
 
     # Month-end: where each month finished, which is the value that was true at the
@@ -577,6 +599,16 @@ def history(cur, window_days: int = 120) -> dict:
     monthly = [{"month": month, **point} for month, point in sorted(by_month.items())]
 
     last = rows[-1] if rows else None
+    launched = last.get("launched_on") if last else None
+    at_launch = next((r for r in rows if r["day"] == launched), None)
+    counted = [r for r in rows if r["was_run"]]
+    pipeline_from, saw_csv = None, False
+    for r in counted:
+        if r.get("measured_by") == "flora.csv":
+            saw_csv = True
+        elif saw_csv:
+            pipeline_from = r["day"]
+            break
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "latest": {
@@ -586,9 +618,13 @@ def history(cur, window_days: int = 120) -> dict:
             "reproductions": last["reproductions"] or 0,
             "source_rows": last["source_rows"],
             "measured_on": str(carried["day"]) if carried else None,
+            "launched_on": str(launched) if launched else None,
+            "launch_total_rows": at_launch["total_rows"] if at_launch else None,
+            "first_counted_on": str(counted[0]["day"]) if counted else None,
+            "pipeline_from": str(pipeline_from) if pipeline_from else None,
         } if last else None,
-        # Capped: the charts need 30 days and the table is a reader's aid, not an
-        # export. The whole history would grow without bound in a public payload.
+        # Capped, since the whole history would grow without bound in a public
+        # payload. What the page needs from beyond it is in `latest`.
         "daily": series[-window_days:],
         "monthly": monthly,
     }

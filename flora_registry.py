@@ -147,7 +147,7 @@ def backfill_source_history(cur, verbose: bool = True) -> int:
         INSERT INTO flora_dataset_history (recorded_on, source_rows)
         SELECT day, SUM(COUNT(*)) OVER (ORDER BY day)
         FROM (
-            SELECT first_seen_at::date AS day FROM source_records
+            SELECT (first_seen_at AT TIME ZONE 'UTC')::date AS day FROM source_records
         ) t
         GROUP BY day
         ORDER BY day
@@ -158,6 +158,16 @@ def backfill_source_history(cur, verbose: bool = True) -> int:
     if verbose and seeded:
         print(f"  history: seeded {seeded} past day(s) from source_records")
     return seeded
+
+
+def has_measured_by(cur) -> bool:
+    """Whether flora_dataset_history has its measured_by column yet. db_schema.sql
+    adds it when the deployed site starts; the nightly job runs from the repository
+    and can reach the database before that."""
+    cur.execute("""SELECT 1 FROM pg_attribute
+                   WHERE attrelid = to_regclass('flora_dataset_history')
+                     AND attname = 'measured_by' AND NOT attisdropped""")
+    return cur.fetchone() is not None
 
 
 def record_history(cur, frame, verbose: bool = True) -> dict:
@@ -181,16 +191,20 @@ def record_history(cur, frame, verbose: bool = True) -> dict:
     cur.execute("SELECT COUNT(*) AS n FROM source_records")
     source_rows = cur.fetchone()["n"]
 
+    # Without the column every recorded total reads as the pipeline's anyway.
+    column, value, update = ((", measured_by", ", 'pipeline'", "measured_by = 'pipeline',")
+                             if has_measured_by(cur) else ("", "", ""))
     cur.execute(
-        """
+        f"""
         INSERT INTO flora_dataset_history
-            (recorded_on, total_rows, replications, reproductions, source_rows)
-        VALUES (CURRENT_DATE, %s, %s, %s, %s)
+            (recorded_on, total_rows, replications, reproductions, source_rows{column})
+        VALUES ((NOW() AT TIME ZONE 'UTC')::date, %s, %s, %s, %s{value})
         ON CONFLICT (recorded_on) DO UPDATE SET
             total_rows = EXCLUDED.total_rows,
             replications = EXCLUDED.replications,
             reproductions = EXCLUDED.reproductions,
             source_rows = EXCLUDED.source_rows,
+            {update}
             recorded_at = NOW()
         """,
         (total, replications, reproductions, source_rows),

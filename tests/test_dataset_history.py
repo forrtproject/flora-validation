@@ -182,7 +182,7 @@ def test_a_month_reports_the_value_it_finished_at():
     assert out["monthly"] == [{"month": "2026-08", "date": "2026-08-31",
                                "source_rows": 90, "total_rows": None,
                                "replications": None, "reproductions": None,
-                               "measured": False}]
+                               "measured": False, "measured_by": None}]
 
 
 def test_each_month_gets_exactly_one_point():
@@ -227,10 +227,89 @@ def test_the_payload_carries_counts_and_nothing_else():
     """This is served without a session. A field added here later that names a
     record, a reference or a reviewer would publish it to everyone."""
     allowed = {"date", "month", "total_rows", "source_rows", "measured",
-               "replications", "reproductions", "measured_on"}
+               "replications", "reproductions", "measured_on", "measured_by", "launched_on",
+               "launch_total_rows", "first_counted_on", "pipeline_from"}
     out = _history([_row(1, 10, total_rows=8, reps=6, repros=2)])
     for point in out["daily"] + out["monthly"] + [out["latest"]]:
         assert set(point) <= allowed, f"unexpected field(s): {set(point) - allowed}"
+
+
+def test_each_figure_says_where_it_came_from_and_carries_that_forward():
+    """flora.csv counts before the pipeline, pipeline counts after: the page names
+    the handover, so a carried day must keep its figure's origin."""
+    rows = [{**_row(1, None, total_rows=900), "measured_by": "flora.csv"},
+            {**_row(2, None), "measured_by": None},
+            {**_row(3, 10, total_rows=950), "measured_by": "pipeline"}]
+    daily = _history(rows)["daily"]
+    assert [d["measured_by"] for d in daily] == ["flora.csv", "flora.csv", "pipeline"]
+    assert [d["measured"] for d in daily] == [True, False, True]
+
+
+def test_no_origin_is_claimed_for_a_day_without_a_figure():
+    assert _history([_row(1, 10)])["daily"][0]["measured_by"] is None
+
+
+def test_latest_names_the_validators_launch_day():
+    rows = [{**_row(1, 10, total_rows=8), "launched_on": dt.date(2026, 5, 21)}]
+    assert _history(rows)["latest"]["launched_on"] == "2026-05-21"
+
+
+def _csv_then_pipeline():
+    """flora.csv counts on days 1 and 3, a carried day between, the pipeline from day 4."""
+    launch = {"launched_on": _day(2)}
+    return [{**_row(1, None, total_rows=900), "measured_by": "flora.csv", **launch},
+            {**_row(2, None), "measured_by": None, **launch},
+            {**_row(3, 10, total_rows=930), "measured_by": "flora.csv", **launch},
+            {**_row(4, 12, total_rows=950), "measured_by": "pipeline", **launch},
+            {**_row(5, 14, total_rows=960), "measured_by": "pipeline", **launch}]
+
+
+def test_latest_gives_the_count_in_force_at_the_launch():
+    """The launch day had no count of its own: the one carried to it stood then."""
+    assert _history(_csv_then_pipeline())["latest"]["launch_total_rows"] == 900
+
+
+def test_latest_names_the_first_count_and_the_handover():
+    latest = _history(_csv_then_pipeline())["latest"]
+    assert latest["first_counted_on"] == str(_day(1))
+    assert latest["pipeline_from"] == str(_day(4))
+
+
+def test_the_launch_and_the_handover_survive_the_daily_window():
+    """Both leave `daily` in time; the page still needs them."""
+    out = _history(_csv_then_pipeline(), window_days=1)
+    assert [d["date"] for d in out["daily"]] == [str(_day(5))]
+    assert (out["latest"]["launch_total_rows"], out["latest"]["pipeline_from"],
+            out["latest"]["first_counted_on"]) == (900, str(_day(4)), str(_day(1)))
+
+
+def test_no_handover_without_flora_csv_counts():
+    rows = [{**_row(1, 10, total_rows=8), "measured_by": "pipeline"},
+            {**_row(2, 10, total_rows=9), "measured_by": "pipeline"}]
+    latest = _history(rows)["latest"]
+    assert latest["pipeline_from"] is None
+    assert latest["launch_total_rows"] is None, "no launch day known"
+
+
+def test_no_launch_figure_before_the_first_count():
+    rows = [{**_row(1, 10), "launched_on": _day(1)},
+            {**_row(2, 10, total_rows=9), "launched_on": _day(1)}]
+    latest = _history(rows)["latest"]
+    assert latest["launch_total_rows"] is None
+    assert latest["first_counted_on"] == str(_day(2))
+
+
+def test_the_query_leaves_source_records_blank_before_the_first_arrived():
+    """Nothing was being ingested yet: zero would be a reading, and it is not one."""
+    cur = FakeCursor([])
+    flora_service.history(cur)
+    sql = cur.executed[0][0]
+    assert "CASE WHEN f.day IS NULL OR c.day < f.day THEN NULL" in sql
+    assert "COALESCE(h.measured_by, 'pipeline')" in sql
+
+
+def test_the_daily_window_reaches_back_past_the_launch():
+    assert flora_service.history.__defaults__ == (400,)
 
 
 def test_history_never_builds_the_frame(monkeypatch):
@@ -252,10 +331,22 @@ def test_history_runs_one_query():
 def test_todays_row_is_upserted_rather_than_duplicated():
     """The pipeline can run several times a day; each run must correct the day's row,
     not add a second point at the same x."""
-    cur = FakeCursor([{"n": 12}])
+    cur = FakeCursor([{"n": 12}, {"present": 1}])
     flora_registry.record_history(cur, pd.DataFrame({"type": ["replication"]}), verbose=False)
     sql = cur.executed[-1][0]
     assert "ON CONFLICT (recorded_on) DO UPDATE" in sql
+    assert "measured_by = 'pipeline'" in sql, "a pipeline run marks its own figure"
+
+
+def test_recording_works_before_the_site_has_added_measured_by():
+    """The nightly job runs from the repository and can reach the database before
+    the deployed site's init_db() adds the column; failing here would roll back the
+    whole registry refresh and skip that night's FLoRA build."""
+    cur = FakeCursor([{"n": 12}, None])
+    flora_registry.record_history(cur, pd.DataFrame({"type": ["replication"]}), verbose=False)
+    assert "pg_attribute" in cur.executed[-2][0]
+    sql = cur.executed[-1][0]
+    assert "INSERT INTO flora_dataset_history" in sql and "measured_by" not in sql
 
 
 def test_the_recorded_split_matches_the_frame():
@@ -331,7 +422,10 @@ def test_the_page_states_which_figures_are_not_measured():
     say that a line stops because the number is unknowable rather than zero."""
     html = (ROOT / "docs" / "dataset.html").read_text(encoding="utf-8")
     assert "carried forward" in html
-    assert "never true on that day" in html
+    earlier = html[html.index('id="def-earlier"'):]
+    earlier = earlier[:earlier.index("</div>")]
+    assert "never true on that day" in html.replace(earlier, ""), \
+        "said on every page, not only once flora.csv counts exist"
 
 
 def test_the_charts_share_one_y_axis():
