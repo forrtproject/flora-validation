@@ -312,7 +312,14 @@ def to_output_shape(frame, keep_extras: bool = True):
     Columns we cannot fill are created empty rather than omitted — see
     FLORA_OUTPUT_COLUMNS.
     """
+    from bibliographic_helpers import normalise_author_json
     out = frame.rename(columns=OUTPUT_RENAMES).copy()
+    # Every author cell as fred-data's compact JSON list, whatever its source wrote.
+    # (Workbook escapes such as "_x000D_" are decoded where a workbook is read, not
+    # here: text of our own can contain the pattern, e.g. a BibTeX key "…_x394e_v3".)
+    for column in ("author_o", "author_r"):
+        if column in out.columns:
+            out[column] = out[column].map(normalise_author_json)
     out["doi_o_hash"] = out["doi_o"].apply(doi_hash)
     out["doi_r_hash"] = out["doi_r"].apply(doi_hash)
     if "source" in out:

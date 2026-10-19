@@ -94,6 +94,17 @@ def _authors(work: dict) -> "str | None":
     return "; ".join(names) or None
 
 
+def _authors_json(work: dict) -> "str | None":
+    """The structured author list, each author's ORCID kept where OpenAlex has one."""
+    items = []
+    for authorship in work.get("authorships") or []:
+        author = authorship.get("author") or {}
+        name = author.get("display_name")
+        if name:
+            items.append({**references._plain_author(name), "orcid": author.get("orcid")})
+    return references.author_fields(items)["authors_json"]
+
+
 def reconstruct_abstract(index) -> "str | None":
     if not isinstance(index, dict) or not index:
         return None
@@ -166,7 +177,7 @@ def shape(work: dict) -> "dict | None":
         "oa_work_id": (work.get("id") or "").rsplit("/", 1)[-1] or None,
         "title": work.get("title") or work.get("display_name") or None,
         "authors": _authors(work),
-        "authors_json": references.author_fields(references._parse_authors(_authors(work)))["authors_json"],
+        "authors_json": _authors_json(work),
         "journal": _journal(work),
         "year": str(work["publication_year"]) if work.get("publication_year") else None,
         "volume": biblio.get("volume") or None,
@@ -413,7 +424,7 @@ def shape_by_work_id(work: dict, work_id: str) -> "dict | None":
             "oa_work_id": (work.get("id") or "").rsplit("/", 1)[-1] or work_id,
             "title": work.get("title") or work.get("display_name") or None,
             "authors": _authors(work),
-            "authors_json": references.author_fields(references._parse_authors(_authors(work)))["authors_json"],
+            "authors_json": _authors_json(work),
             "journal": _journal(work),
             "year": (str(work["publication_year"])
                      if work.get("publication_year") else None),
@@ -501,6 +512,12 @@ def load_metadata(cur, include_seed: bool = True) -> dict:
             # OpenAlex is a fallback for bibliographic fields. Crossref/manual
             # cache values retain the precedence specified by the R helpers.
             preferred = {field: supplied.get(field) for field in reference_fields}
+            # Except an author list that carries ORCIDs (fetched since, or refreshed
+            # by backfill_author_orcids.py) over a seed list that lost them.
+            if ("ORCID" in (row.get("authors_json") or "")
+                    and "ORCID" not in (supplied.get("authors_json") or "")):
+                preferred.pop("authors_json")
+                preferred.pop("authors")
             merged = references.merge_present(merged, preferred)
         if row.get("reference_checked_at"):
             merged["_reference_cached"] = True

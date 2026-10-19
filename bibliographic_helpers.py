@@ -97,23 +97,132 @@ def _year(data):
     return None
 
 
+_ORCID_ID = re.compile(r"\d{4}-\d{4}-\d{4}-\d{3}[\dX]", re.I)
+
+
+def _orcid(item):
+    """An author's ORCID as Crossref writes it (https://orcid.org/…), from a
+    Crossref "ORCID", an OpenAlex "orcid" or a DataCite name identifier."""
+    value = item.get("ORCID") or item.get("orcid")
+    if not isinstance(value, str):
+        value = None
+        for identifier in item.get("nameIdentifiers") or []:
+            if (text(identifier.get("nameIdentifierScheme")) or "").upper() == "ORCID":
+                value = identifier.get("nameIdentifier")
+                break
+    match = _ORCID_ID.search(value) if isinstance(value, str) else None
+    # Always the https form with an upper-case check digit, as every ORCID in
+    # fred-data's file is: providers still send http:// and a lower-case x.
+    return f"https://orcid.org/{match.group(0).upper()}" if match else None
+
+
+def _name_part(value):
+    """A given or family name, kept as it is: unlike text(), "Nan" and "Na" are
+    names here ("Nan Jiang", "Elim Na"), not missing values."""
+    if value is None or isinstance(value, float):            # None, or a NaN cell
+        return None
+    return str(value).strip() or None
+
+
+def author_json(structured):
+    """The author list as the FLoRA CSV carries it: FReD's compact JSON, the same
+    bytes R's jsonlite::toJSON writes for fred-data's flora.csv."""
+    return json.dumps(structured, ensure_ascii=False, separators=(",", ":")) if structured else None
+
+
 def author_fields(authors):
-    """Keep both Crossref-style names and the existing display-name contract."""
+    """Crossref-style structured authors, plus the "; "-joined display names.
+
+    Each entry keeps given, family (or name, for an organisation), sequence and the
+    ORCID when the provider has one. An empty part is left out rather than written
+    as null, as fred-data's flora.csv does.
+    """
     names, structured = [], []
     for item in authors or []:
-        given, family = text(item.get("given")), text(item.get("family"))
-        literal = text(item.get("literal") or item.get("name"))
+        given, family = _name_part(item.get("given")), _name_part(item.get("family"))
+        literal = _name_part(item.get("literal") or item.get("name"))
         name = " ".join(part for part in (given, family) if part) or literal
         if not name:
             continue
         names.append(name)
-        entry = {"given": given, "family": family,
-                 "sequence": "first" if not structured else "additional"}
-        if not family and literal:
+        entry = {}
+        if given:
+            entry["given"] = given
+        if family:
+            entry["family"] = family
+        elif literal:
             entry["name"] = literal
+        entry["sequence"] = "first" if not structured else "additional"
+        orcid = _orcid(item)
+        if orcid:
+            entry["ORCID"] = orcid
         structured.append(entry)
-    return {"authors": "; ".join(names) or None,
-            "authors_json": json.dumps(structured, ensure_ascii=False) if structured else None}
+    return {"authors": "; ".join(names) or None, "authors_json": author_json(structured)}
+
+
+# Words that mark a plain author string as an organisation rather than a person,
+# so it is kept whole as {"name": ...} instead of split into given and family.
+_ORGANISATION = re.compile(
+    r"\b(consortium|group|collaboration|collaborative|team|project|network|initiative|"
+    r"committee|society|association|institute|laboratory|lab|center|centre|university|"
+    r"foundation|council|organi[sz]ation|investigators|alliance|program|programme|"
+    r"partnership|registry|working)\b", re.I)
+_INITIALS = re.compile(r"^(?:[A-Z]\.?-?){1,3}$")
+# Lower-case name particles that belong to the family name, as Crossref has it:
+# "Han L. J. van der Maas" is family "van der Maas".
+_PARTICLES = {"van", "von", "der", "den", "de", "del", "della", "da", "di", "du", "dos",
+              "das", "la", "le", "ten", "ter", "zu", "bin", "ibn", "al"}
+
+
+def _plain_author(name):
+    """One display name as a given/family pair, or kept whole as an organisation."""
+    name = name.strip()
+    if _ORGANISATION.search(name) or name.lower().startswith("the "):
+        return {"name": name}
+    if "," in name:
+        family, given = name.split(",", 1)
+        return {"family": family.strip(), "given": given.strip()}
+    parts = name.split()
+    if len(parts) == 1:
+        return {"family": parts[0]}
+    # "Busenitz L.": family, then initials. Not "YING LIU": an all-capitals name
+    # with a short surname is given then family, as any other.
+    last = parts[-1]
+    if (len(parts) == 2 and _INITIALS.match(last) and not _INITIALS.match(parts[0])
+            and ("." in last or not name.isupper())):
+        return {"family": parts[0], "given": last}
+    start = len(parts) - 1
+    while start > 1 and parts[start - 1] in _PARTICLES:
+        start -= 1
+    return {"given": " ".join(parts[:start]), "family": " ".join(parts[start:])}
+
+
+_MISSING = {"na", "n/a", "nan", "none", "null"}
+
+
+def normalise_author_json(value):
+    """An author cell as a structured JSON list, whatever form it arrived in.
+
+    A JSON list is rewritten in the compact form without empty keys. A plain
+    "A; B; C" string (a sheet value, or display names) becomes a list too: a search
+    index that splits on commas would otherwise read the whole string as one name.
+    Anything else (no value, a missing-value marker) is returned unchanged.
+    """
+    if not isinstance(value, str):
+        return value
+    raw = value.strip()
+    if not raw or raw.lower() in _MISSING:
+        return value
+    if raw.startswith("["):
+        try:
+            items = json.loads(raw)
+        except ValueError:
+            return value
+        if isinstance(items, list) and all(isinstance(item, dict) for item in items):
+            return author_fields(items)["authors_json"] or value
+        return value
+    items = [_plain_author(part) for part in raw.split(";") if part.strip()]
+    return author_fields(items)["authors_json"] or value
 
 
 def crossref_fields(data):
@@ -132,7 +241,8 @@ def datacite_fields(data):
     creators = []
     for author in data.get("creators") or []:
         creators.append({"given": author.get("givenName"),
-                         "family": author.get("familyName"), "name": author.get("name")})
+                         "family": author.get("familyName"), "name": author.get("name"),
+                         "nameIdentifiers": author.get("nameIdentifiers")})
     container = data.get("container") or {}
     publisher = data.get("publisher")
     if isinstance(publisher, dict):
@@ -366,6 +476,24 @@ def fetch_unpaywall(doi, email):
     return {"oa_url": text(oa_url), "is_oa": result.get("is_oa") is True}
 
 
+_XLSX_ESCAPE = re.compile(r"_x([0-9A-Fa-f]{4})_")
+
+
+def decode_xlsx_escapes(value):
+    """Undo the escapes a workbook stores characters with: "_x000D_" is a carriage
+    return. Read raw, they reach the output as literal text (a BibTeX entry with
+    "_x000D_" at every line end)."""
+    if not isinstance(value, str) or "_x" not in value:
+        return value
+
+    def character(match):
+        code = int(match.group(1), 16)
+        # NUL and lone surrogates cannot be stored or encoded: keep those literal.
+        return match.group(0) if code == 0 or 0xD800 <= code <= 0xDFFF else chr(code)
+
+    return _XLSX_ESCAPE.sub(character, value)
+
+
 def _xlsx_rows(path):
     """Read the first worksheet without requiring an Excel runtime/dependency."""
     ns = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
@@ -399,7 +527,7 @@ def _xlsx_rows(path):
                     value = shared[int(value)]
                 elif cell.get("t") == "inlineStr":
                     value = "".join(t.text or "" for t in cell.findall("s:is//s:t", ns))
-                values[column - 1] = value
+                values[column - 1] = decode_xlsx_escapes(value)
             if values:
                 rows.append([values.get(index, "") for index in range(max(values) + 1)])
     if not rows:
