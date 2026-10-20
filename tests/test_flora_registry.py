@@ -246,7 +246,8 @@ def test_grid_columns_are_a_subset_of_what_the_transform_produces():
                    + transform_sources.ENRICHMENT_COLUMNS
                    + transform_sources.PROVENANCE_COLUMNS
                    + ["export_id"]  # attached from the publication registry
-                   + ["edited_fields"])  # added by flora_edits.apply()
+                   + ["edited_fields"]  # added by flora_edits.apply()
+                   + ["outcome_conflict"])  # added by flora_service from the merge log
     assert not set(flora_service.LIST_COLUMNS) - produced
 
 

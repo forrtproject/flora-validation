@@ -413,13 +413,22 @@ def test_disagreeing_mixable_outcomes_become_mixed():
     assert len(conflicts) == 1
 
 
-def test_an_unmixable_clash_is_retained_for_validation():
-    """Kept as "A || B" so validate_flora reports it — merging it into something
-    valid would hide a source-data mistake."""
-    frame = _pair_frame(outcome=["successful", "computationally reproducible"],
-                        source=["replications", "COS"])
-    out, _ = pdd.merge_doi_pair_dups(frame, verbose=False)
-    assert pdd.OUTCOME_CLASH_SEP in out["outcome"].iloc[0]
+def test_an_unmixable_clash_publishes_the_kept_records_outcome_and_asks_for_a_decision():
+    """"failed || uninformative" is no outcome: an API outcome filter never matches
+    it. The record that keeps the id decides until a person does, and the clash is
+    logged as needing that decision."""
+    frame = _pair_frame(outcome=["failed", "uninformative"], source=["replications", "COS"])
+    out, conflicts = pdd.merge_doi_pair_dups(frame, verbose=False)
+    assert out["outcome"].iloc[0] == "failed"
+    assert pdd.OUTCOME_CLASH_SEP not in out["outcome"].iloc[0]
+    assert conflicts.iloc[0]["resolved_by"] == pdd.NEEDS_DECISION
+    assert conflicts.iloc[0]["outcomes"] == "failed | uninformative"
+
+
+def test_a_clash_the_rules_settle_needs_no_decision():
+    frame = _pair_frame(outcome=["successful", "failed"], source=["replications", "COS"])
+    _, conflicts = pdd.merge_doi_pair_dups(frame, verbose=False)
+    assert conflicts.iloc[0]["resolved_by"] == "merge rules"
 
 
 def test_absorbed_record_ids_survive_the_merge():
@@ -521,11 +530,12 @@ def test_a_field_the_website_left_blank_falls_back_to_what_we_have():
     assert out.iloc[0]["outcome_quote"] == "sheet quote"
 
 
-def test_without_a_website_record_the_merge_rules_are_unchanged():
+def test_without_a_website_record_the_kept_record_decides_until_a_person_does():
     frame = _website_and_sheet(source=["reproductions", "reproductions"])
     out, conflicts = pdd.merge_doi_pair_dups(frame, verbose=False)
-    assert pdd.OUTCOME_CLASH_SEP in out.iloc[0]["outcome"]
-    assert conflicts.iloc[0]["resolved_by"] == "merge rules"
+    assert pdd.OUTCOME_CLASH_SEP not in out.iloc[0]["outcome"]
+    assert out.iloc[0]["outcome"] == frame.iloc[0]["outcome"]
+    assert conflicts.iloc[0]["resolved_by"] == pdd.NEEDS_DECISION
 
 
 def test_rows_a_reviewer_ruled_distinct_are_never_merged():

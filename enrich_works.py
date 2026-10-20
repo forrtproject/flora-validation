@@ -527,6 +527,11 @@ def load_metadata(cur, include_seed: bool = True) -> dict:
         combined[key] = merged
     for key, row in references.load_manual_references().items():
         combined[key] = references.merge_present(combined.get(key, {}), row)
+    # A reference cached as JSON (a CSL record the provider sent for an APA request)
+    # is rebuilt from the work's own fields, as a missing one is.
+    for key, row in combined.items():
+        if references.is_structured_text(row.get("apa_ref")):
+            combined[key] = references.synthesise_references({**row, "apa_ref": None}, key)
     return combined
 
 

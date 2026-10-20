@@ -598,6 +598,36 @@ def restore(cur, record: dict, derived: dict, change_id: int, expected_version,
     return _summary(cur, export_id, result, in_force)
 
 
+# What a confirmation pins: the values a record's outcome is.
+CONFIRMED_FIELDS = {"replication": ("outcome",),
+                    "reproduction": ("outcome_computation", "outcome_robustness")}
+
+
+def confirm_outcome(cur, record: dict, derived: dict, expected_version, admin: dict,
+                    note: str = "") -> dict:
+    """Record that the outcome shown is right, as a change of its own.
+
+    For an outcome its duplicate source rows disagreed on, where the build had to
+    pick one (the FLoRA tab's Conflicts): a save that changes nothing records
+    nothing, so confirming stores the shown values (a reproduction's two axes) as
+    corrections. That is a person's decision from then on, like any correction: it
+    holds over later builds and can be restored away like any other change.
+    """
+    fields = CONFIRMED_FIELDS.get(record.get("type"))
+    if not fields:
+        raise ValueError(f"A {record.get('type') or 'record'} has no outcome to confirm")
+    note = _text(note)
+    if note and len(note) > NOTE_LIMIT:
+        raise ValueError(f"The note is longer than {NOTE_LIMIT} characters")
+    export_id, in_force = _guard(cur, record, expected_version)
+    corrections = dict(in_force)
+    for field in fields:
+        corrections.setdefault(field, _text(record.get(field)))
+    result = _append(cur, export_id, record, derived, in_force, corrections, "confirm",
+                     admin, note=note)
+    return _summary(cur, export_id, result, in_force)
+
+
 def _summary(cur, export_id, result, in_force) -> dict:
     """What the change did to the corrections: set or changed, or dropped."""
     corrections = result["corrections"]

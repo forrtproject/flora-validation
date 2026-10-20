@@ -8,6 +8,7 @@ from contextlib import contextmanager
 import json
 import logging
 import os
+import hashlib
 import re
 from threading import Lock
 
@@ -89,10 +90,14 @@ class DatasetCache:
                     if doi not in records:
                         continue
                     prefix = str(row.get(f"doi_{side}_hash") or records[doi].get("doi_hash") or "").strip().lower()[:3]
-                    if re.fullmatch(r"[0-9a-f]{3}", prefix):
-                        bucket = prefixes.setdefault(prefix, [])
-                        if doi not in bucket:
-                            bucket.append(doi)
+                    # Also the bucket of the decoded DOI: a client hashing the real
+                    # "<…>" form of a DOI published as "%3c…%3e" must find it too.
+                    decoded = hashlib.md5(doi.encode("utf-8")).hexdigest()[:3]
+                    for candidate in dict.fromkeys((prefix, decoded)):
+                        if re.fullmatch(r"[0-9a-f]{3}", candidate):
+                            bucket = prefixes.setdefault(candidate, [])
+                            if doi not in bucket:
+                                bucket.append(doi)
             self._key, self._records, self._prefixes = key, records, prefixes
             return records, prefixes
 
@@ -225,8 +230,10 @@ def create_router(database=readonly_database):
                 if any(not re.fullmatch(r"[0-9a-f]{3}", value) for value in values):
                     raise ValueError("Each DOI hash prefix must contain exactly three hexadecimal characters")
             elif kind == "original-lookup":
-                values = [flora_api_records.normalize_doi(value) for value in _lookup_values(body, query, "dois")]
-                values = list(dict.fromkeys(value for value in values if value))
+                # Answered under the DOI as the client sent it, matched in canonical form.
+                values = [(flora_api_records.published_doi(value), flora_api_records.normalize_doi(value))
+                          for value in _lookup_values(body, query, "dois")]
+                values = list(dict.fromkeys(value for value in values if value[1]))
                 if not values:
                     raise ValueError("No DOIs provided")
             elif kind == "id-lookup":
@@ -246,10 +253,10 @@ def create_router(database=readonly_database):
                 return _lookup_hashes(cur, list(dict.fromkeys(values)))
             records, prefixes = cache.load(cur)
         if kind == "dois":
-            return {"total": len(records), "dois": list(records)}
+            return {"total": len(records), "dois": [record["doi"] for record in records.values()]}
         if kind == "original-lookup":
-            return {"results": {value: flora_api_records.serialize_record(records[value], include_derived)
-                                if value in records else None for value in values}}
+            return {"results": {shown: flora_api_records.serialize_record(records[key], include_derived)
+                                if key in records else None for shown, key in values}}
         if kind == "prefix-lookup":
             selected = set(doi for value in values for doi in prefixes.get(value, []))
             if len(selected) > 5000:

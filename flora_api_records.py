@@ -12,6 +12,7 @@ import html
 import json
 import math
 import re
+import urllib.parse
 
 
 BIB_FIELDS = ("title", "authors", "journal", "year", "volume", "issue", "pages",
@@ -58,10 +59,25 @@ def _text(value):
     return "" if value is None else str(value).strip()
 
 
+_DOI_URL = re.compile(r"^(?:(?:https?://)?(?:dx\.)?doi\.org/|doi:\s*)")
+
+
+def published_doi(value):
+    """A DOI as shown and answered under: lower-case, without a resolver prefix, and
+    otherwise as given ("%3c" stays "%3c"), so a client finds its answer under the
+    string it sent and the DOI list reads as the published dataset does."""
+    return _DOI_URL.sub("", _text(value).lower()).strip()
+
+
 def normalize_doi(value):
-    """Canonical DOI key; blank/missing values never become paper records."""
-    value = _text(value).lower()
-    return re.sub(r"^(?:(?:https?://)?(?:dx\.)?doi\.org/|doi:\s*)", "", value).strip()
+    """Canonical DOI key, for matching; blank/missing values never become paper
+    records. Percent-escapes are decoded first: a SICI DOI published as
+    "…11:2%3c107::…%3e…" (as fred-data has it) is the DOI "…11:2<107::…>…", and a
+    lookup by either finds it. Decoded before lower-casing, so "%41" reads as "a"."""
+    value = _text(value)
+    if "%" in value:
+        value = urllib.parse.unquote(value)
+    return _DOI_URL.sub("", value.lower()).strip()
 
 
 def author_names(value):
@@ -103,7 +119,7 @@ def _citation_fields(row, side):
 
 
 def _entry(row, side):
-    doi = normalize_doi(row.get(f"doi_{side}"))
+    doi = published_doi(row.get(f"doi_{side}"))
     short_hash = _text(row.get(f"doi_{side}_hash")).lower()
     out = {
         "id": _jsonable(row.get("id")),
@@ -162,13 +178,13 @@ def build_records(rows):
                            or rep_type.startswith("computational reproduction"))
         role = "reproduction" if is_reproduction else "replication"
         if doi_o:
-            record_o = records.setdefault(doi_o, _new_record(doi_o))
+            record_o = records.setdefault(normalize_doi(doi_o), _new_record(doi_o))
             if "original" not in record_o["types"]:
                 record_o["types"].append("original")
             _merge(record_o, original, _citation_fields(row, "o"))
             record_o["record"][role + "s"].append(replication)
         if doi_r:
-            record_r = records.setdefault(doi_r, _new_record(doi_r))
+            record_r = records.setdefault(normalize_doi(doi_r), _new_record(doi_r))
             if role not in record_r["types"]:
                 record_r["types"].append(role)
             _merge(record_r, replication, _citation_fields(row, "r"))

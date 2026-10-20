@@ -53,6 +53,8 @@ LIST_COLUMNS = [
     "outcome",
     # Which fields an editor corrected on this record, if any (flora_edits.py).
     "edited_fields",
+    # Outcomes its merged source rows disagree on, until a correction settles it.
+    "outcome_conflict",
 ]
 
 SORT_COLUMNS = {
@@ -178,6 +180,7 @@ def _current(cur) -> "tuple[pd.DataFrame, list]":
     frame = flora_registry.attach_ids(cur, frame)
     frame = _attach_merged_ids(cur, frame)
     frame = flora_edits.apply(cur, frame)
+    frame = _attach_outcome_conflicts(frame)
     # Pinned on the cached frame too, so a caller holding the frame reads the log of
     # that same build — not whatever a concurrent build left in the cache since.
     frame.attrs["preprint_dedup_log"] = dedup_log
@@ -197,6 +200,32 @@ def _current(cur) -> "tuple[pd.DataFrame, list]":
 def dataset(cur) -> pd.DataFrame:
     """The prepared FLoRA dataset with flora_id attached. Read-only."""
     return _current(cur)[0]
+
+
+# The corrections that settle an outcome clash: a replication's outcome, or either
+# axis a reproduction's outcome is derived from (a reproduction's editor offers no
+# `outcome` field, so its edited_fields never name one). Confirm outcome stores the
+# shown values as such corrections (flora_edits.confirm_outcome).
+_OUTCOME_FIELDS = {"outcome", "outcome_computation", "outcome_robustness"}
+
+
+def _attach_outcome_conflicts(frame):
+    """`outcome_conflict`: the outcomes its duplicate source rows gave ("failed |
+    uninformative") where no rule settled them (preprint_dedup.NEEDS_DECISION). The
+    build marks the record itself, so a DOI rewritten later, a placeholder DOI or a
+    neighbour ruled distinct cannot move the mark. The Conflicts filter lists these
+    until the outcome is corrected or confirmed in this tab."""
+    frame = frame.copy()
+    column = preprint_dedup.CONFLICT_COLUMN
+    if column not in frame.columns:
+        frame[column] = None
+        return frame
+    edited = (frame["edited_fields"] if "edited_fields" in frame.columns
+              else pd.Series(None, index=frame.index))
+    frame[column] = [
+        None if pd.isna(mark) or _OUTCOME_FIELDS & set(str(fields or "").split()) else mark
+        for mark, fields in zip(frame[column], edited)]
+    return frame
 
 
 def _attach_merged_ids(cur, frame):
@@ -281,6 +310,11 @@ def _apply_filters(frame: pd.DataFrame, filters: dict) -> pd.DataFrame:
     if filters.get("unregistered"):
         out = out[out["flora_id"].isna()]
 
+    # Records whose merged source rows disagree on the outcome: a person decides.
+    if filters.get("conflict"):
+        out = (out[out["outcome_conflict"].notna()] if "outcome_conflict" in out.columns
+               else out.iloc[0:0])
+
     # Records an editor has corrected, to review what was changed.
     if filters.get("edited"):
         out = (out[out["edited_fields"].notna()] if "edited_fields" in out.columns
@@ -350,6 +384,8 @@ def counts(frame: pd.DataFrame) -> dict:
         "untitled": len(frame) - len(transform_sources.drop_untitled(frame)),
         "edited": (int(frame["edited_fields"].notna().sum())
                    if "edited_fields" in frame.columns else 0),
+        "conflicts": (int(frame["outcome_conflict"].notna().sum())
+                      if "outcome_conflict" in frame.columns else 0),
         "sources": sorted(frame["source"].dropna().unique().tolist()),
         "outcomes": sorted(frame["outcome"].dropna().unique().tolist()),
     }
@@ -430,6 +466,12 @@ def restore_record(cur, flora_id: str, change_id: int, version: int,
     derived before any change (change_id 0)."""
     return _changed(cur, flora_id, lambda record, derived: flora_edits.restore(
         cur, record, derived, change_id, version, admin, note))
+
+
+def confirm_outcome(cur, flora_id: str, version: int, admin: dict, note: str = "") -> dict:
+    """Settle an outcome clash by confirming the outcome shown (flora_edits)."""
+    return _changed(cur, flora_id, lambda record, derived: flora_edits.confirm_outcome(
+        cur, record, derived, version, admin, note))
 
 
 def merged_sources(cur, flora_id: str) -> list:

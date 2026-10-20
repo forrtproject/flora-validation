@@ -1699,7 +1699,7 @@ CREATE TABLE IF NOT EXISTS flora_record_changes (
     changed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     admin_id      INTEGER,
     admin_handle  TEXT        NOT NULL,
-    action        TEXT        NOT NULL CHECK (action IN ('edit', 'restore')),
+    action        TEXT        NOT NULL CHECK (action IN ('edit', 'restore', 'confirm')),
     note          TEXT,
     changes       JSONB       NOT NULL DEFAULT '{}'::jsonb,
     corrections   JSONB       NOT NULL DEFAULT '{}'::jsonb,
@@ -1710,6 +1710,19 @@ CREATE TABLE IF NOT EXISTS flora_record_changes (
 -- before it get the column here.
 ALTER TABLE flora_record_changes
     ADD COLUMN IF NOT EXISTS notes JSONB NOT NULL DEFAULT '{}'::jsonb;
+-- 'confirm' came later too: an editor settling an outcome clash by confirming the
+-- outcome shown (flora_edits.confirm_outcome). Replaced only while it lacks it, so
+-- a restart does not lock and re-check the table every time.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint
+               WHERE conname = 'flora_record_changes_action_check'
+                 AND pg_get_constraintdef(oid) NOT LIKE '%confirm%') THEN
+        ALTER TABLE flora_record_changes DROP CONSTRAINT flora_record_changes_action_check;
+        ALTER TABLE flora_record_changes ADD CONSTRAINT flora_record_changes_action_check
+            CHECK (action IN ('edit', 'restore', 'confirm'));
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_flora_record_changes_record
     ON flora_record_changes (export_id, change_id DESC);
 

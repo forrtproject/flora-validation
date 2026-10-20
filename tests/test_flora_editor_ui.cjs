@@ -18,6 +18,7 @@ const SOURCE_ID = "6f1c2d4e-0000-4000-8000-000000000001";
   const errors = [];
   const patches = [];
   const restores = [];
+  const confirmations = [];
   let patchStatus = 200;
   let patchDelay = 0;
   const editing = {
@@ -60,8 +61,10 @@ const SOURCE_ID = "6f1c2d4e-0000-4000-8000-000000000001";
     source_record_id: SOURCE_ID, type: "replication", source: "replications",
     title_o: "A corrected title", doi_o: "10.1/a", outcome: "successful", oa_work_id_o: "W2168190474",
     edited_fields: "title_o", merged_sources: [], editing,
+    outcome_conflict: "successful | uninformative",
   });
   page.on("pageerror", error => errors.push(error.message));
+  const gridQueries = [];
   await page.route("**/*", async route => {
     const request = route.request();
     const url = new URL(request.url());
@@ -70,6 +73,11 @@ const SOURCE_ID = "6f1c2d4e-0000-4000-8000-000000000001";
     if (files[url.pathname]) {
       const type = url.pathname.endsWith(".js") ? "text/javascript" : url.pathname.endsWith(".css") ? "text/css" : "text/html";
       return route.fulfill({ status: 200, contentType: type, body: await fs.readFile(path.join(root, "docs", files[url.pathname])) });
+    }
+    if (url.pathname === "/api/admin/flora/REPL-000001/confirm-outcome") {
+      confirmations.push(JSON.parse(request.postData()));
+      return route.fulfill({ json: { export_id: "FLORA-000001", change_id: 5, changed_fields: ["outcome"],
+                                     reverted_fields: [], version: 5, published: true } });
     }
     if (url.pathname === "/api/admin/flora/REPL-000001/restore") {
       restores.push(JSON.parse(request.postData()));
@@ -88,12 +96,15 @@ const SOURCE_ID = "6f1c2d4e-0000-4000-8000-000000000001";
       return route.fulfill({ json: record() });
     }
     if (url.pathname === "/api/admin/flora") {
+      gridQueries.push(url.search);
       return route.fulfill({ json: {
         records: [{ flora_id: "REPL-000001", export_id: "FLORA-000001", source_display_id: "REPL-000001",
                     type: "replication", source: "replications", doi_o: "10.1/a", ref_o: "Ref O",
-                    doi_r: "10.1/b", ref_r: "Ref R", outcome: "successful", edited_fields: "title_o outcome" }],
+                    doi_r: "10.1/b", ref_r: "Ref R", outcome: "successful", edited_fields: "title_o outcome",
+                    outcome_conflict: "failed | uninformative" }],
         total: 1, page: 1, per_page: 50,
-        counts: { all_records: 1, replications: 1, reproductions: 0, edited: 1, sources: [], outcomes: [] } } });
+        counts: { all_records: 1, replications: 1, reproductions: 0, edited: 1, conflicts: 1,
+                  sources: [], outcomes: [] } } });
     }
     if (url.pathname === "/api/admin/source-records/" + SOURCE_ID) {
       return route.fulfill({ json: {
@@ -123,6 +134,18 @@ const SOURCE_ID = "6f1c2d4e-0000-4000-8000-000000000001";
     await page.locator("#flora-table-body .flora-edited-badge").waitFor();
     assert.match(await page.locator("#flora-table-body .flora-edited-badge").getAttribute("title"), /title_o, outcome/);
     assert.equal(await page.locator("#ffc-edited").innerText(), "1");
+
+    // An outcome its duplicate source entries disagree on is marked, counted and
+    // filterable, so a person can settle it with a correction.
+    const conflict = page.locator("#flora-table-body .src-dup-badge-warn", { hasText: "conflict" });
+    assert.match(await conflict.getAttribute("title"), /failed \| uninformative/);
+    assert.equal(await page.locator("#ffc-conflict").innerText(), "1");
+    await page.locator('#admin-tab-flora .admin-filter-btn[data-filter="conflict"]').click();
+    await page.waitForFunction(() => document.querySelector('#admin-tab-flora .admin-filter-btn[data-filter="conflict"]').classList.contains("active"));
+    await new Promise(resolve => setTimeout(resolve, 300));
+    assert(gridQueries.some(query => query.includes("conflict=true")), "the filter asks the server for conflicts");
+    await page.locator('#admin-tab-flora .admin-filter-btn[data-filter="all"]').click();
+    await page.locator("#flora-table-body .flora-view-btn").waitFor();
 
     // The editor: editable fields as controls, identity as read-only context.
     await page.locator(".flora-view-btn").click();
@@ -259,6 +282,23 @@ const SOURCE_ID = "6f1c2d4e-0000-4000-8000-000000000001";
     await page.locator("#flora-detail-modal:not(.hidden) #flora-save-btn").waitFor();
     assert.equal(await page.locator("#src-detail-modal").isHidden(), true);
     assert.equal(await page.locator("#admin-tab-flora").isVisible(), true);
+
+    // An outcome its duplicates disagree on: confirming the one shown settles it,
+    // with an optional note, and nothing has to be typed into the outcome field.
+    const conflictBox = page.locator("#flora-detail-body .flora-conflict");
+    assert.match(await conflictBox.innerText(), /disagree on the outcome: successful \| uninformative/);
+    assert.equal(await page.locator('#flora-detail-body [data-field="outcome_conflict"]').count(), 0);
+    await page.locator("#flora-confirm-note").fill("Checked the report");
+    await page.locator("#flora-confirm-btn").click();
+    await page.waitForFunction(() => document.querySelector("#flora-save-msg")
+      && /Outcome confirmed/.test(document.querySelector("#flora-save-bar, .src-save-bar").innerText));
+    assert.deepEqual(confirmations, [{ version: 3, note: "Checked the report" }]);
+    // In the change log, a confirmation reads as one, with its note.
+    const logHtml = await page.evaluate(() => floraChangeLog({ fields: [], history: [{
+      change_id: 5, action: "confirm", note: "Checked the report", admin_handle: "luke",
+      changed_at: "2026-10-20T10:00:00Z", changes: { outcome: ["failed", "failed"] },
+      corrections: { outcome: "failed" }, notes: {} }] }));
+    assert.match(logHtml, /Confirmed the outcome<div class="flora-change-note">Checked the report/);
 
     assert.deepEqual(errors, []);
     console.log("FLoRA editor UI checks passed");

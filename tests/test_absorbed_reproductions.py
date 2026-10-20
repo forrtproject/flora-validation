@@ -124,8 +124,9 @@ def test_an_absorbed_reproduction_is_published_on_its_own_at_the_next_run(
     monkeypatch.setattr(preprint_dedup, "merge_doi_pair_dups", type_blind)
     _prepare(tmp_path, "before")
     before = _published(local_database)
-    assert [(r["type"], r["outcome"]) for r in before] == [
-        ("replication", "failed || computational issues, robustness challenges")]
+    # One record only: the reproduction is absorbed. Its outcome no longer shows as
+    # "failed || …" (an outcome clash publishes the kept record's outcome).
+    assert [(r["type"], r["outcome"]) for r in before] == [("replication", "failed")]
 
     monkeypatch.setattr(preprint_dedup, "merge_doi_pair_dups", typed_merge)
     _prepare(tmp_path, "after")

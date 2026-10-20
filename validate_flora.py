@@ -184,6 +184,21 @@ def _check_outcomes(df):
     return issues
 
 
+TEXT_COLUMNS = ("title_o", "title_r", "apa_ref_o", "apa_ref_r", "journal_o", "journal_r")
+
+
+def _check_structured_text(df):
+    """A text cell holding JSON: an API client parsing it gets an object, not text."""
+    from bibliographic_helpers import is_structured_text
+    issues = []
+    for _, row in df.iterrows():
+        for column in TEXT_COLUMNS:
+            value = _text(row.get(column))
+            if is_structured_text(value):
+                issues.append(f"{row_id(row)}: {column} holds JSON ({value[:40]}…)")
+    return issues
+
+
 def _check_types(df):
     return [f"{row_id(r)}: type='{_text(r.get('type'))}'"
             for _, r in df.iterrows() if r.get("type") not in VALID_TYPES]
@@ -275,6 +290,8 @@ CHECKS = [
      "A url column holds something that is not a link."),
     ("Outcome values valid", "Invalid outcome values", _check_outcomes,
      "An outcome outside the allowed set for the row's type, or missing."),
+    ("Text fields hold text", "JSON in a text field", _check_structured_text,
+     "A title, journal or APA reference holds a JSON record instead of text."),
     ("Type values valid", "Invalid type values", _check_types,
      "type must be 'replication' or 'reproduction'."),
     ("Source values valid", "Invalid source values", _check_sources,

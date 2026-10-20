@@ -9010,6 +9010,7 @@ function floraQueryParams() {
   const p = { page: _floraPage, per_page: FLORA_PER_PAGE };
   if (_floraFilter === "replication" || _floraFilter === "reproduction") p.type = _floraFilter;
   if (_floraFilter === "edited") p.edited = "true";
+  if (_floraFilter === "conflict") p.conflict = "true";
   if (_floraSource)  p.source  = _floraSource;
   if (_floraOutcome) p.outcome = _floraOutcome;
   if (_floraSearch)  p.search  = _floraSearch;
@@ -9024,7 +9025,12 @@ function floraQueryString(extra) {
 /** Replications carry `outcome`; reproductions carry the two axes joined into one
  *  derived string by the transform. One column renders both. */
 function floraOutcomeCell(r) {
-  return escapeHtml(r.outcome || "—");
+  const outcome = escapeHtml(r.outcome || "—");
+  if (!r.outcome_conflict) return outcome;
+  return outcome + ' <span class="src-dup-badge src-dup-badge-warn"' +
+    tip("Its duplicate source entries disagree: " + r.outcome_conflict +
+        ". The first entry's outcome is published until you correct or confirm it in the record.") +
+    ">conflict</span>";
 }
 
 function floraIdentifierCell(doi, url, workId) {
@@ -9067,6 +9073,7 @@ function renderFloraRecords(data) {
   set("#ffc-repl", counts.replications);
   set("#ffc-repro", counts.reproductions);
   set("#ffc-edited", counts.edited);
+  set("#ffc-conflict", counts.conflicts);
   fillFloraSelects(counts);
   setFloraDedupCount(counts.preprint_pending);
 
@@ -9287,7 +9294,7 @@ let _floraOpenSeq = 0;
 // Shown as context, never edited: identity, provenance and values the build
 // derives from other fields (the DOI hashes, work ids, author overlap).
 const FLORA_DETAIL_SKIP = new Set(["flora_id", "source_display_id", "source_record_id",
-  "merged_display_ids", "merged_sources", "editing", "edited_fields"]);
+  "merged_display_ids", "merged_sources", "editing", "edited_fields", "outcome_conflict"]);
 
 /** Open (or reload) the editor. `notice` is shown in the save bar once it renders:
  *  the outcome of the save or restore that caused the reload. */
@@ -9404,10 +9411,13 @@ function floraChangeLog(editing) {
         (field in after ? "" : ' <span class="src-dim2">(derived value)</span>') +
         (note ? '<div class="flora-change-note">' + escapeHtml(note) + "</div>" : "") + "</div>";
     }).join("") || '<span class="src-dim2">no value moved</span>';
+    const note = c.note ? '<div class="flora-change-note">' + escapeHtml(c.note) + "</div>" : "";
     const kind = c.action === "restore"
       ? '<div class="flora-change-kind">' + (c.restored_from ? "Restored to #" + c.restored_from : "Restored the original") +
-        (c.note ? '<div class="flora-change-note">' + escapeHtml(c.note) + "</div>" : "") + "</div>"
-      : (c.note ? '<div class="flora-change-note">' + escapeHtml(c.note) + "</div>" : "");
+        note + "</div>"
+      : c.action === "confirm"
+      ? '<div class="flora-change-kind">Confirmed the outcome' + note + "</div>"
+      : note;
     const action = i === 0
       ? '<span class="flora-change-current">Current</span>'
       : '<button type="button" class="ghost-btn flora-restore-btn" data-change-id="' + c.change_id +
@@ -9492,6 +9502,7 @@ function renderFloraRecord(rec) {
 
   $("#flora-detail-body").innerHTML =
     provenance +
+    floraConflictBox(rec) +
     '<p class="flora-edit-note">Change a field to add a note for it. Saving logs the changes and notes under ' +
       "Changes and updates the FLoRA table and the public API at once. Source records stay as imported; " +
       "each pipeline run re-applies the changes. A corrected DOI or URL also fills in its title, authors " +
@@ -9506,6 +9517,45 @@ function renderFloraRecord(rec) {
       '<span id="flora-save-msg" class="src-dim2"></span>' +
       '<button id="flora-save-btn" class="btn-primary" type="button">Save corrections</button>' +
     "</div>";
+}
+
+/** An outcome its duplicate source entries disagree on: correct it below, or
+ *  confirm the one shown. Either settles it and takes it off the Conflicts list. */
+function floraConflictBox(rec) {
+  if (!rec.outcome_conflict) return "";
+  const what = rec.type === "reproduction" ? "axes" : "outcome";
+  return '<div class="src-dup-warn flora-conflict">' +
+    "<b>Its duplicate source entries disagree on the outcome:</b> " + escapeHtml(rec.outcome_conflict) +
+    ". The first entry's " + what + " is published. Correct it below, or confirm it if it is right." +
+    '<div class="flora-conflict-actions">' +
+      '<input id="flora-confirm-note" class="src-input" type="text" maxlength="500" ' +
+        'placeholder="Why it stands (optional)" aria-label="Note for the confirmation">' +
+      '<button id="flora-confirm-btn" class="ghost-btn" type="button">Confirm outcome</button>' +
+    "</div></div>";
+}
+
+async function confirmFloraOutcome() {
+  const rec = _floraCurrent;
+  if (!rec || !rec.editing) return;
+  const btn = $("#flora-confirm-btn");
+  const msg = $("#flora-save-msg");
+  btn.disabled = true;
+  msg.textContent = "Confirming…";
+  const seq = _floraOpenSeq;
+  try {
+    const res = await adminApi("/flora/" + encodeURIComponent(rec.flora_id) + "/confirm-outcome", "POST", {
+      version: rec.editing.version, note: ($("#flora-confirm-note") || {}).value || "",
+    });
+    const outcome = res.change_id
+      ? "Outcome confirmed. " + floraPublishedNote(res)
+      : "Nothing to confirm: the outcome is already a correction.";
+    showToast(outcome);
+    fetchFloraRecords();
+    if (seq === _floraOpenSeq) await openFloraRecord(rec.flora_id, floraNotice(outcome, res.warnings));
+  } catch (err) {
+    btn.disabled = false;
+    floraChangeFailed(err, rec, msg);
+  }
 }
 
 /** Only what the editor changed: the server diffs again, but sending untouched
@@ -9616,6 +9666,7 @@ async function restoreFloraRecord(changeId) {
 
 $("#flora-detail-body")?.addEventListener("click", (e) => {
   if (e.target.closest("#flora-save-btn")) { saveFloraRecord(); return; }
+  if (e.target.closest("#flora-confirm-btn")) { confirmFloraOutcome(); return; }
   const restore = e.target.closest(".flora-restore-btn");
   if (restore) { restoreFloraRecord(Number(restore.dataset.changeId)); return; }
   const revert = e.target.closest(".flora-revert-btn");
