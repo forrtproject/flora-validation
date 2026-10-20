@@ -29,7 +29,12 @@ at most 200 values, with at most 2,048 characters per value. A prefix request
 matching more than 5,000 distinct DOI records is rejected; request fewer prefixes.
 
 Despite its legacy name, `/v1/original-lookup` accepts a DOI in any role:
-original, replication, or reproduction. DOI prefixes and case are normalized.
+original, replication, or reproduction. DOI prefixes, case and percent-escapes
+are normalized: a SICI DOI published as `…11:2%3c107::…%3e…` (fred-data's form) is
+found by its real `…11:2<107::…>…` form too, and a prefix lookup finds it under the
+hash of either form. Answers keep the client's form: an original lookup answers under
+the DOI as sent, and records, the DOI list and search results show each DOI as
+published.
 Unknown DOIs and full ID hashes return `null` under their requested normalized
 key. An unknown three-character DOI prefix returns an empty array.
 

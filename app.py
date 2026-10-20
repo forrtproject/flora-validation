@@ -5920,20 +5920,22 @@ def admin_source_sync_status(admin: dict = Depends(current_admin)):
 
 def _flora_filters(type: str = "", source: str = "", outcome: str = "",
                    search: str = "", unregistered: bool = False,
-                   edited: bool = False) -> dict:
+                   edited: bool = False, conflict: bool = False) -> dict:
     return {"type": type, "source": source, "outcome": outcome,
-            "search": search, "unregistered": unregistered, "edited": edited}
+            "search": search, "unregistered": unregistered, "edited": edited,
+            "conflict": conflict}
 
 
 @app.get("/api/admin/flora")
 def admin_flora_records(
     type: str = "", source: str = "", outcome: str = "",
     search: str = "", unregistered: bool = False, edited: bool = False,
+    conflict: bool = False,
     sort: str = "", dir: str = "asc",
     page: int = 1, per_page: int = 50,
     admin: dict = Depends(current_admin),
 ):
-    filters = _flora_filters(type, source, outcome, search, unregistered, edited)
+    filters = _flora_filters(type, source, outcome, search, unregistered, edited, conflict)
     with db() as cur:
         return flora_service.list_records(
             cur, filters, sort=sort, direction=dir, page=page, per_page=per_page
@@ -5951,6 +5953,7 @@ def admin_flora_stats(admin: dict = Depends(current_admin)):
 def admin_flora_export(
     type: str = "", source: str = "", outcome: str = "",
     search: str = "", unregistered: bool = False, edited: bool = False,
+    conflict: bool = False,
     view: str = "",
     admin: dict = Depends(current_admin),
 ):
@@ -5964,7 +5967,7 @@ def admin_flora_export(
     Retained per-run artifacts have their own endpoint so later edits cannot
     change an earlier run's downloaded file.
     """
-    filters = _flora_filters(type, source, outcome, search, unregistered, edited)
+    filters = _flora_filters(type, source, outcome, search, unregistered, edited, conflict)
     try:
         with db() as cur:
             if view == "tab" or any(filters.values()):
@@ -6101,6 +6104,20 @@ def admin_flora_record_restore(flora_id: str, req: FloraRecordRestore,
     restore is logged as a change itself, so it can be undone the same way."""
     return _flora_change(lambda cur: flora_service.restore_record(
         cur, flora_id, req.change_id, req.version, admin, req.note))
+
+
+class FloraOutcomeConfirm(BaseModel):
+    version: int
+    note: str = Field("", max_length=500)
+
+
+@app.post("/api/admin/flora/{flora_id}/confirm-outcome")
+def admin_flora_confirm_outcome(flora_id: str, req: FloraOutcomeConfirm,
+                                admin: dict = Depends(current_admin)):
+    """Confirm that the outcome shown is right: settles a clash between duplicate
+    source rows (the FLoRA tab's Conflicts) as a logged change, with an optional note."""
+    return _flora_change(lambda cur: flora_service.confirm_outcome(
+        cur, flora_id, req.version, admin, req.note))
 
 
 # ---------------------------------------------------------------------------

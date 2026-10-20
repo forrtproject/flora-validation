@@ -6,7 +6,12 @@ __pycache__
 *.pyc
 node_modules
 tests
-cache
+# Local caches stay out, but not the one tracked file the pipeline reads: without
+# confirmed_preprint_duplicates.csv a website run builds a different dataset from
+# the nightly job's (other duplicate merges, other canonical DOIs, records retired
+# and restored by turns).
+cache/*
+!cache/confirmed_preprint_duplicates.csv
 output
 logs
 docs/superpowers

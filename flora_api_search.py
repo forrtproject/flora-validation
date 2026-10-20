@@ -226,7 +226,8 @@ def search(records: dict, params: dict, include_derived=True) -> dict:
     total = len(ordered)
     results = {}
     for doi in ordered[offset:offset + limit]:
-        results[doi] = {**serialize_record(records[doi], include_derived=include_derived),
+        # Keyed by the DOI as published, like every other answer of the API.
+        results[records[doi]["doi"]] = {**serialize_record(records[doi], include_derived=include_derived),
                         "score": round(matches[doi], 6)}
     return {"query": query, "total": total, "offset": offset, "limit": limit,
             "hasMore": offset + limit < total, "results": results}

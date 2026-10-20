@@ -6287,6 +6287,14 @@ body.has-maint-banner #admin-screen {
   font-size: 0.85rem;
   margin-bottom: 1rem;
 }
+/* The FLoRA editor's outcome clash: a note and Confirm outcome under the message. */
+.flora-conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.flora-conflict-actions .src-input { flex: 1 1 14rem; min-width: 0; }
 
 .src-group { margin-bottom: 1.4rem; }
 .src-group h4 {

@@ -697,8 +697,19 @@ number R wrote into that file.
 
 `merge_doi_pair_dups()` is the piece our dedup previously lacked. Step 5 *drops* a
 colliding row; this *combines* them — study numbers joined with `; `, quotes with
-` || `, `COS` preferred as the source, and disagreeing outcomes collapsed to `mixed`
-or, when they cannot be mixed, retained as `A || B` so `validate_flora` reports them.
+` || `, `COS` preferred as the source, and disagreeing outcomes collapsed to `mixed`.
+Outcomes that cannot be mixed (uninformative, statistically successful but flawed)
+never publish as `A || B`, which no consumer can filter or tally: the record that
+keeps the id (the group's first row) supplies the outcome, and the clash is logged
+with `resolved_by` "…needs a decision" in `dup_outcome_conflicts.csv`. So is any
+outcome clash step 5 settles by dropping a row (it used to read "first record"). The
+record carries the clash itself (`outcome_conflict`), so a DOI rewritten later cannot
+lose it. The FLoRA tab's **Conflicts** filter lists those records, marked "conflict"
+in the outcome column, until someone corrects the outcome there or, when the outcome
+shown is right, presses **Confirm outcome** in the record (an optional note; logged
+as "Confirmed the outcome", and restorable like any change). A merged reproduction
+takes each axis whole (value, quote and quote source) from the first row that judged
+it, and its outcome is derived from those axes.
 Absorbed `record_id`s are carried through so `flora_records` provenance survives.
 
 **A record validated on this website wins — its values, not its identity.** When a
@@ -1069,6 +1080,7 @@ under **Earlier edits to its source records**, also closed.
 | `GET /api/admin/flora/{flora_id}` | The row, plus `editing`: fields, corrections with their derived values, the change log, earlier source edits, version |
 | `PATCH /api/admin/flora/{flora_id}` | Save a change `{fields, revert, version, notes}`; `notes` maps a field to the note on its change |
 | `POST /api/admin/flora/{flora_id}/restore` | Restore the state after a change `{change_id, version, note}`; `change_id` 0 is the original |
+| `POST /api/admin/flora/{flora_id}/confirm-outcome` | Confirm the outcome shown `{version, note}`, settling an outcome clash; logged with action `confirm` |
 | `GET /api/admin/flora?edited=true` | The **Edited** chip: records with at least one correction in force |
 
 A correction on a record that later retires stops applying, and applies again if the

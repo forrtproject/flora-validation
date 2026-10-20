@@ -116,6 +116,11 @@ ENRICHMENT_COLUMNS = [
 # to_output_shape can ever see it.
 DERIVED_COLUMNS = ["author_overlap", "author_overlap_pct"]
 
+# Kept on the built frame for the FLoRA tab, never published: to_output_shape
+# leaves them out. outcome_conflict is a clash of duplicates' outcomes no rule
+# settled (preprint_dedup.CONFLICT_COLUMN), listed under Conflicts until a person does.
+REVIEW_COLUMNS = ["outcome_conflict"]
+
 # Our columns under the output contract's names.
 OUTPUT_RENAMES = {"ref_o": "apa_ref_o", "ref_r": "apa_ref_r"}
 
@@ -737,6 +742,8 @@ def build(cur, verbose: bool = True,
           f"({(df['type'] == 'replication').sum()} replication, "
           f"{(df['type'] == 'reproduction').sum()} reproduction)")
 
+    df[preprint_dedup.CONFLICT_COLUMN] = None     # set by the merges and drops below
+
     # 1 ── outcome
     problems = {"unknown_alias": [], "bad_alias": [], "invalid_axis": []}
     for axis in ("outcome_computation", "outcome_robustness"):
@@ -896,16 +903,27 @@ def build(cur, verbose: bool = True,
             if column in df.columns:
                 df.at[kept, column] = value
         outcomes = {o for o in (_normalise_outcome(r.get("outcome")) for r in rows) if o}
+        # A clash an earlier merge left undecided on one of these rows stays one.
+        undecided_before = next(
+            (r.get(preprint_dedup.CONFLICT_COLUMN) for r in rows
+             if not preprint_dedup._blank(r.get(preprint_dedup.CONFLICT_COLUMN))), None)
         if len(outcomes) > 1:
+            # Nothing settles a dropped row's outcome but a website record: the
+            # survivor's stands in, and a person decides (FLoRA tab, Conflicts).
+            settled = "outcome" in overrides
             conflicts.append({
                 "doi_o": df.at[kept, "doi_o"], "doi_r": df.at[kept, "doi_r"],
                 "type": df.at[kept, "type"],
                 "outcomes": " | ".join(sorted(outcomes)),
                 "resolved_to": _normalise_outcome(df.at[kept, "outcome"]),
-                "resolved_by": "website record" if "outcome" in overrides else "first record",
+                "resolved_by": "website record" if settled else preprint_dedup.NEEDS_DECISION,
                 "url_r": df.at[kept, "url_r"],
                 "sources": " | ".join(dict.fromkeys(str(r.get("source")) for r in rows)),
             })
+            df.at[kept, preprint_dedup.CONFLICT_COLUMN] = (
+                None if settled else " | ".join(sorted(outcomes)))
+        elif undecided_before is not None and "outcome" not in overrides:
+            df.at[kept, preprint_dedup.CONFLICT_COLUMN] = undecided_before
 
     keep = ~(collides & ~exempt)
     survivor_set = set(survivors)
@@ -1086,7 +1104,7 @@ def build(cur, verbose: bool = True,
     df["source_display_id"] = df["display_id"]
     df["flora_id"] = None          # filled in by flora_registry.refresh()
     out = df.reindex(columns=FLORA_COLUMNS + ENRICHMENT_COLUMNS
-                             + DERIVED_COLUMNS + PROVENANCE_COLUMNS)
+                             + DERIVED_COLUMNS + PROVENANCE_COLUMNS + REVIEW_COLUMNS)
     # Beside the frame rather than in a column: a list per row would have to be
     # serialised into the CSV, and only the registry needs it.
     out.attrs["merged_record_ids"] = dict(zip(df["record_id"], df["merged_record_ids"]))

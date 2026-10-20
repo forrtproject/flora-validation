@@ -391,6 +391,18 @@ def synthesise_references(row, key):
     return row
 
 
+def is_structured_text(value):
+    """Whether a text field holds JSON instead of text (a CSL record where an APA
+    reference belongs). Clients that parse such a cell get an object, not a string.
+    Parsed, not guessed from the first character: "[Re] Replication of…" is a title."""
+    if not isinstance(value, str) or not value.lstrip().startswith(("{", "[")):
+        return False
+    try:
+        return isinstance(json.loads(value), (dict, list))
+    except (ValueError, RecursionError):      # not JSON, or nested past the parser
+        return False
+
+
 def fetch_doi_reference(doi):
     """Crossref fields, DataCite/CSL fallback, then negotiated APA and BibTeX."""
     key = normalise_key(doi)
@@ -416,7 +428,9 @@ def fetch_doi_reference(doi):
             sources.append("doi-csl")
     apa = request(doi_url, "text/x-bibliography; style=apa; locale=en-US")
     bibtex = request(doi_url, "application/x-bibtex")
-    if apa:
+    # Some registration agencies answer the APA request with CSL JSON instead of
+    # text; a reference must be prose, so that falls to synthesise_references.
+    if apa and not is_structured_text(apa):
         result["apa_ref"] = html.unescape(apa.strip())
     if bibtex and re.match(r"\s*@\w+\s*[{(]", bibtex):
         result["bibtex_ref"] = bibtex.strip()

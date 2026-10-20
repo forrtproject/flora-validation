@@ -58,6 +58,7 @@ from urllib.parse import unquote
 import pandas as pd
 
 from console_encoding import use_utf8_output
+from extractor_vocab import derive_reproduction_outcome
 
 # This module prints a warning glyph, and the repo's rule (enforced by
 # tests/test_console_encoding.py) is that any module doing so must make its own
@@ -97,11 +98,22 @@ APPLY_ACTIONS = {"keep_1", "keep_2"}
 # guess. These are what the FLoRA tab lists and the preparation report warns about.
 UNRESOLVED_ACTIONS = {NEEDS_REVIEW, "auto_keep_1", "auto_keep_2"}
 
-# A genuine outcome clash survives a merge as "A || B", which validate_flora then
-# reports because it is not in the allowed vocabulary. Merging it to something
-# valid would hide a source-data mistake.
+# Joins the outcome quotes of merged rows. An outcome clash no longer survives as
+# "A || B": that is no outcome at all, and consumers (an outcome filter, a tally of
+# outcomes) cannot use it. A clash the merge rules cannot settle publishes the
+# outcome of the record that keeps the id, and is logged as needing a decision
+# (dup_outcome_conflicts.csv, the preparation report, the FLoRA tab's Conflicts
+# filter) until a correction in the FLoRA tab settles it.
 OUTCOME_CLASH_SEP = " || "
 _MIXABLE = {"successful", "mixed", "failed"}
+NEEDS_DECISION = "merge rules: the kept record's outcome; needs a decision"
+# The column a record carries an undecided clash in ("failed | uninformative").
+CONFLICT_COLUMN = "outcome_conflict"
+# A reproduction axis: its value, quote and quote source, which belong together.
+REPRODUCTION_AXES = (
+    ("outcome_computation", "outcome_computational_quote", "out_quote_computational_source"),
+    ("outcome_robustness", "outcome_robustness_quote", "out_quote_robust_source"),
+)
 
 # Records validated on this website (source_records.source = 'validated'; every one
 # of them exists because someone validated it). When one shares a group with an
@@ -342,7 +354,16 @@ def _pick_outcome(values, normalise):
         return seen[0]
     if all(v in _MIXABLE for v in seen):
         return "mixed"
-    return OUTCOME_CLASH_SEP.join(seen)
+    # Uninformative, flawed and the like do not average with the rest: the record
+    # that keeps the id (the group's first row, as for every other column) decides
+    # until a person does.
+    return seen[0]
+
+
+def _clash_settled(values, normalise):
+    """Whether the merge rules settle these outcomes ("mixed"), or a person must."""
+    seen = {normalise(value) for value in values if not _blank(value)} - {None}
+    return len(seen) <= 1 or seen <= _MIXABLE
 
 
 def _paste_unique(values, sep):
@@ -470,6 +491,23 @@ def merge_doi_pair_dups(frame, normalise_outcome=None, verbose=True):
             else:
                 row[column] = _first_non_null(values)
 
+        # A reproduction's axes come whole: each axis with its quote and quote source
+        # from the first row that judged it, and the outcome derived from the axes
+        # published, never one row's outcome beside another row's axes.
+        if _s(row.get("type")).lower() == "reproduction":
+            for axis in REPRODUCTION_AXES:
+                if axis[0] not in group.columns:
+                    continue
+                donor = next((i for i in range(len(group))
+                              if not _blank(group.iloc[i][axis[0]])), None)
+                if donor is not None:
+                    for column in axis:
+                        if column in group.columns:
+                            row[column] = group.iloc[donor][column]
+            judged = [row.get(axis[0]) for axis in REPRODUCTION_AXES]
+            if any(not _blank(value) for value in judged):
+                row["outcome"] = derive_reproduction_outcome(*judged)
+
         # A website-validated record's values win; the row stays the one it was.
         overrides = {}
         if "source" in group.columns and group["source"].eq(WEBSITE_SOURCE).any():
@@ -488,16 +526,24 @@ def merge_doi_pair_dups(frame, normalise_outcome=None, verbose=True):
         canonical = {normalise_outcome(v) for v in group["outcome"] if not _blank(v)} \
             if "outcome" in group else set()
         if len(canonical) > 1:
+            outcomes = " | ".join(sorted(str(c) for c in canonical))
+            # Which rule settled it: the website record, the merge rules, or nothing
+            # yet (the kept record's outcome stands in until a decision).
+            resolved_by = ("website record" if "outcome" in overrides
+                           else "merge rules" if _clash_settled(group["outcome"], normalise_outcome)
+                           else NEEDS_DECISION)
             conflicts.append({
                 "doi_o": doi_o, "doi_r": doi_r,
                 "type": _s(row.get("type")) or None,
-                "outcomes": " | ".join(sorted(str(c) for c in canonical)),
+                "outcomes": outcomes,
                 "resolved_to": row.get("outcome"),
-                # Which rule settled it: the website record, or the merge rules.
-                "resolved_by": "website record" if "outcome" in overrides else "merge rules",
+                "resolved_by": resolved_by,
                 "url_r": _paste_unique(group.get("url_r", []), " | "),
                 "sources": _paste_unique(group.get("source", []), " | "),
             })
+            # Carried on the record itself, so a later step that rewrites its DOIs
+            # cannot lose it: the FLoRA tab lists it under Conflicts until settled.
+            row[CONFLICT_COLUMN] = outcomes if resolved_by == NEEDS_DECISION else None
         merged_rows.append(row)
 
     if not merged_rows:
@@ -512,11 +558,10 @@ def merge_doi_pair_dups(frame, normalise_outcome=None, verbose=True):
         print(f"  merged {len(merged_rows)} (doi_o, doi_r) group(s); "
               f"removed {len(frame) - len(out)} row(s)")
         if not conflict_frame.empty:
-            retained = sum(1 for c in conflicts
-                           if OUTCOME_CLASH_SEP in str(c["resolved_to"]))
+            undecided = sum(1 for c in conflicts if c["resolved_by"] == NEEDS_DECISION)
             print(f"  ⚠ {len(conflicts)} merged group(s) had CONFLICTING outcomes "
-                  f"(same paper, same url_r); {len(conflicts) - retained} collapsed "
-                  f"to 'mixed', {retained} retained as a clash for validation")
+                  f"(same paper, same url_r); {len(conflicts) - undecided} settled, "
+                  f"{undecided} kept the surviving record's outcome and need a decision")
     return out, conflict_frame
 
 
