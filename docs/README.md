@@ -1682,7 +1682,7 @@ All answer 503 while the feature is switched off or not set up.
 | GET | `/api/admin/flora/{flora_id}` | FLoRA record with its editable fields, corrections and history |
 | PATCH | `/api/admin/flora/{flora_id}` | Version-checked change `{fields, revert, version, notes}` (a note per field), written through to `flora_data` |
 | POST | `/api/admin/flora/{flora_id}/restore` | Restore the state after a logged change (`change_id` 0: the original) |
-| POST | `/api/admin/flora/{flora_id}/confirm-outcome` | Confirm the outcome shown `{version, note}`: settles an outcome clash (FLoRA tab, Conflicts) as a logged change |
+| POST | `/api/admin/flora/{flora_id}/confirm-outcome` | Settle an outcome clash (FLoRA tab, Conflicts) `{version, note, outcome}`: confirm the outcome shown, or choose another the duplicates gave |
 
 Literal Source Records routes are declared before the `{record_id}` detail route
 so values such as `export.csv` and `duplicates` are not parsed as UUIDs.

@@ -133,6 +133,17 @@ def test_correcting_a_doi_does_not_settle_the_clash(field):
         "failed | uninformative"]
 
 
+def test_choosing_an_outcome_stores_what_derives_it():
+    assert flora_edits._chosen_values("replication", "uninformative") == {"outcome": "uninformative"}
+    assert flora_edits._chosen_values("reproduction", "computational issues, robust") == {
+        "outcome_computation": "computational issues", "outcome_robustness": "robust"}
+    assert flora_edits._chosen_values("reproduction", "cannot_be_determined") == {
+        "outcome_computation": "cannot_be_determined",
+        "outcome_robustness": "cannot_be_determined"}
+    assert flora_edits.outcome_options({"outcome_conflict": "failed | uninformative"}) == [
+        "failed", "uninformative"]
+
+
 def _pair(outcomes, **columns):
     """Rows of one (type, doi_o, doi_r) pair, as merge_doi_pair_dups receives them."""
     n = len(outcomes)
@@ -267,7 +278,7 @@ def test_the_conflicts_filter_follows_the_build_and_its_corrections(local_databa
                                                                     monkeypatch):
     """End to end: a preprint and its publication merge into one record whose
     outcomes the rules cannot settle. Correcting its DOI leaves it a conflict;
-    confirming the outcome shown settles it, as a logged change."""
+    choosing the other duplicate's outcome settles it, as a logged change."""
     import flora_registry
     import transform_sources
     from psycopg2.extras import RealDictCursor
@@ -310,20 +321,29 @@ def test_the_conflicts_filter_follows_the_build_and_its_corrections(local_databa
     assert save({"doi_r": fixed})["changed_fields"] == ["doi_r"]
     assert conflicts() == ([(journal, fixed, "failed", "failed | uninformative")], 1)
 
-    # Confirm outcome: the kept record's outcome is right, so nothing is typed.
-    with local_database, local_database.cursor(cursor_factory=RealDictCursor) as cur:
-        [record] = flora_service.list_records(cur, {"search": journal})["records"]
-        editing = flora_service.editing(cur, flora_service.get_record(cur, record["flora_id"]))
-        result = flora_service.confirm_outcome(cur, record["flora_id"], editing["version"],
-                                               {"id": None, "handle": "luke"}, "checked the report")
+    def choose(outcome):
+        with local_database, local_database.cursor(cursor_factory=RealDictCursor) as cur:
+            [record] = flora_service.list_records(cur, {"search": journal})["records"]
+            editing = flora_service.editing(cur, flora_service.get_record(cur, record["flora_id"]))
+            return record["flora_id"], flora_service.confirm_outcome(
+                cur, record["flora_id"], editing["version"], {"id": None, "handle": "luke"},
+                "checked the report", outcome)
+
+    # Only an outcome the duplicates gave can be chosen; anything else is a correction.
+    with pytest.raises(ValueError, match="Choose one of the outcomes its duplicates gave"):
+        choose("successful")
+    assert conflicts()[1] == 1, "a refused choice settles nothing"
+
+    # The other duplicate's outcome was right: chosen, published, logged, settled.
+    flora_id, result = choose("uninformative")
     assert result["changed_fields"] == ["outcome"]
     assert conflicts() == ([], 0)
     with local_database, local_database.cursor(cursor_factory=RealDictCursor) as cur:
-        record = flora_service.get_record(cur, record["flora_id"])
+        record = flora_service.get_record(cur, flora_id)
         latest = flora_service.editing(cur, record)["history"][0]
-    assert record["outcome"] == "failed", "confirmed, not changed"
+    assert record["outcome"] == "uninformative"
     assert (latest["action"], latest["note"], latest["changes"]) == (
-        "confirm", "checked the report", {"outcome": ["failed", "failed"]})
+        "confirm", "checked the report", {"outcome": ["failed", "uninformative"]})
 
 
 def test_a_dropped_duplicates_clash_is_listed_too(local_database, monkeypatch):  # noqa: F811
@@ -356,6 +376,80 @@ def test_a_dropped_duplicates_clash_is_listed_too(local_database, monkeypatch): 
         listed = flora_service.list_records(cur, {"conflict": True})
     assert [(r["outcome"], r["outcome_conflict"]) for r in listed["records"]] == [
         ("failed", "failed | mixed")]
+
+    # Confirming the published outcome: nothing changes but the decision is recorded.
+    with local_database, local_database.cursor(cursor_factory=RealDictCursor) as cur:
+        [record] = listed["records"]
+        editing = flora_service.editing(cur, flora_service.get_record(cur, record["flora_id"]))
+        result = flora_service.confirm_outcome(cur, record["flora_id"], editing["version"],
+                                               {"id": None, "handle": "luke"}, "", "failed")
+        assert result["changed_fields"] == ["outcome"]
+        assert flora_service.get_record(cur, record["flora_id"])["outcome"] == "failed"
+        assert flora_service.list_records(cur, {"conflict": True})["records"] == []
+
+
+def test_a_merged_reproductions_published_outcome_can_settle_its_clash(local_database,  # noqa: F811
+                                                                      monkeypatch):
+    """Each axis comes from the first row that judged it, so the outcome published
+    can be neither row's. It can still be confirmed (the editor offers it beside
+    theirs); a restore brings the clash back; choosing a row's outcome sets both axes."""
+    import uuid
+
+    import flora_registry
+    import transform_sources
+    from psycopg2.extras import RealDictCursor
+
+    monkeypatch.setattr("bibliographic_helpers.request",
+                        lambda *a, **kw: pytest.fail("Unexpected network lookup"))
+    luke = {"id": None, "handle": "luke"}
+    original, report = "10.9999/o.1", "10.9999/r.1"
+    with local_database, local_database.cursor(cursor_factory=RealDictCursor) as cur:
+        for display_id, computation, robustness in (
+                ("REPR-000001", "computationally reproducible", None),
+                ("REPR-000002", "computational issues", "robust")):
+            cur.execute(
+                """INSERT INTO source_records (source, sheet_row_id, display_id, type, doi_o,
+                       doi_r, outcome_computation, outcome_robustness)
+                   VALUES ('reproductions', %s, %s, 'reproduction', %s, %s, %s, %s)""",
+                (str(uuid.uuid4()), display_id, original, report, computation, robustness))
+        for doi, title in ((original, "The original"), (report, "The reproduction")):
+            cur.execute("INSERT INTO work_metadata (doi, title, authors, year) "
+                        "VALUES (%s, %s, 'Ana Fox', '2020')", (doi, title))
+        cur.execute("LOCK TABLE flora_records IN SHARE ROW EXCLUSIVE MODE")
+        flora_registry.refresh(cur, verbose=False, frame=transform_sources.build(cur, verbose=False))
+    flora_service.invalidate()
+
+    def record():
+        with local_database, local_database.cursor(cursor_factory=RealDictCursor) as cur:
+            [listed] = flora_service.list_records(cur, {})["records"]
+            found = flora_service.get_record(cur, listed["flora_id"])
+            return found, flora_service.editing(cur, found)["version"]
+
+    def change(call):
+        found, version = record()
+        with local_database, local_database.cursor(cursor_factory=RealDictCursor) as cur:
+            return call(cur, found["flora_id"], version)
+
+    published, _ = record()
+    assert published["outcome"] == "computationally reproducible, robust"
+    assert flora_edits.outcome_options(published) == [
+        "cannot_be_determined", "computational issues, robust"]
+
+    result = change(lambda cur, flora_id, version: flora_service.confirm_outcome(
+        cur, flora_id, version, luke, "", published["outcome"]))
+    assert result["changed_fields"] == ["outcome_computation", "outcome_robustness"]
+    assert (record()[0]["outcome"], record()[0]["outcome_conflict"]) == (published["outcome"], None)
+
+    change(lambda cur, flora_id, version: flora_service.restore_record(
+        cur, flora_id, 0, version, luke))
+    assert record()[0]["outcome_conflict"] == "cannot_be_determined | computational issues, robust"
+
+    change(lambda cur, flora_id, version: flora_service.confirm_outcome(
+        cur, flora_id, version, luke, "", "computational issues, robust"))
+    chosen, _ = record()
+    assert (chosen["outcome_computation"], chosen["outcome_robustness"], chosen["outcome"],
+            chosen["outcome_conflict"]) == ("computational issues", "robust",
+                                            "computational issues, robust", None)
 
 
 def test_an_older_change_log_accepts_a_confirmation(local_database):  # noqa: F811

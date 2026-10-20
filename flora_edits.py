@@ -51,6 +51,7 @@ from extractor_vocab import (
     derive_reproduction_outcome,
     normalize_axis_value,
     normalize_outcome,
+    split_joined_outcome,
 )
 
 
@@ -603,26 +604,61 @@ CONFIRMED_FIELDS = {"replication": ("outcome",),
                     "reproduction": ("outcome_computation", "outcome_robustness")}
 
 
-def confirm_outcome(cur, record: dict, derived: dict, expected_version, admin: dict,
-                    note: str = "") -> dict:
-    """Record that the outcome shown is right, as a change of its own.
+def outcome_options(record: dict) -> list:
+    """The outcomes a record's duplicate source rows gave, where no rule chose
+    between them (its outcome_conflict, "failed | uninformative")."""
+    return [part.strip() for part in str(record.get("outcome_conflict") or "").split(" | ")
+            if part.strip()]
 
-    For an outcome its duplicate source rows disagreed on, where the build had to
-    pick one (the FLoRA tab's Conflicts): a save that changes nothing records
-    nothing, so confirming stores the shown values (a reproduction's two axes) as
-    corrections. That is a person's decision from then on, like any correction: it
-    holds over later builds and can be restored away like any other change.
+
+def _chosen_values(record_type, outcome) -> dict:
+    """The corrections that make `outcome` the record's outcome: a replication's
+    outcome, or the two axes a reproduction's outcome is derived from."""
+    if record_type == "replication":
+        return {"outcome": clean_value("outcome", outcome, record_type)}
+    computation, robustness = split_joined_outcome(outcome)
+    if computation is None:                      # "cannot_be_determined": neither axis
+        computation = robustness = "cannot_be_determined"
+    return {"outcome_computation": clean_value("outcome_computation", computation, record_type),
+            "outcome_robustness": clean_value("outcome_robustness", robustness, record_type)}
+
+
+def confirm_outcome(cur, record: dict, derived: dict, expected_version, admin: dict,
+                    note: str = "", outcome: "str | None" = None) -> dict:
+    """Settle an outcome its duplicate source rows disagreed on (the FLoRA tab's
+    Conflicts), as a change of its own: one of the outcomes they gave is chosen.
+
+    Without `outcome`, or with the one shown, the shown values are confirmed: a save
+    that changes nothing records nothing, so they are stored as corrections (a
+    reproduction's two axes). With another of the duplicates' outcomes, that one is
+    stored instead. Either way it is a person's decision from then on, like any
+    correction: it holds over later builds and can be restored away like any other.
     """
-    fields = CONFIRMED_FIELDS.get(record.get("type"))
+    record_type = record.get("type")
+    fields = CONFIRMED_FIELDS.get(record_type)
     if not fields:
-        raise ValueError(f"A {record.get('type') or 'record'} has no outcome to confirm")
+        raise ValueError(f"A {record_type or 'record'} has no outcome to confirm")
     note = _text(note)
     if note and len(note) > NOTE_LIMIT:
         raise ValueError(f"The note is longer than {NOTE_LIMIT} characters")
+    # The version first: a page loaded before someone else settled the clash offers
+    # outcomes the record no longer has, and has to reload rather than be refused.
     export_id, in_force = _guard(cur, record, expected_version)
+    chosen = _text(outcome)
+    if chosen and chosen != _text(record.get("outcome")):
+        options = outcome_options(record)
+        if chosen not in options:
+            raise ValueError("Choose one of the outcomes its duplicates gave: "
+                             + (", ".join(options) or "this record has no outcome clash"))
+        values = _chosen_values(record_type, chosen)
+    else:
+        values = {}
     corrections = dict(in_force)
     for field in fields:
-        corrections.setdefault(field, _text(record.get(field)))
+        if field in values:
+            corrections[field] = values[field]
+        else:
+            corrections.setdefault(field, _text(record.get(field)))
     result = _append(cur, export_id, record, derived, in_force, corrections, "confirm",
                      admin, note=note)
     return _summary(cur, export_id, result, in_force)

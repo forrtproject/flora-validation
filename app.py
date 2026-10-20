@@ -6109,15 +6109,17 @@ def admin_flora_record_restore(flora_id: str, req: FloraRecordRestore,
 class FloraOutcomeConfirm(BaseModel):
     version: int
     note: str = Field("", max_length=500)
+    outcome: str | None = None    # one of the duplicates' outcomes; none: the one shown
 
 
 @app.post("/api/admin/flora/{flora_id}/confirm-outcome")
 def admin_flora_confirm_outcome(flora_id: str, req: FloraOutcomeConfirm,
                                 admin: dict = Depends(current_admin)):
-    """Confirm that the outcome shown is right: settles a clash between duplicate
-    source rows (the FLoRA tab's Conflicts) as a logged change, with an optional note."""
+    """Settle a clash between duplicate source rows (the FLoRA tab's Conflicts): the
+    outcome shown is confirmed, or another of the outcomes they gave chosen. A logged
+    change, with an optional note."""
     return _flora_change(lambda cur: flora_service.confirm_outcome(
-        cur, flora_id, req.version, admin, req.note))
+        cur, flora_id, req.version, admin, req.note, req.outcome))
 
 
 # ---------------------------------------------------------------------------

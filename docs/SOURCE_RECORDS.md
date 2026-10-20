@@ -705,11 +705,17 @@ with `resolved_by` "…needs a decision" in `dup_outcome_conflicts.csv`. So is a
 outcome clash step 5 settles by dropping a row (it used to read "first record"). The
 record carries the clash itself (`outcome_conflict`), so a DOI rewritten later cannot
 lose it. The FLoRA tab's **Conflicts** filter lists those records, marked "conflict"
-in the outcome column, until someone corrects the outcome there or, when the outcome
-shown is right, presses **Confirm outcome** in the record (an optional note; logged
-as "Confirmed the outcome", and restorable like any change). A merged reproduction
-takes each axis whole (value, quote and quote source) from the first row that judged
-it, and its outcome is derived from those axes.
+in the outcome column, until someone settles it in the record: one button per
+outcome the duplicates gave, the published one marked (a merged reproduction's can
+be neither row's, see below; it is then offered beside theirs). Choosing the
+published one confirms it, choosing another publishes that one instead (a
+reproduction's two axes are set from it; the quotes stay as published, to correct in
+the editor if they no longer fit); either way with an optional note, logged as
+"Confirmed the outcome" or "Chose the outcome", and restorable like any change,
+which brings the clash back. An outcome no duplicate gave is a normal correction in
+the editor. A merged reproduction takes each axis whole (value, quote and quote
+source) from the first row that judged it, and its outcome is derived from those
+axes.
 Absorbed `record_id`s are carried through so `flora_records` provenance survives.
 
 **A record validated on this website wins — its values, not its identity.** When a
@@ -1080,7 +1086,7 @@ under **Earlier edits to its source records**, also closed.
 | `GET /api/admin/flora/{flora_id}` | The row, plus `editing`: fields, corrections with their derived values, the change log, earlier source edits, version |
 | `PATCH /api/admin/flora/{flora_id}` | Save a change `{fields, revert, version, notes}`; `notes` maps a field to the note on its change |
 | `POST /api/admin/flora/{flora_id}/restore` | Restore the state after a change `{change_id, version, note}`; `change_id` 0 is the original |
-| `POST /api/admin/flora/{flora_id}/confirm-outcome` | Confirm the outcome shown `{version, note}`, settling an outcome clash; logged with action `confirm` |
+| `POST /api/admin/flora/{flora_id}/confirm-outcome` | Settle an outcome clash `{version, note, outcome}`: `outcome` is one the duplicates gave (none: the one shown); logged with action `confirm` |
 | `GET /api/admin/flora?edited=true` | The **Edited** chip: records with at least one correction in force |
 
 A correction on a record that later retires stops applying, and applies again if the
