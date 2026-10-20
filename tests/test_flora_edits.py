@@ -301,6 +301,17 @@ def test_a_stale_version_is_refused_before_anything_is_logged():
     assert caught.value.current_version == 7 and cur.appended() == []
 
 
+def test_a_choice_from_a_stale_page_reloads_rather_than_being_refused():
+    """Someone else settled the clash since the page loaded, so the record has no
+    clash left to choose from: a version conflict (reload), not a 400 that reads as
+    if the outcome offered were not one the duplicates gave."""
+    settled = {**RECORD, "outcome": "uninformative", "outcome_conflict": None}
+    cur = _Cur([(6, {}), (7, {"outcome": "uninformative"})])
+    with pytest.raises(flora_edits.VersionConflict) as caught:
+        flora_edits.confirm_outcome(cur, settled, {"outcome": "failed"}, 6, ADMIN, "", "failed")
+    assert caught.value.current_version == 7 and cur.appended() == []
+
+
 def test_typing_the_derived_value_back_drops_the_correction():
     cur = _Cur([(1, {"title_o": "Shown title"})])
     result = flora_edits.save(cur, RECORD, {"title_o": "Derived title"},

@@ -75,9 +75,11 @@ const SOURCE_ID = "6f1c2d4e-0000-4000-8000-000000000001";
       return route.fulfill({ status: 200, contentType: type, body: await fs.readFile(path.join(root, "docs", files[url.pathname])) });
     }
     if (url.pathname === "/api/admin/flora/REPL-000001/confirm-outcome") {
-      confirmations.push(JSON.parse(request.postData()));
+      const body = JSON.parse(request.postData());
+      confirmations.push(body);
+      // Keeping the published outcome moves no value, so nothing is written through.
       return route.fulfill({ json: { export_id: "FLORA-000001", change_id: 5, changed_fields: ["outcome"],
-                                     reverted_fields: [], version: 5, published: true } });
+                                     reverted_fields: [], version: 5, published: body.outcome !== "successful" } });
     }
     if (url.pathname === "/api/admin/flora/REPL-000001/restore") {
       restores.push(JSON.parse(request.postData()));
@@ -283,22 +285,47 @@ const SOURCE_ID = "6f1c2d4e-0000-4000-8000-000000000001";
     assert.equal(await page.locator("#src-detail-modal").isHidden(), true);
     assert.equal(await page.locator("#admin-tab-flora").isVisible(), true);
 
-    // An outcome its duplicates disagree on: confirming the one shown settles it,
-    // with an optional note, and nothing has to be typed into the outcome field.
+    // An outcome its duplicates disagree on: one button per outcome they gave, the
+    // published one marked; choosing settles it, with an optional note, and nothing
+    // has to be typed into the outcome field.
     const conflictBox = page.locator("#flora-detail-body .flora-conflict");
-    assert.match(await conflictBox.innerText(), /disagree on the outcome: successful \| uninformative/);
+    assert.match(await conflictBox.innerText(), /disagree on the outcome/);
+    const choices = conflictBox.locator(".flora-choose-btn");
+    assert.deepEqual(await choices.allTextContents(), ["successful (published)", "uninformative"]);
     assert.equal(await page.locator('#flora-detail-body [data-field="outcome_conflict"]').count(), 0);
-    await page.locator("#flora-confirm-note").fill("Checked the report");
-    await page.locator("#flora-confirm-btn").click();
-    await page.waitForFunction(() => document.querySelector("#flora-save-msg")
-      && /Outcome confirmed/.test(document.querySelector("#flora-save-bar, .src-save-bar").innerText));
-    assert.deepEqual(confirmations, [{ version: 3, note: "Checked the report" }]);
-    // In the change log, a confirmation reads as one, with its note.
-    const logHtml = await page.evaluate(() => floraChangeLog({ fields: [], history: [{
-      change_id: 5, action: "confirm", note: "Checked the report", admin_handle: "luke",
-      changed_at: "2026-10-20T10:00:00Z", changes: { outcome: ["failed", "failed"] },
-      corrections: { outcome: "failed" }, notes: {} }] }));
-    assert.match(logHtml, /Confirmed the outcome<div class="flora-change-note">Checked the report/);
+    await page.locator("#flora-confirm-note").fill("The report says so");
+    await choices.nth(1).click();
+    await page.waitForFunction(() => /Outcome changed to uninformative/.test(
+      document.querySelector(".src-save-bar").innerText));
+    assert.deepEqual(confirmations, [{ version: 3, note: "The report says so", outcome: "uninformative" }]);
+    // Keeping the published one is confirmed, and there is nothing for a pipeline run
+    // to publish: no value moved.
+    await choices.first().click();
+    await page.waitForFunction(() => /Outcome confirmed/.test(document.querySelector(".src-save-bar").innerText));
+    assert.deepEqual(confirmations[1], { version: 3, note: "", outcome: "successful" });
+    assert.doesNotMatch(await page.locator("#flora-save-msg").innerText(), /pipeline run/);
+    // In the change log: a choice that moved the outcome, and a confirmation.
+    const logHtml = changes => page.evaluate(changes => floraChangeLog({ fields: [], history: [{
+      change_id: 5, action: "confirm", note: "Checked", admin_handle: "luke",
+      changed_at: "2026-10-20T10:00:00Z", changes, corrections: { outcome: "failed" }, notes: {} }] }), changes);
+    assert.match(await logHtml({ outcome: ["successful", "uninformative"] }),
+      /Chose the outcome<div class="flora-change-note">Checked/);
+    assert.match(await logHtml({ outcome: ["failed", "failed"] }),
+      /Confirmed the outcome<div class="flora-change-note">Checked/);
+    // A merged reproduction takes each axis from the first entry that judged it, so
+    // the outcome published can be neither entry's: it is offered too, to confirm.
+    const mixed = await page.evaluate(() => {
+      const box = document.createElement("div");
+      box.innerHTML = floraConflictBox({ type: "reproduction", outcome: "computationally reproducible, robust",
+        outcome_conflict: "cannot_be_determined | computational issues, robust" });
+      return { choices: [...box.querySelectorAll(".flora-choose-btn")].map(b => [b.dataset.outcome, b.textContent]),
+               text: box.textContent };
+    });
+    assert.deepEqual(mixed.choices, [
+      ["computationally reproducible, robust", "computationally reproducible, robust (published)"],
+      ["cannot_be_determined", "cannot_be_determined"],
+      ["computational issues, robust", "computational issues, robust"]]);
+    assert.match(mixed.text, /correct the axes below/);
 
     assert.deepEqual(errors, []);
     console.log("FLoRA editor UI checks passed");

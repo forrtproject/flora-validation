@@ -9029,7 +9029,7 @@ function floraOutcomeCell(r) {
   if (!r.outcome_conflict) return outcome;
   return outcome + ' <span class="src-dup-badge src-dup-badge-warn"' +
     tip("Its duplicate source entries disagree: " + r.outcome_conflict +
-        ". The first entry's outcome is published until you correct or confirm it in the record.") +
+        ". The first entry's outcome is published until you choose one in the record.") +
     ">conflict</span>";
 }
 
@@ -9416,7 +9416,9 @@ function floraChangeLog(editing) {
       ? '<div class="flora-change-kind">' + (c.restored_from ? "Restored to #" + c.restored_from : "Restored the original") +
         note + "</div>"
       : c.action === "confirm"
-      ? '<div class="flora-change-kind">Confirmed the outcome' + note + "</div>"
+      ? '<div class="flora-change-kind">' +
+        (Object.values(c.changes || {}).some(([before, now]) => before !== now)
+          ? "Chose the outcome" : "Confirmed the outcome") + note + "</div>"
       : note;
     const action = i === 0
       ? '<span class="flora-change-current">Current</span>'
@@ -9519,41 +9521,59 @@ function renderFloraRecord(rec) {
     "</div>";
 }
 
-/** An outcome its duplicate source entries disagree on: correct it below, or
- *  confirm the one shown. Either settles it and takes it off the Conflicts list. */
+/** An outcome its duplicate source entries disagree on: choose one of theirs (the
+ *  published one confirms it), or correct it below. Either settles it and takes it
+ *  off the Conflicts list. */
 function floraConflictBox(rec) {
   if (!rec.outcome_conflict) return "";
+  const options = String(rec.outcome_conflict).split(" | ").map((o) => o.trim()).filter(Boolean);
+  const shown = rec.outcome || "";
+  // A merged reproduction takes each axis from the first entry that judged it, so
+  // the outcome published can be neither entry's. It is offered too, to confirm.
+  if (shown && options.indexOf(shown) === -1) options.unshift(shown);
   const what = rec.type === "reproduction" ? "axes" : "outcome";
+  const buttons = options.map((option) => {
+    const published = option === shown;
+    return '<button type="button" class="ghost-btn flora-choose-btn" data-outcome="' + escapeHtml(option) + '"' +
+      tip(published ? "Keep the published outcome, and record that it was checked"
+                    : "Publish this outcome instead") + ">" +
+      escapeHtml(option) + (published ? ' <span class="src-dim2">(published)</span>' : "") + "</button>";
+  }).join("");
   return '<div class="src-dup-warn flora-conflict">' +
-    "<b>Its duplicate source entries disagree on the outcome:</b> " + escapeHtml(rec.outcome_conflict) +
-    ". The first entry's " + what + " is published. Correct it below, or confirm it if it is right." +
-    '<div class="flora-conflict-actions">' +
+    "<b>Its duplicate source entries disagree on the outcome.</b> Choose the right one; the one " +
+    "marked published stands until you do. If none is right, correct the " + what + " below." +
+    '<div class="flora-conflict-actions">' + buttons +
       '<input id="flora-confirm-note" class="src-input" type="text" maxlength="500" ' +
-        'placeholder="Why it stands (optional)" aria-label="Note for the confirmation">' +
-      '<button id="flora-confirm-btn" class="ghost-btn" type="button">Confirm outcome</button>' +
+        'placeholder="Why (optional)" aria-label="Note for the decision">' +
     "</div></div>";
 }
 
-async function confirmFloraOutcome() {
+/** Settle the clash with one of the duplicates' outcomes: the published one is
+ *  confirmed, another is published instead. Logged with the note either way. */
+async function confirmFloraOutcome(choice) {
   const rec = _floraCurrent;
   if (!rec || !rec.editing) return;
-  const btn = $("#flora-confirm-btn");
+  const buttons = [...$("#flora-detail-body").querySelectorAll(".flora-choose-btn")];
   const msg = $("#flora-save-msg");
-  btn.disabled = true;
-  msg.textContent = "Confirming…";
+  buttons.forEach((b) => { b.disabled = true; });
+  const keeps = choice === rec.outcome;
+  msg.textContent = keeps ? "Confirming…" : "Changing the outcome…";
   const seq = _floraOpenSeq;
   try {
     const res = await adminApi("/flora/" + encodeURIComponent(rec.flora_id) + "/confirm-outcome", "POST", {
-      version: rec.editing.version, note: ($("#flora-confirm-note") || {}).value || "",
+      version: rec.editing.version, note: ($("#flora-confirm-note") || {}).value || "", outcome: choice,
     });
-    const outcome = res.change_id
-      ? "Outcome confirmed. " + floraPublishedNote(res)
-      : "Nothing to confirm: the outcome is already a correction.";
+    // Confirming moves no published value, so the FLoRA table has nothing to catch up
+    // on (publish() reports false for it): no "next pipeline run".
+    const outcome = !res.change_id
+      ? "Nothing to change: the outcome is already a correction."
+      : keeps ? "Outcome confirmed."
+      : "Outcome changed to " + choice + ". " + floraPublishedNote(res);
     showToast(outcome);
     fetchFloraRecords();
     if (seq === _floraOpenSeq) await openFloraRecord(rec.flora_id, floraNotice(outcome, res.warnings));
   } catch (err) {
-    btn.disabled = false;
+    buttons.forEach((b) => { b.disabled = false; });
     floraChangeFailed(err, rec, msg);
   }
 }
@@ -9666,7 +9686,8 @@ async function restoreFloraRecord(changeId) {
 
 $("#flora-detail-body")?.addEventListener("click", (e) => {
   if (e.target.closest("#flora-save-btn")) { saveFloraRecord(); return; }
-  if (e.target.closest("#flora-confirm-btn")) { confirmFloraOutcome(); return; }
+  const choose = e.target.closest(".flora-choose-btn");
+  if (choose) { confirmFloraOutcome(choose.dataset.outcome); return; }
   const restore = e.target.closest(".flora-restore-btn");
   if (restore) { restoreFloraRecord(Number(restore.dataset.changeId)); return; }
   const revert = e.target.closest(".flora-revert-btn");

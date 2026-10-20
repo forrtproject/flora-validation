@@ -204,8 +204,9 @@ def dataset(cur) -> pd.DataFrame:
 
 # The corrections that settle an outcome clash: a replication's outcome, or either
 # axis a reproduction's outcome is derived from (a reproduction's editor offers no
-# `outcome` field, so its edited_fields never name one). Confirm outcome stores the
-# shown values as such corrections (flora_edits.confirm_outcome).
+# `outcome` field, so its edited_fields never name one). Settling a clash in the record
+# stores the outcome chosen, or the one shown, as such corrections
+# (flora_edits.confirm_outcome).
 _OUTCOME_FIELDS = {"outcome", "outcome_computation", "outcome_robustness"}
 
 
@@ -468,10 +469,12 @@ def restore_record(cur, flora_id: str, change_id: int, version: int,
         cur, record, derived, change_id, version, admin, note))
 
 
-def confirm_outcome(cur, flora_id: str, version: int, admin: dict, note: str = "") -> dict:
-    """Settle an outcome clash by confirming the outcome shown (flora_edits)."""
+def confirm_outcome(cur, flora_id: str, version: int, admin: dict, note: str = "",
+                    outcome: "str | None" = None) -> dict:
+    """Settle an outcome clash: confirm the outcome shown, or choose another of the
+    outcomes its duplicates gave (flora_edits.confirm_outcome)."""
     return _changed(cur, flora_id, lambda record, derived: flora_edits.confirm_outcome(
-        cur, record, derived, version, admin, note))
+        cur, record, derived, version, admin, note, outcome))
 
 
 def merged_sources(cur, flora_id: str) -> list:
