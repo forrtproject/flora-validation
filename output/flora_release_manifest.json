@@ -2,11 +2,11 @@
   "schema_version": 1,
   "status": "prepared_locally",
   "published": false,
-  "generated_at": "2026-10-20T03:22:26+00:00",
+  "generated_at": "2026-10-21T01:13:24+00:00",
   "filename": "flora.csv",
-  "bytes": 14152687,
-  "sha256": "0b2a39550fb71c2aa73a48e0ffede61fb11f6d18c448eff485bf8a0e63e34d72",
-  "md5": "8a383439d91f4b8658d22ca4ff8fed66",
+  "bytes": 14151264,
+  "sha256": "18e9accfe38bac60273b6d3507a35ce3c793e57c99537808bab415b19506510f",
+  "md5": "00f8c42d897077244b380b0ee7d9cf0f",
   "rows": 3080,
   "columns": [
     "id",
@@ -64,7 +64,7 @@
   "version": null,
   "release_notes": "",
   "data_version": {
-    "stored_at": "2026-10-20T03:22:27.466669+00:00",
-    "change_watermark": 0
+    "stored_at": "2026-10-21T01:11:34.181553+00:00",
+    "change_watermark": 8
   }
 }
