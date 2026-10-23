@@ -1,4 +1,4 @@
-"""publish_flora.py and the Publish FLoRA workflow: the website run's repository copy.
+"""publish_flora.py and the Publish FLoRA workflow: the stored dataset's repository copy.
 
 The writes run against PostgreSQL in the opt-in database tests
 (FLORA_TEST_DATABASE_URL), with the complete supplied 2,914-row snapshot.
@@ -124,25 +124,25 @@ def test_the_workflow_commits_only_a_changed_flora_csv():
 
 
 def test_it_runs_after_every_nightly_sync():
-    """Once a day without a token: GitHub starts it when the nightly job ends,
-    whatever its result, so a failed night still publishes the stored dataset."""
+    """Once a day: GitHub starts it when the nightly job ends, whatever its result,
+    so a failed night still publishes the stored dataset. Otherwise only by hand."""
     import yaml
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     triggers = workflow[True]                    # YAML 1.1 reads the key `on` as True
     assert triggers["workflow_run"] == {"workflows": ["Sync entry sheets"], "types": ["completed"]}
     nightly = yaml.safe_load((WORKFLOW.parent / "sync-sources.yml").read_text(encoding="utf-8"))
     assert nightly["name"] == "Sync entry sheets", "the trigger names the nightly job by its name"
-    assert "workflow_dispatch" in triggers
+    assert set(triggers) == {"workflow_run", "workflow_dispatch"}
+    assert triggers["workflow_dispatch"]["inputs"]["job_id"]["required"] is False
 
 
 def test_the_run_id_never_reaches_the_script_through_an_expression():
     """${{ inputs.job_id }} inside `run:` would let a crafted input run shell code."""
+    import yaml
     workflow = WORKFLOW.read_text(encoding="utf-8")
     assert "JOB_ID: ${{ inputs.job_id }}" in workflow
-    for block in workflow.split("run: |")[1:]:
-        assert "${{" not in block.split("\n      - name:")[0]
-
-
-def test_the_server_starts_the_workflow_this_file_defines():
-    import repo_release
-    assert WORKFLOW.name == repo_release.WORKFLOW
+    steps = yaml.safe_load(workflow)["jobs"]["publish"]["steps"]
+    scripts = [step["run"] for step in steps if "run" in step]
+    assert len(scripts) == 3, "every step's script is checked, `run: |` and `run: >-` alike"
+    for script in scripts:
+        assert "${{" not in script

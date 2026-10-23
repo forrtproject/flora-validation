@@ -296,12 +296,12 @@ const SOURCE_ID = "6f1c2d4e-0000-4000-8000-000000000001";
     await page.locator("#flora-confirm-note").fill("The report says so");
     await choices.nth(1).click();
     await page.waitForFunction(() => /Outcome changed to uninformative/.test(
-      document.querySelector(".src-save-bar").innerText));
+      document.querySelector(".src-save-bar")?.innerText ?? ""));
     assert.deepEqual(confirmations, [{ version: 3, note: "The report says so", outcome: "uninformative" }]);
     // Keeping the published one is confirmed, and there is nothing for a pipeline run
     // to publish: no value moved.
     await choices.first().click();
-    await page.waitForFunction(() => /Outcome confirmed/.test(document.querySelector(".src-save-bar").innerText));
+    await page.waitForFunction(() => /Outcome confirmed/.test(document.querySelector(".src-save-bar")?.innerText ?? ""));
     assert.deepEqual(confirmations[1], { version: 3, note: "", outcome: "successful" });
     assert.doesNotMatch(await page.locator("#flora-save-msg").innerText(), /pipeline run/);
     // In the change log: a choice that moved the outcome, and a confirmation.

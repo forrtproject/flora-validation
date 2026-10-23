@@ -157,15 +157,19 @@ The direct `flora_store.py` import validates the storage/identity contract;
 use `prepare_flora.py` when structural and network validation reports are needed.
 
 The nightly job runs the first command and commits `output/` when `flora.csv`
-changed. A successful **Run pipeline** on the website starts the Publish FLoRA
-workflow, which writes the stored dataset to `output/` with `publish_flora.py` and
-commits it the same way. The repository's `output/flora.csv` is therefore the
-latest run's stored snapshot. The stored columns are always the latest snapshot's,
-in its order, so this export and that file have the same header.
+changed. After it, the Publish FLoRA workflow writes the stored dataset to `output/`
+with `publish_flora.py` and commits it the same way when it changed; it can also be
+started by hand, for instance after a website **Run pipeline**, which stores its
+dataset but cannot commit. The repository's `output/flora.csv` is therefore the
+stored snapshot as of the last nightly run or manual publish. The stored columns are
+always the latest snapshot's, in its order, so this export and that file have the same
+header.
 **Download full CSV** in the FLoRA tab exports `flora_data` with
 `flora_store.export_csv`: that snapshot, plus any corrections saved in the tab
 since, which rewrite their rows in `flora_data` at once. New source records and
-duplicate decisions reach both at the next pipeline run.
+duplicate decisions reach the download at the next pipeline run, and the repository
+file after the next nightly job (after a website run, sooner by starting Publish FLoRA
+by hand).
 
 ### Recovery after a CSV publication failure
 

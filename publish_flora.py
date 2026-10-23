@@ -1,10 +1,11 @@
 """
 publish_flora.py — Write the stored FLoRA dataset to output/ for the repository copy.
 
-The website's Run pipeline stores its dataset in flora_data, but the web server
-cannot commit to the repository. After a successful run it starts the Publish
-FLoRA workflow (.github/workflows/publish-flora.yml), which runs this script and
-commits output/ when flora.csv changed: the folder the nightly run commits to.
+Run by the Publish FLoRA workflow (.github/workflows/publish-flora.yml): by itself
+after every nightly sync, and by hand from the Actions tab, for instance after a
+website Run pipeline, whose dataset is stored in flora_data but which the web server
+cannot commit. The workflow commits output/ when flora.csv changed: the folder the
+nightly run commits to.
 
 flora.csv is flora_store.export_csv: the stored snapshot plus any corrections saved
 since, byte for byte what Download full CSV serves (the public API serves its
