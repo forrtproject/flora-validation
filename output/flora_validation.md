@@ -1,6 +1,6 @@
 ## FLoRA Data Validation Report
 
-_Generated: 2026-10-20 03:18:29 UTC | Dataset: 3080 rows_
+_Generated: 2026-10-23 03:16:48 UTC | Dataset: 3097 rows_
 
 Each row is identified as `doi_o | doi_r (or url_r)`, followed by check-specific detail after `:`.
 Tick an item to mark it a false positive; it is suppressed on the next run.
@@ -140,15 +140,11 @@ _A url column holds something that is not a link._
 
 </details>
 
-**Invalid outcome values** (7 issues):
+**Invalid outcome values** (3 issues):
 
 _An outcome outside the allowed set for the row's type, or missing._
 
 - [ ] 10.1002/j.2164-585x.1979.tb00097.x | 10.1353/csd.2014.0018: outcome is blank
-- [ ] 10.1017/s1930297500005064 | 10.1080/23743603.2021.1878340: type=replication; outcome='failed || uninformative'
-- [ ] 10.1073/pnas.1523698113 | 10.1098/rsos.231240: type=replication; outcome='successful || uninformative'
-- [ ] 10.1080/02699931.2016.1273201 | 10.31234/osf.io/ntukz: type=replication; outcome='statistically successful but flawed || failed'
-- [ ] 10.1177/1948550611410890 | 10.1037/xge0000067: type=replication; outcome='uninformative || failed'
 - [ ] 10.1037/h0055756 | https://osf.io/74892/: outcome is blank
 - [ ] 10.1017/xps.2014.22 | https://osf.io/8uc5z/files/jmk9d: outcome is blank
 
@@ -272,5 +268,6 @@ _The same DOI appears with reference strings more than 20% apart._
 
 **Checks passed:**
 - [x] No 'NA'/'N/A' strings
+- [x] Text fields hold text
 - [x] Type values valid
 - [x] Source values valid

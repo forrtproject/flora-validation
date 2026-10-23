@@ -1,20 +1,20 @@
 # FLoRA preparation report
 
-Generated: 2026-10-20T03:15:18+00:00
+Generated: 2026-10-23T03:15:13+00:00
 
 Status: **needs_attention**
 
 Mode: database_pipeline
 
-Rows: 3,080
+Rows: 3,097
 
 ## Stages
 
 - final CSV: passed
-- structural validation: needs_attention — 215 data issue(s)
-- network validation: needs_attention
+- structural validation: needs_attention — 211 data issue(s)
+- network validation: incomplete
 - release preparation and history: passed
-- store prepared FLoRA table: passed — 3080 active rows in flora_data
+- store prepared FLoRA table: passed — 3097 active rows in flora_data
 - publish CSV artifact: passed
 
 ## Items needing attention
@@ -22,13 +22,13 @@ Rows: 3,080
 - 29 rows omitted because a title is missing; see flora_export_log.csv.
 - 60 merged groups with conflicting outcomes; see dup_outcome_conflicts.csv.
 - 20 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.
-- Structural validation found 215 data issue(s).
-- Network validation: needs_attention; 96 finding(s).
+- Structural validation found 211 data issue(s).
+- Network validation: incomplete; 81 finding(s).
 
 ## Stored dataset
 
 - Database status: committed.
-- Active rows in flora_data: 3,080.
+- Active rows in flora_data: 3,097.
 
 ## Transform diagnostics
 
@@ -40,7 +40,7 @@ The JSON report includes the affected records and reasons.
 
 ## FLoRA Data Validation Report
 
-_Generated: 2026-10-20 03:22:33 UTC | Dataset: 3080 rows_
+_Generated: 2026-10-23 03:21:03 UTC | Dataset: 3097 rows_
 
 Each row is identified as `doi_o | doi_r (or url_r)`, followed by check-specific detail after `:`.
 Tick an item to mark it a false positive; it is suppressed on the next run.
@@ -180,15 +180,11 @@ _A url column holds something that is not a link._
 
 </details>
 
-**Invalid outcome values** (7 issues):
+**Invalid outcome values** (3 issues):
 
 _An outcome outside the allowed set for the row's type, or missing._
 
 - [ ] 10.1002/j.2164-585x.1979.tb00097.x | 10.1353/csd.2014.0018: outcome is blank
-- [ ] 10.1017/s1930297500005064 | 10.1080/23743603.2021.1878340: type=replication; outcome='failed || uninformative'
-- [ ] 10.1073/pnas.1523698113 | 10.1098/rsos.231240: type=replication; outcome='successful || uninformative'
-- [ ] 10.1080/02699931.2016.1273201 | 10.31234/osf.io/ntukz: type=replication; outcome='statistically successful but flawed || failed'
-- [ ] 10.1177/1948550611410890 | 10.1037/xge0000067: type=replication; outcome='uninformative || failed'
 - [ ] 10.1037/h0055756 | https://osf.io/74892/: outcome is blank
 - [ ] 10.1017/xps.2014.22 | https://osf.io/8uc5z/files/jmk9d: outcome is blank
 
@@ -312,33 +308,20 @@ _The same DOI appears with reference strings more than 20% apart._
 
 **Checks passed:**
 - [x] No 'NA'/'N/A' strings
+- [x] Text fields hold text
 - [x] Type values valid
 - [x] Source values valid
 
 
 ## FLoRA Network Validation Report
 
-_Generated: 2026-10-20 03:22:33 UTC | Dataset: 3080 rows_
+_Generated: 2026-10-23 03:21:03 UTC | Dataset: 3097 rows_
 
-<details><summary><b>Retracted papers</b> (13 issues)</summary>
+**Retracted papers** (1 issue):
 
-- [ ] `10.1126/science.abh4340`: retracted (doi_o) — 10.1126/science.abh4340 | 10.1126/sciadv.adl0999
-- [ ] `10.1001/jamapsychiatry.2014.763`: retracted (doi_o) — 10.1001/jamapsychiatry.2014.763 | 10.1037/pas0000664
-- [ ] `10.1016/j.cell.2013.04.008`: retracted (doi_o) — 10.1016/j.cell.2013.04.008 | 10.2337/db13-1435
-- [ ] `10.1038/sdata.2016.120`: retracted (doi_r) — 10.1073/pnas.1118373109 | 10.1038/sdata.2016.120
-- [ ] `10.1073/pnas.1209746109`: retracted (doi_o) — 10.1073/pnas.1209746109 | 10.1073/pnas.1911695117
-- [ ] `10.1093/restud/rdt040`: retracted (doi_o) — 10.1093/restud/rdt040 | 10.1002/jae.2970
-- [ ] `10.1111/jofi.12868`: retracted (doi_o) — 10.1111/jofi.12868 | 10.1111/jofi.13063
-- [ ] `10.1257/aer.20210369`: retracted (doi_o) — 10.1257/aer.20210369 | 10.1257/aer.20221432
-- [ ] `10.1086/661890`: retracted (doi_o) — 10.1086/661890 | 10.15626/mp.2020.2538
-- [ ] `10.1111/j.0956-7976.2004.00757.x`: retracted (doi_o) — 10.1111/j.0956-7976.2004.00757.x | 10.1525/collabra.32572
-- [ ] `10.1177/1948550611410890`: retracted (doi_o) — 10.1177/1948550611410890 | 10.1037/xge0000067
-- [ ] `10.1509/jmkr.45.6.633`: retracted (doi_o) — 10.1509/jmkr.45.6.633 | 10.1177/2515245918781032
-- [ ] `10.1177/0956797611432497`: retracted (doi_o) — 10.1177/0956797611432497 | 10.1027/1864-9335/a000191
+- [ ] SKIPPED: could not download the Retraction Watch database (HTTP Error 502: Bad Gateway)
 
-</details>
-
-<details><summary><b>DOIs that failed to resolve</b> (34 issues)</summary>
+<details><summary><b>DOIs that failed to resolve</b> (35 issues)</summary>
 
 - [ ] `10.1101/gr.126516.111`
 - [ ] `10.18718/81781.7`
@@ -374,10 +357,11 @@ _Generated: 2026-10-20 03:22:33 UTC | Dataset: 3080 rows_
 - [ ] `scholars.indianastate.edu/etds/2136`
 - [ ] `thekeep.eiu.edu/theses/4783`
 - [ ] `10.18718/81781.40`
+- [ ] `10.17705/1atrr.00061`
 
 </details>
 
-<details><summary><b>URLs that failed to resolve</b> (49 issues)</summary>
+<details><summary><b>URLs that failed to resolve</b> (45 issues)</summary>
 
 - [ ] `https://hrcak.srce.hr/file/334421`
 - [ ] `http://hdl.handle.net/1820/9055`
@@ -386,21 +370,17 @@ _Generated: 2026-10-20 03:22:33 UTC | Dataset: 3080 rows_
 - [ ] `http://www.collabra.org/articles/10.1525/collabra.216/galley/263/download/`
 - [ ] `http://www.collabra.org/articles/10.1525/collabra.117/galley/146/download/`
 - [ ] `http://e-spacio.uned.es/fez/view/bibliuned:DptoMIDEII-FEDU-Articulos-Jcperez-0006`
-- [ ] `http://hdl.handle.net/10722/228801`
 - [ ] `https://openalex.org/W7113264659`
 - [ ] `http://elibrary.aisnet.org/Default.aspx?url=https://aisel.aisnet.org/cgi/viewcontent.cgi?article=1006&context=trr`
 - [ ] `https://storage.googleapis.com/plos-corpus-prod/10.1371/journal.pone.0198620/1/pone.0198620.pdf?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=wombat-sa%40plos-prod.iam.gserviceaccount.com%2F20210216%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20210216T121734Z&X-Goog-Expires=3600&X-Goog-SignedHeaders=host&X-Goog-Signature=3a730412736db07da92d2cbb40223611403deceedf4c4ab529ddf4e5b8a860d786570225c2de9600d35dc629d57a660246ac9253b8f99072ab5dc9a80567f81f485d411e250713b8be101c0dee2513a00e2d03ecc80f33de21a761f1fedc45ebdea3ddc53fe6517f06eca371a7f7adaec25056b2c6917bb4f238ed81004578297007e6bef4bcc3af13b93508ccfecf2555ec254babd57c8b15e92a9cfd500a5fd8b1c81f92fdb70874012974d676dbc65974e25bf291f0851a6ac186cb1c5681c9326808c4baf9a0ddfd938c18c571d3e245c17df563554cef21ac564e57881f9f9d9c849efa122d536b4441caa7b213777510d9c7b43b16dfccb17381a049e3`
 - [ ] `https://biblio.ugent.be/publication/8707609`
 - [ ] `http://orbilu.uni.lu/handle/10993/45413`
 - [ ] `https://cdr.lib.unc.edu/downloads/7w62fg56x`
-- [ ] `https://storkjournals.org/index.php/cik/article/download/39/23`
 - [ ] `http://libres.uncg.edu/ir/asu/f/Eshenbaugh_Brooklyn Spring 2018 Thesis.pdf`
-- [ ] `http://libres.uncg.edu/ir/uncg/f/E_Jones_Livestock_2012.pdf`
 - [ ] `https://storage.googleapis.com/plos-corpus-prod/10.1371/journal.pone.0209263/1/pone.0209263.pdf?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=wombat-sa%40plos-prod.iam.gserviceaccount.com%2F20210221%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20210221T170527Z&X-Goog-Expires=3600&X-Goog-SignedHeaders=host&X-Goog-Signature=738cc051df73116169d6a637a6e0d613b3b424dd19f9cc1a2a0652ef9604ca8fb5d4d361df382b5d7c408c77fb4f6509545dcdfe2486dfa37634a35d560bbd4a57d917d70d2ab3ca1c3cd77168c0c56f976f4fa1508305c5e0213370e05fc7f24e3297fcd30822a3f663542a8c941c479901db91978ed30b7f2fe9d211537ee88bc41071cefffe9a060d0fa72322d2d91a19a2d55034266269fe25ef495d4b5c182c0b67d21bc7986eac8096381703773fcae76c9865505177b5f854ea0d25080e05671cc0510339cc237b5ff5a1509b8ac9703d3c6b51bb6dc7a9528bbcd13f1c9195ed9db5302e257d52915013cf67847abac8dfa22d54e5b829452b1e261e`
 - [ ] `http://hdl.handle.net/2328/35450`
 - [ ] `http://www.economics-ejournal.org/dataset/PDFs/journalarticles_2019-51.pdf`
 - [ ] `http://eprints.keele.ac.uk/2958/1/M%20Noor%20-%20Intergroup%20forgiveness%20and%20reconciliation.pdf`
-- [ ] `http://libres.uncg.edu/ir/uncg/f/P_Silvia_Remotely_2018.pdf`
 - [ ] `http://orbilu.uni.lu/handle/10993/27870`
 - [ ] `https://autopapers.ssrn.com/sol3/papers.cfm?abstract_id=1324778`
 - [ ] `https://autopapers.ssrn.com/sol3/papers.cfm?abstract_id=929932`
@@ -432,16 +412,16 @@ _Generated: 2026-10-20 03:22:33 UTC | Dataset: 3080 rows_
 </details>
 
 
-**Network validation status: needs_attention**
+**Network validation status: incomplete**
 
-- dois: 5098 targets; 5064 cached; 34 checked; 0 deferred.
-- urls: 3286 targets; 3237 cached; 49 checked; 0 deferred.
+- dois: 5129 targets; 5064 cached; 65 checked; 0 deferred.
+- urls: 3298 targets; 3239 cached; 59 checked; 0 deferred.
 
 
 ## Prepared release
 
 - File: flora.csv
-- SHA-256: `0b2a39550fb71c2aa73a48e0ffede61fb11f6d18c448eff485bf8a0e63e34d72`
+- SHA-256: `e9ef7c1ba1a6dcf3263a76f9069664441ad509cb135b5d6705a04639b85c3717`
 - Publication: local files only; no OSF or GitHub release.
 
 ## Dataset history
