@@ -2,7 +2,7 @@ doi_o,doi_r,type,outcomes,resolved_to,resolved_by,url_r,sources
 10.1037/0022-3514.86.5.680,10.1016/j.jesp.2020.104052,replication,failed | successful,mixed,merge rules,,fred_replication_success
 10.1145/3290605.3300469,10.1098/rsos.231240,replication,failed | successful,mixed,merge rules,https://github.com/psych251/jakesch2023/blob/main/writeup/Replication%20Report%20Template.qmd,fred_replication_success
 10.1177/0956797616685771,10.1098/rsos.231240,replication,mixed | successful,mixed,merge rules,https://github.com/vboyce/251-254-MA/blob/main/reports/jordan2017_2.html,fred_replication_success
-10.1073/pnas.1523698113,10.1098/rsos.231240,replication,successful | uninformative,successful || uninformative,merge rules,https://rpubs.com/rhanah/982957,fred_replication_success
+10.1073/pnas.1523698113,10.1098/rsos.231240,replication,successful | uninformative,successful,merge rules: the kept record's outcome; needs a decision,https://rpubs.com/rhanah/982957,fred_replication_success
 10.1177/0956797615612202,10.1098/rsos.231240,replication,failed | successful,mixed,merge rules,https://github.com/psych251/porter2016/blob/master/writeup/Replication%20of%20Study%201%20by%20Porter%20et%20al.Rmd,fred_replication_success
 10.1177/0956797615573516,10.1098/rsos.231240,replication,failed | successful,mixed,merge rules,https://rpubs.com/jackie_schwartz/341565,fred_replication_success
 10.1177/0146167202286008,10.1017/s1930297500008470,replication,mixed | successful,mixed,website record,https://doi.org/10.1017/s1930297500008470,fred_replication_success | validated
@@ -10,7 +10,7 @@ doi_o,doi_r,type,outcomes,resolved_to,resolved_by,url_r,sources
 10.1037/a0023527,10.1037/a0036079,replication,failed | mixed,mixed,merge rules,,fred_replication_success
 10.1037/a0012833,10.1177/2515245920958687,replication,failed | mixed,mixed,merge rules,,fred_replication_success
 10.1037/0022-3514.94.1.116,10.1177/2515245920958687,replication,failed | mixed,mixed,merge rules,,fred_replication_success
-10.1177/1948550611410890,10.1037/xge0000067,replication,failed | uninformative,uninformative || failed,merge rules,,fred_replication_success
+10.1177/1948550611410890,10.1037/xge0000067,replication,failed | uninformative,uninformative,merge rules: the kept record's outcome; needs a decision,,fred_replication_success
 10.1037/0022-3514.71.2.230,10.1037/0022-3514.83.2.406,replication,mixed | successful,mixed,merge rules,,fred_replication_success
 10.1111/j.1468-0017.2006.00297.x,10.1177/2515245918810225,replication,mixed | successful,mixed,merge rules,,fred_replication_success
 10.1002/(sici)1099-0771(199806)11:2%3c107::aid-bdm292%3e3.0.co;2-y,10.1177/2515245918810225,replication,failed | successful,mixed,merge rules,,fred_replication_success
@@ -21,9 +21,9 @@ doi_o,doi_r,type,outcomes,resolved_to,resolved_by,url_r,sources
 10.1126/science.1222426,10.1016/j.joep.2018.12.001,replication,failed | mixed | successful,mixed,merge rules,,fred_replication_success
 10.1037/pspa0000032,10.1017/s1930297500007774,replication,failed | mixed | successful,mixed,merge rules,,fred_replication_success
 10.1037/0096-3445.133.1.23,10.17605/osf.io/ahcpw,replication,failed | successful,mixed,merge rules,https://osf.io/qbp4g/files/ue9gm,fred_replication_success
-10.1080/02699931.2016.1273201,10.31234/osf.io/ntukz,replication,failed | statistically successful but flawed,statistically successful but flawed || failed,merge rules,,fred_replication_success
+10.1080/02699931.2016.1273201,10.31234/osf.io/ntukz,replication,failed | statistically successful but flawed,statistically successful but flawed,merge rules: the kept record's outcome; needs a decision,,fred_replication_success
 10.1037/0022-3514.90.4.543,10.17605/osf.io/j9mfn,replication,failed | successful,mixed,merge rules,https://osf.io/8mqx5,fred_replication_success
-10.1017/s1930297500005064,10.1080/23743603.2021.1878340,replication,failed | uninformative,failed || uninformative,merge rules,,fred_replication_success
+10.1017/s1930297500005064,10.1080/23743603.2021.1878340,replication,failed | uninformative,failed,merge rules: the kept record's outcome; needs a decision,,fred_replication_success
 10.1037/0022-3514.67.3.357,10.1525/collabra.37122,replication,failed | mixed | successful,mixed,merge rules,,fred_replication_success
 10.1016/j.jesp.2008.03.012,10.1027/1864-9335/a000188,replication,failed | mixed | successful,mixed,merge rules,,fred_replication_success | replications
 10.1111/j.1467-9280.2006.01720.x,10.17605/osf.io/4hjck,replication,mixed | successful,mixed,merge rules,,fred_replication_success
@@ -55,7 +55,7 @@ doi_o,doi_r,type,outcomes,resolved_to,resolved_by,url_r,sources
 10.1016/j.jcorpfin.2007.03.004,10.1016/j.jfbs.2021.100451,replication,mixed | successful,mixed,merge rules,https://doi.org/10.1016/j.jfbs.2021.100451,replications
 10.3982/ecta6248,10.1002/jae.2861,reproduction,"computationally reproducible, not checked | computationally reproducible, robust","computationally reproducible, not checked",website record,https://doi.org/10.1002/jae.2861,reproductions | validated
 10.1016/j.jfbs.2016.08.001,10.1016/j.jfbs.2022.100497,replication,mixed | successful,mixed,website record,,replications | validated
-10.1037/0096-3445.136.2.289,,replication,mixed | successful,mixed,first record,https://osf.io/ns26x,fred_replication_success
-10.1111/jsbm.12023,10.1108/neje-04-2020-0005,replication,failed | mixed,mixed,first record,,replications
-10.1177/0267658315589656,10.1017/s0261444818000368,replication,mixed | successful,successful,first record,,replications
-10.1177/0956797615624492,10.1098/rsos.231240,replication,failed | mixed,failed,first record,https://rpubs.com/mateusmazza/project_report_pilotB,fred_replication_success
+10.1037/0096-3445.136.2.289,,replication,mixed | successful,mixed,merge rules: the kept record's outcome; needs a decision,https://osf.io/ns26x,fred_replication_success
+10.1111/jsbm.12023,10.1108/neje-04-2020-0005,replication,failed | mixed,mixed,merge rules: the kept record's outcome; needs a decision,,replications
+10.1177/0267658315589656,10.1017/s0261444818000368,replication,mixed | successful,successful,merge rules: the kept record's outcome; needs a decision,,replications
+10.1177/0956797615624492,10.1098/rsos.231240,replication,failed | mixed,failed,merge rules: the kept record's outcome; needs a decision,https://rpubs.com/mateusmazza/project_report_pilotB,fred_replication_success
