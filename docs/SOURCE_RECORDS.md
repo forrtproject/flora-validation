@@ -815,8 +815,9 @@ return, as in fred-data's file.
 The logs are written beside the dataset, so in the nightly job they land in
 `output/`, are uploaded with it, and are committed with it whenever the night's
 `flora.csv` changed. A build removes the logs it did not write, so the ones in
-`output/` are always the latest build's. A Publish FLoRA release (after a website
-run) carries none: its preparation report's JSON lists their records.
+`output/` are always the latest build's. A Publish FLoRA release (after a failed
+night, or started by hand) carries none: their records are in the JSON preparation
+report of the run it is given, if any.
 
 Preprint duplicate pairs nobody has ruled on (`needs_review`, or an unconfirmed
 `auto_keep_*`) also become a warning in the preparation report and on the pipeline
@@ -1119,11 +1120,13 @@ release notes, history and reports) whenever `flora.csv` changed, so other repos
 can read it from a `raw.githubusercontent` URL the way they read `validated_export.csv`.
 It is the file the run stored in `flora_data`, which **Download full CSV** in the FLoRA
 tab also serves. A correction saved in the FLoRA tab rewrites its row in `flora_data`
-at once, so from then on the download has it and the repository file gets it at the next
-run. A successful **Run pipeline** on the website does the same through
-the Publish FLoRA workflow, when `FLORA_RELEASE_TOKEN` is set. Publish FLoRA also runs
-by itself after every nightly job, so even a failed night publishes the stored dataset. `output/flora_entry_sheets.csv` is written only by the
-`transform_sources.py` command line and is not part of it.
+at once, so from then on the download has it and the repository file gets it after the
+next nightly job. A **Run pipeline** on the website stores its dataset but does not
+commit it: the next nightly job commits its own build in its place, and the Publish FLoRA
+workflow, which runs by itself after every nightly job (so even a failed night publishes
+the stored dataset), commits it sooner when started by hand in the repository's Actions
+tab. `output/flora_entry_sheets.csv` is written only by the `transform_sources.py`
+command line and is not part of it.
 
 ### 10.1 The "Run sync now" button
 

@@ -229,9 +229,6 @@ Use a disposable database for development unless you intend those actions to run
 | `GITHUB_TOKEN` | No for a public source repository | empty | Authorization header for nightly extractor CSV download |
 | `GITHUB_REPO` | No | `forrtproject/flora-extractor` | Extractor source repository |
 | `GITHUB_BRANCH` | No | `main` | Extractor source branch |
-| `FLORA_RELEASE_TOKEN` | No | empty | Fine-grained GitHub token with **Actions: read and write** on this repository only. After a successful **Run pipeline** the server starts the Publish FLoRA workflow with it, which commits `output/flora.csv` when it changed; it cannot push code. Unset, invalid or refused, the run still succeeds and its log says no repository copy was requested |
-| `FLORA_RELEASE_REPO` | No | `forrtproject/flora-validation` | Repository whose Publish FLoRA workflow is started |
-| `FLORA_RELEASE_BRANCH` | No | `main` | Branch the workflow runs on and commits to |
 | `EXTRACTOR_DATA_DIR` | No | `data/` | Working directory for `extracted_latest.csv` and the per-run snapshot archives the later stages verify by sha256; need not survive a redeploy, because each imported snapshot is also kept in `extractor_snapshots` |
 | `EXTRACTOR_SNAPSHOTS_KEPT` | No | `10` | Imported snapshots kept in the database (~4 MB each, minimum 2); older ones remain commits in flora-extractor's history |
 | `EXTRACTOR_AUTO_RETIRE` | No | `1` | Run the retire stage at the end of each full sync; `0`/`off` disables it |
@@ -1793,11 +1790,12 @@ tab shows it. Parent progress updates merge JSON rather than replacing it.
    nothing. The build removes transform logs it did not write, so the committed
    ones are always this build's.
 
-`.github/workflows/publish-flora.yml` (Publish FLoRA) runs when the website starts
-it after a successful **Run pipeline** (`repo_release.py`, `FLORA_RELEASE_TOKEN`), once a
-day as soon as the nightly sync job finishes (succeeded or not; GitHub starts it, no token
-needed), or by hand. After a good night it finds `flora.csv` already committed and commits
-nothing; after a failed one it still publishes the stored dataset with the day's
+`.github/workflows/publish-flora.yml` (Publish FLoRA) runs once a day as soon as the
+nightly sync job finishes (succeeded or not), and by hand from the Actions tab, for
+instance right after a website **Run pipeline** (give the run's id to include its
+report): a website run does not commit by itself, as the web server cannot push. After
+a good night Publish FLoRA finds `flora.csv` already committed and commits nothing;
+after a failed one it still publishes the stored dataset with the day's
 corrections. `publish_flora.py` writes the stored dataset (`flora_data`) to `output/flora.csv`
 with its manifest, notes and history row, and the workflow commits `output/` when
 `flora.csv` changed. The run's preparation and validation reports are included only
@@ -2016,7 +2014,6 @@ against a database you have not backed up.
 | `backfill_flora_history.py` | Dry-by-default dataset size history from published flora.csv versions |
 | `backfill_author_orcids.py` | Dry-by-default refresh of cached author lists, with their ORCIDs |
 | `publish_flora.py` | Stored FLoRA dataset to `output/` for the repository copy (Publish FLoRA workflow) |
-| `repo_release.py` | Starts Publish FLoRA after a successful website pipeline run |
 | `update_originals.py` | Dry-by-default raw original-reference refresh by `pair_id` |
 | `update_outcomes.py` | Outcome/type/quote refresh for untouched rows |
 | `find_orphans.py` | Read-only summary of database records absent from the current resolved CSV |

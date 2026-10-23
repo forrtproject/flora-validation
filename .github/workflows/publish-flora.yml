@@ -2,14 +2,13 @@ name: Publish FLoRA
 
 # Writes the stored FLoRA dataset (flora_data) to output/ and commits it when
 # flora.csv changed, so other repositories read the same file the website
-# downloads. Started three ways:
-#   - by the website, after a successful Run pipeline (repo_release.py);
+# downloads. Started two ways:
 #   - once a day, as soon as the nightly "Sync entry sheets" job (03:00 UTC)
 #     finishes, whether it succeeded or not. After a good night it finds flora.csv
 #     already committed and commits nothing; after a failed one it still publishes
-#     the stored dataset with the day's corrections. GitHub starts this one itself:
-#     it needs no FLORA_RELEASE_TOKEN;
-#   - by hand from the Actions tab.
+#     the stored dataset with the day's corrections;
+#   - by hand from the Actions tab, for instance right after a website Run
+#     pipeline (with that run's id, its preparation report comes along).
 on:
   workflow_dispatch:
     inputs:
@@ -64,7 +63,7 @@ jobs:
       - name: Commit the FLoRA release to output/
         env:
           RELEASE_MANIFEST: output/flora_release_manifest.json
-          ORIGIN: ${{ github.event_name == 'workflow_run' && 'after the nightly sync' || inputs.job_id != '' && 'from the website pipeline' || 'started by hand' }}
+          ORIGIN: ${{ github.event_name == 'workflow_run' && 'after the nightly sync' || inputs.job_id != '' && 'for a website pipeline run' || 'started by hand' }}
         run: >-
           bash .github/scripts/commit_and_push.sh
           "chore: FLoRA release $ORIGIN ($(date -u +%Y-%m-%d))"

@@ -5960,10 +5960,10 @@ def admin_flora_export(
     """Rows matching the filter, in the canonical release order.
 
     The complete file is the stored dataset in flora_data: the flora.csv the last
-    pipeline run published (and committed to output/), with the corrections saved
-    since; the public API serves its records from the same table. view=tab, which
-    Export filtered CSV always sends, or any filter, gives the tab's own view
-    instead, which also shows rows the next run will add.
+    pipeline run stored, with the corrections saved since; the public API serves
+    its records from the same table. view=tab, which Export filtered CSV always
+    sends, or any filter, gives the tab's own view instead, which also shows rows
+    the next run will add.
     Retained per-run artifacts have their own endpoint so later edits cannot
     change an earlier run's downloaded file.
     """
