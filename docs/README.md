@@ -1,18 +1,17 @@
 # FLoRA Validation
 
-## Complete preparation pipeline
+## FLoRA pipeline
 
-The administrator's **Source Records → Run pipeline + report** action now prepares
-the final CSV, validates that exact file, and retains CSV/Markdown/JSON downloads
+The administrator's **Source Records → Run pipeline** action builds
+`flora.csv`, validates that exact file, and keeps CSV/Markdown/JSON downloads
 for each run. The export begins with `id`, `id_md5`, then the 35 supplied reference
 columns; existing reference rows keep their order and new records append.
 
 See the [full integration report](PIPELINE_INTEGRATION_REPORT.md) for the supplied
 helper mapping, exact CSV comparison, checks, configuration, and operating commands.
 
-The complete prepared dataset also has an independent `flora_data` table with
-permanent IDs and full MD5 lookup keys. See [Prepared FLoRA database table](FLORA_DATA_TABLE.md)
-for initial import, pipeline storage, retirement, and the title/DOI/hash lookup
+The stored dataset, the `flora_data` table, keeps permanent IDs and full MD5
+lookup keys. See [The stored FLoRA dataset](FLORA_DATA_TABLE.md) for initial import, pipeline storage, retirement, and the title/DOI/hash lookup
 helpers. The [public API guide](FLORA_API.md) documents the implemented `/v1`
 DOI-prefix lookup, DOI lookup/list, search, and permanent ID-hash lookup routes.
 
@@ -24,10 +23,11 @@ tiebreaker, gives administrators the final publication decision, and exports the
 approved records as CSV.
 
 This repository also contains a second, independent pipeline for importing and
-reviewing FLoRA's published Google entry sheets. Those rows live in
-`source_records`, are edited through a separate admin screen, and are combined with
-the app's approved records by `sync_validated.py`. The complete preparation command
-produces `output/flora.csv`; the older direct transform command remains available.
+reviewing FLoRA's published Google entry sheets. Those source records live in
+`source_records`, are reviewed in the Source Records tab (corrections go on the FLoRA
+record), and are combined with the app's approved records by `sync_validated.py`. The
+FLoRA pipeline (`prepare_flora.py`) produces `output/flora.csv`; the older direct
+transform command remains available.
 
 This document describes the implementation in the checked-out `main` revision,
 not the intended design in old planning documents. Where the current code and an
@@ -638,7 +638,7 @@ rule that earns the point. Each judgement records that answer as
 `additional_checks.outcome_quote_reworded` when it is submitted, against the quote
 its screen showed; older ones are compared with the record's extracted quote. The
 Corrections row shows judgements (Type, Original, Outcome, Outcome quote, Title;
-"neither type" counts under Type alone), and "Pipeline vs Final" adds validated
+"neither type" counts under Type alone), and "Extracted vs Final" adds validated
 articles whose final quote was reworded, leaving type changes to Type.
 
 ### The other type vs out of FLoRA
@@ -1424,7 +1424,7 @@ database trigger calculates a duplicate fingerprint from normalized original DOI
 plus replication DOI (or replication URL). The fingerprint is a review signal,
 not identity.
 
-Once a source row exists, later sheet changes do not update it, and nobody edits it
+Once a source record exists, later sheet changes do not update it, and nobody edits it
 by hand: corrections are made to the FLoRA record it feeds (below).
 
 ### Review service
@@ -1791,7 +1791,7 @@ tab shows it. Parent progress updates merge JSON rather than replacing it.
    ones are always this build's.
 
 `.github/workflows/publish-flora.yml` (Publish FLoRA) runs once a day as soon as the
-nightly sync job finishes (succeeded or not), and by hand from the Actions tab, for
+nightly job (Sync entry sheets) finishes, succeeded or not, and by hand from the Actions tab, for
 instance right after a website **Run pipeline** (give the run's id to include its
 report): a website run does not commit by itself, as the web server cannot push. After
 a good night Publish FLoRA finds `flora.csv` already committed and commits nothing;

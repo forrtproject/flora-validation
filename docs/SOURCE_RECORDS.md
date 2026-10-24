@@ -4,7 +4,7 @@ The **Source Records** tab in the admin panel is a spreadsheet-like view of the 
 entry sheets, backed by a Postgres table that a nightly GitHub Action fills. Admins
 browse and search those rows in the browser and rule on duplicates; a separate script
 turns them into the FLoRA dataset. Records are corrected there, in the **FLoRA** tab
-(§9.4): a source row always stays as its source supplied it.
+(§9.4): a source record always stays as its source supplied it.
 
 This document is the complete picture: what it does, why it is built this way, how to
 operate it, and what goes wrong.
@@ -29,7 +29,7 @@ operate it, and what goes wrong.
    - [9.3 The FLoRA tab](#93-the-flora-tab)
    - [9.4 Correcting a FLoRA record](#94-correcting-a-flora-record-flora_editspy)
 10. [The GitHub Action](#10-the-github-action)
-    - [10.1 The "Run sync now" button](#101-the-run-sync-now-button)
+    - [10.1 The "Run pipeline" button](#101-the-run-pipeline-button)
 11. [Common tasks](#11-common-tasks)
 12. [Troubleshooting](#12-troubleshooting)
 13. [Design decisions and why](#13-design-decisions-and-why)
@@ -44,14 +44,14 @@ The FLoRA preparation pipeline (an R notebook, mirrored at
 sheets straight from Google, filters and deduplicates them inline, and emits
 `flora.csv`. That works, but it means:
 
-- nobody can see a source row unless they open the Google Sheet
+- nobody can see a source record unless they open the Google Sheet
 - a malformed DOI or a mis-coded outcome can only be fixed by editing the sheet
 - corrections have no author, no timestamp, and no history
 - the cleaning rules are buried in an R notebook
 
-This system puts the source rows in a database with a review UI on top. Corrections
-are made in the web app, attributed and timestamped, on the FLoRA record a row feeds.
-The source row stays as imported, and the correction is applied on top of every
+This system puts the source records in a database with a review UI on top. Corrections
+are made in the web app, attributed and timestamped, on the FLoRA record a source record
+feeds. The source record stays as imported, and the correction is applied on top of every
 subsequent build automatically.
 
 **It does not replace the R pipeline.** It replaces the *sheet-reading front end* of
@@ -512,7 +512,7 @@ shown exactly as the source supplied them. Nothing in the panel can be edited.
 - ‹ and › walk the rows of the *current filter* without returning to the grid; the
   counter reads `412 / 1653`
 
-Why read-only: a source row is evidence of what a sheet or the validated set said.
+Why read-only: a source record is evidence of what a sheet or the validated set said.
 Editing it in place lost that, and a correction made here had no clear home once the
 row was deduplicated into another. A correction on the FLoRA record keeps both (§9.4).
 
@@ -763,7 +763,7 @@ ignored: a dataset build that already succeeded must not fail on a nudge.
 ### 8.9.1 What a run writes
 
 Every run also appends to **`logs/flora_pipeline.log`**, whichever way it was
-started — the sync button, the nightly Action, cron, or a shell on the server.
+started — the **Run pipeline** button, the nightly Action, cron, or a shell on the server.
 [`pipeline_logging.py`](../pipeline_logging.py) tees stdout and stderr into that
 file, timestamped and labelled with the component:
 
@@ -791,7 +791,7 @@ without it.
 
 | Started by | Where the output goes |
 |---|---|
-| Sync button | `source_sync_jobs.log_text` **and** `logs/flora_pipeline.log` |
+| Run pipeline button | `source_sync_jobs.log_text` **and** `logs/flora_pipeline.log` |
 | Nightly Action | the Action run log, the artifacts, **and** the file (ephemeral in CI) |
 | Terminal / cron | console **and** `logs/flora_pipeline.log` |
 
@@ -971,9 +971,9 @@ works for all 3,032 rows today, including the 2 with no usable identifier at all
 
 ### 9.3 The FLoRA tab
 
-The admin panel's **FLoRA** tab shows the prepared product — the transform's output
-with `flora_id` attached — with search, filters, sorting, a detail view and a CSV
-export honouring the current filter.
+The admin panel's **FLoRA** tab shows the dataset as built from the current source
+records — the transform's output with `flora_id` attached — with search, filters,
+sorting, a detail view and a CSV export honouring the current filter.
 
 Nothing is materialised. [`flora_service.py`](../flora_service.py) derives the dataset
 on demand (~1s) and caches the frame until the underlying tables actually change,
@@ -1021,7 +1021,7 @@ is the registry's `export_id`. Its foreign key points at the registry rather tha
 `flora_data`, because a row can be corrected before it is first published: a missing
 title is exactly what keeps a row out of the export.
 
-**The FLoRA table is rewritten at once.** A save writes what it altered into the
+**The stored dataset is rewritten at once.** A save writes what it altered into the
 record's row in `flora_data` (`flora_edits.publish()`), including what follows from it —
 the title a corrected DOI brings in, the outcome derived from corrected axes — and
 nothing else. The row's `record_version` increases, and so does the table revision
@@ -1040,7 +1040,7 @@ what it derived; a later sync or metadata refresh cannot undo one:
   exact dedup, pair merge and preprint/publication dedup — so a correction can never
   drop, merge or hide a record (`transform_sources.build()`, step 6c). The row is then
   joined to the metadata again from the source's own fallbacks, so the title, authors
-  and journal follow a corrected DOI. The record is found by the source rows it claims
+  and journal follow a corrected DOI. The record is found by the source records it claims
   in the registry, so a correction still reaches it on the run where a duplicate ruling
   changes which row survives. Corrected identifiers are also handed to
   `enrich_works.py`, so metadata not yet cached is fetched at the next pipeline run.
@@ -1079,8 +1079,8 @@ A restore is logged as a change itself (`action = 'restore'`, `restored_from`), 
 be undone by restoring the row before it. *Revert to derived value* on a field drops that
 one correction; typing the derived value back does the same, since a correction identical
 to what the build produces is not kept, and a later improvement at the source flows
-through. Edits made to the record's source rows before changes moved here are listed
-under **Earlier edits to its source records**, also closed.
+through. Edits made to the record's source records before corrections moved here are
+listed under **Earlier edits to its source records**, also closed.
 
 | Route | Purpose |
 |---|---|
@@ -1088,7 +1088,7 @@ under **Earlier edits to its source records**, also closed.
 | `PATCH /api/admin/flora/{flora_id}` | Save a change `{fields, revert, version, notes}`; `notes` maps a field to the note on its change |
 | `POST /api/admin/flora/{flora_id}/restore` | Restore the state after a change `{change_id, version, note}`; `change_id` 0 is the original |
 | `POST /api/admin/flora/{flora_id}/confirm-outcome` | Settle an outcome clash `{version, note, outcome}`: `outcome` is one the duplicates gave (none: the one shown); logged with action `confirm` |
-| `GET /api/admin/flora?edited=true` | The **Edited** chip: records with at least one correction in force |
+| `GET /api/admin/flora?edited=true` | The **Corrected** chip: records with at least one correction in force |
 
 A correction on a record that later retires stops applying, and applies again if the
 record returns. A row without a FLoRA id yet cannot be corrected: run the pipeline first.
@@ -1098,8 +1098,8 @@ record returns. A row without a FLoRA id yet cannot be corrected: run the pipeli
 ## 10. The GitHub Action
 
 [`.github/workflows/sync-sources.yml`](../.github/workflows/sync-sources.yml) —
-**03:00 UTC daily**, plus manual runs from the Actions tab or from the **Run sync
-now** button in the admin panel ([§10.1](#101-the-run-sync-now-button)).
+**03:00 UTC daily**, plus manual runs from the Actions tab. The **Run pipeline**
+button in the admin panel runs the same stages on the server ([§10.1](#101-the-run-pipeline-button)).
 
 ```
 checkout → Python 3.12 → pip install → sync_sources.py → transform_sources.py
@@ -1128,14 +1128,15 @@ the stored dataset), commits it sooner when started by hand in the repository's 
 tab. `output/flora_entry_sheets.csv` is written only by the `transform_sources.py`
 command line and is not part of it.
 
-### 10.1 The "Run sync now" button
+### 10.1 The "Run pipeline" button
 
-The Source Records tab has a sync panel: a **Run sync now** button, live run status,
-and the complete console output of each run.
+The Source Records tab has a pipeline panel: a **Run pipeline** button, live run status,
+the complete console output of each run, and its `flora.csv` and report downloads.
 
-The button **runs the same two scripts on the server** — `sync_sources.py` then
-`sync_validated.py` — rather than calling out to GitHub. No token, no API, nothing to
-configure: if the app can reach the database and the sheets, the button works.
+The button **runs the nightly job's stages on the server** (`source_sync_runner.STAGES`,
+then `prepare_flora.py`) rather than calling out to GitHub. No token, no API, nothing to
+configure: if the app can reach the database and the sheets, the button works. It does
+not commit to GitHub; see §10 for the repository copy.
 
 ```
 button → POST /api/admin/source-sync/dispatch  (persists a queued row, returns a job id)
@@ -1147,14 +1148,14 @@ button → POST /api/admin/source-sync/dispatch  (persists a queued row, returns
        → grid and freshness banner reload when the run ends
 ```
 
-**Why a queue and not an inline call.** A sync takes a minute or two, which an HTTP
-request cannot hold open. A queued row is also durable: if the pod that accepted the
-click dies, another picks the job up instead of the click being silently lost. This
-is the same shape as the extractor pipeline in `extractor_maintenance.py`.
+**Why a queue and not an inline call.** A run takes minutes, which an HTTP request
+cannot hold open. A queued row is also durable: if the pod that accepted the click
+dies, another picks the job up instead of the click being silently lost. This is the
+same shape as the extractor sync in `extractor_maintenance.py`.
 
-**Why subprocesses and not imports.** Both scripts call `sys.exit`, parse `argv` and
+**Why subprocesses and not imports.** The scripts call `sys.exit`, parse `argv` and
 hold module-level state. Importing them into a long-lived web process would leak that
-state between runs, and a hard crash in either would take the web server down.
+state between runs, and a hard crash in one would take the web server down.
 
 **One at a time.** `queue_run()` refuses (409) while a job is queued or running, and
 the advisory lock means that holds across pods, not just within one process. A job
@@ -1330,7 +1331,7 @@ union view to put them back together.
 unseen combination is a lookup-table row to add, not stored data to migrate — and the
 two-dimensional structure the coders actually recorded is never lost.
 
-**Corrections live on the FLoRA record, not the source row.** Editing source rows in
+**Corrections live on the FLoRA record, not the source record.** Editing source records in
 place lost what the source said, and gave a correction no clear home once
 deduplication folded the row into another. A correction stored per field against the
 pinned `flora_id` keeps the evidence intact, records who changed what, and survives a

@@ -42,7 +42,7 @@ from dotenv import load_dotenv
 from console_encoding import use_utf8_output
 from pipeline_logging import start as start_logging
 from validate_flora import (DETAILS_THRESHOLD, _blank, _text, item_id,
-                            load_dataset, load_suppressions, row_id)
+                            load_dataset, load_suppressions, row_id, suppressed_note)
 
 load_dotenv()
 use_utf8_output()
@@ -242,15 +242,24 @@ def validate(cur, df, checks="all", limit=0, suppressions=None) -> dict:
             "suppressed": suppressed, "issue_count": issues, "rows": len(df)}
 
 
+# Status values as the website's run cards word them. The JSON keeps the values.
+STATUS_LABELS = {"needs_attention": "needs review"}
+COVERAGE_LABELS = {"dois": "DOIs", "urls": "URLs"}
+
+
 def render_validation(report: dict) -> str:
     text = render(report["sections"], report["rows"], report["suppressed"])
-    text += f"\n\n**Network validation status: {report['status']}**\n"
+    status = STATUS_LABELS.get(report["status"], report["status"])
+    text += f"\n\n**Network validation status: {status}**\n"
     for kind, coverage in report["coverage"].items():
         if "targets" in coverage:
-            text += (f"\n- {kind}: {coverage['targets']} targets; {coverage['cached']} cached; "
-                     f"{coverage['checked']} checked; {coverage['deferred']} deferred.")
-    if report["checks"] != "all":
-        text += f"\n\nOnly the selected checks ran: {report['checks']}."
+            text += (f"\n- {COVERAGE_LABELS.get(kind, kind)}: {coverage['targets']:,} distinct; "
+                     f"{coverage['cached']:,} cached, {coverage['checked']:,} checked, "
+                     f"{coverage['deferred']:,} deferred.")
+    if report["checks"] == "none":
+        text += "\n\nNo network checks ran (`--network-checks none`)."
+    elif report["checks"] != "all":
+        text += f"\n\nOnly these checks ran: {report['checks']}."
     return text + "\n"
 
 
@@ -258,15 +267,17 @@ def render_validation(report: dict) -> str:
 
 def render(sections: dict, rows: int, suppressed: int = 0) -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    out = ["## FLoRA Network Validation Report", "",
-           f"_Generated: {stamp} UTC | Dataset: {rows} rows_", ""]
+    out = ["## FLoRA network validation", "",
+           f"_Generated: {stamp} UTC | Dataset: {rows:,} rows_", ""]
 
     for heading, items in sections.items():
         if not items:
-            out.append(f"- [x] {heading}: nothing found")
+            # A paragraph, not a list item: after a list and a blank line, "- " would
+            # continue that list and read as one of its findings.
+            out += [f"**{heading}:** none", ""]
             continue
         n = len(items)
-        lines = [f"- [ ] {item}" for item in items]
+        lines = [f"- {item}" for item in items]
         if n <= DETAILS_THRESHOLD:
             out += [f"**{heading}** ({n} issue{'s' if n != 1 else ''}):", ""] + lines + [""]
         else:
@@ -274,8 +285,7 @@ def render(sections: dict, rows: int, suppressed: int = 0) -> str:
                    + lines + ["", "</details>", ""]
 
     if suppressed:
-        out += ["", f"_({suppressed} suppressed false positive"
-                    f"{'s' if suppressed != 1 else ''} not shown)_"]
+        out += ["", suppressed_note(suppressed)]
     return "\n".join(out)
 
 

@@ -59,7 +59,7 @@ def _revision(cur):
     cur.execute("SELECT snapshot_sha256, updated_at FROM flora_data_metadata WHERE singleton")
     row = cur.fetchone()
     if row is None:
-        raise DatasetNotReady("The prepared FLoRA dataset is not ready. Run the preparation pipeline first.")
+        raise DatasetNotReady("No FLoRA dataset is stored yet. Run the pipeline first.")
     return row["snapshot_sha256"], row["updated_at"]
 
 
@@ -309,5 +309,5 @@ def create_router(database=readonly_database):
                                  summary=f"FLoRA {kind} ({method})",
                                  openapi_extra=_openapi(kind, method),
                                  responses={400: {"description": "Invalid or missing query parameters"},
-                                            503: {"description": "Prepared dataset has not been imported"}})
+                                            503: {"description": "No dataset is stored yet"}})
     return router

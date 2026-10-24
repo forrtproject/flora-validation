@@ -138,6 +138,6 @@ def test_locked_local_copy_keeps_successful_job_download(tmp_path, monkeypatch):
     csv_text, report, _, _ = saved[-1]
     assert csv_text.encode("utf-8") == source.read_bytes()
     assert report.adapted["status"] == "needs_attention"
-    assert any("Could not copy local artifact flora.csv" in warning for warning in report.adapted["warnings"])
+    assert any("Could not copy flora.csv to output/" in warning for warning in report.adapted["warnings"])
     assert any(params == ("success", "review-job") for _, params in conn.executed)
     assert not list((tmp_path / "output").glob("flora-sync-*"))

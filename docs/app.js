@@ -681,7 +681,7 @@ async function doLogin() {
   // unique-constraint collision on the server.
   if (_loginInFlight) return;
   const handle = $("#handle-input").value.trim();
-  if (!handle) { await showAlert("Please enter a handle."); return; }
+  if (!handle) { await showAlert("Enter your username."); return; }
 
   // Admins sign in through their own form (triple-click the wordmark, or
   // ?admin=1). This field is an email address and nothing else: it used to
@@ -691,7 +691,7 @@ async function doLogin() {
 
   const email = $("#email-input").value.trim();
   if (!email || !email.includes("@")) {
-    await showAlert("Please enter a valid email address.");
+    await showAlert("Enter a valid email address.");
     return;
   }
   const remember = !!$("#remember-me")?.checked;
@@ -2398,7 +2398,7 @@ function _prepareDraft(draft, pair) {
     judgement.repro_robustness = null;
     judgement.repro_computation_check = null;
     judgement.repro_robustness_check = null;
-    showToast("Draft text restored. Please review the type and outcome again before submitting.");
+    showToast("Draft text restored. Check the type and outcome again before submitting.");
   }
   judgement.shown_record = current;
   return judgement;
@@ -3765,7 +3765,7 @@ function wireEditButtons(container, p) {
       if (!existing) {
         const hint = document.createElement("div");
         hint.className = "abstract-empty-hint unsaved-hint";
-        hint.textContent = "Abstract cannot be empty — please add the text before saving.";
+        hint.textContent = "The abstract cannot be empty. Add the text before saving.";
         abstractEdit.insertAdjacentElement("afterend", hint);
         setTimeout(() => hint.remove(), 5000);
       }
@@ -4609,7 +4609,7 @@ function showSkipReasonDialog() {
         return;
       }
       if (isCommentRequired() && !text) {
-        error.textContent = "Please add a short explanation for this reason.";
+        error.textContent = "Add a short explanation for this reason.";
         comment.focus();
         return;
       }
@@ -4858,7 +4858,7 @@ const TOUR_STEPS = [
   {
     sel: null,
     title: "Here's your workspace",
-    body: "Each entry is a replication study. You'll check three things the automated pipeline extracted: the study type, the original paper, and the reported outcome. Let's walk through it.",
+    body: "Each entry is a replication study. You'll check three things the automated extraction found: the study type, the original paper, and the reported outcome.",
   },
   {
     sel: ".pair-header",
@@ -5193,7 +5193,7 @@ async function guardedSubmit() {
   if (titleEdit && !titleEdit.classList.contains("hidden")) {
     _shakeAndHint(
       card.querySelector("#fix-title-btn"),
-      'Title correction is not saved — please save it to proceed.'
+      'The title correction is not saved yet. Save it to continue.'
     );
     return;
   }
@@ -5242,7 +5242,7 @@ async function guardedSubmit() {
   if (state.mode !== "hard" && !state.assignment && !hasAbstract) {
     _shakeAndHint(
       card?.querySelector("#edit-abstract-btn"),
-      'This record has no abstract — please find and paste it in using "edit abstract" before submitting.'
+      'This record has no abstract. Find it and paste it in with "edit abstract" before submitting.'
     );
     return;
   }
@@ -7194,7 +7194,7 @@ function renderMaintenanceRuns(data) {
     const who = run.trigger === "scheduled" ? "the nightly schedule" : (run.requested_by || run.trigger);
     live.className = "pipeline-live-status";
     live.innerHTML = `<span class="pipeline-live-dot"></span><span><b>${escapeHtml(run.status === "queued" ? "Queued:" : "Running:")}</b> `
-      + `${escapeHtml(kind)} started by ${escapeHtml(who)}. This page updates by itself.</span>`;
+      + `${escapeHtml(kind)} started by ${escapeHtml(who)}.</span>`;
   } else {
     live.classList.add("hidden");
   }
@@ -7239,7 +7239,7 @@ async function fetchMaintenanceRuns() {
     clearTimeout(_maintenancePollTimer);
     _maintenancePollTimer = active ? setTimeout(fetchMaintenanceRuns, 3000) : null;
   } catch (e) {
-    body.innerHTML = `<p class="faq-error">Could not load pipeline history (${escapeHtml(e.message)}).</p>`;
+    body.innerHTML = `<p class="faq-error">Could not load run history (${escapeHtml(e.message)}).</p>`;
     const updated = $("#pipeline-updated");
     if (updated) updated.innerHTML = "Could not refresh<small>Try again in a moment.</small>";
   }
@@ -7799,7 +7799,7 @@ function renderAdminDashboard(d) {
 
   $("#admin-dashboard-body").innerHTML = `
     <div class="dash-section">
-      <div class="dash-section-label">Pipeline Progress</div>
+      <div class="dash-section-label">Validation Progress</div>
       <div class="dash-cards">
         <div class="dash-card dash-card-neutral">
           <span class="dash-card-val">${p.total}</span>
@@ -7895,7 +7895,7 @@ function renderAdminDashboard(d) {
       <div class="dash-section-label">Disagreements <span class="dash-chart-sub">(articles — hover a row for the confusion matrix)</span></div>
       <div class="disagree-toggle">
         <button class="disagree-tab active" data-view="validator">Validator vs Validator</button>
-        <button class="disagree-tab" data-view="pipeline">Pipeline vs Final</button>
+        <button class="disagree-tab" data-view="pipeline">Extracted vs Final</button>
       </div>
       <div id="disagree-body"></div>
     </div>
@@ -7998,7 +7998,7 @@ function _renderDisagree(view) {
     const p = dd.pipeline;
     const dim = (label, x) => row(label, x.count, `of ${x.records} compared`, x.matrix, "Extracted ↓", "Final →");
     body.innerHTML =
-      `<p class="disagree-caption">${p.total_validated} validated articles · counts = where the final value differs from the pipeline's extracted value</p>` +
+      `<p class="disagree-caption">${p.total_validated} validated articles · counts = where the final value differs from the extracted value</p>` +
       dim("Type", p.type) +
       `<div class="disagree-row disagree-row-nomatrix">
         <span class="disagree-dim">Original</span>
@@ -8511,7 +8511,7 @@ async function saveAdminBanner(active) {
   const msgEl = $("#admin-banner-msg");
   const msg   = msgEl ? msgEl.value.trim() : "";
   if (active && !msg) {
-    await showAlert("Please enter a message before sending.");
+    await showAlert("Enter a message before sending.");
     return;
   }
   try {
@@ -8659,9 +8659,9 @@ function openComposePanel() {
     $("#msg-compose-send").addEventListener("click", async () => {
       const subject = ($("#msg-compose-subject")?.value || "").trim();
       const body    = ($("#msg-compose-body")?.value || "").trim();
-      if (!_selectedValidator) return showToast("Please select a validator.");
-      if (!subject)            return showToast("Please enter a subject.");
-      if (!body)               return showToast("Please enter a message.");
+      if (!_selectedValidator) return showToast("Select a validator.");
+      if (!subject)            return showToast("Enter a subject.");
+      if (!body)               return showToast("Enter a message.");
       const isBroadcast = _selectedValidator.id === "all";
       const btn = $("#msg-compose-send");
       btn.disabled = true;
@@ -8784,7 +8784,7 @@ async function submitForgotHandle() {
   const msg   = $("#forgot-msg");
   if (!email || !email.includes("@")) {
     msg.style.color = "var(--red)";
-    msg.textContent = "Please enter a valid email address.";
+    msg.textContent = "Enter a valid email address.";
     return;
   }
   const btn = $("#forgot-submit-btn");
@@ -8794,7 +8794,7 @@ async function submitForgotHandle() {
   try {
     await api("/forgot-handle", "POST", { email });
     msg.style.color = "var(--green)";
-    msg.textContent = "Sent! Check your inbox (and spam folder).";
+    msg.textContent = "Sent. Check your inbox and spam folder.";
     btn.textContent = "Sent ✓";
     setTimeout(closeForgotModal, 2500);
   } catch (e) {
@@ -8899,7 +8899,7 @@ function renderSourceRecords(data) {
 
   body.innerHTML = rows.map((r) => {
     const flag = r.is_duplicate
-      ? ' <span class="src-flag" title="This paper appears under more than one sheet id">⚑</span>'
+      ? ' <span class="src-flag" title="This paper appears under more than one sheet ID">⚑</span>'
       : "";
     const reviewed = r.reviewed_by
       ? escapeHtml(r.reviewed_by) + '<br><span class="src-dim2">' +
@@ -8968,7 +8968,7 @@ async function fetchSourceFreshness() {
       const bits = [escapeHtml(s.source) + " " + when];
       if (s.rows_inserted) bits.push("+" + s.rows_inserted + " new");
       if (s.rows_skipped)  bits.push(s.rows_skipped + " skipped");
-      if (s.dup_ids)       bits.push(s.dup_ids + " dup ids");
+      if (s.dup_ids)       bits.push(s.dup_ids + " duplicate IDs");
       return bits.join(" · ");
     });
     el.innerHTML = "Last sync — " + parts.join("&nbsp;&nbsp;|&nbsp;&nbsp;");
@@ -9028,8 +9028,8 @@ function floraOutcomeCell(r) {
   const outcome = escapeHtml(r.outcome || "—");
   if (!r.outcome_conflict) return outcome;
   return outcome + ' <span class="src-dup-badge src-dup-badge-warn"' +
-    tip("Its duplicate source entries disagree: " + r.outcome_conflict +
-        ". The first entry's outcome is published until you choose one in the record.") +
+    tip("Its duplicate source records disagree: " + r.outcome_conflict +
+        ". The outcome the merge picked is published until you choose one in the record.") +
     ">conflict</span>";
 }
 
@@ -9081,18 +9081,20 @@ function renderFloraRecords(data) {
   const warn = $("#flora-unregistered");
   if (warn) {
     const notes = [];
+    const records = (n) => n + (n === 1 ? " record has" : " records have");
     if (counts.unregistered) {
-      notes.push("<b>" + counts.unregistered + " row(s) have no FLoRA id yet.</b> " +
+      notes.push("<b>" + records(counts.unregistered) + " no FLoRA ID yet.</b> " +
         "Run the pipeline (Source Records tab) to assign them before exporting.");
     }
     // Shown, not hidden: these rows are in the grid but will not reach the
     // published export, and this is the screen someone fixes them on.
     if (counts.untitled) {
-      notes.push("<b>" + counts.untitled + " row(s) have no title on one side</b> " +
-        "and are left out of the final export. The pipeline report records excluded rows.");
+      notes.push("<b>" + records(counts.untitled) + " no title on one side</b> " +
+        "and are left out of flora.csv. The pipeline report lists them.");
     }
     if (counts.preprint_pending) {
-      notes.push("<b>" + counts.preprint_pending + " preprint duplicate pair(s) await a decision.</b> " +
+      notes.push("<b>" + counts.preprint_pending + " preprint duplicate " +
+        (counts.preprint_pending === 1 ? "pair awaits" : "pairs await") + " a decision.</b> " +
         '<button class="link-btn flora-dedup-open" type="button">Review them</button>');
     }
     if (notes.length) {
@@ -9117,7 +9119,7 @@ function renderFloraRecords(data) {
       "<tr>" +
         '<td><code class="flora-id">' + escapeHtml(r.flora_id || "unassigned") + "</code>" +
           (r.edited_fields
-            ? ' <span class="flora-edited-badge" title="Corrected here: ' +
+            ? ' <span class="flora-edited-badge" title="Corrected: ' +
               escapeHtml(r.edited_fields.split(" ").join(", ")) + '">corrected</span>' : "") +
           (r.export_id && r.export_id !== r.flora_id
             ? '<br><small title="Permanent ID in the CSV">CSV: ' + escapeHtml(r.export_id) + '</small>' : '') + "</td>" +
@@ -9126,7 +9128,7 @@ function renderFloraRecords(data) {
         // plus, when the two have diverged, which record the row now derives from.
         '<td><small class="flora-source-key">' + escapeHtml(r.source || "") + "</small>" +
           (r.flora_id && r.source_display_id && r.flora_id !== r.source_display_id
-            ? '<br><span class="flora-repointed" title="This record was re-pointed after a duplicate ruling; its id stays as first published">now ' +
+            ? '<br><span class="flora-repointed" title="Re-pointed after a duplicate ruling; its ID stays as first published">now ' +
               escapeHtml(r.source_display_id) + "</span>"
             : "") + "</td>" +
         "<td>" + escapeHtml(r.type || "—") + "</td>" +
@@ -9152,7 +9154,7 @@ function renderFloraPager(data) {
   pager.innerHTML =
     '<button class="ghost-btn" id="flora-prev" ' + (data.page <= 1 ? "disabled" : "") + ">Previous</button>" +
     '<span class="flora-pageinfo">Page ' + data.page + " of " + pages +
-      " · " + Number(data.total).toLocaleString() + " rows</span>" +
+      " · " + Number(data.total).toLocaleString() + " records</span>" +
     '<button class="ghost-btn" id="flora-next" ' + (data.page >= pages ? "disabled" : "") + ">Next</button>";
   $("#flora-prev")?.addEventListener("click", () => { _floraPage--; fetchFloraRecords(); });
   $("#flora-next")?.addEventListener("click", () => { _floraPage++; fetchFloraRecords(); });
@@ -9165,13 +9167,13 @@ async function fetchFloraStats() {
     const s = await adminApi("/flora/stats");
     const when = s.last_refresh ? srcTimeAgo(new Date(s.last_refresh)) : "never";
     box.innerHTML =
-      '<span><b>' + Number(s.rows).toLocaleString() + "</b> rows</span>" +
+      '<span><b>' + Number(s.rows).toLocaleString() + "</b> records</span>" +
       '<span><b>' + Number(s.replications).toLocaleString() + "</b> replications</span>" +
       '<span><b>' + Number(s.reproductions).toLocaleString() + "</b> reproductions</span>" +
-      '<span><b>' + Number(s.registry_live).toLocaleString() + "</b> ids issued</span>" +
+      '<span><b>' + Number(s.registry_live).toLocaleString() + "</b> IDs issued</span>" +
       (s.registry_retired ? '<span class="flora-retired"><b>' +
         Number(s.registry_retired).toLocaleString() + "</b> retired</span>" : "") +
-      '<span class="flora-when">ids last assigned ' + escapeHtml(when) + "</span>";
+      '<span class="flora-when">IDs last assigned ' + escapeHtml(when) + "</span>";
   } catch (e) {
     box.innerHTML = '<span class="faq-error">Could not load stats (' + escapeHtml(e.message) + ")</span>";
   }
@@ -9447,8 +9449,8 @@ function floraSourceEdits(editing) {
   const edits = editing.source_edits || [];
   if (!edits.length) return "";
   return '<details class="flora-changes"><summary>Earlier edits to its source records (' + edits.length +
-    ")</summary>" + '<p class="src-dim2">Made in Source Records before changes moved to FLoRA records. ' +
-    "They changed the source rows themselves, so they are still in force.</p>" +
+    ")</summary>" + '<p class="src-dim2">Made in Source Records before corrections moved to FLoRA records. ' +
+    "They changed the source records themselves, so they still apply.</p>" +
     '<div class="admin-table-wrap"><table class="admin-table flora-changes-table"><thead><tr>' +
     "<th>When</th><th>Who</th><th>Source record</th><th>Field</th><th>Before → after</th><th>Note</th>" +
     "</tr></thead><tbody>" + edits.map((e) =>
@@ -9468,10 +9470,10 @@ function renderFloraRecord(rec) {
     '<p class="flora-detail-source">Derived from source record <b>' +
       escapeHtml(rec.source_display_id || "—") + "</b>" +
       (rec.flora_id && rec.source_display_id && rec.flora_id !== rec.source_display_id
-        ? ' <span class="flora-repointed">(id pinned from the record this row was first built from)</span>'
+        ? ' <span class="flora-repointed">(ID kept from the source record it was first built from)</span>'
         : "") +
       (rec.export_id && rec.export_id !== rec.flora_id
-        ? ' · CSV id <code class="flora-doi">' + escapeHtml(rec.export_id) + "</code>" : "") +
+        ? ' · CSV ID <code class="flora-doi">' + escapeHtml(rec.export_id) + "</code>" : "") +
       ((rec.merged_sources || []).length
         ? "<br>Absorbed by deduplication: " +
           rec.merged_sources.map((m) => '<code class="flora-doi">' + escapeHtml(m.display_id) + "</code>").join(", ")
@@ -9490,7 +9492,7 @@ function renderFloraRecord(rec) {
 
   if (!editing) {
     $("#flora-detail-body").innerHTML = provenance +
-      '<div class="src-dup-warn">This row has no FLoRA id yet, so it cannot be corrected. ' +
+      '<div class="src-dup-warn">This record has no FLoRA ID yet, so it cannot be corrected. ' +
       "Run the pipeline (Source Records tab) to assign one.</div>" + contextTable;
     return;
   }
@@ -9505,10 +9507,10 @@ function renderFloraRecord(rec) {
   $("#flora-detail-body").innerHTML =
     provenance +
     floraConflictBox(rec) +
-    '<p class="flora-edit-note">Change a field to add a note for it. Saving logs the changes and notes under ' +
-      "Changes and updates the FLoRA table and the public API at once. Source records stay as imported; " +
-      "each pipeline run re-applies the changes. A corrected DOI or URL also fills in its title, authors " +
-      "and journal, by the next pipeline run if they are not cached yet.</p>" +
+    '<p class="flora-edit-note">Saving logs each change, with its note, under Changes, and updates the ' +
+      "stored dataset (Download full CSV, the public API) at once. Source records stay as imported; every " +
+      "pipeline run re-applies the corrections. A corrected DOI or URL also brings in its title, authors " +
+      "and journal: at once if they are cached, otherwise at the next pipeline run.</p>" +
     groups.map((g) =>
       '<div class="src-group"><h4>' + escapeHtml(g.name) + "</h4>" + g.fields.map(floraField).join("") + "</div>"
     ).join("") +
@@ -9540,7 +9542,7 @@ function floraConflictBox(rec) {
       escapeHtml(option) + (published ? ' <span class="src-dim2">(published)</span>' : "") + "</button>";
   }).join("");
   return '<div class="src-dup-warn flora-conflict">' +
-    "<b>Its duplicate source entries disagree on the outcome.</b> Choose the right one; the one " +
+    "<b>Its duplicate source records disagree on the outcome.</b> Choose the right one; the one " +
     "marked published stands until you do. If none is right, correct the " + what + " below." +
     '<div class="flora-conflict-actions">' + buttons +
       '<input id="flora-confirm-note" class="src-input" type="text" maxlength="500" ' +
@@ -9563,8 +9565,8 @@ async function confirmFloraOutcome(choice) {
     const res = await adminApi("/flora/" + encodeURIComponent(rec.flora_id) + "/confirm-outcome", "POST", {
       version: rec.editing.version, note: ($("#flora-confirm-note") || {}).value || "", outcome: choice,
     });
-    // Confirming moves no published value, so the FLoRA table has nothing to catch up
-    // on (publish() reports false for it): no "next pipeline run".
+    // Confirming moves no published value, so the stored dataset has nothing to catch
+    // up on (publish() reports false for it): no "next pipeline run".
     const outcome = !res.change_id
       ? "Nothing to change: the outcome is already a correction."
       : keeps ? "Outcome confirmed."
@@ -9641,8 +9643,8 @@ function floraNotice(outcome, warnings) {
 
 function floraPublishedNote(res) {
   return res.published
-    ? "The FLoRA table is updated."
-    : "It reaches the FLoRA table at the next pipeline run.";
+    ? "The stored dataset is updated."
+    : "It reaches the stored dataset at the next pipeline run.";
 }
 
 function floraChangeFailed(err, rec, msg) {
@@ -9832,8 +9834,8 @@ function floraDedupChoiceTip(item, action) {
     } else {
       detail = setAside
         ? "Brings back " + doi(setAside) + ", which the automatic rule dropped, so both " +
-          "stay. The returning record gets its permanent FLoRA ID at the next pipeline " +
-          "run; until then Download full CSV waits for that run."
+          "stay. The returning record gets its permanent FLoRA ID, and reaches Download " +
+          "full CSV, at the next pipeline run."
         : "Nothing is dropped: both records already stay. This confirms it and takes the " +
           "pair off this list.";
     }
@@ -9849,8 +9851,8 @@ function floraDedupChoiceTip(item, action) {
   }
   const identity = floraDedupSetAside(item, kept)
     // Keeping the record the rule dropped: it has no published ID of its own yet.
-    ? keptLabel + " was dropped by the automatic rule, so it comes back and gets its " +
-      "permanent FLoRA ID at the next pipeline run (Download full CSV waits for that run). " +
+    ? keptLabel + " was dropped by the automatic rule, so it comes back, and gets its " +
+      "permanent FLoRA ID and reaches Download full CSV at the next pipeline run. " +
       "The paper's published ID therefore changes: " + goneLabel + "'s ID is retired, not " +
       "deleted, so existing links still resolve. "
     : keptLabel + " keeps its FLoRA ID. If " + goneLabel + " was already published, its ID " +
@@ -10005,7 +10007,7 @@ async function decideFloraDedup(button) {
       doi_1: item.papers[0].doi, doi_2: item.papers[1].doi,
       action: button.dataset.action, note: note,
     });
-    showToast("Saved. FLoRA records show it now; the published CSV at the next pipeline run.");
+    showToast("Saved. The FLoRA tab shows it now; Download full CSV and the public API at the next pipeline run.");
     fetchFloraDedup();
   } catch (e) {
     buttons.forEach((b) => { b.disabled = false; });
@@ -10043,7 +10045,7 @@ $("#flora-dedup-view")?.addEventListener("click", (e) => {
   if (undo) undoFloraDedup(undo);
 });
 
-/* ---------- Complete FLoRA pipeline (queued job, run on the server) ---------- */
+/* ---------- FLoRA pipeline (queued job, run on the server) ---------- */
 
 let _srcSyncPollTimer = null;
 let _srcSyncWatching  = false;
@@ -10056,19 +10058,18 @@ function srcSyncArtifacts(job) {
   const button = (artifact, label) => '<button class="ghost-btn src-sync-artifact-btn" type="button" ' +
     'data-job-id="' + jobId + '" data-artifact="' + artifact + '">' + label + '</button>';
   const downloads = [];
-  if (job.has_csv) downloads.push(button("flora.csv", "Download final CSV"));
+  if (job.has_csv) downloads.push(button("flora.csv", "Download flora.csv"));
   if (job.has_recovery_csv) downloads.push(button("recovery.csv", "Download recovery CSV"));
   if (job.has_report) {
-    downloads.push(button("report.md", "Download full report"));
+    downloads.push(button("report.md", "Download report"));
     downloads.push(button("report.json", "Report JSON"));
   }
   let message = "";
   if (job.has_csv) message = job.report_status === "needs_attention"
-    ? "CSV generated. Validation found issues to review in the report."
-    : "Final CSV retained for this run.";
-  else if (job.has_recovery_csv) message = "Publication failed after the database was updated. The committed CSV is available for recovery.";
-  else if (job.status === "failed") message = "This run failed. Review its report or log before retrying.";
-  else if (job.status === "success") message = "This older run has no retained CSV. Run the complete pipeline to create one.";
+    ? "Validation found issues; see the report." : "";
+  else if (job.has_recovery_csv) message = "The dataset was stored, but a later step failed. The stored CSV is available for recovery.";
+  else if (job.status === "failed") message = "This run failed. The report and log say why.";
+  else if (job.status === "success") message = "This older run kept no CSV.";
   if (!downloads.length && !message) return "";
   const counts = [];
   if (job.report_rows != null) counts.push(Number(job.report_rows).toLocaleString() + " rows");
@@ -10095,7 +10096,7 @@ function srcSyncPerSourceRow(s) {
   if (s.rows_inserted)         bits.push("<b>+" + Number(s.rows_inserted).toLocaleString() + " new</b>");
   if (s.rows_existing)         bits.push(Number(s.rows_existing).toLocaleString() + " already present");
   if (s.rows_skipped)          bits.push(Number(s.rows_skipped).toLocaleString() + " skipped");
-  if (s.dup_ids)               bits.push(s.dup_ids + " duplicate ids");
+  if (s.dup_ids)               bits.push(s.dup_ids + " duplicate IDs");
   if (s.dup_fingerprints)      bits.push(s.dup_fingerprints + " duplicate papers");
   const when = s.started_at ? srcTimeAgo(new Date(s.started_at)) : "—";
   return '<li class="src-sync-src"><b>' + escapeHtml(s.source) + "</b> " +
@@ -10126,11 +10127,12 @@ function renderSourceSync(data) {
   if (active) {
     const job = jobs.find(j => j.status === "running") || jobs.find(j => j.status === "queued");
     _srcSyncWatchedJob = data.active_job_id || (job && job.job_id) || _srcSyncWatchedJob;
+    const who = job && (job.requested_by || job.trigger);
     live.className = "pipeline-live-status";
     live.innerHTML = '<span class="pipeline-live-dot"></span><b>' +
-      escapeHtml(job && job.status === "queued" ? "Queued" : "Running") + "</b> — " +
-      escapeHtml(job ? (job.requested_by || job.trigger) : "pipeline") +
-      ". The log updates after each stage; downloads appear when the run finishes.";
+      escapeHtml(job && job.status === "queued" ? "Queued" : "Running") + "</b>" +
+      (who ? ", started by " + escapeHtml(who) : "") +
+      ". The log updates after each stage; downloads appear when the run ends.";
   } else {
     live.classList.add("hidden");
   }
@@ -10163,7 +10165,7 @@ function renderSourceSync(data) {
           escapeHtml(job.job_id) + '">Load complete log</button>'
         : "") +
     "</article>";
-  }).join("") : '<p class="src-sync-empty">Run the pipeline to create a final CSV and a report. Results from external scheduled imports appear in the per-sheet history.</p>';
+  }).join("") : '<p class="src-sync-empty">No pipeline runs started here yet. Nightly runs on GitHub are not listed; their sheet imports show under Last result per sheet.</p>';
 
   log.innerHTML =
     (perSource
@@ -10207,10 +10209,10 @@ async function fetchSourceSync() {
         fetchSourceRecords();
         const finished = (data.jobs || []).find(job => job.job_id === _srcSyncWatchedJob);
         showToast(finished?.status === "failed"
-          ? "Pipeline failed. Review the report and log."
-          : finished?.report_status === "needs_attention" ? "CSV ready. Validation found issues; review the report."
-          : finished?.has_csv ? "Pipeline complete. Final CSV and report are ready."
-          : "Pipeline finished. Check its report and log for output details.");
+          ? "Pipeline run failed. The report and log say why."
+          : finished?.report_status === "needs_attention" ? "Pipeline run finished. Validation found issues; see the report."
+          : finished?.has_csv ? "Pipeline run finished. flora.csv and the report are ready."
+          : "Pipeline run finished. See its report and log.");
         _srcSyncWatchedJob = null;
       }
     }
@@ -10230,13 +10232,13 @@ async function startSourceSync() {
   try {
     const job = await adminApi("/source-sync/dispatch", "POST", {});
     _srcSyncWatchedJob = job.job_id;
-    showToast("Pipeline queued.");
+    showToast("Pipeline run queued.");
     _srcSyncWatching = true;
     clearTimeout(_srcSyncPollTimer);
     _srcSyncPollTimer = setTimeout(fetchSourceSync, 800);
   } catch (e) {
     if (btn) btn.disabled = false;
-    showToast("Could not start pipeline: " + e.message);
+    showToast("Could not start the pipeline: " + e.message);
     fetchSourceSync();
   }
 }
@@ -10338,20 +10340,20 @@ function renderSourceRecord(r) {
             escapeHtml(f.flora_id) + '">Open in FLoRA to correct</button>')
       ).join("<br>") +
       '<div class="src-dim2">Source records stay as imported; corrections are made on the FLoRA record.</div></div>'
-    : '<div class="src-flora-link src-dim2">This row does not feed a FLoRA record: it is ruled a duplicate, ' +
-      "excluded, deleted, or not yet reached by the pipeline.</div>";
+    : '<div class="src-flora-link src-dim2">This source record does not feed a FLoRA record: it is ruled a ' +
+      "duplicate, excluded or deleted, or no pipeline run has reached it yet.</div>";
 
   const dups = r.duplicates || [];
   const dupWarning = dups.length
     ? '<div class="src-dup-warn">⚑ This paper also appears as ' +
       dups.map((d) => escapeHtml(d.display_id)).join(", ") +
-      " — same DOIs under a different sheet id.</div>"
+      " — same DOIs under a different sheet ID.</div>"
     : "";
 
   const hist = r.history || [];
   const history = hist.length
     ? '<details class="flora-changes"><summary>Earlier edits (' + hist.length + ")</summary>" +
-      '<p class="src-dim2">Made here before changes moved to FLoRA records, and duplicate rulings.</p>' +
+      '<p class="src-dim2">Edits made here before corrections moved to FLoRA records, and duplicate rulings.</p>' +
       '<div class="admin-table-wrap"><table class="admin-table flora-changes-table"><thead><tr>' +
       "<th>When</th><th>Who</th><th>Field</th><th>Before → after</th><th>Note</th></tr></thead><tbody>" +
       hist.map((h) =>
@@ -10367,7 +10369,7 @@ function renderSourceRecord(r) {
     ? '<div class="src-deleted-banner"><strong>Deleted</strong> on ' +
       escapeHtml(new Date(r.deleted_at).toLocaleString()) + " — " +
       escapeHtml(r.deleted_reason || "its record is no longer validated.") +
-      " It no longer feeds FLoRA; the row and its id " + escapeHtml(r.display_id || "") +
+      " It no longer feeds FLoRA; the record and its ID " + escapeHtml(r.display_id || "") +
       " are kept.</div>"
     : "";
 
@@ -10375,7 +10377,7 @@ function renderSourceRecord(r) {
     deletedBanner +
     '<div class="src-detail-meta">' +
       '<span class="src-type-badge src-type-' + r.type + '">' + escapeHtml(r.type) + "</span> " +
-      '<span class="src-dim2">' + escapeHtml(r.source) + " · sheet id " +
+      '<span class="src-dim2">' + escapeHtml(r.source) + " · sheet ID " +
         escapeHtml(r.sheet_row_id || "—") + "</span>" +
     "</div>" +
     dupWarning +
@@ -10530,17 +10532,17 @@ function renderSourceDuplicates(data) {
     }
     if (g.outcomes_differ) {
       flags.push('<span class="src-dup-badge src-dup-badge-warn"' +
-        tip("The rows disagree about the outcome. If they are one report, only the kept " +
-            "row's outcome is published, so check which is right before choosing.") +
+        tip("The records disagree about the outcome. If they are one report, only the kept " +
+            "record's outcome is published, so check which is right before choosing.") +
         ">outcomes differ</span>");
     }
     if (g.cross_sheet) {
       flags.push('<span class="src-dup-badge"' +
-        tip("The rows come from different entry sheets.") + ">both sheets</span>");
+        tip("The records come from different entry sheets.") + ">both sheets</span>");
     }
     if (g.resolved) {
       flags.push('<span class="src-dup-badge src-dup-badge-ok"' +
-        tip("Every row in this group has a decision. Change one with its buttons below.") +
+        tip("Every record in this group has a decision. Change one with its buttons below.") +
         ">resolved</span>");
     }
     // A replication and a reproduction of one paper share a fingerprint but are
@@ -10573,7 +10575,7 @@ function renderSourceDuplicates(data) {
           "<dt>ref_r</dt><dd>" + srcShorten(m.ref_r, 110) + "</dd>" +
           "<dt>outcome</dt><dd>" + outcome + "</dd>" +
           "<dt>status</dt><dd>" + escapeHtml(m.validation_status || "—") + "</dd>" +
-          "<dt>sheet id</dt><dd><code>" + escapeHtml((m.sheet_row_id || "").slice(0, 8)) + "</code></dd>" +
+          "<dt>sheet ID</dt><dd><code>" + escapeHtml((m.sheet_row_id || "").slice(0, 8)) + "</code></dd>" +
         "</dl>" +
         state +
         '<div class="src-dup-actions">' +

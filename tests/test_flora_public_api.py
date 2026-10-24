@@ -266,7 +266,7 @@ def test_internal_failures_never_expose_database_details(error_type):
 def test_missing_prepared_snapshot_reports_unavailable(local_database):  # noqa: F811
     response = make_client().get("/v1/dois")
     assert response.status_code == 503
-    assert "preparation pipeline" in response.json()["error"]
+    assert response.json()["error"] == "No FLoRA dataset is stored yet. Run the pipeline first."
 
 
 def test_hash_lookup_exposes_published_extras_without_internal_annotations(local_database):

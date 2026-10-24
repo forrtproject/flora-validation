@@ -1,9 +1,8 @@
 """validate_flora.py — structural validation of the FLoRA dataset.
 
 A Python port of R/validate_flora.R. Runs the same checks against the dataset this
-project now builds itself, and emits the same Markdown report: one checkbox per
-issue, so a resolved issue simply disappears on the next run and a false positive
-can be ticked to suppress it.
+project now builds itself, and emits a Markdown report with one list item per
+issue, so a resolved issue disappears on the next run.
 
 WHAT CHANGED IN THE PORT
 ------------------------
@@ -11,9 +10,13 @@ WHAT CHANGED IN THE PORT
 are accepted, and preserved reference rows
 must not become validation failures merely because their labels predate the site.
 
-Suppressions live in the same CSV the R version uses
-(`output/flora_validation_suppressions.csv`), in the same shape, so a suppression
-ticked under either implementation is honoured by both.
+No checkboxes. In fred-data the report is a GitHub issue whose ticked boxes are read
+back as suppressions; here it is a file that nothing reads back, so a box would ask
+for a tick that does nothing.
+
+Suppressions are read from the CSV the R version uses
+(`output/flora_validation_suppressions.csv`), in the same shape, when it exists.
+Nothing in this project writes it.
 
 Usage:
     python validate_flora.py                     # report to stdout
@@ -79,7 +82,7 @@ def row_id(row) -> str:
     """`doi_o | doi_r-or-url_r`, the identifier the R report uses.
 
     Kept even though our rows now carry a real flora_id, because a suppression
-    ticked against the R report has to keep matching. flora_id is shown beside it.
+    recorded against the R report has to keep matching.
     """
     right = _text(row.get("doi_r")) or _text(row.get("url_r"))
     return f"{_text(row.get('doi_o'))} | {right}"
@@ -119,7 +122,7 @@ def _clean_ref(value: str) -> str:
 # ── suppressions ──────────────────────────────────────────────────────────────
 
 def load_suppressions(path: Path = SUPPRESSIONS_FILE) -> set:
-    """(check_name, item_id) pairs previously ticked as false positives."""
+    """(check_name, item_id) pairs recorded as false positives, if the file exists."""
     if not path.exists():
         return set()
     out = set()
@@ -335,13 +338,11 @@ def validate(df, suppressions=None) -> dict:
 def render(report: dict) -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     out = [
-        "## FLoRA Data Validation Report",
+        "## FLoRA structural validation",
         "",
-        f"_Generated: {stamp} UTC | Dataset: {report['rows']} rows_",
+        f"_Generated: {stamp} UTC | Dataset: {report['rows']:,} rows_",
         "",
-        "Each row is identified as `doi_o | doi_r (or url_r)`, followed by "
-        "check-specific detail after `:`.",
-        "Tick an item to mark it a false positive; it is suppressed on the next run.",
+        "Each item names its row as `doi_o | doi_r` (or `url_r`), then the detail after `:`.",
         "",
     ]
 
@@ -351,7 +352,7 @@ def render(report: dict) -> str:
     for result in failed:
         items = result["items"]
         n = len(items)
-        lines = [f"- [ ] {label}" for label in items]
+        lines = [f"- {label}" for label in items]
         if n <= DETAILS_THRESHOLD:
             out += [f"**{result['heading']}** ({n} issue{'s' if n != 1 else ''}):", "",
                     f"_{result['description']}_", ""] + lines + [""]
@@ -360,14 +361,18 @@ def render(report: dict) -> str:
                     "", f"_{result['description']}_", ""] + lines + ["", "</details>", ""]
 
     if passed:
-        out += ["---", "", "**Checks passed:**"]
-        out += [f"- [x] {r['name']}" for r in passed]
+        out += ["---", "", "**Checks passed:**", ""]
+        out += [f"- {r['name']}" for r in passed]
         out.append("")
 
     if report["suppressed"]:
-        out.append(f"_({report['suppressed']} suppressed false positive"
-                   f"{'s' if report['suppressed'] != 1 else ''} not shown)_")
+        out.append(suppressed_note(report["suppressed"]))
     return "\n".join(out)
+
+
+def suppressed_note(count: int) -> str:
+    return (f"_{count} item{'s' if count != 1 else ''} not shown: listed as false positives "
+            f"in `{SUPPRESSIONS_FILE.name}`._")
 
 
 def load_dataset(cur):
@@ -375,7 +380,7 @@ def load_dataset(cur):
 
     Untitled rows are dropped here for the same reason the export drops them: the
     R notebook validates output/flora.csv, which has already been through Step 10.
-    Reporting a row that was never published would put an item in the issue that
+    Reporting a row that was never published would put an item in the report that
     nobody can resolve — it is already recorded in output/flora_export_log.csv and
     counted on the FLoRA tab.
     """

@@ -150,7 +150,7 @@ def test_failed_website_publication_retains_exact_committed_recovery(local_datab
 
 
 def test_workspace_is_preserved_when_artifact_storage_raises(tmp_path):
-    with pytest.raises(RuntimeError, match="Pipeline artifacts retained at"):
+    with pytest.raises(RuntimeError, match="Run files kept at"):
         with runner._run_workspace(tmp_path) as directory:
             recovery = directory / "flora_committed_recovery.csv"
             recovery.write_bytes(b"committed bytes")

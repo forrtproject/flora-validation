@@ -167,13 +167,21 @@ def test_a_suppressed_item_disappears():
     assert types["passed"] and report["suppressed"] == 1
 
 
-def test_the_report_renders_checkboxes():
-    text = vf.render(vf.validate(_df({"type": "extension"})))
-    assert "- [ ] " in text and "FLoRA Data Validation Report" in text
+def test_the_report_lists_each_issue_without_a_checkbox():
+    """Nothing reads a tick back here (fred-data's report is a GitHub issue; this one
+    is a file), so the report offers none and does not ask for one."""
+    frame = _df({"type": "extension"})
+    label = vf._check_types(frame)[0]
+    text = vf.render(vf.validate(frame))
+    assert "FLoRA structural validation" in text
+    assert f"\n- {label}\n" in text
+    assert "[ ]" not in text and "[x]" not in text and "Tick" not in text
 
 
-def test_passed_checks_are_ticked():
-    assert "- [x] Type values valid" in vf.render(vf.validate(_df()))
+def test_passed_checks_are_listed():
+    text = vf.render(vf.validate(_df()))
+    assert "**Checks passed:**" in text and "\n- Type values valid\n" in text
+    assert "[x]" not in text
 
 
 def test_long_sections_are_folded():

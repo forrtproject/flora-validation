@@ -671,8 +671,9 @@
         <div>
           <dt>Days without a new count</dt>
           <dd>
-            The dataset changes only when it is regenerated. On other days the last
-            figure is carried forward, and the table marks the day.
+            The dataset is counted when the pipeline runs: nightly, and when an
+            administrator starts it. On other days the last figure is carried forward,
+            and the table marks the day.
           </dd>
         </div>
         <div>
@@ -701,7 +702,7 @@
 
   <div id="error" class="card state" role="alert" hidden>
     <h2>Figures unavailable</h2>
-    <p id="error-message">The dataset figures could not be loaded right now. Please try again shortly.</p>
+    <p id="error-message">The figures could not be loaded. Try again in a moment.</p>
     <button type="button" class="btn" id="retry">Try again</button>
   </div>
 
@@ -1575,7 +1576,7 @@
     document.body.classList.remove("is-loading");
     $("report").hidden = true;
     $("error-message").textContent = message ||
-      "The dataset figures could not be loaded right now. Please try again shortly.";
+      "The figures could not be loaded. Try again in a moment.";
     $("error").hidden = false;
   }
 

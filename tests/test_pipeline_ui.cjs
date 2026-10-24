@@ -55,6 +55,8 @@ const { chromium } = require("playwright");
     assert.equal(await page.locator(".src-sync-artifact-btn").count(), 3);
     assert.equal(await page.locator("#src-sync-log script").count(), 0);
     assert.equal(await page.locator("#src-sync-run-btn").isEnabled(), true);
+    // The label the docs and the FLoRA tab's legend refer to.
+    assert.equal((await page.locator("#src-sync-run-btn").textContent()).trim(), "Run pipeline");
     const csvDownload = page.waitForEvent("download");
     await page.locator('[data-artifact="flora.csv"]').click();
     assert.equal((await csvDownload).suggestedFilename(), "flora.csv");
@@ -85,7 +87,7 @@ const { chromium } = require("playwright");
     await page.evaluate(() => clearTimeout(_srcSyncPollTimer));
     status = { jobs: [{ ...job, status: "failed", has_csv: false, has_report: true }], active: false, sources: [] };
     await page.evaluate(() => fetchSourceSync());
-    assert.match(await page.locator("body").innerText(), /Pipeline failed\. Review the report and log\./);
+    assert.match(await page.locator("body").innerText(), /Pipeline run failed\. The report and log say why\./);
     assert.equal(await page.locator('[data-artifact="flora.csv"]').count(), 0);
     assert.equal(await page.locator('[data-artifact="report.md"]').count(), 1);
 
@@ -95,7 +97,7 @@ const { chromium } = require("playwright");
     });
     assert.equal(await page.locator('[data-artifact="flora.csv"]').count(), 0);
     assert.equal(await page.locator('[data-artifact="recovery.csv"]').textContent(), "Download recovery CSV");
-    assert.match(await page.locator(".src-sync-artifact-note").innerText(), /committed CSV is available for recovery/);
+    assert.match(await page.locator(".src-sync-artifact-note").innerText(), /stored CSV is available for recovery/);
     const recoveryDownload = page.waitForEvent("download");
     await page.locator('[data-artifact="recovery.csv"]').click();
     assert.match((await recoveryDownload).suggestedFilename(), /recovery\.csv$/);

@@ -100,6 +100,18 @@ def test_structural_issues_keep_exact_csv_and_report_findings(tmp_path):
     assert (tmp_path / "release" / "flora.csv").read_bytes() == input_path.read_bytes()
 
 
+def test_release_files_say_who_commits_the_repository_copy(tmp_path):
+    """They once said nothing went to GitHub; the workflows commit output/."""
+    report = preparation.prepare(tmp_path / "release", write_input(tmp_path / "input.csv"),
+                                 network_checks="none")
+    assert report["status"] != "failed", report["errors"]
+    notes = (tmp_path / "release" / "flora_release_notes.md").read_text(encoding="utf-8")
+    markdown = (tmp_path / "release" / preparation.REPORT_MARKDOWN).read_text(encoding="utf-8")
+    for text in (notes, markdown):
+        assert f"Publication: {release_helpers.PUBLICATION}" in text
+        assert "no OSF or GitHub release" not in text and "no external release" not in text
+
+
 def test_current_transform_diagnostics_are_embedded_in_report(tmp_path, monkeypatch):
     import transform_sources
 
@@ -113,7 +125,10 @@ def test_current_transform_diagnostics_are_embedded_in_report(tmp_path, monkeypa
     diagnostic = report["diagnostics"]["flora_export_log.csv"]
     assert diagnostic["rows"] == 1
     assert diagnostic["records"][0]["reason"] == "missing_title_r"
-    assert any("title is missing" in warning for warning in report["warnings"])
+    assert any("left out for a missing title" in warning for warning in report["warnings"])
+    # One record, worded for one.
+    assert any(warning.startswith("1 record left out") for warning in report["warnings"])
+    assert "flora_export_log.csv: 1 record left out" in preparation.render_report(report)
 
 
 def test_only_undecided_preprint_pairs_are_reported(tmp_path, monkeypatch):
@@ -202,7 +217,17 @@ def test_limited_network_validation_is_explicitly_incomplete(monkeypatch):
     assert report["status"] == "incomplete"
     assert report["coverage"]["dois"] == {"targets": 2, "cached": 0, "checked": 1, "deferred": 1}
     assert report["issue_count"] == 0
-    assert "1 deferred" in network.render_validation(report)
+    text = network.render_validation(report)
+    assert "1 deferred" in text
+    assert "**Retracted papers:** none" in text and "[x]" not in text and "[ ]" not in text
+
+
+def test_an_empty_check_after_findings_is_not_listed_as_one_of_them():
+    """After a list and a blank line, a "- " line continues that list in Markdown."""
+    text = network.render({"DOIs that failed to resolve": ["`10.1/a`"],
+                           "URLs that failed to resolve": []}, rows=2)
+    assert "- `10.1/a`\n\n**URLs that failed to resolve:** none" in text
+    assert "- URLs" not in text
 
 
 def test_unavailable_retraction_source_cannot_be_hidden_by_suppression(monkeypatch):

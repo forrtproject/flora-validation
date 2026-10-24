@@ -192,7 +192,7 @@ const SOURCE_ID = "6f1c2d4e-0000-4000-8000-000000000001";
     await page.locator("#dialog-buttons button", { hasText: "Confirm" }).click();
     await page.waitForFunction(() => document.querySelector("#toast")?.textContent.includes("Restored"));
     assert.deepEqual(restores[0], { change_id: 1, version: 3, note: "back to the paper's title" });
-    assert.match(await page.locator("#toast").innerText(), /FLoRA table is updated/);
+    assert.match(await page.locator("#toast").innerText(), /stored dataset is updated/);
     await page.locator("#flora-change-log summary").click();
     await page.locator("#flora-change-log .flora-change-original .flora-restore-btn").click();
     await page.locator("#dialog-buttons button", { hasText: "Confirm" }).click();
@@ -232,7 +232,7 @@ const SOURCE_ID = "6f1c2d4e-0000-4000-8000-000000000001";
     // The outcome stays in the editor after the reload, warnings included, and the
     // toast is drawn above the editor rather than under it.
     await page.waitForFunction(() => document.querySelector("#flora-save-msg .flora-notice"));
-    assert.match(await page.locator("#flora-save-msg").innerText(), /Saved — 1 field corrected, 1 reverted\. The FLoRA table is updated\./);
+    assert.match(await page.locator("#flora-save-msg").innerText(), /Saved — 1 field corrected, 1 reverted\. The stored dataset is updated\./);
     assert.match(await page.locator("#flora-save-msg .flora-warning").innerText(), /REPL-000009 has the same/);
     const layers = await page.evaluate(() => [getComputedStyle(document.querySelector("#toast")).zIndex,
                                                getComputedStyle(document.querySelector("#flora-detail-modal")).zIndex]);

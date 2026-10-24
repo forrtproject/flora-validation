@@ -1,10 +1,11 @@
 # Public FLoRA APIs
 
-The existing website now exposes read-only `/v1` routes backed by the complete
-prepared `flora_data` table. Four routes preserve the supplied `flora-backend`
+The existing website now exposes read-only `/v1` routes backed by the stored
+dataset, the `flora_data` table. Four routes preserve the supplied `flora-backend`
 response structure, and a separate route resolves permanent record-ID hashes.
-The API reads the latest committed preparation snapshot; edits become visible
-after the preparation pipeline stores its next complete dataset.
+The API reads the snapshot the last pipeline run stored, with the corrections saved
+in the FLoRA tab since, which reach it at once. New source records and duplicate
+rulings reach it at the next pipeline run.
 
 The supplied 2,914-row snapshot produces 4,817 DOI records. Two rows have no DOI
 on either side and are accessible through their permanent ID hashes. API
@@ -198,9 +199,9 @@ numeric `score`. The zero-result example above illustrates the envelope only.
 
 Requests use a PostgreSQL read-only, repeatable-read transaction. DOI aggregates
 are cached in the application process, with the database snapshot hash and
-revision timestamp checked on each request. A newly committed preparation
-invalidates that projection on its next use. No request fetches metadata from
-external services or rewrites the prepared dataset.
+revision timestamp checked on each request. A newly stored snapshot or a saved
+correction invalidates that projection on its next use. No request fetches metadata
+from external services or rewrites the stored dataset.
 
 Successful search responses advertise `Cache-Control: public, max-age=300`;
 the other successful routes use `max-age=3600`. Browser/intermediary caches may
@@ -219,7 +220,7 @@ Errors use `{"error": "message"}` with `Cache-Control: no-store`:
 | --- | --- |
 | 400 | Invalid JSON/object shape, missing lookup values/search terms, malformed hashes, invalid bounds, or excessive list/match counts |
 | 413 | POST body exceeds 64 KiB |
-| 503 | The schema exists but no prepared dataset has been committed yet |
+| 503 | The schema exists but no dataset is stored yet |
 | 500 | Internal failure; response is the generic `Internal Server Error` without database details |
 
 ## Initialize and run
@@ -238,8 +239,8 @@ Start the existing website application normally:
 ```
 
 The application's existing startup behavior and required settings are described
-in the [main guide](README.md#quick-start). Future successful database preparation
-runs update `flora_data` automatically; see the [table guide](FLORA_DATA_TABLE.md)
+in the [main guide](README.md#quick-start). Each successful pipeline run updates
+`flora_data`; see the [table guide](FLORA_DATA_TABLE.md)
 for complete-snapshot imports, permanent identity, and recovery.
 
 This implementation uses the current PostgreSQL application. It does not modify

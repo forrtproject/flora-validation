@@ -12,6 +12,7 @@ import csv
 import hashlib
 import json
 import os
+import re
 import shutil
 import tempfile
 import traceback
@@ -32,13 +33,13 @@ from output_lock import output_directory_lock
 REPORT_JSON = "flora_preparation_report.json"
 REPORT_MARKDOWN = "flora_preparation_report.md"
 TRANSFORM_DIAGNOSTICS = {
-    "flora_export_log.csv": "rows omitted because a title is missing",
-    "dup_outcome_conflicts.csv": "merged groups with conflicting outcomes",
+    "flora_export_log.csv": "records left out for a missing title",
+    "dup_outcome_conflicts.csv": "merged records whose duplicates gave different outcomes",
     "preprint_dedup_candidates.csv":
         "preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates)",
     "cross_type_duplicate_rulings.csv":
-        "rows ruled a duplicate of a record of the other type and left out "
-        "(check in Source Records, Duplicates)",
+        "source records ruled a duplicate of a record of the other type and left out "
+        "(Source Records, Duplicates)",
 }
 # A diagnostic file can log more than needs attention. The candidates log records
 # every detected pair, including ones a human already ruled on, so only the
@@ -69,7 +70,7 @@ def validate_identity(frame):
     if list(frame.columns[:2]) != ["id", "id_md5"]:
         raise ValueError("The first two CSV columns must be id and id_md5")
     if frame.empty:
-        raise ValueError("The prepared dataset is empty; refusing a final release")
+        raise ValueError("The CSV is empty; refusing to release it")
     ids = frame["id"]
     if ids.isna().any() or ids.str.strip().eq("").any() or ids.duplicated().any():
         raise ValueError("Every exported row needs a unique, nonblank id")
@@ -79,50 +80,73 @@ def validate_identity(frame):
     return {"status": "passed", "rows": len(frame), "unique_ids": len(ids)}
 
 
+# Status values as the website's run cards word them. The JSON keeps the values.
+STATUS_LABELS = {"needs_attention": "needs review"}
+MODE_LABELS = {"database_pipeline": "built from the database",
+               "existing_csv": "existing CSV (--input)"}
+
+
+def status_label(status):
+    return STATUS_LABELS.get(status, status)
+
+
+def plural(count, word):
+    return f"{count:,} {word}{'' if count == 1 else 's'}"
+
+
+def counted(count, description):
+    """`count` and a plural description, made singular for a count of one by
+    singularising its first rows, records, pairs or groups (reports stored before
+    the descriptions changed say rows or groups)."""
+    if count == 1:
+        description = re.sub(r"\b(row|record|pair|group)s\b", r"\1", description, count=1)
+    return f"{count:,} {description}"
+
+
 def render_report(report):
     lines = ["# FLoRA preparation report", "",
              f"Generated: {report['generated_at']}", "",
-             f"Status: **{report['status']}**", "",
-             f"Mode: {report['mode']}", "",
+             f"Status: **{status_label(report['status'])}**", "",
+             f"Mode: {MODE_LABELS.get(report['mode'], report['mode'])}", "",
              f"Rows: {report.get('rows', 0):,}", "",
              "## Stages", ""]
     for stage in report.get("stages", []):
-        lines.append(f"- {stage['name']}: {stage['status']}"
+        lines.append(f"- {stage['name']}: {status_label(stage['status'])}"
                      + (f" — {stage['detail']}" if stage.get("detail") else ""))
     if report.get("warnings"):
-        lines += ["", "## Items needing attention", ""]
+        lines += ["", "## Warnings", ""]
         lines.extend(f"- {item}" for item in report["warnings"])
     if report.get("errors"):
-        lines += ["", "## Execution errors", ""]
+        lines += ["", "## Errors", ""]
         lines.extend(f"- {item}" for item in report["errors"])
     if report.get("storage"):
         storage = report["storage"]
         lines += ["", "## Stored dataset", "",
-                  f"- Database status: {storage.get('status', 'unknown')}.",
-                  f"- Active rows in flora_data: {storage['rows']:,}."]
+                  f"- {storage['rows']:,} rows stored in `flora_data`, which Download full CSV "
+                  "and the public API serve."]
         if report.get("recovery_csv"):
-            location = ("Use the job's **Download recovery CSV** button."
+            location = ("Download it with **Download recovery CSV** on this run."
                         if report.get("recovery_artifact")
-                        else f"The imported CSV remains at `{report['recovery_csv']}` for recovery.")
-            lines.append("- Database import succeeded, but the final CSV could not be replaced. " + location)
+                        else f"The stored CSV is kept at `{report['recovery_csv']}`.")
+            lines.append("- The dataset was stored, but a later step failed, so flora.csv was "
+                         "not replaced. " + location)
     if report.get("diagnostics"):
-        lines += ["", "## Transform diagnostics", ""]
+        lines += ["", "## Diagnostic files", ""]
         for filename, diagnostic in report["diagnostics"].items():
-            lines.append(f"- {filename}: {diagnostic['rows']} {diagnostic['description']}.")
-        lines += ["", "The JSON report includes the affected records and reasons."]
+            lines.append(f"- {filename}: {counted(diagnostic['rows'], diagnostic['description'])}.")
+        lines += ["", "The JSON report lists the affected records."]
     if report.get("structural"):
         lines += ["", validate_flora.render(report["structural"])]
     if report.get("network"):
         lines += ["", validate_flora_network.render_validation(report["network"])]
     if report.get("release"):
         release = report["release"]
-        lines += ["", "## Prepared release", "",
-                  f"- File: {release['filename']}",
-                  f"- SHA-256: `{release['sha256']}`",
-                  "- Publication: local files only; no OSF or GitHub release."]
-    lines += ["", "## Dataset history", "",
-              "The website records daily dataset counts in its shared history table. "
-              "This run also writes a CSV history and a Markdown summary alongside the release."]
+        lines += ["", "## Release files", "",
+                  f"- {release['filename']}: {release.get('rows', 0):,} rows, "
+                  f"SHA-256 `{release['sha256']}`.",
+                  "- Also written: the release manifest and notes, and today's counts in "
+                  "flora_history.csv and flora_dataset_summary.md.",
+                  f"- Publication: {release_helpers.PUBLICATION}"]
     return "\n".join(lines) + "\n"
 
 
@@ -161,7 +185,8 @@ def record_local_history(output_dir, frame):
         writer.writeheader()
         writer.writerows(history)
     lines = ["# FLoRA dataset history", "",
-             "| Date | Total | Replications | Reproductions |",
+             "Records in flora.csv on each day it was written, newest first.", "",
+             "| Date | Records | Replications | Reproductions |",
              "| --- | ---: | ---: | ---: |"]
     for row in reversed(history):
         lines.append(f"| {row['date']} | {row['total']} | {row['replications']} | {row['reproductions']} |")
@@ -196,7 +221,7 @@ def store_dataset(candidate, *, expected_revision=UNCHECKED_REVISION):
     from flora_store import materialize
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
-        raise ValueError("DATABASE_URL is required to store the prepared FLoRA table")
+        raise ValueError("DATABASE_URL is required to store the dataset")
     connection = psycopg2.connect(database_url)
     try:
         with connection:
@@ -257,7 +282,7 @@ def _prepare(output_dir, input_path, network_checks, network_limit,
     # would otherwise leave, and the nightly job upload, as this run's.
     for name in VALIDATION_FILES:
         (output_dir / name).unlink(missing_ok=True)
-    stage_name = "final CSV"
+    stage_name = "read the CSV and check IDs" if input_path else "build flora.csv and check IDs"
     release_staging = None
     try:
         # Capture before building, then compare under the materialization lock.
@@ -296,7 +321,7 @@ def _prepare(output_dir, input_path, network_checks, network_limit,
                     report["diagnostics"][name] = {
                         "description": description, "rows": len(records), "records": records}
                     if records:
-                        report["warnings"].append(f"{len(records)} {description}; see {name}.")
+                        report["warnings"].append(f"{counted(len(records), description)}; see {name}.")
         if not candidate.exists():
             raise ValueError("The transform did not produce a CSV")
         frame = read_export(candidate)
@@ -311,9 +336,9 @@ def _prepare(output_dir, input_path, network_checks, network_limit,
         issues = sum(len(check["items"]) for check in structural["results"])
         report["stages"].append({"name": stage_name,
                                   "status": "needs_attention" if issues else "passed",
-                                  "detail": f"{issues} data issue(s)"})
+                                  "detail": plural(issues, "data issue")})
         if issues:
-            report["warnings"].append(f"Structural validation found {issues} data issue(s).")
+            report["warnings"].append(f"Structural validation found {plural(issues, 'data issue')}.")
         (output_dir / "flora_validation.md").write_text(
             validate_flora.render(structural), encoding="utf-8")
         write_report(output_dir, report)
@@ -337,20 +362,23 @@ def _prepare(output_dir, input_path, network_checks, network_limit,
         report["network"] = network
         report["stages"].append({"name": stage_name, "status": network["status"]})
         if network["status"] != "passed":
-            report["warnings"].append(f"Network validation: {network['status']}; "
-                                       f"{network['issue_count']} finding(s).")
+            report["warnings"].append(
+                "Network validation skipped." if network["status"] == "skipped"
+                else f"Network validation {status_label(network['status'])}: "
+                     f"{plural(network['issue_count'], 'finding')}.")
         write_network_validation(output_dir, network)
         if api_filter:
-            stage_name = "optional API dataset filter"
+            stage_name = "API filter (optional)"
             from filter_flora import run_filter
             filter_report = run_filter(candidate, output_dir, use_network=network_checks != "none")
             report["api_filter"] = filter_report
             report["stages"].append({"name": stage_name, "status": filter_report["status"],
-                                      "detail": f"{filter_report['removed_rows']} row(s) removed from derivative"})
+                                      "detail": f"{plural(filter_report['removed_rows'], 'row')} "
+                                                "removed from the API copy"})
             if filter_report["status"] != "passed":
-                report["warnings"].append(f"Optional API filter: {filter_report['status']}. "
+                report["warnings"].append(f"API filter {status_label(filter_report['status'])}. "
                                            + " ".join(filter_report["warnings"]))
-        stage_name = "release preparation and history"
+        stage_name = "release files and history"
         release_staging = tempfile.TemporaryDirectory(prefix=".flora-release-", dir=output_dir)
         staged = Path(release_staging.name)
         history = output_dir / "flora_history.csv"
@@ -361,7 +389,7 @@ def _prepare(output_dir, input_path, network_checks, network_limit,
         record_local_history(staged, frame)
         report["stages"].append({"name": stage_name, "status": "passed"})
         if should_store:
-            stage_name = "store prepared FLoRA table"
+            stage_name = "store dataset"
             report["storage"] = store_dataset(candidate, expected_revision=expected_revision)
             report["storage"]["status"] = "committed"
             # The corrections the build included: those saved before it began.
@@ -370,8 +398,8 @@ def _prepare(output_dir, input_path, network_checks, network_limit,
             release_helpers.add_data_version(staged, report["release"],
                                              report["storage"]["stored_at"], watermark)
             report["stages"].append({"name": stage_name, "status": "passed",
-                                      "detail": f"{report['storage']['rows']} active rows in flora_data"})
-        stage_name = "publish CSV artifact"
+                                      "detail": f"{plural(report['storage']['rows'], 'row')} in flora_data"})
+        stage_name = "write output files"
         publish_release(candidate, staged, output_dir)
         report["stages"].append({"name": stage_name, "status": "passed"})
         report["status"] = "needs_attention" if report["warnings"] else "success"
@@ -424,8 +452,8 @@ def main():
     report = prepare(args.output_dir, args.input, args.network_checks,
                      args.network_limit, args.version, args.release_notes, args.api_filter,
                      args.store_data)
-    print(f"Preparation {report['status']}: {report['rows']} rows; "
-          f"{report['warning_count']} warning(s); {report['failure_count']} failure(s)")
+    print(f"Preparation {status_label(report['status'])}: {plural(report['rows'], 'row')}, "
+          f"{plural(report['warning_count'], 'warning')}, {plural(report['failure_count'], 'error')}")
     print(f"Report: {args.output_dir / REPORT_MARKDOWN}")
     return 1 if report["status"] == "failed" else 0
 

@@ -1417,8 +1417,8 @@ CREATE INDEX IF NOT EXISTS idx_source_sync_runs_recent
 
 -- Per-source display_id counters. Sequential, assigned once, never reused —
 -- a raw UUID is unreadable aloud or in Slack, so rows also get REPL-000847.
--- Manual "Run sync now" jobs from the admin panel. A click persists a queued row
--- here rather than running inline: the sync takes a minute or two, which an HTTP
+-- Manual "Run pipeline" jobs from the admin panel. A click persists a queued row
+-- here rather than running inline: a run takes minutes, which an HTTP
 -- request cannot hold open, and a durable row survives the pod that accepted the
 -- click. A PostgreSQL advisory lock (see source_sync_runner.py) elects one
 -- executor across pods; this table is the queue, not the mutex.

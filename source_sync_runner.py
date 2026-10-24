@@ -1,24 +1,24 @@
-"""source_sync_runner.py — run the entry-sheet sync from the admin panel.
+"""source_sync_runner.py — run the FLoRA pipeline from the admin panel.
 
-The **Run sync now** button queues a row here; a scheduler job on every pod polls
-that queue, and a PostgreSQL advisory lock elects exactly one executor. This is the
-same shape as extractor_maintenance.py, for the same reasons:
+The **Run pipeline** button (Source Records tab) queues a row here; a scheduler job
+on every pod polls that queue, and a PostgreSQL advisory lock elects exactly one
+executor. This is the same shape as extractor_maintenance.py, for the same reasons:
 
-- The sync takes a minute or two. An HTTP request cannot hold that open, so the
-  button returns a job id immediately and the panel polls for the log.
+- A run takes minutes. An HTTP request cannot hold that open, so the button
+  returns a job id immediately and the panel polls for the log.
 - A queued row is durable. If the pod that accepted the click dies, a replacement
   picks the job up instead of the click being silently lost.
 - The advisory lock is what makes "one at a time" true across pods, rather than
   only within one process.
 
-The stages run as SUBPROCESSES, not imports. Both scripts call sys.exit, parse
+The stages run as SUBPROCESSES, not imports. The scripts call sys.exit, parse
 argv, and hold module-level state; importing them into a long-lived web process
-would leak that state between runs, and a hard crash in either would take the web
+would leak that state between runs, and a hard crash in one would take the web
 server down with it.
 
 WHAT THIS DOES NOT GUARD
 ------------------------
-The nightly GitHub Action runs the same two scripts with its own database
+The nightly GitHub Action runs the same scripts with its own database
 connection and cannot see this lock. That overlap is tolerated rather than
 prevented: `sync_sources.py` is insert-only with ON CONFLICT DO NOTHING,
 `sync_validated.py` upserts by a unique key, and display ids come from an atomic
@@ -64,12 +64,12 @@ STAGES = [
     ("validated records", [sys.executable, "sync_validated.py"]),
     # Bibliographic metadata for any DOI not cached yet. Only new DOIs are
     # fetched, so this is a no-op on most runs.
-    ("metadata", [sys.executable, "enrich_works.py"]),
+    ("DOI metadata", [sys.executable, "enrich_works.py"]),
     # Assigns stable ids to whatever the transform now produces. Last, because it
     # reads the rows the stages above just landed.
-    ("flora ids", [sys.executable, "flora_registry.py"]),
+    ("FLoRA IDs", [sys.executable, "flora_registry.py"]),
 ]
-FINAL_STAGE = "final CSV and reports"
+FINAL_STAGE = "prepare flora.csv"
 
 ACTIVE_STATUSES = ["queued", "running"]
 
@@ -78,7 +78,7 @@ class SyncRunConflict(RuntimeError):
     """A run is already queued or in flight."""
 
     def __init__(self, active_job_id: str = None):
-        super().__init__("a sync run is already active")
+        super().__init__("a pipeline run is already active")
         self.active_job_id = active_job_id
 
 
@@ -255,7 +255,7 @@ def _run_workspace(output_root):
     except Exception as exc:
         # A database outage must not destroy the only copy of a committed CSV.
         # The runner records this path in the job log for local recovery.
-        raise RuntimeError(f"Pipeline artifacts retained at {directory}") from exc
+        raise RuntimeError(f"Run files kept at {directory}") from exc
     else:
         shutil.rmtree(directory)
 
@@ -313,7 +313,7 @@ def _execute(conn, job_id: str) -> None:
                 # Also leave the conventional CLI artifacts on this executor.
                 # Downloads are already durable. A local copy error must not
                 # discard them or hide a successfully committed dataset.
-                artifact_name = "preparation report"
+                artifact_name = "the preparation report"
                 try:
                     write_report(output_dir, report)
                     with output_directory_lock(output_root):
@@ -326,8 +326,8 @@ def _execute(conn, job_id: str) -> None:
                                 temporary.replace(destination)
                 except OSError as exc:
                     report.setdefault("warnings", []).append(
-                        f"Could not copy local artifact {artifact_name}: {exc}. "
-                        "The job's CSV and report remain available for download.")
+                        f"Could not copy {artifact_name} to output/ on the server: {exc}. "
+                        "This run's CSV and report can still be downloaded.")
                     report["status"] = "needs_attention"
                     artifacts_persisted = False  # save the additional warning
             else:
@@ -340,10 +340,10 @@ def _execute(conn, job_id: str) -> None:
                         raise ValueError("Recovery CSV does not match the committed candidate's manifest")
                     recovery_csv = payload.decode("utf-8")
                     report["recovery_csv"] = report["recovery_artifact"] = "recovery.csv"
-                detail = ("The committed CSV is retained as the recovery download."
-                          if recovery_csv is not None else "No CSV is available for this run.")
+                detail = ("The stored CSV is kept as this run's recovery CSV."
+                          if recovery_csv is not None else "This run has no CSV.")
                 report.setdefault("errors", []).append(
-                    "Final preparation did not complete with a current CSV and report. " + detail)
+                    f"The {FINAL_STAGE} stage did not finish with a CSV and a report. " + detail)
                 report["finished_at"] = timestamp()
                 # Save the committed recovery bytes before the workspace closes.
                 _persist_artifacts(conn, job_id, report, recovery_csv=recovery_csv)
@@ -352,14 +352,14 @@ def _execute(conn, job_id: str) -> None:
         report["errors"] = [f"{stage['name']} failed" for stage in stage_results
                             if stage["status"] == "failed"]
         report["stages"].append({"name": FINAL_STAGE, "status": "skipped",
-                                  "detail": "An upstream stage failed."})
-        _append_log(conn, job_id, f"\n[{_timestamp()}] {FINAL_STAGE}: skipped; "
-                    "an upstream stage failed, so no current CSV was produced.\n")
+                                  "detail": "An earlier stage failed."})
+        _append_log(conn, job_id, f"\n[{_timestamp()}] {FINAL_STAGE}: skipped because an "
+                    "earlier stage failed; no CSV was made.\n")
     report["finished_at"] = timestamp()
     if not artifacts_persisted:
         _persist_artifacts(conn, job_id, report, csv_text)
     if report.get("warnings"):
-        _append_log(conn, job_id, f"[{_timestamp()}] preparation needs attention: "
+        _append_log(conn, job_id, f"[{_timestamp()}] needs review: "
                     + " ".join(report["warnings"]) + "\n")
 
     status = "success" if ok else "failed"
@@ -437,7 +437,7 @@ def run_queued(database_url: str) -> None:
                     "schema_version": 1, "generated_at": timestamp(),
                     "finished_at": timestamp(), "mode": "database_pipeline",
                     "status": "failed", "rows": 0, "stages": [], "warnings": [],
-                    "errors": ["The pipeline runner crashed; see the job log for details."],
+                    "errors": ["The pipeline runner crashed; the run log has the error."],
                 })
         finally:
             with conn.cursor() as cur:
@@ -460,7 +460,7 @@ def reap_stale_jobs(cur, older_than_minutes: int = 60) -> int:
         """
         UPDATE source_sync_jobs
         SET status='failed', finished_at=NOW(),
-            log_text = log_text || '\nabandoned: no runner finished this job\n'
+            log_text = log_text || '\nabandoned: no runner finished this run\n'
         WHERE status IN ('queued', 'running')
           AND created_at < NOW() - make_interval(mins => %s)
           AND pg_try_advisory_xact_lock(7342025092)

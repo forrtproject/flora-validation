@@ -105,7 +105,7 @@ def materialize(cur, source, *, allow_empty=False, expected_revision=UNCHECKED_R
     """
     columns, incoming, digest = _snapshot(source)
     if not incoming and not allow_empty:
-        raise ValueError("Refusing to replace the prepared table with an empty snapshot")
+        raise ValueError("Refusing to replace the stored dataset with an empty snapshot")
     # Use the same allocation lock/order as the identity registry. Records
     # omitted for a missing title still reserve their publication positions.
     cur.execute("LOCK TABLE flora_records IN SHARE ROW EXCLUSIVE MODE")
@@ -116,7 +116,7 @@ def materialize(cur, source, *, allow_empty=False, expected_revision=UNCHECKED_R
         if current != expected_revision:
             if not (current and expected_revision and len(expected_revision) == 3
                     and current[0] == expected_revision[0]):
-                raise ValueError("The prepared dataset changed during this run; rerun the pipeline to build a current snapshot.")
+                raise ValueError("The stored dataset changed during this run; run the pipeline again to build a current snapshot.")
             import flora_edits                      # local: flora_edits imports this module
             preserved = flora_edits.changed_since(cur, expected_revision[2])
     cur.execute("SELECT export_id, export_position FROM flora_records WHERE export_id IS NOT NULL")

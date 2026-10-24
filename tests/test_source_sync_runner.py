@@ -1,4 +1,4 @@
-"""Tests for source_sync_runner — the queue behind the "Run sync now" button.
+"""Tests for source_sync_runner — the queue behind the "Run pipeline" button.
 
 The button persists a queued row and returns; a scheduler drains the queue under a
 PostgreSQL advisory lock. The rules worth pinning down are the ones that keep a
@@ -111,7 +111,7 @@ def test_all_scripts_run_and_in_order():
     assert commands == ["sync_sources.py", "sync_exclusions.py", "sync_validated.py",
                         "enrich_works.py", "flora_registry.py"]
     assert names == ["entry sheets", "exclusions", "validated records",
-                     "metadata", "flora ids"]
+                     "DOI metadata", "FLoRA IDs"]
 
 
 def test_stages_run_as_subprocesses_not_imports():

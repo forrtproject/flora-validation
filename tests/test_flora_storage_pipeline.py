@@ -37,8 +37,8 @@ def test_database_preparation_persists_checked_candidate(tmp_path, monkeypatch):
     assert report["storage"]["rows"] == 1
     assert saved == [(tmp_path / "flora.csv").read_bytes()]
     assert report["storage"]["status"] == "committed"
-    assert report["stages"][-2]["name"] == "store prepared FLoRA table"
-    assert report["stages"][-1]["name"] == "publish CSV artifact"
+    assert report["stages"][-2]["name"] == "store dataset"
+    assert report["stages"][-1]["name"] == "write output files"
 
 
 def test_invalid_identity_never_reaches_stored_table(tmp_path, monkeypatch):
@@ -67,7 +67,7 @@ def test_failed_table_write_does_not_replace_previous_csv(tmp_path, monkeypatch)
     monkeypatch.setattr(prepare_flora, "store_dataset", Mock(side_effect=RuntimeError("database unavailable")))
     report = prepare_flora.prepare(tmp_path, network_checks="none")
     assert report["status"] == "failed"
-    assert "store prepared FLoRA table" in report["errors"][0]
+    assert report["errors"][0].startswith("store dataset:")
     assert (tmp_path / "flora.csv").read_bytes() == original
 
 
@@ -88,7 +88,7 @@ def test_locked_csv_reports_committed_database_and_keeps_recovery_file(tmp_path,
     report = prepare_flora.prepare(tmp_path, network_checks="none")
     assert report["status"] == "failed"
     assert report["storage"]["status"] == "committed"
-    assert report["errors"][0].startswith("publish CSV artifact:")
+    assert report["errors"][0].startswith("write output files:")
     assert (tmp_path / "flora.csv").read_bytes() == b"previous CSV"
     assert (tmp_path / report["recovery_csv"]).read_bytes() == stored[0]
     assert not (tmp_path / ".flora.candidate.csv").exists()

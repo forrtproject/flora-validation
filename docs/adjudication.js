@@ -419,7 +419,7 @@
       body.innerHTML = `<div class="adj-judge-message">${noticeLine()}
         <h3>Nothing left for you right now</h3>
         <p>Each disagreement is judged by two validators, and the rest are taken or done.
-          You have judged ${count(judging.judged)}. Thank you!</p>
+          You have judged ${count(judging.judged)}. Thank you.</p>
         <button type="button" class="btn-outline" id="adj-done-btn">Close</button></div>`;
       document.getElementById("adj-done-btn")?.addEventListener("click", closeJudging);
       focusWindow(judgeModal());
@@ -748,7 +748,7 @@
           <h3>Review</h3>
           <div class="adj-exports">
             <a class="adj-download" href="${EXPORT_URL}final.csv" download
-               title="Approved answers, in the column order of the FLoRA build">Final answers (CSV)</a>
+               title="Approved answers, in the column order of flora.csv">Final answers (CSV)</a>
             <a class="adj-download" href="${EXPORT_URL}judgements.csv" download
                title="Every record with both judges' answers, for the analysis">All judgements (CSV)</a>
           </div>
@@ -949,7 +949,7 @@
     if (!rows || !rows.length) return "";
     return `<div class="adj-in-flora">
       <p><b>This replication is already in Source Records.</b> Publishing adds the answer as a
-        separate row; Source Records' duplicate review then shows both, and you pick which FLoRA keeps.</p>
+        separate source record; Source Records' duplicate review then shows both, and you pick which FLoRA keeps.</p>
       <ul>${rows.map(r => `<li>${escapeHtml(r.display_id || "")} (${escapeHtml(r.source)}, ${escapeHtml(r.type)})
         · original ${escapeHtml(r.doi_o || "none")} · ${escapeHtml(outcomeLabel(r.outcome) || "no outcome")}
         ${r.ruled_duplicate ? " · ruled a duplicate" : ""}${r.deleted ? " · deleted" : ""}</li>`).join("")}</ul></div>`;
@@ -979,8 +979,8 @@
   }
 
   const CONFIRM = {
-    publish: "Add this answer to FLoRA? It becomes a Source Records row (source \"adjudicated\") and goes into the next FLoRA build.",
-    withdraw: "Take this answer out of FLoRA? Its Source Records row is marked deleted, not removed, and the answer stays approved.",
+    publish: "Add this answer to FLoRA? It becomes a source record (source \"adjudicated\") and goes into the next pipeline run.",
+    withdraw: "Take this answer out of FLoRA? Its source record is marked deleted, not removed, and the answer stays approved.",
     undo: "Undo the approval? The record goes back to \"awaiting approval\".",
   };
   const CONFIRM_LABELS = { publish: "Yes, publish", withdraw: "Yes, withdraw", undo: "Yes, undo" };
@@ -1004,8 +1004,8 @@
     if (!rows.length) return "";
     const names = rows.map(r => `${r.display_id} (${r.source})`).join(", ");
     return `<p class="adj-problem">FLoRA already holds this replication–original pair as ${escapeHtml(names)}.
-      The FLoRA build keeps one row per pair, and a row from the website (source "validated") imposes its
-      outcome on the row it keeps. After publishing, rule one of them a duplicate in Source Records.</p>`;
+      The pipeline keeps one record per pair, and a record from the website (source "validated") imposes its
+      outcome on the record it keeps. After publishing, rule one of them a duplicate in Source Records.</p>`;
   }
 
   function decisionArea(detail) {
@@ -1028,7 +1028,7 @@
     if (record.status === "published") {
       return `<div class="adj-decision-done is-published">
         <p><b>In FLoRA as ${escapeHtml(final.published_record_id)}</b> (Source Records, source "adjudicated"),
-          published by ${escapeHtml(final.published_by || "")}. It goes into the next FLoRA build.</p>
+          published by ${escapeHtml(final.published_by || "")}. It goes into the next pipeline run.</p>
         ${facts}
         ${pairWarning(detail)}
         <p class="adj-error" id="adj-review-error" role="alert"></p>
@@ -1039,7 +1039,7 @@
     const everPublished = !!final.published_record_id;
     return `<div class="adj-decision-done">
       ${final.withdrawn_at ? `<p class="adj-small">Withdrawn from FLoRA by ${escapeHtml(final.withdrawn_by || "")};
-        publishing again brings back ${escapeHtml(final.published_record_id || "its row")}.</p>` : ""}
+        publishing again brings back ${escapeHtml(final.published_record_id || "its source record")}.</p>` : ""}
       ${facts}
       ${problem ? `<p class="adj-problem">${escapeHtml(problem)}</p>` : pairWarning(detail)}
       <p class="adj-error" id="adj-review-error" role="alert"></p>

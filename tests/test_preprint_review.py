@@ -418,7 +418,7 @@ def test_rulings_made_in_the_tab_change_the_dataset_and_the_report(local_databas
     diagnostic = report["diagnostics"]["preprint_dedup_candidates.csv"]
     assert diagnostic["rows"] == 1
     assert diagnostic["records"][0]["applied_action"] == "needs_review"
-    assert any("preprint duplicate pairs awaiting a decision" in w for w in report["warnings"])
+    assert any(w.startswith("1 preprint duplicate pair awaiting a decision") for w in report["warnings"])
 
 
 def _published(cur):

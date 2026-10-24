@@ -1,14 +1,27 @@
-"""Prepare reviewable local release metadata for an exact FLoRA CSV.
+"""Prepare reviewable release metadata for an exact FLoRA CSV.
 
-The supplied R helper mixes preparation and OSF upload. This implementation keeps
-the website's sync action local: its manifest records the exact bytes available
-for download. Publishing a version to OSF is a separate operation.
+The supplied R helper mixes preparation and OSF upload. Here nothing publishes:
+the manifest records the exact bytes written, the repository's workflows commit
+output/ to GitHub (see PUBLICATION), and nothing uploads to OSF.
+
+The manifest's "status": "prepared_locally" and "published": false are machine
+values other readers may rely on, so they are unchanged; they do not say whether
+the file reached GitHub.
 """
 import hashlib
 import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+
+# Who commits output/ to GitHub, for the release notes and the preparation report.
+# True wherever they are written: a website run, the nightly job, Publish FLoRA
+# (.github/workflows/publish-flora.yml) or the command line. "Local" because the
+# nightly job runs prepare_flora.py from a command line too.
+PUBLICATION = ("The repository copy (`output/` on GitHub) is committed by two workflows, each "
+               "when flora.csv changed: the nightly job, with its own run's files, and Publish "
+               "FLoRA, with the stored dataset. Website and local command-line runs commit "
+               "nothing. Nothing is uploaded to OSF.")
 
 
 def extract_current_version(markdown: str):
@@ -78,12 +91,12 @@ def prepare_release(csv_path: Path, output_dir: Path, rows: int, columns: list,
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "flora_release_manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    notes = ["# FLoRA release preparation", "",
+    notes = ["# FLoRA release notes", "",
              f"Generated: {manifest['generated_at']}", "",
              f"Version: {version or 'not assigned'}", "",
              f"Dataset: flora.csv ({rows:,} rows)", "",
              f"SHA-256: `{manifest['sha256']}`", "",
-             "Status: files prepared locally; no external release was published.", "",
+             f"Publication: {PUBLICATION}", "",
              release_notes]
     (output_dir / "flora_release_notes.md").write_text("\n".join(notes) + "\n", encoding="utf-8")
     return manifest

@@ -147,7 +147,7 @@ def main() -> int:
     print(f"Wrote {args.output_dir / 'flora.csv'}: {result['rows']} rows, "
           f"sha256 {result['sha256'][:12]}. Preparation report: {result['report']}.")
     if result["removed"]:
-        print("Removed, as they describe another build: " + ", ".join(result["removed"]))
+        print("Removed, as they describe another flora.csv: " + ", ".join(result["removed"]))
     return 0
 
 

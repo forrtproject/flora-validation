@@ -25,7 +25,7 @@ The complete preparation output now has a separate `flora_data` table. Normal
 database preparation stores the candidate with permanent `id` and generated
 `id_md5`, preserves publication positions, and retires missing records without
 deleting their identities. Python helpers support title/DOI search and full
-ID-hash lookup. See [Prepared FLoRA database table](FLORA_DATA_TABLE.md)
+ID-hash lookup. See [The stored FLoRA dataset](FLORA_DATA_TABLE.md)
 for the schema, complete-snapshot import commands, and backup requirements.
 Production migration/import remain pending.
 The full 2,914-row import/export matched the delivered CSV byte for byte in a
@@ -91,7 +91,7 @@ Exported IDs are searchable and accepted by the record-detail lookup.
 
 ## Website and execution flow
 
-In **Admin → Source Records**, select **Run pipeline + report**. The existing
+In **Admin → Source Records**, select **Run pipeline**. The existing
 background queue performs these stages:
 
 ```mermaid
@@ -320,7 +320,7 @@ are documented in `.env.example`:
 | `FLORA_API_FILTER=1` | Produce the separate API derivative in a website run |
 
 After the updated application is deployed/restarted, its existing startup schema
-initialization adds the new columns. Then use **Run pipeline + report**. A normal
+initialization adds the new columns. Then use **Run pipeline**. A normal
 run allocates publication IDs before exporting; browser reads do not write IDs.
 
 To reproduce the delivered reference snapshot locally:

@@ -163,7 +163,7 @@
     <div class="onb-intro" id="onb-intro">
       <div class="login-circle">
         <h2>First, a quick calibration.</h2>
-        <p>Five worked examples: two are correct, three have errors typical of FLoRA's automated pipeline. After each, you'll see whether you were right, and why.</p>
+        <p>Five worked examples: two are correct, three have errors typical of FLoRA's automated extraction. After each, you'll see whether you were right, and why.</p>
         <p>It doesn't count toward the leaderboard, and you need to finish it to continue.</p>
         <button class="btn-primary" id="onb-start-btn">Begin →</button>
       </div>
@@ -332,34 +332,35 @@
     <div id="admin-tab-sources" class="hidden">
       <div id="src-freshness" class="src-freshness"></div>
 
-      <!-- The server queues the complete preparation pipeline and retains its
-           final CSV and reports with the run. -->
+      <!-- The server queues the FLoRA pipeline and keeps each run's flora.csv and
+           report with the run. -->
       <section class="src-sync-panel" id="src-sync-panel">
         <div class="src-sync-head">
           <div>
-            <p class="src-sync-kicker">FLoRA preparation</p>
-            <h3>Run the complete pipeline</h3>
-            <p class="src-sync-blurb">Imports source rows, applies exclusions and validated records, fetches
-              metadata, assigns IDs, and builds the final CSV with a validation report. The copy in
-              the GitHub repository (<code>output/flora.csv</code>) is updated after the nightly run;
-              for sooner, run <i>Publish FLoRA</i> in the repository's Actions tab.</p>
+            <p class="src-sync-kicker">FLoRA pipeline</p>
+            <h3>Build and check flora.csv</h3>
+            <p class="src-sync-blurb">Builds <code>flora.csv</code> from the source records, validates it, and
+              stores it as the dataset that Download full CSV and the public API serve. It also runs
+              nightly at 03:00 UTC. The repository copy (<code>output/flora.csv</code> on GitHub) is
+              updated after the nightly run; to update it sooner, start <i>Publish FLoRA</i> in the
+              repository's Actions tab.</p>
           </div>
           <div class="src-sync-actions">
-            <button class="btn-primary" id="src-sync-run-btn" type="button">Run pipeline + report</button>
-            <button class="ghost-btn" id="src-sync-refresh-btn" type="button" title="Refresh">Refresh</button>
+            <button class="btn-primary" id="src-sync-run-btn" type="button">Run pipeline</button>
+            <button class="ghost-btn" id="src-sync-refresh-btn" type="button">Refresh</button>
           </div>
         </div>
-        <ol class="src-sync-flow" aria-label="Pipeline sequence">
-          <li>Sources &amp; exclusions</li><li>Validated records</li><li>Metadata &amp; IDs</li><li>Final CSV &amp; checks</li>
+        <ol class="src-sync-flow" aria-label="Pipeline stages">
+          <li>Entry sheets &amp; exclusions</li><li>Validated records</li><li>DOI metadata &amp; FLoRA IDs</li><li>flora.csv &amp; checks</li>
         </ol>
-        <p class="src-sync-contract">The CSV starts with <code>id</code> and <code>id_md5</code>, then the
-          reference columns in order; new rows and columns go at the end. Each run keeps its downloads below.</p>
+        <p class="src-sync-contract"><code>flora.csv</code> starts with <code>id</code> and <code>id_md5</code>,
+          then the reference columns in order; new records and columns are added at the end.</p>
         <div id="src-sync-live" class="pipeline-live-status hidden" role="status"></div>
         <div class="src-sync-log-head">
-          <span>Pipeline history &amp; downloads</span>
+          <span>History &amp; downloads</span>
         </div>
         <div id="src-sync-log" class="src-sync-log">
-          <p class="admin-loading">Loading pipeline history…</p>
+          <p class="admin-loading">Loading run history…</p>
         </div>
       </section>
 
@@ -419,11 +420,12 @@
           <dt>Keep &mdash; distinct</dt>
           <dd>A separate record. It stays in FLoRA and is never merged automatically.</dd>
           <dt>Duplicate of &hellip;</dt>
-          <dd>The same report entered twice. This row leaves FLoRA and the one you name stays.
+          <dd>The same report entered twice. This record leaves FLoRA and the one you name stays.
             Between a replication and a reproduction you are asked to confirm.</dd>
           <dt>When it takes effect</dt>
-          <dd>In the FLoRA tab at once; in the published CSV, the public API and the Atlas at
-            the next pipeline run.</dd>
+          <dd>In the FLoRA tab at once; in Download full CSV and the public API at the next
+            pipeline run; in the repository copy (<code>output/flora.csv</code>) after the next
+            nightly run.</dd>
         </dl>
         <div id="src-dup-body"></div>
       </div>
@@ -539,29 +541,31 @@
           <span id="pipeline-history-count" class="pipeline-history-count"></span>
         </div>
         <div id="pipeline-history" class="pipeline-history">
-          <p class="admin-loading">Loading pipeline history...</p>
+          <p class="admin-loading">Loading run history…</p>
         </div>
       </section>
     </div>
 
-    <!-- FLoRA: the prepared product. Derived from source_records on demand by
-         transform_sources.build(), never materialised, so it cannot drift from
-         the Source Records tab. flora_id comes from the flora_records registry. -->
+    <!-- FLoRA: the dataset. The grid is built from source_records on demand by
+         transform_sources.build(), so it cannot drift from the Source Records tab;
+         Download full CSV serves the stored dataset (flora_data). flora_id comes
+         from the flora_records registry. -->
     <div id="admin-tab-flora" class="hidden">
       <section class="flora-head">
         <div>
-          <p class="flora-kicker">Prepared dataset</p>
+          <p class="flora-kicker">FLoRA dataset</p>
           <h3>FLoRA records</h3>
-          <p class="flora-blurb">The prepared dataset: outcomes derived, DOIs cleaned, exclusions and
-            duplicates applied. Open a record to correct it; source records stay as imported. Each row
-            keeps its Source Records ID, even if a duplicate ruling later changes its source. Pipeline
-            runs and their reports are under Source Records.</p>
+          <p class="flora-blurb">Built from the current source records: outcomes derived, DOIs cleaned,
+            exclusions and duplicate rulings applied. Open a record to correct it; source records stay
+            as imported. A record keeps the ID of the source record it was first built from, even if a
+            duplicate ruling later changes its source. Pipeline runs and their reports are under
+            Source Records.</p>
         </div>
         <div class="flora-actions">
           <button class="btn-primary" id="flora-export-all-btn" type="button"
                   title="The stored dataset, as the public API serves it: the last pipeline run's flora.csv with corrections saved since">Download full CSV</button>
           <button class="ghost-btn" id="flora-export-btn" type="button"
-                  title="The rows this filter shows. Rows added since the last pipeline run get their permanent ID then; until it runs, this export is refused">Export filtered CSV</button>
+                  title="The records this filter shows, as built now. Records added since the last pipeline run get their permanent ID at the next one; until then this export is refused">Export filtered CSV</button>
           <button class="ghost-btn" id="flora-refresh-btn" type="button">Refresh</button>
           <button class="ghost-btn" id="flora-dedup-btn" type="button"
                   title="Possible preprint and publication pairs awaiting a decision">Preprint duplicates
@@ -576,8 +580,8 @@
         <button class="admin-filter-btn active" data-filter="all">All <span class="filter-count" id="ffc-all">—</span></button>
         <button class="admin-filter-btn" data-filter="replication">Replications <span class="filter-count" id="ffc-repl">—</span></button>
         <button class="admin-filter-btn" data-filter="reproduction">Reproductions <span class="filter-count" id="ffc-repro">—</span></button>
-        <button class="admin-filter-btn" data-filter="edited" title="Records with at least one field corrected here">Edited <span class="filter-count" id="ffc-edited">—</span></button>
-        <button class="admin-filter-btn" data-filter="conflict" title="Records whose duplicate source entries disagree on the outcome. The first entry's outcome is published until you choose one in the record">Conflicts <span class="filter-count" id="ffc-conflict">—</span></button>
+        <button class="admin-filter-btn" data-filter="edited" title="Records with at least one correction">Corrected <span class="filter-count" id="ffc-edited">—</span></button>
+        <button class="admin-filter-btn" data-filter="conflict" title="Records whose duplicate source records gave different outcomes. The outcome the merge picked is published until you choose one in the record">Conflicts <span class="filter-count" id="ffc-conflict">—</span></button>
       </div>
 
       <div class="admin-search-bar src-toolbar">
@@ -592,7 +596,7 @@
           <thead>
             <tr>
               <th class="th-sort" data-sort="flora_id">Record ID</th>
-              <th class="th-sort" data-sort="source">Sheet</th>
+              <th class="th-sort" data-sort="source">Source</th>
               <th class="th-sort" data-sort="type">Type</th>
               <th class="th-sort" data-sort="doi_o">Original</th>
               <th class="th-sort" data-sort="doi_r">Replication / Reproduction</th>
@@ -627,15 +631,16 @@
             published record that leaves keeps its ID as retired, so links still work. For two
             <i>original</i> DOIs nothing leaves: the replications move under the kept DOI.</dd>
           <dt>Different papers &mdash; keep both</dt>
-          <dd>Both stay in FLoRA. A record the automatic rule had dropped comes back at once
-            and gets its FLoRA ID at the next pipeline run; Download full CSV waits for that
-            run. Two original DOIs each keep their replications.</dd>
+          <dd>Both stay in FLoRA. A record the automatic rule had dropped comes back at once,
+            and gets its FLoRA ID and reaches Download full CSV at the next pipeline run. Two
+            original DOIs each keep their replications.</dd>
           <dt>Undo</dt>
           <dd>Under <i>Show decided pairs</i>. The pair goes back to the automatic rules, and
             to this list if it still needs a decision.</dd>
           <dt>When it takes effect</dt>
-          <dd>Here at once; in the published CSV, the public API and the Atlas at the next
-            pipeline run (nightly, or <i>Run pipeline</i> in Source Records).</dd>
+          <dd>Here at once; in Download full CSV and the public API at the next pipeline run
+            (nightly, or <i>Run pipeline</i> in Source Records); in the repository copy
+            (<code>output/flora.csv</code>) after the next nightly run.</dd>
         </dl>
         <div id="flora-dedup-body"></div>
         <div id="flora-dedup-decided" class="hidden"></div>
@@ -759,7 +764,7 @@
   <div class="mobile-warning-box">
     <div style="font-size:2.5rem;margin-bottom:1rem">🖥️</div>
     <h2>Desktop only for now</h2>
-    <p>Flora Validator isn't built for phones yet. Please use a desktop or laptop.</p>
+    <p>Flora Validator isn't built for phones yet. Use a desktop or laptop.</p>
     <button id="mobile-continue-btn" class="ghost-btn" style="margin-top:1.25rem;font-size:0.85rem;color:var(--muted)">Continue anyway</button>
   </div>
 </div>

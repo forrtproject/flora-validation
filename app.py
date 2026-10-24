@@ -2220,7 +2220,7 @@ def _housekeeping() -> None:
             # later click, since queue_run() treats it as active.
             abandoned = source_sync_runner.reap_stale_jobs(cur)
             if abandoned:
-                logger.warning("Reaped %s abandoned sync job(s)", abandoned)
+                logger.warning("Reaped %s abandoned pipeline run(s)", abandoned)
     except Exception:
         logger.exception("Session housekeeping failed")
 
@@ -6149,7 +6149,7 @@ def admin_source_sync_job(job_id: str, admin: dict = Depends(current_admin)):
     with db() as cur:
         job = source_sync_runner.job_detail(cur, job_id)
     if job is None:
-        raise HTTPException(404, "No such sync job")
+        raise HTTPException(404, "No such pipeline run")
     return job
 
 
@@ -6200,7 +6200,7 @@ def admin_source_sync_dispatch(request: Request, admin: dict = Depends(current_a
         raise HTTPException(
             409,
             detail={
-                "message": "A sync run is already active",
+                "message": "A pipeline run is already active",
                 "active_job_id": exc.active_job_id,
             },
         )
