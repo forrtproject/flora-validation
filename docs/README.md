@@ -1448,10 +1448,10 @@ note, and every correction in force afterwards), keyed on the record's published
 (`flora_data.id`). A save rewrites the record's row in `flora_data` at once and moves
 the table revision the public API caches on. Every build re-applies the newest
 corrections on top of what it derived: identifiers (`doi_*`, `url_*`) after
-deduplication and before the metadata join, so the title and authors follow a
-corrected DOI, and every correction after ids are attached. Saves quote the record's
-latest `change_id` as a version; a stale save receives HTTP 409. Any row of the log can
-be restored, which is logged as a change too.
+deduplication, with the corrected rows joined to the metadata again so the title and
+authors follow a corrected DOI, and every correction after ids are attached. Saves
+quote the record's latest `change_id` as a version; a stale save receives HTTP 409. Any
+row of the log can be restored, which is logged as a change too.
 
 ### Source duplicate decisions
 
@@ -1474,8 +1474,9 @@ combinations and prevent self-reference.
 2. cleans DOI prefixes, case, whitespace, and known scraped suffixes;
 3. applies `transform_exclusions` by replication DOI or URL;
 4. removes `url_r` when it merely repeats the DOI resolver;
-5. removes admin-confirmed duplicates and collapses remaining identifier
-   duplicates, except rows marked distinct; and
+5. removes admin-confirmed duplicates, drops a row that repeats every identifier
+   of another (keeping what only it had), and combines rows of one paper pair that
+   differ only by a missing `url_r`, except rows marked distinct; and
 6. writes the 20-column FLoRA projection, with the six reproduction-axis/evidence
    columns appended for positional compatibility with older consumers.
 

@@ -605,8 +605,16 @@ A **pure function of the database** — it writes nothing back. Six operations, 
 4. **Strip redundant `url_r`.** 1,403 of the replication rows carry
    `https://doi.org/<doi_r>` — the DOI written twice. In FLoRA, `url_r` means "a link
    to something that is not the DOI".
-5. **Deduplicate.** Key = `type | doi_o | coalesce(doi_r, url_r)`. Rows a reviewer
-   ruled `distinct` are exempt.
+5. **Deduplicate.** Key = `type | doi_o | doi_r | url_r` (`dedup_keys`), so a row is
+   dropped only when it repeats every identifier of another. What only the dropped row
+   had is kept: a cell the surviving row has blank takes its value, and a missing
+   outcome, or a reproduction's missing axis, comes with that row's own quote and quote
+   source. Rows of one pair that differ only because one lacks a `url_r` are combined
+   instead, by `merge_doi_pair_dups()` (below); two `url_r` values are two reports and
+   stay two rows, as in R, whose key is `doi_o` with `url_r`, else `doi_r`. URLs are
+   compared without the scheme, `www.`, `utm_` tracking parameters or a trailing slash.
+   A row with no identifier at all is never a duplicate. Rows a reviewer ruled
+   `distinct` are exempt.
 6. **Project** to the 14 FLoRA columns and strip `DUMMY_*` placeholder DOIs.
 
 ### Ordering matters
@@ -687,7 +695,9 @@ two points, as the notebook does:
   of [`cache/confirmed_preprint_duplicates.csv`](../cache/confirmed_preprint_duplicates.csv).
   Running it first is what makes the metadata fetch use canonical DOIs instead of DOIs
   it is about to discard.
-- `resolve()` **after** enrichment, because detection needs titles and authors.
+- `resolve()` **after** enrichment, because detection needs titles and authors. A row
+  whose `doi_o` it replaces is then joined to the metadata again, so its title,
+  journal and year describe the DOI it now carries.
 
 Detection uses all four of the notebook's routes: replication-side pairs under one
 `doi_o`, identical normalised titles, DOI-format variants, and fuzzy title matches
@@ -696,8 +706,10 @@ the confirmed file's own recorded values: the Pennycook pair scores **0.991** he
 number R wrote into that file.
 
 `merge_doi_pair_dups()` is the piece our dedup previously lacked. Step 5 *drops* a
-colliding row; this *combines* them — study numbers joined with `; `, quotes with
-` || `, `COS` preferred as the source, and disagreeing outcomes collapsed to `mixed`.
+row entered twice, keeping only what the dropped row adds; this *combines* rows of
+one `(type, doi_o, doi_r)` with at most one distinct `url_r` — study numbers joined
+with `; `, quotes with ` || `, `COS` preferred as the source, and disagreeing
+outcomes collapsed to `mixed`.
 Outcomes that cannot be mixed (uninformative, statistically successful but flawed)
 never publish as `A || B`, which no consumer can filter or tally: the record that
 keeps the id (the group's first row) supplies the outcome, and the clash is logged
@@ -756,9 +768,10 @@ one active inside the window → leave it alone; an open one itself stale → co
 
 It is **off by default**, and that default is load-bearing: `build()` runs on every
 FLoRA tab load, so a default of `True` would file GitHub issues when somebody opens a
-page. Only `transform_sources.py --review-issue` turns it on, which is what the nightly
-workflow passes. Every failure — no `gh`, no token, no network — is reported and
-ignored: a dataset build that already succeeded must not fail on a nudge.
+page. Only `transform_sources.py --review-issue` turns it on; the nightly workflow and
+the website's pipeline runs (`prepare_flora.py`) leave it off. Every failure — no `gh`,
+no token, no network — is reported and ignored: a dataset build that already succeeded
+must not fail on a nudge.
 
 ### 8.9.1 What a run writes
 
@@ -823,16 +836,19 @@ Preprint duplicate pairs nobody has ruled on (`needs_review`, or an unconfirmed
 `auto_keep_*`) also become a warning in the preparation report and on the pipeline
 job, and are listed for a decision under **FLoRA tab → Preprint duplicates**. A pair
 is held as `needs_review`, with both rows kept, when its first authors differ or when
-both DOIs are preprints without a matching first author. A ruling there is stored in
-`preprint_dedup_decisions`, wins over `cache/confirmed_preprint_duplicates.csv` for
-the same pair, shows in the tab at once and reaches the published CSV at the next
-run. The run also prints, per step: how many
+the rules cannot tell which DOI is the published version: neither is a preprint or
+repository record, or both are. Only a lone preprint or repository record (a generic
+OSF DOI, PsycEXTRA, an NBER working paper, PsychArchives) loses automatically, and so
+does the non-canonical spelling of one DOI; R dropped `doi_2` wherever its rules could
+not tell. A ruling there is stored in `preprint_dedup_decisions`, wins over
+`cache/confirmed_preprint_duplicates.csv` for the same pair, shows in the tab at once
+and reaches the published CSV at the next run. The run also prints, per step: how many
 outcome spellings were recoded and to what, DOI values that are not DOIs, rows excluded
 by each rule, cells changed per text-cleaned column, conflicting outcomes, and a closing
 coverage table for every column of the output contract.
 
-`dup_outcome_conflicts.csv` currently holds **55** groups — the same paper, the same
-`url_r`, disagreeing outcomes. Those are source-data mistakes, not pipeline bugs.
+`dup_outcome_conflicts.csv` lists the groups with the same paper, the same `url_r` and
+disagreeing outcomes. Those are source-data mistakes, not pipeline bugs.
 
 ---
 
@@ -1054,12 +1070,13 @@ the frame after this step, so the row a pipeline run writes is the one the save 
 wrote.
 
 **What a corrected identifier does not do.** The duplicate steps never see it, which is
-what keeps every record in place. The cost: if a correction makes two records share
-their DOIs, both stay. The save says so — it names the other record, and the pipeline
-log lists such rows — so the decision is yours: rule a duplicate in Source Records if it
-is the same study. A correction onto an identifier on the exclusion list is refused,
-with the exclusion's reason; an exclusion added later still removes the record, as an
-exclusion does.
+what keeps every record in place. The cost: if a correction makes two records look like
+one to those steps — the same identifiers, or the same DOIs where only one of the two
+has a `url_r` (`record_keys`) — both stay. The save says so — it names the other record,
+and the pipeline log lists such rows — so the decision is yours: rule a duplicate in
+Source Records if it is the same study. A correction onto an identifier on the
+exclusion list is refused, with the exclusion's reason; an exclusion added later still
+removes the record, as an exclusion does.
 
 **Validation.** DOIs are cleaned and must start with `10.`; a replication's outcome must
 be in the vocabulary; a reproduction is corrected through its two axes, whose values are

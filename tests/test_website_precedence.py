@@ -147,7 +147,8 @@ def test_a_website_row_ruled_distinct_does_not_swallow_the_other(local_database,
 def test_a_group_a_reviewer_settled_is_not_republished_twice(local_database, offline,
                                                              monkeypatch):
     """REPL-2 ruled a duplicate of REPL-1 (which marks REPL-1 distinct); the
-    unruled website copy must not come back as a second record of the paper."""
+    unruled website copy of REPL-1, every identifier the same, must not come back as
+    a second record of the paper."""
     from psycopg2.extras import RealDictCursor
     import source_records_service
     with local_database:
@@ -157,7 +158,7 @@ def test_a_group_a_reviewer_settled_is_not_republished_twice(local_database, off
                                "REPL-000001")
             second = add_source(cur, {"doi_o": ORIGINAL, "doi_r": REPORT, "outcome": "mixed"},
                                 "REPL-000002")
-            _website_row(cur, "VAL-000001", url_r="https://osf.io/b")
+            _website_row(cur, "VAL-000001", url_r="https://osf.io/a")
             _metadata(cur)
             source_records_service.resolve_duplicate(cur, second, "duplicate", "hamid", first)
     monkeypatch.setattr(preprint_dedup, "WEBSITE_SOURCE", "no-such-source")
@@ -192,15 +193,17 @@ def test_a_website_row_with_an_old_retired_id_does_not_take_the_published_one(
 
 
 def test_an_outcome_the_website_row_overrode_in_the_dedup_is_logged(local_database, offline):
-    """Different url_r values keep the rows out of the merge, so the dedup drop
-    settles it; that used to discard the losing outcome without a trace."""
+    """Every identifier the same once normalised, so the dedup drops the website's
+    copy and its outcome wins there; that used to discard the losing outcome without
+    a trace. (The trailing slash keeps the two out of the pair merge that
+    apply_confirmed runs at step 2b.)"""
     from psycopg2.extras import RealDictCursor
     import transform_sources
     with local_database:
         with local_database.cursor(cursor_factory=RealDictCursor) as cur:
             add_source(cur, {"doi_o": ORIGINAL, "doi_r": REPORT, "url_r": "https://osf.io/sheet",
                              "outcome": "mixed"}, "REPL-000001")
-            _website_row(cur, "VAL-000001", url_r="https://osf.io/val")
+            _website_row(cur, "VAL-000001", url_r="https://osf.io/sheet/")
             _metadata(cur)
     with local_database.cursor(cursor_factory=RealDictCursor) as cur:
         frame = transform_sources.build(cur, verbose=False)

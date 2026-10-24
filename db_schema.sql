@@ -1516,7 +1516,7 @@ CREATE TABLE IF NOT EXISTS flora_records (
     primary_source_record_id UUID NOT NULL UNIQUE
                                   REFERENCES source_records(record_id) ON DELETE CASCADE,
     merged_source_record_ids UUID[] NOT NULL DEFAULT '{}',
-    -- type|doi_o|doi_r-or-url_r at the last refresh. Diagnostic only — never the
+    -- type|doi_o|doi_r|url_r at the last refresh. Diagnostic only — never the
     -- identity, precisely because a DOI correction changes it.
     dedup_key                TEXT,
     first_seen_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),

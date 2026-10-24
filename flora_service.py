@@ -731,6 +731,7 @@ def _review_item(decision: dict) -> dict:
     for n in (1, 2):
         paper = {field: _cell(decision.get(f"{field}_{n}")) for field in _PAPER_FIELDS}
         paper["is_repository"] = preprint_dedup.is_repository_doi(paper["doi"])
+        paper["repository"] = preprint_dedup.repository_kind(paper["doi"])
         paper["position"] = n
         item["papers"].append(paper)
     return item

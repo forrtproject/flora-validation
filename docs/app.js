@@ -9787,6 +9787,21 @@ function tip(text) {
   return ' title="' + escapeHtml(text) + '"';
 }
 
+/** The repository records the automatic rule drops for a publisher DOI, by the
+ *  kind preprint_dedup.REPOSITORY_DOI_PATTERNS names. */
+const FLORA_REPOSITORY_TIPS = {
+  "OSF": "A generic OSF DOI: a project, registration or file, not necessarily a preprint. " +
+         "Different teams' reports often share one templated title here.",
+  "PsycEXTRA": "A PsycEXTRA record: APA's database of grey literature, such as conference " +
+               "papers and reports. When the same paper also has a publisher DOI, the " +
+               "published version is usually the one to keep.",
+  "NBER working paper": "An NBER working paper. When the same paper also has a publisher " +
+                        "DOI, the published version is usually the one to keep.",
+  "PsychArchives": "A PsychArchives record: ZPID's repository of preprints, postprints and " +
+                   "data. When the same paper also has a publisher DOI, the published " +
+                   "version is usually the one to keep.",
+};
+
 /** What kind of record a DOI names — the first thing to read when deciding. */
 function floraDedupKind(p) {
   if (p.is_preprint) {
@@ -9796,12 +9811,14 @@ function floraDedupKind(p) {
       ">preprint</span>";
   }
   if (p.is_repository) {
+    const kind = p.repository || "repository";
     return '<span class="src-dup-badge"' +
-      tip("A generic OSF DOI: a project, registration or file, not necessarily a preprint. " +
-          "Different teams' reports often share one templated title here.") + ">OSF</span>";
+      tip(FLORA_REPOSITORY_TIPS[kind] || "A repository copy rather than the published article.") +
+      ">" + escapeHtml(kind) + "</span>";
   }
   return '<span class="src-dup-badge src-dup-badge-ok"' +
-    tip("Not a preprint or OSF DOI, so usually the published article.") + ">publisher DOI</span>";
+    tip("Not a preprint or repository DOI, so usually the published article.") +
+    ">publisher DOI</span>";
 }
 
 function floraDedupIsOriginal(item) {
@@ -9905,8 +9922,10 @@ function floraDedupGroup(item) {
   const key = escapeHtml(item.pair_key);
   const status = item.applied_action === "needs_review"
     ? '<span class="src-dup-badge src-dup-badge-warn"' +
-        tip("The automatic rule does not pick one here: different first authors, or two " +
-            "preprints without a matching author.") +
+        tip("The automatic rule does not pick one here: different first authors, or " +
+            "nothing says which is the published version (neither DOI is a preprint or " +
+            "repository record, both are, or neither of two spellings of one DOI is the " +
+            "standard one).") +
         ">both kept until decided — " +
         escapeHtml((item.resolution || "").replace(/^review:\s*/, "")) + "</span>"
     : floraDedupIsOriginal(item)
@@ -9917,7 +9936,8 @@ function floraDedupGroup(item) {
           ">merged automatically — not confirmed</span>"
       : '<span class="src-dup-badge src-dup-badge-warn"' +
           tip("The automatic rule treated these as one paper and dropped one (a preprint " +
-              "loses to a published version). Your decision replaces this guess.") +
+              "or repository record loses to a published version). Your decision replaces " +
+              "this guess.") +
           ">one dropped automatically — not confirmed</span>";
   const flags = [status];
   if (item.title_sim != null) {

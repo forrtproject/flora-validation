@@ -46,6 +46,15 @@ def test_published_dois_are_not_preprints(doi):
     assert not pdd.is_preprint_doi(doi)
 
 
+@pytest.mark.parametrize("doi", ["https://doi.org/10.1101/2025.11.02.686051",
+                                 "doi:10.48550/arXiv.2208.07395",
+                                 "HTTPS://DOI.ORG/10.31234/OSF.IO/UHBK9"])
+def test_every_spelling_of_a_preprint_doi_is_a_preprint(doi):
+    """Normalised first, as repository_kind() is, so the spelling of a DOI never
+    decides whether it is a preprint."""
+    assert pdd.is_preprint_doi(doi)
+
+
 def test_double_slash_typo_is_repaired():
     """10.1037//0022 and 10.1037/0022 are the same paper; without this repair the
     whole DOI-variant route finds nothing."""
@@ -128,15 +137,21 @@ def test_for_doi_variants_the_non_canonical_loses():
     assert keep == "10.1037/0022-3514.46.4.778"
 
 
-def test_otherwise_doi_2_loses_deterministically():
-    assert pdd.default_resolve_pair("replication", "10.1/a", "10.2/b",
-                                    False, False) == ("10.2/b", "10.1/a")
+def test_otherwise_the_rules_decide_nothing():
+    """R dropped doi_2 here. Nothing says which of two publisher DOIs is the
+    published version: 10.5964/jnc.6063 was dropped for its PsychArchives copy."""
+    assert pdd.default_resolve_pair("replication", "10.1/a", "10.2/b", False, False) is None
 
 
-def test_two_preprints_still_resolve_deterministically():
-    remove, _ = pdd.default_resolve_pair(
-        "replication", "10.31234/osf.io/a", "10.31234/osf.io/b", True, True)
-    assert remove == "10.31234/osf.io/b"
+def test_two_preprints_are_not_resolved_by_the_rules():
+    assert pdd.default_resolve_pair(
+        "replication", "10.31234/osf.io/a", "10.31234/osf.io/b", True, True) is None
+
+
+def test_a_doi_variant_neither_spelling_of_which_is_canonical_is_not_resolved():
+    assert pdd.default_resolve_pair(
+        "original (DOI variant)", "10.1037//0022-3514.46.4.778",
+        "10.1037/0022-3514.46.4.778%20", False, False) is None
 
 
 def test_a_pair_with_a_missing_doi_cannot_be_resolved():
@@ -183,15 +198,26 @@ def test_differing_first_authors_are_held_and_both_rows_kept(tmp_path):
     assert row["resolution"] == "review: first authors differ"
 
 
-def test_two_preprints_need_a_matching_first_author():
-    candidate = {"side": "replication", "first_author_1": None, "first_author_2": "fox",
-                 "is_preprint_1": True, "is_preprint_2": True}
-    assert pdd.review_reason(candidate) == "two preprints without a matching first author"
+@pytest.mark.parametrize("first_authors", [(None, "fox"), ("fox", "fox")])
+def test_two_preprints_are_held_whoever_wrote_them(first_authors):
+    """Neither is the published version, so a matching author does not say which to
+    keep: two preprints by one author used to fall to the doi_2 tie-break."""
+    candidate = {"side": "replication", "first_author_1": first_authors[0],
+                 "first_author_2": first_authors[1], "is_preprint_1": True, "is_preprint_2": True}
+    assert pdd.review_reason(candidate) == "both are preprints or repository records"
 
 
-def test_two_preprints_by_the_same_author_still_resolve_automatically():
-    candidate = {"side": "replication", "first_author_1": "fox", "first_author_2": "fox",
-                 "is_preprint_1": True, "is_preprint_2": True}
+def test_two_publisher_dois_are_held():
+    candidate = {"side": "original", "doi_1": "10.1080/07350015.1995.10524601",
+                 "doi_2": "10.2307/1392187", "first_author_1": "cheung",
+                 "first_author_2": "cheung", "is_preprint_1": False, "is_preprint_2": False}
+    assert pdd.review_reason(candidate) == "neither is a preprint or repository record"
+
+
+def test_a_lone_preprint_by_the_same_author_still_resolves_automatically():
+    candidate = {"side": "replication", "doi_1": "10.31234/osf.io/x", "doi_2": "10.1016/j.x",
+                 "first_author_1": "fox", "first_author_2": "fox",
+                 "is_preprint_1": True, "is_preprint_2": False}
     assert pdd.review_reason(candidate) is None
 
 
@@ -319,6 +345,130 @@ def test_a_repository_doi_still_loses_to_a_publisher_doi(tmp_path):
     out, _ = pdd.resolve(frame, confirmed_path=tmp_path / "none.csv",
                          candidates_out=None, verbose=False)
     assert list(out["doi_r"]) == ["10.1016/j.x.2020"]
+
+
+# ── repository records ────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("doi, kind", [
+    ("10.17605/OSF.IO/VUFM2", "OSF"),
+    ("10.1037/e519682015-069", "PsycEXTRA"),
+    ("https://doi.org/10.1037/E722852011-095", "PsycEXTRA"),
+    ("10.1037//e519682015-069", "PsycEXTRA"),       # both spellings of one DOI alike
+    ("10.3386/w6614", "NBER working paper"),
+    ("10.23668/psycharchives.4766", "PsychArchives"),
+])
+def test_repository_records_are_recognised(doi, kind):
+    assert pdd.repository_kind(doi) == kind
+    assert pdd.is_repository_doi(doi)
+    assert not pdd.is_preprint_doi(doi)                 # never a preprint for detection
+
+
+@pytest.mark.parametrize("doi", [
+    "10.1037/emo0000569",           # Emotion: APA journals start 10.1037/e too
+    "10.1037/edu0000039",           # Journal of Educational Psychology
+    "10.1037/ebs0000028",           # Evolutionary Behavioral Sciences
+    "10.1037/0022-3514.68.5.793",
+    "10.5964/jnc.6063",
+    "10.1016/s0047-2727(99)00036-5",
+    "10.23668/other.4766",
+    "", None,
+])
+def test_journal_dois_are_not_repository_records(doi):
+    assert pdd.repository_kind(doi) is None
+    assert not pdd.is_repository_doi(doi)
+
+
+def _originals(rows):
+    """One replication of each (doi_o, title_o, first author) given, as resolve()
+    sees them after the metadata join."""
+    return pd.DataFrame({
+        "doi_o": [doi for doi, _, _ in rows],
+        "title_o": [title for _, title, _ in rows],
+        "author_o": [author for _, _, author in rows],
+        "year_o": ["2013"] * len(rows),
+        "doi_r": [f"10.9999/replication.{n}" for n in range(len(rows))],
+        "title_r": [f"Replication {n}" for n in range(len(rows))],
+        "author_r": ["Ana Fox"] * len(rows),
+        "type": ["replication"] * len(rows),
+    })
+
+
+@pytest.mark.parametrize("repository, journal", [
+    ("10.1037/e519682015-069", "10.1177/0956797612464058"),   # PsycEXTRA, Psych. Science
+    ("10.3386/w6614", "10.1016/s0047-2727(99)00036-5"),       # NBER, J. Public Economics
+])
+def test_an_original_repository_record_loses_to_the_journal_article(tmp_path, repository,
+                                                                      journal):
+    """The repository copy came first, so the doi_2 tie-break dropped the journal DOI
+    and published the article's replications under the PsycEXTRA or NBER one."""
+    frame = _originals([(repository, "One Original Study", "Ana Fox"),
+                        (journal, "One original study", "Ana Fox")])
+    out, log = pdd.resolve(frame, confirmed_path=tmp_path / "none.csv",
+                           candidates_out=None, verbose=False)
+    assert (log.iloc[0]["doi_remove"], log.iloc[0]["doi_keep"]) == (repository, journal)
+    assert set(out["doi_o"]) == {journal}
+    assert out["alt_identifier_o"].isna().all()         # an automatic decision annotates nothing
+
+
+def test_a_psycharchives_copy_loses_to_the_journal_article(tmp_path):
+    """VAL-000018 and VAL-000044: one report, as its PsychArchives record and as the
+    Journal of Numerical Cognition article. The tie-break kept the repository copy."""
+    frame = _reproductions(["Artemenko", "Artemenko"],
+                           dois=("10.23668/psycharchives.4766", "10.5964/jnc.6063"))
+    out, log = pdd.resolve(frame, confirmed_path=tmp_path / "none.csv",
+                           candidates_out=None, verbose=False)
+    assert log.iloc[0]["applied_action"] == "auto_keep_2"
+    assert list(out["doi_r"]) == ["10.5964/jnc.6063"]
+
+
+@pytest.mark.parametrize("dois, reason", [
+    (("10.2466/07.10.17.pr0.107.4.139-144", "10.2466/pr0.107.1.139-144"),
+     "neither is a preprint or repository record"),
+    (("10.31234/osf.io/qn7pt", "10.31234/osf.io/9kyur"),
+     "both are preprints or repository records"),
+])
+def test_a_pair_the_rules_cannot_tell_apart_is_held_with_both_rows_kept(tmp_path, dois,
+                                                                         reason):
+    """Same first author, same title: the tie-break used to drop doi_2."""
+    frame = _reproductions(["Steuer", "Steuer"], dois=dois)
+    out, log = pdd.resolve(frame, confirmed_path=tmp_path / "none.csv",
+                           candidates_out=None, verbose=False)
+    assert sorted(out["doi_r"]) == sorted(dois)
+    row = log.iloc[0]
+    assert (row["applied_action"], row["resolution"]) == (pdd.NEEDS_REVIEW, f"review: {reason}")
+    assert pd.isna(row["doi_remove"])
+    assert len(pdd.unresolved(log.to_dict("records"))) == 1    # queued in the FLoRA tab
+
+
+def test_two_publisher_dois_of_one_original_are_held_and_neither_is_replaced(tmp_path):
+    frame = _originals([("10.1080/07350015.1995.10524601", "Lag Order", "Yin-Wong Cheung"),
+                        ("10.2307/1392187", "Lag order", "Yin-Wong Cheung")])
+    out, log = pdd.resolve(frame, confirmed_path=tmp_path / "none.csv",
+                           candidates_out=None, verbose=False)
+    assert log.iloc[0]["applied_action"] == pdd.NEEDS_REVIEW
+    assert list(out["doi_o"]) == ["10.1080/07350015.1995.10524601", "10.2307/1392187"]
+
+
+def test_a_doi_variant_the_canonical_rule_cannot_order_is_held(tmp_path):
+    frame = _originals([("10.1037//0022-3514.46.4.778", "Inaction inertia", "Orit Tykocinski"),
+                        ("10.1037/0022-3514.46.4.778%20", "Inaction inertia",
+                         "Orit Tykocinski")])
+    out, log = pdd.resolve(frame, confirmed_path=tmp_path / "none.csv",
+                           candidates_out=None, verbose=False)
+    row = log.iloc[0]
+    assert row["side"] == "original (DOI variant)"
+    assert (row["applied_action"], row["resolution"]) == (
+        pdd.NEEDS_REVIEW, "review: the rules cannot tell which DOI to keep")
+    assert len(set(out["doi_o"])) == 2
+
+
+def test_a_doi_variant_still_resolves_to_its_canonical_spelling(tmp_path):
+    frame = _originals([("10.1037//0022-3514.68.5.793", "Inaction inertia", "Orit Tykocinski"),
+                        ("10.1037/0022-3514.68.5.793", "Inaction inertia", "Orit Tykocinski")])
+    out, log = pdd.resolve(frame, confirmed_path=tmp_path / "none.csv",
+                           candidates_out=None, verbose=False)
+    assert log.iloc[0]["applied_action"] == "auto_keep_2"
+    assert set(out["doi_o"]) == {"10.1037/0022-3514.68.5.793"}
 
 
 # ── the confirmed file ────────────────────────────────────────────────────────
@@ -579,12 +729,13 @@ def test_a_website_row_without_a_judgement_does_not_override_the_evidence():
 
 
 def test_an_osf_and_a_preprint_doi_without_matching_authors_are_held():
-    """A generic OSF DOI loses like a preprint when resolving, so it must count as
-    one for the review rule too, or the pair falls to the arbitrary tie-break."""
+    """A generic OSF DOI loses like a preprint when resolving, so it counts as one
+    for the review rule too: of an OSF DOI and a preprint, neither is the published
+    version."""
     candidate = {"side": "replication", "doi_1": "10.17605/osf.io/aaaa1",
                  "doi_2": "10.31234/osf.io/bbbb2", "first_author_1": None,
                  "first_author_2": "parsons", "is_preprint_1": False, "is_preprint_2": True}
-    assert pdd.review_reason(candidate) == "two preprints without a matching first author"
+    assert pdd.review_reason(candidate) == "both are preprints or repository records"
 
 
 def test_a_recent_ruling_in_the_tab_counts_as_review_activity(tmp_path, monkeypatch):

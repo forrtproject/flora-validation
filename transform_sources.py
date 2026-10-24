@@ -402,12 +402,33 @@ def _doi_url(value):
     return "https://doi.org/" + doi if _DOI_URL_RE.match(doi) else None
 
 
+def _without_tracking(url):
+    """url without its utm_ query parameters, and without the '?' once none is left.
+
+    Campaign tags say how a reader arrived, not which page it is: FRED-000520 and
+    FRED-000521 are one thesis, linked once plainly and once with ?utm_source=….
+    Every other parameter can name a different page or file, so it stays, in order.
+    """
+    url, hash_mark, fragment = url.partition("#")
+    base, _, query = url.partition("?")
+    params = query.split("&")
+    if not any(param.lower().startswith("utm_") for param in params):
+        return url + hash_mark + fragment
+    # Only the tags go: "?a=1&&utm_x=2" keeps its empty parameter, as "?a=1&&" does.
+    kept = [param for param in params if not param.lower().startswith("utm_")]
+    return base + ("?" + "&".join(kept) if any(kept) else "") + hash_mark + fragment
+
+
 def norm_url(value):
+    """A URL as the exclusions and the duplicate steps compare it: lowercase, without
+    the scheme, a leading www., tracking parameters or a trailing slash."""
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
     v = str(value).strip().lower()
     v = re.sub(r"^https?://", "", v)
     v = re.sub(r"^www\.", "", v)
+    # Before the slash is stripped: "…/5025/?utm_source=…" is "…/5025" once untagged.
+    v = _without_tracking(v)
     v = v.rstrip("/")
     return v or None
 
@@ -442,10 +463,51 @@ def matching_exclusion(exclusions, doi_o, doi_r, url_r):
     return None
 
 
+def _identifiers(df):
+    """doi_o, doi_r and url_r as step 5 compares them."""
+    return pd.DataFrame({"doi_o": df["doi_o"].apply(clean_doi),
+                         "doi_r": df["doi_r"].apply(clean_doi),
+                         "url_r": df["url_r"].apply(norm_url)}, index=df.index)
+
+
 def dedup_keys(df):
-    """type | doi_o | doi_r-or-url_r, as step 5 collapses on. A Series."""
-    right = df["doi_r"].apply(clean_doi).fillna(df["url_r"].apply(norm_url)).fillna("")
-    return df["type"].fillna("") + "|" + df["doi_o"].apply(clean_doi).fillna("") + "|" + right
+    """type | doi_o | doi_r | url_r, as step 5 collapses on. A Series.
+
+    Every identifier counts: two reports of one paper pair (individual reports under
+    a meta-paper) differ only in url_r, and are two records, as in R, whose key is
+    doi_o with url_r, else doi_r. Rows that differ only because one lacks a url_r are
+    left to preprint_dedup.merge_doi_pair_dups, which combines them rather than
+    dropping one. A key says nothing about a row with no identifiers at all: see
+    has_identifier(). Which rows the duplicate steps make one record: record_keys().
+    """
+    ids = _identifiers(df).fillna("")
+    return (df["type"].fillna("") + "|" + ids["doi_o"] + "|" + ids["doi_r"]
+            + "|" + ids["url_r"])
+
+
+def has_identifier(df):
+    """Whether each row has a doi_o, doi_r or url_r. A row with none shares its key
+    with every other such row of its type, yet is the same record as none of them."""
+    return _identifiers(df).notna().any(axis=1)
+
+
+def record_keys(df):
+    """For each row, the key of the record the duplicate steps would make of it, by
+    its identifiers: rows with one key would publish as one record. A Series.
+
+    A row's own key (dedup_keys, step 5), except in a paper pair whose rows carry at
+    most one url_r between them, which step 5b combines: there each row takes the key
+    of the row with the url_r. Missing for a row with no identifier, as it is no other
+    row's duplicate. Rulings play no part, so this is what the identifiers say: what
+    the warnings about corrected identifiers compare.
+    """
+    ids = _identifiers(df)
+    pair = df["type"].fillna("") + "|" + ids["doi_o"].fillna("") + "|" + ids["doi_r"].fillna("")
+    # Grouped by position, so the frame's index, which need not be unique, plays no part.
+    urls = ids["url_r"].groupby(pair.to_numpy())
+    combined = ids["doi_o"].notna() & ids["doi_r"].notna() & urls.transform("nunique").le(1)
+    url_r = ids["url_r"].where(~combined, urls.transform("first"))
+    return (pair + "|" + url_r.fillna("")).where(has_identifier(df))
 
 
 def load(cur):
@@ -699,6 +761,38 @@ def join_metadata(df, meta, sides=("o", "r")):
             df["url_o"] = df["url_o"].fillna(df["doi_o"].map(_doi_url))
 
 
+def join_metadata_again(df, rows, side, meta, fallbacks, kept_urls=()):
+    """Join `rows` of df to the metadata again for one side, in place.
+
+    For rows whose identifier changed after the join (steps 6b and 6c): every column
+    the join writes then describes the new identifier, exactly as for a row that had
+    it from the start. `fallbacks` is what the source supplied for JOIN_FALLBACKS, by
+    record_id. `kept_urls` are the record_ids whose url column is itself the new
+    identifier, which stays as it is.
+    """
+    part = df.loc[rows].copy()
+    for column in JOIN_FALLBACKS:
+        if column.endswith(f"_{side}"):
+            fallback = part["record_id"].map(fallbacks[column]) \
+                if column in fallbacks else None
+            if column == f"url_{side}":
+                # A corrected URL is the identifier itself; only the derived
+                # landing page goes back to what the source supplied.
+                fallback = part[column].where(part["record_id"].isin(kept_urls), fallback)
+            part[column] = fallback
+    if side == "o":
+        part["year_o"] = None               # the sheets carry no original year
+    join_metadata(part, meta, sides=(side,))
+    for column in JOINED_COLUMNS[side]:
+        if column not in part.columns:
+            continue
+        if column not in df.columns:
+            df[column] = None
+        if df[column].dtype.kind in "biufc" and part[column].dtype.kind not in "biufc":
+            df[column] = df[column].astype(object)
+        df.loc[rows, column] = part[column]
+
+
 def build(cur, verbose: bool = True,
           review_issue: bool = False, *,
           rows: "pd.DataFrame | None" = None,
@@ -709,7 +803,8 @@ def build(cur, verbose: bool = True,
     traced back to what it came from:
 
         source_record_id   the surviving source_records row (dedup keeps the first
-                           row; a website-validated duplicate decides its values)
+                           row and what only a dropped row had; a website-validated
+                           duplicate decides its values)
         source_display_id  that row's human id, e.g. REPL-000397
         merged_record_ids  rows the dedup collapsed into it, if any
 
@@ -856,21 +951,25 @@ def build(cur, verbose: bool = True,
     # collapse would silently overrule that decision.
     before = len(df)
 
-    # coalesce(doi_r, url_r) — NOT a concatenation. Concatenating means adding an
-    # unrelated OSF link to one of two otherwise identical rows changes its key,
-    # so genuine duplicates escape. This matches _fingerprint() in sync_sources.py,
-    # which the duplicate detector already uses.
-    right = df["doi_r"].apply(clean_doi).fillna(df["url_r"].apply(norm_url)).fillna("")
+    # The key is every identifier (dedup_keys), so this step drops only a row entered
+    # twice. Two url_r values under one doi_o and doi_r are two reports and stay apart,
+    # as in R (whose key is doi_o with url_r, else doi_r); rows that differ only because
+    # one lacks a url_r are combined by the merge below (5b) rather than one being
+    # dropped here. The Source Records duplicate detector (sync_sources._fingerprint)
+    # keys on coalesce(doi_r, url_r) without the type: it only puts a group in front of
+    # a person, so a wider net costs a look there, where a collapse here deletes a
+    # record unseen.
     # `type` belongs in the key: it is one of the 14 output columns, so a
     # replication and a reproduction of the same paper are not interchangeable
     # and collapsing them silently deletes the reproduction.
-    key = df["type"].fillna("") + "|" + df["doi_o"].fillna("") + "|" + right
+    key = dedup_keys(df)
 
     exempt = df["duplicate_status"].eq("distinct")
     # The survivor of each key is its first row, as it always was: which row a key
     # becomes is its published identity, so nothing here moves it. A record validated
     # on this website decides the VALUES instead (below), whatever its position.
-    collides = key.duplicated() & key.ne("||")
+    # A row with no identifier at all shares nothing with another, whatever its type.
+    collides = key.duplicated() & has_identifier(df)
     survivors = df.index[~key.duplicated()]
 
     # Which rows each survivor absorbs. Captured BEFORE the drop: afterwards the
@@ -889,15 +988,27 @@ def build(cur, verbose: bool = True,
         ids.append(df.at[idx, "record_id"])
         ids.extend(prior[idx] if isinstance(prior[idx], list) else [])
 
+    # A dropped row adds what the survivor lacks and never overwrites it, so the drop
+    # cannot lose the only outcome there is (preprint_dedup.fill_blanks).
     # A website-validated row that is dropped still decides the survivor's values:
     # its judgement wins, as in the merge below (preprint_dedup.website_overrides).
     # A row ruled 'distinct' is its own record and is never dropped, so it never
     # speaks for another. And a drop settles a disagreement as silently as a merge
     # does, so it is logged the same way.
     survivor_of = {df.at[idx, "_key"]: idx for idx in survivors}
+    axis_columns = {column for axis in preprint_dedup.REPRODUCTION_AXES for column in axis}
     for k, group in dropped.groupby("_key"):
         kept = survivor_of[k]
         rows = [df.loc[kept], *(group.loc[i] for i in group.index)]
+        added = preprint_dedup.fill_blanks(rows)
+        for column, value in added.items():
+            df.at[kept, column] = value
+        if added.keys() & axis_columns:
+            # A reproduction's quote and quote source are derived from its axes, as
+            # in step 1, so they follow the axes a dropped row supplied.
+            survivor = df.loc[kept]
+            df.at[kept, "outcome_quote"] = cos_quote_rewrite.rewrite_one(derive_quote(survivor))
+            df.at[kept, "outcome_quote_source"] = derive_quote_source(survivor)
         overrides = preprint_dedup.website_overrides(rows, _normalise_outcome)
         for column, value in overrides.items():
             if column in df.columns:
@@ -909,7 +1020,8 @@ def build(cur, verbose: bool = True,
              if not preprint_dedup._blank(r.get(preprint_dedup.CONFLICT_COLUMN))), None)
         if len(outcomes) > 1:
             # Nothing settles a dropped row's outcome but a website record: the
-            # survivor's stands in, and a person decides (FLoRA tab, Conflicts).
+            # survivor's stands in (the first there is, if it had none), and a person
+            # decides (FLoRA tab, Conflicts).
             settled = "outcome" in overrides
             conflicts.append({
                 "doi_o": df.at[kept, "doi_o"], "doi_r": df.at[kept, "doi_r"],
@@ -959,7 +1071,7 @@ def build(cur, verbose: bool = True,
     from enrich_works import load_metadata          # local: avoids an import cycle
     meta = load_metadata(cur) if metadata is None else metadata
     # What the source supplied for the columns the join falls back on, for joining
-    # again a row whose identifiers are corrected after the dedup (step 6c).
+    # again a row whose identifiers change after the join (steps 6b and 6c).
     join_fallbacks = df.set_index("record_id")[
         [c for c in JOIN_FALLBACKS if c in df.columns]].copy()
     join_fallbacks = join_fallbacks[~join_fallbacks.index.duplicated()]
@@ -973,10 +1085,23 @@ def build(cur, verbose: bool = True,
     # arrive with the metadata join.
     # No file here: build() stays read-only. run() writes the log beside the
     # output, and the FLoRA tab reads it from the frame.
+    doi_o_before = dict(zip(df["record_id"], df["doi_o"]))
     df, dedup_log = preprint_dedup.resolve(
         df, candidates_out=None, normalise_outcome=_normalise_outcome,
         verbose=verbose, conflicts_out=conflicts, open_review_issue=review_issue,
         rulings=dedup_decisions)
+    # An automatic original-side decision replaces doi_o after the join (a confirmed
+    # one did at 2b, before it), so the rows it moved are joined again: their title,
+    # authors and journal describe the DOI they now carry. That includes a row which
+    # absorbed a moved one in the merge after the replacement, and may hold its values.
+    moved = [idx for idx, record_id, doi, merged in zip(
+                 df.index, df["record_id"], df["doi_o"], df["merged_record_ids"])
+             if any(sid in doi_o_before and _s(doi_o_before[sid]) != _s(doi)
+                    for sid in [record_id, *(merged if isinstance(merged, list) else [])])]
+    if moved:
+        join_metadata_again(df, moved, "o", meta, join_fallbacks)
+        say(f"  joined to the metadata again after an original-side replacement: "
+            f"{len(moved)} row(s)")
 
     # 6c ── identifiers corrected on FLoRA records (flora_edits.py)
     # After every duplicate step — exact (5), pair merge (5b) and preprint (6b) — so
@@ -993,31 +1118,11 @@ def build(cur, verbose: bool = True,
             corrected = [rid for rid, fields in identifier_edits.items()
                          if fields.keys() & {f"doi_{side}", f"url_{side}"}]
             rows = df.index[df["record_id"].isin(corrected)]
-            if not len(rows):
-                continue
-            part = df.loc[rows].copy()
-            for column in JOIN_FALLBACKS:
-                if column.endswith(f"_{side}"):
-                    fallback = part["record_id"].map(join_fallbacks[column]) \
-                        if column in join_fallbacks else None
-                    if column == f"url_{side}":
-                        # A corrected URL is the identifier itself; only the derived
-                        # landing page goes back to what the source supplied.
-                        keep = part["record_id"].map(
-                            lambda rid: f"url_{side}" in identifier_edits.get(rid, {}))
-                        fallback = part[column].where(keep, fallback)
-                    part[column] = fallback
-            if side == "o":
-                part["year_o"] = None               # the sheets carry no original year
-            join_metadata(part, meta, sides=(side,))
-            for column in JOINED_COLUMNS[side]:
-                if column not in part.columns:
-                    continue
-                if column not in df.columns:
-                    df[column] = None
-                if df[column].dtype.kind in "biufc" and part[column].dtype.kind not in "biufc":
-                    df[column] = df[column].astype(object)
-                df.loc[rows, column] = part[column]
+            if len(rows):
+                join_metadata_again(
+                    df, rows, side, meta, join_fallbacks,
+                    kept_urls={rid for rid in corrected
+                               if f"url_{side}" in identifier_edits[rid]})
         # An exclusion added after a correction still removes the record: the
         # exclusion is the decision. A save refuses a correction onto one outright.
         excluded = pd.Series(False, index=df.index)
@@ -1029,13 +1134,14 @@ def build(cur, verbose: bool = True,
                 "were left out: " + ", ".join(df.loc[excluded, "display_id"].astype(str)))
             df = df[~excluded]
         # The duplicate steps never see corrected identifiers, so say when a
-        # correction makes two records share their DOIs: it may be one study twice.
-        keys = dedup_keys(df)
-        shared = (df["record_id"].isin(identifier_edits) & keys.duplicated(keep=False)
-                  & keys.str.split("|", n=1).str[1].ne("|"))
+        # correction makes two records look like one to them: it may be one study
+        # twice. record_keys, as the save's warning (flora_edits.duplicate_warnings).
+        keys = record_keys(df)
+        shared = (df["record_id"].isin(identifier_edits) & keys.notna()
+                  & keys.duplicated(keep=False))
         if shared.any():
-            say(f"  ⚠ {int(shared.sum())} corrected row(s) now share their DOIs with "
-                "another record: " + ", ".join(df.loc[shared, "display_id"].astype(str))
+            say(f"  ⚠ {int(shared.sum())} corrected row(s) now match another record's "
+                "identifiers: " + ", ".join(df.loc[shared, "display_id"].astype(str))
                 + " — rule a duplicate in Source Records if it is the same study")
 
     # 8 ── text cleaning (Step 7c of the notebook)

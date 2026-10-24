@@ -547,7 +547,9 @@ def test_corrected_identifiers_come_after_every_duplicate_step_and_are_joined_ag
     position = build.index("flora_edits.apply_identifiers(")
     for step in ("# 5 ── dedup", "merge_doi_pair_dups(", "preprint_dedup.resolve("):
         assert build.index(step) < position
-    assert position < build.index("join_metadata(part, meta") < build.index("# 8 ── text cleaning")
+    # Searched from the correction on: step 6b joins its own replacements again first.
+    assert position < build.index("join_metadata_again(", position) \
+        < build.index("# 8 ── text cleaning")
 
 
 def test_writing_through_moves_the_revision_the_public_api_caches_on():

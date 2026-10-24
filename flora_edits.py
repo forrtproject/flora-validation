@@ -702,23 +702,30 @@ def _refuse_excluded(cur, record, derived, in_force, corrections):
 
 
 def duplicate_warnings(frame, record: dict) -> list:
-    """Records that share this one's DOIs. The duplicate steps of the build never see
-    corrected identifiers — so a correction can never make a record disappear — and
-    this says when one makes two records look like the same study."""
+    """Records the duplicate steps would take for this one. They never see corrected
+    identifiers — so a correction can never make a record disappear — and this says
+    when one makes two records look like the same study to them: the same identifiers,
+    or the same DOIs where only one of the two has a replication link, which step 5b
+    combines (transform_sources.record_keys, as the build's own warning)."""
     if frame.empty or not record.get("export_id"):
         return []
-    keys = transform_sources.dedup_keys(frame)
     mine = frame["export_id"] == record["export_id"]
     if not mine.any():
         return []
-    key = keys[mine].iloc[0]
-    if key.split("|", 1)[1] == "|":
+    groups = transform_sources.record_keys(frame)
+    group = groups[mine].iloc[0]
+    if pd.isna(group):
         return []                                   # no identifiers to compare
-    others = frame[(keys == key) & ~mine]
-    return [f"{row.get('flora_id') or row.get('source_display_id')} has the same original "
-            "and replication identifiers. If it is the same study, rule one of them a "
-            "duplicate in Source Records; if they are different studies, nothing to do."
-            for row in others.to_dict("records")]
+    keys = transform_sources.dedup_keys(frame)
+    key = keys[mine].iloc[0]
+    others = (groups == group) & ~mine
+    return [f"{row.get('flora_id') or row.get('source_display_id')} "
+            + ("has the same original and replication identifiers" if other == key
+               else "has the same original and replication DOIs, and only one of the two "
+                    "has a replication link")
+            + ". If it is the same study, rule one of them a duplicate in Source Records; "
+              "if they are different studies, nothing to do."
+            for row, other in zip(frame[others].to_dict("records"), keys[others])]
 
 
 def change_watermark(cur) -> int:

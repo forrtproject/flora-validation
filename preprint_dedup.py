@@ -16,7 +16,8 @@ The pipeline touches this twice, as the notebook does:
   about to discard.
 - `resolve(...)` runs AFTER enrichment, because detection needs titles and authors.
   It detects candidates, applies overrides where the confirmed file has them, and
-  otherwise falls back to the default rule.
+  otherwise falls back to the default rule or holds the pair for review. The
+  transform joins a row whose `doi_o` it replaced to the metadata again.
 
 CONFIRMED DECISIONS ANNOTATE; AUTOMATIC ONES DO NOT
 ---------------------------------------------------
@@ -28,20 +29,26 @@ with it.
 
 DELIBERATE DEPARTURES FROM R
 ----------------------------
-R auto-dropped every candidate. Here a pair is held as `needs_review` (both rows
-kept) when its first authors differ, or when both DOIs are preprints without a
-matching first author. The generic OSF prefix `10.17605/` is no longer a preprint
-prefix. Together these stop independent reproductions of one original, which share
-templated titles, from being collapsed into one.
+R auto-dropped every candidate, and where its rules could not tell the two DOIs
+apart it dropped doi_2. Here a pair is held as `needs_review` (both rows kept) when
+its first authors differ, or when the rules cannot tell which DOI is the published
+version: neither is a preprint or repository record, or both are. Only a lone
+preprint or repository record, or the non-canonical spelling of one DOI, is dropped
+automatically. The generic OSF prefix `10.17605/` is a repository record rather than
+a preprint prefix, and so are PsycEXTRA, NBER working papers and PsychArchives
+(REPOSITORY_DOI_PATTERNS). Together these stop independent reproductions of one
+original, which share templated titles, from being collapsed into one, and a journal
+article from being dropped in favour of a repository copy.
 
 Rulings can also come from the website: admins decide pending pairs in the FLoRA
 tab, stored in `preprint_dedup_decisions` and passed in as `rulings`. They use
 the confirmed file's vocabulary and win over it for the same pair.
 
-NOT PORTED: the `gh` CLI issue-filing in `maybe_open_dedup_review_issue`. The
-candidates log is written exactly as before, and our workflow already uploads
-reports as artifacts, so a second nudge mechanism that shells out to `gh` would be
-operational glue rather than pipeline behaviour.
+R's review nudge, `maybe_open_dedup_review_issue`, is ported as
+`maybe_open_review_issue`: it files or comments on a GitHub issue through the `gh` CLI
+while pairs wait unruled. It is off by default and only `transform_sources.py
+--review-issue` turns it on; pipeline runs leave it off, since the pairs awaiting a
+ruling are listed in the FLoRA tab and warned about in the preparation report.
 """
 import csv
 import io
@@ -77,19 +84,31 @@ TITLE_THRESHOLD = 0.80
 # is_preprint_doi() returned False for it. The pair still got detected as a
 # candidate (same first author, "kohrt"), but only the "preprint loses" rule
 # reliably keeps the published version; without it the outcome depended on the
-# arbitrary doi_1/doi_2 ordering tie-break instead.
+# arbitrary doi_1/doi_2 ordering tie-break that decided such pairs then.
 PREPRINT_DOI_PREFIXES = (
     "10.31234/", "10.31219/", "10.31222/", "10.48550/", "10.1101/",
     "10.2139/", "10.20944/", "10.21203/", "10.53841/",
 )
 
-# Generic OSF DOIs (projects, registrations, files) — deliberately NOT preprints.
-# SCORE-style reproduction reports live here under templated titles such as
-# "Reproduction (with author data): Ku & Zaroff (2014, ...)", so two independent
-# teams reproducing one original get identical titles. Counting the prefix as a
-# preprint let those pairs skip the first-author check and silently dropped one
-# attempt. It still loses to a publisher DOI when resolving a confirmed pair.
-REPOSITORY_DOI_PREFIXES = ("10.17605/",)
+# Repository records: copies that are not the published article, but not preprints
+# either. Each loses to a publisher DOI when a pair is resolved, and none counts as a
+# preprint for detection. Exact patterns, matched on the normalised DOI, because a
+# bare prefix catches journals: APA's Emotion (10.1037/emo…) and Journal of
+# Educational Psychology (10.1037/edu…) start "10.1037/e" too, and only PsycEXTRA's
+# record numbers follow it with a digit.
+REPOSITORY_DOI_PATTERNS = {
+    # Generic OSF DOIs (projects, registrations, files). SCORE-style reproduction
+    # reports live here under templated titles such as "Reproduction (with author
+    # data): Ku & Zaroff (2014, ...)", so two independent teams reproducing one
+    # original get identical titles. Counting the prefix as a preprint let those
+    # pairs skip the first-author check and silently dropped one attempt.
+    "OSF": re.compile(r"^10\.17605/"),
+    # APA's database of grey literature, such as conference papers and reports.
+    "PsycEXTRA": re.compile(r"^10\.1037/e\d"),
+    "NBER working paper": re.compile(r"^10\.3386/w\d"),
+    # ZPID's repository for psychology: preprints, postprints, data.
+    "PsychArchives": re.compile(r"^10\.23668/psycharchives\."),
+}
 
 VALID_ACTIONS = {"keep_1", "keep_2", "keep_both"}
 NEEDS_REVIEW = "needs_review"
@@ -114,6 +133,18 @@ REPRODUCTION_AXES = (
     ("outcome_computation", "outcome_computational_quote", "out_quote_computational_source"),
     ("outcome_robustness", "outcome_robustness_quote", "out_quote_robust_source"),
 )
+# A replication's outcome with its quote and quote source, which belong together as
+# well. The source is there twice: out_quote_source as the sheet gave it, and
+# outcome_quote_source as the transform derives it.
+OUTCOME_EVIDENCE = ("outcome", "outcome_quote", "outcome_quote_source", "out_quote_source")
+# Never filled from a dropped duplicate (fill_blanks), out of the columns the transform
+# loads: which source row the record is, the identifiers it was matched on and where
+# it came from, that row's own review state, and what the duplicate steps keep
+# themselves (absorbed ids, an undecided clash). The rest of a row is the record's
+# content.
+_OWN_COLUMNS = {"record_id", "display_id", "type", "doi_o", "doi_r", "url_r", "source",
+                "validation_status", "reviewed_by", "duplicate_status",
+                "merged_record_ids", CONFLICT_COLUMN}
 
 # Records validated on this website (source_records.source = 'validated'; every one
 # of them exists because someone validated it). When one shares a group with an
@@ -145,13 +176,23 @@ def _s(value) -> str:
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def is_preprint_doi(doi) -> bool:
-    text = _s(doi).lower()
-    return bool(text) and text.startswith(PREPRINT_DOI_PREFIXES)
+    """Whether a DOI is a preprint server's. Normalised first, as repository_kind()
+    is, so the two spellings of one DOI are always the same kind."""
+    return normalize_doi(doi).startswith(PREPRINT_DOI_PREFIXES)
+
+
+def repository_kind(doi) -> "str | None":
+    """Which kind of repository record a DOI names ("OSF", "PsycEXTRA", …), or None.
+
+    Normalised first, so the two spellings of one DOI are always the same kind.
+    """
+    text = normalize_doi(doi)
+    return next((kind for kind, pattern in REPOSITORY_DOI_PATTERNS.items()
+                 if pattern.match(text)), None)
 
 
 def is_repository_doi(doi) -> bool:
-    text = _s(doi).lower()
-    return bool(text) and text.startswith(REPOSITORY_DOI_PREFIXES)
+    return repository_kind(doi) is not None
 
 
 def normalize_doi(doi) -> str:
@@ -297,8 +338,13 @@ def derive_remove_keep(action, doi_1, doi_2):
 
 
 def default_resolve_pair(side, doi_1, doi_2, is_preprint_1, is_preprint_2):
-    """1. a lone preprint loses. 2. for DOI variants the non-canonical loses.
-    3. otherwise doi_2 loses, deterministically. None when either DOI is absent."""
+    """(DOI to drop, DOI to keep) by the rules that can tell which is the published
+    version: 1. a lone preprint loses. 2. for DOI variants the non-canonical loses.
+
+    None when either DOI is absent or neither rule decides. R dropped doi_2 then, an
+    arbitrary choice that could drop the journal article for its repository copy;
+    such a pair is held for a person instead (review_reason).
+    """
     if _blank(doi_1) or _blank(doi_2):
         return None
     if is_preprint_1 and not is_preprint_2:
@@ -312,7 +358,15 @@ def default_resolve_pair(side, doi_1, doi_2, is_preprint_1, is_preprint_2):
             return doi_2, doi_1
         if canon2 and not canon1:
             return doi_1, doi_2
-    return doi_2, doi_1
+    return None
+
+
+def unpublished(candidate) -> list:
+    """For doi_1 and doi_2 of a candidate, whether it is a preprint or a repository
+    record. A repository DOI is not a preprint for detection, but against a
+    publisher DOI it is still the less canonical record."""
+    return [bool(candidate.get(f"is_preprint_{n}")) or is_repository_doi(candidate.get(f"doi_{n}"))
+            for n in (1, 2)]
 
 
 def review_reason(candidate) -> "str | None":
@@ -320,9 +374,10 @@ def review_reason(candidate) -> "str | None":
 
     A similar title only says two reports are about the same original; the first
     author is what says they are the same report. So a pair is held for a human when
-    the first authors differ, and when both DOIs are preprints the authors must
-    positively match — two preprints are otherwise resolved by the arbitrary doi_2
-    tie-break. DOI variants are exempt: one normalised DOI already proves identity.
+    the first authors differ. It is held, too, when the default rule cannot tell
+    which DOI is the published version: neither is a preprint or repository record,
+    or both are. DOI variants are exempt: one normalised DOI already proves identity,
+    and the canonical spelling is the one kept.
     """
     if "DOI variant" in _s(candidate.get("side")):
         return None
@@ -330,13 +385,11 @@ def review_reason(candidate) -> "str | None":
     fa1, fa2 = _s(candidate.get("first_author_1")), _s(candidate.get("first_author_2"))
     if fa1 and fa2 and fa1 != fa2:
         return "first authors differ"
-    # A generic OSF DOI counts here as it does in default_resolve_pair: otherwise an
-    # OSF + preprint pair would fall to the arbitrary doi_2 tie-break this rule exists
-    # to prevent.
-    unpublished = [candidate.get(f"is_preprint_{n}") or is_repository_doi(candidate.get(f"doi_{n}"))
-                   for n in (1, 2)]
-    if all(unpublished) and not (fa1 and fa1 == fa2):
-        return "two preprints without a matching first author"
+    flags = unpublished(candidate)
+    if all(flags):
+        return "both are preprints or repository records"
+    if not any(flags):
+        return "neither is a preprint or repository record"
     return None
 
 
@@ -391,6 +444,77 @@ def _prefer_cos(values):
     return present[0] if present else None
 
 
+def _take_whole(row, rows, units):
+    """Each unit (a judgement, then its evidence) into `row`, a dict, whole from the
+    first of `rows` that has the judgement. Nothing for a unit no row has judged."""
+    for unit in units:
+        donor = next((r for r in rows if not _blank(r.get(unit[0]))), None)
+        if donor is not None:
+            for column in unit:
+                if column in donor:
+                    row[column] = donor.get(column)
+
+
+def _axes_whole(row, rows):
+    """A reproduction's axes into `row`, each whole from the first row that judged it,
+    and the outcome derived from the axes published, never one row's outcome beside
+    another row's axes."""
+    _take_whole(row, rows, REPRODUCTION_AXES)
+    judged = [row.get(axis[0]) for axis in REPRODUCTION_AXES]
+    if any(not _blank(value) for value in judged):
+        row["outcome"] = derive_reproduction_outcome(*judged)
+
+
+def _evidence_for(row, rows, units):
+    """For each unit whose judgement `row` holds with no evidence at all, the evidence
+    of the first of `rows` that made the same judgement and has some: a quote for
+    another judgement would say something the published one does not."""
+    for unit in units:
+        judgement, evidence = unit[0], unit[1:]
+        if _blank(row.get(judgement)) or any(not _blank(row.get(c)) for c in evidence):
+            continue
+        donor = next((r for r in rows if _s(r.get(judgement)) == _s(row.get(judgement))
+                      and any(not _blank(r.get(c)) for c in evidence)), None)
+        if donor is not None:
+            for column in evidence:
+                if column in donor:
+                    row[column] = donor.get(column)
+
+
+def fill_blanks(rows) -> dict:
+    """What the duplicates the transform's dedup drops add to the row that stays.
+
+    `rows` are the group (Series or dicts), the surviving row first; returns the
+    survivor's {column: value} that change. A dropped row adds and never overwrites:
+    a cell the survivor has blank takes the first value the others have, in their
+    order. A judgement comes whole with its evidence, from the first row that has
+    one, so it is never published beside another row's quote: a replication's
+    outcome with its quote and quote source, a reproduction's axes each with their
+    own and the outcome derived from them, as in merge_doi_pair_dups. A judgement
+    the survivor has keeps its own evidence; only when it has none does it take the
+    evidence of a dropped row that made the same judgement. Its identity, provenance
+    and review state stay its own (_OWN_COLUMNS).
+
+    A reproduction's outcome_quote and outcome_quote_source are derived from its
+    axes, as its outcome is, so they are left to the caller to derive again.
+    """
+    survivor, dropped = rows[0], rows[1:]
+    row = {column: survivor.get(column) for column in survivor.keys()}
+    whole = {column for unit in (*REPRODUCTION_AXES, OUTCOME_EVIDENCE) for column in unit}
+    for column in list(row):
+        if column not in _OWN_COLUMNS and column not in whole and _blank(row[column]):
+            row[column] = _first_non_null(r.get(column) for r in dropped)
+    if _s(row.get("type")).lower() == "reproduction":
+        units = REPRODUCTION_AXES
+        _axes_whole(row, rows)
+    else:
+        units = (OUTCOME_EVIDENCE,)
+        _take_whole(row, rows, units)
+    _evidence_for(row, rows, units)
+    return {column: value for column, value in row.items()
+            if _s(value) != _s(survivor.get(column))}
+
+
 def website_overrides(rows, normalise_outcome=None) -> dict:
     """The values a website-validated record imposes on the row its group becomes.
 
@@ -440,6 +564,9 @@ def merge_doi_pair_dups(frame, normalise_outcome=None, verbose=True):
 
     A row a reviewer ruled 'distinct' in Source Records is never merged, as the
     transform's own dedup already exempts it: the ruling says it is its own record.
+    So an unruled copy of it without its url_r stays a record of its own rather than
+    being absorbed unseen: the copy shares its fingerprint, and Source Records keeps
+    their group open until someone rules on the copy.
     """
     if frame.empty or not {"doi_o", "doi_r"} <= set(frame.columns):
         return frame, pd.DataFrame()
@@ -492,27 +619,15 @@ def merge_doi_pair_dups(frame, normalise_outcome=None, verbose=True):
                 row[column] = _first_non_null(values)
 
         # A reproduction's axes come whole: each axis with its quote and quote source
-        # from the first row that judged it, and the outcome derived from the axes
-        # published, never one row's outcome beside another row's axes.
+        # from the first row that judged it, and the outcome derived from them.
+        members = [group.iloc[i] for i in range(len(group))]
         if _s(row.get("type")).lower() == "reproduction":
-            for axis in REPRODUCTION_AXES:
-                if axis[0] not in group.columns:
-                    continue
-                donor = next((i for i in range(len(group))
-                              if not _blank(group.iloc[i][axis[0]])), None)
-                if donor is not None:
-                    for column in axis:
-                        if column in group.columns:
-                            row[column] = group.iloc[donor][column]
-            judged = [row.get(axis[0]) for axis in REPRODUCTION_AXES]
-            if any(not _blank(value) for value in judged):
-                row["outcome"] = derive_reproduction_outcome(*judged)
+            _axes_whole(row, members)
 
         # A website-validated record's values win; the row stays the one it was.
         overrides = {}
         if "source" in group.columns and group["source"].eq(WEBSITE_SOURCE).any():
-            overrides = website_overrides(
-                [group.iloc[i] for i in range(len(group))], normalise_outcome)
+            overrides = website_overrides(members, normalise_outcome)
             row.update({c: v for c, v in overrides.items() if c in group.columns})
 
         # Provenance has to survive the merge: the rows being folded in are the ones
@@ -807,9 +922,10 @@ def write_candidates(decisions, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     instructions = {
         "side": "INSTRUCTIONS -->", "doi_1": "DOI #1", "doi_2": "DOI #2",
-        "applied_action": "auto-default = drop one (preprint loses; else doi_2); "
-                          "needs_review = kept both, differing first authors "
-                          "or two preprints without a matching author",
+        "applied_action": "auto_keep_1/2 = dropped one (a lone preprint or repository "
+                          "record loses; of one DOI written two ways, the non-canonical); "
+                          "needs_review = kept both: differing first authors, or the rules "
+                          "cannot tell which is the published version",
         "resolution": "Decide in the website's FLoRA tab (Preprint duplicates), or "
                       "copy the row into cache/confirmed_preprint_duplicates.csv "
                       "with action keep_both / keep_1 / keep_2",
@@ -865,15 +981,13 @@ def resolve(frame, confirmed_path: Path = CONFIRMED_PATH,
                             applied_action=NEEDS_REVIEW,
                             doi_remove=None, doi_keep=None)
         else:
-            # A repository DOI is not a preprint for detection, but against a
-            # publisher DOI it is still the less canonical record.
-            result = default_resolve_pair(
-                candidate["side"], candidate["doi_1"], candidate["doi_2"],
-                candidate["is_preprint_1"] or is_repository_doi(candidate["doi_1"]),
-                candidate["is_preprint_2"] or is_repository_doi(candidate["doi_2"]))
+            result = default_resolve_pair(candidate["side"], candidate["doi_1"],
+                                          candidate["doi_2"], *unpublished(candidate))
             if result is None:
-                decision.update(resolution="skipped: NA DOI in pair",
-                                applied_action="skipped",
+                # Past review with both DOIs present: one DOI written two ways that
+                # the canonical rule cannot order, so nothing says which to keep.
+                decision.update(resolution="review: the rules cannot tell which DOI to keep",
+                                applied_action=NEEDS_REVIEW,
                                 doi_remove=None, doi_keep=None)
             else:
                 remove, keep = result
@@ -923,7 +1037,7 @@ def resolve(frame, confirmed_path: Path = CONFIRMED_PATH,
 
     # OFF by default, and that default matters: build() runs on every FLoRA tab
     # load, so a default of True would file GitHub issues when somebody opens a
-    # page. Only the CLI and the nightly job turn it on.
+    # page. Only the transform's CLI (--review-issue) turns it on.
     if open_review_issue:
         # build() writes no log itself (run() does, under the same name), but the
         # issue text still has to point at one.

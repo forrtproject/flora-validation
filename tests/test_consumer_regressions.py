@@ -347,10 +347,10 @@ def test_the_conflicts_filter_follows_the_build_and_its_corrections(local_databa
 
 
 def test_a_dropped_duplicates_clash_is_listed_too(local_database, monkeypatch):  # noqa: F811
-    """The transform's own duplicate step (5) drops the second of two rows for one
-    pair. The merge before it keeps them apart, because their report links differ.
-    Their outcomes disagreed ("failed" and "mixed"): the kept row's stands in and
-    the clash is listed, where it used to be settled silently ("first record")."""
+    """The transform's own duplicate step (5) drops the second of two rows entered
+    twice, every identifier the same. Their outcomes disagreed ("failed" and "mixed"):
+    the kept row's stands in and the clash is listed, where it used to be settled
+    silently ("first record")."""
     import flora_registry
     import transform_sources
     from psycopg2.extras import RealDictCursor
@@ -362,7 +362,7 @@ def test_a_dropped_duplicates_clash_is_listed_too(local_database, monkeypatch): 
         add_source(cur, {"doi_o": "10.9999/o.1", "doi_r": "10.9999/r.1", "outcome": "failed",
                          "url_r": "https://osf.io/aaaa1"}, "REPL-000001")
         add_source(cur, {"doi_o": "10.9999/o.1", "doi_r": "10.9999/r.1", "outcome": "mixed",
-                         "url_r": "https://osf.io/bbbb2"}, "REPL-000002")
+                         "url_r": "https://osf.io/aaaa1/"}, "REPL-000002")
         for doi, title in (("10.9999/o.1", "The original"), ("10.9999/r.1", "The replication")):
             cur.execute("INSERT INTO work_metadata (doi, title, authors, year) "
                         "VALUES (%s, %s, 'Ana Fox', '2020')", (doi, title))

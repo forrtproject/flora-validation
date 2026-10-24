@@ -93,9 +93,25 @@ def test_a_queue_item_is_json_safe_and_shows_each_paper(build_log):
     json.dumps(item, allow_nan=False)
     first, second = item["papers"]
     assert first["is_preprint"] is True and first["is_repository"] is True
+    assert (first["repository"], second["repository"]) == ("OSF", None)
     assert second["outcome"] is None and second["url"] == "https://osf.io/x"
     assert (first["position"], second["position"]) == (1, 2)
     assert item["pair_key"] == preprint_dedup.pair_key("10.17605/osf.io/v9ykq", "10.1016/j.b")
+
+
+def test_a_repository_record_is_named_for_what_it_is():
+    """A PsycEXTRA record or an NBER working paper is not an OSF DOI, and the card
+    must not call it one."""
+    item = flora_service._review_item(candidate(doi_1="10.1037/e519682015-069",
+                                                doi_2="10.3386/w6614"))
+    assert [p["repository"] for p in item["papers"]] == ["PsycEXTRA", "NBER working paper"]
+
+
+def test_the_page_explains_every_kind_of_repository_record():
+    script = (ROOT / "docs" / "app.js").read_text(encoding="utf-8")
+    tips = script[script.index("const FLORA_REPOSITORY_TIPS = {"):]
+    tips = tips[:tips.index("\n};")]
+    assert set(re.findall(r'^  "([^"]+)":', tips, re.M)) == set(preprint_dedup.REPOSITORY_DOI_PATTERNS)
 
 
 def test_the_grid_counts_pairs_awaiting_a_decision(monkeypatch):
