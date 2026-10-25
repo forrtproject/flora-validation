@@ -27,10 +27,33 @@ OK, FAILED, UNCHECKED = network.OK, network.FAILED, network.UNCHECKED
 class Response:
     def __init__(self, status=200, body=b""):
         self.status, self.body, self.read_sizes = status, body, []
+        self.closed, self._at = False, 0
 
     def read(self, size=-1):
         self.read_sizes.append(size)
-        return self.body if size is None or size < 0 else self.body[:size]
+        if size is None or size < 0:
+            return self.body
+        chunk, self._at = self.body[self._at:self._at + size], self._at + size
+        return chunk
+
+    # What io.TextIOWrapper asks of a stream (the retraction download is parsed as it arrives).
+    def read1(self, size=-1):
+        return self.read(size)
+
+    def readable(self):
+        return True
+
+    def writable(self):
+        return False
+
+    def seekable(self):
+        return False
+
+    def flush(self):
+        pass
+
+    def close(self):
+        self.closed = True
 
     def __enter__(self):
         return self
@@ -392,6 +415,27 @@ def test_retraction_watch_rows_are_read_by_doi(few_rows):
         ("unavailable", "Retraction", "1/1/2020 0:00")))
     assert notices == {"10.1257/aer.20210369": [("retraction", datetime(2023, 7, 1).date())],
                        "10.1177/0956797611432497": [("expression of concern", datetime(2021, 11, 9).date())]}
+
+
+class _Download(io.BytesIO):
+    """A response that refuses to be read whole: the 68 MB file must be parsed as it
+    arrives, not held (and decoded) in memory first."""
+    def read(self, size=-1):
+        assert size is not None and size > 0, "the download was read whole"
+        return super().read(size)
+
+    def read1(self, size=-1):
+        return self.read(size)
+
+
+def test_the_download_is_parsed_as_a_stream(few_rows, monkeypatch):
+    # A BOM, a quoted field holding a line break, and non-ASCII text, as the real file has.
+    body = _notices(("10.1257/aer.20210369", "Retraction", "7/1/2023 0:00")).replace(
+        ",T,S,", ',"Zürich\nlab",S,', 1)
+    payload = b"\xef\xbb\xbf" + body.encode("utf-8")
+    monkeypatch.setattr(urllib.request, "urlopen", lambda request, timeout=None: _Download(payload))
+    assert network.retraction_notices() == {
+        "10.1257/aer.20210369": [("retraction", datetime(2023, 7, 1).date())]}
 
 
 @pytest.mark.parametrize("payload,message", [
@@ -774,3 +818,76 @@ def test_without_a_budget_nothing_is_deferred(monkeypatch):
 def test_a_negative_budget_is_refused():
     with pytest.raises(ValueError, match="network minutes"):
         network.validate(None, _frame({}), minutes=-1)
+
+
+# ── what a run answered (for the stored findings, entry_checks) ───────────────
+
+def test_answered_names_every_target_and_whether_this_run_has_its_answer(monkeypatch):
+    frame = _frame({"doi_o": "10.1000/cached", "doi_r": "10.1000/ok"},
+                   {"flora_id": "REPL-000002", "doi_o": "10.1000/gone", "doi_r": "10.1000/slow"})
+    monkeypatch.setattr(network, "fresh_targets", lambda cur, kind: {"10.1000/cached", "10.1000/other"})
+    monkeypatch.setattr(network, "remember", lambda *a: None)
+    monkeypatch.setattr(network.time, "sleep", lambda delay: None)
+    answers = {"10.1000/ok": (OK, "registered"), "10.1000/gone": (FAILED, "not registered at doi.org"),
+               "10.1000/slow": (UNCHECKED, "timed out")}
+    monkeypatch.setattr(network, "doi_registration", lambda doi: answers[doi])
+    answered = {}
+    network.check_resolution(None, frame, "doi", verbose=False, answered=answered)
+    # A cached success is this run's answer too; a cached target the frame lacks is not listed.
+    assert answered == {"10.1000/cached": OK, "10.1000/ok": OK, "10.1000/gone": FAILED,
+                        "10.1000/slow": None}
+
+
+def test_a_deferred_target_has_no_answer(monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr(network.time, "monotonic", lambda: clock[0])
+
+    def answer(target):
+        clock[0] += 60
+        return OK, "registered"
+    monkeypatch.setattr(network, "fresh_targets", lambda cur, kind: set())
+    monkeypatch.setattr(network, "remember", lambda *a: None)
+    monkeypatch.setattr(network, "doi_registration", answer)
+    monkeypatch.setattr(network.time, "sleep", lambda delay: None)
+    answered = {}
+    network.check_resolution(None, _frame({"doi_o": "10.1000/a", "doi_r": "10.1000/b"}), "doi",
+                             verbose=False, deadline=60, answered=answered)
+    assert answered == {"10.1000/a": OK, "10.1000/b": None}
+
+
+def test_answered_lookups_are_found_or_not_and_unanswered_ones_are_none(monkeypatch):
+    frame = _frame({"doi_o": None, "title_o": "Cached found"},
+                   {"flora_id": "REPL-000002", "doi_o": None, "title_o": "Cached missing"},
+                   {"flora_id": "REPL-000003", "doi_o": None, "title_o": "New missing"},
+                   {"flora_id": "REPL-000004", "doi_o": None, "title_o": "Fails"},
+                   {"flora_id": "REPL-000005", "title_o": "Has a DOI"})
+    found = {"doi": "10.1/found", "title": "Cached found", "author": "", "year": ""}
+    monkeypatch.setattr(network, "fresh_lookups",
+                        lambda cur: {"cached found||": found, "cached missing||": None})
+    monkeypatch.setattr(network, "remember_lookup", lambda *a: None)
+    monkeypatch.setattr(network.time, "sleep", lambda delay: None)
+    answers = {"New missing": (OK, None, "answered"), "Fails": (UNCHECKED, None, "HTTP 503")}
+    monkeypatch.setattr(network, "lookup_original_doi", lambda query: answers[query[0]])
+    answered = {}
+    network.check_original_dois(None, frame, verbose=False, answered=answered)
+    assert answered == {"cached found||": OK, "cached missing||": OK, "new missing||": OK,
+                        "fails||": None}
+
+
+def test_validate_fills_answered_per_check_and_reports_the_same(monkeypatch):
+    monkeypatch.setattr(network, "check_retractions", lambda df: ([], None))
+    monkeypatch.setattr(network, "fresh_targets", lambda cur, kind: set())
+    monkeypatch.setattr(network, "remember", lambda *a: None)
+    monkeypatch.setattr(network, "fresh_lookups", lambda cur: {})
+    monkeypatch.setattr(network, "remember_lookup", lambda *a: None)
+    monkeypatch.setattr(network, "doi_registration", lambda doi: (FAILED, "not registered at doi.org"))
+    monkeypatch.setattr(network, "check_link", lambda url: (UNCHECKED, "timed out"))
+    monkeypatch.setattr(network, "lookup_original_doi", lambda query: (OK, None, "answered"))
+    monkeypatch.setattr(network.time, "sleep", lambda delay: None)
+    frame = _frame({"doi_o": None, "url_r": "https://osf.io/abcde"}, {"flora_id": "REPL-000002"})
+    answered = {}
+    with_answers = network.validate(None, frame, answered=answered)
+    assert with_answers == network.validate(None, frame)
+    assert answered == {"dois": {"10.1000/r": FAILED, "10.1000/o": FAILED},
+                        "urls": {"https://osf.io/abcde": None},
+                        "originals": {"original||": OK}}

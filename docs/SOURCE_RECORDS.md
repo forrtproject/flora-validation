@@ -28,6 +28,7 @@ operate it, and what goes wrong.
    - [9.2 Identifiers: what actually exists](#92-identifiers-what-actually-exists)
    - [9.3 The FLoRA tab](#93-the-flora-tab)
    - [9.4 Correcting a FLoRA record](#94-correcting-a-flora-record-flora_editspy)
+   - [9.5 Entry checks on the stored dataset](#95-entry-checks-on-the-stored-dataset-entry_checkspy)
 10. [The GitHub Action](#10-the-github-action)
     - [10.1 The "Run pipeline" button](#101-the-run-pipeline-button)
 11. [Common tasks](#11-common-tasks)
@@ -1112,6 +1113,68 @@ listed under **Earlier edits to its source records**, also closed.
 A correction on a record that later retires stops applying, and applies again if the
 record returns. A row without a FLoRA id yet cannot be corrected: run the pipeline first.
 
+### 9.5 Entry checks on the stored dataset (`entry_checks.py`)
+
+The checks of `validate_flora.py` (structural) and `validate_flora_network.py`
+(network) run in two places. The pipeline runs them on every build and writes
+`flora_validation.md`, `flora_network_validation.md` and `.csv` beside `flora.csv`,
+unchanged. The website also runs them, over the stored dataset (`flora_data`, read
+as `flora_store.export_csv` publishes it), and keeps every finding in the database by
+FLoRA record. The checks only report: they never change a record.
+
+| Part | When | What it resolves |
+|---|---|---|
+| Structural | Whenever the stored dataset's revision moves: a pipeline run stored a snapshot, or a correction was saved | Every open structural finding it did not make again: it checks every record |
+| Network | Once a UTC day from 04:00, after the 03:00 nightly pipeline stored the dataset; 45 minutes at most (`NETWORK_MINUTES`) | Only what it answered this run (below) |
+
+```
+two scheduler jobs on every pod (one per part), every 5 minutes → entry_checks.run_due
+       → "is anything due?" on a pooled connection (almost always no)
+       → a PostgreSQL advisory lock per part (structural 7_342_025_097,
+         network 7_342_025_098) elects ONE executor of that part
+       → each run is a row in flora_check_runs
+```
+
+The parts have their own jobs and locks, so the network run's 45 minutes never hold
+up a correction's structural check. A network run whose process died (a deploy
+mid-run) leaves a `running` row; after an hour it no longer blocks the day, and the
+next run marks it `abandoned` and runs again. It stores its findings at the end
+only, so a run cut off by a crash stores none; the cache keeps every success it
+learnt, and the retry starts from there. The Retraction Watch file (about 68 MB) is
+parsed as it downloads, so the run holds about 20 MB for it, not 500 MB.
+
+**Where findings live.** `flora_check_findings` holds one row per finding, keyed on
+`validate_flora.finding_key` (check, FLoRA IDs, column, value), with its level
+(`problem` or `possible_problem`), `flora_ids` (indexed, for a record's findings),
+the value and what is wrong with it. `first_seen_at` is when a run first found it,
+`last_seen_at` the latest. A finding stays open (`resolved_at` NULL) until the
+value it flagged changes: the key changes with the value, the run no longer finds
+the old one, and resolves it. Found again later, it is re-opened under its key with
+its `first_seen_at`. A finding whose records have all retired is resolved by its own
+part's next run. `dismissed_at`, `dismissed_by` and `dismiss_note` are for the FLoRA tab's "Not a
+problem"; they belong to the key, and no run changes them. `flora_check_runs` holds
+each run: its part, status (`finished`, `incomplete`, `failed`, `abandoned`), the
+dataset revision it checked, counts and notes.
+
+**What a network run resolves.** A budget leaves targets unasked, and a request can
+fail, so a network finding not found again is resolved only when this run settled
+it: a DOI or link answered this run (asked, or a success still in the cache); a
+Retraction Watch finding when the download was checked; an "original probably has a
+DOI" finding when each of its records has a `doi_o` now or its Crossref lookup was
+answered. A value gone from all of a finding's records also resolves it. A deferred
+target, or one that could not be checked, keeps its finding open.
+
+**Shared with the pipeline.** The network part uses the same cache
+(`link_checks`, `original_doi_lookups`): what either learns, the other need not ask.
+No suppressions file is applied here; a person dismisses a finding on its record
+instead.
+
+```bash
+python entry_checks.py --due           # which parts are due now; runs nothing
+python entry_checks.py --structural    # run a part now; refused while another run of that part holds its lock
+python entry_checks.py --network --minutes 45
+```
+
 ---
 
 ## 10. The GitHub Action
@@ -1408,6 +1471,7 @@ by deleting a good row. A trigger keeps it correct.
 | [`transform_sources.py`](../transform_sources.py) | Six-operation transform to the FLoRA columns |
 | [`source_records_service.py`](../source_records_service.py) | All SQL and logic; no FastAPI types; read-only apart from duplicate rulings |
 | [`flora_edits.py`](../flora_edits.py) | Corrections to FLoRA records: validation, storage, applied on top of every build |
+| [`entry_checks.py`](../entry_checks.py) | The FLoRA checks over the stored dataset, on the website's scheduler; findings in `flora_check_findings` |
 | [`app.py`](../app.py) | Thin routes (search for `Source records — entry-sheet datatable`) |
 | [`db_schema.sql`](../db_schema.sql) | Tables, constraints, triggers, rule-table seeds |
 | [`docs/index.html`](index.html) | `admin-tab-sources`, `src-detail-modal` |

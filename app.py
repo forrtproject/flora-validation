@@ -6490,6 +6490,7 @@ def _reap_stale_slots() -> None:
 
 
 def _start_scheduler() -> None:
+    import entry_checks
     from extractor_maintenance import run_queued, run_scheduled
     scheduler = BackgroundScheduler(timezone="UTC")
     scheduler.add_job(
@@ -6528,6 +6529,21 @@ def _start_scheduler() -> None:
         next_run_time=datetime.now(timezone.utc),
         kwargs={"database_url": DATABASE_URL},
     )
+    # The FLoRA entry checks over the stored dataset, findings kept by FLoRA record:
+    # structural whenever the dataset's revision moves, network once a day from
+    # 04:00 UTC. "Is anything due?" is asked on a pooled connection; only work opens
+    # the advisory lock's own, so one pod runs each part (entry_checks.run_due). A job
+    # per part: the network run takes up to 45 minutes and must not hold up a
+    # correction's structural check.
+    for part in entry_checks.PARTS:
+        scheduler.add_job(
+            entry_checks.run_due,
+            IntervalTrigger(minutes=5),
+            id=f"entry_checks_{part}",
+            max_instances=1,
+            coalesce=True,
+            kwargs={"database_url": DATABASE_URL, "parts": (part,)},
+        )
     scheduler.add_job(
         _retry_tiebreakers,
         CronTrigger(hour=0, minute=22, timezone="UTC"),

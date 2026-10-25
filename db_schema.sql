@@ -2159,3 +2159,65 @@ CREATE TABLE IF NOT EXISTS retired_records (
 );
 CREATE INDEX IF NOT EXISTS retired_records_pair_id_idx ON retired_records(pair_id);
 CREATE INDEX IF NOT EXISTS retired_records_record_id_idx ON retired_records(record_id);
+
+-- ── FLoRA entry checks: what the checks found in the stored dataset ────────────
+-- The website's scheduler runs the pipeline's checks (validate_flora, the
+-- structural part; validate_flora_network, the network part) over the stored
+-- dataset and keeps each finding here, by FLoRA record (entry_checks.py). The
+-- pipeline still writes its report files; these tables are the website's own copy,
+-- which the FLoRA tab will show. The checks only report: they never change data.
+--
+-- One row per check run. counts holds the numbers (findings by level and check,
+-- how many were new, re-opened and resolved); notes holds what a person should read
+-- about the run (a network budget that ran out, a check that could not run).
+-- dataset_revision is the stored dataset's revision the run checked
+-- (flora_store.dataset_revision): a structural run is due when it has moved.
+CREATE TABLE IF NOT EXISTS flora_check_runs (
+    run_id           BIGSERIAL   PRIMARY KEY,
+    part             TEXT        NOT NULL CHECK (part IN ('structural', 'network')),
+    started_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    finished_at      TIMESTAMPTZ,
+    -- 'incomplete': a network run that left targets unanswered (a budget, a
+    -- download that failed). It stored what it found and closed only what it checked.
+    -- 'abandoned': the process running it ended first (a pod replaced mid-run).
+    status           TEXT        NOT NULL
+                                 CHECK (status IN ('running', 'finished', 'incomplete',
+                                                   'failed', 'abandoned')),
+    dataset_revision TEXT,
+    counts           JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    notes            JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    error            TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_flora_check_runs_recent
+    ON flora_check_runs (part, run_id DESC);
+
+-- One row per finding, keyed on validate_flora.finding_key: (check, FLoRA IDs,
+-- column, value). The key stays the same while the value it flagged does, so a
+-- finding stays open from run to run; once the value changes the run no longer
+-- finds it and resolves it, and a new value is a new finding. A finding found again
+-- after it was resolved is re-opened under its key, keeping first_seen_at.
+-- The dismissal (a person's "Not a problem", from the FLoRA tab) belongs to the key
+-- too: re-opening never clears it, and no run writes it.
+CREATE TABLE IF NOT EXISTS flora_check_findings (
+    finding_key     TEXT        PRIMARY KEY,
+    part            TEXT        NOT NULL CHECK (part IN ('structural', 'network')),
+    check_code      TEXT        NOT NULL,
+    level           TEXT        NOT NULL CHECK (level IN ('problem', 'possible_problem')),
+    flora_ids       TEXT[]      NOT NULL,
+    column_name     TEXT,
+    value           TEXT,
+    detail          TEXT,
+    first_seen_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_run_id     BIGINT      REFERENCES flora_check_runs(run_id),
+    resolved_at     TIMESTAMPTZ,                 -- NULL while open
+    resolved_run_id BIGINT      REFERENCES flora_check_runs(run_id),
+    dismissed_at    TIMESTAMPTZ,
+    dismissed_by    TEXT,
+    dismiss_note    TEXT
+);
+-- A FLoRA record's findings (flora_ids @> ARRAY[id]), and the open ones by check.
+CREATE INDEX IF NOT EXISTS idx_flora_check_findings_records
+    ON flora_check_findings USING GIN (flora_ids);
+CREATE INDEX IF NOT EXISTS idx_flora_check_findings_open
+    ON flora_check_findings (part, check_code) WHERE resolved_at IS NULL;

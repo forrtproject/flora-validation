@@ -503,6 +503,15 @@ retracted, and a link can rot, long after a record was validated. Checking them
 once at consensus would be worse than not checking — it would read as a clean bill
 of health that silently goes stale.
 
+The right-hand column runs in two places. The pipeline runs it on every build and
+writes its report files beside `flora.csv`, as before. The website's scheduler also
+runs it over the stored dataset (`entry_checks.py`): the structural checks whenever
+the stored dataset changes (a pipeline run stored a snapshot, or a correction was
+saved), the network checks once a day from 04:00 UTC within 45 minutes. Each
+finding is kept in `flora_check_findings`, by FLoRA ID, until the value it flagged
+changes; `flora_check_runs` records each run. Both only report: neither changes a
+record. See [SOURCE_RECORDS.md §9.5](SOURCE_RECORDS.md#95-entry-checks-on-the-stored-dataset-entry_checkspy).
+
 Two adaptations to this app's data model, without which the checks would be mostly
 noise: a blank `doi_o` is legitimate for DOI-less originals and is only flagged when
 there is no `oa_work_id_o` either; and years are parsed from the leading four digits

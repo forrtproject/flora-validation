@@ -376,14 +376,16 @@ def _notice_date(value):
     return None
 
 
-def parse_retraction_watch(payload: str) -> dict:
-    """{original DOI: [(nature, date)]} from the Retraction Watch CSV.
+def parse_retraction_watch(payload) -> dict:
+    """{original DOI: [(nature, date)]} from the Retraction Watch CSV, given as text
+    or as an open text stream (read a row at a time: the file is about 68 MB, and
+    holding it whole, decoded, cost over 500 MB in the web server).
 
     Raises RetractionDataError when a column the check needs is missing (a
     renamed column, or an HTML page served with 200) or the file names
     implausibly few papers: either would otherwise pass every paper in silence.
     """
-    reader = csv.DictReader(io.StringIO(payload))
+    reader = csv.DictReader(io.StringIO(payload) if isinstance(payload, str) else payload)
     missing = [c for c in RETRACTION_WATCH_COLUMNS if c not in (reader.fieldnames or [])]
     if missing:
         raise RetractionDataError(f"the download has no {', '.join(missing)} column")
@@ -423,8 +425,9 @@ def notice_status(notices) -> "str | None":
 def retraction_notices() -> dict:
     request = urllib.request.Request(RETRACTION_WATCH_URL, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=120) as response:
-        payload = response.read().decode("utf-8-sig", errors="replace")
-    return parse_retraction_watch(payload)
+        # Parsed as it arrives; newline="" leaves a quoted field's line breaks to csv.
+        text = io.TextIOWrapper(response, encoding="utf-8-sig", errors="replace", newline="")
+        return parse_retraction_watch(text)
 
 
 def check_retractions(df):
@@ -482,11 +485,14 @@ def _out_of_time(deadline) -> bool:
 
 
 def check_resolution(cur, df, kind: str, limit: int = 0, verbose: bool = True,
-                     statistics: dict = None, deadline: float = None):
+                     statistics: dict = None, deadline: float = None, answered: dict = None):
     """N2 (kind 'doi') or N3 ('url'): (findings, could-not-check items).
 
     `deadline` (time.monotonic()) stops it early: the targets not asked by then are
     deferred, as --limit defers them, and the next run starts on them.
+
+    `answered`, when given, gets every target: OK (asked, or cached as a success),
+    FAILED, or None when this run has no answer (deferred, or could not check).
     """
     if limit < 0:
         raise ValueError("network limit must be zero (all) or positive")
@@ -509,12 +515,16 @@ def check_resolution(cur, df, kind: str, limit: int = 0, verbose: bool = True,
         print(f"  {kind}s: {len(targets)} distinct, {n_cached} cached, "
               f"{len(todo)} to check{note}", file=sys.stderr)
 
+    if answered is not None:
+        answered.update((target, OK if target in cached else None) for target in targets)
     issues, unchecked, asked = [], [], 0
     for n, target in enumerate(todo, 1):
         if _out_of_time(deadline):
             break
         asked = n
         outcome, reason = doi_registration(target) if kind == "doi" else check_link(target)
+        if answered is not None and outcome in (OK, FAILED):
+            answered[target] = outcome
         if outcome == OK:
             remember(cur, kind, target)
         elif outcome == FAILED and kind == "doi":
@@ -648,9 +658,13 @@ def _suggestion_detail(match):
 
 
 def check_original_dois(cur, df, limit: int = 0, verbose: bool = True,
-                        statistics: dict = None, deadline: float = None):
+                        statistics: dict = None, deadline: float = None, answered: dict = None):
     """N4: (findings, could-not-check items) for originals without a doi_o. A
-    `deadline` defers the rest, as in check_resolution."""
+    `deadline` defers the rest, as in check_resolution.
+
+    `answered`, when given, gets every lookup by its query_key: OK when this run has
+    Crossref's answer (asked, or cached), found or not, and None when it has none.
+    """
     if limit < 0:
         raise ValueError("network limit must be zero (all) or positive")
     queries = {}
@@ -683,6 +697,8 @@ def check_original_dois(cur, df, limit: int = 0, verbose: bool = True,
     issues = [finding("original_doi_found", rows, "doi_o", answers[key]["doi"],
                       _suggestion_detail(answers[key]))
               for key, (query, rows) in queries.items() if answers.get(key)]
+    if answered is not None:
+        answered.update((key, OK if key in answers else None) for key in queries)
     if statistics is not None:
         statistics.update(targets=len(queries), cached=len(queries) - len(outstanding),
                           checked=asked, deferred=len(outstanding) - asked,
@@ -698,7 +714,8 @@ def _mostly_unchecked(stats) -> bool:
     return stats["checked"] >= 10 and stats["unchecked"] * 2 > stats["checked"]
 
 
-def validate(cur, df, checks="all", limit=0, suppressions=None, minutes=0) -> dict:
+def validate(cur, df, checks="all", limit=0, suppressions=None, minutes=0,
+             answered=None) -> dict:
     """Check one exported frame and preserve coverage as well as findings.
 
     A limited run, a Retraction Watch download that failed its checks, and a check
@@ -711,6 +728,13 @@ def validate(cur, df, checks="all", limit=0, suppressions=None, minutes=0) -> di
     incomplete. Successes are cached as they come, so the next run starts where
     this one stopped: a cold cache is worked through over several runs instead of
     one run outliving its stage's timeout (source_sync_runner.STAGE_TIMEOUT_SECONDS).
+
+    `answered`, when given a dict, gets an entry for each of the "dois", "urls" and
+    "originals" checks that ran: {target or query key: OK, FAILED or None}
+    (check_resolution, check_original_dois). Whether the Retraction Watch check ran
+    is in the report's coverage. The stored findings (entry_checks) close only what
+    a run answered, and a budget can leave much unanswered. The report is the same
+    either way.
     """
     if checks not in {"all", "none", *SELECTORS}:
         raise ValueError(f"Unknown network checks: {checks}")
@@ -735,13 +759,18 @@ def validate(cur, df, checks="all", limit=0, suppressions=None, minutes=0) -> di
             coverage["retractions"] = {"status": "checked"}
             found += items
     for selector, run in (
-            ("dois", lambda s: check_resolution(cur, df, "doi", limit, statistics=s, deadline=deadline)),
-            ("urls", lambda s: check_resolution(cur, df, "url", limit, statistics=s, deadline=deadline)),
-            ("originals", lambda s: check_original_dois(cur, df, limit, statistics=s, deadline=deadline))):
+            ("dois", lambda s, a: check_resolution(cur, df, "doi", limit, statistics=s,
+                                                   deadline=deadline, **a)),
+            ("urls", lambda s, a: check_resolution(cur, df, "url", limit, statistics=s,
+                                                   deadline=deadline, **a)),
+            ("originals", lambda s, a: check_original_dois(cur, df, limit, statistics=s,
+                                                           deadline=deadline, **a))):
         if selector not in ran:
             continue
         stats = {}
-        items, unchecked[selector] = run(stats)
+        # Passed only when asked for, so the checks are called as before otherwise.
+        extra = {} if answered is None else {"answered": answered.setdefault(selector, {})}
+        items, unchecked[selector] = run(stats, extra)
         found += items
         coverage[selector] = stats
         if _mostly_unchecked(stats):
