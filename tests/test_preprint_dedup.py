@@ -20,7 +20,7 @@ import preprint_dedup as pdd
     "10.31234/osf.io/uhbk9", "10.1101/2023.05.26.542419",
     "10.2139/ssrn.2187902", "10.53841/bpscep.2011.1.12.29",
     "10.21203/rs.3.rs-7544401/v1", "10.31219/osf.io/x394e_v2",
-    "10.31222/osf.io/sjyp3",
+    "10.31222/osf.io/sjyp3", "10.1101/123456", "10.64898/2026.01.19.700331",
 ])
 def test_preprint_dois_are_recognised(doi):
     assert pdd.is_preprint_doi(doi)
@@ -41,7 +41,10 @@ def test_metaarxiv_preprint_loses_to_its_published_replication():
     assert keep == "10.1098/rsos.221306"
 
 
-@pytest.mark.parametrize("doi", ["10.1177/0956797620939054", "10.1037/a0021524", "", None])
+@pytest.mark.parametrize("doi", ["10.1177/0956797620939054", "10.1037/a0021524", "", None,
+                                 # Cold Spring Harbor journals under bioRxiv's prefix
+                                 "10.1101/gr.126516.111", "10.1101/lm.053631.122",
+                                 "https://doi.org/10.1101/GR.126516.111"])
 def test_published_dois_are_not_preprints(doi):
     assert not pdd.is_preprint_doi(doi)
 

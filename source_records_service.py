@@ -84,6 +84,10 @@ DETAIL_COLUMNS = [
     "raw",
 ]
 
+# The reason a reviewer gives for a duplicate ruling: as long as a correction's note
+# in the FLoRA tab (flora_edits.NOTE_LIMIT).
+RULING_NOTE_LIMIT = 500
+
 
 _UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I
@@ -393,7 +397,12 @@ def duplicate_groups(cur, unresolved_only: bool = True) -> dict:
                outcome_computation, outcome_robustness,
                validation_status, sheet_row_id,
                duplicate_status, duplicate_of::text AS duplicate_of,
-               duplicate_reviewed_by, duplicate_reviewed_at
+               duplicate_reviewed_by, duplicate_reviewed_at,
+               -- The latest ruling's note, so the panel shows why beside who.
+               (SELECT e.note FROM source_record_edits e
+                 WHERE e.record_id = source_records.record_id
+                   AND e.field = 'duplicate_status'
+                 ORDER BY e.edited_at DESC LIMIT 1) AS duplicate_note
         FROM source_records
         WHERE content_fingerprint = ANY(%s) AND deleted_at IS NULL
         ORDER BY content_fingerprint, display_id
@@ -444,11 +453,14 @@ def duplicate_groups(cur, unresolved_only: bool = True) -> dict:
 
 
 def resolve_duplicate(cur, record_id: str, status: str, admin_handle: str,
-                      duplicate_of: str | None = None) -> dict:
+                      duplicate_of: str | None = None, note: str | None = None) -> dict:
     """Rule on one row of a duplicate group.
 
     'distinct'  — genuinely a different record; keep it in the transform output.
     'duplicate' — the same paper as duplicate_of; the transform drops it.
+
+    `note` is the reviewer's reason. It goes into the edit log beside the ruling,
+    as a correction's note does in the FLoRA tab, so the log says why, not only what.
     """
     if status not in ("distinct", "duplicate"):
         raise ValueError("status must be 'distinct' or 'duplicate'")
@@ -456,9 +468,13 @@ def resolve_duplicate(cur, record_id: str, status: str, admin_handle: str,
         raise ValueError("duplicate_of is required when marking a row as a duplicate")
     if duplicate_of == record_id:
         raise ValueError("A record cannot be a duplicate of itself")
+    note = (note or "").strip() or None
+    if note and len(note) > RULING_NOTE_LIMIT:
+        raise ValueError(f"The reason is longer than {RULING_NOTE_LIMIT} characters")
 
     _check_uuid(record_id)
-    cur.execute("SELECT deleted_at FROM source_records WHERE record_id = %s", (record_id,))
+    cur.execute("SELECT display_id, deleted_at FROM source_records WHERE record_id = %s",
+                (record_id,))
     row = cur.fetchone()
     if not row:
         raise RecordNotFound(record_id)
@@ -500,6 +516,9 @@ def resolve_duplicate(cur, record_id: str, status: str, admin_handle: str,
         """,
         (status, duplicate_of if status == "duplicate" else None, admin_handle, record_id),
     )
+    # Display ids, not record ids: the log is read by people.
+    ruled_label = row["display_id"] or record_id
+    why = f": {note}" if note else ""
     cur.execute(
         """
         INSERT INTO source_record_edits
@@ -507,7 +526,8 @@ def resolve_duplicate(cur, record_id: str, status: str, admin_handle: str,
         VALUES (%s, 'duplicate_status', NULL, %s, %s, %s)
         """,
         (record_id, status, admin_handle,
-         f"duplicate of {duplicate_of}" if duplicate_of else None),
+         f"duplicate of {survivor['display_id'] or duplicate_of}{why}" if status == "duplicate"
+         else note),
     )
 
     # Marking X a duplicate OF Y is a decision to keep Y, so record that rather
@@ -532,11 +552,11 @@ def resolve_duplicate(cur, record_id: str, status: str, admin_handle: str,
                     (record_id, field, old_value, new_value, edited_by, note)
                 VALUES (%s, 'duplicate_status', NULL, 'distinct', %s, %s)
                 """,
-                (duplicate_of, admin_handle, f"kept as the survivor of {record_id}"),
+                (duplicate_of, admin_handle, f"kept as the survivor of {ruled_label}{why}"),
             )
 
     return {"record_id": record_id, "duplicate_status": status,
-            "duplicate_of": duplicate_of, "survivor_marked": survivor_marked}
+            "duplicate_of": duplicate_of, "survivor_marked": survivor_marked, "note": note}
 
 
 def sync_status(cur) -> dict:

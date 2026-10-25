@@ -6571,6 +6571,9 @@ body.has-maint-banner #admin-screen {
 .src-dup-fields dd { margin: 0; word-break: break-word; }
 
 .src-dup-state { font-size: 0.8rem; color: var(--green); margin-bottom: 0.5rem; }
+.src-dup-why-note { color: var(--muted); margin-top: 0.15rem; overflow-wrap: anywhere; }
+.src-dup-why { display: flex; flex-direction: column; gap: 0.35rem; text-align: left; }
+.src-dup-why textarea { width: 100%; font: inherit; resize: vertical; }
 .src-dup-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.4rem; }
 .src-dup-actions .ghost-btn,
 .src-dup-open { font-size: 0.78rem; padding: 0.25rem 0.55rem; }

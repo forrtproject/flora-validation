@@ -85,10 +85,18 @@ TITLE_THRESHOLD = 0.80
 # candidate (same first author, "kohrt"), but only the "preprint loses" rule
 # reliably keeps the published version; without it the outcome depended on the
 # arbitrary doi_1/doi_2 ordering tie-break that decided such pairs then.
+#
+# Plus "10.64898/": openRxiv's prefix, which bioRxiv and medRxiv preprints carry
+# since late 2025 (10.64898/2026.01.19.700331, fred-data issue #140).
 PREPRINT_DOI_PREFIXES = (
-    "10.31234/", "10.31219/", "10.31222/", "10.48550/", "10.1101/",
+    "10.31234/", "10.31219/", "10.31222/", "10.48550/", "10.1101/", "10.64898/",
     "10.2139/", "10.20944/", "10.21203/", "10.53841/",
 )
+# Cold Spring Harbor's journals share bioRxiv's old prefix: Genome Research is
+# 10.1101/gr…, Learning & Memory 10.1101/lm…. bioRxiv and medRxiv put a number
+# after the slash (10.1101/2023.05.26.542419, or 10.1101/123456 before 2019), so
+# a letter there is a journal article, not a preprint (fred-data issue #141).
+_CSHL_JOURNAL_RE = re.compile(r"^10\.1101/(?!\d)")
 
 # Repository records: copies that are not the published article, but not preprints
 # either. Each loses to a publisher DOI when a pair is resolved, and none counts as a
@@ -178,7 +186,8 @@ def _s(value) -> str:
 def is_preprint_doi(doi) -> bool:
     """Whether a DOI is a preprint server's. Normalised first, as repository_kind()
     is, so the two spellings of one DOI are always the same kind."""
-    return normalize_doi(doi).startswith(PREPRINT_DOI_PREFIXES)
+    text = normalize_doi(doi)
+    return text.startswith(PREPRINT_DOI_PREFIXES) and not _CSHL_JOURNAL_RE.match(text)
 
 
 def repository_kind(doi) -> "str | None":

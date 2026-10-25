@@ -6297,6 +6297,9 @@ def admin_source_duplicates(unresolved_only: bool = True, admin: dict = Depends(
 class DuplicateResolution(BaseModel):
     status: str                       # 'distinct' | 'duplicate'
     duplicate_of: str | None = None
+    # Why: kept in the edit log beside the ruling (source_records_service limits it
+    # to 500 characters; this only stops a runaway body).
+    note: str | None = Field(default=None, max_length=10_000)
 
 
 @app.post("/api/admin/source-records/{record_id}/duplicate")
@@ -6306,7 +6309,7 @@ def admin_resolve_duplicate(record_id: str, req: DuplicateResolution,
     with db() as cur:
         try:
             return source_records_service.resolve_duplicate(
-                cur, record_id, req.status, handle, req.duplicate_of
+                cur, record_id, req.status, handle, req.duplicate_of, req.note
             )
         except source_records_service.RecordNotFound:
             raise HTTPException(404, "Record not found")

@@ -10710,7 +10710,11 @@ function renderSourceDuplicates(data) {
       const state = m.duplicate_status
         ? '<div class="src-dup-state">' +
             (m.duplicate_status === "duplicate" ? "marked duplicate" : "marked distinct") +
-            ' <span class="src-dim2">by ' + escapeHtml(m.duplicate_reviewed_by || "") + "</span></div>"
+            ' <span class="src-dim2">by ' + escapeHtml(m.duplicate_reviewed_by || "") + "</span>" +
+            (m.duplicate_note
+              ? '<div class="src-dup-why-note">' + escapeHtml(m.duplicate_note) + "</div>"
+              : "") +
+          "</div>"
         : "";
       const others = g.members.filter((o) => o.record_id !== m.record_id);
       return '<div class="src-dup-card' + (m.duplicate_status ? " src-dup-done" : "") + '">' +
@@ -10730,12 +10734,14 @@ function renderSourceDuplicates(data) {
         "</dl>" +
         state +
         '<div class="src-dup-actions">' +
-          '<button class="ghost-btn src-dup-distinct" data-id="' + m.record_id + '"' +
+          '<button class="ghost-btn src-dup-distinct" data-id="' + m.record_id +
+            '" data-label="' + escapeHtml(m.display_id) + '"' +
             tip(m.display_id + " is its own record: it stays in FLoRA, and the automatic " +
                 "dedup will not merge it into the others.") +
             ">Keep — distinct</button>" +
           others.map((o) =>
             '<button class="ghost-btn src-dup-dupe" data-id="' + m.record_id +
+            '" data-label="' + escapeHtml(m.display_id) +
             '" data-of="' + o.record_id + '" data-type="' + escapeHtml(m.type || "") +
             '" data-of-type="' + escapeHtml(o.type || "") +
             '" data-of-label="' + escapeHtml(o.display_id) + '"' +
@@ -10760,10 +10766,23 @@ function renderSourceDuplicates(data) {
   }).join("");
 }
 
-async function resolveSourceDuplicate(recordId, status, duplicateOf) {
+/** The reviewer's reason for a ruling, kept in the edit log beside it as a
+ *  correction's note is. Optional: "" when left empty, null when cancelled. */
+async function askRulingReason(action) {
+  const save = await showDialog({
+    title: action,
+    message: '<label class="src-dup-why">Why? (optional)' +
+             '<textarea id="src-dup-why" maxlength="500" rows="3"></textarea></label>',
+    rawHtml: true,
+    buttons: [{ label: "Cancel", value: false }, { label: "Save", value: true, primary: true }],
+  });
+  return save ? ($("#src-dup-why")?.value || "").trim() : null;
+}
+
+async function resolveSourceDuplicate(recordId, status, duplicateOf, note) {
   try {
     await adminApi("/source-records/" + recordId + "/duplicate", "POST",
-                   { status: status, duplicate_of: duplicateOf || null });
+                   { status: status, duplicate_of: duplicateOf || null, note: note || null });
     showToast(status === "duplicate" ? "Marked as duplicate." : "Marked as distinct.");
     fetchSourceDuplicates();
   } catch (e) {
@@ -10782,7 +10801,15 @@ async function confirmSourceDuplicate(button) {
       "same report was entered in the wrong sheet.");
     if (!ok) return;
   }
-  resolveSourceDuplicate(button.dataset.id, "duplicate", button.dataset.of);
+  const why = await askRulingReason("Mark " + button.dataset.label + " a duplicate of " + ofLabel);
+  if (why === null) return;
+  resolveSourceDuplicate(button.dataset.id, "duplicate", button.dataset.of, why);
+}
+
+async function confirmSourceDistinct(button) {
+  const why = await askRulingReason("Keep " + button.dataset.label + " as distinct");
+  if (why === null) return;
+  resolveSourceDuplicate(button.dataset.id, "distinct", null, why);
 }
 
 $("#src-dup-back").onclick = hideSourceDuplicates;
@@ -10793,7 +10820,7 @@ $("#src-dup-show-resolved").addEventListener("change", (e) => {
 
 $("#src-dup-body").addEventListener("click", (e) => {
   const distinct = e.target.closest(".src-dup-distinct");
-  if (distinct) { resolveSourceDuplicate(distinct.dataset.id, "distinct"); return; }
+  if (distinct) { confirmSourceDistinct(distinct); return; }
   const dupe = e.target.closest(".src-dup-dupe");
   if (dupe) { confirmSourceDuplicate(dupe); return; }
   const open = e.target.closest(".src-dup-open");
