@@ -21,6 +21,7 @@ import preprint_dedup as pdd
     "10.2139/ssrn.2187902", "10.53841/bpscep.2011.1.12.29",
     "10.21203/rs.3.rs-7544401/v1", "10.31219/osf.io/x394e_v2",
     "10.31222/osf.io/sjyp3", "10.1101/123456", "10.64898/2026.01.19.700331",
+    "10.31235/osf.io/93eyz", "10.31236/osf.io/tzn6d", "10.35542/osf.io/yu52s",
 ])
 def test_preprint_dois_are_recognised(doi):
     assert pdd.is_preprint_doi(doi)

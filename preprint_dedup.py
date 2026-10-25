@@ -87,9 +87,13 @@ TITLE_THRESHOLD = 0.80
 # arbitrary doi_1/doi_2 ordering tie-break that decided such pairs then.
 #
 # Plus "10.64898/": openRxiv's prefix, which bioRxiv and medRxiv preprints carry
-# since late 2025 (10.64898/2026.01.19.700331, fred-data issue #140).
+# since late 2025 (10.64898/2026.01.19.700331, fred-data issue #140). And three more
+# of the Center for Open Science's preprint servers, whose DOIs Crossref types as
+# posted content: SocArXiv "10.31235/", SportRxiv "10.31236/", EdArXiv "10.35542/"
+# (10.31235/osf.io/93eyz was cited in FLoRA instead of its journal article).
 PREPRINT_DOI_PREFIXES = (
     "10.31234/", "10.31219/", "10.31222/", "10.48550/", "10.1101/", "10.64898/",
+    "10.31235/", "10.31236/", "10.35542/",
     "10.2139/", "10.20944/", "10.21203/", "10.53841/",
 )
 # Cold Spring Harbor's journals share bioRxiv's old prefix: Genome Research is
