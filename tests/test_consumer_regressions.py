@@ -247,7 +247,8 @@ def test_the_validation_report_flags_json_in_a_text_field():
     frame = pd.DataFrame([{"doi_o": "10.1/o", "doi_r": "10.1/r", "apa_ref_o": CSL,
                            "title_o": "[Re] A title", "title_r": "T"}])
     issues = validate_flora._check_structured_text(frame)
-    assert len(issues) == 1 and "apa_ref_o holds JSON" in issues[0]
+    assert len(issues) == 1 and issues[0]["detail"] == "apa_ref_o holds JSON, not text"
+    assert issues[0]["column"] == "apa_ref_o" and issues[0]["value"] == CSL
 
 
 # ── against PostgreSQL: both DOI forms find the record ───────────────────────

@@ -238,15 +238,15 @@ Use a disposable database for development unless you intend those actions to run
 | `EXTRACTOR_LOCK_WAIT_SECONDS` | No | `15` | Brief advisory-lock retry for an already-reserved run |
 | `ADJUDICATION_ENABLED` | No | `0` | Switches on the Observatory-disagreements feature (`adjudication/`, its own PostgreSQL schema `adjudication`); a failed setup leaves it off, is retried once a minute, and never affects the app. See [Observatory disagreements](#observatory-disagreements-adjudication) |
 | `SUBMISSION_FAILURE_STAMP_TTL_MINUTES` | No | `30` | Lifetime of a one-time automatic-release capability issued after a server-observed judgement failure |
-| `OPENALEX_MAILTO` | No | maintainer email embedded in code | OpenAlex work-ID backfill polite-pool contact |
+| `OPENALEX_MAILTO` | No | maintainer email embedded in code | Polite-pool contact sent to OpenAlex (`enrich_works.py`, the backfills, the adjudication importer) and to Crossref (the network checks' DOI lookup for originals, `validate_flora_network.py`) |
 | `PORT` | Provided by many hosts | none | Expanded by the `Procfile`, not read in Python |
 
 The checked-in `.env.example` and `sync_csv.py` both use the extractor's `main`
 branch. Override `GITHUB_BRANCH` only when intentionally testing another contract.
 
 `export_validated.py` and `fetch_oa.py` contain a maintainer contact directly in
-the source for OpenAlex/Unpaywall requests. Only `backfill_oa_work_ids.py` exposes
-that contact through `OPENALEX_MAILTO`.
+the source for OpenAlex/Unpaywall requests. The other scripts that send one read
+it from `OPENALEX_MAILTO`, with the same address as the default.
 
 Do not commit `.env`, database passwords, Gemini keys, GitHub tokens, or Resend
 keys. The repository does not provide a secret manager.

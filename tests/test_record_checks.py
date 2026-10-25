@@ -150,6 +150,20 @@ def test_year_out_of_range():
     nxt = date.today().year + 2
     assert "year_out_of_range" in _codes(_clean(year_o="1500"))
     assert "year_out_of_range" in _codes(_clean(year_r=str(nxt)))
+    assert "year_out_of_range" in _codes(_clean(year_o=str(record_checks.YEAR_MIN - 1)))
+
+
+def test_an_old_original_is_not_out_of_range():
+    """Ebbinghaus's 1880 manuscript is a real original in FLoRA."""
+    assert "year_out_of_range" not in _codes(_clean(year_o="1880"))
+    assert "year_out_of_range" not in _codes(_clean(year_o=str(record_checks.YEAR_MIN)))
+
+
+def test_the_year_floor_is_the_pipelines():
+    """The structural report checks the same floor, so a year passed at consensus is
+    not reported there."""
+    import validate_flora
+    assert validate_flora.YEAR_MIN is record_checks.YEAR_MIN
 
 
 def test_replication_before_original():

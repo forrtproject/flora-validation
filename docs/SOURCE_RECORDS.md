@@ -683,9 +683,11 @@ The FLoRA tab still lists those 24. It is the screen someone fixes such a row on
 a row hidden there is a row nobody fixes; `flora_service.counts()` reports them as
 `untitled` and the grid shows the number above the table.
 
-*`url_o` is excluded from the network URL check.* It holds titles rather than links on
-a large number of rows — which the structural validator reports — and checking them
-would be thousands of guaranteed failures burying the real ones.
+*`url_o` is checked, structurally and over the network.* R checks neither. The
+structural check reports a `url_o` holding a title, a DOI or other text rather than a
+link (121 Reproductions rows held the paper's title). The network check follows the
+`url_o` values that are links, leaving out the `https://doi.org/<doi_o>` the transform
+fills in where the source gave none, which the DOI check covers.
 
 **Preprint deduplication** (notebook Steps 6a and 7d) is
 [`preprint_dedup.py`](../preprint_dedup.py), a port of `R/preprint_dedup.R`. It runs at
@@ -1173,6 +1175,15 @@ same shape as the extractor sync in `extractor_maintenance.py`.
 **Why subprocesses and not imports.** The scripts call `sys.exit`, parse `argv` and
 hold module-level state. Importing them into a long-lived web process would leak that
 state between runs, and a hard crash in one would take the web server down.
+
+**The network checks have a budget here.** Each stage has 30 minutes
+(`STAGE_TIMEOUT_SECONDS`), and the final one also builds and stores the dataset, so
+it runs `prepare_flora.py --network-minutes 15` (`NETWORK_MINUTES`). With the cache
+the nightly job keeps, the checks take minutes. On a cold or expiring cache, a full
+check is about 8,500 requests and over an hour. What 15 minutes leave is then
+deferred: the report says the run is incomplete and why, and the next run picks up
+where this one stopped, because each success is cached as it comes. The nightly job
+has no budget: GitHub gives it hours.
 
 **One at a time.** `queue_run()` refuses (409) while a job is queued or running, and
 the advisory lock means that holds across pods, not just within one process. A job

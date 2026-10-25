@@ -47,16 +47,22 @@ def test_existing_csv_is_validated_without_rebuild_and_preserved_byte_for_byte(t
         tmp_path / "release" / preparation.REPORT_MARKDOWN).read_text()
 
 
-def test_structural_cli_validates_input_file_without_database(tmp_path, monkeypatch):
-    input_path = write_input(tmp_path / "input.csv", frame(year_r="1900"))
+@pytest.mark.parametrize("year_r,exit_code,heading", [
+    ("1500", 1, "Implausible years"),                       # a Problem
+    ("1900", 0, "Replication year before original year"),   # a Possible problem only
+])
+def test_structural_cli_validates_input_file_without_database(tmp_path, monkeypatch,
+                                                              year_r, exit_code, heading):
+    """--fail-on-issues fails on Problems; a Possible problem is still reported."""
+    input_path = write_input(tmp_path / "input.csv", frame(year_r=year_r))
     report_path = tmp_path / "structural.md"
     monkeypatch.setattr(structural, "start_logging", lambda *a: None)
     monkeypatch.setattr(structural.psycopg2, "connect",
                         lambda *a, **kw: pytest.fail("file validation connected to DB"))
     monkeypatch.setattr(structural.sys, "argv", ["validate_flora.py", "--input", str(input_path),
                                                "--output", str(report_path), "--fail-on-issues"])
-    assert structural.main() == 1
-    assert "Replication year before original year" in report_path.read_text()
+    assert structural.main() == exit_code
+    assert heading in report_path.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("change", [{"id": ""}, {"id_md5": "bad"}])
@@ -98,6 +104,15 @@ def test_structural_issues_keep_exact_csv_and_report_findings(tmp_path):
     assert report["status"] == "needs_attention"
     assert report["structural"]["has_issues"]
     assert (tmp_path / "release" / "flora.csv").read_bytes() == input_path.read_bytes()
+
+
+def test_the_warning_counts_each_level(tmp_path):
+    input_path = write_input(tmp_path / "input.csv", frame(year_r="1500", type="extension"))
+    report = preparation.prepare(tmp_path / "release", input_path, network_checks="none")
+    assert "Structural validation found 2 problems and 1 possible problem." in report["warnings"]
+    stage = next(s for s in report["stages"] if s["name"] == "structural validation")
+    assert stage == {"name": "structural validation", "status": "needs_attention",
+                     "detail": "2 problems and 1 possible problem"}
 
 
 def test_release_files_say_who_commits_the_repository_copy(tmp_path):
@@ -203,11 +218,15 @@ def test_history_replaces_same_utc_day_instead_of_adding_duplicate(tmp_path):
     assert len(history) == 1 and history.iloc[0]["total"] == 2
 
 
-def fake_network(monkeypatch, retractions=None):
-    monkeypatch.setattr(network, "check_retractions", lambda data: retractions or [])
+def fake_network(monkeypatch, retractions=None, problem=None):
+    monkeypatch.setattr(network, "check_retractions", lambda data: (retractions or [], problem))
     monkeypatch.setattr(network, "fresh_targets", lambda cur, kind: set())
-    monkeypatch.setattr(network, "_head_ok", lambda url: True)
+    monkeypatch.setattr(network, "doi_registration", lambda doi: (network.OK, "registered"))
+    monkeypatch.setattr(network, "check_link", lambda url: (network.OK, "HTTP 200"))
     monkeypatch.setattr(network, "remember", lambda *a: None)
+    monkeypatch.setattr(network, "fresh_lookups", lambda cur: {})
+    monkeypatch.setattr(network, "lookup_original_doi", lambda query: (network.OK, None, "answered"))
+    monkeypatch.setattr(network, "remember_lookup", lambda *a: None)
     monkeypatch.setattr(network.time, "sleep", lambda delay: None)
 
 
@@ -215,7 +234,9 @@ def test_limited_network_validation_is_explicitly_incomplete(monkeypatch):
     fake_network(monkeypatch)
     report = network.validate(None, frame(), checks="all", limit=1)
     assert report["status"] == "incomplete"
-    assert report["coverage"]["dois"] == {"targets": 2, "cached": 0, "checked": 1, "deferred": 1}
+    # "unchecked": the targets that could not be checked, none here.
+    assert report["coverage"]["dois"] == {"targets": 2, "cached": 0, "checked": 1, "deferred": 1,
+                                          "unchecked": 0}
     assert report["issue_count"] == 0
     text = network.render_validation(report)
     assert "1 deferred" in text
@@ -224,19 +245,43 @@ def test_limited_network_validation_is_explicitly_incomplete(monkeypatch):
 
 def test_an_empty_check_after_findings_is_not_listed_as_one_of_them():
     """After a list and a blank line, a "- " line continues that list in Markdown."""
-    text = network.render({"DOIs that failed to resolve": ["`10.1/a`"],
-                           "URLs that failed to resolve": []}, rows=2)
-    assert "- `10.1/a`\n\n**URLs that failed to resolve:** none" in text
-    assert "- URLs" not in text
+    row = pd.Series({"flora_id": "FLO-000001", "doi_o": "10.1/o", "doi_r": "10.1/a"})
+    item = {**structural.finding("doi_not_registered", [row], "doi_r", "10.1/a",
+                                 "doi_r is not registered at doi.org"), "level": "problem"}
+    report = {"rows": 2, "notices": [], "unchecked": {}, "suppressed": 0, "results": [
+        {"code": "doi_not_registered", "level": "problem", "heading": "DOIs not registered at doi.org",
+         "items": [item], "passed": False},
+        {"code": "dead_link", "level": "problem", "heading": "Dead links", "items": [], "passed": True}]}
+    text = network.render(report)
+    assert "— `10.1/a`\n\n**Dead links:** none" in text
+    assert "- Dead links" not in text
 
 
-def test_unavailable_retraction_source_cannot_be_hidden_by_suppression(monkeypatch):
-    issue = "SKIPPED: could not download the Retraction Watch database (timeout)"
-    fake_network(monkeypatch, [issue])
+def test_an_unavailable_retraction_source_is_a_status_line_not_a_finding(monkeypatch):
+    """A check that could not run found nothing: it must not be counted as a
+    finding, nor be something a suppression could hide."""
+    fake_network(monkeypatch, problem="HTTPError: HTTP Error 502: Bad Gateway")
     report = network.validate(None, frame(), suppressions={("Retracted papers", "SKIPPED")})
-    assert report["status"] == "incomplete"
-    assert report["sections"]["Retracted papers"] == [issue]
-    assert report["coverage"]["retractions"]["status"] == "skipped"
+    assert report["status"] == "incomplete" and report["issue_count"] == 0
+    assert report["notices"] == ["Retraction check did not run: HTTPError: HTTP Error 502: Bad Gateway"]
+    assert report["coverage"]["retractions"]["status"] == "did not run"
+    assert not any(r["code"] in ("retracted", "expression_of_concern") for r in report["results"])
+    text = network.render_validation(report)
+    assert "**Retraction check did not run: HTTPError: HTTP Error 502: Bad Gateway.**" in text
+    assert "Retracted papers" not in text
+
+
+@pytest.mark.parametrize("network,warning", [
+    ({"status": "skipped"}, "Network validation skipped."),
+    ({"status": "needs_attention", "problems": 3, "possible_problems": 1, "notices": []},
+     "Network validation needs review: 3 problems and 1 possible problem."),
+    ({"status": "incomplete", "problems": 0, "possible_problems": 0,
+      "notices": ["Retraction check did not run: HTTPError: HTTP Error 502: Bad Gateway"]},
+     "Network validation incomplete. Retraction check did not run: HTTPError: HTTP Error 502: "
+     "Bad Gateway."),
+])
+def test_the_network_warning_counts_each_level_and_says_why_a_run_is_incomplete(network, warning):
+    assert preparation.network_warning(network) == warning
 
 
 def test_network_complete_clean_run_passes(monkeypatch):
@@ -304,6 +349,60 @@ def test_exit_zero_without_current_artifacts_is_failed(monkeypatch, tmp_path):
     csv_text, report, _, _ = saved_artifacts(conn)
     assert csv_text is None and report["status"] == "failed"
     assert any(params == ("failed", "job-2") for _, params in conn.executed)
+
+
+def test_the_website_run_bounds_its_network_checks(monkeypatch, tmp_path):
+    """Its final stage shares STAGE_TIMEOUT_SECONDS with the build and the storing:
+    a cold cache must defer network checks, not get the stage killed."""
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    commands = []
+    monkeypatch.setattr(runner, "_run_stage",
+                        lambda conn, job, name, command: commands.append(command) or True)
+    runner._execute(Connection(), "job-5")
+    final = commands[-1]
+    assert final[final.index("--network-minutes") + 1] == str(runner.NETWORK_MINUTES)
+    assert final[-2] == "--output-dir", "the output directory stays last"
+    assert 0 < runner.NETWORK_MINUTES * 60 <= runner.STAGE_TIMEOUT_SECONDS / 2
+
+
+@pytest.mark.parametrize("argv,minutes", [([], 0), (["--network-minutes", "15"], 15)])
+def test_the_cli_passes_the_network_budget_on(monkeypatch, tmp_path, argv, minutes):
+    seen = []
+    monkeypatch.setattr(preparation, "prepare", lambda *args: seen.append(args) or {
+        "status": "success", "rows": 0, "warning_count": 0, "failure_count": 0})
+    monkeypatch.setattr("pipeline_logging.start", lambda *a: None)
+    monkeypatch.setattr("sys.argv", ["prepare_flora.py", "--output-dir", str(tmp_path), *argv])
+    assert preparation.main() == 0
+    assert seen[0][-1] == minutes
+
+
+def test_the_network_budget_reaches_the_checks(monkeypatch, tmp_path):
+    class Connection:
+        autocommit = False
+
+        def cursor(self, **kwargs):
+            return None
+
+        def close(self):
+            pass
+    seen = []
+
+    def validate(cur, frame, checks, limit, suppressions, minutes=0):
+        seen.append(minutes)
+        return network.validate(None, frame, checks="none")
+    monkeypatch.setattr(preparation.psycopg2, "connect", lambda *a, **kw: Connection())
+    monkeypatch.setattr(network, "ensure_cache", lambda cur: None)
+    monkeypatch.setattr(network, "validate", validate)
+    preparation.prepare(tmp_path / "release", write_input(tmp_path / "input.csv"), network_minutes=15)
+    assert seen == [15]
+
+
+def test_a_negative_network_budget_is_refused(monkeypatch, tmp_path):
+    monkeypatch.setattr("pipeline_logging.start", lambda *a: None)
+    monkeypatch.setattr("sys.argv", ["prepare_flora.py", "--output-dir", str(tmp_path),
+                                     "--network-minutes", "-1"])
+    with pytest.raises(SystemExit):
+        preparation.main()
 
 
 def test_successful_job_retains_exact_csv_and_reports_in_shared_database(monkeypatch, tmp_path):

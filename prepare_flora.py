@@ -3,9 +3,12 @@
 Usage: python prepare_flora.py --output-dir output
 
 The normal run builds from the database and checks every network target, using
-the shared 30-day success cache. For an offline validation of an existing export,
-use --input path/to/flora.csv --network-checks none. Skipped and limited checks
-remain explicit in the report. This command never publishes to GitHub or OSF.
+the shared cache of successes (25 to 35 days each). --network-minutes bounds the
+time those checks take, deferring the rest to the next run; the website's run
+uses it (source_sync_runner.NETWORK_MINUTES). For an offline validation of an
+existing export, use --input path/to/flora.csv --network-checks none. Skipped,
+limited and deferred checks remain explicit in the report. This command never
+publishes to GitHub or OSF.
 """
 import argparse
 import csv
@@ -159,12 +162,23 @@ def write_report(output_dir, report):
     (output_dir / REPORT_MARKDOWN).write_text(render_report(report), encoding="utf-8")
 
 
+def network_warning(network):
+    """The warning for a network validation that did not pass: its findings at each
+    level, if any, and why it is incomplete, if it is."""
+    if network["status"] == "skipped":
+        return "Network validation skipped."
+    found = network["problems"] or network["possible_problems"]
+    counts = (": " + validate_flora.count_text(network["problems"], network["possible_problems"])
+              if found else "")
+    return (f"Network validation {status_label(network['status'])}{counts}."
+            + "".join(f" {notice}." for notice in network["notices"]))
+
+
 def write_network_validation(output_dir, network):
     (output_dir / "flora_network_validation.md").write_text(
         validate_flora_network.render_validation(network), encoding="utf-8")
-    network_rows = [{"check": heading, "item": item}
-                    for heading, items in network["sections"].items() for item in items]
-    pd.DataFrame(network_rows, columns=["check", "item"]).to_csv(
+    pd.DataFrame(validate_flora_network.finding_rows(network),
+                 columns=validate_flora_network.CSV_COLUMNS).to_csv(
         output_dir / "flora_network_validation.csv", index=False, lineterminator="\n")
 
 
@@ -257,17 +271,18 @@ def publish_release(candidate, staging, output_dir):
 
 
 def prepare(output_dir: Path, input_path=None, network_checks="all", network_limit=0,
-            version=None, release_notes="", api_filter=False, store_data=None) -> dict:
+            version=None, release_notes="", api_filter=False, store_data=None,
+            network_minutes=0) -> dict:
     # Own this output directory before even writing the running report. Runs
     # targeting other directories can still prepare concurrently; the database
     # revision check arbitrates their complete-snapshot commits independently.
     with output_directory_lock(output_dir):
         return _prepare(output_dir, input_path, network_checks, network_limit,
-                        version, release_notes, api_filter, store_data)
+                        version, release_notes, api_filter, store_data, network_minutes)
 
 
 def _prepare(output_dir, input_path, network_checks, network_limit,
-             version, release_notes, api_filter, store_data):
+             version, release_notes, api_filter, store_data, network_minutes=0):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     candidate = output_dir / ".flora.candidate.csv"
@@ -333,12 +348,14 @@ def _prepare(output_dir, input_path, network_checks, network_limit,
         suppressions = validate_flora.load_suppressions()
         structural = validate_flora.validate(frame, suppressions)
         report["structural"] = structural
-        issues = sum(len(check["items"]) for check in structural["results"])
+        # Each level counted: a possible problem is a person's call, not an error.
+        findings = validate_flora.count_text(structural["problems"],
+                                             structural["possible_problems"])
         report["stages"].append({"name": stage_name,
-                                  "status": "needs_attention" if issues else "passed",
-                                  "detail": plural(issues, "data issue")})
-        if issues:
-            report["warnings"].append(f"Structural validation found {plural(issues, 'data issue')}.")
+                                  "status": "needs_attention" if structural["has_issues"] else "passed",
+                                  "detail": findings})
+        if structural["has_issues"]:
+            report["warnings"].append(f"Structural validation found {findings}.")
         (output_dir / "flora_validation.md").write_text(
             validate_flora.render(structural), encoding="utf-8")
         write_report(output_dir, report)
@@ -356,16 +373,13 @@ def _prepare(output_dir, input_path, network_checks, network_limit,
                 cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
                 validate_flora_network.ensure_cache(cur)
                 network = validate_flora_network.validate(
-                    cur, frame, network_checks, network_limit, suppressions)
+                    cur, frame, network_checks, network_limit, suppressions, network_minutes)
             finally:
                 conn.close()
         report["network"] = network
         report["stages"].append({"name": stage_name, "status": network["status"]})
         if network["status"] != "passed":
-            report["warnings"].append(
-                "Network validation skipped." if network["status"] == "skipped"
-                else f"Network validation {status_label(network['status'])}: "
-                     f"{plural(network['issue_count'], 'finding')}.")
+            report["warnings"].append(network_warning(network))
         write_network_validation(output_dir, network)
         if api_filter:
             stage_name = "API filter (optional)"
@@ -433,9 +447,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=Path("output"))
     parser.add_argument("--input", type=Path)
-    parser.add_argument("--network-checks", choices=["all", "retractions", "dois", "urls", "none"],
+    parser.add_argument("--network-checks", choices=["all", *validate_flora_network.SELECTORS, "none"],
                         default="all")
     parser.add_argument("--network-limit", type=int, default=0)
+    parser.add_argument("--network-minutes", type=float, default=0,
+                        help="stop the network checks after this many minutes and defer "
+                             "the rest to the next run (default: no limit)")
     parser.add_argument("--version")
     parser.add_argument("--release-notes", default="")
     parser.add_argument("--api-filter", action="store_true",
@@ -449,9 +466,11 @@ def main():
     args = parser.parse_args()
     if args.network_limit < 0:
         parser.error("--network-limit must be zero (all) or positive")
+    if args.network_minutes < 0:
+        parser.error("--network-minutes must be zero (no limit) or positive")
     report = prepare(args.output_dir, args.input, args.network_checks,
                      args.network_limit, args.version, args.release_notes, args.api_filter,
-                     args.store_data)
+                     args.store_data, args.network_minutes)
     print(f"Preparation {status_label(report['status'])}: {plural(report['rows'], 'row')}, "
           f"{plural(report['warning_count'], 'warning')}, {plural(report['failure_count'], 'error')}")
     print(f"Report: {args.output_dir / REPORT_MARKDOWN}")

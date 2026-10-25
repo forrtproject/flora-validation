@@ -8,9 +8,9 @@ outcome vocabularies, and the two year checks.
 The other half deliberately stays on the pipeline's cron job, because it cannot
 be answered here:
 
-  * conflicting references for one DOI, and exact duplicates — both need the
+  * conflicting references for one DOI, and duplicate records — both need the
     whole dataset, not one row;
-  * retractions, DOI resolution and URL resolution — all time-varying. A paper
+  * retractions, DOI registration and link reachability — all time-varying. A paper
     can be retracted, and a link can rot, long after this record was validated,
     so a one-shot check at consensus would be worse than useless: it would read
     as a clean bill of health that silently goes stale.
@@ -54,7 +54,10 @@ _NA_SCAN_FIELDS = (
     "year_r", "year_o", "url_r", "url_o", "type", "outcome",
 )
 
-_YEAR_MIN = 1890
+# The earliest plausible year, shared with the pipeline's structural check
+# (validate_flora), so a year passed here is not reported there. Ebbinghaus's 1880
+# manuscript is in FLoRA; nothing before the 1600s could be.
+YEAR_MIN = 1600
 _YEAR_RE = re.compile(r"^\s*([0-9]{4})")
 
 VALID_TYPES = frozenset({"replication", "reproduction"})
@@ -200,12 +203,12 @@ def check_record(record: dict, final: dict | None = None) -> list[dict]:
     out_of_range = [
         f"{name}={value}"
         for name, value in (("year_o", year_o), ("year_r", year_r))
-        if value is not None and not (_YEAR_MIN <= value <= year_max)
+        if value is not None and not (YEAR_MIN <= value <= year_max)
     ]
     if out_of_range:
         flags.append(_flag(
             "year_out_of_range",
-            f"Year outside {_YEAR_MIN}–{year_max}",
+            f"Year outside {YEAR_MIN}–{year_max}",
             "; ".join(out_of_range),
         ))
 

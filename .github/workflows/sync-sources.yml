@@ -83,6 +83,9 @@ jobs:
         if: success()
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # The network checks look up DOIs for originals without one in Crossref,
+          # with the contact address enrich_works sends (enrich_works.MAILTO).
+          OPENALEX_MAILTO: ${{ secrets.OPENALEX_MAILTO }}
         run: python prepare_flora.py --output-dir output
 
       # Only when the build ran: output/ also holds the last release's committed

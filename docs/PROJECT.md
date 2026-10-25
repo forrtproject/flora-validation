@@ -489,14 +489,14 @@ reported as a problem.
 This answers issue #139. A check belongs in the final validation step if it can be
 decided **from one row** and its answer **never changes on its own**:
 
-| Runs at consensus (`record_checks.py`) | Stays on the pipeline's cron (`validate_flora*.R`) |
+| Runs at consensus (`record_checks.py`) | Stays on the pipeline's cron (`validate_flora*.py`) |
 | --- | --- |
 | Required fields present | Conflicting references for one DOI (cross-row) |
-| DOI format `10.NNNN/…` | Exact duplicates by `doi_o`+`doi_r` (cross-row) |
-| Literal `NA`/`N/A` values | Retracted papers (time-varying) |
-| URLs start with `http` | DOIs resolve (time-varying, network) |
-| Type and outcome vocabularies | URLs resolve (time-varying, network) |
-| Year range, and `year_r >= year_o` | |
+| DOI format `10.NNNN/…` | Duplicate records, and a paper pair under both types or entered both ways round (cross-row) |
+| Literal `NA`/`N/A` values | Retracted papers and expressions of concern (time-varying) |
+| URLs start with `http` | DOIs registered at doi.org (time-varying, network) |
+| Type and outcome vocabularies | Links reachable (time-varying, network) |
+| Year range, and `year_r >= year_o` | A DOI for an original without one (network) |
 
 Retractions and link rot are the important half of that split: a paper can be
 retracted, and a link can rot, long after a record was validated. Checking them

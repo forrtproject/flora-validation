@@ -70,6 +70,12 @@ STAGES = [
     ("FLoRA IDs", [sys.executable, "flora_registry.py"]),
 ]
 FINAL_STAGE = "prepare flora.csv"
+# The final stage's network checks stop after this long, so the build, the checks
+# and storing the dataset fit in its STAGE_TIMEOUT_SECONDS. On the cache the nightly
+# job keeps warm they take minutes; a cold or expiring cache defers what is left to
+# the next run (the report says so) instead of the stage being killed and the run
+# lost. The nightly job has no such limit: GitHub gives it hours.
+NETWORK_MINUTES = 15
 
 ACTIVE_STATUSES = ["queued", "running"]
 
@@ -292,7 +298,8 @@ def _execute(conn, job_id: str) -> None:
         # an earlier export available under this job's download URL.
         with _run_workspace(output_root) as directory:
             output_dir = Path(directory)
-            command = [sys.executable, "prepare_flora.py", "--output-dir", str(output_dir)]
+            command = [sys.executable, "prepare_flora.py", "--network-minutes", str(NETWORK_MINUTES),
+                       "--output-dir", str(output_dir)]
             if os.environ.get("FLORA_API_FILTER", "").strip().lower() in {"1", "true", "yes"}:
                 command.append("--api-filter")
             ok = _run_stage(conn, job_id, FINAL_STAGE, command)
