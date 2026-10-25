@@ -588,6 +588,7 @@ def flora_api():
     app = FastAPI()
     service = SimpleNamespace(get_record=Mock(), merged_sources=Mock(return_value=[]),
                               editing=Mock(), update_record=Mock(), restore_record=Mock(),
+                              check_findings=Mock(return_value=[]), check_runs=Mock(return_value={}),
                               RecordNotFound=_NotFound, VersionConflict=_Conflict)
 
     def current_admin():

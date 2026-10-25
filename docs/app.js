@@ -9011,6 +9011,8 @@ function floraQueryParams() {
   if (_floraFilter === "replication" || _floraFilter === "reproduction") p.type = _floraFilter;
   if (_floraFilter === "edited") p.edited = "true";
   if (_floraFilter === "conflict") p.conflict = "true";
+  if (_floraFilter === "problems") p.problems = "true";
+  if (_floraFilter === "possible_problems") p.possible_problems = "true";
   if (_floraSource)  p.source  = _floraSource;
   if (_floraOutcome) p.outcome = _floraOutcome;
   if (_floraSearch)  p.search  = _floraSearch;
@@ -9031,6 +9033,17 @@ function floraOutcomeCell(r) {
     tip("Its duplicate source records disagree: " + r.outcome_conflict +
         ". The outcome the merge picked is published until you choose one in the record.") +
     ">conflict</span>";
+}
+
+/** A row's mark for open entry-check findings nobody has marked not a problem:
+ *  named by its worst level, counted in the tooltip. */
+function floraFindingsChip(open) {
+  if (!open || !(open.problem || open.possible_problem)) return "";
+  const count = (n, word) => n + " " + word + (n === 1 ? "" : "s");
+  const counts = [open.problem && count(open.problem, "problem"),
+                  open.possible_problem && count(open.possible_problem, "possible problem")].filter(Boolean);
+  return ' <span class="flora-edited-badge flora-findings-chip' + (open.problem ? " flora-findings-chip-problem" : "") +
+    '"' + tip("Check findings: " + counts.join(", ")) + ">" + (open.problem ? "problem" : "possible problem") + "</span>";
 }
 
 function floraIdentifierCell(doi, url, workId) {
@@ -9074,6 +9087,8 @@ function renderFloraRecords(data) {
   set("#ffc-repro", counts.reproductions);
   set("#ffc-edited", counts.edited);
   set("#ffc-conflict", counts.conflicts);
+  set("#ffc-problems", counts.problems);
+  set("#ffc-possible", counts.possible_problems);
   fillFloraSelects(counts);
   setFloraDedupCount(counts.preprint_pending);
 
@@ -9121,6 +9136,7 @@ function renderFloraRecords(data) {
           (r.edited_fields
             ? ' <span class="flora-edited-badge" title="Corrected: ' +
               escapeHtml(r.edited_fields.split(" ").join(", ")) + '">corrected</span>' : "") +
+          floraFindingsChip(r.open_findings) +
           (r.export_id && r.export_id !== r.flora_id
             ? '<br><small title="Permanent ID in the CSV">CSV: ' + escapeHtml(r.export_id) + '</small>' : '') + "</td>" +
         // The id IS the source record's display_id for almost every row, so repeating
@@ -9296,7 +9312,8 @@ let _floraOpenSeq = 0;
 // Shown as context, never edited: identity, provenance and values the build
 // derives from other fields (the DOI hashes, work ids, author overlap).
 const FLORA_DETAIL_SKIP = new Set(["flora_id", "source_display_id", "source_record_id",
-  "merged_display_ids", "merged_sources", "editing", "edited_fields", "outcome_conflict"]);
+  "merged_display_ids", "merged_sources", "editing", "edited_fields", "outcome_conflict",
+  "check_findings", "check_runs"]);
 
 /** Open (or reload) the editor. `notice` is shown in the save bar once it renders:
  *  the outcome of the save or restore that caused the reload. */
@@ -9507,6 +9524,7 @@ function renderFloraRecord(rec) {
   $("#flora-detail-body").innerHTML =
     provenance +
     floraConflictBox(rec) +
+    floraFindings(rec) +
     '<p class="flora-edit-note">Saving logs each change, with its note, under Changes, and updates the ' +
       "stored dataset (Download full CSV, the public API) at once. Source records stay as imported; every " +
       "pipeline run re-applies the corrections. A corrected DOI or URL also brings in its title, authors " +
@@ -9548,6 +9566,117 @@ function floraConflictBox(rec) {
       '<input id="flora-confirm-note" class="src-input" type="text" maxlength="500" ' +
         'placeholder="Why (optional)" aria-label="Note for the decision">' +
     "</div></div>";
+}
+
+/** What the entry checks found in this record (entry_checks.py), problems first:
+ *  each open finding with a "Not a problem" button, or the mark someone gave it with
+ *  Undo, and when the checks last ran. A finding is referred to by its place in
+ *  rec.check_findings: its key holds arbitrary text. */
+function floraFindings(rec) {
+  const findings = rec.check_findings || [];
+  const items = findings.map((f, i) => floraFinding(rec, f, i)).join("");
+  return '<div class="src-group flora-findings" id="flora-findings"><h4>Check findings</h4>' +
+    (items ? '<ul class="flora-findings-list">' + items + "</ul>"
+           : '<p class="src-dim2">No open findings.</p>') +
+    '<p class="flora-findings-runs">' + floraCheckRuns(rec.check_runs) + "</p></div>";
+}
+
+function floraFinding(rec, f, i) {
+  const problem = f.level === "problem";
+  const others = (f.flora_ids || []).filter((id) => id !== rec.flora_id);
+  const mark = f.dismissed_at
+    ? '<div class="flora-finding-mark">Marked not a problem by <b>' + escapeHtml(f.dismissed_by) + "</b> on " +
+      escapeHtml(new Date(f.dismissed_at).toLocaleDateString()) + ": " + escapeHtml(f.dismiss_note) +
+      ' <button type="button" class="link-btn flora-undismiss-btn" data-finding="' + i + '">Undo</button>' +
+      ' <span class="flora-finding-msg"></span></div>'
+    : '<button type="button" class="ghost-btn flora-dismiss-btn" data-finding="' + i + '">Not a problem</button>' +
+      '<div class="flora-dismiss-form hidden" data-finding-form="' + i + '">' +
+        '<textarea class="src-input flora-dismiss-note" rows="2" maxlength="1000" ' +
+          'placeholder="Why this is not a problem (required)" aria-label="Why this is not a problem"></textarea>' +
+        '<div class="flora-dismiss-actions">' +
+          '<button type="button" class="btn-primary flora-dismiss-save" data-finding="' + i + '">Save</button>' +
+          '<button type="button" class="ghost-btn flora-dismiss-cancel" data-finding="' + i + '">Cancel</button>' +
+          '<span class="flora-finding-msg"></span></div></div>';
+  return '<li class="flora-finding' + (f.dismissed_at ? " flora-finding-dismissed" : "") + '">' +
+    '<div class="flora-finding-head"><span class="flora-level-badge ' +
+      (problem ? "flora-level-problem" : "flora-level-possible") + '">' +
+      (problem ? "Problem" : "Possible problem") + "</span> <b>" +
+      escapeHtml(f.check_heading || f.check_code) + "</b>" +
+      (f.column_name ? " <code>" + escapeHtml(f.column_name) + "</code>" : "") + "</div>" +
+    (floraBlank(f.value) ? "" : '<code class="flora-finding-value">' + escapeHtml(f.value) + "</code>") +
+    (f.detail ? '<div class="flora-finding-detail">' + escapeHtml(f.detail) + "</div>" : "") +
+    '<div class="flora-finding-meta">First seen ' + escapeHtml(new Date(f.first_seen_at).toLocaleDateString()) +
+      (others.length ? " · Also about FLoRA record" + (others.length === 1 ? " " : "s ") +
+        others.map((id) => "<code>" + escapeHtml(id) + "</code>").join(", ") : "") + "</div>" +
+    mark + "</li>";
+}
+
+/** When each part last ran: a finding is as fresh as the run that found it. */
+function floraCheckRuns(runs) {
+  const when = (run) => {
+    if (!run) return "not yet";
+    const at = escapeHtml(new Date(run.finished_at || run.started_at).toLocaleString());
+    return run.status === "finished" ? at : at + " (" + escapeHtml(run.status) + ")";
+  };
+  return "Checks last ran: " + when((runs || {}).structural) + "; network: " + when((runs || {}).network) +
+    ". A saved correction is checked again within about 5 minutes.";
+}
+
+/** Redraw the findings alone: reloading the record would drop unsaved corrections. */
+function redrawFloraFindings() {
+  const box = $("#flora-findings");
+  if (box && _floraCurrent) box.outerHTML = floraFindings(_floraCurrent);
+}
+
+/** Save a "Not a problem" with its comment, or withdraw one (Undo). */
+async function markFloraFinding(index, dismiss) {
+  const rec = _floraCurrent;
+  const f = rec && (rec.check_findings || [])[index];
+  if (!f) return;
+  const box = $("#flora-findings");
+  const scope = dismiss ? box.querySelector('[data-finding-form="' + index + '"]')
+                        : box.querySelector('.flora-undismiss-btn[data-finding="' + index + '"]').parentElement;
+  const msg = scope.querySelector(".flora-finding-msg");
+  const note = dismiss ? scope.querySelector(".flora-dismiss-note").value.trim() : "";
+  if (dismiss && note.length < 3) {
+    msg.innerHTML = '<span class="src-fresh-warn">Say why this is not a problem: at least 3 characters.</span>';
+    scope.querySelector(".flora-dismiss-note").focus();
+    return;
+  }
+  const buttons = [...scope.querySelectorAll("button")];
+  buttons.forEach((b) => { b.disabled = true; });
+  msg.textContent = "Saving…";
+  try {
+    const res = await adminApi("/flora/findings/dismiss", dismiss ? "POST" : "DELETE",
+      dismiss ? { finding_key: f.finding_key, note } : { finding_key: f.finding_key });
+    // Dropped if the editor moved on to another record meanwhile.
+    if (_floraCurrent !== rec) return;
+    Object.assign(f, dismiss
+      ? { dismissed_at: res.dismissed_at, dismissed_by: res.dismissed_by, dismiss_note: res.dismiss_note }
+      : { dismissed_at: null, dismissed_by: null, dismiss_note: null });
+    redrawFloraFindings();
+    showToast(dismiss ? "Marked not a problem." : "Undone: the finding needs review again.");
+    fetchFloraRecords();   // the counts and the list's chip move
+  } catch (err) {
+    buttons.forEach((b) => { b.disabled = false; });
+    msg.innerHTML = '<span class="src-fresh-warn">' + escapeHtml(err.message) + "</span>";
+  }
+}
+
+function floraFindingClick(btn) {
+  const i = Number(btn.dataset.finding);
+  if (btn.classList.contains("flora-dismiss-save")) { markFloraFinding(i, true); return; }
+  if (btn.classList.contains("flora-undismiss-btn")) { markFloraFinding(i, false); return; }
+  // "Not a problem" opens the comment box in its place; Cancel closes it, emptied.
+  const box = $("#flora-findings");
+  const form = box.querySelector('[data-finding-form="' + i + '"]');
+  const opening = btn.classList.contains("flora-dismiss-btn");
+  form.classList.toggle("hidden", !opening);
+  box.querySelector('.flora-dismiss-btn[data-finding="' + i + '"]').classList.toggle("hidden", opening);
+  const note = form.querySelector(".flora-dismiss-note");
+  if (opening) { note.focus(); return; }
+  note.value = "";
+  form.querySelector(".flora-finding-msg").textContent = "";
 }
 
 /** Settle the clash with one of the duplicates' outcomes: the published one is
@@ -9692,6 +9821,8 @@ $("#flora-detail-body")?.addEventListener("click", (e) => {
   if (choose) { confirmFloraOutcome(choose.dataset.outcome); return; }
   const restore = e.target.closest(".flora-restore-btn");
   if (restore) { restoreFloraRecord(Number(restore.dataset.changeId)); return; }
+  const finding = e.target.closest("#flora-findings button[data-finding]");
+  if (finding) { floraFindingClick(finding); return; }
   const revert = e.target.closest(".flora-revert-btn");
   if (!revert || !_floraCurrent) return;
   const name = revert.dataset.revertField;

@@ -569,6 +569,123 @@ def test_findings_for_a_record_and_the_summary(db):
         c["open"] for c in overview["checks"] if c["level"] == "problem")
     assert overview["last_runs"]["structural"]["run_id"] == run["run_id"]
     assert overview["last_runs"]["network"] is None
+    # Each finding and each count is named by its check's heading, beside the code.
+    assert {f["check_heading"] for f in theirs} == {"Invalid type values"}
+    assert invalid_type["check_heading"] == "Invalid type values"
+    assert entry_checks.CHECK_HEADINGS["dead_link"] == "Dead links"
+
+
+def test_every_check_has_a_heading():
+    codes = {check[0] for check in validate_flora.CHECKS} | {check[0] for check in network.CHECKS}
+    assert set(entry_checks.CHECK_HEADINGS) == codes
+    assert entry_checks._named({"check_code": "a_retired_check"})["check_heading"] == "a_retired_check"
+
+
+def test_open_findings_are_counted_per_record_without_the_ones_marked_not_a_problem(db):
+    _store(db, _row(1), _row(2, type="extension"), _row(3, type="extension"),
+           _row(4, year_o="2015", year_r="2011"),
+           # One finding about two records: each counts it.
+           _row(5, doi_o="10.1000/a", doi_r="10.1000/b"), _row(6, doi_o="10.1000/b", doi_r="10.1000/a"))
+    entry_checks.run_structural(db)
+    _dismiss(db, validate_flora.finding_key("invalid_type", ["REPL-000003"], "type", "extension"))
+    with db:
+        with db.cursor(cursor_factory=RealDictCursor) as cur:
+            by_record = entry_checks.open_by_record(cur)
+    assert by_record["REPL-000002"] == {"problem": 1, "possible_problem": 0,
+                                        "checks": {"invalid_type": 1}}
+    assert by_record["REPL-000004"] == {"problem": 0, "possible_problem": 1,
+                                        "checks": {"year_order": 1}}
+    assert by_record["REPL-000005"]["checks"] == by_record["REPL-000006"]["checks"] == {"reversed_pair": 1}
+    assert "REPL-000001" not in by_record and "REPL-000003" not in by_record
+
+
+def test_no_findings_table_yet_counts_nothing():
+    """A database init_db() has not reached, as flora_edits handles one."""
+    cur = MagicMock()
+    cur.fetchone.return_value = {"present": False}
+    assert entry_checks.open_by_record(cur) == {}
+    assert cur.execute.call_count == 1
+
+
+# ── "Not a problem" ───────────────────────────────────────────────────────────
+
+ANA = {"id": 7, "handle": "ana"}
+
+
+def _dismiss(conn, key, note="extension is right for this record", admin=ANA):
+    with conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            return entry_checks.dismiss(cur, key, admin, note)
+
+
+def _undismiss(conn, key, admin=ANA):
+    with conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            return entry_checks.undismiss(cur, key, admin)
+
+
+def test_a_finding_is_marked_not_a_problem_by_the_admin_with_the_comment(db):
+    _store(db, _row(1), _row(2, type="extension"))
+    entry_checks.run_structural(db)
+    marked = _dismiss(db, TYPE_KEY, "  extension is right for this record \n")
+    assert (marked["finding_key"], marked["dismissed_by"], marked["dismiss_note"]) == (
+        TYPE_KEY, "ana", "extension is right for this record")
+    assert marked["check_heading"] == "Invalid type values" and marked["flora_ids"] == ["REPL-000002"]
+    row = _findings(db)[TYPE_KEY]
+    assert (row["dismissed_by"], row["dismiss_note"]) == ("ana", "extension is right for this record")
+    assert row["dismissed_at"] == marked["dismissed_at"] and row["resolved_at"] is None
+
+
+@pytest.mark.parametrize("note, message", [
+    (None, "at least 3 characters"), ("", "at least 3 characters"),
+    ("  ok \n ", "at least 3 characters"), ("x" * 1001, "longer than 1,000 characters"),
+])
+def test_a_mark_without_a_usable_comment_is_refused(db, note, message):
+    _store(db, _row(1), _row(2, type="extension"))
+    entry_checks.run_structural(db)
+    with pytest.raises(ValueError, match=message):
+        _dismiss(db, TYPE_KEY, note)
+    assert _findings(db)[TYPE_KEY]["dismissed_at"] is None
+    assert _dismiss(db, TYPE_KEY, " " + "x" * 1000 + " ")["dismiss_note"] == "x" * 1000
+
+
+def test_an_unknown_marked_or_resolved_finding_is_refused_with_the_reason(db):
+    _store(db, _row(1), _row(2, type="extension"))
+    entry_checks.run_structural(db)
+    with pytest.raises(entry_checks.FindingNotFound):
+        _dismiss(db, TYPE_KEY + "x")
+    with pytest.raises(entry_checks.FindingNotFound):
+        _undismiss(db, TYPE_KEY + "x")
+    with pytest.raises(ValueError, match="not marked not a problem"):
+        _undismiss(db, TYPE_KEY)
+    _dismiss(db, TYPE_KEY)
+    with pytest.raises(ValueError, match="ana already marked this finding not a problem"):
+        _dismiss(db, TYPE_KEY, "a second opinion", {"id": 8, "handle": "luke"})
+    assert _findings(db)[TYPE_KEY]["dismiss_note"] == "extension is right for this record"
+
+    _store(db, _row(1), _row(2, type="extension"), _row(3, type="extension"))
+    entry_checks.run_structural(db)
+    other = validate_flora.finding_key("invalid_type", ["REPL-000003"], "type", "extension")
+    _store(db, _row(1), _row(2, type="extension"), _row(3))      # corrected meanwhile
+    entry_checks.run_structural(db)
+    with pytest.raises(ValueError, match="resolved: the value it flagged has changed"):
+        _dismiss(db, other)
+    assert _findings(db)[other]["dismissed_at"] is None
+
+
+def test_undo_clears_the_mark_and_hands_back_the_one_withdrawn(db):
+    _store(db, _row(1), _row(2, type="extension"))
+    entry_checks.run_structural(db)
+    marked = _dismiss(db, TYPE_KEY)
+    undone = _undismiss(db, TYPE_KEY, {"id": 8, "handle": "luke"})
+    assert undone["withdrawn"] == {"dismissed_at": marked["dismissed_at"], "dismissed_by": "ana",
+                                   "dismiss_note": "extension is right for this record"}
+    assert undone["withdrawn_by"] == "luke" and undone["check_heading"] == "Invalid type values"
+    row = _findings(db)[TYPE_KEY]
+    assert (row["dismissed_at"], row["dismissed_by"], row["dismiss_note"]) == (None, None, None)
+    assert row["resolved_at"] is None
+    # Open for review again, so it can be marked again.
+    assert _dismiss(db, TYPE_KEY, "checked again", {"id": 8, "handle": "luke"})["dismissed_by"] == "luke"
 
 
 # ── the command line ──────────────────────────────────────────────────────────

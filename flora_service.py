@@ -34,11 +34,13 @@ import numpy as np
 import pandas as pd
 
 import bibliographic_helpers
+import entry_checks
 import flora_edits
 import flora_registry
 import preprint_dedup
 import transform_sources
 import final_export
+from validate_flora import POSSIBLE_PROBLEM, PROBLEM
 
 # Columns the grid shows. The heavy ones (abstract_r, the quotes) are fetched only
 # when a single record is opened, and are always present in the export.
@@ -294,8 +296,23 @@ def _cell(value):
     return value
 
 
-def _apply_filters(frame: pd.DataFrame, filters: dict) -> pd.DataFrame:
+def _open_findings(cur) -> dict:
+    """entry_checks.open_by_record, read once per request and shared by the filters,
+    the counts and the list's chips. Empty without a cursor: the tests that hand the
+    tab a bare frame have no database."""
+    return entry_checks.open_by_record(cur) if cur is not None else {}
+
+
+def _flagged(frame: pd.DataFrame, findings: dict, test) -> pd.Series:
+    """Which rows have open findings that `test` accepts."""
+    ids = {flora_id for flora_id, found in findings.items() if test(found)}
+    return frame["flora_id"].isin(ids)
+
+
+def _apply_filters(frame: pd.DataFrame, filters: dict,
+                   findings: "dict | None" = None) -> pd.DataFrame:
     out = frame
+    findings = findings or {}
 
     if filters.get("type"):
         out = out[out["type"] == filters["type"]]
@@ -321,6 +338,15 @@ def _apply_filters(frame: pd.DataFrame, filters: dict) -> pd.DataFrame:
         out = (out[out["edited_fields"].notna()] if "edited_fields" in out.columns
                else out.iloc[0:0])
 
+    # Records the entry checks flag (entry_checks.py), by level or by one check,
+    # leaving out findings marked "Not a problem".
+    if filters.get("problems"):
+        out = out[_flagged(out, findings, lambda found: found[PROBLEM])]
+    if filters.get("possible_problems"):
+        out = out[_flagged(out, findings, lambda found: found[POSSIBLE_PROBLEM])]
+    if filters.get("check"):
+        out = out[_flagged(out, findings, lambda found: filters["check"] in found["checks"])]
+
     search = (filters.get("search") or "").strip()
     if search:
         cols = ["flora_id", "export_id", "source_display_id", "doi_o", "doi_r", "ref_o", "ref_r",
@@ -341,7 +367,8 @@ def _apply_filters(frame: pd.DataFrame, filters: dict) -> pd.DataFrame:
 def list_records(cur, filters: dict, sort: str = "", direction: str = "asc",
                  page: int = 1, per_page: int = 50) -> dict:
     frame = dataset(cur)
-    filtered = _apply_filters(frame, filters)
+    findings = _open_findings(cur)
+    filtered = _apply_filters(frame, filters, findings)
 
     sort_col = SORT_COLUMNS.get(sort)
     if sort_col:
@@ -359,13 +386,18 @@ def list_records(cur, filters: dict, sort: str = "", direction: str = "asc",
         {key: _cell(value) for key, value in row.items()}
         for row in window.reindex(columns=LIST_COLUMNS).to_dict("records")
     ]
+    # The row's chip: how many open findings it has at each level.
+    for record in records:
+        found = findings.get(record["flora_id"])
+        record["open_findings"] = ({level: found[level] for level in (PROBLEM, POSSIBLE_PROBLEM)}
+                                   if found else None)
 
     return {
         "records": records,
         "total": int(len(filtered)),
         "page": page,
         "per_page": per_page,
-        "counts": {**counts(frame),
+        "counts": {**counts(frame, findings),
                    # Drives the badge on the tab's review button, so nobody has to
                    # open the queue to learn whether it is empty.
                    "preprint_pending": len(preprint_dedup.unresolved(
@@ -373,7 +405,8 @@ def list_records(cur, filters: dict, sort: str = "", direction: str = "asc",
     }
 
 
-def counts(frame: pd.DataFrame) -> dict:
+def counts(frame: pd.DataFrame, findings: "dict | None" = None) -> dict:
+    findings = findings or {}
     return {
         "all_records": int(len(frame)),
         "replications": int((frame["type"] == "replication").sum()),
@@ -387,6 +420,10 @@ def counts(frame: pd.DataFrame) -> dict:
                    if "edited_fields" in frame.columns else 0),
         "conflicts": (int(frame["outcome_conflict"].notna().sum())
                       if "outcome_conflict" in frame.columns else 0),
+        # Records, not findings: what the Problems and Possible problems filters show.
+        "problems": int(_flagged(frame, findings, lambda found: found[PROBLEM]).sum()),
+        "possible_problems": int(_flagged(frame, findings,
+                                          lambda found: found[POSSIBLE_PROBLEM]).sum()),
         "sources": sorted(frame["source"].dropna().unique().tolist()),
         "outcomes": sorted(frame["outcome"].dropna().unique().tolist()),
     }
@@ -396,6 +433,20 @@ def counts(frame: pd.DataFrame) -> dict:
 # only this module.
 RecordNotFound = flora_edits.RecordNotFound
 VersionConflict = flora_edits.VersionConflict
+
+# The entry checks' findings (entry_checks.py), for the record view and "Not a
+# problem"; re-exported for the same reason.
+FindingNotFound = entry_checks.FindingNotFound
+dismiss_finding = entry_checks.dismiss
+undismiss_finding = entry_checks.undismiss
+check_runs = entry_checks.last_runs
+checks_summary = entry_checks.summary
+
+
+def check_findings(cur, record: dict) -> list:
+    """The open findings about a record from get_record(), dismissed ones included.
+    By its FLoRA ID, which the findings are kept by, whichever ID opened it."""
+    return entry_checks.findings_for(cur, record["flora_id"]) if record.get("flora_id") else []
 
 
 def _find(cur, flora_id: str) -> "tuple[dict, dict] | None":
@@ -499,7 +550,8 @@ def export_csv(cur, filters: dict) -> str:
     writes — so this file and the nightly artifact are interchangeable rather than
     subtly different.
     """
-    frame = transform_sources.drop_untitled(_apply_filters(dataset(cur), filters))
+    frame = transform_sources.drop_untitled(
+        _apply_filters(dataset(cur), filters, _open_findings(cur)))
     if not frame.empty and (
         "export_id" not in frame or "export_position" not in frame
         or frame["export_id"].map(final_export.text).eq("").any()

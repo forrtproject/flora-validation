@@ -1002,10 +1002,12 @@ rather than after an arbitrary delay.
 
 | Route | Purpose |
 |---|---|
-| `GET /api/admin/flora` | One page of the grid, plus filter counts |
+| `GET /api/admin/flora` | One page of the grid, plus filter counts. Filters include `problems`, `possible_problems` and `check=<code>` (§9.5) |
 | `GET /api/admin/flora/stats` | Row totals and when ids were last assigned |
 | `GET /api/admin/flora/export.csv` | The stored dataset (`flora_data`); with `view=tab` (Export filtered CSV) or any filter, the matching rows of the current build |
-| `GET /api/admin/flora/{flora_id}` | One full row for the editor (§9.4) |
+| `GET /api/admin/flora/{flora_id}` | One full row for the editor (§9.4), with its check findings and when the checks last ran (§9.5) |
+| `GET /api/admin/flora/checks/summary` | Open findings by check and level, and the last run of each part (§9.5) |
+| `POST` / `DELETE /api/admin/flora/findings/dismiss` | Mark a finding "Not a problem" (`{finding_key, note}`), or withdraw the mark (`{finding_key}`) (§9.5) |
 
 The export uses the same column order as the nightly artifact — `FLORA_COLUMNS` then
 `PROVENANCE_COLUMNS` — so the two files are interchangeable rather than subtly
@@ -1168,6 +1170,37 @@ target, or one that could not be checked, keeps its finding open.
 (`link_checks`, `original_doi_lookups`): what either learns, the other need not ask.
 No suppressions file is applied here; a person dismisses a finding on its record
 instead.
+
+**In the FLoRA tab.** Two filter buttons, **Problems** and **Possible problems**,
+show the FLoRA records with at least one open finding of that level that nobody has
+marked "Not a problem"; their counts are records, not findings. A row with such
+findings has a chip (`problem`, or `possible problem` when it has only those), with
+the counts in its tooltip. `check=<code>` narrows the list to one check's records
+(API only). The page reads the open findings once per request
+(`entry_checks.open_by_record`, a map from FLoRA ID to counts) for the filters, the
+counts and the chips. A database without the table yet gets none.
+
+The record view has a **Check findings** section: each open finding, problems
+first, with its level, its check's heading (`entry_checks.CHECK_HEADINGS`, from the
+two `CHECKS` lists), the column and value, what is wrong, and when it was first
+seen. A finding about several records names the others. Under the list, when each
+part last ran, and that a saved correction is checked again within about 5 minutes
+(the next scheduler tick after the revision moves).
+
+**Not a problem.** The button opens a comment box. The comment is required: 3 to
+1,000 characters once trimmed (`entry_checks.dismiss`). Saving records the admin's
+handle in `dismissed_by` (as a correction logs `admin_handle`), the time and the
+comment; the finding then shows "Marked not a problem by X on <date>: <comment>",
+with Undo (`entry_checks.undismiss`), which clears the three columns. The section
+is redrawn in place, so corrections typed but not saved stay in the form. A key
+holds `|` and the flagged value, so it travels in the JSON body, never in the URL.
+An unknown key is a 404; a missing or over-long comment, a finding already marked,
+a resolved one or an Undo of an unmarked one is a 400 that says why. Both actions
+are written to the audit trail (`flora.finding_dismissed`,
+`flora.finding_undismissed`, with the comment), since the row keeps only the
+current mark. The mark belongs to the key: a run that resolves the finding and
+later re-opens it keeps it, while a changed value is a new finding that needs its
+own review.
 
 ```bash
 python entry_checks.py --due           # which parts are due now; runs nothing

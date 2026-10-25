@@ -5920,22 +5920,27 @@ def admin_source_sync_status(admin: dict = Depends(current_admin)):
 
 def _flora_filters(type: str = "", source: str = "", outcome: str = "",
                    search: str = "", unregistered: bool = False,
-                   edited: bool = False, conflict: bool = False) -> dict:
+                   edited: bool = False, conflict: bool = False,
+                   problems: bool = False, possible_problems: bool = False,
+                   check: str = "") -> dict:
     return {"type": type, "source": source, "outcome": outcome,
             "search": search, "unregistered": unregistered, "edited": edited,
-            "conflict": conflict}
+            "conflict": conflict, "problems": problems,
+            "possible_problems": possible_problems, "check": check}
 
 
 @app.get("/api/admin/flora")
 def admin_flora_records(
     type: str = "", source: str = "", outcome: str = "",
     search: str = "", unregistered: bool = False, edited: bool = False,
-    conflict: bool = False,
+    conflict: bool = False, problems: bool = False, possible_problems: bool = False,
+    check: str = "",
     sort: str = "", dir: str = "asc",
     page: int = 1, per_page: int = 50,
     admin: dict = Depends(current_admin),
 ):
-    filters = _flora_filters(type, source, outcome, search, unregistered, edited, conflict)
+    filters = _flora_filters(type, source, outcome, search, unregistered, edited, conflict,
+                             problems, possible_problems, check)
     with db() as cur:
         return flora_service.list_records(
             cur, filters, sort=sort, direction=dir, page=page, per_page=per_page
@@ -5953,7 +5958,8 @@ def admin_flora_stats(admin: dict = Depends(current_admin)):
 def admin_flora_export(
     type: str = "", source: str = "", outcome: str = "",
     search: str = "", unregistered: bool = False, edited: bool = False,
-    conflict: bool = False,
+    conflict: bool = False, problems: bool = False, possible_problems: bool = False,
+    check: str = "",
     view: str = "",
     admin: dict = Depends(current_admin),
 ):
@@ -5967,7 +5973,8 @@ def admin_flora_export(
     Retained per-run artifacts have their own endpoint so later edits cannot
     change an earlier run's downloaded file.
     """
-    filters = _flora_filters(type, source, outcome, search, unregistered, edited, conflict)
+    filters = _flora_filters(type, source, outcome, search, unregistered, edited, conflict,
+                             problems, possible_problems, check)
     try:
         with db() as cur:
             if view == "tab" or any(filters.values()):
@@ -6040,6 +6047,75 @@ def admin_flora_preprint_undo(pair_key: str, request: Request,
     return {"status": "withdrawn", "pair_key": pair_key}
 
 
+# Entry-check findings (entry_checks.py), shown in the record view, where a person
+# marks one "Not a problem". A finding's key holds "|" and the flagged value, any
+# text, so it travels in the JSON body, never in the path or the query. Declared
+# before /flora/{flora_id}, as above.
+
+@app.get("/api/admin/flora/checks/summary")
+def admin_flora_checks_summary(admin: dict = Depends(current_admin)):
+    """Open findings counted by check and level, and the last run of each part."""
+    with db() as cur:
+        return flora_service.checks_summary(cur)
+
+
+# Generous bounds, there to refuse a runaway body. The comment's own rules (required,
+# at most 1,000 characters) are entry_checks.dismiss's, answered with a 400 that says
+# what to fix. A key is as long as the value it flagged.
+class FindingDismissal(BaseModel):
+    finding_key: str = Field(min_length=1, max_length=20_000)
+    note: str = Field("", max_length=10_000)
+
+
+class FindingKey(BaseModel):
+    finding_key: str = Field(min_length=1, max_length=20_000)
+
+
+def _finding_audit(cur, action, request, admin, finding, note) -> None:
+    # A detail over its budget (security_events.MAX_DETAIL_CHARS) is stored as a
+    # summary, which would lose the comment: so no key (a long flagged value) and
+    # at most 20 FLoRA IDs. target_id keeps the key's start.
+    _audit(cur, action, request, actor=admin, target_kind="check_finding",
+           target_id=finding["finding_key"], target_label=finding["check_heading"],
+           detail={"note": note, "check": finding["check_code"],
+                   "flora_ids": finding["flora_ids"][:20]})
+
+
+@app.post("/api/admin/flora/findings/dismiss")
+def admin_flora_finding_dismiss(req: FindingDismissal, request: Request,
+                                admin: dict = Depends(current_admin)):
+    """Mark a finding "Not a problem", with the comment saying why. The mark stays
+    with the finding when a later run re-opens it."""
+    with db() as cur:
+        try:
+            finding = flora_service.dismiss_finding(cur, req.finding_key, admin, req.note)
+        except flora_service.FindingNotFound:
+            raise HTTPException(404, "No such finding. Reload the record.")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        _finding_audit(cur, security_events.FLORA_FINDING_DISMISSED, request, admin,
+                       finding, finding["dismiss_note"])
+    return finding
+
+
+@app.delete("/api/admin/flora/findings/dismiss")
+def admin_flora_finding_undismiss(req: FindingKey, request: Request,
+                                  admin: dict = Depends(current_admin)):
+    """Withdraw a "Not a problem": the finding needs review again. The mark withdrawn,
+    with its comment, is kept in the audit trail."""
+    with db() as cur:
+        try:
+            finding = flora_service.undismiss_finding(cur, req.finding_key, admin)
+        except flora_service.FindingNotFound:
+            raise HTTPException(404, "No such finding. Reload the record.")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        withdrawn = finding["withdrawn"]
+        _finding_audit(cur, security_events.FLORA_FINDING_UNDISMISSED, request, admin,
+                       finding, withdrawn["dismiss_note"])
+    return finding
+
+
 @app.get("/api/admin/flora/{flora_id}")
 def admin_flora_record(flora_id: str, admin: dict = Depends(current_admin)):
     """One full row, every column, for the detail panel, with what its editor needs."""
@@ -6055,6 +6131,10 @@ def admin_flora_record(flora_id: str, admin: dict = Depends(current_admin)):
         # Editable fields, the corrections already made and their history. None
         # for a row the registry has not reached yet.
         record["editing"] = flora_service.editing(cur, record)
+        # What the entry checks found about it, "Not a problem" marks included, and
+        # when each part last ran: a finding is only as fresh as its run.
+        record["check_findings"] = flora_service.check_findings(cur, record)
+        record["check_runs"] = flora_service.check_runs(cur)
     return record
 
 

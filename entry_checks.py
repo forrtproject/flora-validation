@@ -9,8 +9,9 @@ publishes it) and keeps every finding in the database, by FLoRA record:
     flora_check_runs       one row per run of either part
 
 A finding stays open until the value it flagged changes. The checks only report:
-nothing here changes a FLoRA record. A person's "Not a problem" (dismissed_at) is
-kept with the finding's key, and no run touches it.
+nothing here changes a FLoRA record. A person's "Not a problem" (dismissed_at, from
+the FLoRA tab: dismiss, undismiss) is kept with the finding's key, and no run
+touches it.
 
 Two parts, both run by the website's scheduler (app._start_scheduler, every five
 minutes, run_due), on whichever pod takes the advisory lock:
@@ -82,6 +83,20 @@ RETRACTION_CHECKS = ("retracted", "expression_of_concern")
 TARGET_CHECKS = {"doi_not_registered": "dois", "dead_link": "urls"}
 ORIGINAL_CHECK = "original_doi_found"
 ABANDONED = "abandoned: the process running it ended before it finished"
+
+# What the FLoRA tab calls each check: the heading its report section has. A finding
+# stores only the code; a code no check has any more is shown as itself.
+CHECK_HEADINGS = {
+    **{code: heading for code, _level, _name, heading, _fn, _description in validate_flora.CHECKS},
+    **{code: heading for code, _level, heading, _selector in network.CHECKS},
+}
+# A "Not a problem" needs a reason: the next person to read the finding has only the
+# comment to go on. The upper bound keeps it a comment.
+DISMISS_NOTE_MIN, DISMISS_NOTE_MAX = 3, 1000
+
+
+class FindingNotFound(LookupError):
+    """No finding has this key."""
 
 
 def _log(message: str) -> None:
@@ -533,10 +548,49 @@ def run_due(database_url: "str | None" = None, network_minutes: float = NETWORK_
 
 # ── reading, for the FLoRA tab ────────────────────────────────────────────────
 
+def _named(row) -> dict:
+    """A finding or a count by check, with the heading of its check."""
+    row = dict(row)
+    row["check_heading"] = CHECK_HEADINGS.get(row["check_code"], row["check_code"])
+    return row
+
+
+def _tables_exist(cur) -> bool:
+    """False in a database init_db() has not reached (as flora_edits._table_exists):
+    the FLoRA tab then shows no findings instead of failing."""
+    cur.execute("SELECT to_regclass('flora_check_findings') IS NOT NULL "
+                "AND to_regclass('flora_check_runs') IS NOT NULL AS present")
+    return cur.fetchone()["present"]
+
+
+def open_by_record(cur) -> dict:
+    """{FLoRA ID: {"problem": n, "possible_problem": n, "checks": {code: n}}} for the
+    open findings nobody has marked "Not a problem": the FLoRA tab's filters, counts
+    and list chips, from one query per request. A finding about several records
+    counts for each. Empty while the tables do not exist yet."""
+    if not _tables_exist(cur):
+        return {}
+    cur.execute(
+        """
+        SELECT flora_id, level, check_code, COUNT(*) AS n
+          FROM flora_check_findings, unnest(flora_ids) AS flora_id
+         WHERE resolved_at IS NULL AND dismissed_at IS NULL
+         GROUP BY flora_id, level, check_code
+        """)
+    records = {}
+    for row in cur.fetchall():
+        record = records.setdefault(row["flora_id"], {PROBLEM: 0, POSSIBLE_PROBLEM: 0, "checks": {}})
+        record[row["level"]] += row["n"]
+        record["checks"][row["check_code"]] = row["n"]
+    return records
+
+
 def findings_for(cur, flora_id: str) -> list:
     """The open findings about one FLoRA record, dismissed ones included, each with
     the run that last found it: problems first, and within a level the ones that
     still need review before the dismissed ones."""
+    if not _tables_exist(cur):
+        return []
     cur.execute(
         """
         SELECT f.finding_key, f.part, f.check_code, f.level, f.flora_ids, f.column_name,
@@ -549,7 +603,21 @@ def findings_for(cur, flora_id: str) -> list:
          WHERE f.flora_ids @> ARRAY[%s]::text[] AND f.resolved_at IS NULL
          ORDER BY f.level <> 'problem', f.dismissed_at IS NOT NULL, f.check_code, f.finding_key
         """, (flora_id,))
-    return [dict(row) for row in cur.fetchall()]
+    return [_named(row) for row in cur.fetchall()]
+
+
+def last_runs(cur) -> dict:
+    """{part: its latest run, whatever its status, or None before any}."""
+    if not _tables_exist(cur):
+        return {part: None for part in PARTS}
+    cur.execute(
+        """
+        SELECT DISTINCT ON (part) run_id, part, started_at, finished_at, status,
+               dataset_revision, counts, notes, error
+          FROM flora_check_runs ORDER BY part, run_id DESC
+        """)
+    runs = {row["part"]: dict(row) for row in cur.fetchall()}
+    return {part: runs.get(part) for part in PARTS}
 
 
 def summary(cur) -> dict:
@@ -564,19 +632,69 @@ def summary(cur) -> dict:
          GROUP BY part, check_code, level
          ORDER BY level <> 'problem', part, check_code
         """)
-    checks = [dict(row) for row in cur.fetchall()]
-    cur.execute(
-        """
-        SELECT DISTINCT ON (part) run_id, part, started_at, finished_at, status,
-               dataset_revision, counts, notes, error
-          FROM flora_check_runs ORDER BY part, run_id DESC
-        """)
-    runs = {row["part"]: dict(row) for row in cur.fetchall()}
+    checks = [_named(row) for row in cur.fetchall()]
     return {"checks": checks,
             "open": {level: sum(c["open"] for c in checks if c["level"] == level)
                      for level in (PROBLEM, POSSIBLE_PROBLEM)},
             "dismissed": sum(c["dismissed"] for c in checks),
-            "last_runs": {part: runs.get(part) for part in PARTS}}
+            "last_runs": last_runs(cur)}
+
+
+# ── "Not a problem", from the FLoRA tab ───────────────────────────────────────
+
+def _locked(cur, finding_key: str) -> dict:
+    """The finding, locked until the transaction ends: two people marking it at once
+    are answered in turn, the second told the first already did."""
+    cur.execute("""SELECT finding_key, check_code, level, flora_ids, resolved_at,
+                          dismissed_at, dismissed_by, dismiss_note
+                     FROM flora_check_findings WHERE finding_key = %s FOR UPDATE""",
+                (finding_key,))
+    row = cur.fetchone()
+    if row is None:
+        raise FindingNotFound(finding_key)
+    return dict(row)
+
+
+def dismiss(cur, finding_key: str, admin: dict, note: str) -> dict:
+    """Mark a finding "Not a problem": who (the admin's handle, as flora_edits logs a
+    change), when, and the required comment saying why. It belongs to the finding's
+    key, so a run that resolves and later re-opens the finding keeps it; a changed
+    value is a new finding, which needs its own review."""
+    text = (note or "").strip()
+    if len(text) < DISMISS_NOTE_MIN:
+        raise ValueError(f"Say why this is not a problem: at least {DISMISS_NOTE_MIN} characters.")
+    if len(text) > DISMISS_NOTE_MAX:
+        raise ValueError(f"The comment is longer than {DISMISS_NOTE_MAX:,} characters.")
+    finding = _locked(cur, finding_key)
+    if finding["dismissed_at"] is not None:
+        raise ValueError(f"{finding['dismissed_by']} already marked this finding not a problem.")
+    if finding["resolved_at"] is not None:
+        # The record changed while it was open: there is nothing left to judge.
+        raise ValueError("This finding is resolved: the value it flagged has changed.")
+    cur.execute("""UPDATE flora_check_findings
+                      SET dismissed_at = NOW(), dismissed_by = %s, dismiss_note = %s
+                    WHERE finding_key = %s
+                RETURNING finding_key, check_code, level, flora_ids,
+                          dismissed_at, dismissed_by, dismiss_note""",
+                (admin["handle"], text, finding_key))
+    return _named(cur.fetchone())
+
+
+def undismiss(cur, finding_key: str, admin: dict) -> dict:
+    """Withdraw a "Not a problem": the finding needs review again. Returns the
+    dismissal withdrawn, as the row keeps none once it is cleared."""
+    finding = _locked(cur, finding_key)
+    if finding["dismissed_at"] is None:
+        raise ValueError("This finding is not marked not a problem.")
+    cur.execute("""UPDATE flora_check_findings
+                      SET dismissed_at = NULL, dismissed_by = NULL, dismiss_note = NULL
+                    WHERE finding_key = %s""", (finding_key,))
+    return _named({"finding_key": finding_key, "check_code": finding["check_code"],
+                   "level": finding["level"], "flora_ids": finding["flora_ids"],
+                   "withdrawn_by": admin["handle"],
+                   "withdrawn": {"dismissed_at": finding["dismissed_at"],
+                                 "dismissed_by": finding["dismissed_by"],
+                                 "dismiss_note": finding["dismiss_note"]}})
 
 
 # ── the command line ──────────────────────────────────────────────────────────

@@ -6455,6 +6455,49 @@ body.has-maint-banner #admin-screen {
 #flora-save-msg .flora-notice { color: var(--green); font-weight: 600; }
 #flora-save-msg .flora-warning { display: block; margin-top: 0.2rem; color: var(--amber); }
 
+/* Entry-check findings (entry_checks.py): the list's chip, and the record view's
+   section, where a person marks one "Not a problem". Red for a problem, amber for a
+   possible one, as the pipeline report's two levels. */
+.flora-edited-badge.flora-findings-chip { color: var(--amber); border-color: var(--amber); background: #f6ecd4; }
+.flora-edited-badge.flora-findings-chip-problem { color: var(--red); border-color: var(--red); background: #fde8e8; }
+.flora-findings-list { list-style: none; margin: 0; padding: 0; }
+.flora-finding {
+  padding: 0.5rem 0.65rem;
+  margin-bottom: 0.5rem;
+  border-left: 3px solid var(--rule);
+  background: var(--bg);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+.flora-finding-dismissed { opacity: 0.8; }
+.flora-finding-head code, .flora-finding-meta code { font-size: 0.76rem; }
+.flora-level-badge {
+  display: inline-block;
+  padding: 0 0.4rem;
+  border-radius: 3px;
+  border: 1px solid;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.flora-level-problem  { color: var(--red);   border-color: var(--red);   background: #fde8e8; }
+.flora-level-possible { color: var(--amber); border-color: var(--amber); background: #f6ecd4; }
+.flora-finding-value {
+  display: block;
+  margin: 0.25rem 0;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.flora-finding-detail { color: var(--ink-soft); }
+.flora-finding-meta { font-size: 0.76rem; color: var(--muted); margin: 0.15rem 0 0.35rem; }
+.flora-finding-mark { font-size: 0.8rem; color: var(--muted); word-break: break-word; }
+.flora-dismiss-btn { padding: 0.15rem 0.55rem; font-size: 0.76rem; }
+.flora-dismiss-form .src-input { width: 100%; font-size: 0.8rem; }
+.flora-dismiss-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.35rem; }
+.flora-dismiss-actions button { padding: 0.25rem 0.8rem; font-size: 0.76rem; }
+.flora-finding-msg { font-size: 0.76rem; }
+.flora-findings-runs { margin: 0.35rem 0 0; font-size: 0.76rem; color: var(--muted); }
+
 /* Source record panel: the FLoRA record a row feeds, where it is corrected. */
 .src-flora-link {
   margin-bottom: 1rem;

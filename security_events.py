@@ -59,6 +59,10 @@ SOURCE_SYNC_DISPATCHED = "source_sync.dispatched"
 # one, so who ruled, who withdrew it and why are kept here.
 FLORA_PREPRINT_RULED = "flora.preprint_ruled"
 FLORA_PREPRINT_WITHDRAWN = "flora.preprint_withdrawn"
+# An entry-check finding marked "Not a problem", and that withdrawn. The finding
+# keeps only the current mark, so a withdrawn one, with its comment, is kept here.
+FLORA_FINDING_DISMISSED = "flora.finding_dismissed"
+FLORA_FINDING_UNDISMISSED = "flora.finding_undismissed"
 
 ACTIONS = frozenset({
     ADMIN_SIGNED_IN, ADMIN_SIGN_IN_FAILED, ADMIN_SIGNED_OUT, ADMIN_INVITED,
@@ -68,6 +72,7 @@ ACTIONS = frozenset({
     MAINTENANCE_STARTED,
     SOURCE_SYNC_DISPATCHED,
     FLORA_PREPRINT_RULED, FLORA_PREPRINT_WITHDRAWN,
+    FLORA_FINDING_DISMISSED, FLORA_FINDING_UNDISMISSED,
 })
 
 

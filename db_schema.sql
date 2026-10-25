@@ -2165,7 +2165,7 @@ CREATE INDEX IF NOT EXISTS retired_records_record_id_idx ON retired_records(reco
 -- structural part; validate_flora_network, the network part) over the stored
 -- dataset and keeps each finding here, by FLoRA record (entry_checks.py). The
 -- pipeline still writes its report files; these tables are the website's own copy,
--- which the FLoRA tab will show. The checks only report: they never change data.
+-- which the FLoRA tab shows. The checks only report: they never change data.
 --
 -- One row per check run. counts holds the numbers (findings by level and check,
 -- how many were new, re-opened and resolved); notes holds what a person should read

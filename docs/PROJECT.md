@@ -510,7 +510,9 @@ the stored dataset changes (a pipeline run stored a snapshot, or a correction wa
 saved), the network checks once a day from 04:00 UTC within 45 minutes. Each
 finding is kept in `flora_check_findings`, by FLoRA ID, until the value it flagged
 changes; `flora_check_runs` records each run. Both only report: neither changes a
-record. See [SOURCE_RECORDS.md §9.5](SOURCE_RECORDS.md#95-entry-checks-on-the-stored-dataset-entry_checkspy).
+record. The FLoRA tab shows the findings: Problems and Possible problems filters,
+and a Check findings section in each record, where a person can mark one "Not a
+problem" with a comment. See [SOURCE_RECORDS.md §9.5](SOURCE_RECORDS.md#95-entry-checks-on-the-stored-dataset-entry_checkspy).
 
 Two adaptations to this app's data model, without which the checks would be mostly
 noise: a blank `doi_o` is legitimate for DOI-less originals and is only flagged when
