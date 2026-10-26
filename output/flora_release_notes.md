@@ -1,13 +1,13 @@
-# FLoRA release preparation
+# FLoRA release notes
 
-Generated: 2026-10-23T03:20:57+00:00
+Generated: 2026-10-26T11:35:57+00:00
 
 Version: not assigned
 
-Dataset: flora.csv (3,097 rows)
+Dataset: flora.csv (2,807 rows)
 
-SHA-256: `e9ef7c1ba1a6dcf3263a76f9069664441ad509cb135b5d6705a04639b85c3717`
+SHA-256: `15b26c23e77d49216c837e39faed76b0b8f77bd1288fab9363bdd18fea256991`
 
-Status: files prepared locally; no external release was published.
+Publication: The repository copy (`output/` on GitHub) is committed by two workflows, each when flora.csv changed: the nightly job, with its own run's files, and Publish FLoRA, with the stored dataset. Website and local command-line runs commit nothing. Nothing is uploaded to OSF.
 
 

@@ -1,7 +1,10 @@
 # FLoRA dataset history
 
-| Date | Total | Replications | Reproductions |
+Records in flora.csv on each day it was written, newest first.
+
+| Date | Records | Replications | Reproductions |
 | --- | ---: | ---: | ---: |
+| 2026-10-26 | 2807 | 2585 | 222 |
 | 2026-10-23 | 3097 | 2714 | 383 |
 | 2026-10-21 | 3080 | 2697 | 383 |
 | 2026-10-20 | 3080 | 2697 | 383 |
