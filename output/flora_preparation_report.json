@@ -1,0 +1,3598 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-27T03:06:32+00:00",
+  "mode": "database_pipeline",
+  "status": "needs_attention",
+  "rows": 2837,
+  "stages": [
+    {
+      "name": "build flora.csv and check IDs",
+      "status": "passed"
+    },
+    {
+      "name": "structural validation",
+      "status": "needs_attention",
+      "detail": "44 problems and 24 possible problems"
+    },
+    {
+      "name": "network validation",
+      "status": "needs_attention"
+    },
+    {
+      "name": "release files and history",
+      "status": "passed"
+    },
+    {
+      "name": "store dataset",
+      "status": "passed",
+      "detail": "2,837 rows in flora_data"
+    },
+    {
+      "name": "write output files",
+      "status": "passed"
+    }
+  ],
+  "warnings": [
+    "32 records left out for a missing title; see flora_export_log.csv.",
+    "59 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.",
+    "25 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.",
+    "Structural validation found 44 problems and 24 possible problems.",
+    "Network validation needs review: 42 problems and 8 possible problems."
+  ],
+  "errors": [],
+  "warning_count": 5,
+  "failure_count": 0,
+  "diagnostics": {
+    "flora_export_log.csv": {
+      "description": "records left out for a missing title",
+      "rows": 32,
+      "records": [
+        {
+          "reason": "missing title_o",
+          "flora_id": "VAL-000004",
+          "source": "validated",
+          "doi_o": "10.1086/596443",
+          "apa_ref_o": "Breen · 2009",
+          "doi_r": "10.1080/14616696.2017.1290265",
+          "url_r": "",
+          "apa_ref_r": "Barone, C., & Ruggera, L. (2018). Educational equalization stalled? Trends in inequality of educational opportunity between 1930 and 1980 across 26 European nations. European Societies, 20(1), 1–25. https://doi.org/10.1080/14616696.2017.1290265"
+        },
+        {
+          "reason": "missing title_o",
+          "flora_id": "VAL-000014",
+          "source": "validated",
+          "doi_o": "10.25300/misq/2018/13858",
+          "apa_ref_o": "Moody · 2018",
+          "doi_r": "10.17705/1atrr.00067",
+          "url_r": "",
+          "apa_ref_r": "Kajtazi, M., Holmberg, N., Sarker, S., Keller, C., Johansson, B., & Tona, O. (2021). Toward a unified model of information security policy compliance: A conceptual replication study. AIS Transactions on Replication Research, 7(2), 1–15. https://doi.org/10.17705/1atrr.00067"
+        },
+        {
+          "reason": "missing title_o",
+          "flora_id": "VAL-000026",
+          "source": "validated",
+          "doi_o": "10.1017/s014271640808031x",
+          "apa_ref_o": "Kim · 2008",
+          "doi_r": "10.1111/lang.12393",
+          "url_r": "",
+          "apa_ref_r": "Kim, Y., Skalicky, S., & Jung, Y. (2020). The role of linguistic alignment on question development in face-to-face and synchronous computer-mediated communication contexts: A conceptual replication study. Language Learning, 70(3), 643–684. https://doi.org/10.1111/lang.12393"
+        },
+        {
+          "reason": "missing title_o",
+          "flora_id": "VAL-000081",
+          "source": "validated",
+          "doi_o": "10.25300/misq/2018/13855",
+          "apa_ref_o": "Moody · 2018",
+          "doi_r": "https://aisel.aisnet.org/trr/vol6/iss1/13",
+          "url_r": "",
+          "apa_ref_r": "Masuch, K., Hengstler, S., Trang, S., & Brendel, A. B. (2020). Replication research of Moody, Siponen, and Pahnila’s unified model of information security policy compliance. AIS Transactions on Replication Research, 6, Article 13. https://doi.org/10.17705/1atrr.00056"
+        },
+        {
+          "reason": "missing title_o",
+          "flora_id": "VAL-000084",
+          "source": "validated",
+          "doi_o": "10.1176/appi.ajp.2009.0903034",
+          "apa_ref_o": "Suslow · 2010",
+          "doi_r": "10.1503/jpn.120060",
+          "url_r": "",
+          "apa_ref_r": "Stuhrmann, A., Dohm, K., Kugel, H., Zwanzger, P., Redlich, R., Grotegerd, D., Rauch, A. V., Arolt, V., Heindel, W., Suslow, T., Zwitserlood, P., & Dannlowski, U. (2013). Mood-congruent amygdala responses to subliminally presented facial expressions in major depression: Associations with anhedonia. Journal of Psychiatry & Neuroscience, 38(4), 249–258. https://doi.org/10.1503/jpn.120060"
+        },
+        {
+          "reason": "missing title_o",
+          "flora_id": "VAL-000104",
+          "source": "validated",
+          "doi_o": "10.1177/0146167213491962",
+          "apa_ref_o": "Waytz · 2013",
+          "doi_r": "10.31234/osf.io/2h59n",
+          "url_r": "",
+          "apa_ref_r": "Crawford, J. (2020). Close and conceptual replications of Waytz, Dungan, and Young (2013), Studies 2b and 4. PsyArXiv. https://doi.org/10.31234/osf.io/2h59n"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000373",
+          "source": "validated",
+          "doi_o": "10.7326/0003-4819-127-1-199707010-00007",
+          "apa_ref_o": "Bero, L. A., & Jadad, A. R. (1997). How Consumers and Policymakers Can Use Systematic Reviews for Decision Making. Annals of Internal Medicine, 127(1), 37–42. https://doi.org/10.7326/0003-4819-127-1-199707010-00007",
+          "doi_r": "10.20381/ruor-28430",
+          "url_r": "",
+          "apa_ref_r": "C · 2022 · University of Ottawa - Library"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "REPL-000614",
+          "source": "entry_sheet_replications",
+          "doi_o": "",
+          "apa_ref_o": "Fourie, J., & Siebrits, K. (2026). Invisible Handedness: The Myth of Left-Right Batting Partnerships (No. 05/2026).",
+          "doi_r": "",
+          "url_r": "https://www.cs.columbia.edu/~misra/handedness-partnerships-2026.pdf",
+          "apa_ref_r": "Misra, V. The Left–Right Partnership Myth Extends to Domestic T20 Cricket: A Replication and Extension with 160,000 Partnerships."
+        },
+        {
+          "reason": "missing title_o",
+          "flora_id": "REPL-001596",
+          "source": "entry_sheet_replications",
+          "doi_o": "",
+          "apa_ref_o": "Holzer, HarryJ.1986a. \"Black Youth Nonemployment: Duration and Job Search.\" In The Black Youth Employment Crisis, edited by Richard Freeman and Harry Holzer. Chicago: University of Chicago Press.",
+          "doi_r": "10.2307/146341",
+          "url_r": "",
+          "apa_ref_r": "Petterson, S. M. (1998). Black-White Differences in Reservation Wages and Joblessness: A Replication. The Journal of Human Resources, 33(3), 758. https://doi.org/10.2307/146341"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "REPL-001631",
+          "source": "entry_sheet_replications",
+          "doi_o": "10.25300/misq/2021/14626",
+          "apa_ref_o": "Riemenschneider, C. K., & Armstrong, D. J. (2021). The Development of the Perceived Distinctiveness Antecedent of Information Systems Professional Identity. MIS Quarterly, 45(3), 1149–1186. https://doi.org/10.25300/misq/2021/14626",
+          "doi_r": "",
+          "url_r": "https://aisel.aisnet.org/cais/vol58/iss1/25",
+          "apa_ref_r": "Zaza, S., Young, D. K., & Armstrong, D. (In press). The Development of the Perceived Distinctiveness Antecedent of Information Systems Professional Identity: A Conceptual Replication of Study 2 Focusing on Technical Information Systems Professionals. Communications of the Association for Information Systems, 58, pp-pp. Retrieved from https://aisel.aisnet.org/cais/vol58/iss1/25"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "REPRO-000015",
+          "source": "entry_sheet_reproductions",
+          "doi_o": "10.1002/smj.3354",
+          "apa_ref_o": "Kim, M. J., Shaver, J. M., & Funk, R. J. (2021). From mass to motion: Conceptualizing and measuring the dynamics of industry clusters. Strategic Management Journal, 43(4), 822–846. Portico. https://doi.org/10.1002/smj.3354",
+          "doi_r": "",
+          "url_r": "",
+          "apa_ref_r": "10.5465/AMPROC.2026.13271abstract"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "REPRO-000016",
+          "source": "entry_sheet_reproductions",
+          "doi_o": "10.1037/xap0000408",
+          "apa_ref_o": "Irving, D., Clark, R. W. A., Lewandowsky, S., & Allen, P. J. (2022). Correcting statistical misinformation about scientific findings in the media: Causation versus correlation. Journal of Experimental Psychology: Applied, 28(1), 1–9. https://doi.org/10.1037/xap0000408",
+          "doi_r": "",
+          "url_r": "",
+          "apa_ref_r": "10.31234/osf.io/am6rg_v1"
+        },
+        {
+          "reason": "missing title_o",
+          "flora_id": "VAL-000059",
+          "source": "validated",
+          "doi_o": "",
+          "apa_ref_o": "Gray · 2016.0",
+          "doi_r": "10.1017/s0958344023000034",
+          "url_r": "",
+          "apa_ref_r": "Shin, H. W., & Sok, S. (2023). Student satisfaction and perceived learning in an online second language learning environment: A replication of Gray and DiLoreto (2016). ReCALL, 35(2), 160–177. https://doi.org/10.1017/S0958344023000034"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000273",
+          "source": "validated",
+          "doi_o": "10.1027/1864-9335/a000216",
+          "apa_ref_o": "Thornton, B., Faires, A., Robbins, M., & Rollins, E. (2014). The Mere Presence of a Cell Phone May be Distracting. Social Psychology, 45(6), 479–488. https://doi.org/10.1027/1864-9335/a000216",
+          "doi_r": "",
+          "url_r": "https://escholarship.org/uc/item/3dd9n19r",
+          "apa_ref_r": "Lyngs · 2017 · eScholarship (California Digital Library)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000275",
+          "source": "validated",
+          "doi_o": "10.1371/journal.pone.0139159",
+          "apa_ref_o": "Jalal, B., Krishnakumar, D., & Ramachandran, V. S. (2015). “I Feel Contaminated in My Fake Hand”: Obsessive-Compulsive-Disorder like Disgust Sensations Arise from Dummy during Rubber Hand Illusion. Plos One, 10(12), e0139159. https://doi.org/10.1371/journal.pone.0139159",
+          "doi_r": "",
+          "url_r": "http://api.osf.io/v2/nodes/7pg46/",
+          "apa_ref_r": "Tomita · 2016 · OSF Preprints (OSF Preprints)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000276",
+          "source": "validated",
+          "doi_o": "10.1086/678484",
+          "apa_ref_o": "Wadhwa, M., & Zhang, K. (2015). This Number Just Feels Right: The Impact of Roundedness of Price Numbers on Product Evaluations. Journal of Consumer Research, 41(5), 1172–1185. https://doi.org/10.1086/678484",
+          "doi_r": "",
+          "url_r": "http://api.osf.io/v2/nodes/uxdcb/",
+          "apa_ref_r": "Genau · 2018 · OSF Preprints (OSF Preprints)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000284",
+          "source": "validated",
+          "doi_o": "10.1257/0002828054201387",
+          "apa_ref_o": "Plott, C. R., & Zeiler, K. (2005). The Willingness to Pay–Willingness to Accept Gap, the “Endowment Effect,” Subject Misconceptions, and Experimental Procedures for Eliciting Valuations. American Economic Review, 95(3), 530–545. https://doi.org/10.1257/0002828054201387",
+          "doi_r": "",
+          "url_r": "https://econpapers.repec.org/RePEc:zbw:wzbmbh:spii2015204",
+          "apa_ref_r": "Fehr · 2015 · RePEc: Research Papers in Economics"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000287",
+          "source": "validated",
+          "doi_o": "10.1111/j.0963-7214.2004.01502002.x",
+          "apa_ref_o": "Meier, B. P., Robinson, M. D., & Clore, G. L. (2004). Why Good Guys Wear White. Psychological Science, 15(2), 82–87. https://doi.org/10.1111/j.0963-7214.2004.01502002.x",
+          "doi_r": "",
+          "url_r": "http://repository.essex.ac.uk/15666/",
+          "apa_ref_r": "Meier · 2015"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000300",
+          "source": "validated",
+          "doi_o": "10.1037/0022-3514.54.5.768",
+          "apa_ref_o": "Strack, F., Martin, L. L., & Stepper, S. (1988). Inhibiting and facilitating conditions of the human smile: A nonobtrusive test of the facial feedback hypothesis. Journal of Personality and Social Psychology, 54(5), 768–777. https://doi.org/10.1037/0022-3514.54.5.768",
+          "doi_r": "",
+          "url_r": "https://biblio.ugent.be/publication/8768630",
+          "apa_ref_r": "Marie · 2016 · Ghent University Academic Bibliography (Ghent University)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000302",
+          "source": "validated",
+          "doi_o": "10.2753/joa0091-3367370303",
+          "apa_ref_o": "Eisend, M. (2008). Explaining The Impact Of Scarcity Appeals In Advertising: The Mediating Role of Perceptions of Susceptibility. Journal of Advertising, 37(3), 33–40. https://doi.org/10.2753/joa0091-3367370303",
+          "doi_r": "",
+          "url_r": "https://www.tandfonline.com/doi/full/10.1080/00913367.2015.1093438",
+          "apa_ref_r": "Piyush · 2016 · e-publications@bond (Bond University)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000304",
+          "source": "validated",
+          "doi_o": "10.1006/jesp.2001.1488",
+          "apa_ref_o": "Friedman, R. S., & Förster, J. (2002). The Influence of Approach and Avoidance Motor Actions on Creative Cognition. Journal of Experimental Social Psychology, 38(1), 41–55. https://doi.org/10.1006/jesp.2001.1488",
+          "doi_r": "",
+          "url_r": "https://osf.io/4rk9z/overview",
+          "apa_ref_r": "Eshenbaugh · 2021 · OSF Preprints (OSF Preprints)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000306",
+          "source": "validated",
+          "doi_o": "10.1371/journal.pgen.1000660",
+          "apa_ref_o": "Nakanishi, H., Yamada, R., Gotoh, N., Hayashi, H., Yamashiro, K., Shimada, N., Ohno-Matsui, K., Mochizuki, M., Saito, M., Iida, T., Matsuo, K., Tajima, K., Yoshimura, N., & Matsuda, F. (2009). A Genome-Wide Association Analysis Identified a Novel Susceptible Locus for Pathological Myopia at 11q24.1. PLoS Genetics, 5(9), e1000660. https://doi.org/10.1371/journal.pgen.1000660",
+          "doi_r": "",
+          "url_r": "https://www.ncbi.nlm.nih.gov/pmc/articles/3244484",
+          "apa_ref_r": "Wang · 2011 · PubMed"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000307",
+          "source": "validated",
+          "doi_o": "10.1038/eye.2008.152",
+          "apa_ref_o": "Nishizaki, R., Ota, M., Inoko, H., Meguro, A., Shiota, T., Okada, E., Mok, J., Oka, A., Ohno, S., & Mizuki, N. (2008). New susceptibility locus for high myopia is linked to the uromodulin-like 1 (UMODL1) gene region on chromosome 21q22.3. Eye, 23(1), 222–229. https://doi.org/10.1038/eye.2008.152",
+          "doi_r": "",
+          "url_r": "https://www.ncbi.nlm.nih.gov/pmc/articles/3244484",
+          "apa_ref_r": "Wang · 2011 · PubMed"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000317",
+          "source": "validated",
+          "doi_o": "10.1016/j.evolhumbehav.2012.02.004",
+          "apa_ref_o": "McCullough, M. E., Carter, E. C., DeWall, C. N., & Corrales, C. M. (2012). Religious cognition down-regulates sexually selected, characteristically male behaviors in men, but not in women. Evolution and Human Behavior, 33(5), 562–568. https://doi.org/10.1016/j.evolhumbehav.2012.02.004",
+          "doi_r": "",
+          "url_r": "http://api.osf.io/v2/nodes/y6mi9/",
+          "apa_ref_r": "McCullough · 2014 · OSF Preprints (OSF Preprints)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000347",
+          "source": "validated",
+          "doi_o": "10.3758/bf03197186",
+          "apa_ref_o": "Shafir, E. (1993). Choosing versus rejecting: Why some options are both better and worse than others. Memory & Cognition, 21(4), 546–556. https://doi.org/10.3758/bf03197186",
+          "doi_r": "",
+          "url_r": "http://api.osf.io/v2/nodes/ve9bg/",
+          "apa_ref_r": "Weber · 2021 · OSF Preprints (OSF Preprints)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000349",
+          "source": "validated",
+          "doi_o": "10.1023/a:1011122126881",
+          "apa_ref_o": "Goldenberg, J., Libai, B., & Muller, E. (2001). Talk of the Network: A Complex Systems Look at the Underlying Process of Word-of-Mouth. Marketing Letters, 12(3), 211–223. https://doi.org/10.1023/a:1011122126881",
+          "doi_r": "",
+          "url_r": "https://www.researchgate.net/profile/Hume-Winzar/publication/29466608_A_Replication_and_Extension_of_Goldenberg_Libai_Muller_A_Complex_Systems_Look_at_the_Underlying_Process_of_Word-of-Mouth/links/0a85e5317ab077f860000000/A-Replication-and-Extension-of-Goldenberg-Libai-Muller-A-Complex-Systems-Look-at-the-Underlying-Process-of-Word-of-Mouth.pdf",
+          "apa_ref_r": "Winzar · 2016"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000350",
+          "source": "validated",
+          "doi_o": "10.1016/j.brainres.2009.07.042",
+          "apa_ref_o": "Otten, M., & Van Berkum, J. J. A. (2009). Does working memory capacity affect the ability to predict upcoming words in discourse? Brain Research, 1291, 92–101. https://doi.org/10.1016/j.brainres.2009.07.042",
+          "doi_r": "",
+          "url_r": "http://api.osf.io/v2/nodes/prdfu/",
+          "apa_ref_r": "Flecken · 2018 · OSF Preprints (OSF Preprints)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000352",
+          "source": "validated",
+          "doi_o": "10.1016/j.cogdev.2010.09.001",
+          "apa_ref_o": "Hamlin, J. K., & Wynn, K. (2011). Young infants prefer prosocial to antisocial others. Cognitive Development, 26(1), 30–39. https://doi.org/10.1016/j.cogdev.2010.09.001",
+          "doi_r": "",
+          "url_r": "https://scholarlycommons.pacific.edu/uop_etds/294",
+          "apa_ref_r": "D. · 2014 · Scholarly Commons (University of the Pacific)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000355",
+          "source": "validated",
+          "doi_o": "10.1016/j.ajhg.2008.03.016",
+          "apa_ref_o": "Zhernakova, A., Festen, E. M., Franke, L., Trynka, G., van Diemen, C. C., Monsuur, A. J., Bevova, M., Nijmeijer, R. M., van ’t Slot, R., Heijmans, R., Boezen, H. M., van Heel, D. A., van Bodegraven, A. A., Stokkers, P. C. F., Wijmenga, C., Crusius, J. B. A., & Weersma, R. K. (2008). Genetic Analysis of Innate Immunity in Crohn’s Disease and Ulcerative Colitis Identifies Two Susceptibility Loci Harboring CARD9 and IL18RAP. The American Journal of Human Genetics, 82(5), 1202–1210. https://doi.org/10.1016/j.ajhg.2008.03.016",
+          "doi_r": "",
+          "url_r": "https://pubmed.ncbi.nlm.nih.gov/26722558",
+          "apa_ref_r": "Wang · 2015 · PubMed"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000432",
+          "source": "validated",
+          "doi_o": "10.1016/j.jmathb.2019.01.003",
+          "apa_ref_o": "Martínez-Planell, R., & Trigueros, M. (2019). Using cycles of research in APOS: The case of functions of two variables. The Journal of Mathematical Behavior, 55, 100687. https://doi.org/10.1016/j.jmathb.2019.01.003",
+          "doi_r": "",
+          "url_r": "https://hal.science/hal-03750572",
+          "apa_ref_r": "Borji · 2022 · HAL (Le Centre pour la Communication Scientifique Directe)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000442",
+          "source": "validated",
+          "doi_o": "10.1038/nature11467",
+          "apa_ref_o": "Rand, D. G., Greene, J. D., & Nowak, M. A. (2012). Spontaneous giving and calculated greed. Nature, 489(7416), 427–430. https://doi.org/10.1038/nature11467",
+          "doi_r": "",
+          "url_r": "http://repub.eur.nl/pub/98663",
+          "apa_ref_r": "(Samantha) · 2017 · RePub (Erasmus University, Rotterdam)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000453",
+          "source": "validated",
+          "doi_o": "10.1086/598971",
+          "apa_ref_o": "Redden, J. P., & Hoch, S. J. (2009). The Presence of Variety Reduces Perceived Quantity. Journal of Consumer Research, 36(3), 406–417. https://doi.org/10.1086/598971",
+          "doi_r": "",
+          "url_r": "http://api.osf.io/v2/nodes/9s4w7/",
+          "apa_ref_r": "Röseler · 2021 · OSF Preprints (OSF Preprints)"
+        }
+      ]
+    },
+    "dup_outcome_conflicts.csv": {
+      "description": "merged records whose duplicates gave different outcomes",
+      "rows": 59,
+      "records": [
+        {
+          "doi_o": "10.1037/0022-3514.86.5.680",
+          "doi_r": "10.1016/j.jesp.2020.104052",
+          "type": "replication",
+          "outcomes": "failed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1145/3290605.3300469",
+          "doi_r": "10.1098/rsos.231240",
+          "type": "replication",
+          "outcomes": "failed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://github.com/psych251/jakesch2023/blob/main/writeup/Replication%20Report%20Template.qmd",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1177/0956797616685771",
+          "doi_r": "10.1098/rsos.231240",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://github.com/vboyce/251-254-MA/blob/main/reports/jordan2017_2.html",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1073/pnas.1523698113",
+          "doi_r": "10.1098/rsos.231240",
+          "type": "replication",
+          "outcomes": "successful | uninformative",
+          "resolved_to": "successful",
+          "resolved_by": "merge rules: the kept record's outcome; needs a decision",
+          "url_r": "https://rpubs.com/rhanah/982957",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1177/0956797615612202",
+          "doi_r": "10.1098/rsos.231240",
+          "type": "replication",
+          "outcomes": "failed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://github.com/psych251/porter2016/blob/master/writeup/Replication%20of%20Study%201%20by%20Porter%20et%20al.Rmd",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1177/0956797615573516",
+          "doi_r": "10.1098/rsos.231240",
+          "type": "replication",
+          "outcomes": "failed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://rpubs.com/jackie_schwartz/341565",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1177/0146167202286008",
+          "doi_r": "10.1017/s1930297500008470",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "website record",
+          "url_r": "https://doi.org/10.1017/s1930297500008470",
+          "sources": "fred_replication_success | validated"
+        },
+        {
+          "doi_o": "10.3758/bf03211160",
+          "doi_r": "10.20982/tqmp.20.1.r001",
+          "type": "replication",
+          "outcomes": "failed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://www.tqmp.org/ReplicationStudies/vol20-1/r001/index.html",
+          "sources": "fred_replication_success | replications"
+        },
+        {
+          "doi_o": "10.1037/a0023527",
+          "doi_r": "10.1037/a0036079",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1037/a0012833",
+          "doi_r": "10.1177/2515245920958687",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1037/0022-3514.94.1.116",
+          "doi_r": "10.1177/2515245920958687",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1177/1948550611410890",
+          "doi_r": "10.1037/xge0000067",
+          "type": "replication",
+          "outcomes": "failed | uninformative",
+          "resolved_to": "uninformative",
+          "resolved_by": "merge rules: the kept record's outcome; needs a decision",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1037/0022-3514.71.2.230",
+          "doi_r": "10.1037/0022-3514.83.2.406",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1111/j.1468-0017.2006.00297.x",
+          "doi_r": "10.1177/2515245918810225",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1002/(sici)1099-0771(199806)11:2%3c107::aid-bdm292%3e3.0.co;2-y",
+          "doi_r": "10.1177/2515245918810225",
+          "type": "replication",
+          "outcomes": "failed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1037/0022-3514.73.4.733",
+          "doi_r": "10.1177/08902070221094216",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1126/science.1239918",
+          "doi_r": "10.1037/pspa0000064",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.4148/1944-9771.1299",
+          "doi_r": "10.1111/fare.13030",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1016/0030-5073(76)90005-2",
+          "doi_r": "10.1037/xap0000366",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1126/science.1222426",
+          "doi_r": "10.1016/j.joep.2018.12.001",
+          "type": "replication",
+          "outcomes": "failed | mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1037/pspa0000032",
+          "doi_r": "10.1017/s1930297500007774",
+          "type": "replication",
+          "outcomes": "failed | mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1037/0096-3445.133.1.23",
+          "doi_r": "10.17605/osf.io/ahcpw",
+          "type": "replication",
+          "outcomes": "failed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://osf.io/qbp4g/files/ue9gm",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1080/02699931.2016.1273201",
+          "doi_r": "10.31234/osf.io/ntukz",
+          "type": "replication",
+          "outcomes": "failed | statistically successful but flawed",
+          "resolved_to": "statistically successful but flawed",
+          "resolved_by": "merge rules: the kept record's outcome; needs a decision",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1037/0022-3514.90.4.543",
+          "doi_r": "10.17605/osf.io/j9mfn",
+          "type": "replication",
+          "outcomes": "failed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://osf.io/8mqx5",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1017/s1930297500005064",
+          "doi_r": "10.1080/23743603.2021.1878340",
+          "type": "replication",
+          "outcomes": "failed | uninformative",
+          "resolved_to": "failed",
+          "resolved_by": "merge rules: the kept record's outcome; needs a decision",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1037/0022-3514.67.3.357",
+          "doi_r": "10.1525/collabra.37122",
+          "type": "replication",
+          "outcomes": "failed | mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1016/j.jesp.2008.03.012",
+          "doi_r": "10.1027/1864-9335/a000188",
+          "type": "replication",
+          "outcomes": "failed | mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "fred_replication_success | replications"
+        },
+        {
+          "doi_o": "10.1111/j.1467-9280.2006.01720.x",
+          "doi_r": "10.17605/osf.io/4hjck",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1023/a:1007744326393",
+          "doi_r": "10.1016/j.jesp.2021.104222",
+          "type": "replication",
+          "outcomes": "failed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1016/s0749-5978(02)00013-4",
+          "doi_r": "10.1016/j.jesp.2020.103972",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1016/s0022-1031(03)00065-9",
+          "doi_r": "10.1525/collabra.87489",
+          "type": "replication",
+          "outcomes": "failed | mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1111/1467-9280.00376",
+          "doi_r": "10.1177/0956797620968526",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://doi.org/10.1177/0956797620968526",
+          "sources": "fred_replication_success | replications"
+        },
+        {
+          "doi_o": "10.1126/scitranslmed.3001318",
+          "doi_r": "10.7554/elife.17044",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://doi.org/10.7554/elife.17044",
+          "sources": "replications"
+        },
+        {
+          "doi_o": "10.1038/nature11005",
+          "doi_r": "10.7554/elife.29747",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://doi.org/10.7554/elife.29747",
+          "sources": "replications"
+        },
+        {
+          "doi_o": "10.3758/s13423-014-0683-5",
+          "doi_r": "10.1177/25152459241267902",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://doi.org/10.1177/25152459241267902",
+          "sources": "replications"
+        },
+        {
+          "doi_o": "10.1016/0030-5073(84)90043-6",
+          "doi_r": "10.1177/15480518251379918",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://doi.org/10.1177/15480518251379918",
+          "sources": "replications"
+        },
+        {
+          "doi_o": "10.1038/nature06288",
+          "doi_r": "10.1111/desc.13581",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://doi.org/10.1111/desc.13581",
+          "sources": "replications"
+        },
+        {
+          "doi_o": "10.1038/nm.2753",
+          "doi_r": "10.7554/elife.39944",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://doi.org/10.7554/elife.39944",
+          "sources": "replications"
+        },
+        {
+          "doi_o": "10.1093/jopart/muu053",
+          "doi_r": "10.1111/padm.13031",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "website record",
+          "url_r": "https://doi.org/10.1111/padm.13031",
+          "sources": "replications | validated"
+        },
+        {
+          "doi_o": "10.1073/pnas.1121623109",
+          "doi_r": "10.7554/elife.18173",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://doi.org/10.7554/elife.18173",
+          "sources": "replications"
+        },
+        {
+          "doi_o": "10.1037/0022-3514.75.1.5",
+          "doi_r": "10.1177/25152459251401177",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "",
+          "sources": "replications"
+        },
+        {
+          "doi_o": "10.1016/s1386-4181(01)00024-6",
+          "doi_r": "10.1561/104.00000058",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://doi.org/10.1561/104.00000058",
+          "sources": "replications"
+        },
+        {
+          "doi_o": "10.1073/pnas.1211645109",
+          "doi_r": "10.1002/ejsp.2390",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "website record",
+          "url_r": "https://doi.org/10.1002/ejsp.2390",
+          "sources": "replications | validated"
+        },
+        {
+          "doi_o": "10.1016/j.jfineco.2004.06.007",
+          "doi_r": "10.1561/104.00000072",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://doi.org/10.1561/104.00000072",
+          "sources": "replications"
+        },
+        {
+          "doi_o": "10.1198/073500102317352029",
+          "doi_r": "10.17016/feds.2017.062",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://doi.org/10.17016/feds.2017.062",
+          "sources": "replications"
+        },
+        {
+          "doi_o": "10.1016/s0022-4359(00)00035-x",
+          "doi_r": "10.1080/15332969.2014.916148",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "successful",
+          "resolved_by": "website record",
+          "url_r": "https://doi.org/10.1080/15332969.2014.916148",
+          "sources": "replications | validated"
+        },
+        {
+          "doi_o": "10.1002/jaba.672",
+          "doi_r": "10.1002/jaba.740",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "successful",
+          "resolved_by": "website record",
+          "url_r": "https://doi.org/10.1002/jaba.740",
+          "sources": "replications | validated"
+        },
+        {
+          "doi_o": "10.1287/orsc.1040.0065",
+          "doi_r": "10.1002/smj.2573",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "website record",
+          "url_r": "https://doi.org/10.1002/smj.2573",
+          "sources": "replications | validated"
+        },
+        {
+          "doi_o": "10.1038/nm.4246",
+          "doi_r": "10.1016/j.nicl.2019.101796",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "website record",
+          "url_r": "",
+          "sources": "replications | validated"
+        },
+        {
+          "doi_o": "10.1016/j.neuron.2008.07.005",
+          "doi_r": "10.1016/j.cortex.2022.12.003",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "website record",
+          "url_r": "https://doi.org/10.1016/j.cortex.2022.12.003",
+          "sources": "replications | validated"
+        },
+        {
+          "doi_o": "10.1287/orsc.2017.1146",
+          "doi_r": "10.1057/s41267-022-00532-8",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://doi.org/10.1057/s41267-022-00532-8",
+          "sources": "replications"
+        },
+        {
+          "doi_o": "10.1007/bf01371820",
+          "doi_r": "10.1007/s00426-026-02299-1",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "website record",
+          "url_r": "https://doi.org/10.1007/s00426-026-02299-1",
+          "sources": "replications | validated"
+        },
+        {
+          "doi_o": "10.22004/ag.econ.139020",
+          "doi_r": "10.1002/aepp.13306",
+          "type": "replication",
+          "outcomes": "failed | successful",
+          "resolved_to": "successful",
+          "resolved_by": "website record",
+          "url_r": "https://doi.org/10.1002/aepp.13306",
+          "sources": "replications | validated"
+        },
+        {
+          "doi_o": "10.1016/j.jcorpfin.2007.03.004",
+          "doi_r": "10.1016/j.jfbs.2021.100451",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules",
+          "url_r": "https://doi.org/10.1016/j.jfbs.2021.100451",
+          "sources": "replications"
+        },
+        {
+          "doi_o": "10.3982/ecta6248",
+          "doi_r": "10.1002/jae.2861",
+          "type": "reproduction",
+          "outcomes": "computationally reproducible, not checked | computationally reproducible, robust",
+          "resolved_to": "computationally reproducible, not checked",
+          "resolved_by": "website record",
+          "url_r": "https://doi.org/10.1002/jae.2861",
+          "sources": "reproductions | validated"
+        },
+        {
+          "doi_o": "10.1037/0096-3445.136.2.289",
+          "doi_r": "",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules: the kept record's outcome; needs a decision",
+          "url_r": "https://osf.io/ns26x",
+          "sources": "fred_replication_success"
+        },
+        {
+          "doi_o": "10.1111/jsbm.12023",
+          "doi_r": "10.1108/neje-04-2020-0005",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "merge rules: the kept record's outcome; needs a decision",
+          "url_r": "",
+          "sources": "replications"
+        },
+        {
+          "doi_o": "10.1177/0267658315589656",
+          "doi_r": "10.1017/s0261444818000368",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "successful",
+          "resolved_by": "merge rules: the kept record's outcome; needs a decision",
+          "url_r": "",
+          "sources": "replications"
+        },
+        {
+          "doi_o": "10.1016/j.jfbs.2016.08.001",
+          "doi_r": "10.1016/j.jfbs.2022.100497",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "website record",
+          "url_r": "https://www.sciencedirect.com/science/article/pii/S1877858522000158?via%3Dihub#sec0050",
+          "sources": "replications | validated"
+        }
+      ]
+    },
+    "preprint_dedup_candidates.csv": {
+      "description": "preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates)",
+      "rows": 25,
+      "records": [
+        {
+          "side": "replication",
+          "doi_1": "10.31234/osf.io/kavx4",
+          "doi_2": "10.1177/0956797620968526",
+          "applied_action": "auto_keep_2",
+          "resolution": "auto: drop doi_1",
+          "title_1": "Incidental Attitude Formation via the Surveillance Task: A Registered Replication Report of Olson and Fazio (2001)",
+          "title_2": "Incidental Attitude Formation via the Surveillance Task: A Preregistered Replication of the Olson and Fazio (2001) Study",
+          "title_sim": "0.855",
+          "first_author_1": "moran",
+          "first_author_2": "moran",
+          "year_1": "2020",
+          "year_2": "2020",
+          "is_preprint_1": "True",
+          "is_preprint_2": "False",
+          "group_key": "doi_o: 10.1111/1467-9280.00376",
+          "doi_o_group": "10.1111/1467-9280.00376",
+          "source_display_id_1": "FRED-000982",
+          "type_1": "replication",
+          "outcome_1": "successful",
+          "url_1": "",
+          "source_display_id_2": "FRED-000983",
+          "type_2": "replication",
+          "outcome_2": "mixed",
+          "url_2": "",
+          "doi_remove": "10.31234/osf.io/kavx4",
+          "doi_keep": "10.1177/0956797620968526"
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.1037/emo0000569",
+          "doi_2": "10.31234/osf.io/6tn4f",
+          "applied_action": "auto_keep_1",
+          "resolution": "auto: drop doi_2",
+          "title_1": "A conceptual replication of emotional intelligence as a second-stratum factor of intelligence.",
+          "title_2": "A conceptual replication of emotional intelligence as a second-stratum factor of intelligence",
+          "title_sim": "1.0",
+          "first_author_1": "evans",
+          "first_author_2": "evans",
+          "year_1": "2020",
+          "year_2": "2019",
+          "is_preprint_1": "False",
+          "is_preprint_2": "True",
+          "group_key": "doi_o: 10.1037/a0034755",
+          "doi_o_group": "10.1037/a0034755",
+          "source_display_id_1": "REPL-000129",
+          "type_1": "replication",
+          "outcome_1": "successful",
+          "url_1": "",
+          "source_display_id_2": "VAL-000061",
+          "type_2": "replication",
+          "outcome_2": "successful",
+          "url_2": "",
+          "doi_remove": "10.31234/osf.io/6tn4f",
+          "doi_keep": "10.1037/emo0000569"
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.2466/07.10.17.pr0.107.4.139-144",
+          "doi_2": "10.2466/pr0.107.1.139-144",
+          "applied_action": "needs_review",
+          "resolution": "review: neither is a preprint or repository record",
+          "title_1": "Gender Label and Perceived Infant Emotionality: A Partial Replication of a Classic Study",
+          "title_2": "GENDER LABEL AND PERCEIVED INFANT EMOTIONALITY: A PARTIAL REPLICATION OF A CLASSIC STUDY<sup>1,2</sup>",
+          "title_sim": "0.978",
+          "first_author_1": "steuer",
+          "first_author_2": "steuer",
+          "year_1": "2010",
+          "year_2": "2010",
+          "is_preprint_1": "False",
+          "is_preprint_2": "False",
+          "group_key": "doi_o: 10.2307/1128199",
+          "doi_o_group": "10.2307/1128199",
+          "source_display_id_1": "REPL-000166",
+          "type_1": "replication",
+          "outcome_1": "mixed",
+          "url_1": "",
+          "source_display_id_2": "REPL-001208",
+          "type_2": "replication",
+          "outcome_2": "failed",
+          "url_2": "",
+          "doi_remove": "",
+          "doi_keep": ""
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.1371/journal.pone.0220419",
+          "doi_2": "10.1101/705798",
+          "applied_action": "auto_keep_1",
+          "resolution": "auto: drop doi_2",
+          "title_1": "Does sleep protect memories against interference? A failure to replicate",
+          "title_2": "Does Sleep Protect Memories Against Interference? A Failure to Replicate",
+          "title_sim": "1.0",
+          "first_author_1": "bailes",
+          "first_author_2": "bailes",
+          "year_1": "2020",
+          "year_2": "2019",
+          "is_preprint_1": "False",
+          "is_preprint_2": "True",
+          "group_key": "doi_o: 10.1371/journal.pone.0004117",
+          "doi_o_group": "10.1371/journal.pone.0004117",
+          "source_display_id_1": "REPL-000329",
+          "type_1": "replication",
+          "outcome_1": "failed",
+          "url_1": "",
+          "source_display_id_2": "VAL-000437",
+          "type_2": "replication",
+          "outcome_2": "failed",
+          "url_2": "https://www.biorxiv.org/content/biorxiv/early/2019/07/17/705798.full.pdf",
+          "doi_remove": "10.1101/705798",
+          "doi_keep": "10.1371/journal.pone.0220419"
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.26686/wgtn.17143838",
+          "doi_2": "10.26686/wgtn.17143838.v1",
+          "applied_action": "needs_review",
+          "resolution": "review: neither is a preprint or repository record",
+          "title_1": "The effects of different learning conditions on the development of collocational knowledge in a second language",
+          "title_2": "The effects of different learning conditions on the development of collocational knowledge in a second language",
+          "title_sim": "1.0",
+          "first_author_1": "toomer",
+          "first_author_2": "toomer",
+          "year_1": "2019",
+          "year_2": "2019",
+          "is_preprint_1": "False",
+          "is_preprint_2": "False",
+          "group_key": "doi_o: 10.1111/j.1467-9922.2012.00730.x",
+          "doi_o_group": "10.1111/j.1467-9922.2012.00730.x",
+          "source_display_id_1": "VAL-000366",
+          "type_1": "replication",
+          "outcome_1": "successful",
+          "url_1": "",
+          "source_display_id_2": "VAL-000401",
+          "type_2": "replication",
+          "outcome_2": "successful",
+          "url_2": "",
+          "doi_remove": "",
+          "doi_keep": ""
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.1101/2023.06.27.546731",
+          "doi_2": "10.7554/elife.91498",
+          "applied_action": "auto_keep_2",
+          "resolution": "auto: drop doi_1",
+          "title_1": "Evaluating Study Design Rigor in Preclinical Cardiovascular Research: A Replication Study",
+          "title_2": "Evaluating Study Design Rigor in Preclinical Cardiovascular Research: A Replication Study",
+          "title_sim": "1.0",
+          "first_author_1": "jimenez",
+          "first_author_2": "jimenez",
+          "year_1": "2023",
+          "year_2": "2025",
+          "is_preprint_1": "True",
+          "is_preprint_2": "False",
+          "group_key": "doi_o: 10.1161/circresaha.117.310628",
+          "doi_o_group": "10.1161/circresaha.117.310628",
+          "source_display_id_1": "REPL-000953",
+          "type_1": "replication",
+          "outcome_1": "successful",
+          "url_1": "",
+          "source_display_id_2": "VAL-000455",
+          "type_2": "replication",
+          "outcome_2": "successful",
+          "url_2": "https://elifesciences.org/reviewed-preprints/91498.pdf",
+          "doi_remove": "10.1101/2023.06.27.546731",
+          "doi_keep": "10.7554/elife.91498"
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.1098/rsos.221306",
+          "doi_2": "10.31222/osf.io/sjyp3",
+          "applied_action": "auto_keep_1",
+          "resolution": "auto: drop doi_2",
+          "title_1": "Replication of the natural selection of bad science",
+          "title_2": "Replication of the natural selection of bad science",
+          "title_sim": "1.0",
+          "first_author_1": "kohrt",
+          "first_author_2": "kohrt",
+          "year_1": "2023",
+          "year_2": "2022",
+          "is_preprint_1": "False",
+          "is_preprint_2": "True",
+          "group_key": "doi_o: 10.1098/rsos.160384",
+          "doi_o_group": "10.1098/rsos.160384",
+          "source_display_id_1": "REPL-000955",
+          "type_1": "replication",
+          "outcome_1": "successful",
+          "url_1": "",
+          "source_display_id_2": "VAL-000086",
+          "type_2": "replication",
+          "outcome_2": "successful",
+          "url_2": "",
+          "doi_remove": "10.31222/osf.io/sjyp3",
+          "doi_keep": "10.1098/rsos.221306"
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.3389/fnins.2017.00664",
+          "doi_2": "10.17605/osf.io/n65p3",
+          "applied_action": "auto_keep_1",
+          "resolution": "auto: drop doi_2",
+          "title_1": "No Interaction between tDCS Current Strength and Baseline Performance: A Conceptual Replication",
+          "title_2": "No Interaction Between tDCS Current Strength and Baseline Performance: A Conceptual Replication",
+          "title_sim": "1.0",
+          "first_author_1": "learmonth",
+          "first_author_2": "learmonth",
+          "year_1": "2017",
+          "year_2": "2017",
+          "is_preprint_1": "False",
+          "is_preprint_2": "False",
+          "group_key": "doi_o: 10.1016/j.cortex.2015.05.007",
+          "doi_o_group": "10.1016/j.cortex.2015.05.007",
+          "source_display_id_1": "REPL-001166",
+          "type_1": "replication",
+          "outcome_1": "failed",
+          "url_1": "",
+          "source_display_id_2": "VAL-000440",
+          "type_2": "replication",
+          "outcome_2": "failed",
+          "url_2": "",
+          "doi_remove": "10.17605/osf.io/n65p3",
+          "doi_keep": "10.3389/fnins.2017.00664"
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.7717/peerj.5790",
+          "doi_2": "10.1101/226092",
+          "applied_action": "auto_keep_1",
+          "resolution": "auto: drop doi_2",
+          "title_1": "Serotonin 5-HT <sub>1A</sub> receptor binding and self-transcendence in healthy control subjects—a replication study using Bayesian hypothesis testing",
+          "title_2": "Serotonin 5-HT\n                  <sub>1A</sub>\n                  receptor binding and self-transcendence in healthy control subjects - a replication study using Bayesian hypothesis testing",
+          "title_sim": "0.993",
+          "first_author_1": "griffioen",
+          "first_author_2": "griffioen",
+          "year_1": "2018",
+          "year_2": "2017",
+          "is_preprint_1": "False",
+          "is_preprint_2": "True",
+          "group_key": "doi_o: 10.1176/appi.ajp.160.11.1965",
+          "doi_o_group": "10.1176/appi.ajp.160.11.1965",
+          "source_display_id_1": "REPL-001175",
+          "type_1": "replication",
+          "outcome_1": "failed",
+          "url_1": "",
+          "source_display_id_2": "VAL-000358",
+          "type_2": "replication",
+          "outcome_2": "failed",
+          "url_2": "https://www.biorxiv.org/content/biorxiv/early/2017/12/22/226092.full.pdf",
+          "doi_remove": "10.1101/226092",
+          "doi_keep": "10.7717/peerj.5790"
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.1523/eneuro.0150-20.2020",
+          "doi_2": "10.31219/osf.io/pzy5q",
+          "applied_action": "auto_keep_1",
+          "resolution": "auto: drop doi_2",
+          "title_1": "No Evidence for an Object Working Memory Capacity Benefit with Extended Viewing Time",
+          "title_2": "No Evidence for an Object Working Memory Capacity Benefit with Extended Viewing Time",
+          "title_sim": "1.0",
+          "first_author_1": "quirk",
+          "first_author_2": "quirk",
+          "year_1": "2020",
+          "year_2": "2020",
+          "is_preprint_1": "False",
+          "is_preprint_2": "True",
+          "group_key": "doi_o: 10.1073/pnas.1520027113",
+          "doi_o_group": "10.1073/pnas.1520027113",
+          "source_display_id_1": "REPL-001177",
+          "type_1": "replication",
+          "outcome_1": "failed",
+          "url_1": "",
+          "source_display_id_2": "VAL-000024",
+          "type_2": "replication",
+          "outcome_2": "failed",
+          "url_2": "",
+          "doi_remove": "10.31219/osf.io/pzy5q",
+          "doi_keep": "10.1523/eneuro.0150-20.2020"
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.1177/0956797620955209",
+          "doi_2": "10.31234/osf.io/m6ghr",
+          "applied_action": "auto_keep_1",
+          "resolution": "auto: drop doi_2",
+          "title_1": "Preregistered Direct Replication of “Sick Body, Vigilant Mind: The Biological Immune System Activates the Behavioral Immune System”",
+          "title_2": "Preregistered replication of “Sick body, vigilant mind: The biological immune system activates the behavioral immune system”",
+          "title_sim": "0.945",
+          "first_author_1": "tybur",
+          "first_author_2": "tybur",
+          "year_1": "2020",
+          "year_2": "2020",
+          "is_preprint_1": "False",
+          "is_preprint_2": "True",
+          "group_key": "doi_o: 10.1177/0956797611420166",
+          "doi_o_group": "10.1177/0956797611420166",
+          "source_display_id_1": "REPL-001343",
+          "type_1": "replication",
+          "outcome_1": "failed",
+          "url_1": "",
+          "source_display_id_2": "VAL-000007",
+          "type_2": "replication",
+          "outcome_2": "failed",
+          "url_2": "",
+          "doi_remove": "10.31234/osf.io/m6ghr",
+          "doi_keep": "10.1177/0956797620955209"
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.31234/osf.io/b87v6_v1",
+          "doi_2": "10.1111/jpr.70034",
+          "applied_action": "auto_keep_2",
+          "resolution": "auto: drop doi_1",
+          "title_1": "A replication of system-threat paradigm in Japan: Pre-registered experiments using Bayes factor",
+          "title_2": "A Replication of System‐Threat Paradigm in Japan: Preregistered Experiments Using Bayes Factor",
+          "title_sim": "1.0",
+          "first_author_1": "kakimoto",
+          "first_author_2": "kakimoto",
+          "year_1": "2025",
+          "year_2": "2026",
+          "is_preprint_1": "True",
+          "is_preprint_2": "False",
+          "group_key": "doi_o: 10.1111/j.0956-7976.2005.00810.x",
+          "doi_o_group": "10.1111/j.0956-7976.2005.00810.x",
+          "source_display_id_1": "REPL-001387",
+          "type_1": "replication",
+          "outcome_1": "failed",
+          "url_1": "",
+          "source_display_id_2": "VAL-000253",
+          "type_2": "replication",
+          "outcome_2": "failed",
+          "url_2": "",
+          "doi_remove": "10.31234/osf.io/b87v6_v1",
+          "doi_keep": "10.1111/jpr.70034"
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.48550/arxiv.2208.07395",
+          "doi_2": "10.17879/replicationresearch-2026-9414",
+          "applied_action": "needs_review",
+          "resolution": "review: first authors differ",
+          "title_1": "Reproduction and Replication of an Adversarial Stylometry Experiment",
+          "title_2": "Reproduction and Replication of an Adversarial Stylometry Experiment",
+          "title_sim": "1.0",
+          "first_author_1": "wang",
+          "first_author_2": "haining",
+          "year_1": "2022",
+          "year_2": "2026",
+          "is_preprint_1": "True",
+          "is_preprint_2": "False",
+          "group_key": "doi_o: 10.1145/2382448.2382450",
+          "doi_o_group": "10.1145/2382448.2382450",
+          "source_display_id_1": "REPRO-000009",
+          "type_1": "reproduction",
+          "outcome_1": "computationally reproducible, robustness challenges",
+          "url_1": "",
+          "source_display_id_2": "REPRO-000019",
+          "type_2": "reproduction",
+          "outcome_2": "computationally reproducible, robust",
+          "url_2": "",
+          "doi_remove": "",
+          "doi_keep": ""
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.31234/osf.io/qn7pt",
+          "doi_2": "10.31234/osf.io/9kyur",
+          "applied_action": "needs_review",
+          "resolution": "review: both are preprints or repository records",
+          "title_1": "Sexual orientation predicts women’s preferences for sexually dimorphic face-shape characteristics",
+          "title_2": "Sexual orientation predicts men’s preferences for sexually dimorphic face-shape characteristics: a replication study.",
+          "title_sim": "0.805",
+          "first_author_1": "shiramizu",
+          "first_author_2": "shiramizu",
+          "year_1": "2021",
+          "year_2": "2020",
+          "is_preprint_1": "True",
+          "is_preprint_2": "True",
+          "group_key": "doi_o: 10.1007/s10508-009-9559-6",
+          "doi_o_group": "10.1007/s10508-009-9559-6",
+          "source_display_id_1": "VAL-000015",
+          "type_1": "replication",
+          "outcome_1": "successful",
+          "url_1": "",
+          "source_display_id_2": "VAL-000351",
+          "type_2": "replication",
+          "outcome_2": "successful",
+          "url_2": "https://psyarxiv.com/9kyur/download",
+          "doi_remove": "",
+          "doi_keep": ""
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.23668/psycharchives.4766",
+          "doi_2": "10.5964/jnc.6063",
+          "applied_action": "auto_keep_2",
+          "resolution": "auto: drop doi_1",
+          "title_1": "Not all Elementary School Teachers are Scared of Math",
+          "title_2": "Not All Elementary School Teachers Are Scared of Math",
+          "title_sim": "1.0",
+          "first_author_1": "artemenko",
+          "first_author_2": "artemenko",
+          "year_1": "2021",
+          "year_2": "2021",
+          "is_preprint_1": "False",
+          "is_preprint_2": "False",
+          "group_key": "doi_o: 10.2307/749455",
+          "doi_o_group": "10.2307/749455",
+          "source_display_id_1": "VAL-000018",
+          "type_1": "replication",
+          "outcome_1": "successful",
+          "url_1": "",
+          "source_display_id_2": "VAL-000044",
+          "type_2": "replication",
+          "outcome_2": "successful",
+          "url_2": "10.31234/osf.io/wej8z",
+          "doi_remove": "10.23668/psycharchives.4766",
+          "doi_keep": "10.5964/jnc.6063"
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.31234/osf.io/3fvyn",
+          "doi_2": "10.1525/collabra.68054",
+          "applied_action": "auto_keep_2",
+          "resolution": "auto: drop doi_1",
+          "title_1": "Expressive responding in support of Donald Trump: An extended replication of Schaffner and Luks (2018)",
+          "title_2": "Expressive Responding in Support of Donald Trump: An Extended Replication of Schaffner and Luks (2018)",
+          "title_sim": "1.0",
+          "first_author_1": "ross",
+          "first_author_2": "ross",
+          "year_1": "2022",
+          "year_2": "2023",
+          "is_preprint_1": "True",
+          "is_preprint_2": "False",
+          "group_key": "doi_o: 10.1093/poq/nfx042",
+          "doi_o_group": "10.1093/poq/nfx042",
+          "source_display_id_1": "VAL-000038",
+          "type_1": "replication",
+          "outcome_1": "successful",
+          "url_1": "",
+          "source_display_id_2": "FRED-000760",
+          "type_2": "replication",
+          "outcome_2": "successful",
+          "url_2": "",
+          "doi_remove": "10.31234/osf.io/3fvyn",
+          "doi_keep": "10.1525/collabra.68054"
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.31234/osf.io/yd4re",
+          "doi_2": "10.1098/rsos.171127",
+          "applied_action": "auto_keep_2",
+          "resolution": "auto: drop doi_1",
+          "title_1": "Does it Actually Feel Right? A Replication Attempt of the Rounded Price Effect",
+          "title_2": "Does it actually feel right? A replication attempt of the rounded price effect",
+          "title_sim": "1.0",
+          "first_author_1": "harms",
+          "first_author_2": "harms",
+          "year_1": "2017",
+          "year_2": "2018",
+          "is_preprint_1": "True",
+          "is_preprint_2": "False",
+          "group_key": "doi_o: 10.1086/678484",
+          "doi_o_group": "10.1086/678484",
+          "source_display_id_1": "VAL-000096",
+          "type_1": "replication",
+          "outcome_1": "failed",
+          "url_1": "",
+          "source_display_id_2": "VAL-000294",
+          "type_2": "replication",
+          "outcome_2": "failed",
+          "url_2": "",
+          "doi_remove": "10.31234/osf.io/yd4re",
+          "doi_keep": "10.1098/rsos.171127"
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.1016/j.infbeh.2019.03.005",
+          "doi_2": "10.31234/osf.io/fs2ez",
+          "applied_action": "auto_keep_1",
+          "resolution": "auto: drop doi_2",
+          "title_1": "Probing communication-induced memory biases in preverbal infants: Two replication attempts of Yoon, Johnson and Csibra (2008)",
+          "title_2": "Probing Communication-Induced Memory Biases in Preverbal Infants: Two Replication Attempts of Yoon, Johnson and Csibra (2008)",
+          "title_sim": "1.0",
+          "first_author_1": "silverstein",
+          "first_author_2": "silverstein",
+          "year_1": "2019",
+          "year_2": "2019",
+          "is_preprint_1": "False",
+          "is_preprint_2": "True",
+          "group_key": "doi_o: 10.1073/pnas.0804388105",
+          "doi_o_group": "10.1073/pnas.0804388105",
+          "source_display_id_1": "VAL-000260",
+          "type_1": "replication",
+          "outcome_1": "failed",
+          "url_1": "",
+          "source_display_id_2": "VAL-000345",
+          "type_2": "replication",
+          "outcome_2": "failed",
+          "url_2": "",
+          "doi_remove": "10.31234/osf.io/fs2ez",
+          "doi_keep": "10.1016/j.infbeh.2019.03.005"
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.17605/osf.io/77gpt",
+          "doi_2": "10.31234/osf.io/fs2ez",
+          "applied_action": "needs_review",
+          "resolution": "review: first authors differ",
+          "title_1": "Probing Communication Induced Memory Biases in Preverbal Infants: Two Replication Attempts of Yoon, Johnson and Csibra (2008)",
+          "title_2": "Probing Communication-Induced Memory Biases in Preverbal Infants: Two Replication Attempts of Yoon, Johnson and Csibra (2008)",
+          "title_sim": "0.992",
+          "first_author_1": "priya silverstein",
+          "first_author_2": "silverstein",
+          "year_1": "2020",
+          "year_2": "2019",
+          "is_preprint_1": "False",
+          "is_preprint_2": "True",
+          "group_key": "doi_o: 10.1073/pnas.0804388105",
+          "doi_o_group": "10.1073/pnas.0804388105",
+          "source_display_id_1": "VAL-000290",
+          "type_1": "replication",
+          "outcome_1": "failed",
+          "url_1": "https://osf.io/77gpt",
+          "source_display_id_2": "VAL-000345",
+          "type_2": "replication",
+          "outcome_2": "failed",
+          "url_2": "",
+          "doi_remove": "",
+          "doi_keep": ""
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.3389/fnbeh.2020.00128",
+          "doi_2": "10.31219/osf.io/enk2t",
+          "applied_action": "auto_keep_1",
+          "resolution": "auto: drop doi_2",
+          "title_1": "Resting State Cortico-Limbic Functional Connectivity and Dispositional Use of Emotion Regulation Strategies: A Replication and Extension Study",
+          "title_2": "Resting state cortico-limbic functional connectivity and dispositional use of emotion regulation strategies: A replication and extension study",
+          "title_sim": "1.0",
+          "first_author_1": "dörfel",
+          "first_author_2": "dörfel",
+          "year_1": "2020",
+          "year_2": "2020",
+          "is_preprint_1": "False",
+          "is_preprint_2": "True",
+          "group_key": "doi_o: 10.1007/s11682-017-9762-3",
+          "doi_o_group": "10.1007/s11682-017-9762-3",
+          "source_display_id_1": "VAL-000436",
+          "type_1": "replication",
+          "outcome_1": "failed",
+          "url_1": "",
+          "source_display_id_2": "VAL-000439",
+          "type_2": "replication",
+          "outcome_2": "failed",
+          "url_2": "",
+          "doi_remove": "10.31219/osf.io/enk2t",
+          "doi_keep": "10.3389/fnbeh.2020.00128"
+        },
+        {
+          "side": "original",
+          "doi_1": "10.1080/07350015.1995.10524601",
+          "doi_2": "10.2307/1392187",
+          "applied_action": "needs_review",
+          "resolution": "review: neither is a preprint or repository record",
+          "title_1": "Lag Order and Critical Values of the Augmented Dickey–Fuller Test",
+          "title_2": "Lag Order and Critical Values of the Augmented Dickey-Fuller Test",
+          "title_sim": "1.0",
+          "first_author_1": "cheung",
+          "first_author_2": "cheung",
+          "year_1": "1995",
+          "year_2": "1995",
+          "is_preprint_1": "False",
+          "is_preprint_2": "False",
+          "group_key": "title: lag order and critical values of the augmented dickeyfuller ",
+          "doi_o_group": "",
+          "source_display_id_1": "",
+          "type_1": "",
+          "outcome_1": "",
+          "url_1": "",
+          "source_display_id_2": "",
+          "type_2": "",
+          "outcome_2": "",
+          "url_2": "",
+          "doi_remove": "",
+          "doi_keep": ""
+        },
+        {
+          "side": "original",
+          "doi_1": "10.1037/e519682015-069",
+          "doi_2": "10.1177/0956797612464058",
+          "applied_action": "auto_keep_2",
+          "resolution": "auto: drop doi_1",
+          "title_1": "Political Extremism is Supported by an Illusion of Understanding",
+          "title_2": "Political Extremism Is Supported by an Illusion of Understanding",
+          "title_sim": "1.0",
+          "first_author_1": "fernbach",
+          "first_author_2": "fernbach",
+          "year_1": "2012",
+          "year_2": "2013",
+          "is_preprint_1": "False",
+          "is_preprint_2": "False",
+          "group_key": "title: political extremism is supported by an illusion of understan",
+          "doi_o_group": "",
+          "source_display_id_1": "",
+          "type_1": "",
+          "outcome_1": "",
+          "url_1": "",
+          "source_display_id_2": "",
+          "type_2": "",
+          "outcome_2": "",
+          "url_2": "",
+          "doi_remove": "10.1037/e519682015-069",
+          "doi_keep": "10.1177/0956797612464058"
+        },
+        {
+          "side": "original",
+          "doi_1": "10.2139/ssrn.946239",
+          "doi_2": "10.1037/0096-3445.135.4.641",
+          "applied_action": "auto_keep_2",
+          "resolution": "auto: drop doi_1",
+          "title_1": "Seeing the Forest When Entry is Unlikely: Probability and the Mental Representation of Events",
+          "title_2": "Seeing the forest when entry is unlikely: Probability and the mental representation of events.",
+          "title_sim": "1.0",
+          "first_author_1": "wakslak",
+          "first_author_2": "wakslak",
+          "year_1": "2006",
+          "year_2": "2006",
+          "is_preprint_1": "True",
+          "is_preprint_2": "False",
+          "group_key": "title: seeing the forest when entry is unlikely probability and the",
+          "doi_o_group": "",
+          "source_display_id_1": "",
+          "type_1": "",
+          "outcome_1": "",
+          "url_1": "",
+          "source_display_id_2": "",
+          "type_2": "",
+          "outcome_2": "",
+          "url_2": "",
+          "doi_remove": "10.2139/ssrn.946239",
+          "doi_keep": "10.1037/0096-3445.135.4.641"
+        },
+        {
+          "side": "original (DOI variant)",
+          "doi_1": "10.1037//0022-3514.68.5.793",
+          "doi_2": "10.1037/0022-3514.68.5.793",
+          "applied_action": "auto_keep_2",
+          "resolution": "auto: drop doi_1",
+          "title_1": "Inaction inertia: Foregoing future benefits as a result of an initial failure to act.",
+          "title_2": "Inaction inertia: Foregoing future benefits as a result of an initial failure to act.",
+          "title_sim": "1.0",
+          "first_author_1": "tykocinski",
+          "first_author_2": "tykocinski",
+          "year_1": "1995",
+          "year_2": "1995",
+          "is_preprint_1": "False",
+          "is_preprint_2": "False",
+          "group_key": "doi_variant: 10.1037/0022-3514.68.5.793",
+          "doi_o_group": "",
+          "source_display_id_1": "",
+          "type_1": "",
+          "outcome_1": "",
+          "url_1": "",
+          "source_display_id_2": "",
+          "type_2": "",
+          "outcome_2": "",
+          "url_2": "",
+          "doi_remove": "10.1037//0022-3514.68.5.793",
+          "doi_keep": "10.1037/0022-3514.68.5.793"
+        },
+        {
+          "side": "original (fuzzy)",
+          "doi_1": "10.3386/w6614",
+          "doi_2": "10.1016/s0047-2727(99)00036-5",
+          "applied_action": "auto_keep_2",
+          "resolution": "auto: drop doi_1",
+          "title_1": "Coveting Thy Neighbor's Manuafacturing: The Dilemma of State Income Apportionment",
+          "title_2": "Coveting thy neighbor’s manufacturing: the dilemma of state income apportionment",
+          "title_sim": "0.987",
+          "first_author_1": "goolsbee",
+          "first_author_2": "goolsbee",
+          "year_1": "1998",
+          "year_2": "2000",
+          "is_preprint_1": "False",
+          "is_preprint_2": "False",
+          "group_key": "author: goolsbee",
+          "doi_o_group": "",
+          "source_display_id_1": "",
+          "type_1": "",
+          "outcome_1": "",
+          "url_1": "",
+          "source_display_id_2": "",
+          "type_2": "",
+          "outcome_2": "",
+          "url_2": "",
+          "doi_remove": "10.3386/w6614",
+          "doi_keep": "10.1016/s0047-2727(99)00036-5"
+        }
+      ]
+    }
+  },
+  "identity": {
+    "status": "passed",
+    "rows": 2837,
+    "unique_ids": 2837
+  },
+  "columns": [
+    "id",
+    "id_md5",
+    "doi_o",
+    "alt_identifier_o",
+    "doi_o_hash",
+    "title_o",
+    "author_o",
+    "journal_o",
+    "year_o",
+    "volume_o",
+    "issue_o",
+    "pages_o",
+    "apa_ref_o",
+    "bibtex_ref_o",
+    "url_o",
+    "language_o",
+    "doi_r",
+    "alt_identifier_r",
+    "doi_r_hash",
+    "title_r",
+    "author_r",
+    "journal_r",
+    "year_r",
+    "volume_r",
+    "issue_r",
+    "pages_r",
+    "apa_ref_r",
+    "bibtex_ref_r",
+    "url_r",
+    "language_r",
+    "oa_url_o",
+    "oa_url_r",
+    "outcome",
+    "outcome_quote",
+    "outcome_quote_source",
+    "type",
+    "source",
+    "oa_work_id_o",
+    "oa_work_id_r",
+    "author_overlap",
+    "author_overlap_pct",
+    "abstract_r",
+    "outcome_computation",
+    "outcome_computational_quote",
+    "out_quote_computational_source",
+    "outcome_robustness",
+    "outcome_robustness_quote",
+    "out_quote_robust_source",
+    "flora_id",
+    "source_display_id",
+    "source_record_id"
+  ],
+  "structural": {
+    "results": [
+      {
+        "code": "invalid_url",
+        "level": "problem",
+        "name": "All links are valid URLs",
+        "heading": "Invalid URLs",
+        "description": "A url column holds something other than one complete http(s) link.",
+        "items": [
+          {
+            "check": "invalid_url",
+            "flora_ids": [
+              "REPL-001235"
+            ],
+            "column": "oa_url_r",
+            "value": "http://libres.uncg.edu/ir/asu/f/Eshenbaugh_Brooklyn Spring 2018 Thesis.pdf",
+            "detail": "oa_url_r contains spaces (an open-access link from enrichment, not from the source record)",
+            "label": "10.1006/jesp.2001.1488 | 10.71889/5fylantbak.29863007",
+            "key": "invalid_url|REPL-001235|oa_url_r|http://libres.uncg.edu/ir/asu/f/eshenbaugh_brooklyn spring 2018 thesis.pdf",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_url",
+            "flora_ids": [
+              "REPL-001621"
+            ],
+            "column": "url_r",
+            "value": "10.1037/xlm0001650",
+            "detail": "url_r holds a DOI, not a link",
+            "label": "10.1016/j.jml.2020.104174 | 10.31234/osf.io/kt3sw_v2",
+            "key": "invalid_url|REPL-001621|url_r|10.1037/xlm0001650",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_url",
+            "flora_ids": [
+              "FRED-000419"
+            ],
+            "column": "oa_url_o",
+            "value": "http://libres.uncg.edu/ir/uncg/f/P_Delaney_Intentional_2008(MULTI UNCG AUTHORS).pdf",
+            "detail": "oa_url_o contains spaces (an open-access link from enrichment, not from the source record)",
+            "label": "10.1037/0278-7393.34.2.408 | 10.1126/science.aac4716",
+            "key": "invalid_url|FRED-000419|oa_url_o|http://libres.uncg.edu/ir/uncg/f/p_delaney_intentional_2008(multi uncg authors).pdf",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_url",
+            "flora_ids": [
+              "FRED-000048"
+            ],
+            "column": "url_r",
+            "value": "https://osf.io/v6zk8 or http://rpubs.com/catherinecthomas/final_replication",
+            "detail": "url_r holds two links",
+            "label": "10.1177/0956797616674999 | 10.1098/rsos.231240",
+            "key": "invalid_url|FRED-000048|url_r|https://osf.io/v6zk8 or http://rpubs.com/catherinecthomas/final_replication",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_url",
+            "flora_ids": [
+              "VAL-000258"
+            ],
+            "column": "oa_url_r",
+            "value": "https://www.termedia.pl/Journal/-75/pdf-45660-10?filename=Williams Conceptual.pdf",
+            "detail": "oa_url_r contains spaces (an open-access link from enrichment, not from the source record)",
+            "label": "10.2224/sbp.2008.36.6.753 | 10.5114/cipp.2021.110948",
+            "key": "invalid_url|VAL-000258|oa_url_r|https://www.termedia.pl/journal/-75/pdf-45660-10?filename=williams conceptual.pdf",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_url",
+            "flora_ids": [
+              "VAL-000274"
+            ],
+            "column": "url_r",
+            "value": "https://journals.sagepub.com/doi/full/10.1177/2515…",
+            "detail": "url_r is cut off",
+            "label": "10.1111/j.1467-9280.2008.02072.x | 10.17605/osf.io/yptua",
+            "key": "invalid_url|VAL-000274|url_r|https://journals.sagepub.com/doi/full/10.1177/2515…",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_url",
+            "flora_ids": [
+              "VAL-000044"
+            ],
+            "column": "url_r",
+            "value": "10.31234/osf.io/wej8z",
+            "detail": "url_r holds a DOI, not a link",
+            "label": "10.2307/749455 | 10.5964/jnc.6063",
+            "key": "invalid_url|VAL-000044|url_r|10.31234/osf.io/wej8z",
+            "level": "problem"
+          }
+        ],
+        "passed": false
+      },
+      {
+        "code": "invalid_outcome",
+        "level": "problem",
+        "name": "Outcome values valid",
+        "heading": "Invalid outcome values",
+        "description": "An outcome outside the allowed set for the row's type, not_a_replication, or missing.",
+        "items": [
+          {
+            "check": "invalid_outcome",
+            "flora_ids": [
+              "REPL-000419"
+            ],
+            "column": "outcome",
+            "value": null,
+            "detail": "outcome is blank",
+            "label": "10.1002/j.2164-585x.1979.tb00097.x | 10.1353/csd.2014.0018",
+            "key": "invalid_outcome|REPL-000419|outcome|",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_outcome",
+            "flora_ids": [
+              "SCORE-000055"
+            ],
+            "column": "outcome",
+            "value": null,
+            "detail": "outcome is blank",
+            "label": "10.1017/xps.2014.22 | https://osf.io/8uc5z/files/jmk9d",
+            "key": "invalid_outcome|SCORE-000055|outcome|",
+            "level": "problem"
+          }
+        ],
+        "passed": false
+      },
+      {
+        "code": "json_in_text",
+        "level": "problem",
+        "name": "Text fields hold text",
+        "heading": "JSON in a text field",
+        "description": "A title, journal or APA reference holds a JSON record instead of text.",
+        "items": [],
+        "passed": true
+      },
+      {
+        "code": "invalid_type",
+        "level": "problem",
+        "name": "Type values valid",
+        "heading": "Invalid type values",
+        "description": "type must be 'replication' or 'reproduction'.",
+        "items": [],
+        "passed": true
+      },
+      {
+        "code": "invalid_source",
+        "level": "problem",
+        "name": "Source values valid",
+        "heading": "Invalid source values",
+        "description": "source must be one of the labels the build publishes.",
+        "items": [],
+        "passed": true
+      },
+      {
+        "code": "implausible_year",
+        "level": "problem",
+        "name": "Year ranges reasonable",
+        "heading": "Implausible years",
+        "description": "year_o or year_r is outside 1600 to next year.",
+        "items": [],
+        "passed": true
+      },
+      {
+        "code": "duplicate_record",
+        "level": "problem",
+        "name": "No duplicate records",
+        "heading": "Duplicate records",
+        "description": "Rows the build would have made one record: the same type, doi_o, doi_r and url_r, or the same DOIs with one url_r between them.",
+        "items": [],
+        "passed": true
+      },
+      {
+        "code": "missing_required",
+        "level": "problem",
+        "name": "Required fields present",
+        "heading": "Missing required fields",
+        "description": "title_o, title_r, doi_r or url_r, and an identifier for the original: doi_o, a url_o that is a link or DOI (not a title), alt_identifier_o or oa_work_id_o.",
+        "items": [
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-000077"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.1016/j.lindif.2015.03.029",
+            "key": "missing_required|REPL-000077|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-000091"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.1177/2053168016652420",
+            "key": "missing_required|REPL-000091|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-000141"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.1177/0016986220932533",
+            "key": "missing_required|REPL-000141|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-000146"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.1002/aur.2496",
+            "key": "missing_required|REPL-000146|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-000234"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.18148/srm/2012.v6i1.5092",
+            "key": "missing_required|REPL-000234|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-000241"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.1103/physrevstper.10.010110",
+            "key": "missing_required|REPL-000241|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-000244"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.1080/22243534.2015.11828344",
+            "key": "missing_required|REPL-000244|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-000356"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.1177/0958928712471227",
+            "key": "missing_required|REPL-000356|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-000448"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.1371/journal.pone.0120644",
+            "key": "missing_required|REPL-000448|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-000621"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.5539/ibr.v5n4p71",
+            "key": "missing_required|REPL-000621|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-001248"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.3390/jintelligence7010006",
+            "key": "missing_required|REPL-001248|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-000167"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.1177/0098628311421328",
+            "key": "missing_required|REPL-000167|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-000172"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.1177/0022466912449652",
+            "key": "missing_required|REPL-000172|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-000338"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.18653/v1/w19-8649",
+            "key": "missing_required|REPL-000338|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-000353"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.1111/j.1949-8594.2012.00166.x",
+            "key": "missing_required|REPL-000353|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-000357"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.1177/1029864913489703",
+            "key": "missing_required|REPL-000357|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-000622"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | https://blogs.lse.ac.uk/impactofsocialsciences/2013/09/10/bias-at-the-bbc-replicating-the-cps-analysis/",
+            "key": "missing_required|REPL-000622|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-001403"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.17885/heiup.1157.c19369",
+            "key": "missing_required|REPL-001403|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-001425"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.1142/s1084946721500084",
+            "key": "missing_required|REPL-001425|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "REPL-001641"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | https://hdl.handle.net/20.500.14721/40318",
+            "key": "missing_required|REPL-001641|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
+              "VAL-000394"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.5406/bulcouresmusedu.193.0045",
+            "key": "missing_required|VAL-000394|doi_o|",
+            "level": "problem"
+          }
+        ],
+        "passed": false
+      },
+      {
+        "code": "invalid_doi",
+        "level": "problem",
+        "name": "DOI format valid",
+        "heading": "Invalid DOI format",
+        "description": "doi_o or doi_r is not a bare DOI (10.NNNN/…), or a DOI listed in alt_identifier_o or alt_identifier_r is malformed.",
+        "items": [
+          {
+            "check": "invalid_doi",
+            "flora_ids": [
+              "REPL-001062"
+            ],
+            "column": "alt_identifier_r",
+            "value": "10.1108/s0193-230620150000018002?utm_campaign=repec&wt.mc_id=repec",
+            "detail": "alt_identifier_r lists a DOI that carries query or tracking text (?…)",
+            "label": "10.1111/j.1468-0297.2009.02267.x | 10.1108/s0193-230620150000018002",
+            "key": "invalid_doi|REPL-001062|alt_identifier_r|10.1108/s0193-230620150000018002?utm_campaign=repec&wt.mc_id=repec",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_doi",
+            "flora_ids": [
+              "FRED-000330"
+            ],
+            "column": "doi_o",
+            "value": "art00005",
+            "detail": "doi_o is not a DOI",
+            "label": "art00005 | 10.1007/s13164-018-0400-9",
+            "key": "invalid_doi|FRED-000330|doi_o|art00005",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_doi",
+            "flora_ids": [
+              "FRED-000059"
+            ],
+            "column": "doi_o",
+            "value": "djaerv_2018",
+            "detail": "doi_o is not a DOI",
+            "label": "djaerv_2018 | 10.1098/rsos.231240",
+            "key": "invalid_doi|FRED-000059|doi_o|djaerv_2018",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_doi",
+            "flora_ids": [
+              "FRED-000052"
+            ],
+            "column": "doi_o",
+            "value": "escholarship.orgucitem39d347bk",
+            "detail": "doi_o is not a DOI",
+            "label": "escholarship.orgucitem39d347bk | 10.1098/rsos.231240",
+            "key": "invalid_doi|FRED-000052|doi_o|escholarship.orgucitem39d347bk",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_doi",
+            "flora_ids": [
+              "VAL-000005"
+            ],
+            "column": "doi_r",
+            "value": "https://aisel.aisnet.org/trr/vol7/iss1/3",
+            "detail": "doi_r is a link, not a DOI",
+            "label": "10.1016/j.im.2015.06.009 | https://aisel.aisnet.org/trr/vol7/iss1/3",
+            "key": "invalid_doi|VAL-000005|doi_r|https://aisel.aisnet.org/trr/vol7/iss1/3",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_doi",
+            "flora_ids": [
+              "VAL-000210"
+            ],
+            "column": "doi_o",
+            "value": "https://www.jstor.org/stable/41387554",
+            "detail": "doi_o is a link, not a DOI",
+            "label": "https://www.jstor.org/stable/41387554 | 10.1037/0022-0663.83.4.444",
+            "key": "invalid_doi|VAL-000210|doi_o|https://www.jstor.org/stable/41387554",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_doi",
+            "flora_ids": [
+              "FRED-000886"
+            ],
+            "column": "doi_o",
+            "value": "scholars.indianastate.edu/etds/2136",
+            "detail": "doi_o is a link, not a DOI",
+            "label": "scholars.indianastate.edu/etds/2136 | https://digitalcommons.memphis.edu/etd/3538/",
+            "key": "invalid_doi|FRED-000886|doi_o|scholars.indianastate.edu/etds/2136",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_doi",
+            "flora_ids": [
+              "FRED-000520"
+            ],
+            "column": "doi_o",
+            "value": "thekeep.eiu.edu/theses/4783",
+            "detail": "doi_o is a link, not a DOI",
+            "label": "thekeep.eiu.edu/theses/4783 | https://thekeep.eiu.edu/theses/5025",
+            "key": "invalid_doi|FRED-000520|doi_o|thekeep.eiu.edu/theses/4783",
+            "level": "problem"
+          }
+        ],
+        "passed": false
+      },
+      {
+        "code": "reference_conflict",
+        "level": "problem",
+        "name": "DOI mapped to conflicting references",
+        "heading": "DOI with conflicting references",
+        "description": "The same DOI appears with references more than 20% apart.",
+        "items": [],
+        "passed": true
+      },
+      {
+        "code": "retracted_title",
+        "level": "problem",
+        "name": "No title marks a retraction",
+        "heading": "Title says retracted",
+        "description": "title_o or title_r marks the paper retracted or withdrawn.",
+        "items": [
+          {
+            "check": "retracted_title",
+            "flora_ids": [
+              "REPL-000405"
+            ],
+            "column": "title_o",
+            "value": "RETRACTED: In vivo direct imaging of neuronal activity at high temporospatial resolution",
+            "detail": "title_o marks the paper retracted or withdrawn",
+            "label": "10.1126/science.abh4340 | 10.1126/sciadv.adl0999",
+            "key": "retracted_title|REPL-000405|title_o|retracted: in vivo direct imaging of neuronal activity at high temporospatial resolution",
+            "level": "problem"
+          },
+          {
+            "check": "retracted_title",
+            "flora_ids": [
+              "REPL-000626"
+            ],
+            "column": "title_o",
+            "value": "RETRACTED: Betatrophin: A Hormone that Controls Pancreatic β Cell Proliferation",
+            "detail": "title_o marks the paper retracted or withdrawn",
+            "label": "10.1016/j.cell.2013.04.008 | 10.2337/db13-1435",
+            "key": "retracted_title|REPL-000626|title_o|retracted: betatrophin: a hormone that controls pancreatic β cell proliferation",
+            "level": "problem"
+          },
+          {
+            "check": "retracted_title",
+            "flora_ids": [
+              "REPL-001349"
+            ],
+            "column": "title_o",
+            "value": "RETRACTED: Signing at the beginning makes ethics salient and decreases dishonest self-reports in comparison to signing at the end",
+            "detail": "title_o marks the paper retracted or withdrawn",
+            "label": "10.1073/pnas.1209746109 | 10.1073/pnas.1911695117",
+            "key": "retracted_title|REPL-001349|title_o|retracted: signing at the beginning makes ethics salient and decreases dishonest self-reports in comparison to signing at the end",
+            "level": "problem"
+          },
+          {
+            "check": "retracted_title",
+            "flora_ids": [
+              "REPRO-000331"
+            ],
+            "column": "title_o",
+            "value": "RETRACTED BY THE AUTHORS: Dividend Taxes and the Allocation of Capital",
+            "detail": "title_o marks the paper retracted or withdrawn",
+            "label": "10.1257/aer.20210369 | 10.1257/aer.20221432",
+            "key": "retracted_title|REPRO-000331|title_o|retracted by the authors: dividend taxes and the allocation of capital",
+            "level": "problem"
+          },
+          {
+            "check": "retracted_title",
+            "flora_ids": [
+              "FRED-000891"
+            ],
+            "column": "title_o",
+            "value": "Retracted: Super Size Me: Product Size as a Signal of Status",
+            "detail": "title_o marks the paper retracted or withdrawn",
+            "label": "10.1086/661890 | 10.15626/mp.2020.2538",
+            "key": "retracted_title|FRED-000891|title_o|retracted: super size me: product size as a signal of status",
+            "level": "problem"
+          },
+          {
+            "check": "retracted_title",
+            "flora_ids": [
+              "FRED-000420"
+            ],
+            "column": "title_o",
+            "value": "RETRACTED: Sense Creative! The Impact of Global and Local Vision, Hearing, Touching, Tasting and Smelling on Creative and Analytic Thought",
+            "detail": "title_o marks the paper retracted or withdrawn",
+            "label": "10.1177/1948550611410890 | 10.1037/xge0000067",
+            "key": "retracted_title|FRED-000420|title_o|retracted: sense creative! the impact of global and local vision, hearing, touching, tasting and smelling on creative and analytic thought",
+            "level": "problem"
+          }
+        ],
+        "passed": false
+      },
+      {
+        "code": "na_string",
+        "level": "problem",
+        "name": "No 'NA'/'N/A' strings",
+        "heading": "Literal 'NA'/'N/A' strings found",
+        "description": "A text column holds the literal string 'NA' instead of a missing value.",
+        "items": [],
+        "passed": true
+      },
+      {
+        "code": "year_order",
+        "level": "possible_problem",
+        "name": "year_r >= year_o",
+        "heading": "Replication year before original year",
+        "description": "Could be swapped entries or a data-entry error. Not reported when the original has a preprint or other earlier version.",
+        "items": [
+          {
+            "check": "year_order",
+            "flora_ids": [
+              "REPL-000014"
+            ],
+            "column": "year_r",
+            "value": "2012",
+            "detail": "year_r is before year_o (2013)",
+            "label": "10.1080/13639080.2011.573776 | 10.1007/s12186-012-9090-0",
+            "key": "year_order|REPL-000014|year_r|2012",
+            "level": "possible_problem"
+          },
+          {
+            "check": "year_order",
+            "flora_ids": [
+              "REPL-000476"
+            ],
+            "column": "year_r",
+            "value": "2019",
+            "detail": "year_r is before year_o (2021)",
+            "label": "10.1002/bin.1836 | 10.1002/jaba.659",
+            "key": "year_order|REPL-000476|year_r|2019",
+            "level": "possible_problem"
+          },
+          {
+            "check": "year_order",
+            "flora_ids": [
+              "REPRO-000371"
+            ],
+            "column": "year_r",
+            "value": "2023",
+            "detail": "year_r is before year_o (2026)",
+            "label": "10.1086/740225 | https://hdl.handle.net/10419/280434",
+            "key": "year_order|REPRO-000371|year_r|2023",
+            "level": "possible_problem"
+          }
+        ],
+        "passed": false
+      },
+      {
+        "code": "cross_type_pair",
+        "level": "possible_problem",
+        "name": "No paper pair under both types",
+        "heading": "Same paper pair as replication and reproduction",
+        "description": "The same doi_o and doi_r (or url_r, without a doi_r) as a replication and as a reproduction: possibly one coding entered in both sheets.",
+        "items": [
+          {
+            "check": "cross_type_pair",
+            "flora_ids": [
+              "REPL-000312",
+              "REPRO-000378"
+            ],
+            "column": "type",
+            "value": "replication, reproduction",
+            "detail": "the same paper pair is published as a replication and as a reproduction",
+            "label": "10.1086/669122 | 10.31235/osf.io/2nwft",
+            "key": "cross_type_pair|REPL-000312,REPRO-000378|type|replication, reproduction",
+            "level": "possible_problem"
+          },
+          {
+            "check": "cross_type_pair",
+            "flora_ids": [
+              "REPL-000748",
+              "REPRO-000376"
+            ],
+            "column": "type",
+            "value": "replication, reproduction",
+            "detail": "the same paper pair is published as a replication and as a reproduction",
+            "label": "10.1016/s0883-9026(02)00097-6 | 10.1177/10422587251322409",
+            "key": "cross_type_pair|REPL-000748,REPRO-000376|type|replication, reproduction",
+            "level": "possible_problem"
+          },
+          {
+            "check": "cross_type_pair",
+            "flora_ids": [
+              "REPL-001309",
+              "REPRO-000305"
+            ],
+            "column": "type",
+            "value": "replication, reproduction",
+            "detail": "the same paper pair is published as a replication and as a reproduction",
+            "label": "10.1086/511995 | 10.5018/economics-ejournal.ja.2017-13",
+            "key": "cross_type_pair|REPL-001309,REPRO-000305|type|replication, reproduction",
+            "level": "possible_problem"
+          },
+          {
+            "check": "cross_type_pair",
+            "flora_ids": [
+              "REPRO-000340",
+              "VAL-000127"
+            ],
+            "column": "type",
+            "value": "replication, reproduction",
+            "detail": "the same paper pair is published as a replication and as a reproduction",
+            "label": "10.1257/0002828054201242 | 10.1002/jae.2922",
+            "key": "cross_type_pair|REPRO-000340,VAL-000127|type|replication, reproduction",
+            "level": "possible_problem"
+          },
+          {
+            "check": "cross_type_pair",
+            "flora_ids": [
+              "REPL-001633",
+              "REPRO-000018"
+            ],
+            "column": "type",
+            "value": "replication, reproduction",
+            "detail": "the same paper pair is published as a replication and as a reproduction",
+            "label": "10.1257/aer.20201550 | https://shs.hal.science/hal-05474766/",
+            "key": "cross_type_pair|REPL-001633,REPRO-000018|type|replication, reproduction",
+            "level": "possible_problem"
+          }
+        ],
+        "passed": false
+      },
+      {
+        "code": "reversed_pair",
+        "level": "possible_problem",
+        "name": "No pair entered both ways round",
+        "heading": "Pair entered both ways round",
+        "description": "One row's doi_o and doi_r are another row's doi_r and doi_o.",
+        "items": [
+          {
+            "check": "reversed_pair",
+            "flora_ids": [
+              "REPL-000476",
+              "REPL-000529"
+            ],
+            "column": "doi_o",
+            "value": "10.1002/bin.1836 | 10.1002/jaba.659",
+            "detail": "the paper pair is entered both ways round: one row's original is the other's replication",
+            "label": "",
+            "key": "reversed_pair|REPL-000476,REPL-000529|doi_o|10.1002/bin.1836 | 10.1002/jaba.659",
+            "level": "possible_problem"
+          }
+        ],
+        "passed": false
+      },
+      {
+        "code": "file_name_title",
+        "level": "possible_problem",
+        "name": "Replication titles look like titles",
+        "heading": "Title looks like a file or project name",
+        "description": "title_r is a file or project name, or a generic name such as 'Analysis'.",
+        "items": [
+          {
+            "check": "file_name_title",
+            "flora_ids": [
+              "REPL-000453"
+            ],
+            "column": "title_r",
+            "value": "Analysis",
+            "detail": "title_r is a generic name, not a title",
+            "label": "10.1037/a0023937 | https://osf.io/up8xs",
+            "key": "file_name_title|REPL-000453|title_r|analysis",
+            "level": "possible_problem"
+          },
+          {
+            "check": "file_name_title",
+            "flora_ids": [
+              "REPL-000679"
+            ],
+            "column": "title_r",
+            "value": "Analysis",
+            "detail": "title_r is a generic name, not a title",
+            "label": "10.1002/job.697 | https://osf.io/snrcv",
+            "key": "file_name_title|REPL-000679|title_r|analysis",
+            "level": "possible_problem"
+          },
+          {
+            "check": "file_name_title",
+            "flora_ids": [
+              "REPRO-000056"
+            ],
+            "column": "title_r",
+            "value": "Analysis",
+            "detail": "title_r is a generic name, not a title",
+            "label": "10.1037/xge0000157 | https://osf.io/d3s25",
+            "key": "file_name_title|REPRO-000056|title_r|analysis",
+            "level": "possible_problem"
+          },
+          {
+            "check": "file_name_title",
+            "flora_ids": [
+              "REPRO-000060"
+            ],
+            "column": "title_r",
+            "value": "Analysis",
+            "detail": "title_r is a generic name, not a title",
+            "label": "10.1007/s10683-012-9342-8 | https://osf.io/6xce3",
+            "key": "file_name_title|REPRO-000060|title_r|analysis",
+            "level": "possible_problem"
+          },
+          {
+            "check": "file_name_title",
+            "flora_ids": [
+              "REPRO-000077"
+            ],
+            "column": "title_r",
+            "value": "LeBoeuf_JournMarketRes_2010_EKBZ_Somo_191z",
+            "detail": "title_r looks like a file or project name",
+            "label": "10.1509/jmkr.47.2.348 | https://osf.io/za8vm",
+            "key": "file_name_title|REPRO-000077|title_r|leboeuf_journmarketres_2010_ekbz_somo_191z",
+            "level": "possible_problem"
+          },
+          {
+            "check": "file_name_title",
+            "flora_ids": [
+              "REPRO-000079"
+            ],
+            "column": "title_r",
+            "value": "Yang_JournMarketRes_2013_G1Lr_Somo_2zg7",
+            "detail": "title_r looks like a file or project name",
+            "label": "10.1509/jmr.12.0430 | https://osf.io/ptjqy",
+            "key": "file_name_title|REPRO-000079|title_r|yang_journmarketres_2013_g1lr_somo_2zg7",
+            "level": "possible_problem"
+          },
+          {
+            "check": "file_name_title",
+            "flora_ids": [
+              "REPRO-000081"
+            ],
+            "column": "title_r",
+            "value": "Woltin_JournExpSocPsych_2011_Wre_Somo_316k",
+            "detail": "title_r looks like a file or project name",
+            "label": "10.1016/j.jesp.2010.11.006 | https://osf.io/4mtgf",
+            "key": "file_name_title|REPRO-000081|title_r|woltin_journexpsocpsych_2011_wre_somo_316k",
+            "level": "possible_problem"
+          },
+          {
+            "check": "file_name_title",
+            "flora_ids": [
+              "REPRO-000096"
+            ],
+            "column": "title_r",
+            "value": "Wetzel_EurJournPersonality_2016_Ovkm_Somo_78gg",
+            "detail": "title_r looks like a file or project name",
+            "label": "10.1002/per.2062 | https://osf.io/ye5mq",
+            "key": "file_name_title|REPRO-000096|title_r|wetzel_eurjournpersonality_2016_ovkm_somo_78gg",
+            "level": "possible_problem"
+          },
+          {
+            "check": "file_name_title",
+            "flora_ids": [
+              "REPRO-000099"
+            ],
+            "column": "title_r",
+            "value": "Steinmetz_JournPerSocPsy_2016_E4Am_Somo_93mg",
+            "detail": "title_r looks like a file or project name",
+            "label": "10.1037/pspi0000065 | https://osf.io/ayvzd",
+            "key": "file_name_title|REPRO-000099|title_r|steinmetz_journpersocpsy_2016_e4am_somo_93mg",
+            "level": "possible_problem"
+          },
+          {
+            "check": "file_name_title",
+            "flora_ids": [
+              "REPRO-000115"
+            ],
+            "column": "title_r",
+            "value": "Zunick_JournExpSocPsych_2017_zlw_Somo_zg66",
+            "detail": "title_r looks like a file or project name",
+            "label": "10.1016/j.jesp.2016.11.014 | https://osf.io/ptzma",
+            "key": "file_name_title|REPRO-000115|title_r|zunick_journexpsocpsych_2017_zlw_somo_zg66",
+            "level": "possible_problem"
+          },
+          {
+            "check": "file_name_title",
+            "flora_ids": [
+              "REPRO-000118"
+            ],
+            "column": "title_r",
+            "value": "Dumas_AcaManageJourn_2018_5KrD_Somo_82y7",
+            "detail": "title_r looks like a file or project name",
+            "label": "10.5465/amj.2016.0086 | https://osf.io/bjfvk",
+            "key": "file_name_title|REPRO-000118|title_r|dumas_acamanagejourn_2018_5krd_somo_82y7",
+            "level": "possible_problem"
+          },
+          {
+            "check": "file_name_title",
+            "flora_ids": [
+              "REPRO-000151"
+            ],
+            "column": "title_r",
+            "value": "Usmani_AmJournSocio_2018_GJe4_Somo_y4m6",
+            "detail": "title_r looks like a file or project name",
+            "label": "10.1086/700235 | https://osf.io/63bzr",
+            "key": "file_name_title|REPRO-000151|title_r|usmani_amjournsocio_2018_gje4_somo_y4m6",
+            "level": "possible_problem"
+          },
+          {
+            "check": "file_name_title",
+            "flora_ids": [
+              "SCORE-000066"
+            ],
+            "column": "title_r",
+            "value": "Final Report",
+            "detail": "title_r is a generic name, not a title",
+            "label": "10.1093/jcr/ucx109 | https://osf.io/tywer",
+            "key": "file_name_title|SCORE-000066|title_r|final report",
+            "level": "possible_problem"
+          },
+          {
+            "check": "file_name_title",
+            "flora_ids": [
+              "SCORE-000068"
+            ],
+            "column": "title_r",
+            "value": "Analysis",
+            "detail": "title_r is a generic name, not a title",
+            "label": "10.1086/698750 | https://osf.io/rzny2",
+            "key": "file_name_title|SCORE-000068|title_r|analysis",
+            "level": "possible_problem"
+          },
+          {
+            "check": "file_name_title",
+            "flora_ids": [
+              "SCORE-000071"
+            ],
+            "column": "title_r",
+            "value": "Analysis",
+            "detail": "title_r is a generic name, not a title",
+            "label": "10.1016/j.socscimed.2010.08.007 | https://osf.io/yva89",
+            "key": "file_name_title|SCORE-000071|title_r|analysis",
+            "level": "possible_problem"
+          }
+        ],
+        "passed": false
+      }
+    ],
+    "suppressed": 0,
+    "problems": 44,
+    "possible_problems": 24,
+    "has_problems": true,
+    "has_issues": true,
+    "rows": 2837
+  },
+  "network": {
+    "status": "needs_attention",
+    "checks": "all",
+    "results": [
+      {
+        "code": "retracted",
+        "level": "problem",
+        "heading": "Retracted papers",
+        "items": [
+          {
+            "check": "retracted",
+            "flora_ids": [
+              "REPL-000405"
+            ],
+            "column": "doi_o",
+            "value": "10.1126/science.abh4340",
+            "detail": "doi_o is retracted (Retraction Watch)",
+            "label": "10.1126/science.abh4340 | 10.1126/sciadv.adl0999",
+            "key": "retracted|REPL-000405|doi_o|10.1126/science.abh4340",
+            "level": "problem"
+          },
+          {
+            "check": "retracted",
+            "flora_ids": [
+              "REPL-000473"
+            ],
+            "column": "doi_o",
+            "value": "10.1001/jamapsychiatry.2014.763",
+            "detail": "doi_o is retracted (Retraction Watch)",
+            "label": "10.1001/jamapsychiatry.2014.763 | 10.1037/pas0000664",
+            "key": "retracted|REPL-000473|doi_o|10.1001/jamapsychiatry.2014.763",
+            "level": "problem"
+          },
+          {
+            "check": "retracted",
+            "flora_ids": [
+              "REPL-000626"
+            ],
+            "column": "doi_o",
+            "value": "10.1016/j.cell.2013.04.008",
+            "detail": "doi_o is retracted (Retraction Watch)",
+            "label": "10.1016/j.cell.2013.04.008 | 10.2337/db13-1435",
+            "key": "retracted|REPL-000626|doi_o|10.1016/j.cell.2013.04.008",
+            "level": "problem"
+          },
+          {
+            "check": "retracted",
+            "flora_ids": [
+              "REPL-001349"
+            ],
+            "column": "doi_o",
+            "value": "10.1073/pnas.1209746109",
+            "detail": "doi_o is retracted (Retraction Watch)",
+            "label": "10.1073/pnas.1209746109 | 10.1073/pnas.1911695117",
+            "key": "retracted|REPL-001349|doi_o|10.1073/pnas.1209746109",
+            "level": "problem"
+          },
+          {
+            "check": "retracted",
+            "flora_ids": [
+              "REPRO-000331"
+            ],
+            "column": "doi_o",
+            "value": "10.1257/aer.20210369",
+            "detail": "doi_o is retracted (Retraction Watch)",
+            "label": "10.1257/aer.20210369 | 10.1257/aer.20221432",
+            "key": "retracted|REPRO-000331|doi_o|10.1257/aer.20210369",
+            "level": "problem"
+          },
+          {
+            "check": "retracted",
+            "flora_ids": [
+              "FRED-000891"
+            ],
+            "column": "doi_o",
+            "value": "10.1086/661890",
+            "detail": "doi_o is retracted (Retraction Watch)",
+            "label": "10.1086/661890 | 10.15626/mp.2020.2538",
+            "key": "retracted|FRED-000891|doi_o|10.1086/661890",
+            "level": "problem"
+          },
+          {
+            "check": "retracted",
+            "flora_ids": [
+              "FRED-000420"
+            ],
+            "column": "doi_o",
+            "value": "10.1177/1948550611410890",
+            "detail": "doi_o is retracted (Retraction Watch)",
+            "label": "10.1177/1948550611410890 | 10.1037/xge0000067",
+            "key": "retracted|FRED-000420|doi_o|10.1177/1948550611410890",
+            "level": "problem"
+          }
+        ],
+        "passed": false
+      },
+      {
+        "code": "doi_not_registered",
+        "level": "problem",
+        "heading": "DOIs not registered at doi.org",
+        "items": [
+          {
+            "check": "doi_not_registered",
+            "flora_ids": [
+              "REPL-001616"
+            ],
+            "column": "doi_r",
+            "value": "10.1177/0956797626146077",
+            "detail": "doi_r is not registered at doi.org",
+            "label": "10.1111/1467-9280.00441 | 10.1177/0956797626146077",
+            "key": "doi_not_registered|REPL-001616|doi_r|10.1177/0956797626146077",
+            "level": "problem"
+          },
+          {
+            "check": "doi_not_registered",
+            "flora_ids": [
+              "REPRO-000003"
+            ],
+            "column": "doi_r",
+            "value": "10.10419/295247",
+            "detail": "doi_r is not registered at doi.org",
+            "label": "10.1093/qje/qjac034 | 10.10419/295247",
+            "key": "doi_not_registered|REPRO-000003|doi_r|10.10419/295247",
+            "level": "problem"
+          },
+          {
+            "check": "doi_not_registered",
+            "flora_ids": [
+              "FRED-000585"
+            ],
+            "column": "doi_o",
+            "value": "10.1177/2f10986111211035002",
+            "detail": "doi_o is not registered at doi.org",
+            "label": "10.1177/2f10986111211035002 | 10.1080/15614263.2022.2102494",
+            "key": "doi_not_registered|FRED-000585|doi_o|10.1177/2f10986111211035002",
+            "level": "problem"
+          },
+          {
+            "check": "doi_not_registered",
+            "flora_ids": [
+              "VAL-000107"
+            ],
+            "column": "doi_r",
+            "value": "10.17705/1atrr.00067",
+            "detail": "doi_r is not registered at doi.org",
+            "label": "10.25300/misq/2018/13853 | 10.17705/1atrr.00067",
+            "key": "doi_not_registered|VAL-000107|doi_r|10.17705/1atrr.00067",
+            "level": "problem"
+          },
+          {
+            "check": "doi_not_registered",
+            "flora_ids": [
+              "VAL-000125"
+            ],
+            "column": "doi_r",
+            "value": "10.17705/1atrr.00046",
+            "detail": "doi_r is not registered at doi.org",
+            "label": "10.1287/isre.1040.0032 | 10.17705/1atrr.00046",
+            "key": "doi_not_registered|VAL-000125|doi_r|10.17705/1atrr.00046",
+            "level": "problem"
+          },
+          {
+            "check": "doi_not_registered",
+            "flora_ids": [
+              "VAL-000138"
+            ],
+            "column": "doi_r",
+            "value": "10.17705/1atrr.00066",
+            "detail": "doi_r is not registered at doi.org",
+            "label": "10.5465/amj.2010.51468978 | 10.17705/1atrr.00066",
+            "key": "doi_not_registered|VAL-000138|doi_r|10.17705/1atrr.00066",
+            "level": "problem"
+          },
+          {
+            "check": "doi_not_registered",
+            "flora_ids": [
+              "VAL-000185"
+            ],
+            "column": "doi_r",
+            "value": "10.17705/1atrr.00053",
+            "detail": "doi_r is not registered at doi.org",
+            "label": "10.1080/07421222.2017.1394083 | 10.17705/1atrr.00053",
+            "key": "doi_not_registered|VAL-000185|doi_r|10.17705/1atrr.00053",
+            "level": "problem"
+          },
+          {
+            "check": "doi_not_registered",
+            "flora_ids": [
+              "VAL-000215"
+            ],
+            "column": "doi_r",
+            "value": "10.17705/1atrr.00064",
+            "detail": "doi_r is not registered at doi.org",
+            "label": "10.2307/249754 | 10.17705/1atrr.00064",
+            "key": "doi_not_registered|VAL-000215|doi_r|10.17705/1atrr.00064",
+            "level": "problem"
+          },
+          {
+            "check": "doi_not_registered",
+            "flora_ids": [
+              "VAL-000427"
+            ],
+            "column": "doi_r",
+            "value": "10.17705/1atrr.00061",
+            "detail": "doi_r is not registered at doi.org",
+            "label": "10.1287/isre.1040.0032 | 10.17705/1atrr.00061",
+            "key": "doi_not_registered|VAL-000427|doi_r|10.17705/1atrr.00061",
+            "level": "problem"
+          }
+        ],
+        "passed": false
+      },
+      {
+        "code": "dead_link",
+        "level": "problem",
+        "heading": "Dead links",
+        "items": [
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "REPL-000068"
+            ],
+            "column": "oa_url_r",
+            "value": "http://hdl.handle.net/1820/9055",
+            "detail": "oa_url_r is dead (HTTP 404; an open-access link from enrichment, not from the source record)",
+            "label": "10.1177/0146167205279905 | 10.1080/02619768.2014.882308",
+            "key": "dead_link|REPL-000068|oa_url_r|http://hdl.handle.net/1820/9055",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "REPL-000073"
+            ],
+            "column": "oa_url_r",
+            "value": "http://orbilu.uni.lu/handle/10993/18672",
+            "detail": "oa_url_r is dead (connection refused; an open-access link from enrichment, not from the source record)",
+            "label": "10.3102/0002831211419649 | 10.1037/a0036307",
+            "key": "dead_link|REPL-000073|oa_url_r|http://orbilu.uni.lu/handle/10993/18672",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "REPL-000553"
+            ],
+            "column": "oa_url_r",
+            "value": "http://www.collabra.org/articles/10.1525/collabra.216/galley/263/download/",
+            "detail": "oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record)",
+            "label": "10.1016/j.obhdp.2006.10.001 | 10.1525/collabra.216",
+            "key": "dead_link|REPL-000553|oa_url_r|http://www.collabra.org/articles/10.1525/collabra.216/galley/263/download/",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "REPL-000866"
+            ],
+            "column": "oa_url_r",
+            "value": "http://www.collabra.org/articles/10.1525/collabra.117/galley/146/download/",
+            "detail": "oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record)",
+            "label": "10.1126/science.1239918 | 10.1525/collabra.117",
+            "key": "dead_link|REPL-000866|oa_url_r|http://www.collabra.org/articles/10.1525/collabra.117/galley/146/download/",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "REPL-000977"
+            ],
+            "column": "url_r",
+            "value": "https://openalex.org/W7113264659",
+            "detail": "url_r is dead (HTTP 404)",
+            "label": "10.1109/vis54172.2023.00016 | 10.31219/osf.io/v6sfg_v1",
+            "key": "dead_link|REPL-000977|url_r|https://openalex.org/w7113264659",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "REPL-001061"
+            ],
+            "column": "oa_url_r",
+            "value": "http://elibrary.aisnet.org/Default.aspx?url=https://aisel.aisnet.org/cgi/viewcontent.cgi?article=1006&context=trr",
+            "detail": "oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record)",
+            "label": "10.2753/mis0742-1222240209 | 10.17705/1atrr.00004",
+            "key": "dead_link|REPL-001061|oa_url_r|http://elibrary.aisnet.org/default.aspx?url=https://aisel.aisnet.org/cgi/viewcontent.cgi?article=1006&context=trr",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "REPL-001076"
+            ],
+            "column": "oa_url_r",
+            "value": "https://storage.googleapis.com/plos-corpus-prod/10.1371/journal.pone.0198620/1/pone.0198620.pdf?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=wombat-sa%40plos-prod.iam.gserviceaccount.com%2F20210216%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20210216T121734Z&X-Goog-Expires=3600&X-Goog-SignedHeaders=host&X-Goog-Signature=3a730412736db07da92d2cbb40223611403deceedf4c4ab529ddf4e5b8a860d786570225c2de9600d35dc629d57a660246ac9253b8f99072ab5dc9a80567f81f485d411e250713b8be101c0dee2513a00e2d03ecc80f33de21a761f1fedc45ebdea3ddc53fe6517f06eca371a7f7adaec25056b2c6917bb4f238ed81004578297007e6bef4bcc3af13b93508ccfecf2555ec254babd57c8b15e92a9cfd500a5fd8b1c81f92fdb70874012974d676dbc65974e25bf291f0851a6ac186cb1c5681c9326808c4baf9a0ddfd938c18c571d3e245c17df563554cef21ac564e57881f9f9d9c849efa122d536b4441caa7b213777510d9c7b43b16dfccb17381a049e3",
+            "detail": "oa_url_r is dead (HTTP 400; an open-access link from enrichment, not from the source record)",
+            "label": "10.3389/fpsyg.2016.00027 | 10.1371/journal.pone.0198620",
+            "key": "dead_link|REPL-001076|oa_url_r|https://storage.googleapis.com/plos-corpus-prod/10.1371/journal.pone.0198620/1/pone.0198620.pdf?x-goog-algorithm=goog4-rsa-sha256&x-goog-credential=wombat-sa%40plos-prod.iam.gserviceaccount.com%2f20210216%2fauto%2fstorage%2fgoog4_request&x-goog-date=20210216t121734z&x-goog-expires=3600&x-goog-signedheaders=host&x-goog-signature=3a730412736db07da92d2cbb40223611403deceedf4c4ab529ddf4e5b8a860d786570225c2de9600d35dc629d57a660246ac9253b8f99072ab5dc9a80567f81f485d411e250713b8be101c0dee2513a00e2d03ecc80f33de21a761f1fedc45ebdea3ddc53fe6517f06eca371a7f7adaec25056b2c6917bb4f238ed81004578297007e6bef4bcc3af13b93508ccfecf2555ec254babd57c8b15e92a9cfd500a5fd8b1c81f92fdb70874012974d676dbc65974e25bf291f0851a6ac186cb1c5681c9326808c4baf9a0ddfd938c18c571d3e245c17df563554cef21ac564e57881f9f9d9c849efa122d536b4441caa7b213777510d9c7b43b16dfccb17381a049e3",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "FRED-000983"
+            ],
+            "column": "oa_url_r",
+            "value": "https://biblio.ugent.be/publication/8707609",
+            "detail": "oa_url_r is dead (HTTP 404; an open-access link from enrichment, not from the source record)",
+            "label": "10.1111/1467-9280.00376 | 10.1177/0956797620968526",
+            "key": "dead_link|FRED-000983|oa_url_r|https://biblio.ugent.be/publication/8707609",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "VAL-000239"
+            ],
+            "column": "oa_url_o",
+            "value": "https://biblio.ugent.be/publication/8707609",
+            "detail": "oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record)",
+            "label": "10.1177/0956797620968526 | 10.5334/irsp.546",
+            "key": "dead_link|VAL-000239|oa_url_o|https://biblio.ugent.be/publication/8707609",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "REPL-001099"
+            ],
+            "column": "oa_url_r",
+            "value": "http://orbilu.uni.lu/handle/10993/45413",
+            "detail": "oa_url_r is dead (connection refused; an open-access link from enrichment, not from the source record)",
+            "label": "10.1037/edu0000115 | 10.1037/edu0000433",
+            "key": "dead_link|REPL-001099|oa_url_r|http://orbilu.uni.lu/handle/10993/45413",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "REPL-001320"
+            ],
+            "column": "oa_url_r",
+            "value": "https://storage.googleapis.com/plos-corpus-prod/10.1371/journal.pone.0209263/1/pone.0209263.pdf?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=wombat-sa%40plos-prod.iam.gserviceaccount.com%2F20210221%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20210221T170527Z&X-Goog-Expires=3600&X-Goog-SignedHeaders=host&X-Goog-Signature=738cc051df73116169d6a637a6e0d613b3b424dd19f9cc1a2a0652ef9604ca8fb5d4d361df382b5d7c408c77fb4f6509545dcdfe2486dfa37634a35d560bbd4a57d917d70d2ab3ca1c3cd77168c0c56f976f4fa1508305c5e0213370e05fc7f24e3297fcd30822a3f663542a8c941c479901db91978ed30b7f2fe9d211537ee88bc41071cefffe9a060d0fa72322d2d91a19a2d55034266269fe25ef495d4b5c182c0b67d21bc7986eac8096381703773fcae76c9865505177b5f854ea0d25080e05671cc0510339cc237b5ff5a1509b8ac9703d3c6b51bb6dc7a9528bbcd13f1c9195ed9db5302e257d52915013cf67847abac8dfa22d54e5b829452b1e261e",
+            "detail": "oa_url_r is dead (HTTP 400; an open-access link from enrichment, not from the source record)",
+            "label": "10.1016/s0022-1031(03)00057-x | 10.1371/journal.pone.0209263",
+            "key": "dead_link|REPL-001320|oa_url_r|https://storage.googleapis.com/plos-corpus-prod/10.1371/journal.pone.0209263/1/pone.0209263.pdf?x-goog-algorithm=goog4-rsa-sha256&x-goog-credential=wombat-sa%40plos-prod.iam.gserviceaccount.com%2f20210221%2fauto%2fstorage%2fgoog4_request&x-goog-date=20210221t170527z&x-goog-expires=3600&x-goog-signedheaders=host&x-goog-signature=738cc051df73116169d6a637a6e0d613b3b424dd19f9cc1a2a0652ef9604ca8fb5d4d361df382b5d7c408c77fb4f6509545dcdfe2486dfa37634a35d560bbd4a57d917d70d2ab3ca1c3cd77168c0c56f976f4fa1508305c5e0213370e05fc7f24e3297fcd30822a3f663542a8c941c479901db91978ed30b7f2fe9d211537ee88bc41071cefffe9a060d0fa72322d2d91a19a2d55034266269fe25ef495d4b5c182c0b67d21bc7986eac8096381703773fcae76c9865505177b5f854ea0d25080e05671cc0510339cc237b5ff5a1509b8ac9703d3c6b51bb6dc7a9528bbcd13f1c9195ed9db5302e257d52915013cf67847abac8dfa22d54e5b829452b1e261e",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "REPL-001624"
+            ],
+            "column": "oa_url_o",
+            "value": "http://eprints.keele.ac.uk/2958/1/M%20Noor%20-%20Intergroup%20forgiveness%20and%20reconciliation.pdf",
+            "detail": "oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record)",
+            "label": "10.1177/0146167208315555 | 10.1002/ejsp.70015",
+            "key": "dead_link|REPL-001624|oa_url_o|http://eprints.keele.ac.uk/2958/1/m%20noor%20-%20intergroup%20forgiveness%20and%20reconciliation.pdf",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "FRED-000270",
+              "VAL-000311"
+            ],
+            "column": "oa_url_o",
+            "value": "https://autopapers.ssrn.com/sol3/papers.cfm?abstract_id=1324778",
+            "detail": "oa_url_o is dead (DNS: name not found; an open-access link from enrichment, not from the source record)",
+            "label": "",
+            "key": "dead_link|FRED-000270,VAL-000311|oa_url_o|https://autopapers.ssrn.com/sol3/papers.cfm?abstract_id=1324778",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "FRED-000012"
+            ],
+            "column": "oa_url_o",
+            "value": "https://autopapers.ssrn.com/sol3/papers.cfm?abstract_id=929932",
+            "detail": "oa_url_o is dead (DNS: name not found; an open-access link from enrichment, not from the source record)",
+            "label": "10.1037/0022-3514.86.5.680 | 10.1016/j.jesp.2020.104052",
+            "key": "dead_link|FRED-000012|oa_url_o|https://autopapers.ssrn.com/sol3/papers.cfm?abstract_id=929932",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "FRED-000643"
+            ],
+            "column": "oa_url_o",
+            "value": "http://hdl.handle.net/10026.1/3213",
+            "detail": "oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record)",
+            "label": "10.1037/0278-7393.34.1.97 | 10.1126/science.aac4716",
+            "key": "dead_link|FRED-000643|oa_url_o|http://hdl.handle.net/10026.1/3213",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "FRED-000469"
+            ],
+            "column": "oa_url_r",
+            "value": "http://www.collabra.org/articles/10.1525/collabra.192/galley/251/download/",
+            "detail": "oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record)",
+            "label": "10.1177/0146167210386238 | 10.1525/collabra.192",
+            "key": "dead_link|FRED-000469|oa_url_r|http://www.collabra.org/articles/10.1525/collabra.192/galley/251/download/",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "FRED-000772"
+            ],
+            "column": "oa_url_r",
+            "value": "http://orbilu.uni.lu/handle/10993/17967",
+            "detail": "oa_url_r is dead (connection refused; an open-access link from enrichment, not from the source record)",
+            "label": "10.1177/0956797611434748 | 10.1016/j.cognition.2014.09.003",
+            "key": "dead_link|FRED-000772|oa_url_r|http://orbilu.uni.lu/handle/10993/17967",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "VAL-000031"
+            ],
+            "column": "url_r",
+            "value": "https://tesol-dev.journals.cdrs.columbia.edu/wp-content/uploads/sites/12/2015/06/3.-Seol-2005.pdf",
+            "detail": "url_r is dead (DNS: name not found)",
+            "label": "10.1016/0010-0285(89)90003-0 | 10.7916/d8f76r2r",
+            "key": "dead_link|VAL-000031|url_r|https://tesol-dev.journals.cdrs.columbia.edu/wp-content/uploads/sites/12/2015/06/3.-seol-2005.pdf",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "VAL-000031"
+            ],
+            "column": "oa_url_r",
+            "value": "https://tesol-dev.journals.cdrs.columbia.edu/wp-content/uploads/sites/12/2015/06/3.-Seol-2005.pdf",
+            "detail": "oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record)",
+            "label": "10.1016/0010-0285(89)90003-0 | 10.7916/d8f76r2r",
+            "key": "dead_link|VAL-000031|oa_url_r|https://tesol-dev.journals.cdrs.columbia.edu/wp-content/uploads/sites/12/2015/06/3.-seol-2005.pdf",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "VAL-000077"
+            ],
+            "column": "oa_url_r",
+            "value": "http://www.collabra.org/articles/10.1525/collabra.87/galley/208/download/",
+            "detail": "oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record)",
+            "label": "10.1016/j.cognition.2006.12.015 | 10.1525/collabra.87",
+            "key": "dead_link|VAL-000077|oa_url_r|http://www.collabra.org/articles/10.1525/collabra.87/galley/208/download/",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "VAL-000196"
+            ],
+            "column": "oa_url_o",
+            "value": "https://storage.googleapis.com/plos-corpus-prod/10.1371/journal.pone.0197268/1/pone.0197268.pdf?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=wombat-sa%40plos-prod.iam.gserviceaccount.com%2F20210222%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20210222T203614Z&X-Goog-Expires=3600&X-Goog-SignedHeaders=host&X-Goog-Signature=820ffd9e10ee38c554f355d3e14bbbb25b37a99925b05aa62b29fa7c5bf6a6e395fa60956416392212597a68db7f035ee4d20055162de4a7c3959a865cc8327a680e63be2076a25952b9831cd50df888c6c653e28f5c376e340d7ca53ed8e648e7f3a9e16aac2440df564814224cb8ff7c302192de66421bdc172001bb613b91fa38c2498c90bba7caae3a58508316ce71b6593f47220a73f5c648f7287730aa3771bebe0e83349076f2a3803bf17c918e45ad49a2486e3746cc828b12388bc2f1e4f56055ef43037c4839564da2b5cb7ebd9941e2f2db4e87bb39e0c84fe54c11d8e627d4fb83bda04510195c02b5228a898fe2a6d051258a467835d9cfdcb0",
+            "detail": "oa_url_o is dead (HTTP 400; an open-access link from enrichment, not from the source record)",
+            "label": "10.1371/journal.pone.0197268 | 10.1371/journal.pone.0253023",
+            "key": "dead_link|VAL-000196|oa_url_o|https://storage.googleapis.com/plos-corpus-prod/10.1371/journal.pone.0197268/1/pone.0197268.pdf?x-goog-algorithm=goog4-rsa-sha256&x-goog-credential=wombat-sa%40plos-prod.iam.gserviceaccount.com%2f20210222%2fauto%2fstorage%2fgoog4_request&x-goog-date=20210222t203614z&x-goog-expires=3600&x-goog-signedheaders=host&x-goog-signature=820ffd9e10ee38c554f355d3e14bbbb25b37a99925b05aa62b29fa7c5bf6a6e395fa60956416392212597a68db7f035ee4d20055162de4a7c3959a865cc8327a680e63be2076a25952b9831cd50df888c6c653e28f5c376e340d7ca53ed8e648e7f3a9e16aac2440df564814224cb8ff7c302192de66421bdc172001bb613b91fa38c2498c90bba7caae3a58508316ce71b6593f47220a73f5c648f7287730aa3771bebe0e83349076f2a3803bf17c918e45ad49a2486e3746cc828b12388bc2f1e4f56055ef43037c4839564da2b5cb7ebd9941e2f2db4e87bb39e0c84fe54c11d8e627d4fb83bda04510195c02b5228a898fe2a6d051258a467835d9cfdcb0",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "REPL-001284"
+            ],
+            "column": "url_r",
+            "value": "https://openalex.org/W3122646001",
+            "detail": "url_r is dead (HTTP 404)",
+            "label": "10.1257/0002828054201387 | 10.1016/j.euroecorev.2015.05.006",
+            "key": "dead_link|REPL-001284|url_r|https://openalex.org/w3122646001",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "REPL-000373"
+            ],
+            "column": "url_r",
+            "value": "https://openalex.org/W7110675912",
+            "detail": "url_r is dead (HTTP 404)",
+            "label": "10.1177/0956797613508412 | https://openalex.org/W7110675912",
+            "key": "dead_link|REPL-000373|url_r|https://openalex.org/w7110675912",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "REPL-001327"
+            ],
+            "column": "url_r",
+            "value": "https://openalex.org/W7110491536",
+            "detail": "url_r is dead (HTTP 404)",
+            "label": "10.1006/jmla.1996.0032 | https://openalex.org/W7110491536",
+            "key": "dead_link|REPL-001327|url_r|https://openalex.org/w7110491536",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "FRED-000267"
+            ],
+            "column": "url_r",
+            "value": "https://docs.google.com/document/d/10OKLI0-Kw2D7SDyLU_Ieql88gLtbnYGSyZhCBqsEAyk",
+            "detail": "url_r is dead (HTTP 410)",
+            "label": "10.1037/0278-6133.3.5.431 | https://docs.google.com/document/d/10OKLI0-Kw2D7SDyLU_Ieql88gLtbnYGSyZhCBqsEAyk",
+            "key": "dead_link|FRED-000267|url_r|https://docs.google.com/document/d/10okli0-kw2d7sdylu_ieql88gltbnygsyzhcbqseayk",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "VAL-000315"
+            ],
+            "column": "url_r",
+            "value": "http://dergipark.gov.tr/download/article-file/536686",
+            "detail": "url_r is dead (HTTP 404)",
+            "label": "10.1111/j.1540-4781.1996.tb05468.x | 10.32601/ejal.460588",
+            "key": "dead_link|VAL-000315|url_r|http://dergipark.gov.tr/download/article-file/536686",
+            "level": "problem"
+          }
+        ],
+        "passed": false
+      },
+      {
+        "code": "expression_of_concern",
+        "level": "possible_problem",
+        "heading": "Expressions of concern",
+        "items": [
+          {
+            "check": "expression_of_concern",
+            "flora_ids": [
+              "FRED-000510"
+            ],
+            "column": "doi_o",
+            "value": "10.1111/j.0956-7976.2004.00757.x",
+            "detail": "doi_o has an expression of concern (Retraction Watch)",
+            "label": "10.1111/j.0956-7976.2004.00757.x | 10.1525/collabra.32572",
+            "key": "expression_of_concern|FRED-000510|doi_o|10.1111/j.0956-7976.2004.00757.x",
+            "level": "possible_problem"
+          },
+          {
+            "check": "expression_of_concern",
+            "flora_ids": [
+              "FRED-000906"
+            ],
+            "column": "doi_o",
+            "value": "10.1509/jmkr.45.6.633",
+            "detail": "doi_o has an expression of concern (Retraction Watch)",
+            "label": "10.1509/jmkr.45.6.633 | 10.1177/2515245918781032",
+            "key": "expression_of_concern|FRED-000906|doi_o|10.1509/jmkr.45.6.633",
+            "level": "possible_problem"
+          },
+          {
+            "check": "expression_of_concern",
+            "flora_ids": [
+              "FRED-000187"
+            ],
+            "column": "doi_o",
+            "value": "10.1177/0956797611432497",
+            "detail": "doi_o has an expression of concern (Retraction Watch)",
+            "label": "10.1177/0956797611432497 | 10.1027/1864-9335/a000191",
+            "key": "expression_of_concern|FRED-000187|doi_o|10.1177/0956797611432497",
+            "level": "possible_problem"
+          }
+        ],
+        "passed": false
+      },
+      {
+        "code": "original_doi_found",
+        "level": "possible_problem",
+        "heading": "Original probably has a DOI",
+        "items": [
+          {
+            "check": "original_doi_found",
+            "flora_ids": [
+              "REPL-001248"
+            ],
+            "column": "doi_o",
+            "value": "10.4324/9780203718087-5",
+            "detail": "doi_o is blank; Crossref lists this paper with a DOI: 'The Mismeasure of Man' (2012, Gould)",
+            "label": " | 10.3390/jintelligence7010006",
+            "key": "original_doi_found|REPL-001248|doi_o|10.4324/9780203718087-5",
+            "level": "possible_problem"
+          },
+          {
+            "check": "original_doi_found",
+            "flora_ids": [
+              "REPL-000409"
+            ],
+            "column": "doi_o",
+            "value": "10.1177/0022022116631826",
+            "detail": "doi_o is blank; Crossref lists this paper with a DOI: 'Assimilation and Contrast Effects of Culture Priming Among Hong Kong Chinese' (2016, Ng)",
+            "label": " | 10.1111/jpr.12599",
+            "key": "original_doi_found|REPL-000409|doi_o|10.1177/0022022116631826",
+            "level": "possible_problem"
+          },
+          {
+            "check": "original_doi_found",
+            "flora_ids": [
+              "REPL-000412"
+            ],
+            "column": "doi_o",
+            "value": "10.3758/s13421-013-0392-8",
+            "detail": "doi_o is blank; Crossref lists this paper with a DOI: 'Retro-cue benefits in working memory without sustained focal attention' (2014, Rerko)",
+            "label": " | 10.36948/ijfmr.2025.v07i06.61995",
+            "key": "original_doi_found|REPL-000412|doi_o|10.3758/s13421-013-0392-8",
+            "level": "possible_problem"
+          },
+          {
+            "check": "original_doi_found",
+            "flora_ids": [
+              "REPL-001425"
+            ],
+            "column": "doi_o",
+            "value": "10.1093/acprof:oso/9780199580866.003.0010",
+            "detail": "doi_o is blank; Crossref lists this paper with a DOI: 'Poverty and Entrepreneurship in Developing Countries' (2011, Ernesto Amorós)",
+            "label": " | 10.1142/s1084946721500084",
+            "key": "original_doi_found|REPL-001425|doi_o|10.1093/acprof:oso/9780199580866.003.0010",
+            "level": "possible_problem"
+          },
+          {
+            "check": "original_doi_found",
+            "flora_ids": [
+              "REPL-001445"
+            ],
+            "column": "doi_o",
+            "value": "10.1037/0022-3514.54.1.74",
+            "detail": "doi_o is blank; Crossref lists this paper with a DOI: 'The dark side of self- and social perception: Black uniforms and aggression in …' (1988, Frank)",
+            "label": " | 10.1525/collabra.163080",
+            "key": "original_doi_found|REPL-001445|doi_o|10.1037/0022-3514.54.1.74",
+            "level": "possible_problem"
+          }
+        ],
+        "passed": false
+      }
+    ],
+    "unchecked": {
+      "dois": [],
+      "urls": [
+        {
+          "target": "https://hrcak.srce.hr/file/334421",
+          "columns": [
+            "oa_url_r"
+          ],
+          "reason": "HTTP 418",
+          "flora_ids": [
+            "REPL-000009"
+          ]
+        },
+        {
+          "target": "https://cdr.lib.unc.edu/downloads/7w62fg56x",
+          "columns": [
+            "oa_url_r"
+          ],
+          "reason": "timed out",
+          "flora_ids": [
+            "REPL-001176"
+          ]
+        },
+        {
+          "target": "http://hdl.handle.net/2328/35450",
+          "columns": [
+            "oa_url_o"
+          ],
+          "reason": "timed out",
+          "flora_ids": [
+            "REPL-001436"
+          ]
+        },
+        {
+          "target": "http://hdl.handle.net/10366/159754",
+          "columns": [
+            "oa_url_o"
+          ],
+          "reason": "timed out",
+          "flora_ids": [
+            "FRED-000766"
+          ]
+        },
+        {
+          "target": "https://polipapers.upv.es/index.php/MUSE/article/download/10390/11334",
+          "columns": [
+            "oa_url_r"
+          ],
+          "reason": "TLS: unable to get local issuer certificate",
+          "flora_ids": [
+            "VAL-000159"
+          ]
+        },
+        {
+          "target": "http://hdl.handle.net/10902/7358",
+          "columns": [
+            "oa_url_o"
+          ],
+          "reason": "TLS: unable to get local issuer certificate",
+          "flora_ids": [
+            "REPL-000190"
+          ]
+        },
+        {
+          "target": "https://www.proquest.com/docview/221001969?pq-origsite=gscholar&fromopenview=true&sourcetype=Scholarly%20Journals",
+          "columns": [
+            "url_r"
+          ],
+          "reason": "redirect loop",
+          "flora_ids": [
+            "REPL-001417"
+          ]
+        },
+        {
+          "target": "https://www.proquest.com/docview/1470800730",
+          "columns": [
+            "url_o"
+          ],
+          "reason": "redirect loop",
+          "flora_ids": [
+            "REPL-001618"
+          ]
+        },
+        {
+          "target": "http://ira.lib.polyu.edu.hk/bitstream/10397/97105/1/Huang_Influence_Product_Anthropomorphism.pdf",
+          "columns": [
+            "oa_url_o"
+          ],
+          "reason": "ConnectionResetError: [Errno 104] Connection reset by peer",
+          "flora_ids": [
+            "FRED-000798"
+          ]
+        },
+        {
+          "target": "https://www.bslonline.org/journal/download_pdf.php?doi=10.15616/BSL.2021.27.3.187",
+          "columns": [
+            "url_r",
+            "oa_url_r"
+          ],
+          "reason": "RemoteDisconnected: Remote end closed connection without response",
+          "flora_ids": [
+            "VAL-000434"
+          ]
+        },
+        {
+          "target": "https://hal.science/hal-04886611v1/document",
+          "columns": [
+            "url_r"
+          ],
+          "reason": "timed out",
+          "flora_ids": [
+            "VAL-000450"
+          ]
+        }
+      ],
+      "originals": []
+    },
+    "notices": [],
+    "coverage": {
+      "retractions": {
+        "status": "checked"
+      },
+      "dois": {
+        "targets": 4611,
+        "cached": 4550,
+        "checked": 61,
+        "deferred": 0,
+        "unchecked": 0
+      },
+      "urls": {
+        "targets": 3175,
+        "cached": 3079,
+        "checked": 96,
+        "deferred": 0,
+        "unchecked": 11
+      },
+      "originals": {
+        "targets": 26,
+        "cached": 26,
+        "checked": 0,
+        "deferred": 0,
+        "unchecked": 0
+      }
+    },
+    "suppressed": 0,
+    "problems": 42,
+    "possible_problems": 8,
+    "issue_count": 50,
+    "rows": 2837
+  },
+  "release": {
+    "schema_version": 1,
+    "status": "prepared_locally",
+    "published": false,
+    "generated_at": "2026-10-27T03:11:35+00:00",
+    "filename": "flora.csv",
+    "bytes": 13409678,
+    "sha256": "a2e3db201afc9082f189b329f8f418f98281d3ecf25335ca0d09a6539150d9bc",
+    "md5": "b66cbd873f1109cc634a73b8540cb288",
+    "rows": 2837,
+    "columns": [
+      "id",
+      "id_md5",
+      "doi_o",
+      "alt_identifier_o",
+      "doi_o_hash",
+      "title_o",
+      "author_o",
+      "journal_o",
+      "year_o",
+      "volume_o",
+      "issue_o",
+      "pages_o",
+      "apa_ref_o",
+      "bibtex_ref_o",
+      "url_o",
+      "language_o",
+      "doi_r",
+      "alt_identifier_r",
+      "doi_r_hash",
+      "title_r",
+      "author_r",
+      "journal_r",
+      "year_r",
+      "volume_r",
+      "issue_r",
+      "pages_r",
+      "apa_ref_r",
+      "bibtex_ref_r",
+      "url_r",
+      "language_r",
+      "oa_url_o",
+      "oa_url_r",
+      "outcome",
+      "outcome_quote",
+      "outcome_quote_source",
+      "type",
+      "source",
+      "oa_work_id_o",
+      "oa_work_id_r",
+      "author_overlap",
+      "author_overlap_pct",
+      "abstract_r",
+      "outcome_computation",
+      "outcome_computational_quote",
+      "out_quote_computational_source",
+      "outcome_robustness",
+      "outcome_robustness_quote",
+      "out_quote_robust_source",
+      "flora_id",
+      "source_display_id",
+      "source_record_id"
+    ],
+    "version": null,
+    "release_notes": "",
+    "data_version": {
+      "stored_at": "2026-10-27T03:11:36.630078+00:00",
+      "change_watermark": 166
+    }
+  },
+  "storage": {
+    "rows": 2837,
+    "inserted": 34,
+    "updated": 42,
+    "unchanged": 2760,
+    "retired": 5,
+    "reactivated": 1,
+    "preserved": 0,
+    "table": "flora_data",
+    "snapshot_sha256": "a2e3db201afc9082f189b329f8f418f98281d3ecf25335ca0d09a6539150d9bc",
+    "stored_at": "2026-10-27T03:11:36.630078+00:00",
+    "status": "committed"
+  },
+  "finished_at": "2026-10-27T03:11:41+00:00"
+}
