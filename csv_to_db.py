@@ -353,6 +353,10 @@ def _insert_unvalidated(cur, row: dict) -> bool:
 
 
 def _insert_metadata(cur, row: dict) -> None:
+    # The nightly import re-sends every existing record. The WHERE on DO UPDATE
+    # compares each column with exactly the value SET would give it, so an
+    # unchanged row is left alone instead of leaving a dead tuple behind. It
+    # guards only the conflict branch: a new record_id still inserts.
     cur.execute(
         """
         INSERT INTO record_metadata (
@@ -404,6 +408,39 @@ def _insert_metadata(cur, row: dict) -> None:
             bibtex_ref_r             = EXCLUDED.bibtex_ref_r,
             original_rank            = EXCLUDED.original_rank,
             n_originals              = EXCLUDED.n_originals
+        WHERE (record_metadata.pair_id, record_metadata.work_id, record_metadata.release_id,
+               record_metadata.filter_status, record_metadata.filter_method,
+               record_metadata.filter_evidence, record_metadata.filter_confidence,
+               record_metadata.original_match_type, record_metadata.original_match_confidence,
+               record_metadata.doi_o_verification,
+               record_metadata.link_method, record_metadata.link_evidence,
+               record_metadata.link_confidence, record_metadata.link_llm_model,
+               record_metadata.screen_categories,
+               record_metadata.pdf_source, record_metadata.parse_method,
+               record_metadata.outcome_confidence, record_metadata.outcome_reasoning,
+               record_metadata.outcome_llm_model,
+               record_metadata.authors_r, record_metadata.authors_o, record_metadata.journal_r,
+               record_metadata.openalex_id_r, record_metadata.source,
+               record_metadata.bibtex_ref_o, record_metadata.bibtex_ref_r,
+               record_metadata.original_rank, record_metadata.n_originals)
+              IS DISTINCT FROM
+              (EXCLUDED.pair_id,
+               COALESCE(EXCLUDED.work_id, record_metadata.work_id),
+               COALESCE(EXCLUDED.release_id, record_metadata.release_id),
+               EXCLUDED.filter_status, EXCLUDED.filter_method,
+               EXCLUDED.filter_evidence, EXCLUDED.filter_confidence,
+               EXCLUDED.original_match_type, EXCLUDED.original_match_confidence,
+               EXCLUDED.doi_o_verification,
+               EXCLUDED.link_method, EXCLUDED.link_evidence,
+               EXCLUDED.link_confidence, EXCLUDED.link_llm_model,
+               EXCLUDED.screen_categories,
+               EXCLUDED.pdf_source, EXCLUDED.parse_method,
+               EXCLUDED.outcome_confidence, EXCLUDED.outcome_reasoning,
+               EXCLUDED.outcome_llm_model,
+               EXCLUDED.authors_r, EXCLUDED.authors_o, EXCLUDED.journal_r,
+               EXCLUDED.openalex_id_r, EXCLUDED.source,
+               EXCLUDED.bibtex_ref_o, EXCLUDED.bibtex_ref_r,
+               EXCLUDED.original_rank, EXCLUDED.n_originals)
         """,
         row,
     )
@@ -449,6 +486,12 @@ def _refresh_extractor_fields(cur, record_id: str, row: pd.Series) -> None:
     (study numbers and matching-paper OpenAlex ids), not a replacement human
     outcome. DOI triggers deliberately clear stale work ids, so work ids are
     restored in a second statement after all source DOI changes have fired.
+
+    Nearly every row arrives unchanged night after night, so each statement
+    writes only when a value it assigns differs from the stored one: a no-op
+    UPDATE still leaves a dead tuple. updated_at therefore records the last real
+    change. Skipping is safe around the DOI trigger: with no DOI change it has
+    nothing to clear, and the restore compares against the post-trigger ids.
     """
     incoming = _build_unvalidated_row(record_id, _s(row.get("pair_id")), row)
     cur.execute(
@@ -469,36 +512,72 @@ def _refresh_extractor_fields(cur, record_id: str, row: pd.Series) -> None:
             out_quote_robust_source = %(out_quote_robust_source)s,
             updated_at = NOW()
         WHERE record_id = %(record_id)s
+          AND (doi_r, study_r, title_r,
+               year_r, url_r, ref_r,
+               abstract_r,
+               doi_o, study_o, title_o,
+               year_o, url_o, ref_o,
+               type, outcome,
+               outcome_quote, out_quote_source,
+               outcome_computation,
+               outcome_computational_quote,
+               out_quote_computational_source,
+               outcome_robustness,
+               outcome_robustness_quote,
+               out_quote_robust_source)
+              IS DISTINCT FROM
+              (%(doi_r)s, %(study_r)s, %(title_r)s,
+               %(year_r)s, %(url_r)s, %(ref_r)s,
+               %(abstract_r)s,
+               %(doi_o)s, %(study_o)s, %(title_o)s,
+               %(year_o)s, %(url_o)s, %(ref_o)s,
+               %(type)s, %(outcome)s,
+               %(outcome_quote)s, %(out_quote_source)s,
+               %(outcome_computation)s,
+               %(outcome_computational_quote)s,
+               %(out_quote_computational_source)s,
+               %(outcome_robustness)s,
+               %(outcome_robustness_quote)s,
+               %(out_quote_robust_source)s)
+        """,
+        incoming,
+    )
+    # updated_at moves here too: before the guards, the statement above stamped
+    # it whenever these ids were rewritten. NOW() is the transaction time, so a
+    # DOI change that runs both statements stamps one value.
+    cur.execute(
+        """
+        UPDATE unvalidated
+           SET oa_work_id_o = %(oa_work_id_o)s, oa_work_id_r = %(oa_work_id_r)s,
+               updated_at = NOW()
+         WHERE record_id = %(record_id)s
+           AND (oa_work_id_o IS DISTINCT FROM %(oa_work_id_o)s
+                OR oa_work_id_r IS DISTINCT FROM %(oa_work_id_r)s)
         """,
         incoming,
     )
     cur.execute(
         """
-        UPDATE unvalidated
-           SET oa_work_id_o = %s, oa_work_id_r = %s
-         WHERE record_id = %s
-        """,
-        (incoming["oa_work_id_o"], incoming["oa_work_id_r"], record_id),
-    )
-    cur.execute(
-        """
         UPDATE validated SET
-            study_r = %s,
-            study_o = %s,
+            study_r = %(study_r)s,
+            study_o = %(study_o)s,
             oa_work_id_r = CASE
-                WHEN doi_r IS NOT DISTINCT FROM %s AND %s IS NOT NULL THEN %s
-                ELSE oa_work_id_r END,
+                WHEN doi_r IS NOT DISTINCT FROM %(doi_r)s AND %(oa_work_id_r)s IS NOT NULL
+                THEN %(oa_work_id_r)s ELSE oa_work_id_r END,
             oa_work_id_o = CASE
-                WHEN doi_o IS NOT DISTINCT FROM %s AND %s IS NOT NULL THEN %s
-                ELSE oa_work_id_o END
-        WHERE record_id = %s
+                WHEN doi_o IS NOT DISTINCT FROM %(doi_o)s AND %(oa_work_id_o)s IS NOT NULL
+                THEN %(oa_work_id_o)s ELSE oa_work_id_o END
+        WHERE record_id = %(record_id)s
+          AND (study_r IS DISTINCT FROM %(study_r)s
+               OR study_o IS DISTINCT FROM %(study_o)s
+               OR oa_work_id_r IS DISTINCT FROM CASE
+                   WHEN doi_r IS NOT DISTINCT FROM %(doi_r)s AND %(oa_work_id_r)s IS NOT NULL
+                   THEN %(oa_work_id_r)s ELSE oa_work_id_r END
+               OR oa_work_id_o IS DISTINCT FROM CASE
+                   WHEN doi_o IS NOT DISTINCT FROM %(doi_o)s AND %(oa_work_id_o)s IS NOT NULL
+                   THEN %(oa_work_id_o)s ELSE oa_work_id_o END)
         """,
-        (
-            incoming["study_r"], incoming["study_o"],
-            incoming["doi_r"], incoming["oa_work_id_r"], incoming["oa_work_id_r"],
-            incoming["doi_o"], incoming["oa_work_id_o"], incoming["oa_work_id_o"],
-            record_id,
-        ),
+        incoming,
     )
 
 
