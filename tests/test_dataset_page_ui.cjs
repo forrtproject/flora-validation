@@ -57,6 +57,49 @@ function makeHistory() {
   };
 }
 
+// The old fred-data pipeline's counts from 11 Nov 2025 (no type before 13 Jan 2026),
+// no counts from 14 Jan to 20 May 2026, flora.csv counts from the launch on 21 May,
+// the pipeline from 13 Sep. By default all of it inside the daily window, as on the
+// server now; a later `end` with the server's 400-day window leaves the era to `monthly`.
+const OLD_COUNTS = { "2025-11-11": [573, null, null], "2025-11-25": [655, null, null],
+                     "2025-12-02": [753, null, null], "2026-01-13": [758, 753, 5] };
+function makeEarlyHistory(end = "2026-10-02", window = Infinity) {
+  const launchMs = Date.parse("2026-05-21T00:00:00Z");
+  const daily = [];
+  let counted = null;
+  for (let ms = Date.parse("2025-11-11T00:00:00Z"); ms <= Date.parse(end + "T00:00:00Z"); ms += DAY) {
+    const date = iso(ms);
+    let p;
+    if (OLD_COUNTS[date]) {
+      counted = OLD_COUNTS[date];
+      p = [...counted, true, "fred-data"];
+    } else if (date < "2026-01-14") {
+      p = [...counted, false, "fred-data"];
+    } else if (date < "2026-05-21") {
+      p = [null, null, null, false, null];
+    } else {
+      const n = 2167 + Math.floor((ms - launchMs) / DAY);
+      p = [n, n - 9, 9, true, date < "2026-09-13" ? "flora.csv" : "pipeline"];
+    }
+    daily.push({ date, total_rows: p[0], replications: p[1], reproductions: p[2],
+                 source_rows: date >= "2026-08-14" ? 5000 : null, measured: p[3], measured_by: p[4] });
+  }
+  const byMonth = {};
+  for (const point of daily) byMonth[point.date.slice(0, 7)] = point;
+  const last = daily[daily.length - 1];
+  return {
+    generated_at: end + "T10:07:31+00:00",
+    latest: {
+      date: last.date, total_rows: last.total_rows, replications: last.replications,
+      reproductions: last.reproductions, source_rows: last.source_rows, measured_on: last.date,
+      launched_on: "2026-05-21", launch_total_rows: 2167, first_counted_on: "2025-11-11",
+      pipeline_from: "2026-09-13", no_counts_from: "2026-01-14", no_counts_until: "2026-05-20",
+    },
+    daily: daily.slice(-window),
+    monthly: Object.keys(byMonth).sort().map(month => ({ month, ...byMonth[month] })),
+  };
+}
+
 const CHART_STUB = `
   window.__charts = [];
   window.Chart = function (canvas, config) {
@@ -67,8 +110,9 @@ const CHART_STUB = `
   Chart.prototype.update = function () {};
 `;
 
-async function openPage(browser, history, { viewport, blockChart, failFirst } = {}) {
-  const page = await browser.newPage({ viewport: viewport || { width: 1280, height: 900 }, locale: "en-US", acceptDownloads: true });
+async function openPage(browser, history, { viewport, blockChart, failFirst, colorScheme } = {}) {
+  const page = await browser.newPage({ viewport: viewport || { width: 1280, height: 900 }, locale: "en-US",
+                                       acceptDownloads: true, colorScheme: colorScheme || "light" });
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
   const root = path.resolve(__dirname, "..");
@@ -108,8 +152,39 @@ const lastChart = (page, label = "FLoRA dataset") => page.evaluate(label => {
     firstFlora: sets[0].data.findIndex(p => p.y !== null),
     lastX: sets[0].data[sets[0].data.length - 1].x,
     firstX: sets[0].data[0].x,
+    xs: sets[0].data.map(p => p.x),
+    eras: chart.options.plugins.eras,
+    spanGaps: sets[0].spanGaps,
+    // The dash for a step into or out of a day with no value, and for one between values.
+    dash: [sets[0].segment.borderDash({ p0: { skip: false }, p1: { skip: true } }),
+           sets[0].segment.borderDash({ p0: { skip: true }, p1: { skip: false } }),
+           sets[0].segment.borderDash({ p0: { skip: false }, p1: { skip: false } }) || null],
   };
 }, label);
+const dayOf = date => Date.parse(date + "T00:00:00Z") / DAY;
+
+// The stub never draws, so this runs the newest main chart's "eras" plugin on a
+// recording canvas `width` px wide, with the x scale spanning its points.
+const drawEras = (page, width) => page.evaluate(width => {
+  const chart = window.__charts.filter(c => c.data.datasets[0].label === "FLoRA dataset").pop();
+  const plugin = chart.config.plugins.find(p => p.id === "eras");
+  const opts = chart.options.plugins.eras;
+  const xs = chart.data.datasets[0].data.map(p => p.x);
+  const area = { left: 40, right: width - 50, top: 10, bottom: 250 };
+  const px = v => area.left + (v - xs[0]) / (xs[xs.length - 1] - xs[0]) * (area.right - area.left);
+  const drawn = [];
+  const ctx = {
+    save() {}, restore() {}, beginPath() {}, lineTo() {}, stroke() {},
+    moveTo(x) { drawn.push(["line", x]); },
+    fillRect(x, y, w) { drawn.push(["band", x, w]); },
+    fillText(s) { drawn.push(["text", s]); },
+    measureText(s) { return { width: s.length * 6 }; },
+  };
+  const fake = { ctx, width, chartArea: area, scales: { x: { getPixelForValue: px } } };
+  plugin.beforeDraw(fake, {}, opts);
+  plugin.beforeDatasetsDraw(fake, {}, opts);
+  return { drawn, band: [px(opts.band.from), px(opts.band.to)], launch: px(opts.launch) };
+}, width);
 
 (async () => {
   const history = makeHistory();
@@ -151,6 +226,8 @@ const lastChart = (page, label = "FLoRA dataset") => page.evaluate(label => {
     const footnote = await page.locator("#chart-footnote").innerText();
     assert.match(footnote, /Before 5 Jun 2026, one point per month end\./);
     assert.match(footnote, /The dataset line starts on 1 Jul 2026, its first count\./);
+    assert.doesNotMatch(footnote, /Dotted/, "no stretch without counts in this payload");
+    assert.deepEqual(chart.eras, { band: null, launch: null }, "no fred-data counts, no launch date");
     assert.equal(await page.locator('[data-range="all"]').getAttribute("aria-pressed"), "true");
 
     // ── replications and reproductions: a figure and a chart each ──────────
@@ -313,6 +390,102 @@ const lastChart = (page, label = "FLoRA dataset") => page.evaluate(label => {
     await page.click('[data-range="30"]');
     assert.doesNotMatch(await page.locator("#chart-footnote").innerText(), /flora\.csv/,
       "a period wholly after the handover does not mention it");
+    assert.deepEqual(errors, []);
+    await page.close();
+
+    // ── the fred-data pipeline before the launch, and the stretch with no counts ──
+    const early = makeEarlyHistory();
+    const at = date => early.daily.findIndex(d => d.date === date);
+    ({ page, errors } = await openPage(browser, early));
+    await page.locator("body:not(.is-loading)").waitFor();
+    chart = await lastChart(page);
+    assert.equal(chart.firstX, dayOf("2025-11-11"), "starts at the first fred-data count");
+    assert.equal(chart.firstFlora, 0);
+    assert.equal(chart.values[0], 573);
+    assert.equal(chart.points, early.daily.length, "every day is in the daily window");
+    assert.deepEqual(chart.eras, { band: { from: dayOf("2025-11-11"), to: dayOf("2026-01-13") },
+                                   launch: dayOf("2026-05-21") });
+    assert.equal(chart.values[at("2026-01-13")], 758);
+    assert(chart.values.slice(at("2026-01-14"), at("2026-05-21")).every(v => v === null),
+      "no figure is claimed between the old pipeline's last count and the launch");
+    assert.equal(chart.values[at("2026-05-21")], 2167);
+    assert.equal(chart.spanGaps, true);
+    assert.deepEqual(chart.dash, [[1, 5], [1, 5], null], "dotted across the gap only");
+    const drawn = await drawEras(page, 1000);
+    assert.deepEqual(drawn.drawn, [["band", drawn.band[0], drawn.band[1] - drawn.band[0]],
+                                   ["text", "fred-data pipeline"], ["line", Math.round(drawn.launch) + 0.5],
+                                   ["text", "FLoRA validation launched"]]);
+    assert.deepEqual((await drawEras(page, 360)).drawn.filter(d => d[0] === "text").map(d => d[1]),
+      ["fred-data", "pipeline", "FLoRA validation", "launched"], "two lines each on a narrow chart");
+    const label = await page.locator("#chart").getAttribute("aria-label");
+    assert.match(label, /^Line chart from 11 Nov 2025 to 2 Oct 2026\. FLoRA dataset went from 573 on 11 Nov 2025/);
+    assert.match(label, /fred-data pipeline from 11 Nov 2025 to 13 Jan 2026\. No counts from 14 Jan to 20 May 2026\. FLoRA validation launched on 21 May 2026\.$/);
+    const earlyNote = await page.locator("#chart-footnote").innerText();
+    assert.match(earlyNote, /Dotted line: no counts from 14 Jan to 20 May 2026\./);
+    assert.match(earlyNote, /Before 13 Sep 2026, counts of the flora\.csv published each day; since then, this site’s pipeline\./,
+      "the switch to pipeline counts keeps its footnote");
+    assert.doesNotMatch(earlyNote, /starts|month end/, "the line starts at the period's first day");
+    assert.equal(await page.locator("#pipeline-start").innerText(), "13 Sep 2026");
+    const earlyLatest = early.latest.total_rows;
+    assert.equal(await page.locator("#d-launch").innerText(),
+      `+${(earlyLatest - 2167).toLocaleString("en-US")} since the validator launched on 21 May 2026`,
+      "growth still counts from the launch day, not from the first count");
+    assert.equal(await page.locator("#rep-delta").innerText(),
+      `+${(early.latest.replications - 753).toLocaleString("en-US")} since it was first measured on 13 Jan`);
+    const typedEarly = await lastChart(page, "Replications");
+    assert.equal(typedEarly.firstX, dayOf("2026-01-13"), "the split starts with the first version that records a type");
+    assert.equal(typedEarly.values[0], 753);
+    assert.equal(await page.locator("#types-note").innerText(),
+      "Both charts start on 13 Jan 2026, the first count by type. Dotted line: no counts from 14 Jan to 20 May 2026.");
+    // The table: the first count, a day with none, the count after it.
+    await page.click("#table-more");
+    const firstOld = page.locator("#table-body tr").filter({ has: page.locator("th", { hasText: /^11 Nov 2025$/ }) });
+    assert.equal(await firstOld.locator(".tag").innerText(), "FIRST");
+    assert.equal(await page.locator("#table-body tr").filter({ has: page.locator("th", { hasText: /^21 May 2026$/ }) }).count(), 1,
+      "the launch day's count is a change even with no count the day before");
+    await page.check("#all-days");
+    await page.click("#table-more");
+    const empty = page.locator("#table-body tr").filter({ has: page.locator("th", { hasText: /^1 Mar 2026$/ }) });
+    assert.equal(await empty.locator("td").first().innerText(), "—");
+    assert.equal(await empty.locator("td").first().getAttribute("title"), "No count");
+    const [earlyCsv] = await Promise.all([page.waitForEvent("download"), page.click("#download")]);
+    const earlyLines = (await fs.readFile(await earlyCsv.path(), "utf8")).trim().split("\n");
+    assert(earlyLines.includes("2025-11-25,655,,,true,fred-data"), "no type recorded: no split, not 0");
+    assert(earlyLines.includes("2026-01-13,758,753,5,true,fred-data"));
+    assert(earlyLines.includes("2026-03-01,,,,,"));
+    // Inside the last 90 days there is nothing to mark.
+    await page.click('[data-range="90"]');
+    chart = await lastChart(page);
+    assert.deepEqual(chart.eras, { band: null, launch: null });
+    assert.doesNotMatch(await page.locator("#chart-footnote").innerText(), /Dotted/);
+    assert(await page.locator("#types-note").isHidden());
+    assert.deepEqual(errors, []);
+    await page.close();
+
+    // ── the same at phone width with a dark system theme: the page keeps its own ──
+    ({ page, errors } = await openPage(browser, early, { viewport: { width: 390, height: 844 }, colorScheme: "dark" }));
+    await page.locator("body:not(.is-loading)").waitFor();
+    assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), "rgb(244, 239, 230)");
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), 0);
+    assert.deepEqual((await lastChart(page)).eras.launch, dayOf("2026-05-21"));
+    assert.deepEqual(errors, []);
+    await page.close();
+
+    // ── a year on, the 400-day daily window starts after the fred-data era ──
+    const later = makeEarlyHistory("2027-03-01", 400);
+    ({ page, errors } = await openPage(browser, later));
+    await page.locator("body:not(.is-loading)").waitFor();
+    chart = await lastChart(page);
+    assert.equal(chart.firstX, dayOf("2025-11-30"), "the era is month-end points now");
+    assert.deepEqual(chart.eras.band, { from: dayOf("2025-11-11"), to: dayOf("2026-01-13") },
+      "the era's own first and last days, not the month ends that stand for them");
+    assert.match(await page.locator("#chart").getAttribute("aria-label"),
+      /fred-data pipeline from 11 Nov 2025 to 13 Jan 2026\. No counts from 14 Jan to 20 May 2026\./);
+    assert.equal(await page.locator("#types-note").innerText(), "Both charts start on 21 May 2026.",
+      "the first count by type, 13 Jan 2026, is no longer on screen");
+    assert.equal(await page.locator("#rep-delta").innerText(),
+      `+${(later.latest.replications - 2158).toLocaleString("en-US")} since 21 May 2026`,
+      "not \"first measured\": it was measured before the stretch with no counts");
     assert.deepEqual(errors, []);
     await page.close();
 

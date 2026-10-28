@@ -164,9 +164,9 @@ def test_every_day_carries_its_own_breakdown():
 
 
 def test_a_seeded_day_reports_no_breakdown():
-    """The columns are NOT NULL DEFAULT 0, so a seeded day comes back as 0 rather
-    than NULL. Publishing that would say the collection held no replications on a
-    day nothing was measured."""
+    """The columns default to 0, so a seeded day comes back as 0 rather than NULL.
+    Publishing that would say the collection held no replications on a day nothing
+    was measured."""
     seeded = {**_row(1, 10), "replications": 0, "reproductions": 0}
     point = _history([seeded])["daily"][0]
     assert point["replications"] is None and point["reproductions"] is None
@@ -228,7 +228,8 @@ def test_the_payload_carries_counts_and_nothing_else():
     record, a reference or a reviewer would publish it to everyone."""
     allowed = {"date", "month", "total_rows", "source_rows", "measured",
                "replications", "reproductions", "measured_on", "measured_by", "launched_on",
-               "launch_total_rows", "first_counted_on", "pipeline_from"}
+               "launch_total_rows", "first_counted_on", "pipeline_from",
+               "no_counts_from", "no_counts_until"}
     out = _history([_row(1, 10, total_rows=8, reps=6, repros=2)])
     for point in out["daily"] + out["monthly"] + [out["latest"]]:
         assert set(point) <= allowed, f"unexpected field(s): {set(point) - allowed}"
@@ -281,6 +282,55 @@ def test_the_launch_and_the_handover_survive_the_daily_window():
     assert [d["date"] for d in out["daily"]] == [str(_day(5))]
     assert (out["latest"]["launch_total_rows"], out["latest"]["pipeline_from"],
             out["latest"]["first_counted_on"]) == (900, str(_day(4)), str(_day(1)))
+
+
+def _fred_data_then_launch():
+    """The old fred-data pipeline on days 1 and 3 (no type on day 1), no counts on
+    days 4-5, flora.csv from the launch on day 6, the pipeline from day 8."""
+    launch = {"launched_on": _day(6)}
+    old = {"measured_by": "fred-data", **launch}
+    return [{**_row(1, None, total_rows=573), "replications": None, "reproductions": None, **old},
+            {**_row(2, None), "measured_by": None, **launch},
+            {**_row(3, None, total_rows=758, reps=753, repros=5), **old},
+            {**_row(4, None), "measured_by": None, **launch},
+            {**_row(5, None), "measured_by": None, **launch},
+            {**_row(6, None, total_rows=2167, reps=2158, repros=9), "measured_by": "flora.csv", **launch},
+            {**_row(7, None), "measured_by": None, **launch},
+            {**_row(8, 10, total_rows=2200, reps=2190, repros=10), "measured_by": "pipeline", **launch}]
+
+
+def test_the_old_pipelines_last_count_is_not_carried_to_the_launch():
+    """Its flora.csv left the repository root that day and nothing was counted until
+    the launch: a carried figure there would be one that never held."""
+    daily = _history(_fred_data_then_launch())["daily"]
+    assert [d["total_rows"] for d in daily] == [573, 573, 758, None, None, 2167, 2167, 2200]
+    assert [d["measured_by"] for d in daily] == [
+        "fred-data", "fred-data", "fred-data", None, None, "flora.csv", "flora.csv", "pipeline"]
+    assert [d["measured"] for d in daily] == [True, False, True, False, False, True, False, True]
+
+
+def test_a_count_with_no_type_has_no_split():
+    """The old pipeline's first versions record no type: unknown, not 0."""
+    daily = _history(_fred_data_then_launch())["daily"]
+    assert [(d["replications"], d["reproductions"]) for d in daily[:4]] == [
+        (None, None), (None, None), (753, 5), (None, None)]
+
+
+def test_latest_names_the_stretch_with_no_counts_and_keeps_the_launch_figures():
+    latest = _history(_fred_data_then_launch(), window_days=1)["latest"]
+    assert (latest["no_counts_from"], latest["no_counts_until"]) == (str(_day(4)), str(_day(5)))
+    assert latest["launched_on"] == str(_day(6))
+    assert latest["launch_total_rows"] == 2167, "growth is still measured from the launch"
+    assert latest["first_counted_on"] == str(_day(1))
+    assert latest["pipeline_from"] == str(_day(8))
+
+
+def test_no_stretch_without_old_pipeline_counts_or_a_day_between():
+    assert _history(_csv_then_pipeline())["latest"]["no_counts_from"] is None
+    back_to_back = [r for r in _fred_data_then_launch() if r["day"] not in (_day(4), _day(5))]
+    back_to_back[3:] = [{**r, "day": r["day"] - dt.timedelta(days=2)} for r in back_to_back[3:]]
+    latest = _history(back_to_back)["latest"]
+    assert (latest["no_counts_from"], latest["no_counts_until"]) == (None, None)
 
 
 def test_no_handover_without_flora_csv_counts():

@@ -255,17 +255,36 @@ python backfill_flora_history.py --fred-data ../fred-data --apply
 
 These are counts of what was published on each day, not older records re-counted
 under today's rules, so the line can step where the pipeline takes over. The
-script writes nothing from the pipeline's first count on, even with `--until`, a
-re-run replaces only its own rows, and `--apply` refuses until the deployed schema
-has the `measured_by` column. The pipeline writes `measured_by` once the column
-exists and leaves it out until then, so the nightly job does not depend on the
-site being redeployed first. All days are UTC calendar days, whatever the
-database session's time zone.
+script writes nothing from the pipeline's first count on, even with `--until`, and
+only ever inserts: a day that already has a row is never changed. fred-data's
+history has since been rewritten (`output/flora.csv` now starts on 23 Oct 2026), so
+a re-run could only make the counts already written worse. `--apply` refuses until
+the deployed schema has the `measured_by` column. The pipeline writes `measured_by`
+once the column exists and leaves it out until then, so the nightly job does not
+depend on the site being redeployed first. All days are UTC calendar days, whatever
+the database session's time zone.
+
+`--before-launch` reaches back to the old fred-data pipeline: the root `flora.csv`
+it published from 11 Nov 2025 until the 13 Jan 2026 restructure moved it to
+`archive/`. It writes only days before the launch that have no row, marked
+`measured_by = 'fred-data'`, and refuses `--apply` until the deployed schema takes
+that value. `release/latest_data/flora.csv` and `archive/flora.csv` only hold
+copies of root versions and are not read. Versions before 13 Jan 2026 have no type
+column, so their replications and reproductions are NULL:
+
+```bash
+python backfill_flora_history.py --fred-data ../fred-data --before-launch            # dry run
+python backfill_flora_history.py --fred-data ../fred-data --before-launch --apply
+```
+
+The old pipeline's last count is not carried forward: nothing was counted from
+then until the launch, and the data report draws that stretch as a dotted line.
 
 `latest` in the history payload carries what the page needs from beyond the
 400-day daily window: the count at the validator launch (`launch_total_rows`), the
-first count (`first_counted_on`) and the first pipeline count after flora.csv
-counts (`pipeline_from`).
+first count (`first_counted_on`), the first pipeline count after flora.csv
+counts (`pipeline_from`) and the stretch with no counts (`no_counts_from`,
+`no_counts_until`).
 
 The data report shows FLoRA only by default. **Show source records** adds the
 source-record line, table column and CSV column. Once flora.csv days exist, the

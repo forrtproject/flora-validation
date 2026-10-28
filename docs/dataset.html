@@ -640,7 +640,7 @@
       <p class="table-note">
         Each figure is followed by its change from the day before.
         <span class="tag">carried</span> no new count that day; the previous figure still
-        held. A dash: no count yet.
+        held. A dash: no count.
       </p>
     </section>
 
@@ -725,6 +725,7 @@
   var GRID         = "#ddd6c6";
   var RULE         = "#c8c0ad";
   var SURFACE      = "#fffdf8";
+  var BAND         = "#ebe4d2";   // --bg-alt: the fred-data pipeline's era
   var SANS         = "'Inter Tight', sans-serif";
   var MONO         = "'JetBrains Mono', monospace";
 
@@ -736,6 +737,7 @@
   var MINUS = "−";
   var DAY_MS = 86400000;
   var PREVIEW_ROWS = 8;
+  var OLD_PIPELINE = "fred-data";   // measured_by of the old fred-data pipeline's counts
   var NO_CHART = "The chart could not be loaded. Every figure it would show is in the table below.";
   var REDUCED_MOTION = !!(window.matchMedia &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -801,6 +803,13 @@
     return -1;
   }
 
+  // No count on a day after the first count: the stretch after the old pipeline's
+  // last count, which the server leaves empty rather than carried.
+  function inGap(flora, date) {
+    var first = state.data.latest.first_counted_on;
+    return flora === null && !!first && date > first;
+  }
+
   // Series dates are UTC calendar days ("2026-09-13") and are printed as they are;
   // none of them passes through the reader's time zone.
   function ymd(iso) {
@@ -812,6 +821,9 @@
   function shortDate(iso) { var p = ymd(iso); return p[2] + " " + MONTHS[p[1] - 1]; }
   function longDate(iso) { return shortDate(iso) + " " + ymd(iso)[0]; }
   function monthYear(iso) { var p = ymd(iso); return MONTHS[p[1] - 1] + " " + p[0]; }
+  function between(from, to) {
+    return (ymd(from)[0] === ymd(to)[0] ? shortDate(from) : longDate(from)) + " to " + longDate(to);
+  }
   function weekday(iso) { return WEEKDAYS[new Date(dayNumber(iso) * DAY_MS).getUTCDay()]; }
 
   // "on 13 Sep 2026", or for a month-end point, which only says where the month
@@ -849,8 +861,10 @@
         measuredOn: d.total_rows === null ? null : measuredOn,
         floraFirst: d.total_rows !== null && (firstCounted === undefined
           ? !!prev && prev.flora === null
-          : d.date === firstCounted)
+          : d.date === firstCounted),
+        gap: inGap(d.total_rows, d.date)
       };
+      row.resumed = row.flora !== null && !!prev && prev.gap;   // the first count after it
       KEYS.forEach(function (key) {
         row[key + "Change"] = (prev && prev[key] !== null && row[key] !== null)
           ? row[key] - prev[key] : null;
@@ -877,7 +891,7 @@
                  rep: measured ? given(m.replications) : null,
                  repro: measured ? given(m.reproductions) : null,
                  source: m.source_rows, measured: m.measured, measuredBy: given(m.measured_by),
-                 measuredOn: null, monthEnd: true };
+                 measuredOn: null, monthEnd: true, gap: inGap(m.total_rows, m.date) };
       })
       .concat(state.rows);
   }
@@ -910,7 +924,9 @@
     }
     var i = firstWith(points, key);
     var start = points[i];
-    var firstReading = !start.monthEnd && (i > 0 || (before && before[key] === null));
+    // Not after the stretch with no counts: the first reading came before it.
+    var firstReading = !start.monthEnd &&
+      (i > 0 ? !points[i - 1].gap : !!before && before[key] === null && !before.gap);
     return {
       delta: last - start[key],
       period: firstReading ? "since it was first measured on " + shortDate(start.date)
@@ -1079,12 +1095,77 @@
     }
   };
 
+  // The fred-data pipeline's era, shaded under the grid, and a line at the
+  // validator's launch. Each label sits where the line cannot be: the era's at the
+  // top (its counts are the smallest), the launch's at the foot (the dataset after
+  // it is larger). Canvas text is not read aloud: the chart's label says the same
+  // (marksFor).
+  var LINE_HEIGHT = 14;
+
+  function eraSpan(chart, band) {
+    if (!band) return null;
+    var area = chart.chartArea;
+    var left = Math.max(area.left, chart.scales.x.getPixelForValue(band.from));
+    var right = Math.min(area.right, chart.scales.x.getPixelForValue(band.to));
+    return right < left ? null : { left: left, right: Math.max(right, left + 1) };
+  }
+
+  function widest(ctx, lines) {
+    return Math.max.apply(null, lines.map(function (s) { return ctx.measureText(s).width; }));
+  }
+
+  function writeLines(ctx, lines, x, y, align) {
+    ctx.textAlign = align;
+    lines.forEach(function (s, i) { ctx.fillText(s, x, y + i * LINE_HEIGHT); });
+  }
+
+  var eras = {
+    id: "eras",
+    beforeDraw: function (chart, args, opts) {
+      var span = eraSpan(chart, opts.band);
+      if (!span) return;
+      var area = chart.chartArea;
+      chart.ctx.save();
+      chart.ctx.fillStyle = BAND;
+      chart.ctx.fillRect(span.left, area.top, span.right - span.left, area.bottom - area.top);
+      chart.ctx.restore();
+    },
+    beforeDatasetsDraw: function (chart, args, opts) {
+      var area = chart.chartArea;
+      var ctx = chart.ctx;
+      var narrow = chart.width < 520;
+      var span = eraSpan(chart, opts.band);
+      ctx.save();
+      ctx.font = "500 11px " + SANS;
+      ctx.fillStyle = MUTED;
+      ctx.textBaseline = "top";
+      if (span) {
+        writeLines(ctx, narrow ? ["fred-data", "pipeline"] : ["fred-data pipeline"],
+                   span.left + 6, area.top + 6, "left");
+      }
+      if (opts.launch !== null && opts.launch !== undefined) {
+        var x = Math.round(chart.scales.x.getPixelForValue(opts.launch)) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x, area.top);
+        ctx.lineTo(x, area.bottom);
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = MUTED;
+        ctx.stroke();
+        var label = narrow ? ["FLoRA validation", "launched"] : ["FLoRA validation launched"];
+        var right = x + 6 + widest(ctx, label) <= area.right;   // beside the line, inside the plot
+        writeLines(ctx, label, right ? x + 6 : x - 6, area.bottom - 6 - label.length * LINE_HEIGHT,
+                   right ? "left" : "right");
+      }
+      ctx.restore();
+    }
+  };
+
   function pointTitle(p) {
     return p.monthEnd ? "End of " + monthYear(p.date) : weekday(p.date) + " " + longDate(p.date);
   }
 
   function datasetNote(p, key) {
-    if (p[key] === null) return "Not measured yet";
+    if (p[key] === null) return p.gap ? "No count" : "Not measured yet";
     if (!p.measured) return "carried forward" + (p.measuredOn ? " from " + shortDate(p.measuredOn) : "");
     return null;
   }
@@ -1137,7 +1218,46 @@
         ? s.label + " went from " + fmt(start[s.key]) + " " + when(start) + " to " + fmt(last[s.key]) + "."
         : s.label + " not measured yet.");
     });
+    if (view.marks) parts = parts.concat(view.marks.words);
     $(view.canvas).setAttribute("aria-label", parts.join(" "));
+  }
+
+  // The stretch with no counts, "14 Jan to 20 May 2026", when a line through the
+  // dates from..to crosses it (dotted). The server sends it, since it leaves the
+  // daily window in time.
+  function gapIn(from, to) {
+    var l = state.data.latest;
+    if (!l.no_counts_from || !l.no_counts_until) return null;
+    return from < l.no_counts_from && to > l.no_counts_until
+      ? between(l.no_counts_from, l.no_counts_until) : null;
+  }
+
+  // The main chart's marks within the period on screen: the fred-data pipeline's
+  // era (shaded) and the validator's launch (a line). `words` says them, and the
+  // stretch with no counts, in the chart's label.
+  function marksFor(points) {
+    var from = points[0].date;
+    var to = points[points.length - 1].date;
+    var old = points.filter(function (p) { return p.measuredBy === OLD_PIPELINE; });
+    var l = state.data.latest;
+    var launched = l.launched_on;
+    var marks = { band: null, launch: null, words: [] };
+    if (old.length) {
+      // Its counts are the first ones, and it ends the day before the stretch with
+      // no counts. The server sends both days: once they leave the daily window,
+      // month-end points would put the era's ends at month ends.
+      var a = l.first_counted_on && l.first_counted_on < old[0].date ? l.first_counted_on : old[0].date;
+      var b = l.no_counts_from ? isoOf(dayNumber(l.no_counts_from) - 1) : old[old.length - 1].date;
+      marks.band = { from: dayNumber(a), to: dayNumber(b) };
+      marks.words.push("fred-data pipeline from " + longDate(a) + " to " + longDate(b) + ".");
+    }
+    var gap = gapIn(from, to);
+    if (gap) marks.words.push("No counts from " + gap + ".");
+    if (launched && launched >= from && launched <= to) {
+      marks.launch = dayNumber(launched);
+      marks.words.push("FLoRA validation launched on " + longDate(launched) + ".");
+    }
+    return marks;
   }
 
   function drawChart(view, points, emptyMessage) {
@@ -1177,7 +1297,13 @@
         // Straight segments: a curve through cumulative counts invents values
         // between the days, overshooting the real total at every step.
         tension: 0,
-        spanGaps: false,
+        // Across the stretch with no counts the line is dotted: it joins the counts
+        // either side and claims no figure between them. Nothing before a line's
+        // first value is bridged, so that stays blank.
+        spanGaps: true,
+        segment: {
+          borderDash: function (ctx) { return ctx.p0.skip || ctx.p1.skip ? [1, 5] : undefined; }
+        },
         pointRadius: 0,
         pointHitRadius: 12,
         pointHoverRadius: 5,
@@ -1206,7 +1332,8 @@
           // summary and the table too, which a canvas legend could not. A chart
           // with one series is named by its title.
           legend: { display: false },
-          tooltip: { enabled: false, external: function (context) { renderTip(view, context); } }
+          tooltip: { enabled: false, external: function (context) { renderTip(view, context); } },
+          eras: view.marks ? { band: view.marks.band, launch: view.marks.launch } : false
         },
         scales: {
           x: {
@@ -1242,7 +1369,7 @@
           }
         }
       },
-      plugins: [crosshair, endMarkers]
+      plugins: [crosshair, endMarkers, eras]
     });
   }
 
@@ -1259,6 +1386,8 @@
         ? "The dataset line starts at the end of " + monthYear(start.date) + firstCountOn() + "."
         : "The dataset line starts on " + longDate(start.date) + ", its first count.");
     }
+    var gap = gapIn(points[0].date, points[points.length - 1].date);
+    if (gap) notes.push("Dotted line: no counts from " + gap + ".");
     var handover = pipelineStart(points);
     if (handover) {
       notes.push("Before " + longDate(handover) + ", counts of the flora.csv published each day; " +
@@ -1295,7 +1424,9 @@
   function renderTypes(points) {
     var l = state.data.latest;
     var measured = l.total_rows !== null;
-    var start = null;
+    var start = null;     // where the charts start, if after the period's first day
+    var before = null;    // the point before that
+    var drawn = null;     // where they start at all
     [
       { key: "rep", view: VIEWS.rep, value: l.replications },
       { key: "repro", view: VIEWS.repro, value: l.reproductions }
@@ -1304,20 +1435,34 @@
       $(t.key + "-share").textContent = measured && l.total_rows ? share(t.value, l.total_rows) + " of the dataset" : "";
       writeChange($(t.key + "-delta"), changeInPeriod(t.key));
       var first = firstWith(points, t.key);
-      if (first > 0) start = points[first];
+      if (first > 0) { start = points[first]; before = points[first - 1]; }
+      if (first >= 0) drawn = points[first];
       drawChart(t.view, first < 0 ? [] : points.slice(first),
                 "No history has been recorded for this figure yet.");
     });
+    var notes = [];
+    if (start) {
+      // The old pipeline's first versions record no type, so the split can start
+      // after the dataset's first count. After the stretch with no counts, the
+      // first count of either is before it, off screen: no "first" is claimed.
+      var byType = before.flora !== null;
+      notes.push(start.monthEnd
+        ? "Both charts start at the end of " + monthYear(start.date) +
+          (byType || before.gap ? "" : firstCountOn()) + "."
+        : "Both charts start on " + longDate(start.date) +
+          (before.gap ? "." : byType ? ", the first count by type." : ", the first count."));
+    }
+    var gap = drawn && gapIn(drawn.date, points[points.length - 1].date);
+    if (gap) notes.push("Dotted line: no counts from " + gap + ".");
     var note = $("types-note");
-    note.textContent = !start ? "" : start.monthEnd
-      ? "Both charts start at the end of " + monthYear(start.date) + firstCountOn() + "."
-      : "Both charts start on " + longDate(start.date) + ", the first count.";
-    note.hidden = !start;
+    note.textContent = notes.join(" ");
+    note.hidden = !notes.length;
   }
 
   function renderCharts() {
     VIEWS.main.series = state.showSources ? [FLORA_SERIES, SOURCE_SERIES] : [FLORA_SERIES];
     var points = pointsFor(state.range);
+    VIEWS.main.marks = points.length ? marksFor(points) : null;
     drawChart(VIEWS.main, points, "No figures have been recorded yet.");
     mainFootnote(points);
     renderTypes(points);
@@ -1340,7 +1485,7 @@
     }
     var p = view.points[i];
     $("chart-live").textContent = pointTitle(p) + ": " + view.series.map(function (s) {
-      return s.label + " " + (p[s.key] === null ? "not measured yet" : fmt(p[s.key]));
+      return s.label + " " + (p[s.key] === null ? (p.gap ? "no count" : "not measured yet") : fmt(p[s.key]));
     }).join(", ") + ".";
   }
 
@@ -1356,7 +1501,7 @@
   // ---- table -----------------------------------------------------------------
 
   function changed(r) {
-    return r.floraFirst || shownKeys().some(function (key) { return !!r[key + "Change"]; });
+    return r.floraFirst || r.resumed || shownKeys().some(function (key) { return !!r[key + "Change"]; });
   }
 
   function tag(text, title) {
@@ -1365,11 +1510,11 @@
     return node;
   }
 
-  function valueCell(value, change, badge, key) {
+  function valueCell(value, change, badge, key, gap) {
     var td = el("td");
     if (value === null) {
       td.className = "none";
-      td.title = key === "source" ? "Before source records were ingested" : "No count yet";
+      td.title = key === "source" ? "Before source records were ingested" : gap ? "No count" : "No count yet";
     }
     td.appendChild(el("span", "val", fmt(value)));
     var slot = el("span", "chg");
@@ -1414,7 +1559,7 @@
       th.scope = "row";
       tr.appendChild(th);
       shownKeys().forEach(function (key) {
-        tr.appendChild(valueCell(r[key], r[key + "Change"], key === "flora" ? floraBadge(r) : null, key));
+        tr.appendChild(valueCell(r[key], r[key + "Change"], key === "flora" ? floraBadge(r) : null, key, r.gap));
       });
       body.appendChild(tr);
     });

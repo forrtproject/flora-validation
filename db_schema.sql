@@ -1494,17 +1494,41 @@ CREATE TABLE IF NOT EXISTS flora_dataset_history (
     -- that produce it today did not exist then. A day before this pipeline ran can
     -- carry the size of the flora.csv published that day instead (measured_by).
     total_rows    INTEGER,
-    replications  INTEGER NOT NULL DEFAULT 0,
-    reproductions INTEGER NOT NULL DEFAULT 0,
+    -- NULL where a flora.csv version recorded no type (the old fred-data pipeline's
+    -- before 13 Jan 2026): the split is unknown, not 0.
+    replications  INTEGER DEFAULT 0,
+    reproductions INTEGER DEFAULT 0,
     source_rows   INTEGER NOT NULL DEFAULT 0,   -- source_records behind the product
     recorded_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 -- Where a day's total_rows came from: this pipeline's run, or the row count of the
 -- flora.csv published that day in forrtproject/fred-data, for the days before this
--- pipeline existed (backfill_flora_history.py). NULL on a row with a total means a
--- pipeline run recorded before the column existed.
+-- pipeline existed (backfill_flora_history.py): 'flora.csv' for output/flora.csv
+-- from the validator's launch, 'fred-data' for the old fred-data pipeline's root
+-- flora.csv, 11 Nov 2025 - 13 Jan 2026. NULL on a row with a total means a pipeline
+-- run recorded before the column existed.
 ALTER TABLE flora_dataset_history ADD COLUMN IF NOT EXISTS measured_by TEXT
-    CHECK (measured_by IN ('pipeline', 'flora.csv'));
+    CHECK (measured_by IN ('pipeline', 'flora.csv', 'fred-data'));
+-- 'fred-data' and the NULL split came later. Changed only while the table lacks
+-- them, so a restart does not lock and re-check it every time.
+DO $flora_dataset_history$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint
+               WHERE conname = 'flora_dataset_history_measured_by_check'
+                 AND conrelid = 'flora_dataset_history'::regclass
+                 AND pg_get_constraintdef(oid) NOT LIKE '%fred-data%') THEN
+        ALTER TABLE flora_dataset_history DROP CONSTRAINT flora_dataset_history_measured_by_check;
+        ALTER TABLE flora_dataset_history ADD CONSTRAINT flora_dataset_history_measured_by_check
+            CHECK (measured_by IN ('pipeline', 'flora.csv', 'fred-data'));
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'flora_dataset_history' AND column_name = 'replications'
+                 AND is_nullable = 'NO') THEN
+        ALTER TABLE flora_dataset_history
+            ALTER COLUMN replications DROP NOT NULL,
+            ALTER COLUMN reproductions DROP NOT NULL;
+    END IF;
+END $flora_dataset_history$;
 
 CREATE TABLE IF NOT EXISTS flora_records (
     flora_record_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),

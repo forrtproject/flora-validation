@@ -27,7 +27,7 @@ The cache is per process. Several pods each keep their own; they agree because
 they derive from the same rows.
 """
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import NamedTuple
 
 import numpy as np
@@ -600,15 +600,23 @@ def history(cur, window_days: int = 400) -> dict:
     `replications` / `reproductions` are recorded with the total at every run, and
                    are carried and withheld exactly as it is.
 
-    `measured_by`  says where a total came from: "pipeline" (this site's run) or
+    `measured_by`  says where a total came from: "pipeline" (this site's run),
                    "flora.csv" (the row count of the flora.csv published that day,
-                   backfilled for the days before this pipeline existed).
+                   backfilled for the days before this pipeline existed) or
+                   "fred-data" (the same, from the old fred-data pipeline, before the
+                   validator launched).
+
+    The old pipeline's last count is not carried forward: its flora.csv left the
+    repository root that day, and nothing was counted again until the validator
+    launched. Those days stay NULL, a stretch with no counts.
 
     `latest` also names, over the whole history rather than the capped `daily`
     window: `launched_on`, the day the validator opened (its first account), and
     `launch_total_rows`, the dataset size in force at the end of that day;
-    `first_counted_on`, the first day with a dataset size; and `pipeline_from`, the
-    first pipeline count after flora.csv counts (None without flora.csv counts).
+    `first_counted_on`, the first day with a dataset size; `pipeline_from`, the
+    first pipeline count after flora.csv counts (None without flora.csv counts); and
+    `no_counts_from` / `no_counts_until`, the first and last day of that stretch
+    with no counts (None without one).
     """
     cur.execute(
         """
@@ -662,11 +670,15 @@ def history(cur, window_days: int = 400) -> dict:
     )
     rows = [dict(r) for r in cur.fetchall()]
 
+    old = [r["day"] for r in rows if r["was_run"] and r.get("measured_by") == "fred-data"]
+    last_old = old[-1] if old else None
+    after_old = next((r["day"] for r in rows if r["was_run"] and last_old
+                      and r["day"] > last_old), None)
     carried = None
     for r in rows:
         if r["total_rows"] is not None:
             carried = r
-        elif carried is not None:
+        elif carried is not None and carried["day"] != last_old:
             r["total_rows"] = carried["total_rows"]
             r["replications"] = carried["replications"]
             r["reproductions"] = carried["reproductions"]
@@ -675,9 +687,10 @@ def history(cur, window_days: int = 400) -> dict:
     series = [{
         "date": str(r["day"]),
         "total_rows": r["total_rows"],
-        # The split exists exactly where the total does. A seeded day reads 0 here,
-        # not NULL (the columns are NOT NULL DEFAULT 0), and "0 replications" on a
-        # day nothing was measured is a figure that was never true.
+        # The split exists at most where the total does. A seeded day reads 0 here,
+        # not NULL (the columns default to 0), and "0 replications" on a day nothing
+        # was measured is a figure that was never true. A count with no type
+        # recorded (the old pipeline's) stores NULL and passes it through.
         "replications": r["replications"] if r["total_rows"] is not None else None,
         "reproductions": r["reproductions"] if r["total_rows"] is not None else None,
         "source_rows": r["source_rows"],
@@ -706,6 +719,9 @@ def history(cur, window_days: int = 400) -> dict:
         elif saw_csv:
             pipeline_from = r["day"]
             break
+    no_counts = None
+    if after_old and (after_old - last_old).days > 1:
+        no_counts = (last_old + timedelta(days=1), after_old - timedelta(days=1))
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "latest": {
@@ -719,6 +735,8 @@ def history(cur, window_days: int = 400) -> dict:
             "launch_total_rows": at_launch["total_rows"] if at_launch else None,
             "first_counted_on": str(counted[0]["day"]) if counted else None,
             "pipeline_from": str(pipeline_from) if pipeline_from else None,
+            "no_counts_from": str(no_counts[0]) if no_counts else None,
+            "no_counts_until": str(no_counts[1]) if no_counts else None,
         } if last else None,
         # Capped, since the whole history would grow without bound in a public
         # payload. What the page needs from beyond it is in `latest`.
