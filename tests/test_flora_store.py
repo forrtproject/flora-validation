@@ -29,18 +29,21 @@ def test_reference_roundtrip_is_exact_and_idempotent(local_database, tmp_path):
     with local_database:
         with local_database.cursor(cursor_factory=RealDictCursor) as cur:
             first = flora_store.materialize(cur, source)
-            assert first["rows"] == first["inserted"] == 2914
+            assert first["rows"] == first["inserted"] == 2624
             assert first["snapshot_sha256"] == hashlib.sha256(source.read_bytes()).hexdigest()
             assert flora_store.export_csv(cur).encode("utf-8") == source.read_bytes()
             before = flora_store.get_record(cur, "FLORA-000001")
             second = flora_store.materialize(cur, source)
-            assert second["unchanged"] == 2914
+            assert second["unchanged"] == 2624
             assert second["inserted"] == second["updated"] == second["retired"] == 0
             assert flora_store.get_record(cur, before["id"]) == before
             assert flora_store.get_record_by_hash(cur, before["id_md5"].upper()) == before
-            page = flora_store.list_records(cur, limit=2, offset=2912)
-            assert page["total"] == 2914
+            page = flora_store.list_records(cur, limit=2, offset=2622)
+            assert page["total"] == 2624
             assert [row["id"] for row in page["records"]] == ["FLORA-002913", "FLORA-002914"]
+            assert [row["_meta"]["export_position"] for row in page["records"]] == [2913, 2914]
+            assert flora_store.get_record(cur, "FLORA-001942")["_meta"]["export_position"] == 1942
+            assert flora_store.get_record(cur, "FLORA-001662") is None
 
 
 def test_corrections_retirement_reappearance_and_append_keep_identity(local_database):

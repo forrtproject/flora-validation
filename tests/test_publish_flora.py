@@ -1,7 +1,7 @@
 """publish_flora.py and the Publish FLoRA workflow: the stored dataset's repository copy.
 
 The writes run against PostgreSQL in the opt-in database tests
-(FLORA_TEST_DATABASE_URL), with the complete supplied 2,914-row snapshot.
+(FLORA_TEST_DATABASE_URL), with the complete supplied 2,624-row snapshot.
 """
 import hashlib
 import json
@@ -39,9 +39,9 @@ def test_the_repository_copy_is_the_stored_dataset(local_database, tmp_path):
     assert published == source.read_bytes()
     manifest = json.loads((output / "flora_release_manifest.json").read_text(encoding="utf-8"))
     assert manifest["sha256"] == hashlib.sha256(published).hexdigest() == result["sha256"]
-    assert manifest["rows"] == result["rows"] == 2914
+    assert manifest["rows"] == result["rows"] == 2624
     history = (output / "flora_history.csv").read_text(encoding="utf-8").splitlines()
-    assert len(history) == 2 and history[1].split(",")[1] == "2914", "one row per day"
+    assert len(history) == 2 and history[1].split(",")[1] == "2624", "one row per day"
     assert result["report"] == "no run given"
     assert not (output / "flora_preparation_report.json").exists()
     assert sorted(p.name for p in output.iterdir() if p.name.startswith(".")) == [
@@ -51,7 +51,7 @@ def test_the_repository_copy_is_the_stored_dataset(local_database, tmp_path):
 def _report(sha256, source=None):
     """A run's stored report; with `source`, carrying real validation results of it."""
     report = {"generated_at": "2026-10-19T09:00:00+00:00", "status": "success",
-              "mode": "database_pipeline", "rows": 2914,
+              "mode": "database_pipeline", "rows": 2624,
               "release": {"filename": "flora.csv", "sha256": sha256},
               "stages": [{"name": "entry sheets", "status": "passed"}],
               "warnings": [], "errors": []}

@@ -3,6 +3,7 @@
 The supplied snapshot defines initial positions, never an instruction to restore
 excluded records. Current records are matched to it; genuinely new records are
 appended. The registry pins matches so later DOI edits cannot move or rename them.
+Rows removed from the snapshot leave gaps: the rest keep their original positions.
 """
 from __future__ import annotations
 
@@ -19,6 +20,9 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parent
 REFERENCE = ROOT / "data" / "flora_reference.csv"
+# The original positions of reference rows since removed from REFERENCE, one integer
+# per line. The remaining rows keep their original numbers (see reference_index).
+REMOVED_POSITIONS = ROOT / "data" / "flora_reference_removed_positions.txt"
 IDENTITY_COLUMNS = ["id", "id_md5"]
 
 
@@ -53,12 +57,36 @@ def key(row) -> tuple:
     return text(row.get("type")).lower(), original, replication, report
 
 
+def removed_positions() -> frozenset[int]:
+    """The original positions of the reference rows removed from the snapshot."""
+    positions = []
+    for line in REMOVED_POSITIONS.read_text(encoding="utf-8").split():
+        if not line.isdigit() or int(line) < 1:
+            raise ValueError(f"{REMOVED_POSITIONS.name} holds positive integers only")
+        positions.append(int(line))
+    if len(set(positions)) != len(positions):
+        raise ValueError(f"{REMOVED_POSITIONS.name} lists a position twice")
+    return frozenset(positions)
+
+
 @lru_cache(maxsize=1)
 def reference_index() -> tuple[dict, dict, int]:
+    """(exact key -> identity, DOI pair -> candidates, original snapshot size).
+
+    Rows are numbered by their position in the original supplied snapshot: the
+    removed positions are skipped, so each remaining row keeps the ID it was first
+    published under and a removed record's ID and position are never reissued. The
+    size counts the removed rows too, so newcomers are appended after all of them.
+    """
     with REFERENCE.open(encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.DictReader(handle))
+    removed = removed_positions()
+    size = len(rows) + len(removed)
+    if removed and max(removed) > size:
+        raise ValueError("A removed reference position lies beyond the original snapshot")
+    original_positions = (position for position in range(1, size + 1) if position not in removed)
     exact, pairs = {}, {}
-    for position, row in enumerate(rows, 1):
+    for position, row in zip(original_positions, rows):
         identity = (f"FLORA-{position:06d}", position)
         row_key = key(row)
         if row_key in exact:
@@ -67,7 +95,7 @@ def reference_index() -> tuple[dict, dict, int]:
         # Missing/redundant report URLs can match only an unambiguous DOI pair.
         if row_key[1] and row_key[2]:
             pairs.setdefault(row_key[:3], []).append((row_key[3], identity))
-    return exact, pairs, len(rows)
+    return exact, pairs, size
 
 
 def reference_match(row):
@@ -126,7 +154,8 @@ def register_order(cur, frame: pd.DataFrame) -> None:
     by_source = {text(row.get("source_record_id")): row for row in frame.to_dict("records")}
     taken_ids = {row["export_id"] for row in records if row.get("export_id")}
     taken_positions = {int(row["export_position"]) for row in records if row.get("export_position")}
-    reserved_ids = {identity[0] for identity in reference_index()[0].values()}
+    # Every reference ID, including those of removed rows, which are never reissued.
+    reserved_ids = {f"FLORA-{position:06d}" for position in range(1, reference_index()[2] + 1)}
     next_position = max([reference_index()[2], *taken_positions, *published_positions])
     updates = []
     for record in records:

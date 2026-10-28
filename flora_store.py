@@ -137,7 +137,9 @@ def materialize(cur, source, *, allow_empty=False, expected_revision=UNCHECKED_R
         if position in positions and positions[position] != identifier:
             raise ValueError(f"Publication position {position} is claimed by different IDs")
         positions[position] = identifier
-    last_position = max([len(reference), *positions])
+    # The original snapshot size, removed reference rows included: their positions
+    # stay reserved, so newcomers are appended after all of them.
+    last_position = max([final_export.reference_index()[2], *positions])
     stats = {"rows": len(incoming), "inserted": 0, "updated": 0,
              "unchanged": 0, "retired": 0, "reactivated": 0, "preserved": len(preserved),
              "table": "flora_data", "snapshot_sha256": digest}

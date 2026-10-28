@@ -24,10 +24,12 @@ def test_reference_replay_preserves_every_cell_order_and_hash(tmp_path):
         reader = csv.DictReader(handle)
         actual = list(reader)
         assert reader.fieldnames == ["id", "id_md5"] + columns
-    assert len(actual) == len(original) == 2914
+    assert len(actual) == len(original) == 2624
     assert [{column: row[column] for column in columns} for row in actual] == original
     assert len({row["id"] for row in actual}) == len(actual)
-    for position, row in enumerate(actual, 1):
+    # Each row keeps its original number; removed rows leave gaps.
+    kept = [position for position in range(1, 2915) if position not in export.removed_positions()]
+    for position, row in zip(kept, actual, strict=True):
         assert row["id"] == f"FLORA-{position:06d}"
         assert row["id_md5"] == hashlib.md5(row["id"].encode()).hexdigest()
     assert report["live_sources_fetched"] is False
@@ -124,3 +126,76 @@ def test_new_legacy_id_cannot_take_a_reference_identity(monkeypatch):
                           dict(rows[0], source_record_id="reference")])
     export.register_order(Cursor(), frame)
     assert updates == [("NEW-new", 2915, "FLORA-000001"), ("FLORA-000001", 1, "REPL-000001")]
+
+
+def test_removed_reference_positions_are_listed_as_integers_only():
+    lines = export.REMOVED_POSITIONS.read_text(encoding="utf-8").split()
+    assert all(line.isdigit() for line in lines)
+    removed = export.removed_positions()
+    assert len(lines) == len(removed) == 290
+    assert 1662 in removed and 1942 not in removed
+    assert max(removed) <= 2914
+
+
+def test_reference_positions_skip_the_removed_ones():
+    exact, pairs, size = export.reference_index()
+    removed = export.removed_positions()
+    identities = sorted(exact.values(), key=lambda identity: identity[1])
+    assert [position for _, position in identities] == [
+        position for position in range(1, 2915) if position not in removed]
+    assert all(identifier == f"FLORA-{position:06d}" for identifier, position in identities)
+    assert not {position for _, position in identities} & removed
+    assert {identity for candidates in pairs.values() for _, identity in candidates} <= set(exact.values())
+
+
+def test_reference_size_is_the_original_snapshot_size():
+    _, rows = reference_rows()
+    exact, _, size = export.reference_index()
+    assert len(rows) == len(exact) == 2624
+    assert size == 2914 == len(rows) + len(export.removed_positions())
+
+
+def test_record_at_original_position_1942_keeps_its_id():
+    _, rows = reference_rows()
+    row = rows[1661]                                   # row 1662 of the file, after removals
+    assert export.doi(row["doi_o"]) == "10.1037/a0012833"
+    assert export.url(row["url_r"]).endswith("ctvej")
+    assert export.reference_match(row) == ("FLORA-001942", 1942)
+    assert export.with_identity(pd.DataFrame([row]))["id"].tolist() == ["FLORA-001942"]
+
+
+def register(monkeypatch, rows, records):
+    """register_order over an in-memory registry with no stored dataset; its updates."""
+    class Cursor:
+        def execute(self, sql): self.statement = sql
+        def fetchall(self): return [] if "FROM flora_data" in self.statement else records
+    updates = []
+    monkeypatch.setattr("psycopg2.extras.execute_batch", lambda cur, sql, values: updates.extend(values))
+    export.register_order(Cursor(), pd.DataFrame(rows))
+    return updates
+
+
+def test_registering_the_record_at_position_1942_gives_flora_001942(monkeypatch):
+    _, rows = reference_rows()
+    updates = register(monkeypatch, [dict(rows[1661], source_record_id="fred")],
+                       [{"sid": "fred", "flora_id": "FRED-000914", "export_id": None, "export_position": None}])
+    assert updates == [("FLORA-001942", 1942, "FRED-000914")]
+
+
+def test_no_removed_position_or_id_is_ever_assigned(monkeypatch):
+    _, rows = reference_rows()
+    removed = export.removed_positions()
+    # Every reference row registered at once, plus newcomers, one with a legacy
+    # FLORA- id of a removed record.
+    frame = [dict(row, source_record_id=f"ref-{index}") for index, row in enumerate(rows)]
+    records = [{"sid": f"ref-{index}", "flora_id": f"REPL-{index:06d}", "export_id": None,
+                "export_position": None} for index in range(len(rows))]
+    for name, flora_id in [("new-a", "REPL-900001"), ("new-b", "FLORA-001662")]:
+        frame.append(dict(rows[0], source_record_id=name, doi_o=f"10.9999/{name}"))
+        records.append({"sid": name, "flora_id": flora_id, "export_id": None, "export_position": None})
+    updates = register(monkeypatch, frame, records)
+    assert len(updates) == len(rows) + 2
+    positions = [position for _, position, _ in updates]
+    assert not set(positions) & removed
+    assert not {export_id for export_id, _, _ in updates} & {f"FLORA-{p:06d}" for p in removed}
+    assert updates[-2:] == [("REPL-900001", 2915, "REPL-900001"), ("NEW-new-b", 2916, "FLORA-001662")]
