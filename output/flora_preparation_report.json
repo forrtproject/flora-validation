@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-10-27T03:06:32+00:00",
+  "generated_at": "2026-10-28T03:06:33+00:00",
   "mode": "database_pipeline",
   "status": "needs_attention",
-  "rows": 2837,
+  "rows": 2847,
   "stages": [
     {
       "name": "build flora.csv and check IDs",
@@ -12,7 +12,7 @@
     {
       "name": "structural validation",
       "status": "needs_attention",
-      "detail": "44 problems and 24 possible problems"
+      "detail": "44 problems and 25 possible problems"
     },
     {
       "name": "network validation",
@@ -25,7 +25,7 @@
     {
       "name": "store dataset",
       "status": "passed",
-      "detail": "2,837 rows in flora_data"
+      "detail": "2,847 rows in flora_data"
     },
     {
       "name": "write output files",
@@ -36,8 +36,8 @@
     "32 records left out for a missing title; see flora_export_log.csv.",
     "59 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.",
     "25 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.",
-    "Structural validation found 44 problems and 24 possible problems.",
-    "Network validation needs review: 42 problems and 8 possible problems."
+    "Structural validation found 44 problems and 25 possible problems.",
+    "Network validation needs review: 40 problems and 8 possible problems."
   ],
   "errors": [],
   "warning_count": 5,
@@ -1674,8 +1674,8 @@
   },
   "identity": {
     "status": "passed",
-    "rows": 2837,
-    "unique_ids": 2837
+    "rows": 2847,
+    "unique_ids": 2847
   },
   "columns": [
     "id",
@@ -1790,6 +1790,18 @@
           {
             "check": "invalid_url",
             "flora_ids": [
+              "VAL-000044"
+            ],
+            "column": "url_r",
+            "value": "10.31234/osf.io/wej8z",
+            "detail": "url_r holds a DOI, not a link",
+            "label": "10.2307/749455 | 10.5964/jnc.6063",
+            "key": "invalid_url|VAL-000044|url_r|10.31234/osf.io/wej8z",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_url",
+            "flora_ids": [
               "VAL-000258"
             ],
             "column": "oa_url_r",
@@ -1809,18 +1821,6 @@
             "detail": "url_r is cut off",
             "label": "10.1111/j.1467-9280.2008.02072.x | 10.17605/osf.io/yptua",
             "key": "invalid_url|VAL-000274|url_r|https://journals.sagepub.com/doi/full/10.1177/2515…",
-            "level": "problem"
-          },
-          {
-            "check": "invalid_url",
-            "flora_ids": [
-              "VAL-000044"
-            ],
-            "column": "url_r",
-            "value": "10.31234/osf.io/wej8z",
-            "detail": "url_r holds a DOI, not a link",
-            "label": "10.2307/749455 | 10.5964/jnc.6063",
-            "key": "invalid_url|VAL-000044|url_r|10.31234/osf.io/wej8z",
             "level": "problem"
           }
         ],
@@ -2415,6 +2415,18 @@
             "label": "10.1086/740225 | https://hdl.handle.net/10419/280434",
             "key": "year_order|REPRO-000371|year_r|2023",
             "level": "possible_problem"
+          },
+          {
+            "check": "year_order",
+            "flora_ids": [
+              "REPL-001689"
+            ],
+            "column": "year_r",
+            "value": "2020",
+            "detail": "year_r is before year_o (2021)",
+            "label": "10.1177/1042258719892987 | 10.1111/apps.12247",
+            "key": "year_order|REPL-001689|year_r|2020",
+            "level": "possible_problem"
           }
         ],
         "passed": false
@@ -2710,10 +2722,10 @@
     ],
     "suppressed": 0,
     "problems": 44,
-    "possible_problems": 24,
+    "possible_problems": 25,
     "has_problems": true,
     "has_issues": true,
-    "rows": 2837
+    "rows": 2847
   },
   "network": {
     "status": "needs_attention",
@@ -2983,18 +2995,6 @@
           {
             "check": "dead_link",
             "flora_ids": [
-              "REPL-000977"
-            ],
-            "column": "url_r",
-            "value": "https://openalex.org/W7113264659",
-            "detail": "url_r is dead (HTTP 404)",
-            "label": "10.1109/vis54172.2023.00016 | 10.31219/osf.io/v6sfg_v1",
-            "key": "dead_link|REPL-000977|url_r|https://openalex.org/w7113264659",
-            "level": "problem"
-          },
-          {
-            "check": "dead_link",
-            "flora_ids": [
               "REPL-001061"
             ],
             "column": "oa_url_r",
@@ -3183,18 +3183,6 @@
             "detail": "oa_url_o is dead (HTTP 400; an open-access link from enrichment, not from the source record)",
             "label": "10.1371/journal.pone.0197268 | 10.1371/journal.pone.0253023",
             "key": "dead_link|VAL-000196|oa_url_o|https://storage.googleapis.com/plos-corpus-prod/10.1371/journal.pone.0197268/1/pone.0197268.pdf?x-goog-algorithm=goog4-rsa-sha256&x-goog-credential=wombat-sa%40plos-prod.iam.gserviceaccount.com%2f20210222%2fauto%2fstorage%2fgoog4_request&x-goog-date=20210222t203614z&x-goog-expires=3600&x-goog-signedheaders=host&x-goog-signature=820ffd9e10ee38c554f355d3e14bbbb25b37a99925b05aa62b29fa7c5bf6a6e395fa60956416392212597a68db7f035ee4d20055162de4a7c3959a865cc8327a680e63be2076a25952b9831cd50df888c6c653e28f5c376e340d7ca53ed8e648e7f3a9e16aac2440df564814224cb8ff7c302192de66421bdc172001bb613b91fa38c2498c90bba7caae3a58508316ce71b6593f47220a73f5c648f7287730aa3771bebe0e83349076f2a3803bf17c918e45ad49a2486e3746cc828b12388bc2f1e4f56055ef43037c4839564da2b5cb7ebd9941e2f2db4e87bb39e0c84fe54c11d8e627d4fb83bda04510195c02b5228a898fe2a6d051258a467835d9cfdcb0",
-            "level": "problem"
-          },
-          {
-            "check": "dead_link",
-            "flora_ids": [
-              "REPL-001284"
-            ],
-            "column": "url_r",
-            "value": "https://openalex.org/W3122646001",
-            "detail": "url_r is dead (HTTP 404)",
-            "label": "10.1257/0002828054201387 | 10.1016/j.euroecorev.2015.05.006",
-            "key": "dead_link|REPL-001284|url_r|https://openalex.org/w3122646001",
             "level": "problem"
           },
           {
@@ -3453,27 +3441,6 @@
           "flora_ids": [
             "FRED-000798"
           ]
-        },
-        {
-          "target": "https://www.bslonline.org/journal/download_pdf.php?doi=10.15616/BSL.2021.27.3.187",
-          "columns": [
-            "url_r",
-            "oa_url_r"
-          ],
-          "reason": "RemoteDisconnected: Remote end closed connection without response",
-          "flora_ids": [
-            "VAL-000434"
-          ]
-        },
-        {
-          "target": "https://hal.science/hal-04886611v1/document",
-          "columns": [
-            "url_r"
-          ],
-          "reason": "timed out",
-          "flora_ids": [
-            "VAL-000450"
-          ]
         }
       ],
       "originals": []
@@ -3484,18 +3451,18 @@
         "status": "checked"
       },
       "dois": {
-        "targets": 4611,
-        "cached": 4550,
-        "checked": 61,
+        "targets": 4625,
+        "cached": 4605,
+        "checked": 20,
         "deferred": 0,
         "unchecked": 0
       },
       "urls": {
-        "targets": 3175,
-        "cached": 3079,
-        "checked": 96,
+        "targets": 3187,
+        "cached": 3143,
+        "checked": 44,
         "deferred": 0,
-        "unchecked": 11
+        "unchecked": 9
       },
       "originals": {
         "targets": 26,
@@ -3506,21 +3473,21 @@
       }
     },
     "suppressed": 0,
-    "problems": 42,
+    "problems": 40,
     "possible_problems": 8,
-    "issue_count": 50,
-    "rows": 2837
+    "issue_count": 48,
+    "rows": 2847
   },
   "release": {
     "schema_version": 1,
     "status": "prepared_locally",
     "published": false,
-    "generated_at": "2026-10-27T03:11:35+00:00",
+    "generated_at": "2026-10-28T03:09:35+00:00",
     "filename": "flora.csv",
-    "bytes": 13409678,
-    "sha256": "a2e3db201afc9082f189b329f8f418f98281d3ecf25335ca0d09a6539150d9bc",
-    "md5": "b66cbd873f1109cc634a73b8540cb288",
-    "rows": 2837,
+    "bytes": 13452254,
+    "sha256": "6bad4d9dd1af137594aeb803e140f62d2d4547dcb00bb6e8ce7aef3246f5403d",
+    "md5": "5f0f0c1f66bb52dcfcf20f049cffddf3",
+    "rows": 2847,
     "columns": [
       "id",
       "id_md5",
@@ -3577,22 +3544,22 @@
     "version": null,
     "release_notes": "",
     "data_version": {
-      "stored_at": "2026-10-27T03:11:36.630078+00:00",
+      "stored_at": "2026-10-28T03:09:36.040078+00:00",
       "change_watermark": 166
     }
   },
   "storage": {
-    "rows": 2837,
-    "inserted": 34,
-    "updated": 42,
-    "unchanged": 2760,
-    "retired": 5,
-    "reactivated": 1,
+    "rows": 2847,
+    "inserted": 10,
+    "updated": 0,
+    "unchanged": 2837,
+    "retired": 0,
+    "reactivated": 0,
     "preserved": 0,
     "table": "flora_data",
-    "snapshot_sha256": "a2e3db201afc9082f189b329f8f418f98281d3ecf25335ca0d09a6539150d9bc",
-    "stored_at": "2026-10-27T03:11:36.630078+00:00",
+    "snapshot_sha256": "6bad4d9dd1af137594aeb803e140f62d2d4547dcb00bb6e8ce7aef3246f5403d",
+    "stored_at": "2026-10-28T03:09:36.040078+00:00",
     "status": "committed"
   },
-  "finished_at": "2026-10-27T03:11:41+00:00"
+  "finished_at": "2026-10-28T03:09:39+00:00"
 }
