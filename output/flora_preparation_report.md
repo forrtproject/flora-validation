@@ -1,20 +1,20 @@
 # FLoRA preparation report
 
-Generated: 2026-10-27T03:06:32+00:00
+Generated: 2026-10-28T03:06:33+00:00
 
 Status: **needs review**
 
 Mode: built from the database
 
-Rows: 2,837
+Rows: 2,847
 
 ## Stages
 
 - build flora.csv and check IDs: passed
-- structural validation: needs review — 44 problems and 24 possible problems
+- structural validation: needs review — 44 problems and 25 possible problems
 - network validation: needs review
 - release files and history: passed
-- store dataset: passed — 2,837 rows in flora_data
+- store dataset: passed — 2,847 rows in flora_data
 - write output files: passed
 
 ## Warnings
@@ -22,12 +22,12 @@ Rows: 2,837
 - 32 records left out for a missing title; see flora_export_log.csv.
 - 59 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.
 - 25 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.
-- Structural validation found 44 problems and 24 possible problems.
-- Network validation needs review: 42 problems and 8 possible problems.
+- Structural validation found 44 problems and 25 possible problems.
+- Network validation needs review: 40 problems and 8 possible problems.
 
 ## Stored dataset
 
-- 2,837 rows stored in `flora_data`, which Download full CSV and the public API serve.
+- 2,847 rows stored in `flora_data`, which Download full CSV and the public API serve.
 
 ## Diagnostic files
 
@@ -39,7 +39,7 @@ The JSON report lists the affected records.
 
 ## FLoRA structural validation
 
-_Generated: 2026-10-27 03:11:41 UTC | Dataset: 2,837 rows_
+_Generated: 2026-10-28 03:09:39 UTC | Dataset: 2,847 rows_
 
 Each item names the FLoRA record by its FLoRA ID and `doi_o | doi_r` (or `url_r`), says what is wrong and, after the dash, gives the value.
 
@@ -53,9 +53,9 @@ _A url column holds something other than one complete http(s) link._
 - REPL-001621 (`10.1016/j.jml.2020.104174 | 10.31234/osf.io/kt3sw_v2`): url_r holds a DOI, not a link — `10.1037/xlm0001650`
 - FRED-000419 (`10.1037/0278-7393.34.2.408 | 10.1126/science.aac4716`): oa_url_o contains spaces (an open-access link from enrichment, not from the source record) — `http://libres.uncg.edu/ir/uncg/f/P_Delaney_Intentional_2008(MULTI UNCG AUTHORS).pdf`
 - FRED-000048 (`10.1177/0956797616674999 | 10.1098/rsos.231240`): url_r holds two links — `https://osf.io/v6zk8 or http://rpubs.com/catherinecthomas/final_replication`
+- VAL-000044 (`10.2307/749455 | 10.5964/jnc.6063`): url_r holds a DOI, not a link — `10.31234/osf.io/wej8z`
 - VAL-000258 (`10.2224/sbp.2008.36.6.753 | 10.5114/cipp.2021.110948`): oa_url_r contains spaces (an open-access link from enrichment, not from the source record) — `https://www.termedia.pl/Journal/-75/pdf-45660-10?filename=Williams Conceptual.pdf`
 - VAL-000274 (`10.1111/j.1467-9280.2008.02072.x | 10.17605/osf.io/yptua`): url_r is cut off — `https://journals.sagepub.com/doi/full/10.1177/2515…`
-- VAL-000044 (`10.2307/749455 | 10.5964/jnc.6063`): url_r holds a DOI, not a link — `10.31234/osf.io/wej8z`
 
 **Invalid outcome values** (2 findings):
 
@@ -116,17 +116,18 @@ _title_o or title_r marks the paper retracted or withdrawn._
 - FRED-000891 (`10.1086/661890 | 10.15626/mp.2020.2538`): title_o marks the paper retracted or withdrawn — `Retracted: Super Size Me: Product Size as a Signal of Status`
 - FRED-000420 (`10.1177/1948550611410890 | 10.1037/xge0000067`): title_o marks the paper retracted or withdrawn — `RETRACTED: Sense Creative! The Impact of Global and Local Vision, Hearing, Touching, Tasting and Smelling on Creative a…`
 
-### Possible problems (24)
+### Possible problems (25)
 
 _Heuristics: a person decides whether each one is a problem._
 
-**Replication year before original year** (3 findings):
+**Replication year before original year** (4 findings):
 
 _Could be swapped entries or a data-entry error. Not reported when the original has a preprint or other earlier version._
 
 - REPL-000014 (`10.1080/13639080.2011.573776 | 10.1007/s12186-012-9090-0`): year_r is before year_o (2013) — `2012`
 - REPL-000476 (`10.1002/bin.1836 | 10.1002/jaba.659`): year_r is before year_o (2021) — `2019`
 - REPRO-000371 (`10.1086/740225 | https://hdl.handle.net/10419/280434`): year_r is before year_o (2026) — `2023`
+- REPL-001689 (`10.1177/1042258719892987 | 10.1111/apps.12247`): year_r is before year_o (2021) — `2020`
 
 **Same paper pair as replication and reproduction** (5 findings):
 
@@ -181,11 +182,11 @@ _title_r is a file or project name, or a generic name such as 'Analysis'._
 
 ## FLoRA network validation
 
-_Generated: 2026-10-27 03:11:41 UTC | Dataset: 2,837 rows_
+_Generated: 2026-10-28 03:09:39 UTC | Dataset: 2,847 rows_
 
 Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says what is wrong and, after the dash, gives the DOI or link.
 
-### Problems (42)
+### Problems (40)
 
 **Retracted papers** (7 findings):
 
@@ -209,13 +210,12 @@ Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says wha
 - VAL-000215 (`10.2307/249754 | 10.17705/1atrr.00064`): doi_r is not registered at doi.org — `10.17705/1atrr.00064`
 - VAL-000427 (`10.1287/isre.1040.0032 | 10.17705/1atrr.00061`): doi_r is not registered at doi.org — `10.17705/1atrr.00061`
 
-<details><summary><b>Dead links</b> (26 findings)</summary>
+<details><summary><b>Dead links</b> (24 findings)</summary>
 
 - REPL-000068 (`10.1177/0146167205279905 | 10.1080/02619768.2014.882308`): oa_url_r is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `http://hdl.handle.net/1820/9055`
 - REPL-000073 (`10.3102/0002831211419649 | 10.1037/a0036307`): oa_url_r is dead (connection refused; an open-access link from enrichment, not from the source record) — `http://orbilu.uni.lu/handle/10993/18672`
 - REPL-000553 (`10.1016/j.obhdp.2006.10.001 | 10.1525/collabra.216`): oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `http://www.collabra.org/articles/10.1525/collabra.216/galley/263/download/`
 - REPL-000866 (`10.1126/science.1239918 | 10.1525/collabra.117`): oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `http://www.collabra.org/articles/10.1525/collabra.117/galley/146/download/`
-- REPL-000977 (`10.1109/vis54172.2023.00016 | 10.31219/osf.io/v6sfg_v1`): url_r is dead (HTTP 404) — `https://openalex.org/W7113264659`
 - REPL-001061 (`10.2753/mis0742-1222240209 | 10.17705/1atrr.00004`): oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `http://elibrary.aisnet.org/Default.aspx?url=https://aisel.aisnet.org/cgi/viewcontent.cgi?article=1006&context=trr`
 - REPL-001076 (`10.3389/fpsyg.2016.00027 | 10.1371/journal.pone.0198620`): oa_url_r is dead (HTTP 400; an open-access link from enrichment, not from the source record) — `https://storage.googleapis.com/plos-corpus-prod/10.1371/journal.pone.0198620/1/pone.0198620.pdf?X-Goog-Algorithm=GOOG4-…`
 - FRED-000983 (`10.1111/1467-9280.00376 | 10.1177/0956797620968526`): oa_url_r is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `https://biblio.ugent.be/publication/8707609`
@@ -232,7 +232,6 @@ Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says wha
 - VAL-000031 (`10.1016/0010-0285(89)90003-0 | 10.7916/d8f76r2r`): oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `https://tesol-dev.journals.cdrs.columbia.edu/wp-content/uploads/sites/12/2015/06/3.-Seol-2005.pdf`
 - VAL-000077 (`10.1016/j.cognition.2006.12.015 | 10.1525/collabra.87`): oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `http://www.collabra.org/articles/10.1525/collabra.87/galley/208/download/`
 - VAL-000196 (`10.1371/journal.pone.0197268 | 10.1371/journal.pone.0253023`): oa_url_o is dead (HTTP 400; an open-access link from enrichment, not from the source record) — `https://storage.googleapis.com/plos-corpus-prod/10.1371/journal.pone.0197268/1/pone.0197268.pdf?X-Goog-Algorithm=GOOG4-…`
-- REPL-001284 (`10.1257/0002828054201387 | 10.1016/j.euroecorev.2015.05.006`): url_r is dead (HTTP 404) — `https://openalex.org/W3122646001`
 - REPL-000373 (`10.1177/0956797613508412 | https://openalex.org/W7110675912`): url_r is dead (HTTP 404) — `https://openalex.org/W7110675912`
 - REPL-001327 (`10.1006/jmla.1996.0032 | https://openalex.org/W7110491536`): url_r is dead (HTTP 404) — `https://openalex.org/W7110491536`
 - FRED-000267 (`10.1037/0278-6133.3.5.431 | https://docs.google.com/document/d/10OKLI0-Kw2D7SDyLU_Ieql88gLtbnYGSyZhCBqsEAyk`): url_r is dead (HTTP 410) — `https://docs.google.com/document/d/10OKLI0-Kw2D7SDyLU_Ieql88gLtbnYGSyZhCBqsEAyk`
@@ -258,11 +257,11 @@ _Heuristics: a person decides whether each one is a problem._
 - REPL-001425 (`| 10.1142/s1084946721500084`): doi_o is blank; Crossref lists this paper with a DOI: 'Poverty and Entrepreneurship in Developing Countries' (2011, Ernesto Amorós) — `10.1093/acprof:oso/9780199580866.003.0010`
 - REPL-001445 (`| 10.1525/collabra.163080`): doi_o is blank; Crossref lists this paper with a DOI: 'The dark side of self- and social perception: Black uniforms and aggression in …' (1988, Frank) — `10.1037/0022-3514.54.1.74`
 
-<details><summary><b>Could not check</b> (11 links)</summary>
+<details><summary><b>Could not check</b> (9 links)</summary>
 
-_Not findings: no answer could be had for these 11, and they are checked again on the next run._
+_Not findings: no answer could be had for these 9, and they are checked again on the next run._
 
-**Links** (11):
+**Links** (9):
 
 - REPL-000009, oa_url_r: HTTP 418 — `https://hrcak.srce.hr/file/334421`
 - REPL-001176, oa_url_r: timed out — `https://cdr.lib.unc.edu/downloads/7w62fg56x`
@@ -273,21 +272,19 @@ _Not findings: no answer could be had for these 11, and they are checked again o
 - REPL-001417, url_r: redirect loop — `https://www.proquest.com/docview/221001969?pq-origsite=gscholar&fromopenview=true&sourcetype=Scholarly%20Journals`
 - REPL-001618, url_o: redirect loop — `https://www.proquest.com/docview/1470800730`
 - FRED-000798, oa_url_o: ConnectionResetError: \[Errno 104\] Connection reset by peer — `http://ira.lib.polyu.edu.hk/bitstream/10397/97105/1/Huang_Influence_Product_Anthropomorphism.pdf`
-- VAL-000434, url_r/oa_url_r: RemoteDisconnected: Remote end closed connection without response — `https://www.bslonline.org/journal/download_pdf.php?doi=10.15616/BSL.2021.27.3.187`
-- VAL-000450, url_r: timed out — `https://hal.science/hal-04886611v1/document`
 
 </details>
 
 
 **Network validation status: needs review**
 
-- DOIs: 4,611 distinct; 4,550 cached, 61 checked, 0 deferred.
-- Links: 3,175 distinct; 3,079 cached, 96 checked (11 could not be checked), 0 deferred.
+- DOIs: 4,625 distinct; 4,605 cached, 20 checked, 0 deferred.
+- Links: 3,187 distinct; 3,143 cached, 44 checked (9 could not be checked), 0 deferred.
 - Originals without a DOI: 26 distinct; 26 cached, 0 checked, 0 deferred.
 
 
 ## Release files
 
-- flora.csv: 2,837 rows, SHA-256 `a2e3db201afc9082f189b329f8f418f98281d3ecf25335ca0d09a6539150d9bc`.
+- flora.csv: 2,847 rows, SHA-256 `6bad4d9dd1af137594aeb803e140f62d2d4547dcb00bb6e8ce7aef3246f5403d`.
 - Also written: the release manifest and notes, and today's counts in flora_history.csv and flora_dataset_summary.md.
 - Publication: The repository copy (`output/` on GitHub) is committed by two workflows, each when flora.csv changed: the nightly job, with its own run's files, and Publish FLoRA, with the stored dataset. Website and local command-line runs commit nothing. Nothing is uploaded to OSF.

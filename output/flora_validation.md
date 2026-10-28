@@ -1,6 +1,6 @@
 ## FLoRA structural validation
 
-_Generated: 2026-10-27 03:07:20 UTC | Dataset: 2,837 rows_
+_Generated: 2026-10-28 03:07:06 UTC | Dataset: 2,847 rows_
 
 Each item names the FLoRA record by its FLoRA ID and `doi_o | doi_r` (or `url_r`), says what is wrong and, after the dash, gives the value.
 
@@ -14,9 +14,9 @@ _A url column holds something other than one complete http(s) link._
 - REPL-001621 (`10.1016/j.jml.2020.104174 | 10.31234/osf.io/kt3sw_v2`): url_r holds a DOI, not a link — `10.1037/xlm0001650`
 - FRED-000419 (`10.1037/0278-7393.34.2.408 | 10.1126/science.aac4716`): oa_url_o contains spaces (an open-access link from enrichment, not from the source record) — `http://libres.uncg.edu/ir/uncg/f/P_Delaney_Intentional_2008(MULTI UNCG AUTHORS).pdf`
 - FRED-000048 (`10.1177/0956797616674999 | 10.1098/rsos.231240`): url_r holds two links — `https://osf.io/v6zk8 or http://rpubs.com/catherinecthomas/final_replication`
+- VAL-000044 (`10.2307/749455 | 10.5964/jnc.6063`): url_r holds a DOI, not a link — `10.31234/osf.io/wej8z`
 - VAL-000258 (`10.2224/sbp.2008.36.6.753 | 10.5114/cipp.2021.110948`): oa_url_r contains spaces (an open-access link from enrichment, not from the source record) — `https://www.termedia.pl/Journal/-75/pdf-45660-10?filename=Williams Conceptual.pdf`
 - VAL-000274 (`10.1111/j.1467-9280.2008.02072.x | 10.17605/osf.io/yptua`): url_r is cut off — `https://journals.sagepub.com/doi/full/10.1177/2515…`
-- VAL-000044 (`10.2307/749455 | 10.5964/jnc.6063`): url_r holds a DOI, not a link — `10.31234/osf.io/wej8z`
 
 **Invalid outcome values** (2 findings):
 
@@ -77,17 +77,18 @@ _title_o or title_r marks the paper retracted or withdrawn._
 - FRED-000891 (`10.1086/661890 | 10.15626/mp.2020.2538`): title_o marks the paper retracted or withdrawn — `Retracted: Super Size Me: Product Size as a Signal of Status`
 - FRED-000420 (`10.1177/1948550611410890 | 10.1037/xge0000067`): title_o marks the paper retracted or withdrawn — `RETRACTED: Sense Creative! The Impact of Global and Local Vision, Hearing, Touching, Tasting and Smelling on Creative a…`
 
-### Possible problems (24)
+### Possible problems (25)
 
 _Heuristics: a person decides whether each one is a problem._
 
-**Replication year before original year** (3 findings):
+**Replication year before original year** (4 findings):
 
 _Could be swapped entries or a data-entry error. Not reported when the original has a preprint or other earlier version._
 
 - REPL-000014 (`10.1080/13639080.2011.573776 | 10.1007/s12186-012-9090-0`): year_r is before year_o (2013) — `2012`
 - REPL-000476 (`10.1002/bin.1836 | 10.1002/jaba.659`): year_r is before year_o (2021) — `2019`
 - REPRO-000371 (`10.1086/740225 | https://hdl.handle.net/10419/280434`): year_r is before year_o (2026) — `2023`
+- REPL-001689 (`10.1177/1042258719892987 | 10.1111/apps.12247`): year_r is before year_o (2021) — `2020`
 
 **Same paper pair as replication and reproduction** (5 findings):
 

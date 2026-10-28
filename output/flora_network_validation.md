@@ -1,10 +1,10 @@
 ## FLoRA network validation
 
-_Generated: 2026-10-27 03:11:35 UTC | Dataset: 2,837 rows_
+_Generated: 2026-10-28 03:09:35 UTC | Dataset: 2,847 rows_
 
 Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says what is wrong and, after the dash, gives the DOI or link.
 
-### Problems (42)
+### Problems (40)
 
 **Retracted papers** (7 findings):
 
@@ -28,13 +28,12 @@ Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says wha
 - VAL-000215 (`10.2307/249754 | 10.17705/1atrr.00064`): doi_r is not registered at doi.org — `10.17705/1atrr.00064`
 - VAL-000427 (`10.1287/isre.1040.0032 | 10.17705/1atrr.00061`): doi_r is not registered at doi.org — `10.17705/1atrr.00061`
 
-<details><summary><b>Dead links</b> (26 findings)</summary>
+<details><summary><b>Dead links</b> (24 findings)</summary>
 
 - REPL-000068 (`10.1177/0146167205279905 | 10.1080/02619768.2014.882308`): oa_url_r is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `http://hdl.handle.net/1820/9055`
 - REPL-000073 (`10.3102/0002831211419649 | 10.1037/a0036307`): oa_url_r is dead (connection refused; an open-access link from enrichment, not from the source record) — `http://orbilu.uni.lu/handle/10993/18672`
 - REPL-000553 (`10.1016/j.obhdp.2006.10.001 | 10.1525/collabra.216`): oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `http://www.collabra.org/articles/10.1525/collabra.216/galley/263/download/`
 - REPL-000866 (`10.1126/science.1239918 | 10.1525/collabra.117`): oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `http://www.collabra.org/articles/10.1525/collabra.117/galley/146/download/`
-- REPL-000977 (`10.1109/vis54172.2023.00016 | 10.31219/osf.io/v6sfg_v1`): url_r is dead (HTTP 404) — `https://openalex.org/W7113264659`
 - REPL-001061 (`10.2753/mis0742-1222240209 | 10.17705/1atrr.00004`): oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `http://elibrary.aisnet.org/Default.aspx?url=https://aisel.aisnet.org/cgi/viewcontent.cgi?article=1006&context=trr`
 - REPL-001076 (`10.3389/fpsyg.2016.00027 | 10.1371/journal.pone.0198620`): oa_url_r is dead (HTTP 400; an open-access link from enrichment, not from the source record) — `https://storage.googleapis.com/plos-corpus-prod/10.1371/journal.pone.0198620/1/pone.0198620.pdf?X-Goog-Algorithm=GOOG4-…`
 - FRED-000983 (`10.1111/1467-9280.00376 | 10.1177/0956797620968526`): oa_url_r is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `https://biblio.ugent.be/publication/8707609`
@@ -51,7 +50,6 @@ Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says wha
 - VAL-000031 (`10.1016/0010-0285(89)90003-0 | 10.7916/d8f76r2r`): oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `https://tesol-dev.journals.cdrs.columbia.edu/wp-content/uploads/sites/12/2015/06/3.-Seol-2005.pdf`
 - VAL-000077 (`10.1016/j.cognition.2006.12.015 | 10.1525/collabra.87`): oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `http://www.collabra.org/articles/10.1525/collabra.87/galley/208/download/`
 - VAL-000196 (`10.1371/journal.pone.0197268 | 10.1371/journal.pone.0253023`): oa_url_o is dead (HTTP 400; an open-access link from enrichment, not from the source record) — `https://storage.googleapis.com/plos-corpus-prod/10.1371/journal.pone.0197268/1/pone.0197268.pdf?X-Goog-Algorithm=GOOG4-…`
-- REPL-001284 (`10.1257/0002828054201387 | 10.1016/j.euroecorev.2015.05.006`): url_r is dead (HTTP 404) — `https://openalex.org/W3122646001`
 - REPL-000373 (`10.1177/0956797613508412 | https://openalex.org/W7110675912`): url_r is dead (HTTP 404) — `https://openalex.org/W7110675912`
 - REPL-001327 (`10.1006/jmla.1996.0032 | https://openalex.org/W7110491536`): url_r is dead (HTTP 404) — `https://openalex.org/W7110491536`
 - FRED-000267 (`10.1037/0278-6133.3.5.431 | https://docs.google.com/document/d/10OKLI0-Kw2D7SDyLU_Ieql88gLtbnYGSyZhCBqsEAyk`): url_r is dead (HTTP 410) — `https://docs.google.com/document/d/10OKLI0-Kw2D7SDyLU_Ieql88gLtbnYGSyZhCBqsEAyk`
@@ -77,11 +75,11 @@ _Heuristics: a person decides whether each one is a problem._
 - REPL-001425 (`| 10.1142/s1084946721500084`): doi_o is blank; Crossref lists this paper with a DOI: 'Poverty and Entrepreneurship in Developing Countries' (2011, Ernesto Amorós) — `10.1093/acprof:oso/9780199580866.003.0010`
 - REPL-001445 (`| 10.1525/collabra.163080`): doi_o is blank; Crossref lists this paper with a DOI: 'The dark side of self- and social perception: Black uniforms and aggression in …' (1988, Frank) — `10.1037/0022-3514.54.1.74`
 
-<details><summary><b>Could not check</b> (11 links)</summary>
+<details><summary><b>Could not check</b> (9 links)</summary>
 
-_Not findings: no answer could be had for these 11, and they are checked again on the next run._
+_Not findings: no answer could be had for these 9, and they are checked again on the next run._
 
-**Links** (11):
+**Links** (9):
 
 - REPL-000009, oa_url_r: HTTP 418 — `https://hrcak.srce.hr/file/334421`
 - REPL-001176, oa_url_r: timed out — `https://cdr.lib.unc.edu/downloads/7w62fg56x`
@@ -92,14 +90,12 @@ _Not findings: no answer could be had for these 11, and they are checked again o
 - REPL-001417, url_r: redirect loop — `https://www.proquest.com/docview/221001969?pq-origsite=gscholar&fromopenview=true&sourcetype=Scholarly%20Journals`
 - REPL-001618, url_o: redirect loop — `https://www.proquest.com/docview/1470800730`
 - FRED-000798, oa_url_o: ConnectionResetError: \[Errno 104\] Connection reset by peer — `http://ira.lib.polyu.edu.hk/bitstream/10397/97105/1/Huang_Influence_Product_Anthropomorphism.pdf`
-- VAL-000434, url_r/oa_url_r: RemoteDisconnected: Remote end closed connection without response — `https://www.bslonline.org/journal/download_pdf.php?doi=10.15616/BSL.2021.27.3.187`
-- VAL-000450, url_r: timed out — `https://hal.science/hal-04886611v1/document`
 
 </details>
 
 
 **Network validation status: needs review**
 
-- DOIs: 4,611 distinct; 4,550 cached, 61 checked, 0 deferred.
-- Links: 3,175 distinct; 3,079 cached, 96 checked (11 could not be checked), 0 deferred.
+- DOIs: 4,625 distinct; 4,605 cached, 20 checked, 0 deferred.
+- Links: 3,187 distinct; 3,143 cached, 44 checked (9 could not be checked), 0 deferred.
 - Originals without a DOI: 26 distinct; 26 cached, 0 checked, 0 deferred.
