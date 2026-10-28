@@ -50,6 +50,17 @@ def test_a_manifest_with_an_unknown_reason_is_refused(tmp_path):
         csv_to_db.load_retire_manifest(path)
 
 
+def test_every_reason_flora_extractor_writes_is_accepted(tmp_path):
+    """The extractor's RETIRE_REASONS, mirrored: an unknown one refuses the whole
+    manifest, so a reason added there and not here stalls every retirement."""
+    reasons = ["superseded", "set_aside", "unresolved", "not_admitted",
+               "screen_discarded", "screen_deferred", "in_flora", "unexplained"]
+    path = tmp_path / "retired_pairs.csv"
+    pd.DataFrame([_entry(r, reason=r) for r in reasons]).to_csv(path, index=False)
+    assert {e["reason"] for e in csv_to_db.load_retire_manifest(path).values()} \
+        == set(reasons)
+
+
 class _Cursor:
     """Answers the retire path's reads from *state*; records every statement."""
 
