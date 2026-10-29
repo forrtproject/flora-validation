@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1460 850" role="img" aria-labelledby="overview-title overview-desc">
+<title id="overview-title">The complete FLoRA pipeline</title><desc id="overview-desc">Two input routes meet in Source Records. Review approval, preparation and repository publication are separate steps. Each box links to its explanatory README.</desc>
+<defs><marker id="overview-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#78877a"/></marker></defs>
+<rect width="1460" height="850" fill="#fffcf5"/>
+<text x="36" y="42" font-family="Georgia,serif" font-size="25" fill="#263c31">The complete FLoRA pipeline</text>
+<text x="36" y="68" font-family="Segoe UI,sans-serif" font-size="13" fill="#657267">Two input routes meet in Source Records. Review approval, preparation and repository publication are separate steps.</text>
+<text x="36" y="120" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">01 · GATHER</text>
+<text x="276" y="120" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">02 · IMPORT</text>
+<text x="516" y="120" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">03 · REVIEW / COMBINE</text>
+<text x="756" y="120" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">04 · DECIDE / PREPARE</text>
+<text x="996" y="120" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">05 · APPROVE / STORE</text>
+<text x="1236" y="120" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">06 · SHARE</text>
+<text x="36" y="606" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">ALSO EXPLORE</text>
+<polyline points="224,212 276,212" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#overview-arrow)"/>
+<polyline points="464,212 516,212" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#overview-arrow)"/>
+<polyline points="704,212 756,212" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#overview-arrow)"/>
+<polyline points="944,212 996,212" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#overview-arrow)"/>
+<polyline points="1184,212 1236,212" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#overview-arrow)"/>
+<polyline points="224,472 276,472" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#overview-arrow)"/>
+<polyline points="464,472 516,472" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#overview-arrow)"/>
+<polyline points="704,472 756,472" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#overview-arrow)"/>
+<polyline points="944,472 996,472" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#overview-arrow)"/>
+<polyline points="1330,275 1330,326 370,326 370,410" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#overview-arrow)"/>
+<text x="575" y="317" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">approved input is synchronized during the FLoRA pipeline</text>
+<polyline points="850,275 850,296 1330,296 1330,275" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#overview-arrow)" stroke-dasharray="5 5"/>
+<text x="1020" y="288" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">eligible automatic approval</text>
+<polyline points="1184,450 1209,450 1209,417 1236,417" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#overview-arrow)"/>
+<polyline points="1184,495 1209,495 1209,577 1236,577" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#overview-arrow)"/>
+<polyline points="610,660 610,535" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#overview-arrow)"/>
+<text x="621" y="609" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">supporting inputs</text>
+<polyline points="944,722 1090,722 1090,535" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#overview-arrow)" stroke-dasharray="5 5"/>
+<text x="965" y="710" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">eligible row: immediate</text>
+<polyline points="1184,510 1198,510 1198,730 1236,730" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#overview-arrow)" stroke-dasharray="5 5"/>
+<polyline points="151,630 151,585 370,585 370,535" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#overview-arrow)" stroke-dasharray="5 5"/>
+<text x="172" y="575" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">Publish to Source Records</text>
+<a href="../index.html#view=overview&amp;node=input-extractor" data-node="input-extractor" aria-label="Extractor output: open README"><rect x="36" y="150" width="188" height="125" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="36" y="162" width="3" height="101" fill="#284e3e"/>
+<text x="53" y="179" font-family="Georgia,serif" font-size="19" fill="#284e3e">Extractor</text>
+<text x="53" y="202" font-family="Georgia,serif" font-size="19" fill="#284e3e">output</text>
+<text x="53" y="232" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">External project / CSV</text>
+</a>
+<a href="../index.html#view=overview&amp;node=process-extractor-maintenance" data-node="process-extractor-maintenance" aria-label="Import candidates: open README"><rect x="276" y="150" width="188" height="125" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="276" y="162" width="3" height="101" fill="#284e3e"/>
+<text x="293" y="179" font-family="Georgia,serif" font-size="19" fill="#284e3e">Import</text>
+<text x="293" y="202" font-family="Georgia,serif" font-size="19" fill="#284e3e">candidates</text>
+<text x="293" y="232" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">unvalidated + review</text>
+<text x="293" y="248" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">slots</text>
+</a>
+<a href="../index.html#view=overview&amp;node=review-submit" data-node="review-submit" aria-label="Human reviews: open README"><rect x="516" y="150" width="188" height="125" rx="5" fill="#faf0e6" stroke="#bbc8b7"/><rect x="516" y="162" width="3" height="101" fill="#a75032"/>
+<text x="533" y="179" font-family="Georgia,serif" font-size="19" fill="#a75032">Human reviews</text>
+<text x="533" y="209" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Two people submit</text>
+<text x="533" y="225" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">answers</text>
+</a>
+<a href="../index.html#view=overview&amp;node=review-consensus" data-node="review-consensus" aria-label="Consensus + Gemini: open README"><rect x="756" y="150" width="188" height="125" rx="5" fill="#faf0e6" stroke="#bbc8b7"/><rect x="756" y="162" width="3" height="101" fill="#a75032"/>
+<text x="773" y="179" font-family="Georgia,serif" font-size="19" fill="#a75032">Consensus +</text>
+<text x="773" y="202" font-family="Georgia,serif" font-size="19" fill="#a75032">Gemini</text>
+<text x="773" y="232" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Agreement or review</text>
+<text x="773" y="248" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">needed</text>
+</a>
+<a href="../index.html#view=overview&amp;node=admin-entries" data-node="admin-entries" aria-label="Admin decision: open README"><rect x="996" y="150" width="188" height="125" rx="5" fill="#faf0e6" stroke="#bbc8b7"/><rect x="996" y="162" width="3" height="101" fill="#a75032"/>
+<text x="1013" y="179" font-family="Georgia,serif" font-size="19" fill="#a75032">Admin decision</text>
+<text x="1013" y="209" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Approve / resolve</text>
+</a>
+<a href="../index.html#view=overview&amp;node=process-validated-bridge" data-node="process-validated-bridge" aria-label="Approved records: open README"><rect x="1236" y="150" width="188" height="125" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="1236" y="162" width="3" height="101" fill="#284e3e"/>
+<text x="1253" y="179" font-family="Georgia,serif" font-size="19" fill="#284e3e">Approved</text>
+<text x="1253" y="202" font-family="Georgia,serif" font-size="19" fill="#284e3e">records</text>
+<text x="1253" y="232" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">validated →</text>
+<text x="1253" y="248" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">source_records</text>
+</a>
+<a href="../index.html#view=overview&amp;node=input-sheets" data-node="input-sheets" aria-label="Entry sheets: open README"><rect x="36" y="410" width="188" height="125" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="36" y="422" width="3" height="101" fill="#284e3e"/>
+<text x="53" y="439" font-family="Georgia,serif" font-size="19" fill="#284e3e">Entry sheets</text>
+<text x="53" y="469" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Published Google CSV</text>
+<text x="53" y="485" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">inputs</text>
+</a>
+<a href="../index.html#view=overview&amp;node=storage-sources" data-node="storage-sources" aria-label="Source Records: open README"><rect x="276" y="410" width="188" height="125" rx="5" fill="#f4f0df" stroke="#bbc8b7"/><rect x="276" y="422" width="3" height="101" fill="#71682f"/>
+<text x="293" y="439" font-family="Georgia,serif" font-size="19" fill="#71682f">Source Records</text>
+<text x="293" y="469" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Shared imported input</text>
+</a>
+<a href="../index.html#view=overview&amp;node=process-transform" data-node="process-transform" aria-label="Combine + clean: open README"><rect x="516" y="410" width="188" height="125" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="516" y="422" width="3" height="101" fill="#284e3e"/>
+<text x="533" y="439" font-family="Georgia,serif" font-size="19" fill="#284e3e">Combine + clean</text>
+<text x="533" y="469" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Normalize / deduplicate</text>
+</a>
+<a href="../index.html#view=overview&amp;node=process-prepare" data-node="process-prepare" aria-label="Prepare + check: open README"><rect x="756" y="410" width="188" height="125" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="756" y="422" width="3" height="101" fill="#284e3e"/>
+<text x="773" y="439" font-family="Georgia,serif" font-size="19" fill="#284e3e">Prepare + check</text>
+<text x="773" y="469" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">One candidate CSV +</text>
+<text x="773" y="485" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">reports</text>
+</a>
+<a href="../index.html#view=overview&amp;node=storage-dataset" data-node="storage-dataset" aria-label="Stored dataset: open README"><rect x="996" y="410" width="188" height="125" rx="5" fill="#f4f0df" stroke="#bbc8b7"/><rect x="996" y="422" width="3" height="101" fill="#71682f"/>
+<text x="1013" y="439" font-family="Georgia,serif" font-size="19" fill="#71682f">Stored dataset</text>
+<text x="1013" y="469" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">PostgreSQL flora_data</text>
+</a>
+<a href="../index.html#view=overview&amp;node=output-downloads" data-node="output-downloads" aria-label="CSV downloads: open README"><rect x="1236" y="355" width="188" height="125" rx="5" fill="#edf3f4" stroke="#bbc8b7"/><rect x="1236" y="367" width="3" height="101" fill="#416b83"/>
+<text x="1253" y="384" font-family="Georgia,serif" font-size="19" fill="#416b83">CSV downloads</text>
+<text x="1253" y="414" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Full dataset / filtered</text>
+<text x="1253" y="430" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">/ run</text>
+</a>
+<a href="../index.html#view=overview&amp;node=output-api" data-node="output-api" aria-label="Public API: open README"><rect x="1236" y="515" width="188" height="125" rx="5" fill="#edf3f4" stroke="#bbc8b7"/><rect x="1236" y="527" width="3" height="101" fill="#416b83"/>
+<text x="1253" y="544" font-family="Georgia,serif" font-size="19" fill="#416b83">Public API</text>
+<text x="1253" y="574" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">DOI / title / ID-hash</text>
+<text x="1253" y="590" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">lookup</text>
+</a>
+<a href="../index.html#view=overview&amp;node=input-rules-metadata" data-node="input-rules-metadata" aria-label="Rules + metadata: open README"><rect x="516" y="660" width="188" height="125" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="516" y="672" width="3" height="101" fill="#284e3e"/>
+<text x="533" y="689" font-family="Georgia,serif" font-size="19" fill="#284e3e">Rules +</text>
+<text x="533" y="712" font-family="Georgia,serif" font-size="19" fill="#284e3e">metadata</text>
+<text x="533" y="742" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Exclusions / aliases /</text>
+<text x="533" y="758" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">DOIs</text>
+</a>
+<a href="../index.html#view=overview&amp;node=process-save" data-node="process-save" aria-label="FLoRA corrections: open README"><rect x="756" y="660" width="188" height="125" rx="5" fill="#faf0e6" stroke="#bbc8b7"/><rect x="756" y="672" width="3" height="101" fill="#a75032"/>
+<text x="773" y="689" font-family="Georgia,serif" font-size="19" fill="#a75032">FLoRA</text>
+<text x="773" y="712" font-family="Georgia,serif" font-size="19" fill="#a75032">corrections</text>
+<text x="773" y="742" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">History + eligible</text>
+<text x="773" y="758" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">stored row</text>
+</a>
+<a href="../index.html#view=overview&amp;node=output-publication" data-node="output-publication" aria-label="Repository release: open README"><rect x="1236" y="675" width="188" height="110" rx="5" fill="#edf3f4" stroke="#bbc8b7"/><rect x="1236" y="687" width="3" height="86" fill="#416b83"/>
+<text x="1253" y="704" font-family="Georgia,serif" font-size="19" fill="#416b83">Repository</text>
+<text x="1253" y="727" font-family="Georgia,serif" font-size="19" fill="#416b83">release</text>
+<text x="1253" y="757" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Publish FLoRA → GitHub</text>
+</a>
+<a href="../index.html#view=overview&amp;node=review-adjudication" data-node="review-adjudication" aria-label="Disagreements: open README"><rect x="36" y="630" width="230" height="125" rx="5" fill="#faf0e6" stroke="#bbc8b7"/><rect x="36" y="642" width="3" height="101" fill="#a75032"/>
+<text x="53" y="659" font-family="Georgia,serif" font-size="19" fill="#a75032">Disagreements</text>
+<text x="53" y="689" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Optional separate review lane</text>
+</a>
+<line x1="36" y1="807" x2="1424" y2="807" stroke="#d4dacc"/><text x="36" y="830" font-family="Consolas,monospace" font-size="10" fill="#657267">FLoRA FIELD GUIDE  /  29 OCTOBER 2026  /  CODE 2f3a89c</text><text x="1424" y="830" text-anchor="end" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267">Click a box for its README and code.</text></svg>

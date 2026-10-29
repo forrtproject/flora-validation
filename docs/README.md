@@ -1,5 +1,11 @@
 # FLoRA Validation
 
+For a visual explanation, open the [clickable pipeline field guide](pipeline-guide/index.html).
+It maps all admin tabs and actions to their save locations, update timing and source code,
+with separate input, processing, output and storage diagrams. The [text guide](pipeline-guide/README.md)
+also links to individual READMEs and PNG/SVG pictures for slides. This is a dated code snapshot;
+see its maintenance instructions when application behavior changes.
+
 ## FLoRA pipeline
 
 The administrator's **Source Records → Run pipeline** action builds

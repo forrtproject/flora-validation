@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1420 840" role="img" aria-labelledby="inputs-title inputs-desc">
+<title id="inputs-title">Input schema · how data is gathered</title><desc id="inputs-desc">The rows entering this repository come from two main routes, plus an optional adjudication lane. Each box links to its explanatory README.</desc>
+<defs><marker id="inputs-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#78877a"/></marker></defs>
+<rect width="1420" height="840" fill="#fffcf5"/>
+<text x="36" y="42" font-family="Georgia,serif" font-size="25" fill="#263c31">Input schema · how data is gathered</text>
+<text x="36" y="68" font-family="Segoe UI,sans-serif" font-size="13" fill="#657267">The rows entering this repository come from two main routes, plus an optional adjudication lane.</text>
+<text x="40" y="118" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">OUTSIDE THE APPLICATION</text>
+<text x="390" y="118" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">ACCEPTANCE / IMPORT</text>
+<text x="750" y="118" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">SHARED DATABASE</text>
+<text x="1100" y="118" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">NEXT DESTINATION</text>
+<text x="40" y="757" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">SUPPORTING INPUTS →</text>
+<polyline points="310,219 390,219" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#inputs-arrow)"/>
+<polyline points="660,219 750,219" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#inputs-arrow)"/>
+<polyline points="1020,219 1100,219" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#inputs-arrow)"/>
+<polyline points="310,424 390,424" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#inputs-arrow)"/>
+<polyline points="660,424 750,424" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#inputs-arrow)"/>
+<polyline points="1020,424 1100,424" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#inputs-arrow)"/>
+<polyline points="310,629 390,629" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#inputs-arrow)"/>
+<polyline points="660,629 750,629" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#inputs-arrow)"/>
+<polyline points="1020,629 1100,629" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#inputs-arrow)"/>
+<a href="../index.html#view=inputs&amp;node=input-extractor" data-node="input-extractor" aria-label="Extractor CSV: open README"><rect x="40" y="155" width="270" height="128" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="40" y="167" width="3" height="104" fill="#284e3e"/>
+<text x="57" y="184" font-family="Georgia,serif" font-size="19" fill="#284e3e">Extractor CSV</text>
+<text x="57" y="214" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Candidate pair + provenance</text>
+</a>
+<a href="../index.html#view=inputs&amp;node=process-extractor-maintenance" data-node="process-extractor-maintenance" aria-label="Check + import: open README"><rect x="390" y="155" width="270" height="128" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="390" y="167" width="3" height="104" fill="#284e3e"/>
+<text x="407" y="184" font-family="Georgia,serif" font-size="19" fill="#284e3e">Check + import</text>
+<text x="407" y="214" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Schema, identity, safety gates</text>
+</a>
+<a href="../index.html#view=inputs&amp;node=review-storage" data-node="review-storage" aria-label="Candidate tables: open README"><rect x="750" y="155" width="270" height="128" rx="5" fill="#f4f0df" stroke="#bbc8b7"/><rect x="750" y="167" width="3" height="104" fill="#71682f"/>
+<text x="767" y="184" font-family="Georgia,serif" font-size="19" fill="#71682f">Candidate tables</text>
+<text x="767" y="214" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">unvalidated + queue + metadata</text>
+</a>
+<a href="../index.html#view=inputs&amp;node=review-claim" data-node="review-claim" aria-label="Human review: open README"><rect x="1100" y="155" width="270" height="128" rx="5" fill="#faf0e6" stroke="#bbc8b7"/><rect x="1100" y="167" width="3" height="104" fill="#a75032"/>
+<text x="1117" y="184" font-family="Georgia,serif" font-size="19" fill="#a75032">Human review</text>
+<text x="1117" y="214" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">A validator claims a slot</text>
+</a>
+<a href="../index.html#view=inputs&amp;node=input-sheets" data-node="input-sheets" aria-label="Published sheets: open README"><rect x="40" y="360" width="270" height="128" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="40" y="372" width="3" height="104" fill="#284e3e"/>
+<text x="57" y="389" font-family="Georgia,serif" font-size="19" fill="#284e3e">Published sheets</text>
+<text x="57" y="419" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Source URLs in sources.yml</text>
+</a>
+<a href="../index.html#view=inputs&amp;node=input-sheets" data-node="input-sheets" aria-label="Validate + insert: open README"><rect x="390" y="360" width="270" height="128" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="390" y="372" width="3" height="104" fill="#284e3e"/>
+<text x="407" y="389" font-family="Georgia,serif" font-size="19" fill="#284e3e">Validate + insert</text>
+<text x="407" y="419" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">New accepted UUIDs only</text>
+</a>
+<a href="../index.html#view=inputs&amp;node=storage-sources" data-node="storage-sources" aria-label="source_records: open README"><rect x="750" y="360" width="270" height="128" rx="5" fill="#f4f0df" stroke="#bbc8b7"/><rect x="750" y="372" width="3" height="104" fill="#71682f"/>
+<text x="767" y="389" font-family="Georgia,serif" font-size="19" fill="#71682f">source_records</text>
+<text x="767" y="419" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Imported fields + raw row</text>
+</a>
+<a href="../index.html#view=inputs&amp;node=process-queue" data-node="process-queue" aria-label="Run FLoRA pipeline: open README"><rect x="1100" y="360" width="270" height="128" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="1100" y="372" width="3" height="104" fill="#284e3e"/>
+<text x="1117" y="389" font-family="Georgia,serif" font-size="19" fill="#284e3e">Run FLoRA pipeline</text>
+<text x="1117" y="419" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Combine with approved reviews</text>
+</a>
+<a href="../index.html#view=inputs&amp;node=review-adjudication" data-node="review-adjudication" aria-label="Observatory CSV: open README"><rect x="40" y="565" width="270" height="128" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="40" y="577" width="3" height="104" fill="#284e3e"/>
+<text x="57" y="594" font-family="Georgia,serif" font-size="19" fill="#284e3e">Observatory CSV</text>
+<text x="57" y="624" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Optional disagreement input</text>
+</a>
+<a href="../index.html#view=inputs&amp;node=admin-disagreements" data-node="admin-disagreements" aria-label="Import + adjudicate: open README"><rect x="390" y="565" width="270" height="128" rx="5" fill="#faf0e6" stroke="#bbc8b7"/><rect x="390" y="577" width="3" height="104" fill="#a75032"/>
+<text x="407" y="594" font-family="Georgia,serif" font-size="19" fill="#a75032">Import + adjudicate</text>
+<text x="407" y="624" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Approve, then explicitly publish</text>
+</a>
+<a href="../index.html#view=inputs&amp;node=storage-sources" data-node="storage-sources" aria-label="source_records: open README"><rect x="750" y="565" width="270" height="128" rx="5" fill="#f4f0df" stroke="#bbc8b7"/><rect x="750" y="577" width="3" height="104" fill="#71682f"/>
+<text x="767" y="594" font-family="Georgia,serif" font-size="19" fill="#71682f">source_records</text>
+<text x="767" y="624" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Published adjudication rows</text>
+</a>
+<a href="../index.html#view=inputs&amp;node=process-transform" data-node="process-transform" aria-label="Final transform: open README"><rect x="1100" y="565" width="270" height="128" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="1100" y="577" width="3" height="104" fill="#284e3e"/>
+<text x="1117" y="594" font-family="Georgia,serif" font-size="19" fill="#284e3e">Final transform</text>
+<text x="1117" y="624" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Same combined output path</text>
+</a>
+<a href="../index.html#view=inputs&amp;node=input-rules-metadata" data-node="input-rules-metadata" aria-label="Rules &amp; metadata: open README"><rect x="310" y="725" width="700" height="65" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="310" y="737" width="3" height="41" fill="#284e3e"/>
+<text x="327" y="754" font-family="Georgia,serif" font-size="19" fill="#284e3e">Rules &amp; metadata</text>
+<text x="327" y="784" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Exclusions · aliases · OpenAlex · duplicate rulings</text>
+</a>
+<line x1="36" y1="797" x2="1384" y2="797" stroke="#d4dacc"/><text x="36" y="820" font-family="Consolas,monospace" font-size="10" fill="#657267">FLoRA FIELD GUIDE  /  29 OCTOBER 2026  /  CODE 2f3a89c</text><text x="1384" y="820" text-anchor="end" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267">Click a box for its README and code.</text></svg>

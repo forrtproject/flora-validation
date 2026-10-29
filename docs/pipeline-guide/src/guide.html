@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="An interactive, code-linked field guide to FLoRA validation, administration, storage and publication.">
+  <title>FLoRA · Inside the pipeline</title>
+  <style>/*GUIDE_CSS*/</style>
+</head>
+<body>
+  <header class="masthead">
+    <a class="wordmark" href="#view=overview" aria-label="FLoRA guide home"><span class="brand-flower" aria-hidden="true">✳</span> FLoRA <span class="wordmark-sub">FIELD GUIDE / 01</span></a>
+    <div class="header-actions"><span class="edition">Code snapshot · <b id="snapshot-date"></b></span><a href="README.md">Read as text ↗</a><button class="quiet" id="print-button">Print</button></div>
+  </header>
+  <section class="intro">
+    <div><p class="eyebrow">FROM A PAPER TO A PUBLISHED RECORD</p><h1>Inside the pipeline.</h1><p class="dek">Where the data comes from. What each button does.<br>What gets saved, where it lives, and when it changes.</p></div>
+    <div class="intro-note"><span class="note-number">01—08</span><p>A map you can open.<br><strong>Click any box</strong> for a simple README and the exact source code.</p><span class="snapshot-label">Offline guide · no database connection</span></div>
+  </section>
+  <nav class="view-nav" aria-label="Guide views"></nav>
+  <main id="main">
+    <div class="workspace">
+      <section class="canvas-panel" aria-labelledby="view-title">
+        <div class="canvas-heading"><div><p class="eyebrow" id="view-kicker"></p><h2 id="view-title"></h2></div><div class="canvas-tools" id="canvas-tools"></div></div>
+        <p class="view-description" id="view-description"></p>
+        <div id="view-content"></div>
+      </section>
+      <aside class="detail-panel" id="detail-panel" aria-label="Selected element README" hidden>
+        <div class="detail-top"><span class="eyebrow">ELEMENT README</span><button class="quiet" id="close-detail" aria-label="Close element details">Close ×</button></div>
+        <div id="detail-content"></div>
+      </aside>
+    </div>
+    <section class="guide-search" aria-labelledby="search-heading">
+      <div><p class="eyebrow">FIND A BUTTON, TABLE OR SCRIPT</p><h2 id="search-heading">Follow your question.</h2></div>
+      <label class="search-label"><span class="sr-only">Search guide</span><input id="search" type="search" placeholder="Try: Save, duplicates, flora_data…" autocomplete="off"></label>
+      <p id="search-count" role="status" aria-live="polite"></p><div id="search-results"></div>
+    </section>
+  </main>
+  <footer><p>Verified against source, <a id="commit-link"></a>. This is a documentation snapshot, not live system status.</p><p>Runtime configuration and job failures can change timing. External extractor internals are outside this checkout.</p></footer>
+  <script id="guide-data" type="application/json">/*GUIDE_DATA*/</script>
+  <script>/*GUIDE_JS*/</script>
+</body>
+</html>

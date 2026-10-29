@@ -1,0 +1,66 @@
+{
+  "nodes": [
+    {
+      "id": "compare-tabs",
+      "title": "Source Records vs FLoRA: how the tabs connect",
+      "group": "comparison",
+      "summary": "Source Records shows the imported inputs. FLoRA shows a current combined view built from those inputs, rules, metadata and saved corrections. The full CSV and public API read a third layer: the stored prepared dataset, flora_data.",
+      "inputs": ["Accepted published-sheet records, approved app records after synchronization, and explicitly published disagreement records.", "Exclusions, duplicate decisions, outcome mappings, paper metadata, the identity registry and FLoRA corrections."],
+      "steps": ["Open Source Records to inspect an imported row, its raw source values and its provenance. Its detail panel links to registered FLoRA records that it feeds.", "The FLoRA service builds a combined view: transform the source records, apply rules and deduplication, attach permanent identities and apply correction history. It reuses cached results only while its inputs remain unchanged.", "Open FLoRA to correct the derived record, restore changes, settle outcome conflicts, inspect checks and decide preprint duplicates. Source Records also has its own duplicate-import decisions.", "Run pipeline in Source Records to refresh inputs, prepare and check the candidate CSV, and store the complete dataset in flora_data.", "Download full CSV and the public API read active stored rows. Export filtered CSV reads the current FLoRA tab view. A pipeline-run download preserves that particular run's snapshot.", "Publish FLoRA or the successful nightly release updates the repository copy separately."],
+      "saves": ["Imported input: source_records. Sync evidence: source_sync_runs.", "Source duplicate rulings: source_records and source_record_edits. Preprint rulings: preprint_dedup_decisions.", "FLoRA field corrections: flora_record_changes, plus an eligible existing active row in flora_data and its revision.", "Prepared full dataset: flora_data and flora_data_metadata. Website job, logs and exact run artifacts: source_sync_jobs.", "A correction in FLoRA does not write back to Google Sheets or overwrite the imported input cells."],
+      "refresh": ["A saved input ruling or correction appears in the derived FLoRA view on its next fetch/rebuild; Refresh only rereads data.", "An eligible saved field correction updates its already-stored active row immediately after commit. Public HTTP caches may still show an older response.", "Duplicate rulings and newly available records need preparation to reconcile the full stored dataset.", "Google sheet sync is insert-only for an existing source/UUID: changing its spreadsheet cells is not a way to overwrite an imported record.", "The nightly combined pipeline is configured for 03:00 UTC. Manual Run pipeline can run earlier. GitHub publication is a separate step."],
+      "outputs": ["Source Records Export CSV: filtered imported rows.", "FLoRA Export filtered CSV: the current derived view under its filters.", "FLoRA Download full CSV and public API: stored prepared active rows.", "Run-history CSV: an immutable snapshot for that run; GitHub output/flora.csv: the committed release."],
+      "cautions": ["The two tabs do not need to have the same row count: several inputs can be merged into one derived record, and excluded inputs can disappear from the final view. Filters and retirement also affect counts.", "The FLoRA tab is not a direct table viewer for flora_data. Its view can include data that the next preparation run will add to the stored snapshot.", "The pipeline uses multiple transactions. If it fails, inspect its report: some earlier stages may already have saved changes, and a late failure can occur after dataset storage.", "Examples in this comparison are illustrations of code behavior, not actual production records."],
+      "sources": [
+        {"file":"source_records_service.py","line":179,"symbol":"list_records"},
+        {"file":"source_records_service.py","line":265,"symbol":"get_record: raw values, history and FLoRA links"},
+        {"file":"flora_service.py","line":159,"symbol":"_current: build the derived FLoRA view"},
+        {"file":"flora_service.py","line":484,"symbol":"_changed: correction without editing source inputs"},
+        {"file":"flora_service.py","line":531,"symbol":"merged_sources: provenance in FLoRA"},
+        {"file":"flora_edits.py","line":759,"symbol":"publish: immediate eligible stored-row correction"},
+        {"file":"app.py","line":6070,"symbol":"admin_flora_export: current filtered vs stored full export"},
+        {"file":"source_sync_runner.py","line":269,"symbol":"_execute: refresh, prepare and store"},
+        {"file":"sync_sources.py","line":325,"symbol":"sync_source: sheet import"}
+      ]
+    }
+  ],
+  "rows": [
+    {"question":"What am I looking at?","source":"Imported input rows, with source labels, original values and sync history.","flora":"The current combined view after transformation, deduplication, metadata and corrections.","node":"compare-tabs"},
+    {"question":"What is behind the screen?","source":"PostgreSQL source_records, read by source_records_service.py.","flora":"flora_service.py derives the view from inputs and saved decisions. It is not simply reading flora_data.","node":"storage-sources"},
+    {"question":"What does one row mean?","source":"One imported source record, identified by its source/row identity and display ID.","flora":"A combined FLoRA record. Several source rows may feed it; an excluded source may feed none.","node":"review-identities"},
+    {"question":"Where do I fix a DOI or outcome?","source":"Inspect the read-only detail, then follow its linked FLoRA record. Imported cells stay available as provenance.","flora":"Open the record and Save changes, confirm its outcome, or restore a recorded version.","node":"process-save"},
+    {"question":"Which other decisions live here?","source":"Duplicate imports: keep distinct or identify the duplicate's surviving record. Run pipeline and view source/job history.","flora":"Review preprint duplicates, outcome conflicts and check findings; inspect correction history.","node":"admin-flora"},
+    {"question":"What does Export download?","source":"Export CSV downloads the filtered imported source rows. History downloads belong to a specific pipeline run.","flora":"Export filtered CSV uses the tab's current view. Download full CSV uses the stored flora_data snapshot plus eligible later corrections.","node":"output-downloads"},
+    {"question":"When do the outputs catch up?","source":"A duplicate ruling affects the derived view on reload. Run pipeline reconciles the full stored dataset.","flora":"Eligible field saves update an existing stored row immediately; new rows and whole-snapshot changes need preparation. GitHub changes on publication.","node":"schedule-updates"},
+    {"question":"How do I trace a record?","source":"Open the row and follow its linked FLoRA records, including cases where it was absorbed by deduplication.","flora":"Inspect source provenance and merged sources; use the registry to connect source IDs to the permanent FLoRA identity.","node":"compare-tabs"}
+  ],
+  "scenarios": [
+    {
+      "id":"correction","title":"I correct a DOI","intro":"Illustrative example: an imported row has an incorrect DOI. Its derived FLoRA record already has an eligible active row in the stored dataset.",
+      "action":"In FLoRA, open the record, change the DOI and click Save changes.",
+      "source":"The originally imported DOI remains visible. FLoRA corrections do not rewrite source_records or the Google Sheet.",
+      "flora":"The corrected DOI and its derived consequences appear on the next record fetch. The change is logged in flora_record_changes.",
+      "stored":"The eligible active flora_data row updates after commit. A fresh server request sees the revision; public HTTP caches can lag.",
+      "github":"The repository CSV waits for publication. If no eligible stored row exists yet, run the pipeline before publishing.",
+      "node":"process-save"
+    },
+    {
+      "id":"duplicate","title":"I mark a duplicate","intro":"Illustrative example: two imported source rows describe the same record and the administrator chooses one survivor.",
+      "action":"In Source Records → Duplicates, mark the redundant record as Duplicate of the survivor.",
+      "source":"Both source rows remain traceable. The duplicate ruling and edit history are saved with the input records.",
+      "flora":"The next derived view applies the ruling. The redundant record is excluded from that combined view; row counts may change.",
+      "stored":"The stored full CSV and public API retain their earlier snapshot until the next successful preparation reconciles it.",
+      "github":"Publish after preparation, or wait for the scheduled release, to update output/flora.csv in GitHub.",
+      "node":"admin-sources--duplicates-duplicate-of"
+    },
+    {
+      "id":"new-row","title":"A new sheet row arrives","intro":"Illustrative example: a published sheet gains a new accepted row with a new valid UUID, and it passes the import gates.",
+      "action":"Use Source Records → Run pipeline, or let the configured 03:00 UTC nightly workflow run.",
+      "source":"The sheet stage inserts the row into source_records. Editing an already-imported UUID does not overwrite its existing cells.",
+      "flora":"The row can enter the derived view if the rules retain it. The identity registry and preparation stages give it its output identity.",
+      "stored":"After successful preparation/storage, an eligible retained record is included in the complete stored dataset. An earlier failed stage can prevent that final update.",
+      "github":"The website run does not commit GitHub. Use Publish FLoRA, or let the nightly release workflow update the repository.",
+      "node":"process-queue"
+    }
+  ]
+}

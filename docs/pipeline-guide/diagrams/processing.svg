@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1460 900" role="img" aria-labelledby="processing-title processing-desc">
+<title id="processing-title">Processing schema · review, then prepare</title><desc id="processing-desc">Human judgement becomes an approved input; preparation turns combined inputs into a stored public dataset. Each box links to its explanatory README.</desc>
+<defs><marker id="processing-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#78877a"/></marker></defs>
+<rect width="1460" height="900" fill="#fffcf5"/>
+<text x="36" y="42" font-family="Georgia,serif" font-size="25" fill="#263c31">Processing schema · review, then prepare</text>
+<text x="36" y="68" font-family="Segoe UI,sans-serif" font-size="13" fill="#657267">Human judgement becomes an approved input; preparation turns combined inputs into a stored public dataset.</text>
+<text x="36" y="120" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">A · REVIEW ONE EXTRACTOR PAIR</text>
+<text x="36" y="500" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">B · PREPARE THE COMBINED DATASET</text>
+<polyline points="276,212 322,212" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#processing-arrow)"/>
+<polyline points="562,212 608,212" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#processing-arrow)"/>
+<polyline points="848,212 894,212" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#processing-arrow)"/>
+<polyline points="1134,212 1180,212" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#processing-arrow)"/>
+<polyline points="156,275 156,320" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#processing-arrow)" stroke-dasharray="5 5"/>
+<polyline points="1300,275 1300,320" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#processing-arrow)"/>
+<polyline points="1014,275 1014,299 1300,299 1300,320" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#processing-arrow)" stroke-dasharray="5 5"/>
+<text x="1080" y="291" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">eligible auto-approval</text>
+<polyline points="1014,275 1014,380 848,380" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#processing-arrow)" stroke-dasharray="5 5"/>
+<text x="866" y="368" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">rejection branch</text>
+<polyline points="276,597 322,597" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#processing-arrow)"/>
+<polyline points="562,597 608,597" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#processing-arrow)"/>
+<polyline points="848,597 894,597" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#processing-arrow)"/>
+<polyline points="1134,597 1180,597" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#processing-arrow)"/>
+<polyline points="1300,440 1300,474 442,474 442,535" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#processing-arrow)"/>
+<text x="670" y="464" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">joins source collection</text>
+<polyline points="728,720 728,660" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#processing-arrow)"/>
+<polyline points="562,782 585,782 585,688 728,688 728,660" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#processing-arrow)" stroke-dasharray="5 5"/>
+<polyline points="1300,660 1300,720" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#processing-arrow)"/>
+<a href="../index.html#view=processing&amp;node=review-claim" data-node="review-claim" aria-label="Claim a study: open README"><rect x="36" y="150" width="240" height="125" rx="5" fill="#faf0e6" stroke="#bbc8b7"/><rect x="36" y="162" width="3" height="101" fill="#a75032"/>
+<text x="53" y="179" font-family="Georgia,serif" font-size="19" fill="#a75032">Claim a study</text>
+<text x="53" y="209" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Reserve a human slot</text>
+</a>
+<a href="../index.html#view=processing&amp;node=review-draft" data-node="review-draft" aria-label="Draft answers: open README"><rect x="322" y="150" width="240" height="125" rx="5" fill="#faf0e6" stroke="#bbc8b7"/><rect x="322" y="162" width="3" height="101" fill="#a75032"/>
+<text x="339" y="179" font-family="Georgia,serif" font-size="19" fill="#a75032">Draft answers</text>
+<text x="339" y="209" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Browser-only autosave</text>
+</a>
+<a href="../index.html#view=processing&amp;node=review-submit" data-node="review-submit" aria-label="Submit review: open README"><rect x="608" y="150" width="240" height="125" rx="5" fill="#faf0e6" stroke="#bbc8b7"/><rect x="608" y="162" width="3" height="101" fill="#a75032"/>
+<text x="625" y="179" font-family="Georgia,serif" font-size="19" fill="#a75032">Submit review</text>
+<text x="625" y="209" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Server commit required</text>
+</a>
+<a href="../index.html#view=processing&amp;node=review-consensus" data-node="review-consensus" aria-label="Two-review decision: open README"><rect x="894" y="150" width="240" height="125" rx="5" fill="#faf0e6" stroke="#bbc8b7"/><rect x="894" y="162" width="3" height="101" fill="#a75032"/>
+<text x="911" y="179" font-family="Georgia,serif" font-size="19" fill="#a75032">Two-review decision</text>
+<text x="911" y="209" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Gemini / rules / admin</text>
+</a>
+<a href="../index.html#view=processing&amp;node=admin-entries" data-node="admin-entries" aria-label="Approve or resolve: open README"><rect x="1180" y="150" width="240" height="125" rx="5" fill="#faf0e6" stroke="#bbc8b7"/><rect x="1180" y="162" width="3" height="101" fill="#a75032"/>
+<text x="1197" y="179" font-family="Georgia,serif" font-size="19" fill="#a75032">Approve or resolve</text>
+<text x="1197" y="209" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Write approved validated row</text>
+</a>
+<a href="../index.html#view=processing&amp;node=review-skip" data-node="review-skip" aria-label="Skip / restricted: open README"><rect x="36" y="320" width="240" height="120" rx="5" fill="#faf0e6" stroke="#bbc8b7"/><rect x="36" y="332" width="3" height="96" fill="#a75032"/>
+<text x="53" y="349" font-family="Georgia,serif" font-size="19" fill="#a75032">Skip / restricted</text>
+<text x="53" y="379" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Release or route to an assignee</text>
+</a>
+<a href="../index.html#view=processing&amp;node=process-validated-bridge" data-node="process-validated-bridge" aria-label="Sync approved rows: open README"><rect x="1180" y="320" width="240" height="120" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="1180" y="332" width="3" height="96" fill="#284e3e"/>
+<text x="1197" y="349" font-family="Georgia,serif" font-size="19" fill="#284e3e">Sync approved rows</text>
+<text x="1197" y="379" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">validated → source_records</text>
+</a>
+<a href="../index.html#view=processing&amp;node=review-consensus" data-node="review-consensus" aria-label="Excluded record: open README"><rect x="608" y="320" width="240" height="120" rx="5" fill="#faf0e6" stroke="#bbc8b7"/><rect x="608" y="332" width="3" height="96" fill="#a75032"/>
+<text x="625" y="349" font-family="Georgia,serif" font-size="19" fill="#a75032">Excluded record</text>
+<text x="625" y="379" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Rejected; no approved output</text>
+</a>
+<a href="../index.html#view=processing&amp;node=process-queue" data-node="process-queue" aria-label="Queue the run: open README"><rect x="36" y="535" width="240" height="125" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="36" y="547" width="3" height="101" fill="#284e3e"/>
+<text x="53" y="564" font-family="Georgia,serif" font-size="19" fill="#284e3e">Queue the run</text>
+<text x="53" y="594" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">source_sync_jobs</text>
+</a>
+<a href="../index.html#view=processing&amp;node=storage-sources" data-node="storage-sources" aria-label="Refresh inputs: open README"><rect x="322" y="535" width="240" height="125" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="322" y="547" width="3" height="101" fill="#284e3e"/>
+<text x="339" y="564" font-family="Georgia,serif" font-size="19" fill="#284e3e">Refresh inputs</text>
+<text x="339" y="594" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Sheets + validated + rules</text>
+</a>
+<a href="../index.html#view=processing&amp;node=process-transform" data-node="process-transform" aria-label="Transform + dedup: open README"><rect x="608" y="535" width="240" height="125" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="608" y="547" width="3" height="101" fill="#284e3e"/>
+<text x="625" y="564" font-family="Georgia,serif" font-size="19" fill="#284e3e">Transform + dedup</text>
+<text x="625" y="594" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Codebook / identities / edits</text>
+</a>
+<a href="../index.html#view=processing&amp;node=process-prepare" data-node="process-prepare" aria-label="Check exact CSV: open README"><rect x="894" y="535" width="240" height="125" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="894" y="547" width="3" height="101" fill="#284e3e"/>
+<text x="911" y="564" font-family="Georgia,serif" font-size="19" fill="#284e3e">Check exact CSV</text>
+<text x="911" y="594" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Structure + network evidence</text>
+</a>
+<a href="../index.html#view=processing&amp;node=storage-dataset" data-node="storage-dataset" aria-label="Commit snapshot: open README"><rect x="1180" y="535" width="240" height="125" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="1180" y="547" width="3" height="101" fill="#284e3e"/>
+<text x="1197" y="564" font-family="Georgia,serif" font-size="19" fill="#284e3e">Commit snapshot</text>
+<text x="1197" y="594" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">flora_data + revision</text>
+</a>
+<a href="../index.html#view=processing&amp;node=process-identities" data-node="process-identities" aria-label="Permanent identities: open README"><rect x="608" y="720" width="240" height="125" rx="5" fill="#f4f0df" stroke="#bbc8b7"/><rect x="608" y="732" width="3" height="101" fill="#71682f"/>
+<text x="625" y="749" font-family="Georgia,serif" font-size="19" fill="#71682f">Permanent identities</text>
+<text x="625" y="779" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">flora_records registry</text>
+</a>
+<a href="../index.html#view=processing&amp;node=process-save" data-node="process-save" aria-label="Saved corrections: open README"><rect x="322" y="720" width="240" height="125" rx="5" fill="#faf0e6" stroke="#bbc8b7"/><rect x="322" y="732" width="3" height="101" fill="#a75032"/>
+<text x="339" y="749" font-family="Georgia,serif" font-size="19" fill="#a75032">Saved corrections</text>
+<text x="339" y="779" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Versioned correction history</text>
+</a>
+<a href="../index.html#view=processing&amp;node=process-entry-checks" data-node="process-entry-checks" aria-label="Recheck stored rows: open README"><rect x="1180" y="720" width="240" height="125" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="1180" y="732" width="3" height="101" fill="#284e3e"/>
+<text x="1197" y="749" font-family="Georgia,serif" font-size="19" fill="#284e3e">Recheck stored rows</text>
+<text x="1197" y="779" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Structural / daily network</text>
+</a>
+<line x1="36" y1="857" x2="1424" y2="857" stroke="#d4dacc"/><text x="36" y="880" font-family="Consolas,monospace" font-size="10" fill="#657267">FLoRA FIELD GUIDE  /  29 OCTOBER 2026  /  CODE 2f3a89c</text><text x="1424" y="880" text-anchor="end" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267">Click a box for its README and code.</text></svg>

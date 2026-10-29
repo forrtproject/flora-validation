@@ -1,0 +1,1678 @@
+{
+  "schema_version": 1,
+  "title": "Admin panel map",
+  "verified_on": "2026-10-29",
+  "scope": "Current checked-out code; no live production/database actions were performed.",
+  "nodes": [
+    {
+      "id": "admin-entries",
+      "title": "Entries",
+      "tab": "Entries",
+      "group": "admin",
+      "summary": "The review desk for papers imported from flora-extractor. Compare the extracted record, human judgements, and AI result; decide which records belong in the approved validation dataset.",
+      "inputs": [
+        "unvalidated records, validation_queue judgements, record_metadata, skip history, and any existing validated row."
+      ],
+      "steps": [
+        "Filter or search the table, then open Review to see the evidence and current decision.",
+        "Use Approve for a consensus record, or edit the fields and choose Mark as Resolved."
+      ],
+      "saves": [
+        "Approved/resolved values: unvalidated.final_* plus the validated table.",
+        "Admin decision history: admin_decisions. Notes: unvalidated.admin_notes, note_saved_by, note_saved_at."
+      ],
+      "refresh": [
+        "The Entries list changes after a successful request and refetch.",
+        "Approving a validation entry does not rebuild flora.csv: sync_validated.py brings approved records into Source Records during the next FLoRA pipeline; preparation then updates the stored dataset."
+      ],
+      "outputs": [
+        "An approved validation row, an excluded row, or a row returned for review."
+      ],
+      "cautions": [
+        "Changing fields in the form is not a save.",
+        "An admin who judged the record may be prevented from deciding it; the server checks the self-approval policy.",
+        "Skip in the admin review modal only moves to the next entry; it is different from a validator recording a skip."
+      ],
+      "sources": [
+        {
+          "file": "docs/app.js",
+          "line": 5418,
+          "symbol": "fetchAdminEntries"
+        },
+        {
+          "file": "docs/app.js",
+          "line": 5670,
+          "symbol": "renderAdminDetail"
+        },
+        {
+          "file": "app.py",
+          "line": 4716,
+          "symbol": "admin_entries"
+        },
+        {
+          "file": "app.py",
+          "line": 4915,
+          "symbol": "admin_entry_detail"
+        },
+        {
+          "file": "db_schema.sql",
+          "line": 2114,
+          "symbol": "admin_decisions"
+        }
+      ],
+      "actions": [
+        {
+          "label": "Filters, search, sorting, pagination, Review",
+          "does": "Reads matching entries and their details; no study decision is changed.",
+          "saves": "No database write.",
+          "when": "On fetch.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 5418,
+              "symbol": "fetchAdminEntries"
+            },
+            {
+              "file": "app.py",
+              "line": 4716,
+              "symbol": "admin_entries"
+            },
+            {
+              "file": "app.py",
+              "line": 4915,
+              "symbol": "admin_entry_detail"
+            }
+          ]
+        },
+        {
+          "label": "Approve",
+          "does": "POST /api/admin/entries/{id}/approve accepts the agreed values and marks the entry validated.",
+          "saves": "unvalidated status/admin fields; validated row; admin_decisions.",
+          "when": "Entries immediately; FLoRA input after sync_validated, stored output after a successful pipeline.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 5605,
+              "symbol": "quickApprove"
+            },
+            {
+              "file": "app.py",
+              "line": 5388,
+              "symbol": "admin_approve"
+            }
+          ]
+        },
+        {
+          "label": "Save Note",
+          "does": "Saves only the admin note, including who saved it and when. An empty note clears it.",
+          "saves": "unvalidated.admin_notes, note_saved_by, note_saved_at.",
+          "when": "After success; visible to all admins when the record reloads. It does not approve or publish the record.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 6483,
+              "symbol": "Save Note click handler"
+            },
+            {
+              "file": "app.py",
+              "line": 5560,
+              "symbol": "admin_save_note"
+            }
+          ]
+        },
+        {
+          "label": "Mark as Resolved",
+          "does": "POST /resolve validates the edited type, original, outcome and evidence; saves the final decision. For reproductions both axes are required.",
+          "saves": "unvalidated.final_* and admin fields; replaces this record's validated row; admin_decisions.",
+          "when": "After commit; then downstream sync/preparation is required.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 6691,
+              "symbol": "submitAdminResolve"
+            },
+            {
+              "file": "app.py",
+              "line": 5606,
+              "symbol": "admin_resolve"
+            }
+          ]
+        },
+        {
+          "label": "Merge duplicate (conflict dialog)",
+          "does": "If the proposed identity already belongs to another validated record, explicitly keep that survivor and link this duplicate to it.",
+          "saves": "validated_record_merges; duplicate is rejected in unvalidated, removed from validated, and open assignments completed; survivor preserved.",
+          "when": "After confirmed resolve succeeds; downstream source retirement is triggered on deletion.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 6654,
+              "symbol": "confirmValidatedDuplicateMerge"
+            },
+            {
+              "file": "app.py",
+              "line": 5821,
+              "symbol": "admin_resolve duplicate-conflict branch"
+            }
+          ]
+        },
+        {
+          "label": "It's a replication / It's a reproduction",
+          "does": "Changes the edit form to the other FLoRA type and shows its fields.",
+          "saves": "Nothing until Mark as Resolved.",
+          "when": "Form changes immediately; database only on resolve.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 6460,
+              "symbol": "openAsType"
+            }
+          ]
+        },
+        {
+          "label": "Reject — not in FLoRA",
+          "does": "After confirmation, resolves as not_validation: neither a replication nor a reproduction.",
+          "saves": "unvalidated becomes rejected; existing validated row removed; decision audit written.",
+          "when": "Entries immediately; derived FLoRA view follows source retirement; stored release waits for pipeline.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 6515,
+              "symbol": "Reject click handler"
+            },
+            {
+              "file": "app.py",
+              "line": 5606,
+              "symbol": "admin_resolve"
+            }
+          ]
+        },
+        {
+          "label": "Flag for Review / Send back for review",
+          "does": "Moves an eligible record to need_review. Sending back an auto-validated record also removes its approved row.",
+          "saves": "unvalidated status/admin note; validated deletion for auto-validated rows; admin_decisions.",
+          "when": "After success; the validated-source trigger marks its source row deleted at commit.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 6613,
+              "symbol": "Send back handler"
+            },
+            {
+              "file": "app.py",
+              "line": 5518,
+              "symbol": "admin_flag_review"
+            }
+          ]
+        },
+        {
+          "label": "Flag / Unflag a judgement",
+          "does": "Toggles the flag on one person's submitted judgement. A nonempty reason also creates an inbox message for that validator.",
+          "saves": "validation_queue.flagged and flag_reason; optional validator_messages.",
+          "when": "Immediately after the request; validator sees the message when their inbox refreshes.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 6549,
+              "symbol": "val-flag-btn handler"
+            },
+            {
+              "file": "app.py",
+              "line": 5084,
+              "symbol": "admin_flag_queue"
+            }
+          ]
+        },
+        {
+          "label": "Skip → / Cancel",
+          "does": "Moves to the next entry, or closes the detail window.",
+          "saves": "No resolution is saved; Save Note is a separate action.",
+          "when": "Immediately in the browser.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 6810,
+              "symbol": "advanceToNextAdminEntry"
+            },
+            {
+              "file": "docs/app.js",
+              "line": 6829,
+              "symbol": "closeAdminDetail"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "admin-sources",
+      "title": "Source Records",
+      "tab": "Source Records",
+      "group": "admin",
+      "summary": "The input ledger: imported entry-sheet records, approved app records, and published disagreement decisions. Open a row to see its provenance; run the FLoRA pipeline here.",
+      "inputs": [
+        "source_records from sync_sources.py, sync_validated.py and adjudication publishing."
+      ],
+      "steps": [
+        "Browse imported rows with filters and search; open one to inspect its raw fields and links to derived FLoRA records.",
+        "Resolve duplicate imports where necessary.",
+        "Run pipeline to ingest, prepare, store and check the complete FLoRA dataset."
+      ],
+      "saves": [
+        "Duplicate rulings update source_records and append source_record_edits.",
+        "Pipeline queue, log and retained artifacts: source_sync_jobs."
+      ],
+      "refresh": [
+        "Source Records grid refetches after a watched run ends.",
+        "Pipeline history polls about every 3 seconds while active and visible.",
+        "The FLoRA grid reflects source duplicate rulings on rebuild; stored CSV/API update at the next successful pipeline."
+      ],
+      "outputs": [
+        "Filtered source CSV; per-run flora.csv plus Markdown/JSON validation reports and full log."
+      ],
+      "cautions": [
+        "Source record detail is read-only: correct the derived record in the FLoRA tab.",
+        "Export CSV here exports source records, not the prepared public dataset.",
+        "Run pipeline does not directly commit a GitHub file. The Publish FLoRA workflow handles the repository copy.",
+        "A failed run can occasionally have committed the dataset before a later artifact step failed; inspect the report storage status and recovery artifact rather than assuming that failed means no database changes."
+      ],
+      "sources": [
+        {
+          "file": "docs/app.js",
+          "line": 8954,
+          "symbol": "fetchSourceRecords"
+        },
+        {
+          "file": "docs/app.js",
+          "line": 10546,
+          "symbol": "renderSourceRecord"
+        },
+        {
+          "file": "app.py",
+          "line": 5977,
+          "symbol": "admin_source_records"
+        },
+        {
+          "file": "source_records_service.py",
+          "line": 179,
+          "symbol": "list_records"
+        },
+        {
+          "file": "source_sync_runner.py",
+          "line": 340,
+          "symbol": "failed artifact path with committed-storage recovery"
+        }
+      ],
+      "actions": [
+        {
+          "label": "Filters / Search / Open record / Previous / Next",
+          "does": "Reads the imported row and follows the current filter queue. Links lead to any derived FLoRA records.",
+          "saves": "No edits to input fields.",
+          "when": "On fetch.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 10532,
+              "symbol": "openSourceRecord"
+            },
+            {
+              "file": "app.py",
+              "line": 6433,
+              "symbol": "admin_source_record_detail"
+            }
+          ]
+        },
+        {
+          "label": "Export CSV",
+          "does": "Downloads rows matching the source filters.",
+          "saves": "A file downloaded by your browser; no database change.",
+          "when": "At click time.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 10679,
+              "symbol": "source export handler"
+            },
+            {
+              "file": "app.py",
+              "line": 5993,
+              "symbol": "admin_source_records_export"
+            }
+          ]
+        },
+        {
+          "label": "Run pipeline",
+          "does": "POST /api/admin/source-sync/dispatch queues a server job. A background worker runs the full ingestion/preparation/check sequence.",
+          "saves": "source_sync_jobs queue/log/artifact fields, source data and prepared dataset during stages.",
+          "when": "Queued first; output updates when stages succeed. Also scheduled nightly at 03:00 UTC.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 10463,
+              "symbol": "startSourceSync"
+            },
+            {
+              "file": "app.py",
+              "line": 6384,
+              "symbol": "admin_source_sync_dispatch"
+            },
+            {
+              "file": "source_sync_runner.py",
+              "line": 110,
+              "symbol": "queue_run"
+            },
+            {
+              "file": "source_sync_runner.py",
+              "line": 391,
+              "symbol": "run_queued"
+            }
+          ]
+        },
+        {
+          "label": "Refresh",
+          "does": "Reloads run status/history; it does not launch a run.",
+          "saves": "No database mutation from this button.",
+          "when": "On request.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 10420,
+              "symbol": "fetchSourceSync"
+            }
+          ]
+        },
+        {
+          "label": "History: CSV / report / full log",
+          "does": "Downloads the chosen run's retained artifact or displays its complete log. Later edits do not rewrite an older run's CSV.",
+          "saves": "Browser download only.",
+          "when": "The artifact is available once that run produces it.",
+          "sources": [
+            {
+              "file": "app.py",
+              "line": 6349,
+              "symbol": "admin_source_sync_artifact"
+            },
+            {
+              "file": "docs/app.js",
+              "line": 10489,
+              "symbol": "source history click handler"
+            }
+          ]
+        },
+        {
+          "label": "Duplicates → Keep — distinct",
+          "does": "Records that this input is a separate study and protects it from automatic merging.",
+          "saves": "source_records duplicate ruling and source_record_edits history.",
+          "when": "FLoRA grid on next fetch; full CSV/API after pipeline; repository after publication.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 10892,
+              "symbol": "confirmSourceDistinct"
+            },
+            {
+              "file": "source_records_service.py",
+              "line": 455,
+              "symbol": "resolve_duplicate"
+            }
+          ]
+        },
+        {
+          "label": "Duplicates → Duplicate of …",
+          "does": "Names the surviving source row. A reason is requested; cross-type pairing asks for confirmation.",
+          "saves": "source_records.duplicate_status/duplicate_of/review fields and source_record_edits.",
+          "when": "FLoRA grid on next fetch; full CSV/API after pipeline.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 10865,
+              "symbol": "resolveSourceDuplicate"
+            },
+            {
+              "file": "source_records_service.py",
+              "line": 455,
+              "symbol": "resolve_duplicate"
+            }
+          ]
+        },
+        {
+          "label": "Show resolved / Back to grid",
+          "does": "Includes ruled groups for reconsideration, or returns to the source table.",
+          "saves": "No write until a new ruling is submitted.",
+          "when": "Immediately in the view.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 10736,
+              "symbol": "fetchSourceDuplicates"
+            },
+            {
+              "file": "docs/app.js",
+              "line": 10723,
+              "symbol": "hideSourceDuplicates"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "admin-flora",
+      "title": "FLoRA",
+      "tab": "FLoRA",
+      "group": "admin",
+      "summary": "The prepared view of the current source records: cleaned identifiers, derived outcomes, exclusions, duplicate decisions and saved corrections. This view can be newer than the stored public release.",
+      "inputs": [
+        "source_records + exclusions + metadata/cache + duplicate rulings + flora_records registry + flora_record_changes."
+      ],
+      "steps": [
+        "The service builds a derived view and attaches permanent IDs.",
+        "Open a record to correct fields, inspect merged source rows, review checks, or restore a previous correction.",
+        "Use Download full CSV for what the public API currently serves; Export filtered CSV for the current tab view."
+      ],
+      "saves": [
+        "flora_record_changes stores the correction overlay and complete change history.",
+        "For an existing live stored row, field changes also update flora_data and its metadata revision in the same transaction.",
+        "Preprint rulings are in preprint_dedup_decisions; checks in flora_check_findings."
+      ],
+      "refresh": [
+        "Saving a correction refreshes the grid and the open record.",
+        "Existing stored rows get the correction immediately; records not yet stored need the next pipeline. The UI reports which happened.",
+        "Duplicate/withdrawal decisions need the next pipeline to change the full stored release."
+      ],
+      "outputs": [
+        "Prepared records, current full CSV, filtered view CSV, correction history, findings and preprint decisions."
+      ],
+      "cautions": [
+        "Permanent IDs are assigned during pipeline preparation. Filtered export refuses rows without registered IDs.",
+        "The source records and Google Sheets stay as imported; corrections are reapplied over them on later builds.",
+        "A version conflict reloads the record instead of overwriting another admin's changes."
+      ],
+      "sources": [
+        {
+          "file": "docs/app.js",
+          "line": 9281,
+          "symbol": "fetchFloraRecords"
+        },
+        {
+          "file": "flora_service.py",
+          "line": 159,
+          "symbol": "_current"
+        },
+        {
+          "file": "flora_service.py",
+          "line": 506,
+          "symbol": "update_record"
+        },
+        {
+          "file": "app.py",
+          "line": 6070,
+          "symbol": "admin_flora_export"
+        }
+      ],
+      "actions": [
+        {
+          "label": "Filters / Search / Refresh / Open record",
+          "does": "Fetches a current derived view, details, correction history and check findings.",
+          "saves": "No study changes.",
+          "when": "On request.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 9281,
+              "symbol": "fetchFloraRecords"
+            },
+            {
+              "file": "docs/app.js",
+              "line": 9403,
+              "symbol": "openFloraRecord"
+            },
+            {
+              "file": "app.py",
+              "line": 6232,
+              "symbol": "admin_flora_record"
+            }
+          ]
+        },
+        {
+          "label": "Save changes",
+          "does": "PATCH /api/admin/flora/{id} saves changed fields and per-field notes, guarding the record version.",
+          "saves": "flora_record_changes; changed published fields in flora_data if a live row exists; flora_data_metadata revision.",
+          "when": "Grid after success; public API/full CSV immediately for a stored live row, otherwise next pipeline.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 9814,
+              "symbol": "saveFloraRecord"
+            },
+            {
+              "file": "app.py",
+              "line": 6277,
+              "symbol": "admin_flora_record_update"
+            },
+            {
+              "file": "flora_edits.py",
+              "line": 527,
+              "symbol": "save"
+            },
+            {
+              "file": "flora_edits.py",
+              "line": 759,
+              "symbol": "publish"
+            }
+          ]
+        },
+        {
+          "label": "Revert field to derived value",
+          "does": "Removes that field's saved override when Save changes is pressed, so the current derived input value is used again.",
+          "saves": "New flora_record_changes entry; existing live flora_data row is updated where applicable.",
+          "when": "Only after Save changes.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 9797,
+              "symbol": "collectFloraEdits"
+            },
+            {
+              "file": "flora_edits.py",
+              "line": 527,
+              "symbol": "save"
+            }
+          ]
+        },
+        {
+          "label": "Restore this version / Restore original derived values",
+          "does": "Restores the selected historical correction state (or removes all overrides). The restore itself is another logged change.",
+          "saves": "flora_record_changes; live flora_data row where applicable.",
+          "when": "After confirmed restore; same stored-output rules as Save changes.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 9874,
+              "symbol": "restoreFloraRecord"
+            },
+            {
+              "file": "flora_edits.py",
+              "line": 579,
+              "symbol": "restore"
+            },
+            {
+              "file": "app.py",
+              "line": 6293,
+              "symbol": "admin_flora_record_restore"
+            }
+          ]
+        },
+        {
+          "label": "Confirm outcome / Choose conflicting outcome",
+          "does": "Settles the conflicting outcomes of merged source rows by confirming the shown outcome or choosing one of the candidates.",
+          "saves": "flora_record_changes outcome decision, and live flora_data row where applicable.",
+          "when": "After success; pipeline retains this correction.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 9767,
+              "symbol": "confirmFloraOutcome"
+            },
+            {
+              "file": "app.py",
+              "line": 6308,
+              "symbol": "admin_flora_confirm_outcome"
+            },
+            {
+              "file": "flora_edits.py",
+              "line": 626,
+              "symbol": "confirm_outcome"
+            }
+          ]
+        },
+        {
+          "label": "Not a problem / Undo dismissal",
+          "does": "Adds a reasoned dismissal to a check finding, or reopens it for review. It does not change the scientific record.",
+          "saves": "flora_check_findings dismissal fields and security_events audit.",
+          "when": "After success; matching finding retains its dismissal across later check runs.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 9715,
+              "symbol": "markFloraFinding"
+            },
+            {
+              "file": "app.py",
+              "line": 6197,
+              "symbol": "admin_flora_finding_dismiss"
+            },
+            {
+              "file": "app.py",
+              "line": 6214,
+              "symbol": "admin_flora_finding_undismiss"
+            }
+          ]
+        },
+        {
+          "label": "Download full CSV",
+          "does": "Downloads the live stored dataset: last pipeline's stored rows plus subsequent published corrections.",
+          "saves": "Browser file only; reads flora_data.",
+          "when": "At request time.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 9339,
+              "symbol": "downloadAdminArtifact"
+            },
+            {
+              "file": "app.py",
+              "line": 6070,
+              "symbol": "admin_flora_export"
+            }
+          ]
+        },
+        {
+          "label": "Export filtered CSV",
+          "does": "Downloads the current tab view with its filters. Refused if included records still lack permanent IDs.",
+          "saves": "Browser file only.",
+          "when": "At request time; may differ from the full stored release.",
+          "sources": [
+            {
+              "file": "flora_service.py",
+              "line": 546,
+              "symbol": "export_csv"
+            },
+            {
+              "file": "app.py",
+              "line": 6070,
+              "symbol": "admin_flora_export"
+            }
+          ]
+        },
+        {
+          "label": "Preprint duplicates → Same paper, keep A / keep B",
+          "does": "Records which DOI should survive; the discarded DOI becomes an alternative identifier. For original-study DOIs, replications move under the kept DOI.",
+          "saves": "preprint_dedup_decisions and security_events.",
+          "when": "Grid after refetch; stored CSV/API after next pipeline.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 10232,
+              "symbol": "decideFloraDedup"
+            },
+            {
+              "file": "flora_service.py",
+              "line": 831,
+              "symbol": "decide_preprint_pair"
+            },
+            {
+              "file": "app.py",
+              "line": 6128,
+              "symbol": "admin_flora_preprint_decide"
+            }
+          ]
+        },
+        {
+          "label": "Different papers — keep both / Undo ruling",
+          "does": "Keep both overrides automatic merging; Undo removes the explicit ruling so automatic rules apply again.",
+          "saves": "preprint_dedup_decisions insert/update or deletion, plus security_events audit.",
+          "when": "Grid after refetch; stored release after pipeline.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 10252,
+              "symbol": "undoFloraDedup"
+            },
+            {
+              "file": "flora_service.py",
+              "line": 873,
+              "symbol": "undo_preprint_decision"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "admin-stats",
+      "title": "Validator Stats",
+      "tab": "Validator Stats",
+      "group": "admin",
+      "summary": "Shows how contributors are progressing, their judgement timing and flags, and their review tier.",
+      "inputs": [
+        "validators and validation_queue joined with validation outcomes."
+      ],
+      "steps": [
+        "Open the tab to fetch totals and a table of validators.",
+        "Review flagged judgements or change a validator's tier when appropriate."
+      ],
+      "saves": [
+        "Only tier changes and sent messages write data."
+      ],
+      "refresh": [
+        "Statistics load when the tab opens; tier cells update after success."
+      ],
+      "outputs": [
+        "Contributor statistics, tier levels, flagged-judgement links and direct messages."
+      ],
+      "cautions": [
+        "Tier changes affect future eligibility/weighting; they do not automatically rerun old decisions."
+      ],
+      "sources": [
+        {
+          "file": "docs/app.js",
+          "line": 7605,
+          "symbol": "fetchAdminStats"
+        },
+        {
+          "file": "docs/app.js",
+          "line": 8025,
+          "symbol": "renderAdminStats"
+        },
+        {
+          "file": "app.py",
+          "line": 3426,
+          "symbol": "admin_stats"
+        }
+      ],
+      "actions": [
+        {
+          "label": "Level / tier button",
+          "does": "Cycles the contributor tier: regular (0), trusted (1), senior (2).",
+          "saves": "validators.validator_tier and security_events audit.",
+          "when": "After success; later serving/consensus reads the saved tier.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 8068,
+              "symbol": "tier handler"
+            },
+            {
+              "file": "app.py",
+              "line": 4067,
+              "symbol": "admin_set_tier"
+            }
+          ]
+        },
+        {
+          "label": "Flagged count",
+          "does": "Opens the list of that validator's flagged judgements, with reasons and links to the entries.",
+          "saves": "No write.",
+          "when": "On fetch.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 8087,
+              "symbol": "openValidatorFlagsModal"
+            },
+            {
+              "file": "app.py",
+              "line": 4030,
+              "symbol": "admin_validator_flagged"
+            }
+          ]
+        },
+        {
+          "label": "DM",
+          "does": "Composes and sends an in-app message to this validator.",
+          "saves": "validator_messages.",
+          "when": "After Send; the recipient sees it when their inbox refreshes.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 8159,
+              "symbol": "openComposeDialog"
+            },
+            {
+              "file": "app.py",
+              "line": 5351,
+              "symbol": "admin_send_message"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "admin-admins",
+      "title": "Admins",
+      "tab": "Admins",
+      "group": "admin",
+      "summary": "Manages administrator accounts, their linked validator identities and the notice banner shown to validators.",
+      "inputs": [
+        "admins, validators, auth_links/sessions and site_banner."
+      ],
+      "steps": [
+        "Trusted administrators can invite and manage other administrators.",
+        "The banner controls a notice in the signed-in validator interface."
+      ],
+      "saves": [
+        "admins, auth_links, sessions, site_banner and security_events."
+      ],
+      "refresh": [
+        "The account list refreshes after changes.",
+        "Validator banner fetches on sign-in and then every five minutes while visible; it catches up after a hidden interval."
+      ],
+      "outputs": [
+        "Invitation/recovery email or fallback link, access changes, and a shared notice banner."
+      ],
+      "cautions": [
+        "Only trusted admins can manage admin accounts; you cannot delete yourself, delete the last admin, change your own trusted status, or change your own linked validator.",
+        "The recipient chooses their own password; the inviter does not set it."
+      ],
+      "sources": [
+        {
+          "file": "docs/app.js",
+          "line": 8372,
+          "symbol": "fetchAdminAdmins"
+        },
+        {
+          "file": "docs/app.js",
+          "line": 8386,
+          "symbol": "renderAdminAdmins"
+        },
+        {
+          "file": "app.py",
+          "line": 4129,
+          "symbol": "list_admins"
+        },
+        {
+          "file": "auth_links.py",
+          "line": 1,
+          "symbol": "single-use authentication links"
+        }
+      ],
+      "actions": [
+        {
+          "label": "Send invitation",
+          "does": "Creates an admin without a password and issues a single-use link, then attempts email delivery. If email fails the response provides a one-time fallback URL to share.",
+          "saves": "admins, auth_links token record, security_events.",
+          "when": "Account exists after commit; it becomes usable after the invitee sets their password.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 8609,
+              "symbol": "addAdminAccount"
+            },
+            {
+              "file": "app.py",
+              "line": 4258,
+              "symbol": "create_admin"
+            }
+          ]
+        },
+        {
+          "label": "Resend invitation / Send recovery link",
+          "does": "Issues a fresh invitation for an account without a password, or recovery for an account with one; uses its saved email address.",
+          "saves": "auth_links; possibly an email on an account that previously lacked one; security_events.",
+          "when": "After issuance; it replaces the outstanding link of that kind.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 8504,
+              "symbol": "sendAdminLink"
+            },
+            {
+              "file": "app.py",
+              "line": 4316,
+              "symbol": "resend_admin_invite"
+            }
+          ]
+        },
+        {
+          "label": "Link / Unlink validator account",
+          "does": "Connects the admin to that person's validator identity for the self-approval rule. Another trusted admin must set your own link.",
+          "saves": "admins.validator_id and security_events.",
+          "when": "After success; future decisions enforce the link.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 8446,
+              "symbol": "validator link handler"
+            },
+            {
+              "file": "app.py",
+              "line": 4171,
+              "symbol": "link_admin_validator"
+            }
+          ]
+        },
+        {
+          "label": "Trusted toggle",
+          "does": "Grants or removes account-management authority for another admin.",
+          "saves": "admins.trusted and security_events.",
+          "when": "After success.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 8463,
+              "symbol": "trusted toggle handler"
+            },
+            {
+              "file": "app.py",
+              "line": 4556,
+              "symbol": "toggle_admin_trusted"
+            }
+          ]
+        },
+        {
+          "label": "Remove admin",
+          "does": "Deletes another admin account and revokes its sessions in the same transaction.",
+          "saves": "admins deletion; sessions.revoked_at; security_events.",
+          "when": "After confirmed deletion succeeds.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 8483,
+              "symbol": "delete admin handler"
+            },
+            {
+              "file": "app.py",
+              "line": 4527,
+              "symbol": "delete_admin"
+            }
+          ]
+        },
+        {
+          "label": "Send to all users (banner)",
+          "does": "Saves and activates the banner text. This is a page notice rather than an inbox broadcast.",
+          "saves": "site_banner singleton row with message, active flag, editor and timestamp.",
+          "when": "Saved immediately; users see it on their next banner poll (up to about five minutes while visible).",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 8593,
+              "symbol": "saveAdminBanner"
+            },
+            {
+              "file": "app.py",
+              "line": 3930,
+              "symbol": "set_site_banner"
+            },
+            {
+              "file": "docs/app.js",
+              "line": 2272,
+              "symbol": "banner polling"
+            }
+          ]
+        },
+        {
+          "label": "Clear banner",
+          "does": "Sets the banner inactive.",
+          "saves": "site_banner.active and timestamp.",
+          "when": "After save; users remove it on their next banner poll.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 8593,
+              "symbol": "saveAdminBanner"
+            },
+            {
+              "file": "app.py",
+              "line": 3930,
+              "symbol": "set_site_banner"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "admin-dashboard",
+      "title": "Dashboard",
+      "tab": "Dashboard",
+      "group": "admin",
+      "summary": "A read-only summary of the validation workload, completion, outcomes, disagreements and contributor activity.",
+      "inputs": [
+        "Aggregated unvalidated, validated, validation_queue and validator data."
+      ],
+      "steps": [
+        "Opening the tab fetches aggregates and draws charts.",
+        "Use chart selectors/controls to explore the returned data."
+      ],
+      "saves": [
+        "No workflow or record writes."
+      ],
+      "refresh": [
+        "Fetches on opening the tab. The charts are a snapshot, not a continuous live stream."
+      ],
+      "outputs": [
+        "Charts and operational totals."
+      ],
+      "cautions": [
+        "A displayed count is current to its fetch; it does not itself run the extractor or publication pipeline."
+      ],
+      "sources": [
+        {
+          "file": "docs/app.js",
+          "line": 7630,
+          "symbol": "fetchAdminDashboard"
+        },
+        {
+          "file": "docs/app.js",
+          "line": 7788,
+          "symbol": "renderAdminDashboard"
+        },
+        {
+          "file": "app.py",
+          "line": 3738,
+          "symbol": "admin_dashboard"
+        }
+      ],
+      "actions": [
+        {
+          "label": "Open tab / chart controls",
+          "does": "Reads dashboard aggregates and changes chart presentation.",
+          "saves": "No data mutation.",
+          "when": "On opening the tab / in the browser.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 7630,
+              "symbol": "fetchAdminDashboard"
+            },
+            {
+              "file": "docs/app.js",
+              "line": 7788,
+              "symbol": "renderAdminDashboard"
+            },
+            {
+              "file": "app.py",
+              "line": 3738,
+              "symbol": "admin_dashboard"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "admin-priority",
+      "title": "Pool Priority",
+      "tab": "Pool Priority",
+      "group": "admin",
+      "summary": "Controls which waiting records are more likely to be offered to validators. It changes assignment order, not a paper's outcome.",
+      "inputs": [
+        "Proposed outcome, year range, enabled flag and priority share; the currently servable unvalidated pool."
+      ],
+      "steps": [
+        "Choose the desired priority group and preview the current counts.",
+        "Click Save to apply the rule to future record selection."
+      ],
+      "saves": [
+        "The single serving_config row (id = 1), including editor and timestamp."
+      ],
+      "refresh": [
+        "New record requests read the saved setting. Existing claimed assignments are not replaced by this button.",
+        "Preview counts are fetched live but do not continue updating; Refresh counts recounts the current form."
+      ],
+      "outputs": [
+        "A weighted/random selection rule and a preview of matching waiting records."
+      ],
+      "cautions": [
+        "Reset to defaults changes the form only; press Save to persist it.",
+        "Previewing a proposed rule does not activate it."
+      ],
+      "sources": [
+        {
+          "file": "docs/app.js",
+          "line": 7658,
+          "symbol": "renderServingConfig"
+        },
+        {
+          "file": "app.py",
+          "line": 3685,
+          "symbol": "put_serving_config"
+        },
+        {
+          "file": "app.py",
+          "line": 1717,
+          "symbol": "_serving_config"
+        }
+      ],
+      "actions": [
+        {
+          "label": "Enable / outcome / year / share controls",
+          "does": "Edits a proposed rule in the browser. Changing outcome/year refreshes the preview.",
+          "saves": "No write until Save.",
+          "when": "Form changes immediately.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 7658,
+              "symbol": "renderServingConfig"
+            }
+          ]
+        },
+        {
+          "label": "Refresh counts",
+          "does": "Counts currently servable waiting records matching the unsaved form.",
+          "saves": "No write.",
+          "when": "On fetch; this is a snapshot.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 7731,
+              "symbol": "_refreshPriorityPreview"
+            },
+            {
+              "file": "app.py",
+              "line": 3714,
+              "symbol": "preview_serving_config"
+            }
+          ]
+        },
+        {
+          "label": "Save",
+          "does": "PUT /api/admin/serving-config persists the selection rule; normalizes the share and reversed year bounds.",
+          "saves": "serving_config row.",
+          "when": "Future record claims use it after success.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 7768,
+              "symbol": "_saveServingConfig"
+            },
+            {
+              "file": "app.py",
+              "line": 3685,
+              "symbol": "put_serving_config"
+            }
+          ]
+        },
+        {
+          "label": "Reset to defaults",
+          "does": "Repopulates the form with default settings.",
+          "saves": "Nothing until Save.",
+          "when": "Immediately in the form.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 7709,
+              "symbol": "Reset to defaults handler"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "admin-maintenance",
+      "title": "Extractor Pipeline",
+      "tab": "Extractor Pipeline",
+      "group": "admin",
+      "summary": "Imports the latest candidate pairs from flora-extractor into the human-review pool. This is separate from building the final FLoRA release.",
+      "inputs": [
+        "flora-extractor extracted.csv and retired_pairs.csv, previous imported snapshot, configured import thresholds."
+      ],
+      "steps": [
+        "Download and compare a candidate snapshot.",
+        "Import new/changed pairs and report missing records.",
+        "Archive and retire explicitly withdrawn untouched records when the retirement policy allows it."
+      ],
+      "saves": [
+        "unvalidated, record_metadata, validation_queue; extractor_snapshots; extractor_maintenance_runs; retired_records for eligible removals."
+      ],
+      "refresh": [
+        "Run full sync queues work, which continues on the server if you leave the page.",
+        "History polls about every 3 seconds while a run is active and the page is visible; Refresh history requests it manually.",
+        "The nightly schedule is 02:00 UTC."
+      ],
+      "outputs": [
+        "A refreshed validation pool, audited snapshot, stage counts and complete run log."
+      ],
+      "cautions": [
+        "A pair missing from extracted.csv is not automatically deleted. Retirement uses the explicit withdrawn-pair list and preserves touched records.",
+        "A second active run is refused. A queued response is not completion."
+      ],
+      "sources": [
+        {
+          "file": "docs/app.js",
+          "line": 7225,
+          "symbol": "fetchMaintenanceRuns"
+        },
+        {
+          "file": "docs/app.js",
+          "line": 7284,
+          "symbol": "startMaintenanceRun"
+        },
+        {
+          "file": "app.py",
+          "line": 6532,
+          "symbol": "admin_start_maintenance"
+        },
+        {
+          "file": "extractor_maintenance.py",
+          "line": 355,
+          "symbol": "queue_maintenance_run"
+        }
+      ],
+      "actions": [
+        {
+          "label": "Run full sync",
+          "does": "POST /api/admin/maintenance/run with stage=full reserves the full maintenance routine.",
+          "saves": "extractor_maintenance_runs and the imported/retired data as each stage completes.",
+          "when": "Queued first; Entries reflect completed import transactions. Also runs nightly at 02:00 UTC.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 7284,
+              "symbol": "startMaintenanceRun"
+            },
+            {
+              "file": "app.py",
+              "line": 6532,
+              "symbol": "admin_start_maintenance"
+            },
+            {
+              "file": "extractor_maintenance.py",
+              "line": 355,
+              "symbol": "queue_maintenance_run"
+            }
+          ]
+        },
+        {
+          "label": "Refresh history",
+          "does": "Reloads recent run state and counts.",
+          "saves": "No imported-data write.",
+          "when": "On request.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 7268,
+              "symbol": "refreshMaintenanceRuns"
+            },
+            {
+              "file": "app.py",
+              "line": 6458,
+              "symbol": "admin_maintenance_runs"
+            }
+          ]
+        },
+        {
+          "label": "Open full log / stage details",
+          "does": "Fetches the chosen run's complete log and shows stage progress/results.",
+          "saves": "No database changes.",
+          "when": "At click time; an active log is refreshed when its run version changes.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 7448,
+              "symbol": "_loadMaintenanceLog"
+            },
+            {
+              "file": "app.py",
+              "line": 6509,
+              "symbol": "admin_maintenance_run_detail"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "admin-restricted",
+      "title": "Restricted access",
+      "tab": "Restricted access",
+      "group": "admin",
+      "summary": "Routes papers that a validator could not access to a chosen person who can review them.",
+      "inputs": [
+        "unvalidated.restricted_access, reporting validator and assignments."
+      ],
+      "steps": [
+        "Pick a listed record and choose a validator.",
+        "Assign or reassign it to that person's assigned-work queue."
+      ],
+      "saves": [
+        "assignments row with status=open, assignee, assigning admin and timestamps; security_events audit."
+      ],
+      "refresh": [
+        "The admin list reloads after assignment. The validator assignments poll runs every 30 seconds while visible and catches up after a hidden interval."
+      ],
+      "outputs": [
+        "A named assignment for a restricted paper."
+      ],
+      "cautions": [
+        "Assignment is not approval or publication; the assignee still has to review it.",
+        "Reassign replaces the previous assignment for that record."
+      ],
+      "sources": [
+        {
+          "file": "docs/app.js",
+          "line": 7532,
+          "symbol": "fetchAdminRestricted"
+        },
+        {
+          "file": "docs/app.js",
+          "line": 7554,
+          "symbol": "renderRestricted"
+        },
+        {
+          "file": "app.py",
+          "line": 3963,
+          "symbol": "admin_restricted"
+        },
+        {
+          "file": "app.py",
+          "line": 3999,
+          "symbol": "admin_assign"
+        }
+      ],
+      "actions": [
+        {
+          "label": "Assign / Reassign",
+          "does": "POST /api/admin/assign creates or replaces the record's named assignment and marks it open.",
+          "saves": "assignments and security_events.",
+          "when": "After save; recipient receives it through assigned-work refresh.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 7594,
+              "symbol": "assignment handler"
+            },
+            {
+              "file": "app.py",
+              "line": 3999,
+              "symbol": "admin_assign"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "admin-disagreements",
+      "title": "Disagreements",
+      "tab": "Disagreements",
+      "group": "admin",
+      "summary": "Optional review lane for disagreements between FLoRA and the Metascience Observatory. It uses its own records and two trusted/senior judgements before an admin decision.",
+      "inputs": [
+        "Pinned disagreement CSV from fred-data PR #143; metadata from OpenAlex/Europe PMC; adjudication judgements."
+      ],
+      "steps": [
+        "Preview and import the disagreement rows.",
+        "Two eligible people judge each row; admin reviews and approves the final answer.",
+        "Publish the approved answer into Source Records, then use the FLoRA pipeline to include it in stored outputs."
+      ],
+      "saves": [
+        "adjudication.records, adjudication.judgements, adjudication.final; publication writes source_records."
+      ],
+      "refresh": [
+        "The tab appears only when ADJUDICATION_ENABLED is on.",
+        "Approval changes the adjudication lane immediately; Publish updates source inputs immediately; stored public release waits for the FLoRA pipeline."
+      ],
+      "outputs": [
+        "Approved disagreement decisions; new/updated Source Records; optional CSV exports."
+      ],
+      "cautions": [
+        "Approve and Publish to FLoRA are separate actions.",
+        "Published answers must be withdrawn before changing the answer.",
+        "An admin cannot approve a disagreement they judged themselves."
+      ],
+      "sources": [
+        {
+          "file": "docs/adjudication.js",
+          "line": 26,
+          "symbol": "initAdmin"
+        },
+        {
+          "file": "adjudication/api.py",
+          "line": 60,
+          "symbol": "create_router"
+        },
+        {
+          "file": "adjudication/review.py",
+          "line": 266,
+          "symbol": "approve"
+        },
+        {
+          "file": "adjudication/review.py",
+          "line": 404,
+          "symbol": "publish"
+        }
+      ],
+      "actions": [
+        {
+          "label": "Preview import",
+          "does": "Reads the pinned source and looks up metadata; reports what an import would add/update/keep.",
+          "saves": "No adjudication database rows are written by the preview; metadata lookups may be cached.",
+          "when": "After the read/lookup completes.",
+          "sources": [
+            {
+              "file": "docs/adjudication.js",
+              "line": 151,
+              "symbol": "runImport"
+            },
+            {
+              "file": "adjudication/importer.py",
+              "line": 417,
+              "symbol": "run_import"
+            }
+          ]
+        },
+        {
+          "label": "Import rows",
+          "does": "Adds missing rows and refreshes only rows nobody has judged; preserves judged rows and deletes nothing.",
+          "saves": "adjudication.records.",
+          "when": "After import succeeds; counts reload.",
+          "sources": [
+            {
+              "file": "adjudication/importer.py",
+              "line": 392,
+              "symbol": "_write"
+            },
+            {
+              "file": "adjudication/api.py",
+              "line": 182,
+              "symbol": "import route"
+            }
+          ]
+        },
+        {
+          "label": "Review / Next / filters",
+          "does": "Reads a disagreement, both judgements and any final answer/source linkage.",
+          "saves": "No write.",
+          "when": "On fetch.",
+          "sources": [
+            {
+              "file": "adjudication/review.py",
+              "line": 212,
+              "symbol": "detail"
+            },
+            {
+              "file": "docs/adjudication.js",
+              "line": 873,
+              "symbol": "review window"
+            }
+          ]
+        },
+        {
+          "label": "Approve / Save the answer",
+          "does": "Validates the selected original and outcome, then records the admin's final answer.",
+          "saves": "adjudication.final and adjudication.records.status=approved.",
+          "when": "After success; does not yet publish a source row.",
+          "sources": [
+            {
+              "file": "adjudication/review.py",
+              "line": 266,
+              "symbol": "approve"
+            },
+            {
+              "file": "docs/adjudication.js",
+              "line": 1184,
+              "symbol": "approve"
+            }
+          ]
+        },
+        {
+          "label": "Undo approval",
+          "does": "Removes an approved final answer that has never been published and returns it to awaiting approval.",
+          "saves": "Deletes adjudication.final and changes adjudication.records status.",
+          "when": "After confirmation succeeds.",
+          "sources": [
+            {
+              "file": "adjudication/review.py",
+              "line": 302,
+              "symbol": "undo_approval"
+            }
+          ]
+        },
+        {
+          "label": "Publish to FLoRA",
+          "does": "Checks eligibility/conflicts and creates or updates its Source Records row; records the publication identity.",
+          "saves": "source_records; adjudication.final publication fields; status=published.",
+          "when": "Source Records/derived grid after refresh; stored full CSV/API at next pipeline.",
+          "sources": [
+            {
+              "file": "adjudication/review.py",
+              "line": 404,
+              "symbol": "publish"
+            }
+          ]
+        },
+        {
+          "label": "Withdraw from FLoRA",
+          "does": "Marks the source row deleted, preserves history and returns the disagreement to approved for editing.",
+          "saves": "source_records.deleted_at/deleted_reason; adjudication.final withdrawal fields; status=approved.",
+          "when": "Derived view after refresh; stored release at next pipeline.",
+          "sources": [
+            {
+              "file": "adjudication/review.py",
+              "line": 451,
+              "symbol": "withdraw"
+            }
+          ]
+        },
+        {
+          "label": "CSV exports",
+          "does": "Downloads the adjudication final-answer or judgement data through its dedicated export endpoint.",
+          "saves": "Browser file only.",
+          "when": "At request time.",
+          "sources": [
+            {
+              "file": "adjudication/api.py",
+              "line": 174,
+              "symbol": "export route"
+            },
+            {
+              "file": "adjudication/export.py",
+              "line": 150,
+              "symbol": "export_csv"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "admin-messages",
+      "title": "Messages",
+      "tab": "Messages",
+      "group": "admin",
+      "summary": "In-app conversations with validators, including replies and messages sent to everyone. These are stored in the application inbox.",
+      "inputs": [
+        "validator_messages conversations, validators, subject/body/recipient or broadcast flag."
+      ],
+      "steps": [
+        "Select a conversation to read its thread, or choose + New.",
+        "Send a reply, a message to one validator, or a broadcast to all validators."
+      ],
+      "saves": [
+        "validator_messages with direction, parent thread, sender, body and read flags."
+      ],
+      "refresh": [
+        "Messages load when opening the tab; opening a thread marks incoming messages read by the admin.",
+        "The validator inbox polls about every 30 seconds while the inbox is open and the page is visible; messages are also fetched at validator sign-in. There is no continuous admin-thread polling."
+      ],
+      "outputs": [
+        "A persisted conversation and updated unread badges."
+      ],
+      "cautions": [
+        "This is the application inbox; sending here does not itself send an email.",
+        "Broadcast inserts one message for each current validator."
+      ],
+      "sources": [
+        {
+          "file": "docs/app.js",
+          "line": 8205,
+          "symbol": "fetchAdminMessages"
+        },
+        {
+          "file": "docs/app.js",
+          "line": 8273,
+          "symbol": "openThread"
+        },
+        {
+          "file": "docs/app.js",
+          "line": 8653,
+          "symbol": "openComposePanel"
+        },
+        {
+          "file": "app.py",
+          "line": 5351,
+          "symbol": "admin_send_message"
+        }
+      ],
+      "actions": [
+        {
+          "label": "Open conversation",
+          "does": "Reads the thread and marks its inbound messages read by the admin.",
+          "saves": "validator_messages.is_read_by_admin.",
+          "when": "After opening; unread badge refreshes.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 8273,
+              "symbol": "openThread"
+            },
+            {
+              "file": "app.py",
+              "line": 5249,
+              "symbol": "get admin thread route"
+            }
+          ]
+        },
+        {
+          "label": "+ New → Send",
+          "does": "Validates subject/body and inserts a message for the selected validator.",
+          "saves": "validator_messages.",
+          "when": "After save; recipient sees it when inbox refreshes.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 8653,
+              "symbol": "openComposePanel"
+            },
+            {
+              "file": "app.py",
+              "line": 5351,
+              "symbol": "admin_send_message"
+            }
+          ]
+        },
+        {
+          "label": "Send to everyone / broadcast",
+          "does": "Creates a separate in-app message for each current validator.",
+          "saves": "One validator_messages row per validator.",
+          "when": "After successful send; each recipient's next inbox poll.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 8756,
+              "symbol": "compose submit handler"
+            },
+            {
+              "file": "app.py",
+              "line": 5351,
+              "symbol": "admin_send_message"
+            }
+          ]
+        },
+        {
+          "label": "Reply",
+          "does": "Adds an outbound reply linked to the conversation root, retaining any related judgement link.",
+          "saves": "validator_messages with parent_id and direction=outbound.",
+          "when": "After successful reply; thread updates.",
+          "sources": [
+            {
+              "file": "docs/app.js",
+              "line": 8338,
+              "symbol": "reply handler"
+            },
+            {
+              "file": "app.py",
+              "line": 5296,
+              "symbol": "admin_reply_to_thread"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

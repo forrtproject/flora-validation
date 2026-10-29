@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1420 870" role="img" aria-labelledby="outputs-title outputs-desc">
+<title id="outputs-title">Output schema · which result am I looking at?</title><desc id="outputs-desc">A live view, an exact run artifact and a committed repository release can represent different moments. Each box links to its explanatory README.</desc>
+<defs><marker id="outputs-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#78877a"/></marker></defs>
+<rect width="1420" height="870" fill="#fffcf5"/>
+<text x="36" y="42" font-family="Georgia,serif" font-size="25" fill="#263c31">Output schema · which result am I looking at?</text>
+<text x="36" y="68" font-family="Segoe UI,sans-serif" font-size="13" fill="#657267">A live view, an exact run artifact and a committed repository release can represent different moments.</text>
+<text x="415" y="650" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">SEPARATE DAILY EXPORT OF VALIDATED</text>
+<polyline points="300,212 410,212" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#outputs-arrow)"/>
+<text x="318" y="196" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">derive on read</text>
+<polyline points="170,275 170,380" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#outputs-arrow)"/>
+<text x="185" y="332" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">Run pipeline</text>
+<polyline points="300,442 410,442" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#outputs-arrow)"/>
+<text x="337" y="425" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">commit</text>
+<polyline points="700,420 752,420 752,382 810,382" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#outputs-arrow)"/>
+<polyline points="700,470 752,470 752,562 810,562" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#outputs-arrow)"/>
+<polyline points="700,486 770,486 770,672 1245,672 1245,505" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#outputs-arrow)"/>
+<text x="837" y="662" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">Publish FLoRA or successful nightly build</text>
+<polyline points="170,505 170,680" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#outputs-arrow)"/>
+<text x="186" y="599" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">exact run snapshot</text>
+<polyline points="810,204 760,204 760,295 555,295 555,380" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#outputs-arrow)" stroke-dasharray="5 5"/>
+<text x="572" y="286" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">existing eligible rows</text>
+<a href="../index.html#view=outputs&amp;node=storage-sources" data-node="storage-sources" aria-label="Current inputs: open README"><rect x="40" y="150" width="260" height="125" rx="5" fill="#f4f0df" stroke="#bbc8b7"/><rect x="40" y="162" width="3" height="101" fill="#71682f"/>
+<text x="57" y="179" font-family="Georgia,serif" font-size="19" fill="#71682f">Current inputs</text>
+<text x="57" y="209" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">source_records + decisions</text>
+</a>
+<a href="../index.html#view=outputs&amp;node=admin-flora" data-node="admin-flora" aria-label="Current FLoRA grid: open README"><rect x="410" y="150" width="290" height="125" rx="5" fill="#edf3f4" stroke="#bbc8b7"/><rect x="410" y="162" width="3" height="101" fill="#416b83"/>
+<text x="427" y="179" font-family="Georgia,serif" font-size="19" fill="#416b83">Current FLoRA grid</text>
+<text x="427" y="209" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Derived view / filtered export</text>
+</a>
+<a href="../index.html#view=outputs&amp;node=process-prepare" data-node="process-prepare" aria-label="Prepare snapshot: open README"><rect x="40" y="380" width="260" height="125" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="40" y="392" width="3" height="101" fill="#284e3e"/>
+<text x="57" y="409" font-family="Georgia,serif" font-size="19" fill="#284e3e">Prepare snapshot</text>
+<text x="57" y="439" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Build / validate / store</text>
+</a>
+<a href="../index.html#view=outputs&amp;node=storage-dataset" data-node="storage-dataset" aria-label="Stored flora_data: open README"><rect x="410" y="380" width="290" height="125" rx="5" fill="#f4f0df" stroke="#bbc8b7"/><rect x="410" y="392" width="3" height="101" fill="#71682f"/>
+<text x="427" y="409" font-family="Georgia,serif" font-size="19" fill="#71682f">Stored flora_data</text>
+<text x="427" y="439" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Permanent prepared rows</text>
+</a>
+<a href="../index.html#view=outputs&amp;node=output-downloads" data-node="output-downloads" aria-label="Download full CSV: open README"><rect x="810" y="320" width="260" height="125" rx="5" fill="#edf3f4" stroke="#bbc8b7"/><rect x="810" y="332" width="3" height="101" fill="#416b83"/>
+<text x="827" y="349" font-family="Georgia,serif" font-size="19" fill="#416b83">Download full CSV</text>
+<text x="827" y="379" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Current stored active rows</text>
+</a>
+<a href="../index.html#view=outputs&amp;node=output-api" data-node="output-api" aria-label="Public API: open README"><rect x="810" y="500" width="260" height="125" rx="5" fill="#edf3f4" stroke="#bbc8b7"/><rect x="810" y="512" width="3" height="101" fill="#416b83"/>
+<text x="827" y="529" font-family="Georgia,serif" font-size="19" fill="#416b83">Public API</text>
+<text x="827" y="559" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Stored rows; HTTP caching</text>
+</a>
+<a href="../index.html#view=outputs&amp;node=output-publication" data-node="output-publication" aria-label="GitHub release: open README"><rect x="1110" y="380" width="270" height="125" rx="5" fill="#edf3f4" stroke="#bbc8b7"/><rect x="1110" y="392" width="3" height="101" fill="#416b83"/>
+<text x="1127" y="409" font-family="Georgia,serif" font-size="19" fill="#416b83">GitHub release</text>
+<text x="1127" y="439" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">output/flora.csv + manifest</text>
+</a>
+<a href="../index.html#view=outputs&amp;node=output-downloads" data-node="output-downloads" aria-label="This run&#x27;s CSV: open README"><rect x="40" y="680" width="260" height="125" rx="5" fill="#edf3f4" stroke="#bbc8b7"/><rect x="40" y="692" width="3" height="101" fill="#416b83"/>
+<text x="57" y="709" font-family="Georgia,serif" font-size="19" fill="#416b83">This run&#x27;s CSV</text>
+<text x="57" y="739" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">source_sync_jobs + reports</text>
+</a>
+<a href="../index.html#view=outputs&amp;node=output-validated-export" data-node="output-validated-export" aria-label="Validated-only CSV: open README"><rect x="410" y="680" width="290" height="125" rx="5" fill="#edf3f4" stroke="#bbc8b7"/><rect x="410" y="692" width="3" height="101" fill="#416b83"/>
+<text x="427" y="709" font-family="Georgia,serif" font-size="19" fill="#416b83">Validated-only CSV</text>
+<text x="427" y="739" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">data/validated_export.csv</text>
+</a>
+<a href="../index.html#view=outputs&amp;node=process-save" data-node="process-save" aria-label="Save a field correction: open README"><rect x="810" y="150" width="340" height="108" rx="5" fill="#faf0e6" stroke="#bbc8b7"/><rect x="810" y="162" width="3" height="84" fill="#a75032"/>
+<text x="827" y="179" font-family="Georgia,serif" font-size="19" fill="#a75032">Save a field correction</text>
+<text x="827" y="209" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Updates eligible stored row</text>
+</a>
+<line x1="36" y1="827" x2="1384" y2="827" stroke="#d4dacc"/><text x="36" y="850" font-family="Consolas,monospace" font-size="10" fill="#657267">FLoRA FIELD GUIDE  /  29 OCTOBER 2026  /  CODE 2f3a89c</text><text x="1384" y="850" text-anchor="end" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267">Click a box for its README and code.</text></svg>

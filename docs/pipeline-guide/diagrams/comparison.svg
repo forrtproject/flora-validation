@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="comparison-title comparison-desc">
+<title id="comparison-title">Source Records and FLoRA: inputs, current view, stored output</title><desc id="comparison-desc">Source Records preserves the imported inputs. FLoRA combines and corrects them. Full CSV and API read the stored dataset. Each box links to its explanatory README.</desc>
+<defs><marker id="comparison-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#78877a"/></marker></defs>
+<rect width="1600" height="900" fill="#fffcf5"/>
+<text x="36" y="42" font-family="Georgia,serif" font-size="25" fill="#263c31">Source Records and FLoRA: inputs, current view, stored output</text>
+<text x="36" y="68" font-family="Segoe UI,sans-serif" font-size="13" fill="#657267">Source Records preserves the imported inputs. FLoRA combines and corrects them. Full CSV and API read the stored dataset.</text>
+<text x="40" y="125" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">01 · INSPECT THE INPUT</text>
+<text x="620" y="125" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">02 · APPLY THE RULES</text>
+<text x="1200" y="125" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">03 · REVIEW THE COMBINED VIEW</text>
+<text x="40" y="770" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">THE TABS MAY HAVE DIFFERENT COUNTS: SEVERAL INPUTS CAN COMBINE INTO ONE RECORD; EXCLUSIONS CAN REMOVE OTHERS.</text>
+<text x="40" y="803" font-family="Consolas,monospace" font-size="10" letter-spacing="1.5" fill="#657267">REFRESH RELOADS A VIEW. RUN PIPELINE REBUILDS THE FULL STORED DATASET. GITHUB PUBLICATION IS A SEPARATE STEP.</text>
+<polyline points="400,222 620,222" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#comparison-arrow)"/>
+<text x="435" y="206" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">read imported inputs</text>
+<polyline points="980,222 1200,222" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#comparison-arrow)"/>
+<text x="1000" y="206" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">build / reuse current view</text>
+<polyline points="1380,285 1380,355" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#comparison-arrow)"/>
+<text x="1393" y="326" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">Save changes</text>
+<polyline points="220,285 220,580" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#comparison-arrow)"/>
+<text x="234" y="446" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">Source Records button</text>
+<polyline points="400,642 620,642" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#comparison-arrow)"/>
+<text x="448" y="625" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">prepare + commit</text>
+<polyline points="980,642 1200,642" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#comparison-arrow)"/>
+<text x="1038" y="625" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">read stored output</text>
+<polyline points="1380,480 1380,527 800,527 800,580" fill="none" stroke="#78877a" stroke-width="1.6" stroke-linejoin="round" marker-end="url(#comparison-arrow)" stroke-dasharray="5 5"/>
+<text x="870" y="514" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267" paint-order="stroke" stroke="#fffcf5" stroke-width="5">Save updates only eligible existing stored rows</text>
+<a href="../index.html#view=comparison&amp;node=admin-sources" data-node="admin-sources" aria-label="Source Records tab: open README"><rect x="40" y="160" width="360" height="125" rx="5" fill="#f4f0df" stroke="#bbc8b7"/><rect x="40" y="172" width="3" height="101" fill="#71682f"/>
+<text x="57" y="189" font-family="Georgia,serif" font-size="19" fill="#71682f">Source Records tab</text>
+<text x="57" y="219" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">source_records / original imported values</text>
+</a>
+<a href="../index.html#view=comparison&amp;node=process-transform" data-node="process-transform" aria-label="Derive current records: open README"><rect x="620" y="160" width="360" height="125" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="620" y="172" width="3" height="101" fill="#284e3e"/>
+<text x="637" y="189" font-family="Georgia,serif" font-size="19" fill="#284e3e">Derive current records</text>
+<text x="637" y="219" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Rules / duplicates / metadata / identities</text>
+</a>
+<a href="../index.html#view=comparison&amp;node=admin-flora" data-node="admin-flora" aria-label="FLoRA tab: open README"><rect x="1200" y="160" width="360" height="125" rx="5" fill="#faf0e6" stroke="#bbc8b7"/><rect x="1200" y="172" width="3" height="101" fill="#a75032"/>
+<text x="1217" y="189" font-family="Georgia,serif" font-size="19" fill="#a75032">FLoRA tab</text>
+<text x="1217" y="219" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Current combined view + saved corrections</text>
+</a>
+<a href="../index.html#view=comparison&amp;node=process-save" data-node="process-save" aria-label="Save a field correction: open README"><rect x="1200" y="355" width="360" height="125" rx="5" fill="#faf0e6" stroke="#bbc8b7"/><rect x="1200" y="367" width="3" height="101" fill="#a75032"/>
+<text x="1217" y="384" font-family="Georgia,serif" font-size="19" fill="#a75032">Save a field correction</text>
+<text x="1217" y="414" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">flora_record_changes / versioned history</text>
+</a>
+<a href="../index.html#view=comparison&amp;node=process-queue" data-node="process-queue" aria-label="Run pipeline: open README"><rect x="40" y="580" width="360" height="125" rx="5" fill="#f1f4eb" stroke="#bbc8b7"/><rect x="40" y="592" width="3" height="101" fill="#284e3e"/>
+<text x="57" y="609" font-family="Georgia,serif" font-size="19" fill="#284e3e">Run pipeline</text>
+<text x="57" y="639" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Refresh inputs, build and check the CSV</text>
+</a>
+<a href="../index.html#view=comparison&amp;node=storage-dataset" data-node="storage-dataset" aria-label="Stored dataset: open README"><rect x="620" y="580" width="360" height="125" rx="5" fill="#f4f0df" stroke="#bbc8b7"/><rect x="620" y="592" width="3" height="101" fill="#71682f"/>
+<text x="637" y="609" font-family="Georgia,serif" font-size="19" fill="#71682f">Stored dataset</text>
+<text x="637" y="639" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">flora_data / snapshot + eligible corrections</text>
+</a>
+<a href="../index.html#view=comparison&amp;node=output-downloads" data-node="output-downloads" aria-label="Full CSV + public API: open README"><rect x="1200" y="580" width="360" height="125" rx="5" fill="#edf3f4" stroke="#bbc8b7"/><rect x="1200" y="592" width="3" height="101" fill="#416b83"/>
+<text x="1217" y="609" font-family="Georgia,serif" font-size="19" fill="#416b83">Full CSV + public API</text>
+<text x="1217" y="639" font-family="Segoe UI,sans-serif" font-size="11.5" fill="#657267">Read the active stored rows</text>
+</a>
+<line x1="36" y1="857" x2="1564" y2="857" stroke="#d4dacc"/><text x="36" y="880" font-family="Consolas,monospace" font-size="10" fill="#657267">FLoRA FIELD GUIDE  /  29 OCTOBER 2026  /  CODE 2f3a89c</text><text x="1564" y="880" text-anchor="end" font-family="Segoe UI,sans-serif" font-size="11" fill="#657267">Click a box for its README and code.</text></svg>
