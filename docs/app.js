@@ -8402,8 +8402,11 @@ function renderAdminAdmins(admins, validators = []) {
                  ${a.trusted ? "⭐ Trusted" : "—"}
                </button>`
             : a.trusted ? '<span style="color:var(--muted);font-size:0.85rem">⭐ Trusted</span>' : '<span style="color:var(--muted)">—</span>';
+          // Never on your own row: the server refuses it too, so a hijacked
+          // session cannot mint itself a password.
           const actions = _adminTrusted && !isYou
-            ? `<button class="ghost-btn admin-delete-admin-btn" data-id="${a.id}" style="color:var(--muted);font-size:0.8rem">Remove</button>`
+            ? `<button class="ghost-btn admin-send-link-btn" data-id="${a.id}" style="font-size:0.8rem">${a.has_password === false ? "Resend invite" : "Send reset link"}</button>
+               <button class="ghost-btn admin-delete-admin-btn" data-id="${a.id}" style="color:var(--muted);font-size:0.8rem">Remove</button>`
             : "";
           // Nobody sets the link on their own account: another trusted admin does
           // (the server refuses it too), so nobody can lift the rule from themselves.
@@ -8424,7 +8427,7 @@ function renderAdminAdmins(admins, validators = []) {
                 ? ` <span class="chk-na-note">likely ${escapeHtml(a.suggested_validator_handle)}</span>` : "");
           return `<tr>
             <td class="admin-cell-num">${i + 1}</td>
-            <td><strong>${a.handle}</strong>${isYou ? ' <span style="color:var(--muted);font-size:0.8rem">(you)</span>' : ""}</td>
+            <td><strong>${escapeHtml(a.handle)}</strong>${isYou ? ' <span style="color:var(--muted);font-size:0.8rem">(you)</span>' : ""}</td>
             <td>${trustedCell}</td>
             <td class="admin-link-cell">${linkCell}</td>
             <td style="color:var(--muted);font-size:0.8rem">${a.joined || "—"}</td>
@@ -8466,6 +8469,11 @@ function renderAdminAdmins(admins, validators = []) {
     };
   });
 
+  const adminsById = new Map(admins.map((a) => [String(a.id), a]));
+  list.querySelectorAll(".admin-send-link-btn").forEach((btn) => {
+    btn.onclick = () => sendAdminLink(adminsById.get(btn.dataset.id), btn);
+  });
+
   list.querySelectorAll(".admin-delete-admin-btn").forEach((btn) => {
     btn.onclick = async () => {
       const confirmed = await showConfirm("Remove this admin account? They will no longer be able to sign in.");
@@ -8486,6 +8494,81 @@ function renderAdminAdmins(admins, validators = []) {
   if (addForm) addForm.style.display = _adminTrusted ? "" : "none";
   const noTrustMsg = $("#admin-no-trust-msg");
   if (noTrustMsg) noTrustMsg.style.display = _adminTrusted ? "none" : "";
+}
+
+/* A trusted admin sends another admin a password reset link, or a fresh
+   invitation when the account has never had a password. The server sends it
+   only to the address on file, so nobody can redirect someone else's recovery.
+   An address is asked for here only when the account has none, and the server
+   saves it to the account only once the link is used from that inbox. */
+async function sendAdminLink(a, btn) {
+  if (!a) return;
+  const invite = a.has_password === false;
+  const what = invite ? "a fresh invitation" : "a password reset link";
+  const title = invite ? "Resend invitation" : "Send reset link";
+  const buttons = [
+    { label: "Cancel", value: false },
+    { label: "Send", value: true, primary: true },
+  ];
+  let email = null;
+  if (a.has_email) {
+    const ok = await showDialog({
+      title,
+      message: `Send ${what} for <strong>${escapeHtml(a.handle)}</strong> to ` +
+               `<strong>${escapeHtml(a.email || "the address on file")}</strong>? ` +
+               "Any earlier link of this kind stops working.",
+      rawHtml: true,
+      buttons,
+      layout: "row",
+    });
+    if (!ok) return;
+  } else {
+    const pending = showDialog({
+      title,
+      message: `
+        <p style="text-align:left;margin-bottom:0.75rem;font-size:0.9rem"><strong>${escapeHtml(a.handle)}</strong> has no email address on file. Where should ${what} go?</p>
+        <label for="admin-link-email" style="display:block;text-align:left;margin-bottom:0.25rem;font-size:0.85rem;color:var(--ink-soft)">Email</label>
+        <input id="admin-link-email" type="email" autocomplete="off" style="width:100%;box-sizing:border-box;padding:0.45rem 0.6rem;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:0.9rem" placeholder="name@example.org">
+        <p style="text-align:left;margin-top:0.5rem;font-size:0.8rem;color:var(--muted)">It is saved to the account only once the link is used, so a typo can be fixed by sending again.</p>`,
+      rawHtml: true,
+      buttons,
+      layout: "row",
+    });
+    // The dialog is in the page as soon as showDialog returns; Enter sends.
+    const input = $("#admin-link-email");
+    if (input) {
+      input.focus();
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") $("#dialog-buttons .btn-primary")?.click();
+      });
+    }
+    if (!(await pending)) return;
+    email = ($("#admin-link-email")?.value || "").trim();
+    if (!email) { await showAlert("Enter an email address to send the link to."); return; }
+  }
+
+  btn.disabled = true;
+  try {
+    const result = await adminApi("/invite/resend", "POST",
+                                  email ? { admin_id: a.id, email } : { admin_id: a.id });
+    // showToast and a plain showDialog write textContent, so nothing is escaped
+    // there; escaping would print the entities.
+    if (result.emailed) {
+      showToast(`${invite ? "Invitation" : "Reset link"} sent to ${result.email}. ` +
+                `It expires in ${result.expires_in_hours} hours.`);
+    } else {
+      // The server could not send the mail, so it handed the link back once.
+      await showDialog({
+        title: invite ? "Invitation could not be emailed" : "Reset link could not be emailed",
+        message: `${result.warning}\n\n${result.link_url}`,
+        buttons: [{ label: "Copy and close", value: true, primary: true }],
+      });
+      try { await navigator.clipboard.writeText(result.link_url); } catch {}
+    }
+  } catch (e) {
+    await showAlert("Error: " + e.message);
+  }
+  btn.disabled = false;
 }
 
 /* ---------- Admin broadcast banner ---------- */

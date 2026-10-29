@@ -1503,10 +1503,13 @@ CREATE TABLE IF NOT EXISTS flora_dataset_history (
 );
 -- Where a day's total_rows came from: this pipeline's run, or the row count of the
 -- flora.csv published that day in forrtproject/fred-data, for the days before this
--- pipeline existed (backfill_flora_history.py): 'flora.csv' for output/flora.csv
--- from the validator's launch, 'fred-data' for the old fred-data pipeline's root
--- flora.csv, 11 Nov 2025 - 13 Jan 2026. NULL on a row with a total means a pipeline
--- run recorded before the column existed.
+-- pipeline existed (backfill_flora_history.py). 'fred-data' is the old fred-data
+-- pipeline's root flora.csv, 11 Nov 2025 - 13 Jan 2026. 'flora.csv' is
+-- output/flora.csv, from its first version on 20 Jan 2026: before the launch, from
+-- the versions kept in pull request 102's history (to 15 Mar 2026) and then the
+-- update log in fred-data's README.md (16 Mar - 20 May 2026); from the validator's
+-- launch, from fred-data's git history. 14-19 Jan 2026 had no file and no count.
+-- NULL on a row with a total means a pipeline run recorded before the column existed.
 ALTER TABLE flora_dataset_history ADD COLUMN IF NOT EXISTS measured_by TEXT
     CHECK (measured_by IN ('pipeline', 'flora.csv', 'fred-data'));
 -- 'fred-data' and the NULL split came later. Changed only while the table lacks

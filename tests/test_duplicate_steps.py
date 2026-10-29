@@ -222,8 +222,37 @@ def test_a_reproductions_axes_come_whole_and_its_outcome_and_quote_follow():
     assert (row["outcome_robustness"], row["outcome_robustness_quote"],
             row["out_quote_robust_source"]) == ("robust", "Robust to other choices.", "full text")
     assert row["outcome"] == "computationally reproducible, robust"
-    assert row["outcome_quote"] == "The code ran. || Robust to other choices."
-    assert row["outcome_quote_source"] == "abstract || full text"
+    assert row["outcome_quote"] == ("Computational: The code ran. "
+                                    "|| Robustness: Robust to other choices.")
+    assert row["outcome_quote_source"] == "Computational: abstract || Robustness: full text"
+
+
+def test_a_reproduction_merged_at_5b_publishes_the_quotes_of_its_axes():
+    """The pair merge pastes every row's quote together but takes the axes whole: the
+    quote of the computational axis it dropped must not be published beside it."""
+    built = build(reproduction("REPRO-000001", url_r="https://osf.io/report",
+                               outcome_computation="computationally reproducible",
+                               outcome_computational_quote="The code ran.",
+                               out_quote_computational_source="abstract"),
+                  reproduction("REPRO-000002", outcome_computation="computational issues",
+                               outcome_computational_quote="The code failed.",
+                               out_quote_computational_source="full text",
+                               outcome_robustness="robust", outcome_robustness_quote="Robust.",
+                               out_quote_robust_source="full text"))
+    [row] = built.to_dict("records")
+    assert (row["outcome_computational_quote"], row["outcome_robustness_quote"]) \
+        == ("The code ran.", "Robust.")
+    assert row["outcome_quote"] == "Computational: The code ran. || Robustness: Robust."
+    assert row["outcome_quote_source"] == "Computational: abstract || Robustness: full text"
+
+
+def test_double_encoded_metadata_is_published_decoded():
+    built = build(source("REPL-000001", outcome="successful"), metadata={REPORT: {
+        "title": "Replication of Rich &amp;amp; Gureckis (2018)",
+        "oa_url": "https://aisel.aisnet.org/viewcontent.cgi?article=1063&amp;amp;context=trr"}})
+    [row] = built.to_dict("records")
+    assert row["title_r"] == "Replication of Rich & Gureckis (2018)"
+    assert row["oa_url_r"] == "https://aisel.aisnet.org/viewcontent.cgi?article=1063&context=trr"
 
 
 def test_the_website_record_still_wins_over_what_the_others_add():

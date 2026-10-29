@@ -146,7 +146,7 @@ def test_values_computed_from_a_corrected_field_follow_it():
     assert out.loc["REPL-1", "author_overlap"] == 1
     assert out.loc["REPL-1", "author_overlap_pct"] == 100.0
     assert out.loc["REPR-1", "outcome"] == "computationally reproducible, robust"
-    assert out.loc["REPR-1", "outcome_quote"] == "It ran. || Robust."
+    assert out.loc["REPR-1", "outcome_quote"] == "Computational: It ran. || Robustness: Robust."
 
 
 def test_a_correction_the_record_type_does_not_allow_is_ignored():

@@ -32,6 +32,96 @@ def test_double_encoded_markup_is_stripped_too():
     assert "<" not in ts.clean_text("A &amp;lt;i&amp;gt;title&amp;lt;/i&amp;gt;")
 
 
+@pytest.mark.parametrize(("raw", "expected"), [
+    ("Rich &amp;amp; Gureckis (2018)", "Rich & Gureckis (2018)"),
+    ("A&amp;nbsp;replication study", "A replication study"),
+    ("Baron and Hershey&amp;rsquo;s (1988)", "Baron and Hershey’s (1988)"),
+    ("Freie Universit&amp;#x0E4;t Berlin", "Freie Universität Berlin"),
+    ("Rich &amp;Amp; Gureckis", "Rich & Gureckis"),
+])
+def test_double_encoded_entities_are_decoded(raw, expected):
+    """OpenAlex and the validated set double-encode; one unescape published
+    "Rich &amp; Gureckis" in 14 replication titles."""
+    assert ts.clean_text(raw) == expected
+
+
+@pytest.mark.parametrize(("raw", "expected"), [
+    ("Smith &amp;notes on &amp;copying", "Smith &notes on &copying"),
+    ("Smith &amp;amp;notes", "Smith &notes"),
+    ("an &amp;region; of text", "an &region; of text"),
+])
+def test_decoding_leaves_text_that_only_looks_like_an_entity(raw, expected):
+    """html.unescape reads "&notes" as ¬es: only whole entities are decoded."""
+    assert ts.clean_text(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["Smith &notes on &copying", "Rich & Gureckis",
+                                 "the author’s <claim>", "p < .05 when d > 0.5"])
+def test_cleaning_clean_text_again_changes_nothing(raw):
+    """A FLoRA tab correction is cleaned as it is saved (flora_edits), so text the
+    pipeline already cleaned must come through unchanged."""
+    once = ts.clean_text(raw)
+    assert ts.clean_text(once) == once
+
+
+@pytest.mark.parametrize(("raw", "expected"), [
+    ("effects (p &amp;lt; .05) were larger when d &amp;gt; 0.5",
+     "effects (p < .05) were larger when d > 0.5"),
+    ("effects (p &lt; .05) were larger when d &gt; 0.5",
+     "effects (p < .05) were larger when d > 0.5"),
+    ("A &#38;lt;i&#38;gt;title&#38;lt;/i&#38;gt;", "A title"),
+])
+def test_a_decoded_comparison_keeps_its_text(raw, expected):
+    """Only what looks like a tag goes once decoded; "< .05) ... d >" is not one."""
+    assert ts.clean_text(raw) == expected
+
+
+def test_a_double_encoded_link_is_decoded():
+    assert ts.unescape_entities("https://aisel.aisnet.org/cgi/viewcontent.cgi"
+                                "?article=1063&amp;amp;context=trr") \
+        == "https://aisel.aisnet.org/cgi/viewcontent.cgi?article=1063&context=trr"
+
+
+@pytest.mark.parametrize("url", ["https://x.org/?a=1&region=us",
+                                 "https://x.org/?a=1&copy=2&not=3"])
+def test_a_links_query_string_is_not_read_as_entities(url):
+    assert ts.unescape_entities(url) == url
+    assert ts.unescape_entities(url.replace("&", "&amp;")) == url
+
+
+# ── reproduction quotes ───────────────────────────────────────────────────────
+
+def _reproduction(computational, robustness):
+    return {"type": "reproduction",
+            "outcome_computational_quote": computational, "outcome_robustness_quote": robustness,
+            "out_quote_computational_source": computational and "abstract",
+            "out_quote_robust_source": robustness and "full text"}
+
+
+def test_a_reproductions_quotes_are_labelled_with_their_axis():
+    """As fred-data's flora.csv labelled them, which its readers rely on."""
+    row = _reproduction("The code ran.", "Robust to other choices.")
+    assert ts.derive_quote(row) == ("Computational: The code ran. "
+                                    "|| Robustness: Robust to other choices.")
+    assert ts.derive_quote_source(row) == "Computational: abstract || Robustness: full text"
+
+
+@pytest.mark.parametrize(("computational", "robustness", "expected"), [
+    ("The code ran.", None, "Computational: The code ran."),
+    (None, "Robust.", "Robustness: Robust."),
+    ("Both held.", "Both held.", "Both held."),
+    (None, None, None),
+    (float("nan"), "  ", None),
+])
+def test_one_quote_is_labelled_and_an_identical_pair_is_not(computational, robustness, expected):
+    assert ts.derive_quote(_reproduction(computational, robustness)) == expected
+
+
+def test_a_replications_quote_is_left_as_it_is():
+    assert ts.derive_quote({"type": "replication", "outcome_quote": "It replicated."}) \
+        == "It replicated."
+
+
 def test_jats_math_blocks_go():
     assert ts.clean_text("Effect <mml:math><mml:mi>d</mml:mi></mml:math> size") \
         == "Effect d size"

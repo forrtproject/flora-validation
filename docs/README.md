@@ -1184,10 +1184,19 @@ the trusted administrator who triggered it, so an invitee is never stranded by a
 mail outage. `python admin_password.py --handle NAME --invite` prints one from
 the command line for the same reason.
 
+From the Admins tab, a trusted administrator can send another administrator a
+reset link (or a fresh invitation, if that account has no password yet). It goes
+only to the address on file; a different `email` in the request is refused, so
+nobody can redirect someone else's recovery to their own inbox. An account with
+no address on file needs one in the request. That address goes on the link but
+is written to `admins.email` only when the link is redeemed, which is the first
+proof it reaches its owner, and only if no other admin holds it by then. Nobody
+can send a link for their own account, and the reset email names the sender.
+
 | Endpoint | Auth | Purpose |
 | --- | --- | --- |
 | `POST /api/admin/admins` | trusted admin | Create an account and email its invitation |
-| `POST /api/admin/invite/resend` | trusted admin | Replace an outstanding link |
+| `POST /api/admin/invite/resend` | trusted admin | Send another admin a reset link (or a fresh invitation if they have no password yet), replacing the outstanding one |
 | `GET /api/admin/auth-link/{token}` | public | Name the account a live link belongs to |
 | `POST /api/admin/auth-link/redeem` | public | Spend a link to set the password |
 
@@ -1629,6 +1638,7 @@ the caller. State-changing requests are refused unless they originate from
 | POST | `/api/admin/admins` | Trusted-admin account creation |
 | DELETE | `/api/admin/admins/{admin_id}` | Trusted-admin account deletion |
 | POST | `/api/admin/admins/{admin_id}/toggle-trusted` | Toggle another admin's trust |
+| POST | `/api/admin/invite/resend` | Send another admin a reset link or fresh invitation (`admin_id`, plus `email` only when none is on file) |
 | GET | `/api/admin/entries` | Filtered/paginated validation entry grid |
 | GET | `/api/admin/entries/{record_id}` | Full review detail and queue rows |
 | POST | `/api/admin/entries/{record_id}/approve` | Approve pending consensus |

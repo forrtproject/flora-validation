@@ -82,10 +82,14 @@ def _now():
 class FakeAdminCursor:
     """Answers the statements the admin credential paths actually issue."""
 
-    def __init__(self, rows, has_password_column=True, links=None):
+    def __init__(self, rows, has_password_column=True, links=None,
+                 email_update_raises=False):
         self.rows = rows
         self.links = links if links is not None else []
         self.has_password_column = has_password_column
+        # Stands in for a concurrent redemption claiming the same address
+        # between the NOT EXISTS check and the write.
+        self.email_update_raises = email_update_raises
         self.executed = []
         self.events = []
         self._one = None
@@ -96,11 +100,15 @@ class FakeAdminCursor:
     def _links_sql(self, sql, params):
         if "SET status = 'revoked'" in sql:
             # _issue now names the subject kind too, so links for validators and
-            # admins cannot collide on the same id.
-            subject_kind, subject_id, purpose = params
+            # admins cannot collide on the same id. Redemption passes only the
+            # subject: it retires every purpose at once.
+            if len(params) == 1:
+                subject_id, purpose = params[0], None
+            else:
+                subject_kind, subject_id, purpose = params
             for link in self.links:
                 if (link["subject_id"] == subject_id
-                        and link["purpose"] == purpose
+                        and purpose in (None, link["purpose"])
                         and link["status"] == "pending"):
                     link["status"] = "revoked"
             return True
@@ -125,7 +133,8 @@ class FakeAdminCursor:
                     link["status"] = "used"
                     link["used_at"] = _now()
                     self._one = {"subject_id": link["subject_id"],
-                                 "purpose": link["purpose"]}
+                                 "purpose": link["purpose"],
+                                 "email": link["email"]}
                     return True
             self._one = None
             return True
@@ -161,6 +170,39 @@ class FakeAdminCursor:
         if "auth_links" in sql:
             if self._links_sql(sql, params):
                 return
+
+        if sql.startswith(("SAVEPOINT", "RELEASE SAVEPOINT", "ROLLBACK TO SAVEPOINT")):
+            return
+        if "UPDATE admins SET email = %s WHERE id = %s AND email IS NULL" in sql:
+            if self.email_update_raises:
+                import psycopg2.errors
+                raise psycopg2.errors.UniqueViolation("duplicate email")
+            email, row_id = params[0], params[1]
+            taken = any((r.get("email") or "").lower() == email.lower()
+                        and r["id"] != row_id for r in self.rows)
+            row = next((r for r in self.rows
+                        if r["id"] == row_id and r.get("email") is None), None)
+            if row and not taken:
+                row["email"] = email
+                self._one = {"id": row_id}
+            else:
+                self._one = None
+            return
+        if "SELECT 1 FROM admins WHERE lower(email) = %s AND id <> %s" in sql:
+            email, row_id = params
+            self._one = next(
+                ({"?column?": 1} for r in self.rows
+                 if (r.get("email") or "").lower() == email and r["id"] != row_id),
+                None,
+            )
+            return
+        if "FROM admins a LEFT JOIN validators v" in sql:
+            self._all = [{
+                "id": r["id"], "handle": r["handle"], "trusted": r.get("trusted"),
+                "email": r.get("email"), "has_email": r.get("email") is not None,
+                "has_password": r.get("password_hash") is not None,
+            } for r in self.rows]
+            return
 
         if "UPDATE admins SET password_hash = %s WHERE id = %s RETURNING handle" in sql:
             new_hash, row_id = params
@@ -442,6 +484,31 @@ def _create_admin(app_module, cursor, handle="newadmin", email="new@example.org"
         )
 
 
+# The fake numbers new accounts from 1, which is TRUSTED_ADMIN's id too, so link
+# tests send as a trusted admin whose own row is never the one acted on.
+SENDER = {"id": 100, "handle": "Hamid", "trusted": True}
+
+
+def _resend(app_module, cursor, admin_id, email=None, caller=SENDER, sender=None):
+    """Ask for a link. `sender` is a mock Resend client; without one, mail is off."""
+    req = app_module.AdminLinkResendRequest(admin_id=admin_id, email=email)
+    with _patch_db(app_module, cursor), \
+         patch.object(app_module, "RESEND_API_KEY", "re_live_key" if sender else ""), \
+         patch.object(app_module, "resend", sender or MagicMock()):
+        return app_module.resend_admin_invite(req, _fake_request(), admin=caller)
+
+
+def _existing_admin(admin_id=2, handle="luke", email=None, has_password=True):
+    # Never verified by these paths, only tested for presence.
+    return {"id": admin_id, "handle": handle, "email": email, "trusted": False,
+            "password_hash": "$argon2id$existing" if has_password else None}
+
+
+def _audited(cursor, action):
+    import json
+    return [json.loads(params[-1]) for params in cursor.events if params[0] == action]
+
+
 def test_an_invited_admin_has_no_password_until_they_choose_one(app_module):
     """The inviter never picks the credential, so it exists only for its owner."""
     cursor = FakeAdminCursor([])
@@ -551,10 +618,7 @@ def test_reissuing_an_invite_kills_the_previous_one(app_module):
     cursor = FakeAdminCursor([])
     first = _create_admin(app_module, cursor)["invite_url"].split("invite=")[1]
 
-    with _patch_db(app_module, cursor), \
-         patch.object(app_module, "RESEND_API_KEY", ""):
-        again = app_module.resend_admin_invite(_fake_request(), admin_id=1,
-                                       admin=TRUSTED_ADMIN)
+    again = _resend(app_module, cursor, 1)
     second = again["link_url"].split("invite=")[1]
 
     assert first != second
@@ -566,6 +630,34 @@ def test_reissuing_an_invite_kills_the_previous_one(app_module):
             )
         app_module.redeem_auth_link(
                 MagicMock(token=second, password="a-brand-new-password"),
+                _fake_request(),
+            )
+    assert admin_auth.verify_password(
+        cursor.rows[0]["password_hash"], "a-brand-new-password"
+    )
+
+
+def test_redeeming_any_link_retires_the_accounts_other_links(app_module):
+    """An invite left pending when a password was set elsewhere dies with the reset."""
+    from fastapi import HTTPException
+
+    cursor = FakeAdminCursor([])
+    invite = _create_admin(app_module, cursor)["invite_url"].split("invite=")[1]
+    # A password set from the CLI, which issues no link and revokes none.
+    cursor.rows[0]["password_hash"] = admin_auth.hash_password("set-from-the-cli")
+
+    resent = _resend(app_module, cursor, 1)
+    assert resent["purpose"] == "admin_reset"
+    reset = resent["link_url"].split("reset=")[1]
+
+    with _patch_db(app_module, cursor):
+        app_module.redeem_auth_link(
+            MagicMock(token=reset, password="a-brand-new-password"),
+            _fake_request(),
+        )
+        with pytest.raises(HTTPException):
+            app_module.redeem_auth_link(
+                MagicMock(token=invite, password="someone-elses-password"),
                 _fake_request(),
             )
     assert admin_auth.verify_password(
@@ -623,6 +715,213 @@ def test_only_a_trusted_admin_may_invite(app_module):
             )
     assert raised.value.status_code == 403
     assert cursor.rows == []
+
+
+# ---------------------------------------------------------------------------
+# Sending another administrator a reset link or a fresh invitation
+# ---------------------------------------------------------------------------
+
+def test_a_reset_link_goes_to_the_email_on_file_and_names_the_sender(app_module):
+    cursor = FakeAdminCursor([_existing_admin(email="luke@example.org")])
+    sender = MagicMock()
+
+    # The same address in another case and with stray spaces is not a mismatch.
+    result = _resend(app_module, cursor, 2, email=" Luke@Example.org ", sender=sender)
+
+    assert result["emailed"] is True and "link_url" not in result
+    assert result["purpose"] == auth_links.PURPOSE_RESET
+    assert result["email"] == "luke@example.org"
+    sent = sender.Emails.send.call_args[0][0]
+    assert sent["to"] == ["luke@example.org"]
+    # The recipient never asked, so the email says who did.
+    assert "Hamid sent you a link" in sent["html"]
+    assert "Hamid sent you a link" in sent["text"]
+    assert cursor.links[0]["email"] == "luke@example.org"
+    assert _audited(cursor, "admin.invite_resent") == [{
+        "purpose": auth_links.PURPOSE_RESET, "email": "luke@example.org",
+        "email_supplied": False,
+    }]
+
+
+def test_a_link_cannot_be_redirected_away_from_the_email_on_file(app_module):
+    """Otherwise any trusted admin could reset someone else's password."""
+    from fastapi import HTTPException
+
+    cursor = FakeAdminCursor([_existing_admin(email="luke@example.org")])
+    sender = MagicMock()
+    with pytest.raises(HTTPException) as raised:
+        _resend(app_module, cursor, 2, email="attacker@example.org", sender=sender)
+
+    assert raised.value.status_code == 400
+    assert cursor.links == []
+    assert sender.Emails.send.call_count == 0
+    assert cursor.rows[0]["email"] == "luke@example.org"
+
+
+@pytest.mark.parametrize("email", [None, "", "   "])
+def test_an_account_with_no_email_needs_one_supplied(app_module, email):
+    from fastapi import HTTPException
+
+    cursor = FakeAdminCursor([_existing_admin()])
+    with pytest.raises(HTTPException) as raised:
+        _resend(app_module, cursor, 2, email=email)
+    assert raised.value.status_code == 400
+    assert cursor.links == []
+
+
+@pytest.mark.parametrize("email", ["not-an-email", "luke@localhost", "two@@example.org"])
+def test_a_supplied_email_must_look_like_one(app_module, email):
+    from fastapi import HTTPException
+
+    cursor = FakeAdminCursor([_existing_admin()])
+    with pytest.raises(HTTPException) as raised:
+        _resend(app_module, cursor, 2, email=email)
+    assert raised.value.status_code == 400
+    assert cursor.links == []
+
+
+def test_a_supplied_email_another_admin_uses_is_refused(app_module):
+    from fastapi import HTTPException
+
+    cursor = FakeAdminCursor([
+        _existing_admin(),
+        _existing_admin(admin_id=3, handle="rohan", email="taken@example.org"),
+    ])
+    with pytest.raises(HTTPException) as raised:
+        _resend(app_module, cursor, 2, email="Taken@Example.org")
+    assert raised.value.status_code == 409
+    assert cursor.links == []
+
+
+def test_a_supplied_email_goes_on_the_link_but_not_yet_on_the_account(app_module):
+    """Unproven until redeemed, so a typo stays correctable by sending again."""
+    cursor = FakeAdminCursor([_existing_admin()])
+    sender = MagicMock()
+
+    first = _resend(app_module, cursor, 2, email=" Luke.Typo@Example.org", sender=sender)
+    assert first["email"] == "luke.typo@example.org"
+    assert sender.Emails.send.call_args[0][0]["to"] == ["luke.typo@example.org"]
+    assert cursor.rows[0]["email"] is None
+
+    # Resending to the corrected address kills the link sent to the typo.
+    second = _resend(app_module, cursor, 2, email="luke@example.org", sender=sender)
+    assert second["email"] == "luke@example.org"
+    assert [l["status"] for l in cursor.links] == ["revoked", "pending"]
+    assert cursor.links[1]["email"] == "luke@example.org"
+    assert cursor.rows[0]["email"] is None
+    assert _audited(cursor, "admin.invite_resent")[-1] == {
+        "purpose": auth_links.PURPOSE_RESET, "email": "luke@example.org",
+        "email_supplied": True,
+    }
+
+
+def test_redeeming_a_link_records_the_address_it_was_sent_to(app_module):
+    cursor = FakeAdminCursor([_existing_admin(has_password=False)])
+    result = _resend(app_module, cursor, 2, email="luke@example.org")
+    assert result["purpose"] == auth_links.PURPOSE_INVITE
+    assert "warning" in result
+    token = result["link_url"].split("invite=")[1]
+
+    with _patch_db(app_module, cursor):
+        app_module.redeem_auth_link(
+            MagicMock(token=token, password="a-brand-new-password"), _fake_request(),
+        )
+
+    assert cursor.rows[0]["email"] == "luke@example.org"
+    assert admin_auth.verify_password(cursor.rows[0]["password_hash"],
+                                      "a-brand-new-password")
+    assert _audited(cursor, "admin.password_set")[-1]["email_recorded"] is True
+
+
+@pytest.mark.parametrize("race", [False, True])
+def test_a_taken_address_never_costs_the_password_change(app_module, race):
+    """Claimed by another admin before redemption: skipped, not fatal."""
+    cursor = FakeAdminCursor([_existing_admin()], email_update_raises=race)
+    token = _resend(app_module, cursor, 2, email="luke@example.org")["link_url"] \
+        .split("reset=")[1]
+    if not race:
+        cursor.rows.append(_existing_admin(admin_id=3, handle="rohan",
+                                           email="luke@example.org"))
+
+    with _patch_db(app_module, cursor):
+        redeemed = app_module.redeem_auth_link(
+            MagicMock(token=token, password="a-brand-new-password"), _fake_request(),
+        )
+
+    assert redeemed["handle"] == "luke"
+    assert cursor.rows[0]["email"] is None
+    assert admin_auth.verify_password(cursor.rows[0]["password_hash"],
+                                      "a-brand-new-password")
+    assert _audited(cursor, "admin.password_set")[-1]["email_recorded"] is False
+    if race:
+        assert any(sql == "ROLLBACK TO SAVEPOINT admin_redeemed_email"
+                   for sql, _ in cursor.executed)
+
+
+def test_redeeming_never_overwrites_an_address_on_file(app_module):
+    cursor = FakeAdminCursor([_existing_admin(email="luke@example.org")])
+    token = _resend(app_module, cursor, 2)["link_url"].split("reset=")[1]
+    cursor.links[0]["email"] = "somewhere-else@example.org"
+
+    with _patch_db(app_module, cursor):
+        app_module.redeem_auth_link(
+            MagicMock(token=token, password="a-brand-new-password"), _fake_request(),
+        )
+    assert cursor.rows[0]["email"] == "luke@example.org"
+
+
+def test_nobody_sends_a_link_for_their_own_account(app_module):
+    from fastapi import HTTPException
+
+    cursor = FakeAdminCursor([_existing_admin(admin_id=1, handle="Hamid",
+                                              email="hamid@example.org")])
+    with pytest.raises(HTTPException) as raised:
+        _resend(app_module, cursor, 1, caller=TRUSTED_ADMIN)
+    assert raised.value.status_code == 400
+    assert cursor.links == []
+
+
+def test_only_a_trusted_admin_may_send_a_link(app_module):
+    from fastapi import HTTPException
+
+    cursor = FakeAdminCursor([_existing_admin(admin_id=3, email="luke@example.org")])
+    with pytest.raises(HTTPException) as raised:
+        _resend(app_module, cursor, 3, caller=PLAIN_ADMIN)
+    assert raised.value.status_code == 403
+    assert cursor.links == []
+
+
+def test_only_a_trusted_admin_sees_admin_email_addresses(app_module):
+    cursor = FakeAdminCursor([
+        _existing_admin(email="luke@example.org"),
+        _existing_admin(admin_id=3, handle="rohan", has_password=False),
+    ])
+    with _patch_db(app_module, cursor):
+        trusted = app_module.list_admins(admin=SENDER)["admins"]
+        plain = app_module.list_admins(admin=PLAIN_ADMIN)["admins"]
+
+    assert [a["email"] for a in trusted] == ["luke@example.org", None]
+    assert all("email" not in a for a in plain)
+    for listing in (trusted, plain):
+        assert [(a["has_email"], a["has_password"]) for a in listing] == [
+            (True, True), (False, False),
+        ]
+        assert all("password_hash" not in a for a in listing)
+
+
+def test_the_reset_email_keeps_its_wording_when_nobody_is_named():
+    from email_templates import admin_reset_email
+
+    plain = admin_reset_email("luke", "https://example.org/?reset=t", 2)
+    assert plain["text"].startswith("Set a new password for luke.")
+    assert "Tell the team" in plain["html"]
+    assert "sent you a link" not in plain["text"]
+
+    named = admin_reset_email("luke", "https://example.org/?reset=t", 2,
+                              requested_by="Hamid")
+    assert named["text"].startswith("Hamid sent you a link to set a new password for luke.")
+    assert "Check with Hamid" in named["html"]
+    assert "Didn’t ask for this" not in named["text"]
 
 
 def test_no_code_path_writes_a_plaintext_admin_password():

@@ -454,7 +454,8 @@ def test_a_reproduction_is_corrected_through_its_axes(local_database, offline):
     with local_database, local_database.cursor(cursor_factory=RealDictCursor) as cur:
         record = flora_service.get_record(cur, "REPR-000001")
     assert record["outcome"] == "computationally reproducible, robust"
-    assert record["outcome_quote"] == "The code ran. || Robust to every check."
+    assert record["outcome_quote"] == ("Computational: The code ran. "
+                                       "|| Robustness: Robust to every check.")
 
 
 def test_the_source_panel_points_at_the_flora_record_to_correct(seeded):

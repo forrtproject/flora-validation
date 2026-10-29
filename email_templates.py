@@ -227,11 +227,31 @@ def admin_invite_email(handle: str, url: str, hours: int, inviter: str | None = 
     }
 
 
-def admin_reset_email(handle: str, url: str, hours: int) -> dict:
-    """Recovery link for an administrator who cannot sign in."""
+def admin_reset_email(handle: str, url: str, hours: int,
+                      requested_by: str | None = None) -> dict:
+    """Recovery link for an administrator who cannot sign in.
+
+    requested_by names the administrator who sent it. The recipient did not ask
+    for that link, and an unasked "reset your password" email from nobody in
+    particular is what phishing looks like, so the copy says who sent it and
+    that it is fine to check with them before using it.
+    """
+    if requested_by:
+        heading = f"{requested_by} sent you a link to set a new password for {handle}."
+        caution = (
+            f"Not expecting this? Check with {requested_by} or the team before "
+            f"using it. Your account is unchanged and the link will lapse."
+        )
+        footnote = caution
+    else:
+        heading = f"Set a new password for {handle}."
+        caution = (
+            "Didn\u2019t ask for this? Your account is unchanged and the link will lapse."
+        )
+        footnote = f"{caution} Tell the team so the request can be looked into."
     body = "".join([
         f'<p style="margin:0 0 20px;font-size:16px;font-weight:600;color:{INK};">'
-        f"Set a new password for {handle}.</p>",
+        f"{heading}</p>",
         _paragraph(
             "Use the button below to choose a new administrator password. Your "
             "current password keeps working until you do."
@@ -239,8 +259,7 @@ def admin_reset_email(handle: str, url: str, hours: int) -> dict:
         _link_button(url, "Choose a new password"),
         _paragraph(f"This link works once and expires in {hours} hours."),
         f'<p style="margin:24px 0 0;font-size:13px;color:{MUTED};line-height:1.7;">'
-        f"Didn\u2019t ask for this? Your account is unchanged and the link will lapse. "
-        f"Tell the team so the request can be looked into.</p>",
+        f"{footnote}</p>",
         _divider(),
         _sign_off(),
     ])
@@ -248,10 +267,10 @@ def admin_reset_email(handle: str, url: str, hours: int) -> dict:
         "subject": "Reset your FLoRA Validation administrator password",
         "html": _base_layout(body),
         "text": (
-            f"Set a new password for {handle}.\n\n"
+            f"{heading}\n\n"
             f"Choose a new password here (works once, expires in {hours} hours):\n{url}\n\n"
             f"Your current password keeps working until you do.\n\n"
-            f"Didn\u2019t ask for this? Your account is unchanged and the link will lapse.\n\n"
+            f"{caution}\n\n"
             f"— The FLoRA Validation team"
         ),
     }

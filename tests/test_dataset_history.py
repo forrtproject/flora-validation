@@ -301,7 +301,8 @@ def _fred_data_then_launch():
 
 def test_the_old_pipelines_last_count_is_not_carried_to_the_launch():
     """Its flora.csv left the repository root that day and nothing was counted until
-    the launch: a carried figure there would be one that never held."""
+    the next count (here the launch's): a carried figure there would be one that
+    never held."""
     daily = _history(_fred_data_then_launch())["daily"]
     assert [d["total_rows"] for d in daily] == [573, 573, 758, None, None, 2167, 2167, 2200]
     assert [d["measured_by"] for d in daily] == [
@@ -323,6 +324,77 @@ def test_latest_names_the_stretch_with_no_counts_and_keeps_the_launch_figures():
     assert latest["launch_total_rows"] == 2167, "growth is still measured from the launch"
     assert latest["first_counted_on"] == str(_day(1))
     assert latest["pipeline_from"] == str(_day(8))
+
+
+def _gap_filled():
+    """Every day from 11 Nov 2025 to 14 Sep 2026 as production holds them once the
+    gap is filled: the old pipeline's root flora.csv to 13 Jan 2026, nothing 14-19
+    Jan, output/flora.csv from 20 Jan (the pull request's versions, then the README
+    log from 16 Mar, which lacks 25-28 Apr), the launch on 21 May, the pipeline from
+    13 Sep."""
+    counts = {"2025-11-11": (573, None, None, "fred-data"),
+              "2026-01-13": (758, 753, 5, "fred-data"),
+              "2026-01-20": (740, 740, 0, "flora.csv"),
+              "2026-03-10": (1128, 1120, 8, "flora.csv"),
+              "2026-03-16": (1126, 1118, 8, "flora.csv"),
+              "2026-04-24": (2097, 2088, 9, "flora.csv"),
+              "2026-04-29": (2167, 2158, 9, "flora.csv"),
+              "2026-05-20": (2168, 2159, 9, "flora.csv"),
+              "2026-05-21": (2167, 2158, 9, "flora.csv"),
+              "2026-09-12": (2600, 2590, 10, "flora.csv"),
+              "2026-09-13": (2610, 2600, 10, "pipeline")}
+    rows, day = [], dt.date(2025, 11, 11)
+    while day <= dt.date(2026, 9, 14):
+        total, reps, repros, by = counts.get(str(day), (None, None, None, None))
+        rows.append({"day": day, "source_rows": None, "total_rows": total, "replications": reps,
+                     "reproductions": repros, "measured_by": by, "launched_on": dt.date(2026, 5, 21),
+                     "was_run": total is not None})
+        day += dt.timedelta(days=1)
+    return rows
+
+
+def test_the_stretch_with_no_counts_is_the_six_days_without_a_file():
+    """The root flora.csv left on 13 Jan 2026 and output/flora.csv first appeared on
+    20 Jan: 14-19 Jan had nothing published."""
+    latest = _history(_gap_filled())["latest"]
+    assert (latest["no_counts_from"], latest["no_counts_until"]) == ("2026-01-14", "2026-01-19")
+
+
+def test_nothing_is_carried_across_the_six_days():
+    daily = {d["date"]: d for d in _history(_gap_filled())["daily"]}
+    gap = [daily[f"2026-01-{n}"] for n in range(14, 20)]
+    assert [(d["total_rows"], d["replications"], d["measured_by"]) for d in gap] == [(None, None, None)] * 6
+    assert (daily["2026-01-13"]["total_rows"], daily["2026-01-13"]["measured_by"]) == (758, "fred-data")
+    assert (daily["2026-01-20"]["total_rows"], daily["2026-01-20"]["measured"],
+            daily["2026-01-20"]["measured_by"]) == (740, True, "flora.csv")
+    assert (daily["2026-02-01"]["total_rows"], daily["2026-02-01"]["measured"]) == (740, False), \
+        "a flora.csv count carries like any other"
+
+
+def test_a_day_the_readme_log_lacks_carries_the_day_before():
+    daily = {d["date"]: d for d in _history(_gap_filled())["daily"]}
+    assert [(daily[f"2026-04-{n}"]["total_rows"], daily[f"2026-04-{n}"]["replications"],
+             daily[f"2026-04-{n}"]["reproductions"], daily[f"2026-04-{n}"]["measured"],
+             daily[f"2026-04-{n}"]["measured_by"]) for n in range(25, 29)] == [
+        (2097, 2088, 9, False, "flora.csv")] * 4
+    assert daily["2026-04-29"]["measured"] is True
+
+
+def test_filling_the_gap_leaves_the_launch_figures_and_the_handover():
+    latest = _history(_gap_filled(), window_days=1)["latest"]
+    assert (latest["launched_on"], latest["launch_total_rows"]) == ("2026-05-21", 2167)
+    assert latest["pipeline_from"] == "2026-09-13", "the first pipeline count, not the first after any flora.csv"
+
+
+def test_the_band_runs_from_the_first_count_to_the_launch():
+    """The page shades the fred-data pipeline's era from `first_counted_on` to
+    `launched_on`: every count before the launch is that pipeline's, its root
+    flora.csv's or output/flora.csv's. Both survive the daily window."""
+    out = _history(_gap_filled(), window_days=1)
+    assert (out["latest"]["first_counted_on"], out["latest"]["launched_on"]) == ("2025-11-11", "2026-05-21")
+    daily = _history(_gap_filled())["daily"]
+    assert {d["measured_by"] for d in daily if d["date"] < "2026-05-21" and d["total_rows"] is not None} == {
+        "fred-data", "flora.csv"}
 
 
 def test_no_stretch_without_old_pipeline_counts_or_a_day_between():

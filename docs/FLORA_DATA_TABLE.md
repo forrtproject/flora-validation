@@ -277,8 +277,36 @@ python backfill_flora_history.py --fred-data ../fred-data --before-launch       
 python backfill_flora_history.py --fred-data ../fred-data --before-launch --apply
 ```
 
-The old pipeline's last count is not carried forward: nothing was counted from
-then until the launch, and the data report draws that stretch as a dotted line.
+Between the two, `output/flora.csv`'s early versions are gone from fred-data's
+branches. Two records of them survive, and two more modes count them. Both write
+`measured_by = 'flora.csv'`, since they measure the same file, and both write only
+days before the launch that have no row:
+
+- `--pull-snapshots` counts the versions still reachable from
+  `refs/pull/102/head`, which GitHub keeps: from the first version (20 Jan 2026) to
+  the day before the README log starts (15 Mar 2026), dated like the default mode.
+  Those versions contain records that were deleted on purpose. So the ref is
+  fetched, without file contents, into a temporary bare repository that is deleted
+  when the run ends. It is never fetched into `../fred-data`, and only counts leave
+  the temporary repository. `--pull-remote` and `--pull-ref` override the source.
+- `--readme` takes the counts from the update log in fred-data's `README.md`: the
+  table between `<!-- FLORA_UPDATE_LOG_START -->` and
+  `<!-- FLORA_UPDATE_LOG_END -->`, one row per day from 16 Mar 2026. It writes
+  16 Mar to 20 May 2026. The log lacks 25 to 28 Apr, so those days carry 24 Apr's
+  count. It stops if the markers or the table are missing.
+
+```bash
+python backfill_flora_history.py --fred-data ../fred-data --readme                 # dry run
+python backfill_flora_history.py --fred-data ../fred-data --pull-snapshots         # dry run
+python backfill_flora_history.py --fred-data ../fred-data --readme --apply
+python backfill_flora_history.py --fred-data ../fred-data --pull-snapshots --apply
+```
+
+The root `flora.csv` moved away on 13 Jan 2026, and `output/flora.csv` first
+appeared on 20 Jan. So 14 to 19 Jan had no published file and have no counts. The
+old pipeline's last count is not carried into them, and the data report draws that
+stretch as a dotted line. The "fred-data pipeline" band runs from the first count to
+the launch line, because every count before the launch is that pipeline's.
 
 `latest` in the history payload carries what the page needs from beyond the
 400-day daily window: the count at the validator launch (`launch_total_rows`), the

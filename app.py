@@ -4132,9 +4132,13 @@ def list_admins(admin: dict = Depends(current_admin)):
         # validator_*: the person's validator account, for the self-approval rule.
         # suggested_*: an unlinked account's likely match — same email, else the
         # same handle — offered for a trusted admin to confirm, never applied.
+        # has_email / has_password decide which link the page offers to send;
+        # password_hash itself never leaves this query.
         cur.execute(
             """
             SELECT a.id, a.handle, a.trusted, a.created_at::date AS joined,
+                   a.email, a.email IS NOT NULL AS has_email,
+                   a.password_hash IS NOT NULL AS has_password,
                    a.validator_id, v.handle AS validator_handle,
                    s.id AS suggested_validator_id, s.handle AS suggested_validator_handle
             FROM admins a
@@ -4151,7 +4155,13 @@ def list_admins(admin: dict = Depends(current_admin)):
             ORDER BY a.id
             """
         )
-        return {"admins": [dict(r) for r in cur.fetchall()]}
+        admins = [dict(r) for r in cur.fetchall()]
+    # An address is personal data, and only a trusted admin can act on one by
+    # sending a link to it. Everyone else learns only whether one is on file.
+    if not admin["trusted"]:
+        for row in admins:
+            row.pop("email", None)
+    return {"admins": admins}
 
 
 class AdminValidatorLinkRequest(BaseModel):
@@ -4206,6 +4216,13 @@ class AuthLinkRedeemRequest(BaseModel):
     password: str = Field(max_length=1024)
 
 
+class AdminLinkResendRequest(BaseModel):
+    admin_id: int
+    # Only needed, and only accepted as a new address, for an account with no
+    # email on file. An account that has one is always sent the link there.
+    email: str | None = Field(default=None, max_length=320)
+
+
 def _send_auth_link(handle: str, email: str, raw_token: str, purpose: str,
                     inviter: str | None) -> bool:
     """Mail the link. Returns False when email is not configured or fails."""
@@ -4213,10 +4230,12 @@ def _send_auth_link(handle: str, email: str, raw_token: str, purpose: str,
         return False
     url = auth_links.build_url(raw_token, purpose)
     hours = auth_links.ttl_hours(purpose)
+    # A recovery link sent by another admin arrives unasked, so the email names
+    # who sent it; otherwise it reads like phishing.
     template = (
         admin_invite_email(handle, url, hours, inviter)
         if purpose == auth_links.PURPOSE_INVITE
-        else admin_reset_email(handle, url, hours)
+        else admin_reset_email(handle, url, hours, requested_by=inviter)
     )
     try:
         resend.api_key = RESEND_API_KEY
@@ -4295,45 +4314,92 @@ def create_admin(req: AdminCreateRequest, request: Request,
 
 
 @app.post("/api/admin/invite/resend")
-def resend_admin_invite(request: Request,
-                        admin_id: int = Body(..., embed=True),
+def resend_admin_invite(req: AdminLinkResendRequest, request: Request,
                         admin: dict = Depends(current_admin)):
-    """Issue a fresh invitation, replacing any outstanding one."""
+    """Send another admin a fresh invitation or recovery link.
+
+    An account that has never had a password gets an invitation; one that has
+    gets a recovery link. Either replaces the outstanding link of that kind.
+
+    The link goes to the address on file. A trusted admin cannot redirect it to
+    another mailbox, or they could take over any account by resetting its
+    password from an inbox they control. Only an account with no address yet
+    may be sent one at an address the caller types, and that address is not
+    recorded here: it is written to the account only when the link is redeemed,
+    which is the first proof that the address reaches its owner. Until then a
+    typo is corrected simply by sending again.
+    """
     if not admin["trusted"]:
         raise HTTPException(403, "Only trusted admins can manage admin accounts")
     inviter = admin["handle"]
+    supplied = (req.email or "").strip().lower()
     with db() as cur:
         cur.execute(
             "SELECT id, handle, email, password_hash FROM admins WHERE id = %s",
-            (admin_id,),
+            (req.admin_id,),
         )
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "Administrator not found")
-        if not row["email"]:
-            raise HTTPException(400, "That administrator has no email address on file")
+        # A session is not a password. Letting one mint a link for its own
+        # account would let a stolen session turn itself into a permanent
+        # credential, so another trusted admin has to send it.
+        if row["id"] == admin["id"]:
+            raise HTTPException(400, "Another trusted admin must send a link for "
+                                     "your own account")
+        if row["email"]:
+            if supplied and supplied != row["email"].strip().lower():
+                raise HTTPException(400, "That administrator already has an email "
+                                         "address on file, and the link can only "
+                                         "go there")
+            email = row["email"]
+        else:
+            if not supplied:
+                raise HTTPException(400, "That administrator has no email address "
+                                         "on file. Enter one to send the link to")
+            if not EMAIL_RE.match(supplied):
+                raise HTTPException(400, "Invalid email address")
+            # The unique index would only object at redemption, after the link
+            # had gone out. Refuse now so the caller can pick the right address.
+            cur.execute(
+                "SELECT 1 FROM admins WHERE lower(email) = %s AND id <> %s",
+                (supplied, row["id"]),
+            )
+            if cur.fetchone():
+                raise HTTPException(409, "Another administrator already uses that "
+                                         "email address")
+            email = supplied
         purpose = (
             auth_links.PURPOSE_INVITE if not row["password_hash"]
             else auth_links.PURPOSE_RESET
         )
         raw_token = auth_links.issue_for_admin(
-            cur, row["id"], row["email"], purpose, inviter
+            cur, row["id"], email, purpose, inviter
         )
+        # email_supplied: the address came from the caller rather than the
+        # account, so the trail shows who chose where the link went.
         _audit(cur, security_events.ADMIN_INVITE_RESENT, request, actor=admin,
                target_kind="admin", target_id=row["id"],
-               target_label=row["handle"], detail={"purpose": purpose})
+               target_label=row["handle"],
+               detail={"purpose": purpose, "email": email,
+                       "email_supplied": not row["email"]})
 
-    emailed = _send_auth_link(
-        row["handle"], row["email"], raw_token, purpose, inviter
-    )
+    emailed = _send_auth_link(row["handle"], email, raw_token, purpose, inviter)
     result = {
         "handle": row["handle"],
+        "email": email,
         "purpose": purpose,
         "emailed": emailed,
         "expires_in_hours": auth_links.ttl_hours(purpose),
     }
     if not emailed:
+        # Returned only to the trusted admin who asked, and only when the mail
+        # could not go, so the recipient is not stranded by a mail outage.
         result["link_url"] = auth_links.build_url(raw_token, purpose)
+        result["warning"] = (
+            "Email could not be sent. Give this single-use link to the "
+            "administrator yourself; it is not shown again."
+        )
     return result
 
 
@@ -4364,6 +4430,41 @@ def describe_auth_link(token: str):
     }
 
 
+def _record_redeemed_email(cur, admin_id: int, email: str | None) -> bool:
+    """Give an account with no address the one its link was redeemed from.
+
+    Redeeming proves the holder reads that inbox, which is why the resend
+    endpoint leaves the address unrecorded until now. An address already on
+    file is never overwritten. When another admin holds this one by now, the
+    address is skipped rather than allowed to fail: the password change in the
+    same transaction must not be rolled back over it.
+    """
+    if not email:
+        return False
+    # The NOT EXISTS settles the ordinary case. The savepoint covers two
+    # redemptions racing for one address: the loser's unique-index violation is
+    # undone on its own instead of aborting the whole transaction.
+    cur.execute("SAVEPOINT admin_redeemed_email")
+    try:
+        cur.execute(
+            """
+            UPDATE admins SET email = %s
+            WHERE id = %s AND email IS NULL
+              AND NOT EXISTS (SELECT 1 FROM admins other
+                              WHERE lower(other.email) = lower(%s)
+                                AND other.id <> %s)
+            RETURNING id
+            """,
+            (email, admin_id, email, admin_id),
+        )
+        recorded = cur.fetchone() is not None
+    except psycopg2.errors.UniqueViolation:
+        cur.execute("ROLLBACK TO SAVEPOINT admin_redeemed_email")
+        return False
+    cur.execute("RELEASE SAVEPOINT admin_redeemed_email")
+    return recorded
+
+
 @app.post("/api/admin/auth-link/redeem")
 def redeem_auth_link(req: AuthLinkRedeemRequest, request: Request):
     """Spend a one-time link to set an administrator password."""
@@ -4380,7 +4481,7 @@ def redeem_auth_link(req: AuthLinkRedeemRequest, request: Request):
             UPDATE auth_links
             SET status = 'used', used_at = NOW()
             WHERE token_hash = %s AND subject_kind = 'admin' AND status = 'pending'
-            RETURNING subject_id, purpose
+            RETURNING subject_id, purpose, email
             """,
             (auth_links.token_digest(req.token),),
         )
@@ -4394,6 +4495,16 @@ def redeem_auth_link(req: AuthLinkRedeemRequest, request: Request):
         admin = cur.fetchone()
         if not admin:
             raise HTTPException(404, "This link is no longer valid")
+        # Setting a password retires every other link for the account, whatever
+        # its purpose. Issuing only supersedes links of the same purpose, so an
+        # invitation left pending when a password was set some other way (the
+        # CLI) would otherwise stay spendable for the rest of its 48 hours.
+        cur.execute(
+            "UPDATE auth_links SET status = 'revoked' "
+            "WHERE subject_kind = 'admin' AND subject_id = %s AND status = 'pending'",
+            (link["subject_id"],),
+        )
+        email_recorded = _record_redeemed_email(cur, link["subject_id"], link["email"])
         # A new password must end every session opened with the old one. That
         # immediacy is the point of a session store; a derived token could only
         # ever be waited out.
@@ -4404,7 +4515,8 @@ def redeem_auth_link(req: AuthLinkRedeemRequest, request: Request):
                actor={"id": link["subject_id"], "handle": admin["handle"]},
                target_kind="admin", target_id=link["subject_id"],
                target_label=admin["handle"],
-               detail={"purpose": link["purpose"], "sessions_revoked": revoked})
+               detail={"purpose": link["purpose"], "sessions_revoked": revoked,
+                       "email_recorded": email_recorded})
     logger.warning(
         "Administrator %r set a password via a %s link; %d session(s) revoked",
         admin["handle"], link["purpose"], revoked,

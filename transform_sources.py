@@ -186,6 +186,9 @@ META_PAPER_CANDIDATE_URLS = 5
 # JATS/HTML markup that reaches us inside titles and abstracts: <i>, <sup>, <scp>,
 # and whole <mml:math> blocks from publisher XML.
 _TAG_RE = re.compile(r"<[^>]+>")
+# A tag by its shape: a name, "?" or "!" straight after "<" or "</", and no "<"
+# inside: "<i>", "<?Pub Caret?>", "<!-- -->", but not "< .05".
+_DECODED_TAG_RE = re.compile(r"</?[A-Za-z!?][^<>]*>")
 # A single newline inside a paragraph is a PDF copy artefact — the sentence simply
 # continued. Two or more are a real paragraph break and are preserved.
 _SOFT_BREAK_RE = re.compile(r"(?<!\n)\n(?!\n)")
@@ -218,6 +221,41 @@ def _lower_unknown_entity(match):
     return match.group(0).lower()
 
 
+# Enough for the double encoding OpenAlex and the validated set send ("&amp;amp;"),
+# with a margin; a bound so text that keeps producing entities cannot loop forever.
+_UNESCAPE_PASSES = 3
+# An entity written out in full, with its semicolon.
+_WHOLE_ENTITY_RE = re.compile(r"&(?:#\d+|#[xX][0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]*);")
+
+
+def _decode_whole_entity(match):
+    """`&amp;` -> `&`; `&region;` left alone, which html.unescape makes `®ion;`."""
+    entity = match.group(0)
+    if entity[1] == "#" or entity[1:] in html5:
+        return html.unescape(entity)
+    return entity
+
+
+def unescape_entities(text):
+    """Entities decoded until none are left.
+
+    One pass is not enough: titles arrive double-encoded ("Rich &amp;amp; Gureckis",
+    "A&amp;nbsp;replication"), and a single pass published "&amp;".
+
+    Only whole entities, never html.unescape's legacy forms without a semicolon:
+    those read "Smith &notes" as "Smith ¬es" and a link's "&region=us" as "®ion=us".
+    No source cell needs them, and without them decoding text already decoded leaves
+    it as it is, so a FLoRA tab correction is not changed by being cleaned again.
+    """
+    for _ in range(_UNESCAPE_PASSES):
+        decoded = _WHOLE_ENTITY_RE.sub(_decode_whole_entity,
+                                       _ENTITY_RE.sub(_lower_unknown_entity, text))
+        if decoded == text:
+            break
+        text = decoded
+    return text
+
+
 def clean_text(value):
     """Strip markup, decode entities, and repair PDF-copied line breaks.
 
@@ -234,12 +272,13 @@ def clean_text(value):
     # returns forms ("&Amp;", "&Rsquo;") that html.unescape does not recognise, and
     # which then reach the published reference verbatim. Only an entity that is not
     # itself a real one is touched — see _lower_unknown_entity.
-    text = _ENTITY_RE.sub(_lower_unknown_entity, text)
-    text = html.unescape(text)
-    # A second pass: publisher XML double-encodes, so &amp;lt;i&amp;gt; only becomes
-    # a literal tag after the first unescape.
+    text = unescape_entities(text)
+    # Tags stripped again: publisher XML double-encodes, so &amp;lt;i&amp;gt; only
+    # becomes a literal tag once unescaped. Only what looks like a tag: decoded,
+    # "p &lt; .05 when d &gt; 0.5" is a comparison, and _TAG_RE would take the
+    # text between the two signs with it.
     if "<" in text and ">" in text:
-        text = _TAG_RE.sub(" ", text)
+        text = _DECODED_TAG_RE.sub(" ", text)
     text = text.replace("\xa0", " ")
     text = _SOFT_BREAK_RE.sub(" ", text)
     text = _WS_RE.sub(" ", text)
@@ -655,20 +694,37 @@ def _join_parts(*values):
     return " || ".join(parts) if parts else None
 
 
+def _join_axes(computational, robustness):
+    """A reproduction's two values as one, each labelled with its axis.
+
+    fred-data's combine_reproduction_quotes, which readers of the old flora.csv
+    rely on: "Computational: A || Robustness: B", one labelled value when only one
+    axis has text, and an identical pair collapsed to one unlabelled value.
+    """
+    comp, rob = _join_parts(computational), _join_parts(robustness)
+    if comp and rob:
+        return comp if comp == rob else f"Computational: {comp} || Robustness: {rob}"
+    if comp:
+        return f"Computational: {comp}"
+    if rob:
+        return f"Robustness: {rob}"
+    return None
+
+
 def derive_quote(row):
     """Reproductions have two quotes; join them rather than picking one, so no
     coder's text is silently dropped."""
     if row["type"] != "reproduction":
         return row.get("outcome_quote")
-    return _join_parts(row.get("outcome_computational_quote"),
-                       row.get("outcome_robustness_quote"))
+    return _join_axes(row.get("outcome_computational_quote"),
+                      row.get("outcome_robustness_quote"))
 
 
 def derive_quote_source(row):
     if row["type"] != "reproduction":
         return row.get("out_quote_source")
-    return _join_parts(row.get("out_quote_computational_source"),
-                       row.get("out_quote_robust_source"))
+    return _join_axes(row.get("out_quote_computational_source"),
+                      row.get("out_quote_robust_source"))
 
 
 # The columns the metadata join keeps from the source where no provider resolves the
@@ -1144,6 +1200,18 @@ def build(cur, verbose: bool = True,
                 "identifiers: " + ", ".join(df.loc[shared, "display_id"].astype(str))
                 + " — rule a duplicate in Source Records if it is the same study")
 
+    # 7e ── a reproduction's quote and quote source from the axes it publishes
+    # The pair merges (2b, 5b, 6b: preprint_dedup.merge_doi_pair_dups) take the axes
+    # whole from one row but paste every row's quote together, which published
+    # "Computational: A || Computational: B || Robustness: C" beside axes saying A and
+    # C. Once, here, after the last of them, as step 1 derived them.
+    reproduction = df["type"].eq("reproduction")
+    if reproduction.any():
+        df.loc[reproduction, "outcome_quote"] = df[reproduction].apply(
+            lambda row: cos_quote_rewrite.rewrite_one(derive_quote(row)), axis=1)
+        df.loc[reproduction, "outcome_quote_source"] = df[reproduction].apply(
+            derive_quote_source, axis=1)
+
     # 8 ── text cleaning (Step 7c of the notebook)
     # After enrichment, because titles and journals arrive from OpenAlex carrying
     # JATS markup, and before anything compares strings.
@@ -1158,6 +1226,12 @@ def build(cur, verbose: bool = True,
         changed = int((before.fillna("") != df[column].fillna("")).sum())
         if changed:
             say(f"      cleaned {column}: {changed} cell(s) changed")
+    # Links only unescaped: the rest of clean_text would rewrite a URL. An OpenAlex
+    # link arrives as "...?article=1063&amp;amp;context=trr", which no browser opens.
+    for column in ("oa_url_o", "oa_url_r"):
+        if column in df.columns:
+            df[column] = df[column].map(lambda url: unescape_entities(url)
+                                        if isinstance(url, str) else url)
 
     # 8b ── last-resort title recovery from the reference text
     # Placed HERE, after the dedup in 6b, deliberately: dedup matches on title

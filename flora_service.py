@@ -601,19 +601,23 @@ def history(cur, window_days: int = 400) -> dict:
                    are carried and withheld exactly as it is.
 
     `measured_by`  says where a total came from: "pipeline" (this site's run),
-                   "flora.csv" (the row count of the flora.csv published that day,
-                   backfilled for the days before this pipeline existed) or
-                   "fred-data" (the same, from the old fred-data pipeline, before the
-                   validator launched).
+                   "flora.csv" (the row count of fred-data's output/flora.csv
+                   published that day, backfilled for the days before this pipeline
+                   existed: from 20 Jan 2026, by backfill_flora_history.py from git
+                   history, a pull request's kept history and fred-data's README
+                   update log) or "fred-data" (the same, from the old fred-data
+                   pipeline's root flora.csv, 11 Nov 2025 - 13 Jan 2026).
 
     The old pipeline's last count is not carried forward: its flora.csv left the
-    repository root that day, and nothing was counted again until the validator
-    launched. Those days stay NULL, a stretch with no counts.
+    repository root that day, and output/flora.csv first appeared on 20 Jan 2026.
+    The days up to the next count stay NULL, a stretch with no counts. Every other
+    day after a count carries it, flora.csv days included, as between pipeline runs.
 
     `latest` also names, over the whole history rather than the capped `daily`
     window: `launched_on`, the day the validator opened (its first account), and
     `launch_total_rows`, the dataset size in force at the end of that day;
-    `first_counted_on`, the first day with a dataset size; `pipeline_from`, the
+    `first_counted_on`, the first day with a dataset size (the page shades the
+    fred-data pipeline's era from it to the launch); `pipeline_from`, the
     first pipeline count after flora.csv counts (None without flora.csv counts); and
     `no_counts_from` / `no_counts_until`, the first and last day of that stretch
     with no counts (None without one).

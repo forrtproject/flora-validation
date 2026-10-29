@@ -737,7 +737,6 @@
   var MINUS = "−";
   var DAY_MS = 86400000;
   var PREVIEW_ROWS = 8;
-  var OLD_PIPELINE = "fred-data";   // measured_by of the old fred-data pipeline's counts
   var NO_CHART = "The chart could not be loaded. Every figure it would show is in the table below.";
   var REDUCED_MOTION = !!(window.matchMedia &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -804,7 +803,7 @@
   }
 
   // No count on a day after the first count: the stretch after the old pipeline's
-  // last count, which the server leaves empty rather than carried.
+  // last count (14 to 19 Jan 2026), which the server leaves empty rather than carried.
   function inGap(flora, date) {
     var first = state.data.latest.first_counted_on;
     return flora === null && !!first && date > first;
@@ -821,8 +820,11 @@
   function shortDate(iso) { var p = ymd(iso); return p[2] + " " + MONTHS[p[1] - 1]; }
   function longDate(iso) { return shortDate(iso) + " " + ymd(iso)[0]; }
   function monthYear(iso) { var p = ymd(iso); return MONTHS[p[1] - 1] + " " + p[0]; }
+  // "14 to 19 Jan 2026", "14 Jan to 20 May 2026", "11 Nov 2025 to 20 May 2026".
   function between(from, to) {
-    return (ymd(from)[0] === ymd(to)[0] ? shortDate(from) : longDate(from)) + " to " + longDate(to);
+    var a = ymd(from), b = ymd(to);
+    var start = a[0] !== b[0] ? longDate(from) : a[1] !== b[1] ? shortDate(from) : String(a[2]);
+    return start + " to " + longDate(to);
   }
   function weekday(iso) { return WEEKDAYS[new Date(dayNumber(iso) * DAY_MS).getUTCDay()]; }
 
@@ -924,9 +926,11 @@
     }
     var i = firstWith(points, key);
     var start = points[i];
-    // Not after the stretch with no counts: the first reading came before it.
+    // Not after the stretch with no counts: the first reading came before it. Nor
+    // after a month-end point: the first reading may be in the days between.
     var firstReading = !start.monthEnd &&
-      (i > 0 ? !points[i - 1].gap : !!before && before[key] === null && !before.gap);
+      (i > 0 ? !points[i - 1].gap && !points[i - 1].monthEnd
+             : !!before && before[key] === null && !before.gap);
     return {
       delta: last - start[key],
       period: firstReading ? "since it was first measured on " + shortDate(start.date)
@@ -1222,14 +1226,21 @@
     $(view.canvas).setAttribute("aria-label", parts.join(" "));
   }
 
-  // The stretch with no counts, "14 Jan to 20 May 2026", when a line through the
-  // dates from..to crosses it (dotted). The server sends it, since it leaves the
-  // daily window in time.
+  // The stretch with no counts, "14 to 19 Jan 2026", when a line through the
+  // dates from..to crosses it. The server sends it, since it leaves the daily
+  // window in time.
   function gapIn(from, to) {
     var l = state.data.latest;
     if (!l.no_counts_from || !l.no_counts_until) return null;
     return from < l.no_counts_from && to > l.no_counts_until
       ? between(l.no_counts_from, l.no_counts_until) : null;
+  }
+
+  // A footnote's words for it. The line is dotted where a day inside it is on
+  // screen; where month-end points step over it, the line runs straight on.
+  function gapNote(points, gap) {
+    var dotted = points.some(function (p) { return p.gap; });
+    return (dotted ? "Dotted line: no counts from " : "No counts from ") + gap + ".";
   }
 
   // The main chart's marks within the period on screen: the fred-data pipeline's
@@ -1238,18 +1249,19 @@
   function marksFor(points) {
     var from = points[0].date;
     var to = points[points.length - 1].date;
-    var old = points.filter(function (p) { return p.measuredBy === OLD_PIPELINE; });
     var l = state.data.latest;
     var launched = l.launched_on;
+    var first = l.first_counted_on;
     var marks = { band: null, launch: null, words: [] };
-    if (old.length) {
-      // Its counts are the first ones, and it ends the day before the stretch with
-      // no counts. The server sends both days: once they leave the daily window,
-      // month-end points would put the era's ends at month ends.
-      var a = l.first_counted_on && l.first_counted_on < old[0].date ? l.first_counted_on : old[0].date;
-      var b = l.no_counts_from ? isoOf(dayNumber(l.no_counts_from) - 1) : old[old.length - 1].date;
-      marks.band = { from: dayNumber(a), to: dayNumber(b) };
-      marks.words.push("fred-data pipeline from " + longDate(a) + " to " + longDate(b) + ".");
+    if (launched && first && first < launched && from < launched) {
+      // Every count before the launch is the fred-data pipeline's (its root
+      // flora.csv, then output/flora.csv), so the era runs from the first count to
+      // the launch line, across the stretch with no counts. The server sends both
+      // days: once they leave the daily window, month-end points would put the
+      // era's ends at month ends.
+      marks.band = { from: dayNumber(first), to: dayNumber(launched) };
+      marks.words.push("fred-data pipeline from " + longDate(first) + " to " +
+                       longDate(isoOf(dayNumber(launched) - 1)) + ".");
     }
     var gap = gapIn(from, to);
     if (gap) marks.words.push("No counts from " + gap + ".");
@@ -1387,7 +1399,7 @@
         : "The dataset line starts on " + longDate(start.date) + ", its first count.");
     }
     var gap = gapIn(points[0].date, points[points.length - 1].date);
-    if (gap) notes.push("Dotted line: no counts from " + gap + ".");
+    if (gap) notes.push(gapNote(points, gap));
     var handover = pipelineStart(points);
     if (handover) {
       notes.push("Before " + longDate(handover) + ", counts of the flora.csv published each day; " +
@@ -1444,16 +1456,18 @@
     if (start) {
       // The old pipeline's first versions record no type, so the split can start
       // after the dataset's first count. After the stretch with no counts, the
-      // first count of either is before it, off screen: no "first" is claimed.
+      // first count of either is before it, off screen: no "first" is claimed. Nor
+      // after a month-end point: the days between it and the daily window are not
+      // on screen, and the first count may be among them.
       var byType = before.flora !== null;
       notes.push(start.monthEnd
         ? "Both charts start at the end of " + monthYear(start.date) +
           (byType || before.gap ? "" : firstCountOn()) + "."
         : "Both charts start on " + longDate(start.date) +
-          (before.gap ? "." : byType ? ", the first count by type." : ", the first count."));
+          (before.gap || before.monthEnd ? "." : byType ? ", the first count by type." : ", the first count."));
     }
     var gap = drawn && gapIn(drawn.date, points[points.length - 1].date);
-    if (gap) notes.push("Dotted line: no counts from " + gap + ".");
+    if (gap) notes.push(gapNote(points, gap));
     var note = $("types-note");
     note.textContent = notes.join(" ");
     note.hidden = !notes.length;
