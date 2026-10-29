@@ -998,9 +998,13 @@ _RETIRED_NOTE_PREFIX = "⚠ Retired upstream:"
 
 # extract/export.py RETIRE_REASONS. 'unexplained' means no current extractor
 # verdict speaks for the work, so it is held unless --include-unexplained.
+# 'screen_deferred' marks a work that passed the screen but is held back by a strict
+# rule's admission gate (flora-extractor filter/spec/CONVENTIONS.md, "Admission
+# gates"). The extractor never defers a work a person has judged, and a touched
+# record is flagged here anyway.
 RETIRE_REASONS = frozenset({
     "superseded", "set_aside", "unresolved", "not_admitted", "screen_discarded",
-    "in_flora", "unexplained",
+    "screen_deferred", "in_flora", "unexplained",
 })
 # The actions a plan can contain; only the first two write.
 RETIRE_ACTIONS = ("retire", "flag", "already_excluded", "held_unexplained",
