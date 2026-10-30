@@ -39,6 +39,9 @@
     "error": "http 404",
     "ref": ""
   },
+  "10.1002/cncr.28799": {
+    "ref": "Amanda Jane Cross, Steven C. Moore, Simina Maria Boca, Wen\u2010Yi Huang, Xiaoqin Xiong, Rachael Z. Stolzenberg\u2010Solomon, Rashmi R. Sinha, Joshua Neil Sampson (2014) A prospective study of serum metabolites and colorectal cancer risk. Cancer."
+  },
   "10.1002/cpp.2677": {
     "ref": "Brechje Dandachi\u2010FitzGerald, Laura Meijs, Isabelle M. A. J. Moonen, Harald Merckelbach (2021) No self\u2010serving bias in therapists' evaluations of clients' premature treatment termination: An approximate replication of Murdock et al. (2010). Clinical Psychology & Psychotherapy."
   },
@@ -92,6 +95,9 @@
   },
   "10.1002/jae.2922": {
     "ref": "Nino Buliskeria, Jarom\u00edr Baxa (2022) Do rural banks matter that much? Burgess and Pande (2005) reconsidered. Journal of Applied Econometrics."
+  },
+  "10.1002/jae.70033": {
+    "ref": "Joonkyo Hong, Davide Luparello (2025) Unveiling Plant\u2010Product Productivity via First\u2010Order Conditions: Robust Replication of Orr (2022). Journal of Applied Econometrics."
   },
   "10.1002/jeab.169": {
     "ref": "Ashley M. Prichard, Danielle Panoz\u2010Brown, Katherine E. M. Bruce, Mark Galizio (2015) Emergent identity but not symmetry following successive olfactory discrimination training in rats. Journal of the Experimental Analysis of Behavior."
@@ -1154,6 +1160,9 @@
   "10.1086/716952": {
     "ref": "Laure Bokobza, Suthan Krishnarajan, Jacob Nyrup, Casper Sakstrup, Lasse Aaskoven (2021) The Morning After: Cabinet Instability and the Purging of Ministers after Failed Coup Attempts in Autocracies. The Journal of Politics."
   },
+  "10.1086/720465": {
+    "ref": "Scott Orr (2022) Within-Firm Productivity Dispersion: Estimates and Implications. Journal of Political Economy."
+  },
   "10.1089/eco.2020.0012": {
     "ref": "Matt N Williams, Bruce A Jaftha (2020) Perceptions of Powerlessness Are Negatively Associated with Taking Action on Climate Change: A Preregistered Replication. Ecopsychology."
   },
@@ -1171,6 +1180,12 @@
   },
   "10.1093/chemse/28.2.105": {
     "ref": "Matthias Laska (2003) SURE, Why Not? The SUbstitution-REciprocity Method for Measurement of Odor Quality Discrimination Thresholds: Replication and Extension to Nonhuman Primates. Chemical Senses."
+  },
+  "10.1093/geronb/gbv068": {
+    "ref": "Mary Ellen Stone, Jielu Lin, Dale Dannefer, Jessica A. Kelley\u2010Moore (2016) The Continued Eclipse of Heterogeneity in Gerontological Research. The Journals of Gerontology Series B."
+  },
+  "10.1093/geront/32.1.17": {
+    "ref": "Emily Nelson, Dale Dannefer (1992) Aged Heterogeneity: Fact or Fiction? The Fate of Diversity in Gerontological Research. The Gerontologist."
   },
   "10.1093/hcr/hqab013": {
     "ref": "Chris Skurka, Rainer Romero\u2010Canyas, Helen H. Joo, David Acup, Jeff Niederdeppe (2021) Emotional Appeals, Climate Change, and Young Adults: A Direct Replication of Skurka et al. (2018). Human Communication Research."
@@ -2500,6 +2515,9 @@
   },
   "10.3390/g11040058": {
     "ref": "Yvan I. Russell, Yana Stoilova, Aura-Adriana Dosoftei (2020) Cooperation through Image Scoring: A Replication. Games."
+  },
+  "10.3390/metabo11030156": {
+    "ref": "Marjorie L. McCullough, Rebecca A. Hodge, Peter T. Campbell, Victoria L. Stevens, Ying Wang (2021) Pre-Diagnostic Circulating Metabolites and Colorectal Cancer Risk in the Cancer Prevention Study-II Nutrition Cohort. Metabolites."
   },
   "10.36019/9781978817111": {
     "ref": "Jack Katz (1982) Poor People\u2019s Lawyers in Transition. Rutgers University Press eBooks."
