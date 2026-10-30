@@ -1,6 +1,6 @@
 ## FLoRA network validation
 
-_Generated: 2026-10-28 03:09:35 UTC | Dataset: 2,847 rows_
+_Generated: 2026-10-30 03:08:30 UTC | Dataset: 2,850 rows_
 
 Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says what is wrong and, after the dash, gives the DOI or link.
 
@@ -96,6 +96,6 @@ _Not findings: no answer could be had for these 9, and they are checked again on
 
 **Network validation status: needs review**
 
-- DOIs: 4,625 distinct; 4,605 cached, 20 checked, 0 deferred.
-- Links: 3,187 distinct; 3,143 cached, 44 checked (9 could not be checked), 0 deferred.
+- DOIs: 4,631 distinct; 4,616 cached, 15 checked, 0 deferred.
+- Links: 3,191 distinct; 3,155 cached, 36 checked (9 could not be checked), 0 deferred.
 - Originals without a DOI: 26 distinct; 26 cached, 0 checked, 0 deferred.

@@ -1,12 +1,12 @@
 # FLoRA preparation report
 
-Generated: 2026-10-28T03:06:33+00:00
+Generated: 2026-10-30T03:05:28+00:00
 
 Status: **needs review**
 
 Mode: built from the database
 
-Rows: 2,847
+Rows: 2,850
 
 ## Stages
 
@@ -14,7 +14,7 @@ Rows: 2,847
 - structural validation: needs review — 44 problems and 25 possible problems
 - network validation: needs review
 - release files and history: passed
-- store dataset: passed — 2,847 rows in flora_data
+- store dataset: passed — 2,850 rows in flora_data
 - write output files: passed
 
 ## Warnings
@@ -27,7 +27,7 @@ Rows: 2,847
 
 ## Stored dataset
 
-- 2,847 rows stored in `flora_data`, which Download full CSV and the public API serve.
+- 2,850 rows stored in `flora_data`, which Download full CSV and the public API serve.
 
 ## Diagnostic files
 
@@ -39,7 +39,7 @@ The JSON report lists the affected records.
 
 ## FLoRA structural validation
 
-_Generated: 2026-10-28 03:09:39 UTC | Dataset: 2,847 rows_
+_Generated: 2026-10-30 03:08:35 UTC | Dataset: 2,850 rows_
 
 Each item names the FLoRA record by its FLoRA ID and `doi_o | doi_r` (or `url_r`), says what is wrong and, after the dash, gives the value.
 
@@ -182,7 +182,7 @@ _title_r is a file or project name, or a generic name such as 'Analysis'._
 
 ## FLoRA network validation
 
-_Generated: 2026-10-28 03:09:39 UTC | Dataset: 2,847 rows_
+_Generated: 2026-10-30 03:08:35 UTC | Dataset: 2,850 rows_
 
 Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says what is wrong and, after the dash, gives the DOI or link.
 
@@ -278,13 +278,13 @@ _Not findings: no answer could be had for these 9, and they are checked again on
 
 **Network validation status: needs review**
 
-- DOIs: 4,625 distinct; 4,605 cached, 20 checked, 0 deferred.
-- Links: 3,187 distinct; 3,143 cached, 44 checked (9 could not be checked), 0 deferred.
+- DOIs: 4,631 distinct; 4,616 cached, 15 checked, 0 deferred.
+- Links: 3,191 distinct; 3,155 cached, 36 checked (9 could not be checked), 0 deferred.
 - Originals without a DOI: 26 distinct; 26 cached, 0 checked, 0 deferred.
 
 
 ## Release files
 
-- flora.csv: 2,847 rows, SHA-256 `6bad4d9dd1af137594aeb803e140f62d2d4547dcb00bb6e8ce7aef3246f5403d`.
+- flora.csv: 2,850 rows, SHA-256 `c783e586431ebd6b52a6fdb94caba770bf7fa41333982ca6fc8e9b44a9887228`.
 - Also written: the release manifest and notes, and today's counts in flora_history.csv and flora_dataset_summary.md.
 - Publication: The repository copy (`output/` on GitHub) is committed by two workflows, each when flora.csv changed: the nightly job, with its own run's files, and Publish FLoRA, with the stored dataset. Website and local command-line runs commit nothing. Nothing is uploaded to OSF.

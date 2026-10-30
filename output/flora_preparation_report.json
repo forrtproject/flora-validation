@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-10-28T03:06:33+00:00",
+  "generated_at": "2026-10-30T03:05:28+00:00",
   "mode": "database_pipeline",
   "status": "needs_attention",
-  "rows": 2847,
+  "rows": 2850,
   "stages": [
     {
       "name": "build flora.csv and check IDs",
@@ -25,7 +25,7 @@
     {
       "name": "store dataset",
       "status": "passed",
-      "detail": "2,847 rows in flora_data"
+      "detail": "2,850 rows in flora_data"
     },
     {
       "name": "write output files",
@@ -1674,8 +1674,8 @@
   },
   "identity": {
     "status": "passed",
-    "rows": 2847,
-    "unique_ids": 2847
+    "rows": 2850,
+    "unique_ids": 2850
   },
   "columns": [
     "id",
@@ -2725,7 +2725,7 @@
     "possible_problems": 25,
     "has_problems": true,
     "has_issues": true,
-    "rows": 2847
+    "rows": 2850
   },
   "network": {
     "status": "needs_attention",
@@ -3451,16 +3451,16 @@
         "status": "checked"
       },
       "dois": {
-        "targets": 4625,
-        "cached": 4605,
-        "checked": 20,
+        "targets": 4631,
+        "cached": 4616,
+        "checked": 15,
         "deferred": 0,
         "unchecked": 0
       },
       "urls": {
-        "targets": 3187,
-        "cached": 3143,
-        "checked": 44,
+        "targets": 3191,
+        "cached": 3155,
+        "checked": 36,
         "deferred": 0,
         "unchecked": 9
       },
@@ -3476,18 +3476,18 @@
     "problems": 40,
     "possible_problems": 8,
     "issue_count": 48,
-    "rows": 2847
+    "rows": 2850
   },
   "release": {
     "schema_version": 1,
     "status": "prepared_locally",
     "published": false,
-    "generated_at": "2026-10-28T03:09:35+00:00",
+    "generated_at": "2026-10-30T03:08:30+00:00",
     "filename": "flora.csv",
-    "bytes": 13452254,
-    "sha256": "6bad4d9dd1af137594aeb803e140f62d2d4547dcb00bb6e8ce7aef3246f5403d",
-    "md5": "5f0f0c1f66bb52dcfcf20f049cffddf3",
-    "rows": 2847,
+    "bytes": 13472053,
+    "sha256": "c783e586431ebd6b52a6fdb94caba770bf7fa41333982ca6fc8e9b44a9887228",
+    "md5": "506408439ef8855e1bfa707c252cf96d",
+    "rows": 2850,
     "columns": [
       "id",
       "id_md5",
@@ -3544,22 +3544,22 @@
     "version": null,
     "release_notes": "",
     "data_version": {
-      "stored_at": "2026-10-28T03:09:36.040078+00:00",
+      "stored_at": "2026-10-30T03:08:31.088419+00:00",
       "change_watermark": 166
     }
   },
   "storage": {
-    "rows": 2847,
-    "inserted": 10,
-    "updated": 0,
-    "unchanged": 2837,
+    "rows": 2850,
+    "inserted": 3,
+    "updated": 231,
+    "unchanged": 2616,
     "retired": 0,
     "reactivated": 0,
     "preserved": 0,
     "table": "flora_data",
-    "snapshot_sha256": "6bad4d9dd1af137594aeb803e140f62d2d4547dcb00bb6e8ce7aef3246f5403d",
-    "stored_at": "2026-10-28T03:09:36.040078+00:00",
+    "snapshot_sha256": "c783e586431ebd6b52a6fdb94caba770bf7fa41333982ca6fc8e9b44a9887228",
+    "stored_at": "2026-10-30T03:08:31.088419+00:00",
     "status": "committed"
   },
-  "finished_at": "2026-10-28T03:09:39+00:00"
+  "finished_at": "2026-10-30T03:08:35+00:00"
 }
