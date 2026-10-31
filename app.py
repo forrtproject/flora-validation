@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 import psycopg2
@@ -33,6 +33,7 @@ import hashlib
 import hmac
 import resend
 import db_pool
+import extra_originals
 import flora_service
 import flora_store
 from flora_public_api import create_router as create_flora_api_router, is_public_read_request
@@ -556,8 +557,13 @@ _CODED_ORIGINALS_LIMIT = 100
 # identity is still exact, and widening that is a separate decision. lower() on both
 # sides rather than str.lower() in Python so the predicate and the functional index
 # agree on collation; the index expression must match or the planner ignores it.
+#
+# Extractor records only. An original an admin added (extra_originals.py) is an
+# admin's decision, not extractor output, and showing it here would put a verdict
+# in front of the validator, like a sibling's status would.
 _CODED_ORIGINALS_WHERE = (
-    "lower(u.doi_r) = lower(%s) AND u.validation_status <> 'rejected'")
+    "lower(u.doi_r) = lower(%s) AND u.validation_status <> 'rejected'"
+    " AND u.origin = 'extractor'")
 
 
 def _coded_originals_sort_key(r):
@@ -750,6 +756,12 @@ class JudgeRequest(BaseModel):
     doi_r_published: str | None = None      # preprint replications: DOI of the published article
     validator_notes: str | None = None
     additional_checks: dict | None = None   # e.g. {"was_unsure_original": true}
+    # "This study has more than one original": [{doi_or_url, title, study, note}].
+    # Deliberately untyped and unbounded. A judgement is sent from a queue that
+    # gives up on any 4xx, so a typo in this optional side field must never be a
+    # reason to refuse it; extra_originals.store_suggestions keeps what it can and
+    # cuts or drops the rest. Absent from older pages, so it stays optional.
+    extra_originals: Any = None
 
 
 class SkipRequest(BaseModel):
@@ -2611,6 +2623,10 @@ def assignment_judge(req: JudgeRequest,
         )
         if not cur.fetchone():
             raise HTTPException(409, "This assignment was already submitted")
+        # After the assignment's one-shot guard. An assignment has no queue row.
+        extra_originals.store_suggestions(
+            cur, req.record_id, None, coder_id, validator["handle"],
+            req.extra_originals, final_type)
         cur.execute(
             "UPDATE validators SET total_points = total_points + %s, "
             "total_judgements = total_judgements + 1 WHERE id = %s RETURNING total_points",
@@ -2758,6 +2774,12 @@ def judge(req: JudgeRequest,
         except psycopg2.errors.UniqueViolation:
             raise HTTPException(400, "Already judged this record")
 
+        # After the slot's one-shot UPDATE, so a retried submission (409 above)
+        # cannot store its suggestions twice. Never raises: see JudgeRequest.
+        extra_original_count = extra_originals.store_suggestions(
+            cur, record_id, queue_id, coder_id, validator["handle"],
+            req.extra_originals, target_type)
+
         # Build JSONB summary for unvalidated
         summary = {
             "validator_id": coder_id,
@@ -2784,6 +2806,7 @@ def judge(req: JudgeRequest,
             "doi_r_published": _normalize_doi(req.doi_r_published),
             "additional_checks": req.additional_checks,
             "validator_notes": req.validator_notes or "",
+            "extra_original_count": extra_original_count,
             "points": pts,
             "validated_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -3478,8 +3501,11 @@ def admin_stats(admin: dict = Depends(current_admin)):
             SELECT
                 COUNT(*)  AS total_validators,
                 SUM(total_judgements) AS total_judgements,
-                (SELECT COUNT(*) FROM unvalidated WHERE validation_status = 'validated')  AS total_validated,
-                (SELECT COUNT(*) FROM unvalidated WHERE validation_status = 'need_review') AS total_review
+                -- Validator work: originals an admin added were never judged.
+                (SELECT COUNT(*) FROM unvalidated WHERE validation_status = 'validated'
+                   AND origin = 'extractor')  AS total_validated,
+                (SELECT COUNT(*) FROM unvalidated WHERE validation_status = 'need_review'
+                   AND origin = 'extractor') AS total_review
             FROM validators
             WHERE total_judgements > 0
             """
@@ -3753,8 +3779,14 @@ def admin_dashboard(admin: dict = Depends(current_admin)):
                 COUNT(*) FILTER (WHERE validation_status = 'validated'
                                    AND NOT admin_checked)                            AS auto_validated
             FROM unvalidated
+            -- The extractor's records. Originals an admin added were never
+            -- extracted or judged, and are counted on their own below.
+            WHERE origin = 'extractor'
         """)
         pipeline = dict(cur.fetchone())
+        cur.execute("SELECT COUNT(*) AS n FROM unvalidated "
+                    "WHERE origin = 'admin_extra_original' AND validation_status = 'validated'")
+        pipeline["admin_extra_originals"] = cur.fetchone()["n"]
 
         # Outcome distribution from validated table
         cur.execute("""
@@ -3883,6 +3915,9 @@ def admin_dashboard(admin: dict = Depends(current_admin)):
                    END AS quote_reworded
             FROM unvalidated
             WHERE validation_status = 'validated'
+              -- An added original's extracted and final values are the same by
+              -- construction; counting it would dilute every change rate.
+              AND origin = 'extractor'
         """)
         b_rows = cur.fetchall()
 
@@ -4711,6 +4746,10 @@ _ENTRIES_SORT = {
 # the rules replaced (those records have no rule recorded).
 _AUTO_VALIDATED_SQL = "(u.validation_status = 'validated' AND NOT u.admin_checked)"
 
+_OPEN_EXTRA_SUGGESTIONS_SQL = (
+    "(u.validation_status <> 'rejected' AND EXISTS (SELECT 1 FROM extra_original_suggestions xs "
+    "WHERE xs.record_id = u.record_id AND xs.status = 'open'))")
+
 
 @app.get("/api/admin/entries")
 def admin_entries(
@@ -4773,6 +4812,9 @@ def admin_entries(
         # Advisory flags never change validation_status, so without a filter a
         # flagged record is invisible until someone happens to open it.
         "quality_flagged":  "WHERE jsonb_array_length(COALESCE(u.quality_flags, '[]'::jsonb)) > 0",
+        # Validators suggested other originals no admin has acted on yet. Approve
+        # and resolve move on to the next entry, so this is how they are found again.
+        "extra_originals":  f"WHERE {_OPEN_EXTRA_SUGGESTIONS_SQL}",
     }.get(filter, "")
 
     if hide_mine and my_id:
@@ -4841,7 +4883,20 @@ def admin_entries(
                  WHERE vs.record_id = u.record_id
                    AND vs.reason_code IN ('eligibility_unclear', 'data_quality')) AS skip_issue_validator_count,
                 (SELECT MAX(vs.skipped_at) FROM validation_skips vs
-                 WHERE vs.record_id = u.record_id) AS latest_skip_at
+                 WHERE vs.record_id = u.record_id) AS latest_skip_at,
+                -- Additional originals: a parent and its added originals share the
+                -- replication's title, so the row names the original as well.
+                u.origin,
+                u.parent_record_id::text AS parent_record_id,
+                COALESCE(NULLIF(u.final_title_o, ''), u.title_o) AS effective_title_o,
+                COALESCE(u.final_doi_o, u.doi_o) AS effective_doi_o,
+                EXISTS (SELECT 1 FROM unvalidated xc
+                        WHERE xc.parent_record_id = u.record_id
+                          AND xc.validation_status <> 'rejected') AS has_extra_children,
+                -- By paper, as the entry's section counts them (extra_originals.detail_summary).
+                (SELECT COUNT(DISTINCT lower(COALESCE(NULLIF(xs.doi_o, ''), NULLIF(xs.url_o, ''), xs.title_o)))
+                 FROM extra_original_suggestions xs
+                 WHERE xs.record_id = u.record_id AND xs.status = 'open') AS open_extra_suggestions
             FROM unvalidated u
             {where}
             {order_by}
@@ -4887,6 +4942,8 @@ def admin_entries(
         cur.execute("SELECT COUNT(*) AS n FROM unvalidated "
                     "WHERE jsonb_array_length(COALESCE(quality_flags, '[]'::jsonb)) > 0")
         c_quality = cur.fetchone()["n"]
+        cur.execute(f"SELECT COUNT(*) AS n FROM unvalidated u WHERE {_OPEN_EXTRA_SUGGESTIONS_SQL}")
+        c_extra = cur.fetchone()["n"]
 
     return {
         "entries": entries,
@@ -4907,6 +4964,7 @@ def admin_entries(
             "rejected": c_rejected,
             "admin_checked": c_admin,
             "quality_flagged": c_quality,
+            "extra_originals": c_extra,
         },
     }
 
@@ -5015,6 +5073,10 @@ def admin_entry_detail(record_id: str, admin: dict = Depends(current_admin)):
         duplicate_merge = cur.fetchone()
         duplicate_merge = dict(duplicate_merge) if duplicate_merge else None
 
+        # Counts only: the "Additional originals" section loads its own data when
+        # opened, so the 15-entry preload does not pay for it.
+        extra_originals_summary = extra_originals.detail_summary(cur, record_id)
+
         # Track record for the two human cards: lifetime judgement count (from
         # validators, so assignment work counts too) and how many of their
         # judgements an admin has flagged. Keyed by validator id (as a string —
@@ -5077,7 +5139,87 @@ def admin_entry_detail(record_id: str, admin: dict = Depends(current_admin)):
             "duplicate_merge": duplicate_merge,
             "skip_history": skip_history,
             "skip_summary": skip_summary,
-            "submission_failure_history": submission_failure_history}
+            "submission_failure_history": submission_failure_history,
+            "extra_originals_summary": extra_originals_summary}
+
+
+# ---------------------------------------------------------------------------
+# Additional originals: a replication or reproduction with more than one
+# original. The logic lives in extra_originals.py; these routes stay thin.
+# ---------------------------------------------------------------------------
+
+def _extra_originals_call(fn, *args, **kwargs):
+    """Run an extra_originals call, turning its refusals into HTTP errors."""
+    try:
+        return fn(*args, **kwargs)
+    except extra_originals.ExtraOriginalError as exc:
+        raise HTTPException(exc.status, detail=exc.detail) from exc
+
+
+@app.get("/api/admin/entries/{record_id}/extra-originals")
+def admin_extra_originals(record_id: str, admin: dict = Depends(current_admin)):
+    """The validators' suggested originals for a record, the originals already
+    added to it, and whether more can be added now."""
+    with db() as cur:
+        return _extra_originals_call(extra_originals.read_view, cur, record_id)
+
+
+@app.post("/api/admin/entries/{record_id}/extra-originals/suggestions/{suggestion_id}/dismiss")
+def admin_dismiss_extra_original(record_id: str, suggestion_id: int,
+                                 admin: dict = Depends(current_admin)):
+    with db() as cur:
+        n = _extra_originals_call(extra_originals.dismiss_suggestion,
+                                  cur, record_id, suggestion_id, admin)
+    return {"dismissed": n}
+
+
+class ExtraOriginalCreate(BaseModel):
+    """One original to add. Lengths are checked here; formats and the rules
+    between fields in extra_originals._child_values, which can name the entry."""
+    from_suggestion_ids: list[int] = Field(default_factory=list, max_length=20)
+    doi_o: str | None = Field(default=None, max_length=300)
+    oa_work_id_o: str | None = Field(default=None, max_length=20)
+    title_o: str = Field(default="", max_length=1000)
+    ref_o: str | None = Field(default=None, max_length=2000)
+    year_o: str | None = Field(default=None, max_length=10)
+    url_o: str | None = Field(default=None, max_length=1000)
+    study_o: str | None = Field(default=None, max_length=50)
+    study_r: str | None = Field(default=None, max_length=50)   # None = the entry's
+    # Off: the outcome follows the entry's. On: these fields, by the entry's type.
+    own_outcome: bool = False
+    outcome: str | None = Field(default=None, max_length=100)
+    outcome_quote: str | None = Field(default=None, max_length=5000)
+    out_quote_source: str | None = Field(default=None, max_length=100)
+    outcome_computation: str | None = Field(default=None, max_length=100)
+    outcome_computational_quote: str | None = Field(default=None, max_length=5000)
+    out_quote_computational_source: str | None = Field(default=None, max_length=100)
+    outcome_robustness: str | None = Field(default=None, max_length=100)
+    outcome_robustness_quote: str | None = Field(default=None, max_length=5000)
+    out_quote_robust_source: str | None = Field(default=None, max_length=100)
+
+
+class ExtraOriginalsCreateRequest(BaseModel):
+    originals: list[ExtraOriginalCreate] = Field(min_length=1, max_length=10)
+
+
+@app.post("/api/admin/entries/{record_id}/extra-originals")
+def admin_add_extra_originals(record_id: str, req: ExtraOriginalsCreateRequest,
+                              admin: dict = Depends(current_admin)):
+    """Add originals to a published, admin-reviewed replication or reproduction:
+    a new record each, validated under this admin's name. All or none."""
+    with db() as cur:
+        created = _extra_originals_call(
+            extra_originals.create_children, cur, record_id,
+            [o.model_dump() for o in req.originals], admin)
+    return {"created": created, "parent_record_id": record_id}
+
+
+@app.post("/api/admin/entries/{record_id}/extra-original/remove")
+def admin_remove_extra_original(record_id: str, admin: dict = Depends(current_admin)):
+    """Take an added original out of FLoRA and re-open the suggestions it came from."""
+    with db() as cur:
+        _extra_originals_call(extra_originals.remove_child, cur, record_id, admin)
+    return {"removed": True, "record_id": record_id}
 
 
 @app.post("/api/admin/queue/{queue_id}/flag")
@@ -5427,13 +5569,18 @@ def admin_approve(record_id: str, admin: dict = Depends(current_admin)):
         approved_robustness_source = approved["out_quote_robust_source"]
 
         # The upsert below would take over another entry's row with the same
-        # identity, unpublishing it. Resolving offers the duplicate merge instead.
-        if _validated_identity_conflict(
+        # identity, unpublishing it. Resolving offers the duplicate merge instead,
+        # except into an original an admin added: that one has to go first.
+        conflict = _validated_identity_conflict(
             cur, record_id, doi_r=rec["doi_r"], study_r=rec["study_r"],
             title_r=approved["title_r"], doi_o=approved["doi_o"],
             oa_work_id_o=_wid.get("oa_work_id_o"), study_o=rec["study_o"],
             title_o=approved["title_o"],
-        ):
+        )
+        if conflict:
+            child_conflict = extra_originals.child_conflict_detail(cur, conflict)
+            if child_conflict:
+                raise HTTPException(409, detail=child_conflict)
             raise HTTPException(409, "This entry matches one that is already validated. "
                                      "Open it and use Mark as Resolved to merge the two.")
 
@@ -5509,6 +5656,8 @@ def admin_approve(record_id: str, admin: dict = Depends(current_admin)):
                 rec.get("doi_r_published"), rec.get("alt_identifier_r"),
             ),
         )
+        # Originals added to this entry follow what it now publishes.
+        _extra_originals_call(extra_originals.sync_children, cur, record_id, admin=admin)
         _log_decision(cur, record_id, admin, "approved", rec)
 
     return {"approved": True, "record_id": record_id}
@@ -5662,8 +5811,22 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
             req, base_type, base_outcome, base_computation, base_robustness
         )
 
+        # An original an admin added had no validators; it edits only its original
+        # and outcome, and takes the replication's details and type from its entry.
+        is_added_original = rec.get("origin") == extra_originals.ORIGIN_CHILD
+        if is_added_original:
+            _extra_originals_call(
+                extra_originals.check_child_resolve, cur, rec,
+                {"corrected_title_r": corrected_title_r, "corrected_doi_r": req.corrected_doi_r,
+                 "corrected_url_r": req.corrected_url_r,
+                 "corrected_abstract_r": req.corrected_abstract_r,
+                 "doi_r_published": req.doi_r_published,
+                 "alt_identifier_r": req.alt_identifier_r},
+                final_type)
+
         # Only enforce 2-validator requirement for records still in progress
-        if rec["validation_status"] not in ("need_review", "consensus_reached", "rejected"):
+        if (rec["validation_status"] not in ("need_review", "consensus_reached", "rejected")
+                and not is_added_original):
             cur.execute(
                 "SELECT COUNT(*) AS n FROM validation_queue WHERE record_id = %s AND is_validated = TRUE",
                 (record_id,),
@@ -5762,6 +5925,12 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
             )
             # Rejected → must not remain in the authoritative export table.
             cur.execute("DELETE FROM validated WHERE record_id = %s", (record_id,))
+            # Not a replication, so neither are the originals added to it; an
+            # added original rejected here re-opens the suggestion it came from.
+            if is_added_original:
+                extra_originals.child_left(cur, rec, admin)
+            else:
+                extra_originals.reject_children(cur, record_id, admin)
             _log_decision(cur, record_id, admin, "rejected", rec)
             return {"resolved": True, "rejected": True, "record_id": record_id}
 
@@ -5831,6 +6000,18 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
         )
         if conflict:
             conflict_id = conflict["record_id"]
+            # Never a merge into an added original (an extractor record would become
+            # the child of a child), nor of one: it would just be removed.
+            child_conflict = extra_originals.child_conflict_detail(cur, conflict)
+            if child_conflict:
+                raise HTTPException(409, detail=child_conflict)
+            if is_added_original:
+                raise HTTPException(409, detail={
+                    "code": "extra_original_published",
+                    "message": "That original is already published for this replication "
+                               f"(entry {conflict_id}). Remove this added original instead.",
+                    "existing_record_id": conflict_id,
+                })
             if req.merge_into_record_id != conflict_id:
                 raise HTTPException(
                     409, detail=_validated_duplicate_detail(record_id, conflict)
@@ -5880,6 +6061,9 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
                 """,
                 (record_id,),
             )
+            # The survivor has the same replication and original, so the originals
+            # added to the duplicate are its now.
+            extra_originals.repoint_children(cur, record_id, conflict_id, admin)
             _log_decision(cur, record_id, admin, "merged", rec)
             return {
                 "resolved": True, "merged": True,
@@ -5896,6 +6080,10 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
                 "duplicate_record_id": record_id,
                 "survivor_record_id": req.merge_into_record_id,
             })
+
+        # What an added original published before this resolve, to tell whether
+        # the admin changed its outcome (then it stops following its entry's).
+        published_before = extra_originals.published_row(cur, record_id) if is_added_original else None
 
         # Drop any prior row for this record (the natural key is mutable, so a
         # correction could otherwise leave a stale duplicate under the old key).
@@ -5941,11 +6129,18 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
             )
             if conflict:
                 raise HTTPException(
-                    409, detail=_validated_duplicate_detail(record_id, conflict)
+                    409, detail=(extra_originals.child_conflict_detail(cur, conflict)
+                                 or _validated_duplicate_detail(record_id, conflict))
                 )
             raise HTTPException(
                 409, "The validated identity changed concurrently; retry the resolution."
             )
+        if is_added_original:
+            extra_originals.after_child_resolved(cur, record_id, published_before, admin)
+        else:
+            # Originals added to this entry follow what it now publishes; a change
+            # that would collide one of them with a published record is refused.
+            _extra_originals_call(extra_originals.sync_children, cur, record_id, admin=admin)
         _log_decision(cur, record_id, admin, "resolved", rec)
 
     return {"resolved": True, "rejected": False, "record_id": record_id}

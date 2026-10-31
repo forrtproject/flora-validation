@@ -1682,6 +1682,109 @@ details[open] .senior-reject-summary::before { content: "▾ "; }
   color: var(--ink-soft);
 }
 
+/* "This study has more than one original": suggestions between Gate II and III. */
+.xo-panel {
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-alt);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  max-width: 65ch;
+}
+.xo-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+.xo-body { margin-top: 0.6rem; }
+.xo-hint {
+  margin: 0 0 0.6rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.xo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.xo-item {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.xo-item.xo-open { padding: 0.6rem 0.75rem; }
+.xo-item.xo-collapsed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  padding: 0.3rem 0.5rem;
+}
+.xo-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.35rem;
+}
+.xo-num { font-size: 0.82rem; font-weight: 600; color: var(--ink-soft); }
+.xo-label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 0.45rem;
+}
+.xo-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 0.15rem;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+}
+.xo-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.15rem 0;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--ink);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.xo-remove {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.1rem 0.3rem;
+}
+.xo-remove:hover { color: var(--red); }
+.xo-incomplete {
+  display: block;
+  width: 100%;
+  font-size: 0.78rem;
+  color: var(--amber, #b26a00);
+}
+.xo-incomplete.hidden { display: none; }
+.xo-add { margin-top: 0.5rem; font-size: 0.85rem; }
+
 .outcome-info {
   background: var(--bg-alt);
   padding: 1.1rem 1.4rem;
@@ -2916,6 +3019,15 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
 .flag-tie   { background: #fdf3e0; color: var(--amber); }
 .flag-admin { background: #eaf2e8; color: var(--green); }
 .flag-mine  { background: #e8f0fe; color: #1a56db; }
+.flag-xo       { background: #fff4e0; color: #8a5a00; }
+.flag-xo-child { background: #eef6ec; color: #2d6a2d; }
+/* The original, on rows that share a replication with other rows. */
+.admin-xo-original {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
 
 /* Pagination */
 .admin-pagination {
@@ -6804,6 +6916,83 @@ body.has-maint-banner #admin-screen {
 .admin-decisions summary { cursor: pointer; font-weight: 600; }
 .admin-decisions ul { margin: 0.4rem 0 0; padding-left: 1.2rem; }
 .admin-decisions li { margin: 0.2rem 0; }
+
+/* ---------- Additional originals (admin entry detail) ---------- */
+.admin-xo-banner {
+  background: #eef6ec;
+  border: 1px solid var(--green);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+}
+.admin-xo-banner strong { color: var(--green); }
+.admin-xo {
+  margin-top: 1.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.75rem;
+  background: var(--bg-alt);
+}
+.admin-xo > summary {
+  cursor: pointer;
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+.admin-xo-body { padding: 0 1rem 1rem; }
+.admin-xo-h {
+  margin: 0.9rem 0 0.4rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.admin-xo-notice {
+  margin: 0.25rem 0 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--amber);
+  background: var(--bg);
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.admin-xo-empty { font-size: 0.85rem; color: var(--muted); margin: 0.2rem 0; }
+.admin-xo-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.admin-xo-item {
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+}
+.admin-xo-title { font-weight: 600; font-size: 0.9rem; color: var(--ink); }
+.admin-xo-meta, .admin-xo-notes { font-size: 0.8rem; color: var(--muted); margin-top: 0.2rem; word-break: break-word; }
+.admin-xo-badges, .admin-xo-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.45rem; align-items: center; }
+.xo-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--bg-alt);
+  border: 1px solid var(--rule);
+  color: var(--ink-soft);
+}
+.xo-badge-warn { background: #fff4e0; border-color: var(--amber); color: #7a4f00; }
+/* The add form (shares the validator panel's xo-item / xo-input look). */
+.xo-row { display: flex; flex-wrap: wrap; gap: 0 0.75rem; }
+.xo-row .xo-label { flex: 1 1 8rem; }
+.xo-abstract { margin: 0.25rem 0 0.6rem; font-size: 0.8rem; color: var(--muted); }
+.xo-abstract summary { cursor: pointer; }
+.xo-abstract p { margin: 0.35rem 0 0; white-space: pre-wrap; color: var(--ink-soft); }
+.xo-own { margin-top: 0.4rem; font-weight: 500; font-size: 0.85rem; }
+.xo-own-fields {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--rule);
+}
 .admin-hide-mine {
   display: inline-flex;
   align-items: center;

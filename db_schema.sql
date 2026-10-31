@@ -2248,3 +2248,61 @@ CREATE INDEX IF NOT EXISTS idx_flora_check_findings_records
     ON flora_check_findings USING GIN (flora_ids);
 CREATE INDEX IF NOT EXISTS idx_flora_check_findings_open
     ON flora_check_findings (part, check_code) WHERE resolved_at IS NULL;
+
+-- ── Additional originals ──────────────────────────────────────────────────────
+-- A replication or reproduction can have more originals than the extractor
+-- coded. An admin adds each one as a record of its own (origin
+-- 'admin_extra_original'), linked to the extractor record it extends. Its own
+-- record_id because every path that re-publishes a record deletes its validated
+-- rows by record_id first: a row sharing the parent's would be wiped by the next
+-- approve or resolve. pair_id stays NULL, so the extractor sync (import, re-key,
+-- retire), which keys on pair_id, never sees these records. They have no queue
+-- slots, so they are never served and consensus never runs on them.
+--
+-- inherits_outcome: the record publishes its parent's type, outcome and quotes,
+-- and follows them when the parent is re-published (extra_originals.sync_children).
+-- The replication side (DOI, title, abstract, links) always follows the parent.
+-- Defaults keep flora-extractor's PostgREST inserts working unchanged.
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS origin TEXT NOT NULL DEFAULT 'extractor';
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS parent_record_id UUID REFERENCES unvalidated(record_id);
+ALTER TABLE unvalidated ADD COLUMN IF NOT EXISTS inherits_outcome BOOLEAN NOT NULL DEFAULT FALSE;
+-- Guarded rather than dropped and re-added, so a restart does not re-scan the table.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'unvalidated_origin_shape') THEN
+        ALTER TABLE unvalidated ADD CONSTRAINT unvalidated_origin_shape CHECK (
+            (origin = 'extractor' AND parent_record_id IS NULL AND NOT inherits_outcome)
+         OR (origin = 'admin_extra_original' AND parent_record_id IS NOT NULL
+             AND parent_record_id <> record_id AND pair_id IS NULL));
+    END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_unvalidated_parent_record
+    ON unvalidated (parent_record_id) WHERE parent_record_id IS NOT NULL;
+
+-- Other originals a validator suggested with a judgement ("This study has more than
+-- one original"), one row each. An admin turns a suggestion into a record above, or
+-- dismisses it. queue_id is NULL for an assignment judgement, which has no queue
+-- row. Written leniently: a suggestion can never make a judgement fail.
+CREATE TABLE IF NOT EXISTS extra_original_suggestions (
+    suggestion_id      BIGSERIAL   PRIMARY KEY,
+    record_id          UUID        NOT NULL REFERENCES unvalidated(record_id),
+    queue_id           UUID        REFERENCES validation_queue(queue_id) ON DELETE SET NULL,
+    validator_id       INTEGER     REFERENCES validators(id) ON DELETE SET NULL,
+    validator_name     TEXT,
+    position           SMALLINT    NOT NULL DEFAULT 0,
+    doi_o              TEXT,       -- the bare DOI, when the validator gave one
+    url_o              TEXT,       -- the link, when it was not a DOI
+    title_o            TEXT,       -- title or free-text reference
+    study_o            TEXT,
+    note               TEXT,
+    status             TEXT        NOT NULL DEFAULT 'open'
+                                   CHECK (status IN ('open', 'accepted', 'dismissed')),
+    resolved_record_id UUID,       -- the record it became; no FK, the log outlives it
+    resolved_by        TEXT,
+    resolved_at        TIMESTAMPTZ,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (COALESCE(NULLIF(btrim(doi_o), ''), NULLIF(btrim(url_o), ''),
+                    NULLIF(btrim(title_o), '')) IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS idx_extra_original_suggestions_record
+    ON extra_original_suggestions (record_id, status);

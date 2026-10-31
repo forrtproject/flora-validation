@@ -15,3 +15,6 @@ snapshots/
 /output/flora_committed_recovery.csv
 # Backups the outcome-agreement backfill writes before changing anything
 /backups/
+# Local working notes, kept out of the repository
+/docs/TABS.md
+/docs/pipeline-guide/topic-map.json

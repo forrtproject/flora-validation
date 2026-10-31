@@ -1068,6 +1068,10 @@ def delete_source_records(cur, ids: list) -> dict:
         ("validation_skips",
          "DELETE FROM validation_skips WHERE record_id = ANY(%s::uuid[])"),
         ("assignments", "DELETE FROM assignments WHERE record_id = ANY(%s::uuid[])"),
+        # Suggestions come with a judgement, so a retirable record has none; listed
+        # anyway because they reference both the queue slot and the record.
+        ("extra_original_suggestions",
+         "DELETE FROM extra_original_suggestions WHERE record_id = ANY(%s::uuid[])"),
         ("validation_queue",
          "DELETE FROM validation_queue WHERE record_id = ANY(%s::uuid[])"),
         ("record_metadata",

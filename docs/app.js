@@ -37,6 +37,10 @@ function blankJudgement() {
     // outcome stays "correct"; this only asks for the improved quote.
     outcome_quote_fix: false,
     no_access: false,          // hard mode: "I cannot access this article"
+    // "This study has more than one original": the other originals the validator
+    // suggests, [{doi_or_url, title, study, note}]. Older drafts lack both fields.
+    has_extra_originals: false,
+    extra_originals: [],
   };
 }
 
@@ -2430,6 +2434,16 @@ function _restoreDraftInputs(card, draft) {
   if (doiInput   && draft.corrected_doi_o)   doiInput.value   = draft.corrected_doi_o;
   if (studyInput && draft.corrected_study_o) studyInput.value = draft.corrected_study_o;
 
+  // Suggested other originals. The panel is already in the card (hidden until
+  // Gate II is answered, which _replayGates does next), so order does not matter.
+  const xoBox = card.querySelector("#xo-has-more");
+  if (xoBox && draft.has_extra_originals &&
+      Array.isArray(draft.extra_originals) && draft.extra_originals.length) {
+    xoBox.checked = true;
+    card.querySelector("#xo-body")?.classList.remove("hidden");
+    _renderExtraOriginalsList(card);
+  }
+
   const urlBtn = card.querySelector("#suggest-url-r-btn");
   if (urlBtn && draft.corrected_url_r) urlBtn.textContent = "suggest link (✓ edited)";
 
@@ -3319,6 +3333,151 @@ function _codedOriginalsBlock(p) {
     </div>`;
 }
 
+/* ---------- Additional originals (Gate II suggestions) ---------- */
+
+// A replication or reproduction can have more than one original, and the
+// extractor may have coded only some of them. The validator suggests the others
+// here; an admin reviews each suggestion and may add it as a record of its own.
+// A suggestion does not change the Gate II answer. The panel sits between the
+// gates, like the original correction panel, because an answered gate collapses
+// its body. Limits match the server's, which cuts rather than refuses: a refused
+// judgement would be lost from the background queue, so they are enforced here.
+const XO_LIMITS = { doi_or_url: 500, title: 1000, study: 50, note: 1000 };
+const XO_MAX = 10;
+
+function _extraOriginalsBlock() {
+  return `
+      <div id="extra-originals" class="xo-panel hidden">
+        <label class="xo-toggle"><input type="checkbox" id="xo-has-more"> This study has more than one original</label>
+        <div id="xo-body" class="xo-body hidden">
+          <p class="xo-hint">Suggest each other original this paper replicates or reproduces. An admin reviews your suggestions; your answer above stays as it is.</p>
+          <ol id="xo-list" class="xo-list"></ol>
+          <button type="button" id="xo-add-btn" class="link-btn xo-add">+ Add another original</button>
+        </div>
+      </div>`;
+}
+
+const _blankXo = () => ({ doi_or_url: "", title: "", study: "", note: "" });
+const _xoComplete = (e) => !!((e.doi_or_url || "").trim() || (e.title || "").trim());
+
+function _xoSummaryText(e, i) {
+  const title = (e.title || "").trim();
+  const link = (e.doi_or_url || "").trim();
+  const study = (e.study || "").trim();
+  return `#${i + 1} · ${title || link || "(nothing entered yet)"}` +
+    `${title && link ? " — " + link : ""}${study ? " · Study " + study : ""}`;
+}
+
+// One entry is expanded: the one being edited, or the newest. The others collapse
+// to a one-line summary, so a long list stays short.
+function _renderExtraOriginalsList(container) {
+  const list = container.querySelector("#xo-list");
+  if (!list) return;
+  const j = state.judgement;
+  if (!Array.isArray(j.extra_originals)) j.extra_originals = [];
+  const entries = j.extra_originals;
+  let open = Number(list.dataset.open);
+  if (!Number.isInteger(open) || open < 0 || open >= entries.length) open = entries.length - 1;
+  list.dataset.open = String(open);
+  const field = (e, i, name, label, placeholder) => `
+          <label class="xo-label">${label}
+            <input type="text" class="xo-input" data-xo-idx="${i}" data-xo-field="${name}"
+                   maxlength="${XO_LIMITS[name]}" placeholder="${escapeHtml(placeholder)}"
+                   value="${escapeHtml(e[name] || "")}">
+          </label>`;
+  list.innerHTML = entries.map((e, i) => {
+    const incomplete = `<span class="xo-incomplete${_xoComplete(e) ? " hidden" : ""}" data-xo-incomplete="${i}">Add a DOI, link or title, or this one is not sent.</span>`;
+    if (i !== open) {
+      return `
+        <li class="xo-item xo-collapsed">
+          <button type="button" class="xo-summary" data-xo-open="${i}" title="Show this original">${escapeHtml(_xoSummaryText(e, i))} ▸</button>
+          <button type="button" class="xo-remove" data-xo-remove="${i}" aria-label="Remove original ${i + 1}">✕</button>
+          ${incomplete}
+        </li>`;
+    }
+    return `
+        <li class="xo-item xo-open">
+          <div class="xo-item-head">
+            <span class="xo-num">Original #${i + 1}</span>
+            <button type="button" class="link-btn xo-remove-text" data-xo-remove="${i}">Remove</button>
+          </div>
+          ${field(e, i, "doi_or_url", "DOI or link", "e.g. https://doi.org/10.1000/xyz")}
+          ${field(e, i, "title", "Title or reference", "e.g. Smith et al. (2018) — The effect of…")}
+          ${field(e, i, "study", "Study number in that paper (optional)", "e.g. 2")}
+          ${field(e, i, "note", "Note (optional)", "e.g. Study 3 of this paper replicates it")}
+          ${incomplete}
+        </li>`;
+  }).join("");
+}
+
+function _wireExtraOriginals(container) {
+  const panel = container.querySelector("#extra-originals");
+  if (!panel) return;
+  const checkbox = panel.querySelector("#xo-has-more");
+  const body = panel.querySelector("#xo-body");
+  const list = panel.querySelector("#xo-list");
+  const entries = () => {
+    if (!Array.isArray(state.judgement.extra_originals)) state.judgement.extra_originals = [];
+    return state.judgement.extra_originals;
+  };
+  const setOn = (on) => {
+    state.judgement.has_extra_originals = on;
+    checkbox.checked = on;
+    body.classList.toggle("hidden", !on);
+  };
+  checkbox.onchange = () => {
+    // Unticking keeps the entries (ticking again brings them back) but sends none.
+    setOn(checkbox.checked);
+    if (checkbox.checked && !entries().length) entries().push(_blankXo());
+    _renderExtraOriginalsList(container);
+    if (checkbox.checked) list.querySelector(".xo-open input")?.focus();
+  };
+  panel.querySelector("#xo-add-btn").onclick = () => {
+    if (entries().length >= XO_MAX) {
+      showToast(`Up to ${XO_MAX} other originals per record.`);
+      return;
+    }
+    entries().push(_blankXo());
+    list.dataset.open = String(entries().length - 1);
+    _renderExtraOriginalsList(container);
+    list.querySelector(".xo-open input")?.focus();
+  };
+  list.onclick = (e) => {
+    const opener = e.target.closest("[data-xo-open]");
+    const remover = e.target.closest("[data-xo-remove]");
+    if (opener) {
+      list.dataset.open = opener.dataset.xoOpen;
+      _renderExtraOriginalsList(container);
+    } else if (remover) {
+      entries().splice(Number(remover.dataset.xoRemove), 1);
+      delete list.dataset.open;   // the newest remaining entry opens
+      if (!entries().length) setOn(false);
+      _renderExtraOriginalsList(container);
+    }
+  };
+  // Typing updates the draft in place; the list is not re-rendered, so focus stays.
+  list.oninput = (e) => {
+    const input = e.target.closest("[data-xo-field]");
+    if (!input) return;
+    const entry = entries()[Number(input.dataset.xoIdx)];
+    if (!entry) return;
+    entry[input.dataset.xoField] = input.value.slice(0, XO_LIMITS[input.dataset.xoField]);
+    list.querySelector(`[data-xo-incomplete="${input.dataset.xoIdx}"]`)
+      ?.classList.toggle("hidden", _xoComplete(entry));
+  };
+}
+
+// What /api/judge receives: complete entries only, trimmed, or null.
+function _extraOriginalsPayload(j) {
+  if (!j.has_extra_originals || !Array.isArray(j.extra_originals)) return null;
+  const out = j.extra_originals
+    .map((e) => Object.fromEntries(Object.keys(XO_LIMITS).map((k) =>
+      [k, String(e[k] || "").trim().slice(0, XO_LIMITS[k])])))
+    .filter(_xoComplete)
+    .slice(0, XO_MAX);
+  return out.length ? out : null;
+}
+
 /* ---------- Pair rendering (normal + onboarding) ---------- */
 let _pairShownAt = null;
 
@@ -3474,6 +3633,8 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
         <div id="oc-saved-confirm" class="hidden" style="font-size:0.85rem;color:var(--green)">✓ Suggestion saved — <button class="link-btn" id="oc-edit-btn" style="font-size:0.82rem">edit</button></div>
       </div>
 
+      ${onboarding ? "" : _extraOriginalsBlock()}
+
       <div class="gate hidden" id="gate-3">
         <div class="gate-header-row">
           <h3><span class="gate-num">iii.</span>Outcome check</h3>
@@ -3574,6 +3735,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
   }
 
   wireEditButtons(container, p);
+  if (!onboarding) _wireExtraOriginals(container);
 
   // Wire original correction panel
   const doiInput      = container.querySelector("#corrected-doi-input");
@@ -4009,6 +4171,8 @@ function onChoice(btn) {
       const g3 = pairBody.querySelector("#gate-3");
       unanswerGate(g2); g2.classList.add("hidden");
       unanswerGate(g3); g3.classList.add("hidden");
+      // Neither type has no original at all; the entries stay but are not sent.
+      pairBody.querySelector("#extra-originals")?.classList.add("hidden");
       state.judgement.original = null;
       state.judgement.outcome = null;
       state.judgement.outcome_quote_fix = false;
@@ -4041,6 +4205,8 @@ function onChoice(btn) {
     pairBody.querySelector(".comment").classList.remove("hidden");
   } else if (btn.dataset.original) {
     state.judgement.original = btn.dataset.original;
+    // Whatever the answer: a correct original can still have siblings.
+    pairBody.querySelector("#extra-originals")?.classList.remove("hidden");
     if (wasAnswered) {
       unanswerGate(pairBody.querySelector("#gate-3"));
       state.judgement.outcome = null;
@@ -4797,6 +4963,8 @@ async function submitJudgement() {
     corrected_url_r:         j.corrected_url_r || null,
     doi_r_published:         j.doi_r_published || null,
     validator_notes:         j.comment || null,
+    // Other originals the validator suggested. Not for "neither": no original.
+    extra_originals:         isNotValidation ? null : _extraOriginalsPayload(j),
   };
 
   // Assignment validation — resolves the record directly (double points),
@@ -5468,6 +5636,8 @@ function renderAdminCounts(counts) {
   $("#fc-admin-comments").textContent   = counts.admin_comments ?? 0;
   const fcQuality = $("#fc-quality-flagged");
   if (fcQuality) fcQuality.textContent = counts.quality_flagged ?? 0;
+  const fcExtra = $("#fc-extra-originals");
+  if (fcExtra) fcExtra.textContent = counts.extra_originals ?? 0;
   $("#fc-validated").textContent        = counts.validated;
   const fcAuto = $("#fc-auto-validated");
   if (fcAuto) fcAuto.textContent = counts.auto_validated ?? 0;
@@ -5525,7 +5695,16 @@ function renderAdminTable(entries, total) {
       e.is_tiebreaker  ? '<span class="admin-flag flag-tie" title="Tiebreaker">TIE</span>' : "",
       e.admin_checked  ? '<span class="admin-flag flag-admin" title="Admin checked">✓</span>' : "",
       e.mine           ? '<span class="admin-flag flag-mine" title="You validated this entry">YOU</span>' : "",
+      Number(e.open_extra_suggestions) > 0
+        ? `<span class="admin-flag flag-xo" title="Validators suggested other originals">+${Number(e.open_extra_suggestions)} suggested</span>` : "",
+      e.origin === "admin_extra_original"
+        ? '<span class="admin-flag flag-xo-child" title="An original an admin added to another entry">added original</span>' : "",
     ].join("");
+    // A parent and its added originals share the replication's title: name the
+    // original too, or the rows look identical.
+    const xoOriginal = (e.origin === "admin_extra_original" || e.has_extra_children)
+      ? `<span class="admin-xo-original">↳ ${escapeHtml(String(e.effective_title_o || e.effective_doi_o || "original").substring(0, 60))}</span>`
+      : "";
     const validators = [
       e.has_v1  ? `<span class="val-badge" title="${escapeHtml(e.v1_handle || "Validator 1")}">V1</span>` : `<span class="val-badge val-badge-empty">—</span>`,
       e.has_v2  ? `<span class="val-badge" title="${escapeHtml(e.v2_handle || "Validator 2")}">V2</span>` : `<span class="val-badge val-badge-empty">—</span>`,
@@ -5568,7 +5747,7 @@ function renderAdminTable(entries, total) {
       : "—";
     return `<tr>
       <td class="admin-cell-num">${offset + i + 1}</td>
-      <td class="admin-cell-study" title="${(e.final_title_r || e.title_r || "").replace(/"/g, "&quot;")}">${escapeHtml(study)}${e.study_r ? ` <span class="chk-na-note">Study ${escapeHtml(e.study_r)}</span>` : ""}${flags}${trustBadge}${needsAttentionFlag}${noteFlag}</td>
+      <td class="admin-cell-study" title="${(e.final_title_r || e.title_r || "").replace(/"/g, "&quot;")}">${escapeHtml(study)}${e.study_r ? ` <span class="chk-na-note">Study ${escapeHtml(e.study_r)}</span>` : ""}${flags}${trustBadge}${needsAttentionFlag}${noteFlag}${xoOriginal}</td>
       <td>${escapeHtml(e.final_type || e.type || "—")}</td>
       <td>${escapeHtml(fmtOutcome(e.final_outcome || e.outcome) || "—")}</td>
       <td><span class="admin-status ${s.cls}"${e.auto_validated ? ` title="No admin reviewed it: ${escapeHtml(_autoValidatedHow(e.auto_validated_rule))}"` : ""}>${s.text}</span></td>
@@ -5607,7 +5786,7 @@ async function quickApprove(recordId, btn) {
   btn.textContent = "…";
   try {
     await adminApi(`/entries/${recordId}/approve`, "POST");
-    showToast("Entry approved.");
+    showToast(_xoPendingNote(recordId, "Entry approved."));
     fetchAdminEntries();
   } catch (e) {
     btn.disabled = false;
@@ -5665,6 +5844,438 @@ function _trackRecordText(st) {
 function _trackRecordTitle(st) {
   return `${st.approved || 0} of their records approved by an admin · ${st.flags || 0} ` +
          `judgement${st.flags === 1 ? "" : "s"} flagged · ${st.judged || 0} submitted in total`;
+}
+
+/* ---------- Additional originals (admin entry detail) ---------- */
+
+// A replication or reproduction can have more than one original. Validators
+// suggest them with their judgement; here an admin sees those suggestions and the
+// originals already added, and adds more (extra_originals.py). Kept out of
+// renderAdminDetail, which only places the section and calls in.
+const _adminXoCache = {};
+
+// Only http(s) links are ever made clickable: these values are typed by people.
+function _xoSafeHref(url) {
+  const u = String(url || "").trim();
+  return /^https?:\/\//i.test(u) ? u : null;
+}
+
+function _xoPaperLink(doi, url) {
+  if (doi) {
+    return `<a href="${escapeHtml("https://doi.org/" + doi)}" target="_blank" rel="noopener">${escapeHtml(doi)}</a>`;
+  }
+  const href = _xoSafeHref(url);
+  return href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">${escapeHtml(url)}</a>` : "";
+}
+
+function _adminChildBanner(rec) {
+  if (rec.origin !== "admin_extra_original") return "";
+  return `
+    <div class="admin-xo-banner">
+      <strong>Additional original</strong> — added by ${escapeHtml(rec.admin_name || "an admin")}
+      to <button type="button" class="link-btn" id="xo-open-parent" data-id="${escapeHtml(rec.parent_record_id)}">its entry</button>.
+      Its replication details always follow that entry;
+      ${rec.inherits_outcome ? "so does its outcome." : "it has an outcome of its own."}
+      <button type="button" class="btn-reject-outline" id="xo-remove-self" data-id="${escapeHtml(rec.record_id)}">Remove this original</button>
+    </div>`;
+}
+
+function _adminExtraOriginalsShell(rec, data) {
+  if (rec.origin === "admin_extra_original") return "";
+  const type = rec.final_type || rec.type;
+  if (!["replication", "reproduction"].includes(type)) return "";
+  const summary = data.extra_originals_summary || {};
+  const open = Number(summary.open_suggestions) || 0;
+  const added = Number(summary.children) || 0;
+  // Collapsed unless a validator's suggestion is waiting.
+  return `
+    <details id="xo-admin" class="admin-xo" data-record-id="${escapeHtml(rec.record_id)}"${open ? " open" : ""}>
+      <summary>Additional originals${open ? ` · ${open} suggested` : ""}${added ? ` · ${added} added` : ""}</summary>
+      <div id="xo-admin-body" class="admin-xo-body"><p class="faq-loading">Loading…</p></div>
+    </details>`;
+}
+
+function _wireAdminExtraOriginals(rec, data) {
+  $("#xo-open-parent")?.addEventListener("click", (e) => openAdminDetail(e.currentTarget.dataset.id));
+  $("#xo-remove-self")?.addEventListener("click", () => _removeAdminExtraOriginal(rec.record_id, rec.parent_record_id));
+  const details = $("#xo-admin");
+  if (!details) return;
+  // Always fresh on opening an entry: whether originals can be added changes when
+  // the entry is approved, and validators may have suggested more since.
+  if (details.open) _loadAdminExtraOriginals(rec.record_id, { fresh: true });
+  details.addEventListener("toggle", () => {
+    if (details.open && !details.dataset.loaded) _loadAdminExtraOriginals(rec.record_id, { fresh: true });
+  });
+}
+
+async function _loadAdminExtraOriginals(recordId, { fresh = false } = {}) {
+  const details = $("#xo-admin");
+  if (!details) return;
+  details.dataset.loaded = "1";
+  try {
+    if (fresh || !_adminXoCache[recordId]) {
+      _adminXoCache[recordId] = await adminApi(`/entries/${recordId}/extra-originals`);
+    }
+    // The admin may have moved to another entry while this loaded.
+    if ($("#xo-admin")?.dataset.recordId !== String(recordId)) return;
+    const xo = _adminXoCache[recordId];
+    const open = (xo.suggestions || []).filter((g) => g.status === "open").length;
+    const added = (xo.children || []).length;
+    const summary = $("#xo-admin > summary");
+    if (summary) {
+      summary.textContent = `Additional originals${open ? ` · ${open} suggested` : ""}${added ? ` · ${added} added` : ""}`;
+    }
+    _renderAdminExtraOriginals($("#xo-admin-body"), xo);
+  } catch (e) {
+    // Not on another entry's section; and the next opening of this one tries again.
+    if ($("#xo-admin")?.dataset.recordId !== String(recordId)) return;
+    delete details.dataset.loaded;
+    const body = $("#xo-admin-body");
+    if (body) body.innerHTML = `<p class="faq-error">Could not load additional originals (${escapeHtml(e.message)}).</p>`;
+  }
+}
+
+function _xoChildRow(c) {
+  const meta = [
+    _xoPaperLink(c.doi_o, c.url_o),
+    c.study_o ? "Study " + escapeHtml(c.study_o) : "",
+    c.year_o ? escapeHtml(c.year_o) : "",
+    c.inherits_outcome ? "outcome inherited" : "own outcome: " + escapeHtml(fmtOutcome(c.outcome) || "—"),
+    "added by " + escapeHtml(c.admin_name || "an admin"),
+  ].filter(Boolean).join(" · ");
+  return `
+    <li class="admin-xo-item">
+      <div class="admin-xo-title">${escapeHtml(c.title_o || c.doi_o || "(untitled)")}</div>
+      <div class="admin-xo-meta">${meta}</div>
+      <div class="admin-xo-actions">
+        <button type="button" class="ghost-btn" data-xo-open-child="${escapeHtml(c.record_id)}">Open</button>
+        <button type="button" class="btn-reject-outline" data-xo-remove-child="${escapeHtml(c.record_id)}">Remove</button>
+      </div>
+    </li>`;
+}
+
+function _xoSuggestionRow(g, parent) {
+  const who = (g.suggested_by || []).map((s) => escapeHtml(s.validator_name || "a validator")).join(", ");
+  const match = g.coded_match;
+  const badges = [
+    g.is_own_original ? `<span class="xo-badge xo-badge-warn">this entry's own original</span>` : "",
+    match ? `<span class="xo-badge xo-badge-warn">${match.origin === "admin_extra_original" ? "already added" : "already coded"}
+      (<button type="button" class="link-btn" data-xo-open-child="${escapeHtml(match.record_id)}">${escapeHtml((STATUS_LABELS[match.validation_status] || {}).text || match.validation_status)}</button>)</span>` : "",
+    g.status === "accepted" ? `<span class="xo-badge">added</span>` : "",
+    g.status === "dismissed" ? `<span class="xo-badge">dismissed</span>` : "",
+  ].join("");
+  const usable = parent.can_add && !g.is_own_original && !match;
+  const actions = g.status === "open" ? `
+        <button type="button" class="btn-outline" data-xo-use="${escapeHtml(g.key)}"${usable ? "" : " disabled"}>Use as additional original</button>
+        <button type="button" class="ghost-btn" data-xo-dismiss="${Number(g.open_suggestion_ids[0])}">Dismiss</button>` : "";
+  const meta = [
+    _xoPaperLink(g.doi_o, g.url_o),
+    g.study_o ? "Study " + escapeHtml(g.study_o) : "",
+    "suggested by " + who,
+  ].filter(Boolean).join(" · ");
+  return `
+    <li class="admin-xo-item">
+      <div class="admin-xo-title">${escapeHtml(g.title_o || g.doi_o || g.url_o || "(untitled)")}</div>
+      <div class="admin-xo-meta">${meta}</div>
+      ${(g.notes || []).length ? `<div class="admin-xo-notes">${g.notes.map((n) => `“${escapeHtml(n)}”`).join(" ")}</div>` : ""}
+      ${badges ? `<div class="admin-xo-badges">${badges}</div>` : ""}
+      ${actions ? `<div class="admin-xo-actions">${actions}</div>` : ""}
+    </li>`;
+}
+
+function _renderAdminExtraOriginals(body, xo) {
+  if (!body) return;
+  const parent = xo.parent || {};
+  const children = xo.children || [];
+  const suggestions = xo.suggestions || [];
+  body.innerHTML = `
+    ${parent.can_add ? "" : `<p class="admin-xo-notice">${escapeHtml(parent.block_reason || "")}</p>`}
+    ${children.length ? `
+      <h4 class="admin-xo-h">Added</h4>
+      <ul class="admin-xo-list">${children.map(_xoChildRow).join("")}</ul>` : ""}
+    <h4 class="admin-xo-h">Suggested by validators</h4>
+    ${suggestions.length
+      ? `<ul class="admin-xo-list">${suggestions.map((g) => _xoSuggestionRow(g, parent)).join("")}</ul>`
+      : `<p class="admin-xo-empty">No validator suggested another original.</p>`}
+    <div id="xo-add-section"></div>`;
+
+  body.querySelectorAll("[data-xo-open-child]").forEach((btn) => {
+    btn.onclick = () => openAdminDetail(btn.dataset.xoOpenChild);
+  });
+  body.querySelectorAll("[data-xo-remove-child]").forEach((btn) => {
+    btn.onclick = () => _removeAdminExtraOriginal(btn.dataset.xoRemoveChild, parent.record_id);
+  });
+  body.querySelectorAll("[data-xo-dismiss]").forEach((btn) => {
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        await adminApi(`/entries/${parent.record_id}/extra-originals/suggestions/${btn.dataset.xoDismiss}/dismiss`, "POST");
+        delete _adminDetailCache[parent.record_id];
+        showToast("Suggestion dismissed.");
+        await _loadAdminExtraOriginals(parent.record_id, { fresh: true });
+      } catch (e) {
+        btn.disabled = false;
+        await showAlert("Error: " + e.message);
+      }
+    };
+  });
+  body.querySelectorAll("[data-xo-use]").forEach((btn) => {
+    btn.onclick = () => {
+      const g = suggestions.find((s) => s.key === btn.dataset.xoUse);
+      if (g) _useXoSuggestion(xo, g);
+    };
+  });
+  _renderAdminXoAddSection(body, xo);
+}
+
+// Removing an added original takes it out of FLoRA (its Source Records row is
+// retired at commit) and re-opens the suggestions it came from.
+async function _removeAdminExtraOriginal(childId, parentId) {
+  if (!await showConfirm("Remove this added original? It leaves FLoRA at the next sync.")) return;
+  try {
+    await adminApi(`/entries/${childId}/extra-original/remove`, "POST");
+    delete _adminDetailCache[childId];
+    if (parentId) { delete _adminDetailCache[parentId]; delete _adminXoCache[parentId]; }
+    showToast("Additional original removed.");
+    if ($("#xo-admin")?.dataset.recordId === String(parentId)) {
+      await _loadAdminExtraOriginals(parentId, { fresh: true });
+    } else {
+      await openAdminDetail(parentId || childId);
+    }
+  } catch (e) {
+    await showAlert("Error: " + e.message);
+  }
+}
+
+// Approve and resolve move on to the next entry, so say where the validators'
+// suggested originals for this one can be found again.
+function _xoPendingNote(recordId, message) {
+  const open = Number(_adminDetailCache[recordId]?.extra_originals_summary?.open_suggestions) || 0;
+  return open
+    ? `${message} Validators suggested ${open} other original${open === 1 ? "" : "s"}: find ${open === 1 ? "it" : "them"} under Suggested originals.`
+    : message;
+}
+
+// The "Add additional originals" form. Off until switched on, even with no
+// suggestions; "+" adds an entry and folds the earlier ones to one line. A
+// suggestion's "Use as additional original" opens a pre-filled entry here, so
+// both ways end in the same form and the same request. Entries survive a re-render
+// of the section (per entry record), not a page reload.
+const _adminXoDrafts = {};
+const _XO_ADMIN_LIMITS = { doi_o: 300, oa_work_id_o: 20, title_o: 1000, ref_o: 2000, year_o: 4,
+                           url_o: 1000, study_o: 50, study_r: 50, outcome_quote: 5000,
+                           outcome_computational_quote: 5000, outcome_robustness_quote: 5000 };
+
+function _blankAdminXo(published) {
+  return {
+    from_suggestion_ids: [], doi_o: "", oa_work_id_o: "", title_o: "", ref_o: "", year_o: "",
+    url_o: "", study_o: "", study_r: (published && published.study_r) || "", own_outcome: false,
+    outcome: "", outcome_quote: "", out_quote_source: "",
+    outcome_computation: "", outcome_computational_quote: "", out_quote_computational_source: "",
+    outcome_robustness: "", outcome_robustness_quote: "", out_quote_robust_source: "",
+  };
+}
+
+function _adminXoDraft(parent) {
+  if (!_adminXoDrafts[parent.record_id]) {
+    _adminXoDrafts[parent.record_id] = { on: false, entries: [], open: -1 };
+  }
+  return _adminXoDrafts[parent.record_id];
+}
+
+function _xoAdminSummaryText(e, i) {
+  const bits = [e.title_o || e.doi_o || "(no title yet)", e.doi_o && e.title_o ? e.doi_o : "",
+                e.study_o ? "Study " + e.study_o : "", e.own_outcome ? "own outcome" : "inherits outcome"];
+  return `#${i + 1} · ` + bits.filter(Boolean).join(" · ");
+}
+
+function _xoAdminOutcomeFields(e, i, type) {
+  const quote = (name, label) => `
+      <label class="admin-form-label">${label}</label>
+      <textarea class="admin-textarea" data-xoa-idx="${i}" data-xoa-field="${name}"
+                maxlength="${_XO_ADMIN_LIMITS[name]}">${escapeHtml(e[name] || "")}</textarea>`;
+  const source = (name) => `
+      <select class="admin-select" data-xoa-idx="${i}" data-xoa-field="${name}">${_adminQuoteSourceOptions(e[name] || "")}</select>`;
+  if (type === "reproduction") {
+    return `
+      <label class="admin-form-label">Computational reproducibility</label>
+      <select class="admin-select" data-xoa-idx="${i}" data-xoa-field="outcome_computation">${_axisOptions(_REPRO_COMPUTATION, e.outcome_computation)}</select>
+      ${quote("outcome_computational_quote", "Quote for the computational verdict")}
+      ${source("out_quote_computational_source")}
+      <label class="admin-form-label">Robustness</label>
+      <select class="admin-select" data-xoa-idx="${i}" data-xoa-field="outcome_robustness">${_axisOptions(_REPRO_ROBUSTNESS, e.outcome_robustness)}</select>
+      ${quote("outcome_robustness_quote", "Quote for the robustness verdict")}
+      ${source("out_quote_robust_source")}`;
+  }
+  return `
+      <label class="admin-form-label">Outcome</label>
+      <select class="admin-select" data-xoa-idx="${i}" data-xoa-field="outcome">
+        <option value="">— choose —</option>${_outcomeOptionsFor("replication", e.outcome || "")}
+      </select>
+      ${quote("outcome_quote", "Outcome quote")}
+      ${source("out_quote_source")}`;
+}
+
+function _xoAdminEntryForm(e, i, parent) {
+  const input = (name, label, placeholder = "") => `
+      <label class="xo-label">${label}
+        <input type="text" class="xo-input" data-xoa-idx="${i}" data-xoa-field="${name}"
+               maxlength="${_XO_ADMIN_LIMITS[name]}" placeholder="${escapeHtml(placeholder)}"
+               value="${escapeHtml(e[name] || "")}">
+      </label>`;
+  const abstract = (parent.published && parent.published.abstract_r) || "";
+  return `
+        <li class="xo-item xo-open" data-xoa-entry="${i}">
+          <div class="xo-item-head">
+            <span class="xo-num">Original #${i + 1}${e.from_suggestion_ids.length ? " · from a validator's suggestion" : ""}</span>
+            <button type="button" class="link-btn xo-remove-text" data-xoa-remove="${i}">Remove</button>
+          </div>
+          ${input("doi_o", "DOI", "10.1000/xyz")}
+          ${input("title_o", "Title (required)")}
+          <label class="xo-label">Reference (required without a DOI)
+            <textarea class="admin-textarea" data-xoa-idx="${i}" data-xoa-field="ref_o"
+                      maxlength="${_XO_ADMIN_LIMITS.ref_o}" placeholder="Smith, J. (2018). The effect of…">${escapeHtml(e.ref_o || "")}</textarea>
+          </label>
+          <div class="xo-row">
+            ${input("year_o", "Year", "2018")}
+            ${input("study_o", "Study in the original", "e.g. 2")}
+            ${input("study_r", "Study in the replication", "e.g. 1")}
+          </div>
+          ${input("url_o", "Link (https://…)")}
+          ${input("oa_work_id_o", "OpenAlex id (when there is no DOI)", "W123456789")}
+          <p class="xo-hint">Without a DOI, FLoRA describes this original by its reference alone: the title, year and OpenAlex id do not reach it.</p>
+          <details class="xo-abstract">
+            <summary>Abstract (the replication's, from this entry; read-only)</summary>
+            <p>${escapeHtml(abstract || "No abstract.")}</p>
+          </details>
+          <label class="xo-toggle xo-own">
+            <input type="checkbox" data-xoa-own="${i}"${e.own_outcome ? " checked" : ""}>
+            Give it its own outcome and quote (otherwise it follows this entry's)
+          </label>
+          ${e.own_outcome ? `<div class="xo-own-fields">${_xoAdminOutcomeFields(e, i, parent.type)}</div>` : ""}
+        </li>`;
+}
+
+function _renderAdminXoAddSection(body, xo) {
+  const parent = xo.parent || {};
+  const host = body.querySelector("#xo-add-section");
+  if (!host || !parent.can_add) return;
+  const draft = _adminXoDraft(parent);
+  host.innerHTML = `
+    <h4 class="admin-xo-h">Add additional originals</h4>
+    <label class="xo-toggle"><input type="checkbox" id="xo-add-on"${draft.on ? " checked" : ""}>
+      Add other originals of this ${escapeHtml(parent.type || "record")}</label>
+    <div id="xo-add-body"${draft.on ? "" : ' class="hidden"'}>
+      <p class="xo-hint">Each one becomes a validated record under your name, with this entry's replication details. It reaches Source Records and FLoRA at the next nightly sync.</p>
+      <ol id="xo-add-list" class="xo-list"></ol>
+      <button type="button" id="xo-add-more" class="link-btn xo-add">+ Add another original</button>
+      <div class="admin-xo-actions"><button type="button" id="xo-add-save" class="btn-primary"></button></div>
+    </div>`;
+  const list = host.querySelector("#xo-add-list");
+  const render = () => {
+    if (draft.open < 0 || draft.open >= draft.entries.length) draft.open = draft.entries.length - 1;
+    list.innerHTML = draft.entries.map((e, i) => i === draft.open ? _xoAdminEntryForm(e, i, parent) : `
+        <li class="xo-item xo-collapsed">
+          <button type="button" class="xo-summary" data-xoa-open="${i}">${escapeHtml(_xoAdminSummaryText(e, i))} ▸</button>
+          <button type="button" class="xo-remove" data-xoa-remove="${i}" aria-label="Remove original ${i + 1}">✕</button>
+        </li>`).join("");
+    const save = host.querySelector("#xo-add-save");
+    const n = draft.entries.length;
+    save.textContent = n === 1 ? "Add this original" : `Add these ${n} originals`;
+    save.disabled = n === 0;
+  };
+  draft.render = render;
+  host.querySelector("#xo-add-on").onchange = (ev) => {
+    draft.on = ev.target.checked;
+    host.querySelector("#xo-add-body").classList.toggle("hidden", !draft.on);
+    if (draft.on && !draft.entries.length) draft.entries.push(_blankAdminXo(parent.published));
+    render();
+  };
+  host.querySelector("#xo-add-more").onclick = () => {
+    if (draft.entries.length >= 10) { showToast("Up to 10 originals at a time."); return; }
+    draft.entries.push(_blankAdminXo(parent.published));
+    draft.open = draft.entries.length - 1;
+    render();
+  };
+  list.onclick = (ev) => {
+    const opener = ev.target.closest("[data-xoa-open]");
+    const remover = ev.target.closest("[data-xoa-remove]");
+    if (opener) { draft.open = Number(opener.dataset.xoaOpen); render(); }
+    if (remover) { draft.entries.splice(Number(remover.dataset.xoaRemove), 1); draft.open = -1; render(); }
+  };
+  // Typing updates the entry in place without a re-render, so focus stays put.
+  const update = (ev) => {
+    const own = ev.target.closest("[data-xoa-own]");
+    if (own) {
+      draft.entries[Number(own.dataset.xoaOwn)].own_outcome = own.checked;
+      render();
+      return;
+    }
+    const field = ev.target.closest("[data-xoa-field]");
+    if (field) draft.entries[Number(field.dataset.xoaIdx)][field.dataset.xoaField] = field.value;
+  };
+  list.oninput = update;
+  list.onchange = update;
+  host.querySelector("#xo-add-save").onclick = () => _submitAdminExtraOriginals(parent, draft);
+  render();
+}
+
+// "Use as additional original": a pre-filled entry in the add form, carrying the
+// suggestions it answers so they are marked as added.
+function _useXoSuggestion(xo, g) {
+  const parent = xo.parent || {};
+  const draft = _adminXoDraft(parent);
+  draft.on = true;
+  draft.entries.push({
+    ..._blankAdminXo(parent.published),
+    from_suggestion_ids: [...g.open_suggestion_ids],
+    doi_o: g.doi_o || "", url_o: _xoSafeHref(g.url_o) || "", title_o: g.title_o || "",
+    study_o: (g.study_o || "").split(",")[0].trim(),
+  });
+  draft.open = draft.entries.length - 1;
+  _renderAdminExtraOriginals($("#xo-admin-body"), xo);
+  $("#xo-add-list .xo-open")?.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+function _xoAdminPayload(e) {
+  const out = { from_suggestion_ids: e.from_suggestion_ids, own_outcome: !!e.own_outcome };
+  for (const name of ["doi_o", "oa_work_id_o", "title_o", "ref_o", "year_o", "url_o", "study_o"]) {
+    out[name] = String(e[name] || "").trim() || null;
+  }
+  out.title_o = out.title_o || "";
+  out.study_r = String(e.study_r || "").trim();
+  if (e.own_outcome) {
+    for (const name of ["outcome", "outcome_quote", "out_quote_source",
+                        "outcome_computation", "outcome_computational_quote", "out_quote_computational_source",
+                        "outcome_robustness", "outcome_robustness_quote", "out_quote_robust_source"]) {
+      out[name] = String(e[name] || "").trim() || null;
+    }
+  }
+  return out;
+}
+
+async function _submitAdminExtraOriginals(parent, draft) {
+  const save = $("#xo-add-save");
+  if (save) { save.disabled = true; save.textContent = "Adding…"; }
+  try {
+    const resp = await adminApi(`/entries/${parent.record_id}/extra-originals`, "POST",
+                                { originals: draft.entries.map(_xoAdminPayload) });
+    const n = (resp.created || []).length;
+    delete _adminXoDrafts[parent.record_id];
+    delete _adminDetailCache[parent.record_id];
+    showToast(`Added ${n} original${n === 1 ? "" : "s"}. ${n === 1 ? "It reaches" : "They reach"} Source Records and FLoRA at the next nightly sync.`);
+    await _loadAdminExtraOriginals(parent.record_id, { fresh: true });
+  } catch (e) {
+    // The server names the entry at fault; open it so the admin sees what to fix.
+    if (typeof e.detail?.index === "number" && e.detail.index < draft.entries.length) {
+      draft.open = e.detail.index;
+      draft.render?.();
+      $("#xo-add-list .xo-open")?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+    if (save) { save.disabled = false; }
+    draft.render?.();
+    await showAlert(e.message);
+  }
 }
 
 function renderAdminDetail(data) {
@@ -6286,6 +6897,13 @@ function renderAdminDetail(data) {
     approved: "Approved", resolved: "Resolved", rejected: "Rejected — not in FLoRA",
     merged: "Merged into another entry", flagged_for_review: "Flagged for review",
     sent_back: "Sent back for review (was auto-validated)",
+    extra_original_added: "Additional original added",
+    extra_original_removed: "Additional original removed",
+    extra_originals_moved: "Additional originals moved here",
+    inherited_update: "Updated from its entry",
+    own_outcome_set: "Given its own outcome",
+    rejected_with_parent: "Excluded with its entry",
+    suggestion_dismissed: "Suggested original dismissed",
   };
   const decisions = Array.isArray(data.decisions) ? data.decisions : [];
   const decisionsCard = decisions.length
@@ -6302,6 +6920,7 @@ function renderAdminDetail(data) {
     : "";
 
   $("#admin-detail-body").innerHTML = `
+    ${_adminChildBanner(rec)}
     ${autoBanner}
     ${selfBanner}
     ${qualityBanner}
@@ -6452,7 +7071,9 @@ function renderAdminDetail(data) {
         </div>
       </div>
     </div>
+    ${_adminExtraOriginalsShell(rec, data)}
   `;
+  _wireAdminExtraOriginals(rec, data);
 
   // "It's a reproduction" / "It's a replication": the other FLoRA type is a
   // correction of the type, not a rejection. Open the edit panel (hidden behind
@@ -6780,7 +7401,7 @@ async function submitAdminResolve(recordId) {
 
   try {
     await adminApi(`/entries/${recordId}/resolve`, "POST", body);
-    showToast("Entry resolved.");
+    showToast(_xoPendingNote(recordId, "Entry resolved."));
     await advanceToNextAdminEntry();
   } catch (e) {
     if (e.status === 409 && e.detail?.code === "validated_duplicate_conflict") {
@@ -7840,6 +8461,12 @@ function renderAdminDashboard(d) {
           <span class="dash-card-label">Excluded</span>
           <span class="dash-card-sub">${pct(p.rejected, p.total)}</span>
         </div>
+        ${p.admin_extra_originals ? `
+        <div class="dash-card dash-card-neutral" title="Originals an admin added to a replication or reproduction. Counted apart: the extractor never coded them and no validator judged them.">
+          <span class="dash-card-val">${p.admin_extra_originals}</span>
+          <span class="dash-card-label">Added originals</span>
+          <span class="dash-card-sub">not in the counts above</span>
+        </div>` : ""}
       </div>
     </div>
 

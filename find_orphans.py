@@ -77,9 +77,11 @@ def main(csv_path: Path, expect_sha256: str | None = None,
     conn = psycopg2.connect(database_url)
     try:
         with conn.cursor() as cur:
+            # Only extractor records: an original an admin added has no pair_id and
+            # was never in a CSV, so it is not an orphan.
             cur.execute(
                 "SELECT record_id, pair_id, doi_r, doi_o, validation_status "
-                "FROM unvalidated"
+                "FROM unvalidated WHERE origin = 'extractor'"
             )
             rows = cur.fetchall()
     finally:

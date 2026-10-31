@@ -373,6 +373,67 @@ the complete A-side source and judgement history still attached to
 
 ---
 
+### Additional originals (`unvalidated.origin`, `extra_original_suggestions`)
+
+A replication or reproduction can have more than one original. The extractor codes
+one record per (replication, original) pair and may miss some; a validator can
+suggest the others with a judgement ("This study has more than one original"), and
+an admin adds each one, from a suggestion or by hand, as a **record of its own**.
+The logic is in `extra_originals.py`.
+
+| Column on `unvalidated` | Meaning |
+| --- | --- |
+| `origin` | `'extractor'` (default) or `'admin_extra_original'` |
+| `parent_record_id` | the extractor record an added original belongs to |
+| `inherits_outcome` | the added original publishes its parent's type, outcome and quotes, and follows them |
+
+- **Own `record_id`**: every re-publication deletes a record's `validated` rows by
+  `record_id` first, so a row sharing the parent's would vanish at its next approve or
+  resolve. **`pair_id` is NULL** (enforced by `unvalidated_origin_shape`), so the
+  extractor sync (import, re-key, retire, orphan report) never sees one. It has no
+  `validation_queue` slots: never served, never judged by consensus, never counted as
+  validator work (the dashboard counts it apart as "Added originals").
+- **Created** only on a parent that is validated **and** admin-checked, as
+  `validation_status = 'validated'`, `admin_checked = TRUE`, `admin_name` = the admin,
+  with a `validated` row (`admin_approved = TRUE`) that reaches Source Records as a VAL-
+  row at the next sync. Each creation is logged in `admin_decisions` on both records.
+- **Identity**: key columns are stored as `''`, never NULL. A new original is refused if
+  it is the parent's own (same original and study), already published for the
+  replication (DOI compared case-insensitively), or still being validated as an
+  extractor record. An original without a DOI is also refused while the replication
+  already has one (the entry's own, an extractor sibling's or an added one's), because
+  FLoRA's build merges rows sharing type, `doi_o`, `doi_r` and `url_r`. An approve or resolve that would collide with an added original
+  is refused rather than offered as a merge.
+- **Follows its parent**: when the parent's `validated` row is written again, its added
+  originals take its replication DOI, title, link, abstract, published DOI,
+  alternative identifiers and work id, and its type (`sync_children`); inheriting ones
+  also take the outcome. `study_r` is kept as entered. A parent rejected as not a
+  replication takes its added originals with it; a merged parent's move to the survivor.
+
+```sql
+CREATE TABLE extra_original_suggestions (
+    suggestion_id      BIGSERIAL   PRIMARY KEY,
+    record_id          UUID        NOT NULL REFERENCES unvalidated(record_id),
+    queue_id           UUID        REFERENCES validation_queue(queue_id) ON DELETE SET NULL,
+    validator_id       INTEGER     REFERENCES validators(id) ON DELETE SET NULL,
+    validator_name     TEXT,
+    position           SMALLINT    NOT NULL DEFAULT 0,
+    doi_o              TEXT,       -- the bare DOI, when the validator gave one
+    url_o              TEXT,       -- the link, when it was not a DOI
+    title_o            TEXT,       -- title or free-text reference
+    study_o            TEXT,
+    note               TEXT,
+    status             TEXT        NOT NULL DEFAULT 'open'
+                                   CHECK (status IN ('open', 'accepted', 'dismissed')),
+    resolved_record_id UUID,       -- the added original it became
+    resolved_by        TEXT,
+    resolved_at        TIMESTAMPTZ,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+---
+
 ### `admins` and authentication state
 
 `admins` currently stores `password TEXT` and `trusted BOOLEAN`. Admin bearer tokens

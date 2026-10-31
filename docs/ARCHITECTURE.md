@@ -66,6 +66,8 @@ Client → session cookie + mode/count/buffer options
 ```text
 Client → session cookie + record_id + type_check + original_check + outcome_check + corrected_*
        → update validation_queue (is_validated=TRUE, store checks)
+       → store any suggested other originals → extra_original_suggestions
+         (lenient: a suggestion never makes the judgement fail)
        → write JSONB summary → unvalidated.validator_1 / validator_2
        → update validators.total_points / total_judgements
        → call consensus_engine.evaluate_consensus()
@@ -294,7 +296,8 @@ See [VALIDATION_DB_SCHEMA.md](VALIDATION_DB_SCHEMA.md) for full DDL and JSONB sh
 | Table | Key columns |
 | --- | --- |
 | `validators` | `id`, `handle`, `vote_score`, `total_points`, `validator_tier` |
-| `unvalidated` | `record_id`, `pair_id`, `validation_status`, `validator_1/2` JSONB, `llm_validator` JSONB |
+| `unvalidated` | `record_id`, `pair_id`, `validation_status`, `validator_1/2` JSONB, `llm_validator` JSONB; `origin`/`parent_record_id`/`inherits_outcome` for originals an admin added |
+| `extra_original_suggestions` | other originals a validator suggested with a judgement; open, accepted (with the record it became) or dismissed |
 | `validation_queue` | `queue_id`, `record_id`, `validator_slot`, `is_validated`, all check fields |
 | `validation_skips` | application-append-only `record_id`/validator/reason/comment/timestamp history; removed only with a retired record (archived in `retired_records`) |
 | `submission_failure_releases` | server-observed save-failure audit, hashed one-time capability, explicit recovery state; never counted as a validator skip |

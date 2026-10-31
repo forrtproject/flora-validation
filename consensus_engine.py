@@ -13,6 +13,7 @@ import json
 import re
 from datetime import datetime, timezone
 
+import extra_originals
 from llm_validator import run_llm_validation
 from record_checks import check_record
 from extractor_vocab import (
@@ -524,6 +525,11 @@ def _update_status(cur, record_id: str, status: str, is_tiebreaker: bool,
     # A rejected record must never remain in the authoritative export table.
     if status == "rejected":
         cur.execute("DELETE FROM validated WHERE record_id = %s", (record_id,))
+        # Nor may the originals an admin added to it. Reachable: the nightly import
+        # can send a validated record back to review (csv_to_db re-key), and the
+        # tiebreaker retry can then reject it.
+        if extra_originals.may_have_children(record):
+            extra_originals.reject_children(cur, record_id)
 
 
 def _insert_validated(cur, record: dict, final: dict) -> None:
@@ -620,6 +626,10 @@ def _insert_validated(cur, record: dict, final: dict) -> None:
             datetime.now(timezone.utc).isoformat(),
         ),
     )
+    # Originals an admin added to this record follow what it now publishes. Not
+    # strict: no admin is here to decide, so one that would collide is skipped.
+    if extra_originals.may_have_children(record):
+        extra_originals.sync_children(cur, record.get("record_id"), strict=False)
 
 
 def evaluate_consensus(cur, record_id: str) -> None:
