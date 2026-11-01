@@ -128,7 +128,7 @@ the following decision tree:
 | --- | --- | --- |
 | Checks agree + corrections agree, senior involved | Yes (sanity) | `validated` — humans always win |
 | Checks agree + corrections agree, no senior | Yes (sanity) | `consensus_reached` — admin approval |
-| Checks agree + corrections differ | No | `need_review` |
+| Checks agree + corrections differ | Yes (sanity, stored only) | `need_review` |
 | Checks differ + LLM matches H1 | Yes (tiebreak) | `validated` with H1 verdict |
 | Checks differ + LLM matches H2 | Yes (tiebreak) | `validated` with H2 verdict |
 | Checks differ + 3-way split | Yes (tiebreak) | `need_review` |

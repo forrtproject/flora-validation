@@ -5,9 +5,15 @@ Decision tree:
   1. checks agree + corrections agree → LLM sanity check → consensus_reached for an
      admin to approve, or validated straight away when an auto-validation rule
      applies (auto_validation_rule)
-  2. checks agree + corrections differ → need_review (no LLM)
+  2. checks agree + corrections differ → LLM sanity check, stored for the admin
+     only → need_review
   3. checks differ → LLM tiebreaker → agrees with one human → consensus_reached,
      else → need_review
+
+A validator answering "Can't tell", or the quote gate flagging a submission, sends
+the record to need_review before this tree; the LLM sanity check still runs there,
+for the admin only. Once both humans have submitted, every record gets an LLM call
+except a senior reject, which is final.
 """
 import json
 import re
@@ -273,6 +279,34 @@ def _is_unsure(h: dict) -> bool:
         or ac.get("was_unsure_outcome")
         or axis_unsure
     )
+
+
+def _stored_llm(record: dict) -> dict | None:
+    """The record's stored llm_validator as a dict, or None when it holds none.
+    Tolerates the column arriving as a dict (jsonb adapter) or a raw JSON string."""
+    stored = record.get("llm_validator")
+    if isinstance(stored, str):
+        try:
+            stored = json.loads(stored)
+        except (ValueError, TypeError):
+            return None
+    return stored if isinstance(stored, dict) else None
+
+
+def _store_only_answer(record: dict, llm: dict) -> dict | None:
+    """What a branch that only stores the LLM's answer writes to llm_validator.
+
+    A call that errored does not replace a clean answer the record already holds
+    (from an earlier evaluation, or the nightly retry): None leaves the column as
+    it is. Only for the branches where the answer is shown to the admin and
+    decides nothing. Where it decides the outcome, the stored value must be the
+    answer the decision used, errors included: the nightly tiebreaker retry finds
+    its records by that error."""
+    if "error" in llm:
+        earlier = _stored_llm(record)
+        if earlier is not None and "error" not in earlier:
+            return None
+    return llm
 
 
 def _quote_flagged(h: dict) -> bool:
@@ -712,17 +746,21 @@ def evaluate_consensus(cur, record_id: str) -> None:
     # If either validator answered "Can't tell" (unsure) on the original or outcome,
     # the record can't be auto-resolved — a validator explicitly couldn't judge it.
     # Route it to human review instead of treating unsure as a hard 'incorrect'.
+    # The LLM still runs, but only so the admin sees its answer: it never decides.
+    # An errored call keeps a clean answer stored earlier (_store_only_answer).
     if _is_unsure(h1) or _is_unsure(h2):
-        _update_status(cur, record_id, "need_review", False, None, None, record)
+        llm = _store_only_answer(record, run_llm_validation(record, context="sanity_check"))
+        _update_status(cur, record_id, "need_review", False, None, llm, record)
         return
 
     # If the quote gate flagged either submission (outcome quote not found in the
     # abstract, even fuzzily), an admin must look before anything gets published:
     # it's either a legitimate full-text quote — the admin sets the quote source —
     # or a mis-copied quote that needs fixing. This intentionally also stops the
-    # senior auto-validate shortcut.
+    # senior auto-validate shortcut. The LLM's answer is stored for the admin only.
     if _quote_flagged(h1) or _quote_flagged(h2):
-        _update_status(cur, record_id, "need_review", False, None, None, record)
+        llm = _store_only_answer(record, run_llm_validation(record, context="sanity_check"))
+        _update_status(cur, record_id, "need_review", False, None, llm, record)
         return
 
     # Who the two validators are, for the auto-validation rules.
@@ -757,8 +795,10 @@ def evaluate_consensus(cur, record_id: str) -> None:
             _update_status(cur, record_id, "consensus_reached", False, final, llm, record)
 
     elif checks_ok and not corrections_ok:
-        # Branch 2: checks agree but corrections differ → need_review, no LLM
-        _update_status(cur, record_id, "need_review", False, None, None, record)
+        # Branch 2: checks agree but corrections differ → need_review. The LLM
+        # sanity check runs only so the admin sees its answer; it never decides.
+        llm = _store_only_answer(record, run_llm_validation(record, context="sanity_check"))
+        _update_status(cur, record_id, "need_review", False, None, llm, record)
 
     else:
         # Branch 3: checks differ → LLM tiebreaker

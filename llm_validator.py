@@ -2,8 +2,11 @@
 llm_validator.py — Gemini Flash validator for the FLoRA validation pipeline.
 
 Checks whether extracted metadata (type, original study, outcome) is consistent
-with the replication paper's abstract. Called by consensus_engine.py either as a
-sanity check (both humans agreed) or as a tiebreaker (humans disagreed).
+with the replication paper's abstract. Called by consensus_engine.py for every
+record once both humans have submitted (a senior reject aside): as a tiebreaker
+when the humans' checks disagree, otherwise as a sanity check. On a record already
+bound for need_review (a "Can't tell", a flagged quote, or differing corrections)
+the sanity check is only stored for the admin to see; it changes nothing.
 
 Each check is "correct", "incorrect", or "uncertain" — the model is instructed to
 say "uncertain" rather than guess. consensus_engine never special-cases this: an

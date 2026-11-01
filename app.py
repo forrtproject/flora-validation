@@ -6945,7 +6945,8 @@ def _retry_tiebreakers() -> None:
     those are the ones stuck by a transient LLM failure. Records that reached
     need_review with a *successful* LLM (genuine 3-way ambiguity) are left for a
     human/admin: re-running them would waste paid LLM calls nightly and could flip
-    their status purely from LLM nondeterminism."""
+    their status purely from LLM nondeterminism. Run by _nightly_llm_retry, under
+    its lock."""
     from consensus_engine import evaluate_consensus
     try:
         with db() as cur:
@@ -6974,6 +6975,138 @@ def _retry_tiebreakers() -> None:
         import traceback
         print("[retry_tiebreakers] ERROR:")
         traceback.print_exc()
+
+
+# Statuses an admin has yet to act on. A record past them keeps its stored answer.
+_LLM_RETRY_OPEN_STATUSES = ("need_review", "consensus_reached")
+
+
+def _has_open_llm_error(row) -> bool:
+    """Still a record _retry_llm_errors is for: open, not a tiebreaker, and its
+    stored LLM answer is an error."""
+    stored = row["llm_validator"]
+    return (row["validation_status"] in _LLM_RETRY_OPEN_STATUSES
+            and not row["is_tiebreaker"]
+            and isinstance(stored, dict) and "error" in stored)
+
+
+def _retry_llm_error(record_id: str, run_llm_validation) -> bool:
+    """Ask Gemini again for one record and save the answer if it is clean. Returns
+    whether it saved one.
+
+    No row lock is held across the call, which can take a while: a validator or
+    admin saving this record meanwhile must not wait on Gemini. The write is
+    instead made only if, under the lock, the row still holds the error read
+    here and is still open and not a tiebreaker, so an answer a submission stored
+    in the meantime is never overwritten."""
+    with db() as cur:
+        cur.execute("SELECT * FROM unvalidated WHERE record_id = %s", (record_id,))
+        record = cur.fetchone()
+    if record is None or not _has_open_llm_error(record):
+        return False                      # settled or re-evaluated since the list was made
+    stored = record["llm_validator"]
+    answer = run_llm_validation(dict(record), context=stored.get("context") or "sanity_check")
+    if "error" in answer:
+        print(f"[retry_llm_errors] {record_id}: Gemini failed again, error kept")
+        return False
+    with db() as cur:
+        cur.execute(
+            "SELECT validation_status, is_tiebreaker, llm_validator FROM unvalidated "
+            "WHERE record_id = %s FOR UPDATE",
+            (record_id,),
+        )
+        current = cur.fetchone()
+        if current is None or not _has_open_llm_error(current) or current["llm_validator"] != stored:
+            print(f"[retry_llm_errors] {record_id}: changed while Gemini answered, left as is")
+            return False
+        cur.execute("UPDATE unvalidated SET llm_validator = %s::jsonb WHERE record_id = %s",
+                    (json.dumps(answer), record_id))
+    print(f"[retry_llm_errors] {record_id}: new answer saved")
+    return True
+
+
+def _retry_llm_errors() -> None:
+    """Ask Gemini again for every open record, other than a tiebreaker, whose
+    stored LLM answer is an error, and save only the answer.
+
+    On these records the answer is shown to the admin. Either it never decided
+    anything (a "Can't tell", a flagged quote, differing corrections), or its
+    error already decided: an errored sanity check matches nobody, so the record
+    went to an admin rather than being validated or rejected. Re-running
+    consensus on a new answer could now settle such a record with no admin
+    looking, so consensus is never re-run here: only llm_validator is written,
+    never the status, the final values, the flags or the validated table. A
+    tiebreaker's answer decides its outcome, so _retry_tiebreakers re-runs
+    consensus for those instead.
+
+    One transaction per record, so one failure does not stop the rest. A call
+    that errors again writes nothing: the stored error stays for the next night."""
+    import traceback
+    import llm_validator
+    try:
+        with db() as cur:
+            cur.execute(
+                """
+                SELECT record_id FROM unvalidated
+                WHERE validation_status = ANY(%s) AND NOT is_tiebreaker
+                  AND llm_validator ? 'error'
+                ORDER BY record_id
+                """,
+                (list(_LLM_RETRY_OPEN_STATUSES),),
+            )
+            ids = [str(r["record_id"]) for r in cur.fetchall()]
+    except Exception:
+        print("[retry_llm_errors] ERROR:")
+        traceback.print_exc()
+        return
+    print(f"[retry_llm_errors] Found {len(ids)} open record(s) with an LLM error")
+    saved = 0
+    for record_id in ids:
+        try:
+            if _retry_llm_error(record_id, llm_validator.run_llm_validation):
+                saved += 1
+        except Exception:
+            print(f"[retry_llm_errors] ERROR on {record_id}:")
+            traceback.print_exc()
+    print(f"[retry_llm_errors] Saved {saved} new answer(s)")
+
+
+# Same key family as SCHEMA_INIT_ADVISORY_LOCK_ID; held while the nightly LLM
+# retry runs.
+NIGHTLY_LLM_RETRY_LOCK_ID = 7_342_025_099
+
+
+def _nightly_llm_retry() -> None:
+    """The 00:22 UTC job: the tiebreaker retry, then the other LLM errors.
+
+    The scheduler starts in every process, and production runs two replicas, so
+    every process fires this job. A PostgreSQL advisory lock lets one of them run
+    it and the rest skip; otherwise each errored record would cost a Gemini call
+    per process and the tiebreaker retry would re-evaluate a record twice at once.
+    The lock is session-level, so it lives on a connection of its own, never a
+    pooled one (see db_pool.py). Closing that connection releases it too."""
+    import traceback
+    conn = None
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_try_advisory_lock(%s)", (NIGHTLY_LLM_RETRY_LOCK_ID,))
+            if not cur.fetchone()[0]:
+                print("[nightly_llm_retry] Another process is running the retry; skipped here")
+                return
+        try:
+            _retry_tiebreakers()
+            _retry_llm_errors()
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (NIGHTLY_LLM_RETRY_LOCK_ID,))
+    except Exception:
+        print("[nightly_llm_retry] ERROR:")
+        traceback.print_exc()
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def _reap_stale_slots() -> None:
@@ -7109,9 +7242,11 @@ def _start_scheduler() -> None:
             coalesce=True,
             kwargs={"database_url": DATABASE_URL, "parts": (part,)},
         )
+    # Every process fires it; the advisory lock inside lets one of them run it.
     scheduler.add_job(
-        _retry_tiebreakers,
+        _nightly_llm_retry,
         CronTrigger(hour=0, minute=22, timezone="UTC"),
+        id="nightly_llm_retry",
     )
     scheduler.add_job(_reap_stale_slots, IntervalTrigger(minutes=2))
     # Hourly is plenty: nothing depends on dead rows disappearing promptly,

@@ -523,7 +523,7 @@ Both humans complete
         │             → INSERT into validated (final values from consensus)
         │
         ├─ Checks agree BUT corrections differ?
-        │       → No LLM called
+        │       → LLM sanity check, stored for the admin only
         │       → validation_status = 'need_review'
         │
         └─ Checks differ (humans disagree)?

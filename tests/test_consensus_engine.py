@@ -1,4 +1,5 @@
 import json
+import re
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -85,6 +86,30 @@ def _make_cur(human_rows, record, senior_count=0, senior_reject=0, experienced_c
     return cur
 
 
+def _written(cur):
+    """The columns the evaluation's UPDATE of unvalidated set, by name."""
+    for call in cur.execute.call_args_list:
+        sql, *rest = call.args
+        if sql.startswith("UPDATE unvalidated SET validation_status"):
+            columns = re.findall(r"(\w+) = %s", sql.split(" WHERE ", 1)[0])
+            return dict(zip(columns, rest[0]))
+    return None
+
+
+def _assert_llm_stored_only(cur, mock_llm, llm):
+    """The LLM ran once as a sanity check and its answer was stored for the admin,
+    yet the record still went to review: not a tiebreaker, nothing resolved or
+    published."""
+    mock_llm.assert_called_once_with(BASE_RECORD, context="sanity_check")
+    written = _written(cur)
+    assert written["validation_status"] == "need_review"
+    assert written["is_tiebreaker"] is False
+    assert json.loads(written["llm_validator"]) == llm
+    assert "final_outcome" not in written
+    assert "auto_validated_rule" not in written
+    assert "INSERT INTO validated" not in str(cur.execute.call_args_list)
+
+
 def test_returns_early_when_only_one_human():
     """evaluate_consensus does nothing when only one human slot is complete."""
     from consensus_engine import evaluate_consensus
@@ -116,45 +141,39 @@ def test_both_agree_llm_errors_still_validates():
 
 
 def test_both_agree_different_corrections_sets_need_review():
-    """Both humans agree on checks but have different corrections → need_review, no LLM."""
+    """Both humans agree on checks but have different corrections → need_review. The
+    LLM sanity check runs and is stored for the admin, but decides nothing."""
     from consensus_engine import evaluate_consensus
     h1 = {**H1_AGREE, "corrected_doi_o": "10.1000/a"}
     h2 = {**H2_AGREE, "corrected_doi_o": "10.1000/b"}
     cur = _make_cur([h1, h2], BASE_RECORD)
-    with patch("consensus_engine.run_llm_validation") as mock_llm:
+    with patch("consensus_engine.run_llm_validation", return_value=LLM_AGREE_ALL) as mock_llm:
         evaluate_consensus(cur, "rec-001")
-    mock_llm.assert_not_called()
-    calls_str = str(cur.execute.call_args_list)
-    assert "need_review" in calls_str
+    _assert_llm_stored_only(cur, mock_llm, LLM_AGREE_ALL)
 
 
 def test_unsure_routes_to_need_review():
-    """A validator answering 'Can't tell' (unsure) sends the record to review, no LLM,
-    even when the raw checks otherwise agree."""
+    """A validator answering 'Can't tell' (unsure) sends the record to review even
+    when the raw checks otherwise agree; the LLM's answer is only stored."""
     from consensus_engine import evaluate_consensus
     h1 = {**H1_AGREE, "additional_checks": {"was_unsure_original": True}}
     cur = _make_cur([h1, H2_AGREE], BASE_RECORD)
-    with patch("consensus_engine.run_llm_validation") as mock_llm:
+    with patch("consensus_engine.run_llm_validation", return_value=LLM_AGREE_ALL) as mock_llm:
         evaluate_consensus(cur, "rec-001")
-    mock_llm.assert_not_called()
+    _assert_llm_stored_only(cur, mock_llm, LLM_AGREE_ALL)
     calls_str = str(cur.execute.call_args_list)
-    assert "need_review" in calls_str
     assert "consensus_reached" not in calls_str      # not auto-resolved
-    assert "INSERT INTO validated" not in calls_str  # never written to the export table
 
 
 def test_diverging_published_doi_sets_need_review():
     """Only one validator supplies a published-article DOI → treated like any other
-    correction conflict: need_review, no LLM call."""
+    correction conflict: need_review, the LLM's answer only stored."""
     from consensus_engine import evaluate_consensus
     h1 = {**H1_AGREE, "doi_r_published": "10.1234/published"}
     cur = _make_cur([h1, H2_AGREE], BASE_RECORD)
-    with patch("consensus_engine.run_llm_validation") as mock_llm:
+    with patch("consensus_engine.run_llm_validation", return_value=LLM_AGREE_ALL) as mock_llm:
         evaluate_consensus(cur, "rec-001")
-    mock_llm.assert_not_called()
-    calls_str = str(cur.execute.call_args_list)
-    assert "need_review" in calls_str
-    assert "INSERT INTO validated" not in calls_str
+    _assert_llm_stored_only(cur, mock_llm, LLM_AGREE_ALL)
 
 
 def test_agreeing_published_doi_flows_to_final():
@@ -217,30 +236,26 @@ def test_published_doi_formats_agree():
 
 def test_quote_flag_routes_to_need_review():
     """A submission auto-flagged by the frontend quote gate (outcome quote not
-    found in the abstract) sends the record to review, no LLM, even on agreement."""
+    found in the abstract) sends the record to review even on agreement; the LLM's
+    answer is only stored."""
     from consensus_engine import evaluate_consensus
     h1 = {**H1_AGREE, "additional_checks": {"quote_not_in_abstract": True}}
     cur = _make_cur([h1, H2_AGREE], BASE_RECORD)
-    with patch("consensus_engine.run_llm_validation") as mock_llm:
+    with patch("consensus_engine.run_llm_validation", return_value=LLM_AGREE_ALL) as mock_llm:
         evaluate_consensus(cur, "rec-001")
-    mock_llm.assert_not_called()
-    calls_str = str(cur.execute.call_args_list)
-    assert "need_review" in calls_str
-    assert "INSERT INTO validated" not in calls_str
+    _assert_llm_stored_only(cur, mock_llm, LLM_AGREE_ALL)
 
 
 def test_quote_flag_stops_senior_auto_validate():
     """The quote flag must also stop the senior auto-validate shortcut — nothing
-    with a suspect quote reaches the export table unreviewed."""
+    with a suspect quote reaches the export table unreviewed, not even with the
+    LLM agreeing."""
     from consensus_engine import evaluate_consensus
     h2 = {**H2_AGREE, "additional_checks": {"quote_not_in_abstract": True}}
     cur = _make_cur([H1_AGREE, h2], BASE_RECORD, senior_count=2)
-    with patch("consensus_engine.run_llm_validation") as mock_llm:
+    with patch("consensus_engine.run_llm_validation", return_value=LLM_AGREE_ALL) as mock_llm:
         evaluate_consensus(cur, "rec-001")
-    mock_llm.assert_not_called()
-    calls_str = str(cur.execute.call_args_list)
-    assert "need_review" in calls_str
-    assert "INSERT INTO validated" not in calls_str
+    _assert_llm_stored_only(cur, mock_llm, LLM_AGREE_ALL)
 
 
 def test_quote_flag_tolerates_json_string_column():
@@ -248,11 +263,9 @@ def test_quote_flag_tolerates_json_string_column():
     from consensus_engine import evaluate_consensus
     h1 = {**H1_AGREE, "additional_checks": json.dumps({"quote_not_in_abstract": True})}
     cur = _make_cur([h1, H2_AGREE], BASE_RECORD)
-    with patch("consensus_engine.run_llm_validation") as mock_llm:
+    with patch("consensus_engine.run_llm_validation", return_value=LLM_AGREE_ALL) as mock_llm:
         evaluate_consensus(cur, "rec-001")
-    mock_llm.assert_not_called()
-    calls_str = str(cur.execute.call_args_list)
-    assert "need_review" in calls_str
+    _assert_llm_stored_only(cur, mock_llm, LLM_AGREE_ALL)
 
 
 def test_humans_disagree_llm_agrees_h1_sets_validated():
@@ -311,16 +324,115 @@ def test_both_agree_same_url_suggestion_flows_to_final():
 
 
 def test_diverging_url_suggestions_set_need_review():
-    """Checks agree but humans suggest different URLs → need_review, no LLM call."""
+    """Checks agree but humans suggest different URLs → need_review, the LLM's
+    answer only stored."""
     from consensus_engine import evaluate_consensus
     h1 = {**H1_AGREE, "corrected_url_r": "https://a.example"}
     h2 = {**H2_AGREE, "corrected_url_r": "https://b.example"}
     cur = _make_cur([h1, h2], BASE_RECORD)
+    with patch("consensus_engine.run_llm_validation", return_value=LLM_AGREE_ALL) as mock_llm:
+        evaluate_consensus(cur, "rec-001")
+    _assert_llm_stored_only(cur, mock_llm, LLM_AGREE_ALL)
+
+
+@pytest.mark.parametrize("h2", [
+    {**H2_AGREE, "additional_checks": {"was_unsure_outcome": True}},     # "Can't tell"
+    {**H2_AGREE, "additional_checks": {"quote_not_in_abstract": True}},  # quote gate
+    {**H2_AGREE, "corrected_doi_o": "10.1000/other"},                    # corrections differ
+], ids=["unsure", "quote_flagged", "corrections_differ"])
+@pytest.mark.parametrize("llm", [LLM_AGREE_ALL, LLM_ERROR], ids=["llm_agrees", "llm_error"])
+def test_the_llm_never_settles_a_record_bound_for_review(h2, llm):
+    """Two Senior, experienced validators and an agreeing LLM would auto-validate a
+    plain agreement. Here the LLM's answer, agreeing or errored, is only stored."""
+    from consensus_engine import evaluate_consensus
+    cur = _make_cur([H1_AGREE, h2], BASE_RECORD, senior_count=2, experienced_count=2)
+    with patch("consensus_engine.run_llm_validation", return_value=llm) as mock_llm:
+        evaluate_consensus(cur, "rec-001")
+    _assert_llm_stored_only(cur, mock_llm, llm)
+
+
+def test_a_senior_reject_stays_final_without_the_llm():
+    """A senior reject is authoritative: no LLM call, nothing for it to inform."""
+    from consensus_engine import evaluate_consensus
+    h2 = {**H2_AGREE, "additional_checks": {"senior_reject": True}}
+    cur = _make_cur([H1_AGREE, h2], BASE_RECORD, senior_reject=1)
     with patch("consensus_engine.run_llm_validation") as mock_llm:
         evaluate_consensus(cur, "rec-001")
     mock_llm.assert_not_called()
-    calls_str = str(cur.execute.call_args_list)
-    assert "need_review" in calls_str
+    written = _written(cur)
+    assert written["validation_status"] == "rejected"
+    assert "llm_validator" not in written
+
+
+STORE_ONLY_BRANCHES = pytest.mark.parametrize("h2", [
+    {**H2_AGREE, "additional_checks": {"was_unsure_outcome": True}},     # "Can't tell"
+    {**H2_AGREE, "additional_checks": {"quote_not_in_abstract": True}},  # quote gate
+    {**H2_AGREE, "corrected_doi_o": "10.1000/other"},                    # corrections differ
+], ids=["unsure", "quote_flagged", "corrections_differ"])
+
+
+@STORE_ONLY_BRANCHES
+@pytest.mark.parametrize("as_json", [False, True], ids=["dict", "json_string"])
+def test_an_errored_call_keeps_the_clean_answer_stored_earlier(h2, as_json):
+    """Where the answer is only stored for the admin, an errored call does not
+    replace a clean answer the record already holds (the column may arrive as a
+    dict or a raw JSON string)."""
+    from consensus_engine import evaluate_consensus
+    record = {**BASE_RECORD,
+              "llm_validator": json.dumps(LLM_AGREE_ALL) if as_json else LLM_AGREE_ALL}
+    cur = _make_cur([H1_AGREE, h2], record)
+    with patch("consensus_engine.run_llm_validation", return_value=LLM_ERROR) as mock_llm:
+        evaluate_consensus(cur, "rec-001")
+    mock_llm.assert_called_once_with(record, context="sanity_check")
+    written = _written(cur)
+    assert written["validation_status"] == "need_review"
+    assert "llm_validator" not in written
+
+
+@STORE_ONLY_BRANCHES
+@pytest.mark.parametrize("stored", [
+    None,
+    LLM_ERROR,
+    json.dumps({**LLM_ERROR, "error": "an older failure"}),
+    "not json",
+], ids=["none", "error", "error_json_string", "unreadable"])
+def test_an_errored_call_is_stored_when_there_is_no_clean_answer_to_keep(h2, stored):
+    from consensus_engine import evaluate_consensus
+    cur = _make_cur([H1_AGREE, h2], {**BASE_RECORD, "llm_validator": stored})
+    with patch("consensus_engine.run_llm_validation", return_value=LLM_ERROR):
+        evaluate_consensus(cur, "rec-001")
+    written = _written(cur)
+    assert written["validation_status"] == "need_review"
+    assert json.loads(written["llm_validator"]) == LLM_ERROR
+
+
+@STORE_ONLY_BRANCHES
+def test_a_clean_answer_replaces_the_one_stored_earlier(h2):
+    from consensus_engine import evaluate_consensus
+    newer = {**LLM_AGREE_ALL, "validated_at": "2026-11-01T00:00:00+00:00"}
+    cur = _make_cur([H1_AGREE, h2], {**BASE_RECORD, "llm_validator": LLM_AGREE_ALL})
+    with patch("consensus_engine.run_llm_validation", return_value=newer):
+        evaluate_consensus(cur, "rec-001")
+    assert json.loads(_written(cur)["llm_validator"]) == newer
+
+
+@pytest.mark.parametrize("h1, h2, llm_error, status", [
+    (H1_DISAGREE, H2_DISAGREE, {**LLM_ERROR, "context": "tiebreaker"}, "need_review"),
+    (H1_AGREE, H2_AGREE, LLM_ERROR, "consensus_reached"),
+    ({**H1_AGREE, "type_check": "incorrect", "corrected_type": "not_validation"},
+     {**H2_AGREE, "type_check": "incorrect", "corrected_type": "not_validation"},
+     LLM_ERROR, "need_review"),
+], ids=["tiebreaker", "sanity_check", "not_a_replication"])
+def test_where_the_answer_decides_an_errored_call_is_always_stored(h1, h2, llm_error, status):
+    """The stored answer must be the one the decision used, errors included: the
+    nightly tiebreaker retry finds its records by that error."""
+    from consensus_engine import evaluate_consensus
+    cur = _make_cur([h1, h2], {**BASE_RECORD, "llm_validator": LLM_AGREE_ALL})
+    with patch("consensus_engine.run_llm_validation", return_value=llm_error):
+        evaluate_consensus(cur, "rec-001")
+    written = _written(cur)
+    assert written["validation_status"] == status
+    assert json.loads(written["llm_validator"]) == llm_error
 
 
 def test_senior_agreement_auto_validates():

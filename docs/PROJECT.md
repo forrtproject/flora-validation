@@ -45,8 +45,9 @@ This repo is the layer that makes it trustworthy:
 - Volunteers ("validators") are shown one **paper pair** at a time — a replication and
   the original it claims to replicate — and answer three questions.
 - **Two humans** must judge every record before anything is decided.
-- A **consensus engine** compares their answers. An **LLM** acts as sanity check or
-  tiebreaker, but never overrules agreeing humans.
+- A **consensus engine** compares their answers. An **LLM** checks every record once
+  both humans are in (a senior reject aside), as sanity check or tiebreaker, but never
+  overrules agreeing humans.
 - Records that reach consensus are **approved by an admin** and written to `validated`.
 - A nightly job exports `validated` to CSV, which the FLoRA R pipeline consumes.
 
@@ -412,11 +413,14 @@ submission and returns immediately if fewer than two humans have completed.
 
 ### Pre-checks, in order
 
-1. **Senior reject present?** → `rejected`. Nothing else is consulted.
+1. **Senior reject present?** → `rejected`. Nothing else is consulted, not even the LLM.
 2. **Either human unsure?** (`was_unsure_original` / `was_unsure_outcome`) → `need_review`.
 3. **Quote flagged?** (`quote_not_in_abstract`, stamped by the frontend quote gate) →
    `need_review`. This also stops the senior auto-validate shortcut: a suspect quote
    never reaches the export table unreviewed.
+
+Pre-checks 2 and 3 still run the LLM sanity check and store its answer for the admin;
+whatever it says, the record goes to `need_review`.
 
 ### The decision tree
 
@@ -432,9 +436,10 @@ checks agree AND corrections agree
             └── otherwise            → consensus_reached (admin must approve)
 
 checks agree AND corrections differ
-└── need_review                                    (no LLM call — humans already
-                                                    agree on the judgement, they
-                                                    just wrote different fixes)
+└── LLM sanity check (stored for the admin only)
+      └── need_review                              (humans already agree on the
+                                                    judgement, they just wrote
+                                                    different fixes)
 
 checks differ
 └── LLM tiebreaker
@@ -446,7 +451,10 @@ checks differ
 ```
 
 **Humans always win.** The LLM in branch 1 is advisory — its verdict is stored in
-`unvalidated.llm_validator` for admin visibility but does not change the outcome.
+`unvalidated.llm_validator` for admin visibility but does not change the outcome. In
+branch 2 and pre-checks 2 and 3 it is only stored: an agreeing or errored LLM leaves
+the record at `need_review` all the same, and an errored call there does not replace a
+clean answer the record already holds.
 
 ### Resolving final values
 
@@ -526,7 +534,8 @@ is safe to re-run, since flags are recomputed from current values each time.
 ## 8. The LLM validator
 
 `llm_validator.run_llm_validation(record, context)` where context is `sanity_check` or
-`tiebreaker`.
+`tiebreaker`. Consensus calls it for every record once both humans have submitted,
+except a senior reject: `tiebreaker` when the checks differ, `sanity_check` otherwise.
 
 - Model: **`gemini-3.1-flash-lite`**
 - Input: the replication abstract plus the extracted metadata — **nothing else**. The
@@ -548,9 +557,20 @@ is safe to re-run, since flags are recomputed from current values each time.
   than passing an invented label through. This fixes the LLM occasionally suggesting
   off-schema outcome labels like `"inconsistent"`.
 
-Errors are captured rather than raised: the verdict dict carries an `error` key, the
-engine treats it as "matches nobody", and the record goes to `need_review`. A nightly
-job retries records whose LLM call genuinely errored.
+Errors are captured rather than raised: the verdict dict carries an `error` key and the
+engine treats it as "matches nobody". An errored tiebreaker or "not a replication"
+check sends the record to `need_review`, and an agreement waits at `consensus_reached`
+for an admin instead of auto-validating. Where the answer is only stored for the admin
+(branch 2, pre-checks 2 and 3), an errored call keeps a clean answer stored earlier
+(`_store_only_answer`). Everywhere else the stored value is the answer the decision
+used, errors included: the nightly tiebreaker retry finds its records by that error.
+
+The nightly job (§12) retries every open record whose stored answer is an error. A
+tiebreaker is re-evaluated, since its answer decides the outcome. Any other record only
+gets the new answer: consensus is not re-run, so the retry can never validate or reject
+a record that is waiting for an admin. The saved answer does count later, though: if
+`auto_validate_waiting.py --apply` is run by hand, an agreement whose sanity check now
+agrees can pass its rules like any other.
 
 ---
 
@@ -895,11 +915,22 @@ saving changes do not alter these times.
 |---|---|---|
 | `extractor_maintenance.run_scheduled` | 02:00 UTC | Under one lock: sync/import, OpenAlex enrichment, read-only orphan report, then retire of the pairs flora-extractor withdrew |
 | `extractor_maintenance.run_queued` | every 10 seconds | Claim durable admin requests and recover work after pod termination |
-| `_retry_tiebreakers` | 00:22 UTC | Re-run consensus on records whose LLM call errored |
+| `_nightly_llm_retry` | 00:22 UTC | Retry stored LLM errors: re-run consensus on errored tiebreakers (`_retry_tiebreakers`), then ask Gemini again for every other open record holding an error and save only the answer (`_retry_llm_errors`) |
 | `_reap_stale_slots` | every 2 min | Release queue slots claimed but abandoned, so records return to circulation |
 
 The reaper matters: without it, a validator who closes the tab mid-record would lock
 that record indefinitely.
+
+The 00:22 job fires in every process (the scheduler starts at import and production
+runs two replicas), so it first takes a PostgreSQL advisory lock
+(`NIGHTLY_LLM_RETRY_LOCK_ID`); a process that does not get it logs a line and skips.
+`_retry_llm_errors` covers `need_review` and `consensus_reached` records that are not
+tiebreakers. It writes `llm_validator` and nothing else: not the status, the final
+values, the quality flags or `validated`. It holds no row lock while Gemini answers;
+it saves the answer only if, under the lock, the row still holds the error it read and
+is still open and not a tiebreaker, so an answer a submission saved meanwhile is kept.
+Each record has its own transaction, and a call that fails again leaves the error for
+the next night.
 
 The 02:00 extractor job is a fail-fast sync → report → retire operation with
 OpenAlex enrichment sequenced inside the same process lock. A failed CSV sync
@@ -1038,8 +1069,10 @@ database.
 Only `DATABASE_URL` is technically required to boot, but that is **not a safe
 production configuration**: without `ADMIN_PASSWORD`, a fresh database is seeded with
 the known fallback password described in §19. Set a unique value before first start.
-Without `GEMINI_API_KEY` the LLM paths record an error and route records to
-`need_review` — degraded, not broken.
+Without `GEMINI_API_KEY` every LLM call records an error, so nothing is auto-validated
+or rejected on the LLM's word (a senior reject still works): agreements wait at
+`consensus_reached`, the rest at `need_review` —
+degraded, not broken.
 
 There is also a **static demo mode**: `build_static.py` writes JSON fixtures into
 `docs/`, which can be served from GitHub Pages with no backend at all.
@@ -1061,8 +1094,10 @@ admin has not approved*. It is a queue for people, not a bug — Entries → Pen
 **Lots of `need_review`.** Expected. It is the destination for unsure answers,
 conflicting corrections, three-way splits, and LLM errors. 140 live.
 
-**LLM errors.** `_retry_tiebreakers` re-runs them nightly. Filter Entries by LLM errors
-to see the backlog. Check `GEMINI_API_KEY` and the free-tier rate limit.
+**LLM errors.** The 00:22 UTC job (`_nightly_llm_retry`) retries every open one
+nightly: an errored tiebreaker is re-evaluated, any other record only gets the new
+answer. A call that fails again keeps the error for the next night. Filter Entries by
+LLM errors to see the backlog. Check `GEMINI_API_KEY` and the free-tier rate limit.
 
 **Export is missing references.** `export_validated.py` also writes
 `data/needs_manual_refs.csv` — entries whose DOI/URL cannot be resolved by
@@ -1105,11 +1140,12 @@ verdict is recorded for admin visibility but changes nothing. The LLM only decid
 humans conflict — and then only by matching exactly one of them.
 
 **"Can't tell" is not "incorrect".** Collapsing the two would let uncertainty
-masquerade as a judgement. Any unsure answer routes to `need_review`.
+masquerade as a judgement. Any unsure answer routes to `need_review`; the LLM's answer
+is stored for the admin but cannot settle it.
 
 **Corrections differing is enough to block.** If two validators agree on *what is wrong*
-but write different fixes, the record goes to review without an LLM call. The engine
-will not pick a fix on its own.
+but write different fixes, the record goes to review. The LLM's sanity check is stored
+for the admin, but the engine will not pick a fix on its own.
 
 **Longest edit wins for quotes and abstracts.** Deterministic and reproducible, and
 longer text carries more context. Not a quality judgement — just a tie-break rule you

@@ -973,8 +973,10 @@ outcome check becomes uncertain.
 
 Gemini calls retry once. Persistent failures return an error object instead of
 raising through the submission transaction. The nightly retry job revisits only
-`need_review` tiebreakers whose stored Gemini object contains `error`; genuine
-three-way disagreements are not repeatedly called.
+open records whose stored Gemini object contains `error`: it re-runs consensus on a
+`need_review` tiebreaker, and on any other `need_review` or `consensus_reached`
+record it only saves the new answer. Genuine three-way disagreements are not
+repeatedly called.
 
 ## Administrator workflow
 
@@ -1734,7 +1736,7 @@ so values such as `export.csv` and `duplicates` are not parsed as UUIDs.
 
 | UTC schedule | Function | Effect |
 | --- | --- | --- |
-| 00:22 daily | `_retry_tiebreakers()` | Retries only failed Gemini tiebreakers |
+| 00:22 daily | `_nightly_llm_retry()` | One process, under an advisory lock: re-runs consensus on failed Gemini tiebreakers (`_retry_tiebreakers`), then re-asks Gemini for other open records holding an error and saves only the answer (`_retry_llm_errors`) |
 | 02:00 daily | `extractor_maintenance.run_scheduled()` | Locked sync/import → OpenAlex enrichment → read-only orphan report → retire of the pairs flora-extractor withdrew |
 | Every 10 seconds | `extractor_maintenance.run_queued()` | Claims a durable manual request or recovers work abandoned by a terminated pod |
 | Every 2 minutes | `_reap_stale_slots()` | Releases 45-minute buffered and five-day started claims; marks elapsed failure stamps `expired` |
