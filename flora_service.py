@@ -204,6 +204,35 @@ def dataset(cur) -> pd.DataFrame:
     return _current(cur)[0]
 
 
+def source_rows(cur) -> pd.DataFrame:
+    """transform_sources.load(cur): the build's input rows, shared with the cached
+    build while source_records has not changed. For a reader that needs the rows
+    rather than the build (manual_records works out where a row will land).
+
+    Only in a transaction that has not written to source_records: rows read after
+    an uncommitted write would be cached, and outlive a rollback."""
+    cur.execute(
+        """
+        SELECT (SELECT COUNT(*) FROM source_records)                AS n_source,
+               (SELECT MAX(updated_at) FROM source_records)         AS max_updated,
+               (SELECT COUNT(*) FROM source_records
+                 WHERE duplicate_status IS NOT NULL)                AS n_ruled,
+               (SELECT SUM(xmin::text::bigint) FROM source_records) AS source_versions
+        """
+    )
+    row = cur.fetchone()
+    # The same reading as _Signature.rows_key(), so the two caches are one.
+    key = (row["n_source"], str(row["max_updated"]), row["n_ruled"], str(row["source_versions"]))
+    with _lock:
+        if _cache["rows_key"] == key and _cache["rows"] is not None:
+            return _cache["rows"]
+    rows = transform_sources.load(cur)
+    with _lock:
+        _cache["rows_key"] = key
+        _cache["rows"] = rows
+    return rows
+
+
 # The corrections that settle an outcome clash: a replication's outcome, or either
 # axis a reproduction's outcome is derived from (a reproduction's editor offers no
 # `outcome` field, so its edited_fields never name one). Settling a clash in the record

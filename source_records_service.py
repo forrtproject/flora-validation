@@ -233,6 +233,7 @@ def list_records(cur, filters: dict, sort: str = "", direction: str = "asc",
 
 
 def _counts(cur) -> dict:
+    from preprint_dedup import MANUAL_SOURCE    # local: keeps this module free of pandas
     cur.execute(
         """
         SELECT
@@ -242,9 +243,11 @@ def _counts(cur) -> dict:
             COUNT(*) FILTER (WHERE deleted_at IS NULL AND reviewed_at IS NOT NULL) AS reviewed,
             COUNT(*) FILTER (WHERE deleted_at IS NULL AND reviewed_at IS NULL)  AS unreviewed,
             COUNT(*) FILTER (WHERE deleted_at IS NULL AND source = 'validated') AS validated,
+            COUNT(*) FILTER (WHERE deleted_at IS NULL AND source = %s)          AS manual,
             COUNT(*) FILTER (WHERE deleted_at IS NOT NULL)                      AS deleted
         FROM source_records
-        """
+        """,
+        (MANUAL_SOURCE,),
     )
     counts = dict(cur.fetchone())
 

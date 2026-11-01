@@ -5,6 +5,12 @@
 # via yaml::read_yaml() so the two never drift.
 #
 # Adding or repointing a sheet is a config change here — never a code change.
+#
+# Three more sources write to source_records without being sheets, so they have no
+# entry here. Their keys and display prefixes are taken: no sheet may use them.
+#   validated    VAL-  records validated on this website (sync_validated.py)
+#   adjudicated  ADJ-  answers approved in the adjudication (adjudication/review.py)
+#   manual       MAN-  records added by hand in the FLoRA tab (manual_records.py)
 
 # Default spreadsheet. A source that omits `document` is a tab of this one, so the
 # original entry sheets keep sharing a single permission: if it is unshared, all of

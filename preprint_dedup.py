@@ -149,6 +149,10 @@ REPRODUCTION_AXES = (
 # well. The source is there twice: out_quote_source as the sheet gave it, and
 # outcome_quote_source as the transform derives it.
 OUTCOME_EVIDENCE = ("outcome", "outcome_quote", "outcome_quote_source", "out_quote_source")
+# Whether a row is the source row of a live FLoRA record (flora_records), set by
+# transform_sources.build when rows added by hand are present: a hand record that is
+# already a FLoRA record keeps it against rows arriving later (_yields).
+REGISTERED_COLUMN = "_registered"
 # Never filled from a dropped duplicate (fill_blanks), out of the columns the transform
 # loads: which source row the record is, the identifiers it was matched on and where
 # it came from, that row's own review state, and what the duplicate steps keep
@@ -156,7 +160,7 @@ OUTCOME_EVIDENCE = ("outcome", "outcome_quote", "outcome_quote_source", "out_quo
 # content.
 _OWN_COLUMNS = {"record_id", "display_id", "type", "doi_o", "doi_r", "url_r", "source",
                 "validation_status", "reviewed_by", "duplicate_status",
-                "merged_record_ids", CONFLICT_COLUMN}
+                "merged_record_ids", CONFLICT_COLUMN, REGISTERED_COLUMN}
 
 # Records validated on this website (source_records.source = 'validated'; every one
 # of them exists because someone validated it). When one shares a group with an
@@ -166,6 +170,12 @@ _OWN_COLUMNS = {"record_id", "display_id", "type", "doi_o", "doi_r", "url_r", "s
 # else merges by the ordinary rules, and a field it leaves blank falls back to what
 # the others have. See website_overrides().
 WEBSITE_SOURCE = "validated"
+# Records an admin added by hand in the FLoRA tab (manual_records.py), published
+# under this key. The opposite of a website record: one never speaks for a record
+# another source holds. transform_sources.load() puts them last, so they never
+# survive over another row, and in a pair merge they only fill what the other rows
+# left blank (merge_doi_pair_dups).
+MANUAL_SOURCE = "manual"
 _JUDGEMENT = ("outcome", "outcome_computation", "outcome_robustness")
 _EVIDENCE = ("outcome_quote", "outcome_quote_source", "out_quote_source",
              "outcome_computational_quote", "out_quote_computational_source",
@@ -528,6 +538,30 @@ def fill_blanks(rows) -> dict:
             if _s(value) != _s(survivor.get(column))}
 
 
+def fill_blanks_by_hand(rows) -> dict:
+    """fill_blanks for rows added by hand, which only ever fill what the row that stays
+    left blank. A judgement with its evidence (a replication's outcome, or one axis of a
+    reproduction, with its quote and quote source) is taken only when that takes no
+    value the row has: a quote it holds without a judgement stays, rather than giving
+    way to another row's. A reproduction's outcome follows the axes it then has."""
+    survivor = rows[0]
+    added = fill_blanks(rows)
+    reproduction = _s(survivor.get("type")).lower() == "reproduction"
+    for unit in (REPRODUCTION_AXES if reproduction else (OUTCOME_EVIDENCE,)):
+        if any(column in added and not _blank(survivor.get(column)) for column in unit):
+            for column in unit:
+                added.pop(column, None)
+    if reproduction:
+        added.pop("outcome", None)
+        axes = [added.get(axis[0], survivor.get(axis[0])) for axis in REPRODUCTION_AXES]
+        if any(column in added for column, *_ in REPRODUCTION_AXES):
+            outcome = derive_reproduction_outcome(*axes)
+            if _s(outcome) != _s(survivor.get("outcome")):
+                added["outcome"] = outcome
+    return {column: value for column, value in added.items()
+            if _blank(survivor.get(column)) or (reproduction and column == "outcome")}
+
+
 def website_overrides(rows, normalise_outcome=None) -> dict:
     """The values a website-validated record imposes on the row its group becomes.
 
@@ -563,7 +597,163 @@ def website_overrides(rows, normalise_outcome=None) -> dict:
             for c in fields if not _blank(preferred.get(c))}
 
 
-def merge_doi_pair_dups(frame, normalise_outcome=None, verbose=True):
+def _merge_group(group, doi_o, doi_r, normalise_outcome):
+    """One (type, doi_o, doi_r) group combined into one row, and the outcome clash
+    to log (or None). See merge_doi_pair_dups."""
+    row = {"doi_o": doi_o, "doi_r": doi_r}
+    for column in group.columns:
+        if column in ("doi_o", "doi_r"):
+            continue
+        values = list(group[column])
+        if column == "study_o":
+            row[column] = _paste_unique(values, "; ")
+        elif column in ("outcome_quote", "outcome_quote_source", "out_quote_source"):
+            row[column] = _paste_unique(values, OUTCOME_CLASH_SEP)
+        elif column == "source":
+            row[column] = _prefer_cos(values)
+        elif column == "outcome":
+            row[column] = _pick_outcome(values, normalise_outcome)
+        elif column == "merged_record_ids":
+            combined = []
+            for value in values:
+                if isinstance(value, list):
+                    combined.extend(value)
+            row[column] = combined
+        elif column == REGISTERED_COLUMN:
+            row[column] = any(bool(value) for value in values if not _blank(value))
+        else:
+            row[column] = _first_non_null(values)
+
+    # A reproduction's axes come whole: each axis with its quote and quote source
+    # from the first row that judged it, and the outcome derived from them.
+    members = [group.iloc[i] for i in range(len(group))]
+    if _s(row.get("type")).lower() == "reproduction":
+        _axes_whole(row, members)
+
+    # A website-validated record's values win; the row stays the one it was.
+    overrides = {}
+    if "source" in group.columns and group["source"].eq(WEBSITE_SOURCE).any():
+        overrides = website_overrides(members, normalise_outcome)
+        row.update({c: v for c, v in overrides.items() if c in group.columns})
+
+    # Provenance has to survive the merge: the rows being folded in are the ones
+    # flora_registry needs to recognise if a reviewer later promotes one of them,
+    # and _first_non_null would simply drop their ids.
+    if "record_id" in group.columns and "merged_record_ids" in row:
+        survivor = row.get("record_id")
+        absorbed = [r for r in group["record_id"] if r and r != survivor]
+        row["merged_record_ids"] = list(row["merged_record_ids"] or []) + absorbed
+
+    conflict = None
+    canonical = {normalise_outcome(v) for v in group["outcome"] if not _blank(v)} \
+        if "outcome" in group else set()
+    if len(canonical) > 1:
+        outcomes = " | ".join(sorted(str(c) for c in canonical))
+        # Which rule settled it: the website record, the merge rules, or nothing
+        # yet (the kept record's outcome stands in until a decision).
+        resolved_by = ("website record" if "outcome" in overrides
+                       else "merge rules" if _clash_settled(group["outcome"], normalise_outcome)
+                       else NEEDS_DECISION)
+        conflict = {
+            "doi_o": doi_o, "doi_r": doi_r,
+            "type": _s(row.get("type")) or None,
+            "outcomes": outcomes,
+            "resolved_to": row.get("outcome"),
+            "resolved_by": resolved_by,
+            "url_r": _paste_unique(group.get("url_r", []), " | "),
+            "sources": _paste_unique(group.get("source", []), " | "),
+        }
+        # Carried on the record itself, so a later step that rewrites its DOIs
+        # cannot lose it: the FLoRA tab lists it under Conflicts until settled.
+        row[CONFLICT_COLUMN] = outcomes if resolved_by == NEEDS_DECISION else None
+    return row, conflict
+
+
+def _fill_from_hand(row, hand, hand_fills=None):
+    """`row`, a group's row made from its other rows, with the blanks the rows added
+    by hand in `hand` can fill, and their ids recorded as absorbed. Given a
+    `hand_fills` list, the filling is only noted there, for apply_hand_fills().
+
+    By the rules of the transform's own dedup (fill_blanks_by_hand): a cell `row` has stays,
+    and a judgement comes whole with its evidence only when `row` has none. The
+    replication link too, which fill_blanks leaves alone as an identifier: here it is
+    the one link the group has between them, as the merge would take it.
+    """
+    members = [hand.iloc[i] for i in range(len(hand))]
+    if hand_fills is not None:
+        hand_fills.append((row.get("record_id"), [member.to_dict() for member in members], True))
+    else:
+        row = {**row, **fill_blanks_by_hand([row, *members])}
+        if "url_r" in row and _blank(row["url_r"]):
+            row["url_r"] = _first_non_null(member.get("url_r") for member in members)
+    if "merged_record_ids" in row:
+        absorbed = list(row["merged_record_ids"]) if isinstance(row["merged_record_ids"], list) else []
+        for member in members:
+            if not _blank(member.get("record_id")):
+                absorbed.append(member["record_id"])
+            prior = member.get("merged_record_ids")
+            absorbed.extend(prior if isinstance(prior, list) else [])
+        row["merged_record_ids"] = absorbed
+    return row
+
+
+def _set(frame, label, column, value):
+    """frame.at[label, column] = value, also into a column that holds no text yet (all
+    blank, so read as floats)."""
+    try:
+        frame.at[label, column] = value
+    except (TypeError, ValueError):
+        frame[column] = frame[column].astype(object)
+        frame.at[label, column] = value
+
+
+def apply_hand_fills(frame, hand_fills, filled=None):
+    """Fill the blanks that rows added by hand were absorbed to fill, after every
+    duplicate step: the steps given a `hand_fills` list record the absorption (the ids)
+    at once, but note the filling there as (record id, rows, with their link). Filled
+    any earlier, a value an entry supplies would compete with another source's row in
+    a later merge, where the first value present wins. Each fills the row that now
+    holds the record it was absorbed into (fill_blanks_by_hand); a row merged in a pair
+    also brings the replication link the record lacks. `filled`, a dict, collects what
+    was filled: {record_id of the row filled: {column: value}}."""
+    if not hand_fills or frame.empty:
+        return frame
+    ids = list(frame["record_id"])
+    merged = (list(frame["merged_record_ids"]) if "merged_record_ids" in frame.columns
+              else [[] for _ in ids])
+    # All the rows filling one record fill it together, whichever step folded each in:
+    # which fills first must not depend on that. Rows of the record's own kind first
+    # (for a hand record, the entries that were there with it, before rows arriving
+    # later), then in the order load() gives them.
+    by_record = {}
+    for survivor_id, members, with_link in hand_fills:
+        position = next((p for p in range(len(ids)) if ids[p] == survivor_id
+                         or (isinstance(merged[p], list) and survivor_id in merged[p])), None)
+        if position is not None:
+            by_record.setdefault(position, []).extend((member, with_link) for member in members)
+    for position, entries in by_record.items():
+        label = frame.index[position]
+        by_hand = _s(frame.at[label, "source"]) == MANUAL_SOURCE if "source" in frame.columns else False
+        entries.sort(key=lambda entry: ((_s(entry[0].get("source")) == MANUAL_SOURCE) != by_hand,
+                                        _s(entry[0].get("display_id"))))
+        members = [member for member, _ in entries]
+        for column, value in fill_blanks_by_hand([frame.loc[label], *members]).items():
+            if column in frame.columns and column != "merged_record_ids":
+                _set(frame, label, column, value)
+                if filled is not None:
+                    filled.setdefault(ids[position], {})[column] = value
+        if "url_r" in frame.columns and _blank(frame.at[label, "url_r"]):
+            # A link that only restates the record's DOI is none (the transform's step 4,
+            # which ran before this was filled).
+            doi = normalize_doi(frame.at[label, "doi_r"]) if "doi_r" in frame.columns else ""
+            link = _first_non_null(member.get("url_r") for member, with_link in entries
+                                   if with_link and (not doi or normalize_doi(member.get("url_r")) != doi))
+            if link is not None:
+                _set(frame, label, "url_r", link)
+    return frame
+
+
+def merge_doi_pair_dups(frame, normalise_outcome=None, verbose=True, hand_fills=None):
     """Merge rows sharing (type, doi_o, doi_r) when their url_r values are compatible.
 
     Two or more distinct non-null url_r means the rows are kept apart — they may be
@@ -580,6 +770,15 @@ def merge_doi_pair_dups(frame, normalise_outcome=None, verbose=True):
     So an unruled copy of it without its url_r stays a record of its own rather than
     being absorbed unseen: the copy shares its fingerprint, and Source Records keeps
     their group open until someone rules on the copy.
+
+    Rows added by hand (MANUAL_SOURCE) in a group with other rows are not combined
+    with them: the group's row is made from the other rows exactly as without them,
+    and a row added by hand only fills what that row left blank (_fill_from_hand).
+    The other way round for a hand record that already is a FLoRA record: rows with
+    no FLoRA record of their own only fill its blanks (_yields).
+    So it never changes a record another source holds — no joined quote, no "mixed"
+    outcome, no clash — while its id is still recorded as absorbed. A group of rows
+    added by hand alone merges like any other. `hand_fills`: see apply_hand_fills().
     """
     if frame.empty or not {"doi_o", "doi_r"} <= set(frame.columns):
         return frame, pd.DataFrame()
@@ -601,78 +800,67 @@ def merge_doi_pair_dups(frame, normalise_outcome=None, verbose=True):
 
     keys = ["type", "doi_o", "doi_r"] if "type" in pairs.columns else ["doi_o", "doi_r"]
     merged_rows, kept_index, conflicts = [], [], []
+    absorbed_into = {}           # one other row's index -> rows added by hand folded into it
     # dropna=False: a row without a type must still meet its duplicates.
     for key, group in pairs.groupby(keys, sort=False, dropna=False):
         doi_o, doi_r = key[-2], key[-1]
-        distinct_urls = group["url_r"].dropna().nunique() if "url_r" in group else 0
-        if len(group) <= 1 or distinct_urls > 1:
+        by_hand = _yields(group)
+        mixed = bool(by_hand.any() and not by_hand.all())
+        # Whether the group merges is for the other rows to say: a row added by hand
+        # never keeps rows apart that merge without it (nor merges ones that do not).
+        others = group[~by_hand] if mixed else group
+        links = set(others["url_r"].dropna()) if "url_r" in others else set()
+        if len(others) <= 1 and not mixed or len(links) > 1:
             kept_index.extend(group.index.tolist())
             continue
 
-        row = {"doi_o": doi_o, "doi_r": doi_r}
-        for column in group.columns:
-            if column in ("doi_o", "doi_r"):
+        if mixed:
+            # A link of its own is another report than the record's: that row stays
+            # apart, a record of its own, as any two rows with two links do.
+            link, joined = next(iter(links), None), []
+            for index in group.index[by_hand]:
+                own = group.at[index, "url_r"] if "url_r" in group else None
+                if _blank(own) or link is None or own == link:
+                    joined.append(index)
+                    link = link if link is not None else (None if _blank(own) else own)
+                else:
+                    kept_index.append(index)
+            if len(others) == 1:
+                # One other row is the record as it stands: kept as it is, and where
+                # it is, as it would be with no row added by hand beside it.
+                kept_index.extend(others.index.tolist())
+                if joined:
+                    absorbed_into[others.index[0]] = joined
                 continue
-            values = list(group[column])
-            if column == "study_o":
-                row[column] = _paste_unique(values, "; ")
-            elif column in ("outcome_quote", "outcome_quote_source", "out_quote_source"):
-                row[column] = _paste_unique(values, OUTCOME_CLASH_SEP)
-            elif column == "source":
-                row[column] = _prefer_cos(values)
-            elif column == "outcome":
-                row[column] = _pick_outcome(values, normalise_outcome)
-            elif column == "merged_record_ids":
-                combined = []
-                for value in values:
-                    if isinstance(value, list):
-                        combined.extend(value)
-                row[column] = combined
-            else:
-                row[column] = _first_non_null(values)
-
-        # A reproduction's axes come whole: each axis with its quote and quote source
-        # from the first row that judged it, and the outcome derived from them.
-        members = [group.iloc[i] for i in range(len(group))]
-        if _s(row.get("type")).lower() == "reproduction":
-            _axes_whole(row, members)
-
-        # A website-validated record's values win; the row stays the one it was.
-        overrides = {}
-        if "source" in group.columns and group["source"].eq(WEBSITE_SOURCE).any():
-            overrides = website_overrides(members, normalise_outcome)
-            row.update({c: v for c, v in overrides.items() if c in group.columns})
-
-        # Provenance has to survive the merge: the rows being folded in are the ones
-        # flora_registry needs to recognise if a reviewer later promotes one of them,
-        # and _first_non_null would simply drop their ids.
-        if "record_id" in group.columns and "merged_record_ids" in row:
-            survivor = row.get("record_id")
-            absorbed = [r for r in group["record_id"] if r and r != survivor]
-            row["merged_record_ids"] = list(row["merged_record_ids"] or []) + absorbed
-
-        canonical = {normalise_outcome(v) for v in group["outcome"] if not _blank(v)} \
-            if "outcome" in group else set()
-        if len(canonical) > 1:
-            outcomes = " | ".join(sorted(str(c) for c in canonical))
-            # Which rule settled it: the website record, the merge rules, or nothing
-            # yet (the kept record's outcome stands in until a decision).
-            resolved_by = ("website record" if "outcome" in overrides
-                           else "merge rules" if _clash_settled(group["outcome"], normalise_outcome)
-                           else NEEDS_DECISION)
-            conflicts.append({
-                "doi_o": doi_o, "doi_r": doi_r,
-                "type": _s(row.get("type")) or None,
-                "outcomes": outcomes,
-                "resolved_to": row.get("outcome"),
-                "resolved_by": resolved_by,
-                "url_r": _paste_unique(group.get("url_r", []), " | "),
-                "sources": _paste_unique(group.get("source", []), " | "),
-            })
-            # Carried on the record itself, so a later step that rewrites its DOIs
-            # cannot lose it: the FLoRA tab lists it under Conflicts until settled.
-            row[CONFLICT_COLUMN] = outcomes if resolved_by == NEEDS_DECISION else None
+            row, conflict = _merge_group(others, doi_o, doi_r, normalise_outcome)
+            if joined:
+                row = _fill_from_hand(row, group.loc[joined], hand_fills)
+        else:
+            row, conflict = _merge_group(group, doi_o, doi_r, normalise_outcome)
+        if conflict is not None:
+            conflicts.append(conflict)
         merged_rows.append(row)
+
+    if absorbed_into:
+        # Folded in place, so the frame keeps its order: a merge reorders it (below),
+        # and a row added by hand must not be what brings that about.
+        frame = frame.copy()
+        merged = list(frame["merged_record_ids"]) if "merged_record_ids" in frame.columns else None
+        position = {label: p for p, label in enumerate(frame.index)}
+        for label, joined in absorbed_into.items():
+            before = frame.loc[label].to_dict()
+            after = _fill_from_hand(dict(before), frame.loc[joined], hand_fills)
+            for column, value in after.items():
+                if column == "merged_record_ids":
+                    if merged is not None:
+                        merged[position[label]] = value
+                elif _s(value) != _s(before.get(column)):
+                    _set(frame, label, column, value)
+        if merged is not None:
+            frame["merged_record_ids"] = merged
+        frame = frame.drop(index=[i for joined in absorbed_into.values() for i in joined])
+        pairs, untouched = frame.loc[kept_index], frame.loc[untouched.index]
+        kept_index = list(pairs.index)
 
     if not merged_rows:
         return frame, pd.DataFrame()
@@ -836,14 +1024,90 @@ def find_duplicates(frame, title_threshold=TITLE_THRESHOLD, verbose=True):
 
 # ── application ───────────────────────────────────────────────────────────────
 
-def _drop_replication(frame, doi_remove, doi_keep, annotate: bool):
+def _by_hand(frame) -> pd.Series:
+    """Which rows were added by hand (MANUAL_SOURCE)."""
+    return (frame["source"].eq(MANUAL_SOURCE) if "source" in frame.columns
+            else pd.Series(False, index=frame.index))
+
+
+def _yields(rows) -> pd.Series:
+    """Which of `rows` (one duplicate group, or the rows of one preprint pair) only
+    fill blanks and never become the record: whoever was there first keeps the values.
+
+    Rows added by hand, as a hand row never takes over a record another source holds.
+    Except that a hand record that is already a FLoRA record (REGISTERED_COLUMN: its
+    row is the source row of a live one) keeps it, with its id and values, against
+    rows with no FLoRA record of their own, which then fill its blanks in the same
+    way. Against another source's FLoRA record it yields as any row added by hand.
+    No row added by hand: none yields, and the steps run as they always did."""
+    by_hand = _by_hand(rows)
+    if not by_hand.any() or REGISTERED_COLUMN not in rows.columns:
+        return by_hand
+    registered = rows[REGISTERED_COLUMN].eq(True)
+    senior = by_hand & registered
+    if senior.any() and not (registered & ~by_hand).any():
+        return ~senior
+    return by_hand
+
+
+def yielding(frame, keys) -> pd.Series:
+    """_yields for each group of `keys` (one key per row of `frame`) that has a row
+    added by hand; False elsewhere."""
+    out = pd.Series(False, index=frame.index)
+    by_hand = _by_hand(frame)
+    if not by_hand.any():
+        return out
+    shared = keys.isin(set(keys[by_hand]))
+    for _, group in frame[shared].groupby(keys[shared], sort=False):
+        out[group.index] = _yields(group)
+    return out
+
+
+def _absorb_by_hand(frame, absorbed, hand_fills=None):
+    """Rows added by hand folded into another source's row by a preprint ruling, as
+    the duplicate steps fold them: `absorbed` is [(position of the row that stays,
+    [positions of rows added by hand])]. The row that stays keeps its identifiers and
+    every value it has; theirs only fill its blanks (fill_blanks_by_hand), and their ids are
+    recorded as absorbed, so the registry knows them. The caller drops them. Given a
+    `hand_fills` list, the filling is only noted there, for apply_hand_fills()."""
+    if not absorbed:
+        return frame
+    if "record_id" in frame.columns and "merged_record_ids" not in frame.columns:
+        frame = frame.assign(merged_record_ids=[[] for _ in range(len(frame))])
+    merged = list(frame["merged_record_ids"]) if "merged_record_ids" in frame.columns else None
+    for stays, hand in absorbed:
+        members = [frame.iloc[position] for position in hand]
+        label = frame.index[stays]
+        if hand_fills is not None:
+            hand_fills.append((frame.iloc[stays].get("record_id"),
+                               [member.to_dict() for member in members], False))
+        else:
+            for column, value in fill_blanks_by_hand([frame.iloc[stays], *members]).items():
+                if column != "merged_record_ids":
+                    _set(frame, label, column, value)
+        if merged is not None:
+            ids = list(merged[stays]) if isinstance(merged[stays], list) else []
+            for member in members:
+                if not _blank(member.get("record_id")):
+                    ids.append(member["record_id"])
+                prior = member.get("merged_record_ids")
+                ids.extend(prior if isinstance(prior, list) else [])
+            merged[stays] = ids
+    if merged is not None:
+        frame["merged_record_ids"] = merged
+    return frame
+
+
+def _drop_replication(frame, doi_remove, doi_keep, annotate: bool, hand_fills=None):
     """Drop rows carrying the losing doi_r, but ONLY where the surviving one has a
     row of the same type under the same original.
 
     The original restriction stops the same preprint DOI paired with an unrelated
     original being removed as collateral. The type restriction stops a reproduction
     being removed because the published version was recorded only as a replication:
-    those are two records about one paper, and only one of them has a survivor."""
+    those are two records about one paper, and only one of them has a survivor.
+
+    A row added by hand never removes another source's row (_drop_replication_by_hand)."""
     lower_r = frame["doi_r"].apply(lambda v: _s(v).lower())
     lower_o = frame["doi_o"].apply(lambda v: _s(v).lower())
     kind = frame["type"].apply(_s) if "type" in frame.columns else pd.Series("", index=frame.index)
@@ -854,6 +1118,11 @@ def _drop_replication(frame, doi_remove, doi_keep, annotate: bool):
 
     in_keeper_group = group.apply(lambda g: g in keepers)
     is_target = (lower_r == _s(doi_remove).lower()) & in_keeper_group
+    by_hand = _by_hand(frame)
+    if by_hand.any():
+        return _drop_replication_by_hand(
+            frame, group, (lower_r == _s(doi_keep).lower()) & in_keeper_group, is_target,
+            by_hand, doi_remove, annotate, hand_fills)
     if annotate:
         is_kept = (lower_r == _s(doi_keep).lower()) & in_keeper_group
         if is_kept.any():
@@ -864,7 +1133,58 @@ def _drop_replication(frame, doi_remove, doi_keep, annotate: bool):
     return frame[~is_target]
 
 
+def _drop_replication_by_hand(frame, group, is_kept, is_target, by_hand, doi_remove, annotate,
+                              hand_fills=None):
+    """_drop_replication with rows added by hand among the rows, (doi_o, type) group by
+    group. "Added by hand" is _yields': rows that only fill blanks. Where the
+    replication DOI to keep is held only by rows added by hand and
+    the one to drop by another source, it is turned round: that source's row stays,
+    with its DOI, id and values, and the rows added by hand are absorbed into it
+    (_absorb_by_hand). Correcting it to the other DOI is done in its FLoRA editor.
+    Rows added by hand dropped beside another source's kept row are absorbed into it
+    too. A hand record that is already a FLoRA record and does not yield is never
+    dropped. Everything else is dropped as always."""
+    kept, target, manual = list(is_kept), list(is_target), list(by_hand)
+    groups, members = list(group), {}
+    for position in range(len(frame)):
+        if kept[position] or target[position]:
+            members.setdefault(groups[position], []).append(position)
+    drop, annotated, absorbed = list(target), list(kept) if annotate else [False] * len(frame), []
+    for positions in members.values():
+        hand = dict(zip(positions, _yields(frame.iloc[positions])))
+        keep_rows = [p for p in positions if kept[p]]
+        drop_rows = [p for p in positions if target[p]]
+        others_kept = [p for p in keep_rows if not hand[p]]
+        others_dropped = [p for p in drop_rows if not hand[p]]
+        hand_dropped = [p for p in drop_rows if hand[p]]
+        if keep_rows and not others_kept and others_dropped:
+            for p in drop_rows:
+                drop[p] = False
+            for p in keep_rows:
+                drop[p], annotated[p] = True, False
+            absorbed.append((others_dropped[0], keep_rows))
+        elif others_kept and hand_dropped:
+            absorbed.append((others_kept[0], hand_dropped))
+        # A hand record that is already a FLoRA record and does not yield here (no other
+        # source's FLoRA record is in the group) keeps it: no preprint rule retires it.
+        for p in drop_rows:
+            if drop[p] and manual[p] and not hand[p]:
+                drop[p] = False
+    if any(annotated):
+        mask = pd.Series(annotated, index=frame.index)
+        frame.loc[mask, "alt_identifier_r"] = [
+            append_alt_identifier(v, doi_remove) for v in frame.loc[mask, "alt_identifier_r"]]
+    frame = _absorb_by_hand(frame, absorbed, hand_fills)
+    return frame[~pd.Series(drop, index=frame.index)]
+
+
 def _replace_original(frame, mapping, annotate_removals):
+    """Rewrite doi_o by `mapping` (remove -> keep, lower-case), annotating the rows of
+    a confirmed removal. Unlike a replication-side drop, a replacement needs no row
+    under the DOI kept, so a row added by hand never brings one about: a confirmed
+    ruling moves the same rows with or without it, and an automatic one is decided
+    against the rows added by hand when they alone hold the DOI to keep
+    (_against_another_source)."""
     lower_o = frame["doi_o"].apply(lambda v: _s(v).lower())
     matched = lower_o.isin(mapping)
     annotate = lower_o.isin(annotate_removals)
@@ -888,10 +1208,11 @@ def _ensure_alt_columns(frame):
 
 def apply_confirmed(frame, confirmed_path: Path = CONFIRMED_PATH,
                     normalise_outcome=None, verbose=True, conflicts_out=None,
-                    rulings=None):
+                    rulings=None, hand_fills=None):
     """Step 6a — apply only the confirmed keep_1/keep_2 rows, before enrichment.
 
     `rulings` are admin rulings from the FLoRA tab, overlaid on the file.
+    `hand_fills`: see apply_hand_fills().
     """
     frame = _ensure_alt_columns(frame.copy())
     confirmed = [r for r in confirmed_decisions(confirmed_path, rulings)
@@ -907,7 +1228,7 @@ def apply_confirmed(frame, confirmed_path: Path = CONFIRMED_PATH,
         if _blank(remove) or _blank(keep):
             continue
         if (row.get("side") or "").startswith("replication"):
-            frame = _drop_replication(frame, remove, keep, annotate=True)
+            frame = _drop_replication(frame, remove, keep, annotate=True, hand_fills=hand_fills)
 
     originals = [r for r in confirmed if (r.get("side") or "").startswith("original")]
     if originals:
@@ -918,7 +1239,8 @@ def apply_confirmed(frame, confirmed_path: Path = CONFIRMED_PATH,
                 mapping[_s(remove).lower()] = _s(keep).lower()
                 removals.add(_s(remove).lower())
         frame = _replace_original(frame, mapping, removals)
-        frame, conflicts = merge_doi_pair_dups(frame, normalise_outcome, verbose=False)
+        frame, conflicts = merge_doi_pair_dups(frame, normalise_outcome, verbose=False,
+                                               hand_fills=hand_fills)
         # Collected rather than dropped: a merge here can be the only place an
         # outcome clash is ever detected, and the R side logs every one of them.
         if conflicts_out is not None and not conflicts.empty:
@@ -948,13 +1270,32 @@ def write_candidates(decisions, path: Path) -> None:
       .to_csv(path, index=False, encoding="utf-8", lineterminator="\n")
 
 
+def _against_another_source(frame, candidate, remove, keep) -> bool:
+    """Whether the automatic rule would drop or move another source's rows for a DOI
+    held only by rows added by hand: on the replication side within the candidate's
+    original, on the original side anywhere."""
+    by_hand = _by_hand(frame)
+    if not by_hand.any():
+        return False
+    replication = _s(candidate.get("side")).startswith("replication")
+    column = "doi_r" if replication else "doi_o"
+    lower = frame[column].apply(lambda v: _s(v).lower())
+    scope = (frame["doi_o"].apply(lambda v: _s(v).lower()) == _s(candidate.get("doi_o_group")).lower()
+             if replication else pd.Series(True, index=frame.index))
+    keeping, replacing = scope & (lower == _s(keep).lower()), scope & (lower == _s(remove).lower())
+    yields = _yields(frame[keeping | replacing])
+    holders, replaced = yields[keeping[keeping | replacing]], yields[replacing[keeping | replacing]]
+    return bool(len(holders) and holders.all() and not replaced.all())
+
+
 def resolve(frame, confirmed_path: Path = CONFIRMED_PATH,
             candidates_out: Path = CANDIDATES_PATH,
             title_threshold=TITLE_THRESHOLD, normalise_outcome=None, verbose=True,
-            conflicts_out=None, open_review_issue=False, rulings=None):
+            conflicts_out=None, open_review_issue=False, rulings=None, hand_fills=None):
     """Step 7d — detect candidates and apply overrides or the default rule.
 
     `rulings` are admin rulings from the FLoRA tab, overlaid on the file.
+    `hand_fills`: see apply_hand_fills().
     """
     frame = _ensure_alt_columns(frame.copy())
     candidates = find_duplicates(frame, title_threshold, verbose)
@@ -1004,9 +1345,15 @@ def resolve(frame, confirmed_path: Path = CONFIRMED_PATH,
                                 doi_remove=None, doi_keep=None)
             else:
                 remove, keep = result
+                note = ""
+                if _against_another_source(frame, candidate, remove, keep):
+                    # The DOI to keep is only on rows added by hand: the record another
+                    # source holds stays, and the rows added by hand are folded into it.
+                    remove, keep = keep, remove
+                    note = " (the other DOI was added by hand; another source's record stays)"
                 dropped = "doi_1" if remove == candidate["doi_1"] else "doi_2"
                 decision.update(
-                    resolution=f"auto: drop {dropped}",
+                    resolution=f"auto: drop {dropped}{note}",
                     applied_action="auto_keep_2" if dropped == "doi_1" else "auto_keep_1",
                     doi_remove=remove, doi_keep=keep)
         decisions.append(decision)
@@ -1019,7 +1366,7 @@ def resolve(frame, confirmed_path: Path = CONFIRMED_PATH,
             continue
         frame = _drop_replication(
             frame, decision["doi_remove"], decision["doi_keep"],
-            annotate=decision["applied_action"] in confirmed_actions)
+            annotate=decision["applied_action"] in confirmed_actions, hand_fills=hand_fills)
 
     originals = [d for d in decisions
                  if d["side"].startswith("original") and not _blank(d["doi_remove"])]
@@ -1029,7 +1376,8 @@ def resolve(frame, confirmed_path: Path = CONFIRMED_PATH,
         removals = {_s(d["doi_remove"]).lower() for d in originals
                     if d["applied_action"] in confirmed_actions}
         frame = _replace_original(frame, mapping, removals)
-        frame, conflicts = merge_doi_pair_dups(frame, normalise_outcome, verbose=False)
+        frame, conflicts = merge_doi_pair_dups(frame, normalise_outcome, verbose=False,
+                                               hand_fills=hand_fills)
         if conflicts_out is not None and not conflicts.empty:
             conflicts_out.extend(conflicts.to_dict("records"))
 

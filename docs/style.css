@@ -7029,3 +7029,93 @@ body.has-maint-banner #admin-screen {
   font-size: 0.88rem;
   color: var(--ink-soft);
 }
+
+/* ---- FLoRA: records added by hand (manual_records.py) ---- */
+
+.flora-edited-badge.flora-manual-badge { color: var(--green); border-color: var(--green); background: #e7eedf; }
+/* Who added a record by hand: in the record editor and the Source Records panel. */
+.flora-manual-provenance {
+  background: #e7eedf;
+  border-left: 3px solid var(--green);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+.flora-manual-provenance .ghost-btn { margin-left: 0.3rem; padding: 0.15rem 0.55rem; font-size: 0.78rem; }
+.src-save-bar #flora-manual-msg { flex: 1 1 auto; text-align: right; }
+.flora-manual-type { display: flex; gap: 1.25rem; margin: 0 0 1rem; font-size: 0.9rem; }
+.flora-manual-type label { display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; }
+.flora-manual-req {
+  font-family: inherit;
+  font-size: 0.66rem;
+  color: var(--accent);
+  margin-left: 0.2rem;
+}
+.flora-manual-error { color: var(--red); font-size: 0.78rem; margin-top: 0.2rem; }
+#flora-manual-body .src-input.flora-manual-invalid { border-color: var(--red); box-shadow: 0 0 0 2px rgba(168, 50, 50, 0.12); }
+#flora-manual-body .src-input:disabled { background: var(--bg-alt); color: var(--muted); }
+.flora-manual-derived { margin: -0.6rem 0 1.4rem; font-size: 0.85rem; color: var(--muted); }
+.flora-manual-derived b { color: var(--ink); }
+.flora-manual-dups > div { margin-bottom: 0.75rem; }
+.flora-manual-dups p { margin: 0 0 0.35rem; }
+.flora-manual-dups-ok {
+  background: var(--bg-alt);
+  border-left: 3px solid var(--green);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.85rem;
+}
+.flora-manual-dups-error {
+  background: #fde8e8;
+  border-left: 3px solid var(--red);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.85rem;
+  color: #6e2d23;
+}
+.flora-manual-matches { margin-top: 0.4rem; }
+.flora-manual-matches ul { margin: 0.2rem 0 0; padding-left: 1.2rem; }
+.flora-manual-matches li { margin: 0.1rem 0; }
+.flora-manual-keep { display: flex; align-items: flex-start; gap: 0.45rem; margin: 0 0 1rem; font-size: 0.86rem; }
+.flora-manual-notice {
+  background: #e7eedf;
+  border-left: 3px solid var(--green);
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 1rem;
+  font-size: 0.88rem;
+}
+.flora-manual-notice p { margin: 0 0 0.4rem; }
+.flora-manual-notice p:last-child { margin-bottom: 0; }
+/* What the build makes of an entry, by its state. */
+.flora-manual-state {
+  padding: 0.55rem 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.86rem;
+  border-left: 3px solid var(--muted);
+  background: var(--bg-alt);
+}
+.flora-manual-state .ghost-btn { margin-left: 0.4rem; padding: 0.15rem 0.55rem; font-size: 0.78rem; }
+.flora-manual-state-awaiting_id, .flora-manual-state-in_flora { border-color: var(--green); background: #e7eedf; }
+.flora-manual-state-absorbed { border-color: var(--amber); background: #f6ecd4; }
+.flora-manual-state-excluded, .flora-manual-state-ruled_duplicate,
+.flora-manual-state-left_out { border-color: var(--red); background: #fde8e8; }
+.flora-manual-lifecycle { margin: 1rem 0 0.5rem; font-size: 0.86rem; }
+.flora-manual-lifecycle h4 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 0 0 0.4rem;
+}
+.flora-manual-lifecycle #flora-manual-restore-note { max-width: 28rem; display: inline-block; }
+.flora-manual-confirm {
+  margin-top: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--red);
+  border-radius: 6px;
+  background: #fff;
+}
+.flora-manual-confirm p { margin: 0 0 0.5rem; }
+.flora-manual-confirm label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.25rem; }
+.flora-manual-confirm-actions { margin-top: 0.5rem; display: flex; gap: 0.5rem; }
+.btn-primary.flora-manual-danger { background: var(--red); border-color: var(--red); }
+.flora-manual-table td { vertical-align: top; }
+.flora-manual-where { max-width: 16rem; }

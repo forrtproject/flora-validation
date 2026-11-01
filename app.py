@@ -36,6 +36,7 @@ import db_pool
 import extra_originals
 import flora_service
 import flora_store
+import manual_records
 from flora_public_api import create_router as create_flora_api_router, is_public_read_request
 import source_records_service
 import source_sync_runner
@@ -6421,6 +6422,180 @@ def admin_flora_finding_undismiss(req: FindingKey, request: Request,
         _finding_audit(cur, security_events.FLORA_FINDING_UNDISMISSED, request, admin,
                        finding, withdrawn["dismiss_note"])
     return finding
+
+
+# Records added by hand in this tab (manual_records.py): stored in manual_records and
+# projected into source_records as MAN- rows on every save. Declared before
+# /flora/{flora_id}, which would otherwise take "manual" for a record id, and the
+# fixed paths (options, counts, check) before /flora/manual/{ref}. The logic lives in
+# manual_records.py; these routes stay thin.
+
+def _manual_call(fn, *args, **kwargs):
+    """Run a manual_records call, turning its refusals into HTTP errors. A stale
+    version's 409 carries the version to reload in a header, as the editor's does."""
+    try:
+        return fn(*args, **kwargs)
+    except manual_records.ManualRecordError as exc:
+        current = exc.detail.get("current_version") if isinstance(exc.detail, dict) else None
+        headers = {"X-Current-Version": str(current)} if current is not None else None
+        raise HTTPException(exc.status, detail=exc.detail, headers=headers) from exc
+
+
+class ManualRecordFields(BaseModel):
+    """A record's fields. Generous bounds, there to refuse a runaway body: the limits,
+    formats and rules between fields are manual_records.clean's, which names the
+    field that is wrong."""
+    type: str | None = Field(default=None, max_length=20)
+    doi_o: str | None = Field(default=None, max_length=1000)
+    url_o: str | None = Field(default=None, max_length=2000)
+    ref_o: str | None = Field(default=None, max_length=5000)
+    study_o: str | None = Field(default=None, max_length=1000)
+    alt_identifier_o: str | None = Field(default=None, max_length=1000)
+    doi_r: str | None = Field(default=None, max_length=1000)
+    url_r: str | None = Field(default=None, max_length=2000)
+    ref_r: str | None = Field(default=None, max_length=5000)
+    year_r: str | None = Field(default=None, max_length=100)
+    abstract_r: str | None = Field(default=None, max_length=40_000)
+    alt_identifier_r: str | None = Field(default=None, max_length=1000)
+    outcome: str | None = Field(default=None, max_length=200)
+    outcome_quote: str | None = Field(default=None, max_length=10_000)
+    out_quote_source: str | None = Field(default=None, max_length=200)
+    outcome_computation: str | None = Field(default=None, max_length=200)
+    outcome_computational_quote: str | None = Field(default=None, max_length=10_000)
+    out_quote_computational_source: str | None = Field(default=None, max_length=200)
+    outcome_robustness: str | None = Field(default=None, max_length=200)
+    outcome_robustness_quote: str | None = Field(default=None, max_length=10_000)
+    out_quote_robust_source: str | None = Field(default=None, max_length=200)
+
+
+class ManualRecordCheck(BaseModel):
+    fields: ManualRecordFields
+    keep_distinct: bool = False
+    manual_id: str | None = Field(default=None, max_length=64)   # the entry being changed
+
+
+class ManualRecordCreate(BaseModel):
+    fields: ManualRecordFields
+    note: str = Field("", max_length=10_000)
+    keep_distinct: bool = False
+    # Made when the form opens: a repeated submit returns the entry already saved.
+    client_token: str | None = Field(default=None, max_length=64)
+
+
+class ManualRecordUpdate(BaseModel):
+    fields: ManualRecordFields
+    note: str = Field("", max_length=10_000)
+    keep_distinct: bool = False
+    version: int          # required: an absent version would skip the concurrency check
+
+
+class ManualRecordAction(BaseModel):
+    version: int
+    reason: str = Field("", max_length=10_000)
+
+
+@app.get("/api/admin/flora/manual/options")
+def admin_flora_manual_options(admin: dict = Depends(current_admin)):
+    """What the form offers: outcomes, reproduction verdicts, field limits."""
+    with db() as cur:
+        return manual_records.options(cur)
+
+
+@app.get("/api/admin/flora/manual/counts")
+def admin_flora_manual_counts(admin: dict = Depends(current_admin)):
+    """Entries by status, for the tab's "Added by hand" chip."""
+    with db() as cur:
+        return manual_records.counts(cur)
+
+
+@app.post("/api/admin/flora/manual/check")
+def admin_flora_manual_check(req: ManualRecordCheck, admin: dict = Depends(current_admin)):
+    """What saving a draft would do: the records it shares identifiers with and
+    whether the build would absorb it. Reads only."""
+    with db() as cur:
+        return _manual_call(manual_records.check, cur, req.fields.model_dump(),
+                            exclude_ref=req.manual_id, keep_distinct=req.keep_distinct)
+
+
+@app.get("/api/admin/flora/manual")
+def admin_flora_manual_list(status: str = "active", admin: dict = Depends(current_admin)):
+    """Every entry added by hand, with what the build makes of it. The place to find
+    one: an entry absorbed into another record has no row of its own in the grid."""
+    with db() as cur:
+        return _manual_call(manual_records.list_records, cur, status)
+
+
+@app.post("/api/admin/flora/manual", status_code=201)
+def admin_flora_manual_create(req: ManualRecordCreate, request: Request, response: Response,
+                              admin: dict = Depends(current_admin)):
+    """Add a record by hand. It is a source row at once (MAN-); it gets a FLoRA ID at
+    the next pipeline run, unless the build absorbs it into a record another source
+    holds, which the answer says. An identical repeat answers 200 with the entry."""
+    with db() as cur:
+        saved = _manual_call(manual_records.create, cur, req.fields.model_dump(), req.note,
+                             req.keep_distinct, admin, client_token=req.client_token)
+        if not saved["repeat"]:
+            _audit(cur, security_events.FLORA_MANUAL_ADDED, request, actor=admin,
+                   target_kind="manual_record", target_id=saved["display_id"],
+                   detail={"manual_id": saved["manual_id"],
+                           "kept_distinct_from": saved.get("kept_from") or None})
+    if saved["repeat"]:
+        response.status_code = 200
+    # After the commit: the answer reads the build's input rows, which the tab caches.
+    with db() as cur:
+        return manual_records.saved(cur, saved["manual_id"], repeat=saved["repeat"])
+
+
+@app.get("/api/admin/flora/manual/{ref}")
+def admin_flora_manual_record(ref: str, admin: dict = Depends(current_admin)):
+    """One entry by its id or MAN- id: fields, history, and what the build makes of it."""
+    with db() as cur:
+        return _manual_call(manual_records.detail, cur, ref)
+
+
+@app.patch("/api/admin/flora/manual/{ref}")
+def admin_flora_manual_update(ref: str, req: ManualRecordUpdate, request: Request,
+                              admin: dict = Depends(current_admin)):
+    """Change an entry the registry does not know under a FLoRA ID yet. Once it does
+    (its own ID, or that of the record it is absorbed into), the fix is made in that
+    record's FLoRA editor instead (409)."""
+    with db() as cur:
+        saved = _manual_call(manual_records.update, cur, ref, req.fields.model_dump(), req.note,
+                             req.version, admin, keep_distinct=req.keep_distinct)
+        if saved["changed"]:
+            _audit(cur, security_events.FLORA_MANUAL_EDITED, request, actor=admin,
+                   target_kind="manual_record", target_id=saved["display_id"],
+                   detail={"manual_id": saved["manual_id"]})
+    with db() as cur:
+        return manual_records.saved(
+            cur, saved["manual_id"],
+            head=None if saved["changed"] else f"Nothing changed in {saved['display_id']}.")
+
+
+@app.post("/api/admin/flora/manual/{ref}/withdraw")
+def admin_flora_manual_withdraw(ref: str, req: ManualRecordAction, request: Request,
+                                admin: dict = Depends(current_admin)):
+    """Take an entry out of FLoRA, with a reason. Its source row is marked deleted."""
+    with db() as cur:
+        done = _manual_call(manual_records.withdraw, cur, ref, req.reason, req.version, admin)
+        _audit(cur, security_events.FLORA_MANUAL_WITHDRAWN, request, actor=admin,
+               target_kind="manual_record", target_id=done["display_id"],
+               detail={"manual_id": done["manual_id"], "reason": req.reason.strip() or None})
+    with db() as cur:
+        return manual_records.saved(cur, done["manual_id"], head=f"Withdrew {done['display_id']}.")
+
+
+@app.post("/api/admin/flora/manual/{ref}/restore")
+def admin_flora_manual_restore(ref: str, req: ManualRecordAction, request: Request,
+                               admin: dict = Depends(current_admin)):
+    """Bring a withdrawn entry back, with the same source row and display id."""
+    with db() as cur:
+        done = _manual_call(manual_records.restore, cur, ref, req.reason, req.version, admin)
+        _audit(cur, security_events.FLORA_MANUAL_RESTORED, request, actor=admin,
+               target_kind="manual_record", target_id=done["display_id"],
+               detail={"manual_id": done["manual_id"], "note": req.reason.strip() or None})
+    with db() as cur:
+        return manual_records.saved(cur, done["manual_id"], head=f"Restored {done['display_id']}.")
 
 
 @app.get("/api/admin/flora/{flora_id}")

@@ -551,7 +551,13 @@ def record_keys(df):
 
 def load(cur):
     """The source rows. Anything ruled a duplicate is left behind here, and so is a
-    row marked deleted (a record no longer validated)."""
+    row marked deleted (a record no longer validated).
+
+    In display_id order, except that rows added by hand (manual_records.py) come
+    last: the duplicate steps keep each group's first row, so one never takes over
+    a record another source holds, whatever its prefix sorts as. It is absorbed
+    instead, filling only blanks, unless it is ruled distinct. (A hand record that
+    is already a FLoRA record keeps it: build() moves it ahead within its group.)"""
     cur.execute(
         """
         SELECT record_id::text AS record_id, display_id, source, type,
@@ -565,8 +571,9 @@ def load(cur):
         FROM source_records
         WHERE duplicate_status IS DISTINCT FROM 'duplicate'
           AND deleted_at IS NULL
-        ORDER BY display_id
-        """
+        ORDER BY (source = %s), display_id
+        """,
+        (preprint_dedup.MANUAL_SOURCE,),
     )
     return pd.DataFrame([dict(r) for r in cur.fetchall()])
 
@@ -578,6 +585,19 @@ def load_rules(cur):
     cur.execute("SELECT doi_o, doi_r, url_r, reason FROM transform_exclusions")
     exclusions = [dict(r) for r in cur.fetchall()]
     return aliases, exclusions
+
+
+def load_live_primaries(cur) -> set:
+    """The record_ids that are the source row of a live FLoRA record (flora_records).
+
+    Guarded like the rulings: the nightly job can reach a database before the site's
+    init_db() has created the table."""
+    cur.execute("SELECT to_regclass('flora_records') IS NOT NULL AS present")
+    if not cur.fetchone()["present"]:
+        return set()
+    cur.execute("SELECT primary_source_record_id::text AS sid FROM flora_records "
+                "WHERE retired_at IS NULL")
+    return {row["sid"] for row in cur.fetchall()}
 
 
 def load_dedup_decisions(cur):
@@ -894,6 +914,12 @@ def build(cur, verbose: bool = True,
           f"{(df['type'] == 'reproduction').sum()} reproduction)")
 
     df[preprint_dedup.CONFLICT_COLUMN] = None     # set by the merges and drops below
+    # A hand record that is already a FLoRA record keeps it, its id and its values,
+    # against rows arriving later, which only fill its blanks (preprint_dedup._yields):
+    # the duplicate steps have to know which rows are a live record's source row.
+    # Asked only when there are rows added by hand.
+    if df["source"].eq(preprint_dedup.MANUAL_SOURCE).any():
+        df[preprint_dedup.REGISTERED_COLUMN] = df["record_id"].isin(load_live_primaries(cur))
 
     # 1 ── outcome
     problems = {"unknown_alias": [], "bad_alias": [], "invalid_axis": []}
@@ -961,10 +987,14 @@ def build(cur, verbose: bool = True,
     # step performed it. Written by run() to output/dup_outcome_conflicts.csv;
     # build() stays read-only.
     conflicts = []
+    # What rows added by hand fill, noted by each duplicate step and filled once the
+    # last of them (6b) is done: an entry never competes with another source's rows in
+    # a merge (preprint_dedup.apply_hand_fills).
+    hand_fills = []
 
     df = preprint_dedup.apply_confirmed(
         df, normalise_outcome=_normalise_outcome, verbose=verbose,
-        conflicts_out=conflicts, rulings=dedup_decisions)
+        conflicts_out=conflicts, rulings=dedup_decisions, hand_fills=hand_fills)
 
     # 3 ── exclusions
     # Runs BEFORE url_r is stripped: an operator registering an exclusion copies
@@ -1019,11 +1049,19 @@ def build(cur, verbose: bool = True,
     # replication and a reproduction of the same paper are not interchangeable
     # and collapsing them silently deletes the reproduction.
     key = dedup_keys(df)
+    # Rows that only fill blanks (preprint_dedup._yields): rows added by hand, or the
+    # rows arriving after a hand record that is already a FLoRA record. They go after
+    # the others, so they are never a key's first row. None without rows added by hand.
+    yields = preprint_dedup.yielding(df, key)
+    if yields.any():
+        order = list(df.index[~yields.to_numpy()]) + list(df.index[yields.to_numpy()])
+        df, key, yields = df.loc[order], key.loc[order], yields.loc[order]
 
     exempt = df["duplicate_status"].eq("distinct")
     # The survivor of each key is its first row, as it always was: which row a key
     # becomes is its published identity, so nothing here moves it. A record validated
-    # on this website decides the VALUES instead (below), whatever its position.
+    # on this website decides the VALUES instead (below), whatever its position. A row
+    # that only fills blanks is never first beside one that does not (above).
     # A row with no identifier at all shares nothing with another, whatever its type.
     collides = key.duplicated() & has_identifier(df)
     survivors = df.index[~key.duplicated()]
@@ -1053,9 +1091,16 @@ def build(cur, verbose: bool = True,
     # does, so it is logged the same way.
     survivor_of = {df.at[idx, "_key"]: idx for idx in survivors}
     axis_columns = {column for axis in preprint_dedup.REPRODUCTION_AXES for column in axis}
+    # Rows added by hand dropped here fill the record only once it is made: a later
+    # merge (5b, 6b) may still combine this survivor with other rows, and a blank
+    # filled now would be a value that competes with theirs (hand_fills).
     for k, group in dropped.groupby("_key"):
         kept = survivor_of[k]
         rows = [df.loc[kept], *(group.loc[i] for i in group.index)]
+        hand = [r for r in rows[1:] if yields[r.name]]
+        if hand and not yields[kept]:
+            hand_fills.append((df.at[kept, "record_id"], [h.to_dict() for h in hand], False))
+            rows = [r for r in rows if not any(r is h for h in hand)]
         added = preprint_dedup.fill_blanks(rows)
         for column, value in added.items():
             df.at[kept, column] = value
@@ -1065,14 +1110,18 @@ def build(cur, verbose: bool = True,
             survivor = df.loc[kept]
             df.at[kept, "outcome_quote"] = cos_quote_rewrite.rewrite_one(derive_quote(survivor))
             df.at[kept, "outcome_quote_source"] = derive_quote_source(survivor)
-        overrides = preprint_dedup.website_overrides(rows, _normalise_outcome)
+        # A row added by hand only fills blanks, so beside another source's rows it
+        # takes no part in what the website record decides, and its outcome is no
+        # clash, as in the pair merge (merge_doi_pair_dups).
+        judged = [r for r in rows if not yields[r.name]] or rows
+        overrides = preprint_dedup.website_overrides(judged, _normalise_outcome)
         for column, value in overrides.items():
             if column in df.columns:
                 df.at[kept, column] = value
-        outcomes = {o for o in (_normalise_outcome(r.get("outcome")) for r in rows) if o}
+        outcomes = {o for o in (_normalise_outcome(r.get("outcome")) for r in judged) if o}
         # A clash an earlier merge left undecided on one of these rows stays one.
         undecided_before = next(
-            (r.get(preprint_dedup.CONFLICT_COLUMN) for r in rows
+            (r.get(preprint_dedup.CONFLICT_COLUMN) for r in judged
              if not preprint_dedup._blank(r.get(preprint_dedup.CONFLICT_COLUMN))), None)
         if len(outcomes) > 1:
             # Nothing settles a dropped row's outcome but a website record: the
@@ -1095,7 +1144,14 @@ def build(cur, verbose: bool = True,
 
     keep = ~(collides & ~exempt)
     survivor_set = set(survivors)
+    # A record is a live FLoRA record's when any row folded into it is one.
+    registered = preprint_dedup.REGISTERED_COLUMN
+    registered_by_key = (dropped.groupby("_key")[registered].any().to_dict()
+                         if registered in df.columns and not dropped.empty else {})
     df = df[keep].copy()
+    if registered_by_key:
+        df[registered] = [bool(flag) or (idx in survivor_set and registered_by_key.get(k, False))
+                          for idx, flag, k in zip(df.index, df[registered], df["_key"])]
     df["merged_record_ids"] = [
         (list(prior[idx]) if isinstance(prior[idx], list) else [])
         + (merged_by_key.get(k, []) if idx in survivor_set else [])
@@ -1112,7 +1168,7 @@ def build(cur, verbose: bool = True,
     # about to be discarded can hold the only outcome_quote there is. Two distinct
     # url_r values mean two different reports and are left alone.
     df, outcome_conflicts = preprint_dedup.merge_doi_pair_dups(
-        df, _normalise_outcome, verbose=verbose)
+        df, _normalise_outcome, verbose=verbose, hand_fills=hand_fills)
     if not outcome_conflicts.empty:
         conflicts.extend(outcome_conflicts.to_dict("records"))
 
@@ -1145,7 +1201,7 @@ def build(cur, verbose: bool = True,
     df, dedup_log = preprint_dedup.resolve(
         df, candidates_out=None, normalise_outcome=_normalise_outcome,
         verbose=verbose, conflicts_out=conflicts, open_review_issue=review_issue,
-        rulings=dedup_decisions)
+        rulings=dedup_decisions, hand_fills=hand_fills)
     # An automatic original-side decision replaces doi_o after the join (a confirmed
     # one did at 2b, before it), so the rows it moved are joined again: their title,
     # authors and journal describe the DOI they now carry. That includes a row which
@@ -1158,6 +1214,17 @@ def build(cur, verbose: bool = True,
         join_metadata_again(df, moved, "o", meta, join_fallbacks)
         say(f"  joined to the metadata again after an original-side replacement: "
             f"{len(moved)} row(s)")
+    # The last duplicate step is done: rows added by hand fill their records' blanks.
+    # A reproduction's quote follows the axes it then has at 7e.
+    filled = {}
+    df = preprint_dedup.apply_hand_fills(df, hand_fills, filled)
+    # What they filled is the record's own from now on: a corrected identifier joins
+    # the record to the metadata again (6c) from these fallbacks, which must not undo it.
+    for record_id, columns in filled.items():
+        for column, value in columns.items():
+            if column in join_fallbacks.columns and record_id in join_fallbacks.index:
+                join_fallbacks[column] = join_fallbacks[column].astype(object)
+                join_fallbacks.at[record_id, column] = value
 
     # 6c ── identifiers corrected on FLoRA records (flora_edits.py)
     # After every duplicate step — exact (5), pair merge (5b) and preprint (6b) — so

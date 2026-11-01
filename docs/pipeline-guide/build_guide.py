@@ -54,8 +54,8 @@ def load_nodes():
     nodes.extend(action_nodes)
     nodes.append({
         "id": "storage-sources", "title": "Source Records: the combined input", "group": "storage",
-        "summary": "source_records is the shared input collection for final preparation. It combines published sheet rows, approved extractor reviews and separately published disagreement records.",
-        "inputs": ["Accepted Google entry-sheet rows.", "Approved validated rows projected by sync_validated.py.", "Explicitly published Observatory adjudication decisions, when that feature is enabled."],
+        "summary": "source_records is the shared input collection for final preparation. It combines published sheet rows, approved extractor reviews, separately published disagreement records and records added by hand in the FLoRA tab.",
+        "inputs": ["Accepted Google entry-sheet rows.", "Approved validated rows projected by sync_validated.py.", "Explicitly published Observatory adjudication decisions, when that feature is enabled.", "Records added by hand in the FLoRA tab (source manual, MAN- display IDs), written by manual_records.py on every save."],
         "steps": ["Keep source identity and original values so each combined record can be traced back to its input.", "Apply exclusions, duplicate decisions, outcome rules and FLoRA corrections when building the derived dataset."],
         "saves": ["PostgreSQL source_records; source_sync_runs records refresh outcomes.", "Corrections belong in flora_record_changes, rather than overwriting imported sheet values."],
         "refresh": ["The Source Records grid reloads the imported input. The FLoRA grid derives the current combined view.", "The stored complete CSV and public API update through preparation, with eligible existing-row corrections applied immediately."],

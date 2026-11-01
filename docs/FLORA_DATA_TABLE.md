@@ -15,6 +15,7 @@ session.
 | Table | Purpose |
 | --- | --- |
 | `source_records` | Imported source records, never edited by hand, and duplicate rulings |
+| `manual_records` | Records an admin added by hand in the FLoRA tab; each is projected into `source_records` as a `MAN-` row ([details](SOURCE_RECORDS.md#33-records-added-by-hand-manual)) |
 | `flora_records` | Permanent identity and provenance registry for transformed records |
 | `flora_record_changes` | Change log of FLoRA records: who, note, before → after; re-applied by every build ([details](SOURCE_RECORDS.md#94-correcting-a-flora-record-flora_editspy)) |
 | `flora_data` | Complete stored preparation output, including retired published records |

@@ -374,6 +374,7 @@
         <button class="admin-filter-btn" data-filter="replication">Replications <span class="filter-count" id="sfc-repl">—</span></button>
         <button class="admin-filter-btn" data-filter="reproduction">Reproductions <span class="filter-count" id="sfc-repro">—</span></button>
         <button class="admin-filter-btn" data-filter="validated">Validated <span class="filter-count" id="sfc-validated">—</span></button>
+        <button class="admin-filter-btn" data-filter="manual" title="Records added by hand in the FLoRA tab (MAN-)">Added by hand <span class="filter-count" id="sfc-manual">—</span></button>
         <button class="admin-filter-btn" data-filter="flagged">Duplicates <span class="filter-count" id="sfc-flagged">—</span></button>
         <button class="admin-filter-btn" data-filter="deleted" title="Records no longer validated: kept, but left out of FLoRA">Deleted <span class="filter-count" id="sfc-deleted">—</span></button>
       </div>
@@ -564,13 +565,17 @@
             exclusions and duplicate rulings applied. Open a record to correct it; source records stay
             as imported. A record keeps the ID of the source record it was first built from, even if a
             duplicate ruling later changes its source. Pipeline runs and their reports are under
-            Source Records.</p>
+            Source Records. A record no source holds can be added by hand: it goes through the same
+            build, and if it has the identifiers of a record already here it only fills that
+            record&rsquo;s blanks.</p>
         </div>
         <div class="flora-actions">
           <button class="btn-primary" id="flora-export-all-btn" type="button"
                   title="The stored dataset, as the public API serves it: the last pipeline run's flora.csv with corrections saved since">Download full CSV</button>
           <button class="ghost-btn" id="flora-export-btn" type="button"
                   title="The records this filter shows, as built now. Records added since the last pipeline run get their permanent ID at the next one; until then this export is refused">Export filtered CSV</button>
+          <button class="ghost-btn" id="flora-add-btn" type="button"
+                  title="Add a replication or reproduction that no source holds. It goes through the same build as every other row, and gets its FLoRA ID at the next pipeline run">Add record by hand</button>
           <button class="ghost-btn" id="flora-refresh-btn" type="button">Refresh</button>
           <button class="ghost-btn" id="flora-dedup-btn" type="button"
                   title="Possible preprint and publication pairs awaiting a decision">Preprint duplicates
@@ -589,6 +594,7 @@
         <button class="admin-filter-btn" data-filter="conflict" title="Records whose duplicate source records gave different outcomes. The outcome the merge picked is published until you choose one in the record">Conflicts <span class="filter-count" id="ffc-conflict">—</span></button>
         <button class="admin-filter-btn" data-filter="problems" title="Records the entry checks found a problem in that nobody has marked not a problem">Problems <span class="filter-count" id="ffc-problems">—</span></button>
         <button class="admin-filter-btn" data-filter="possible_problems" title="Records the entry checks found a possible problem in that nobody has marked not a problem. A person decides whether each one is a problem">Possible problems <span class="filter-count" id="ffc-possible">—</span></button>
+        <button class="admin-filter-btn" data-filter="manual" title="Records added by hand in this tab, including those merged into a record another source holds">Added by hand <span class="filter-count" id="ffc-manual">—</span></button>
       </div>
 
       <div class="admin-search-bar src-toolbar">
@@ -651,6 +657,23 @@
         </dl>
         <div id="flora-dedup-body"></div>
         <div id="flora-dedup-decided" class="hidden"></div>
+      </div>
+
+      <!-- Records added by hand (manual_records.py), listed from their own table: one
+           merged into a record another source holds has no row of its own above. -->
+      <div id="flora-manual-view" class="hidden">
+        <div class="src-dup-toolbar">
+          <label class="src-dup-toggle" title="List withdrawn entries too, each with Restore">
+            <input type="checkbox" id="flora-manual-show-withdrawn"> Show withdrawn entries
+          </label>
+          <span id="flora-manual-summary" class="src-dim2"></span>
+        </div>
+        <p class="flora-blurb flora-dedup-help">Records added by hand in this tab, newest first. One with
+          the identifiers of a record another source holds is merged into it: that record keeps its
+          FLoRA ID and values, the entry only fills its blanks, and the entry has no row of its own in
+          the grid. Open an entry to change it until it, or the record it is merged into, has a
+          FLoRA ID (then the fix is made in that record&rsquo;s editor), or to withdraw it.</p>
+        <div id="flora-manual-list"></div>
       </div>
     </div>
 
@@ -763,6 +786,18 @@
       <button id="flora-detail-close" class="faq-close" title="Close">×</button>
     </div>
     <div class="admin-detail-body" id="flora-detail-body"></div>
+  </div>
+</div>
+
+<!-- ------------ FLORA: RECORD ADDED BY HAND ------------ -->
+<div id="flora-manual-modal" class="faq-overlay hidden" role="dialog" aria-modal="true"
+     aria-labelledby="flora-manual-title">
+  <div class="admin-detail-panel">
+    <div class="faq-panel-header">
+      <span class="faq-panel-title" id="flora-manual-title">Add a record by hand</span>
+      <button id="flora-manual-close" class="faq-close" title="Close">×</button>
+    </div>
+    <div class="admin-detail-body" id="flora-manual-body"></div>
   </div>
 </div>
 

@@ -1224,7 +1224,8 @@ CREATE TABLE IF NOT EXISTS source_records (
     record_id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
 
     -- Identity
-    source              TEXT        NOT NULL,   -- registry key: replications | reproductions
+    source              TEXT        NOT NULL,   -- registry key: replications | reproductions;
+                                                -- not sheets: validated | adjudicated | manual
     sheet_row_id        TEXT        NOT NULL,   -- static UUID from the sheet's id column
     display_id          TEXT        UNIQUE,     -- human-facing, e.g. REPL-000847
     type                TEXT        NOT NULL CHECK (type IN ('replication', 'reproduction')),
@@ -2306,3 +2307,105 @@ CREATE TABLE IF NOT EXISTS extra_original_suggestions (
 );
 CREATE INDEX IF NOT EXISTS idx_extra_original_suggestions_record
     ON extra_original_suggestions (record_id, status);
+
+-- ── Records added by hand ─────────────────────────────────────────────────────
+-- A replication or reproduction that no source holds, added by an admin in the
+-- FLoRA tab (manual_records.py). Every save projects it into source_records, in
+-- the same transaction, as source 'manual' with a display id MAN-000001, the way
+-- approved answers are published as ADJ- rows. From there the build treats it as
+-- any other source row, except that transform_sources.load() puts these rows last:
+-- one with another record's identifiers is absorbed into it and only fills blanks,
+-- and one that is already a FLoRA record keeps it against rows arriving later.
+-- Withdrawn, never deleted: the source row is marked deleted, and a restore brings
+-- back the same row and id. Once the registry knows it under a FLoRA ID, its own or
+-- that of the record it is absorbed into, the entry is frozen and that record is
+-- corrected in the FLoRA tab (flora_edits.py). Neither
+-- the note nor the admin's name is published. study_r is left out on purpose: the
+-- build reads no such column, so it would never reach FLoRA.
+CREATE TABLE IF NOT EXISTS manual_records (
+    manual_id        UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    type             TEXT        NOT NULL CHECK (type IN ('replication', 'reproduction')),
+    -- The columns transform_sources.load() reads, cleaned at save.
+    ref_o            TEXT,
+    doi_o            TEXT,
+    url_o            TEXT,
+    study_o          TEXT,
+    alt_identifier_o TEXT,
+    ref_r            TEXT,
+    doi_r            TEXT,
+    url_r            TEXT,
+    year_r           TEXT,
+    abstract_r       TEXT,
+    alt_identifier_r TEXT,
+    outcome          TEXT,
+    outcome_quote    TEXT,
+    out_quote_source TEXT,
+    -- Checked against the vocabulary before saving; source_records' own CHECKs
+    -- are the backstop.
+    outcome_computation            TEXT,
+    outcome_computational_quote    TEXT,
+    out_quote_computational_source TEXT,
+    outcome_robustness             TEXT,
+    outcome_robustness_quote       TEXT,
+    out_quote_robust_source        TEXT,
+    note             TEXT        NOT NULL,   -- where it comes from, why it is added; never published
+    -- The admin said it is a different study from the record it matched; the
+    -- source row was then ruled 'distinct' (source_records_service.resolve_duplicate).
+    keep_distinct    BOOLEAN     NOT NULL DEFAULT FALSE,
+    status           TEXT        NOT NULL DEFAULT 'active'
+                                 CHECK (status IN ('active', 'withdrawn')),
+    -- Set by the form when it opens: a repeated submit returns the entry already
+    -- saved instead of adding it twice.
+    client_token     TEXT        UNIQUE,
+    source_record_id UUID        UNIQUE REFERENCES source_records(record_id),
+    display_id       TEXT        UNIQUE,     -- MAN-000001, copied at the first projection
+    created_by_id    INTEGER,                -- no FK: the entry outlives the admin account
+    created_by       TEXT        NOT NULL,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by       TEXT,
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    withdrawn_by     TEXT,
+    withdrawn_at     TIMESTAMPTZ,
+    withdrawn_reason TEXT,
+    version          INTEGER     NOT NULL DEFAULT 1,
+    CONSTRAINT manual_records_outcome_shape CHECK (
+        (type = 'replication' AND outcome_computation IS NULL AND outcome_robustness IS NULL)
+     OR (type = 'reproduction' AND outcome IS NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_manual_records_status
+    ON manual_records (status, created_at DESC);
+
+-- One row per create, edit, withdraw or restore: who, when, each field changed as
+-- [before, after], and the note. Append-only.
+CREATE TABLE IF NOT EXISTS manual_record_events (
+    event_id     BIGSERIAL   PRIMARY KEY,
+    manual_id    UUID        NOT NULL REFERENCES manual_records(manual_id),
+    display_id   TEXT,
+    occurred_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    admin_id     INTEGER,
+    admin_handle TEXT        NOT NULL,
+    action       TEXT        NOT NULL CHECK (action IN ('create', 'edit', 'withdraw', 'restore')),
+    changes      JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    note         TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_manual_record_events_record
+    ON manual_record_events (manual_id, event_id DESC);
+
+CREATE OR REPLACE FUNCTION prevent_manual_event_rewrite() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'manual_record_events is append-only';
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_manual_record_events_append_only ON manual_record_events;
+CREATE TRIGGER trg_manual_record_events_append_only BEFORE UPDATE OR DELETE ON manual_record_events
+    FOR EACH ROW EXECUTE FUNCTION prevent_manual_event_rewrite();
+DROP TRIGGER IF EXISTS trg_manual_record_events_no_truncate ON manual_record_events;
+CREATE TRIGGER trg_manual_record_events_no_truncate BEFORE TRUNCATE ON manual_record_events
+    FOR EACH STATEMENT EXECUTE FUNCTION prevent_manual_event_rewrite();
+-- Withdrawn, never deleted (the guard is defined with the FLoRA registry's above).
+DROP TRIGGER IF EXISTS trg_manual_records_no_delete ON manual_records;
+CREATE TRIGGER trg_manual_records_no_delete BEFORE DELETE ON manual_records
+    FOR EACH ROW EXECUTE FUNCTION prevent_flora_identity_deletion();
+DROP TRIGGER IF EXISTS trg_manual_records_no_truncate ON manual_records;
+CREATE TRIGGER trg_manual_records_no_truncate BEFORE TRUNCATE ON manual_records
+    FOR EACH STATEMENT EXECUTE FUNCTION prevent_flora_identity_deletion();

@@ -518,11 +518,15 @@ def test_every_label_the_build_publishes_passes():
 
 
 def test_the_allowed_sources_come_from_the_transforms_mapping():
-    """So a registry key that a broken mapping lets through is reported."""
+    """So a registry key that a broken mapping lets through is reported. Three
+    sources publish under their own key: validated, adjudicated, and the records
+    added by hand in the FLoRA tab."""
     from adjudication import review
+    import manual_records
     import sync_validated
     assert vf.VALID_SOURCES == (set(transform_sources.OUTPUT_SOURCES.values())
-                                | {sync_validated.SOURCE_KEY, review.SOURCE_KEY})
+                                | {sync_validated.SOURCE_KEY, review.SOURCE_KEY,
+                                   manual_records.SOURCE_KEY})
     for key in transform_sources.OUTPUT_SOURCES:
         assert vf._check_sources(_df({"source": key})), key
 

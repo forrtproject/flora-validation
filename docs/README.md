@@ -1385,6 +1385,24 @@ Removing the feature: switch it off, then `DROP SCHEMA adjudication CASCADE`. Ro
 already published stay in Source Records under source `adjudicated` until they
 are withdrawn.
 
+## Records added by hand
+
+An admin can add a replication or reproduction that no source holds in the FLoRA
+tab (**Add record by hand**), with an internal note on where it comes from. It is
+stored in `manual_records` (history in `manual_record_events`) and, on every save,
+projected into Source Records as source `manual`, display id `MAN-000001`: in the
+FLoRA tab at once, with its FLoRA ID at the next pipeline run. Duplicates are a
+warning, never a refusal (except an excluded pair): the build puts these rows last,
+so one with the identifiers of a record another source holds is merged into it and
+only fills its blanks, and the save notice names that record; the preprint rules never
+let it remove or move another source's record either. The other way round, a hand
+record that already has its FLoRA ID keeps it and its values: a row arriving later
+with its identifiers only fills its blanks. An entry can be changed until
+the registry knows it under a FLoRA ID (its own, or that of the record it is merged
+into); then it is frozen and fixed in the FLoRA editor for that record. It can be
+withdrawn (its source row marked deleted) and restored with the same id. `validate_flora.py` knows the source `manual`. Details:
+[SOURCE_RECORDS.md §3.3](SOURCE_RECORDS.md#33-records-added-by-hand-manual).
+
 ## Source Records pipeline
 
 The Source Records subsystem is separate from human validation. Its detailed
@@ -1697,6 +1715,15 @@ All answer 503 while the feature is switched off or not set up.
 | PATCH | `/api/admin/flora/{flora_id}` | Version-checked change `{fields, revert, version, notes}` (a note per field), written through to `flora_data` |
 | POST | `/api/admin/flora/{flora_id}/restore` | Restore the state after a logged change (`change_id` 0: the original) |
 | POST | `/api/admin/flora/{flora_id}/confirm-outcome` | Settle an outcome clash (FLoRA tab, Conflicts) `{version, note, outcome}`: confirm the outcome shown, or choose another the duplicates gave |
+| GET | `/api/admin/flora/manual/options` | Records added by hand: the form's vocabularies |
+| GET | `/api/admin/flora/manual/counts` | Entries added by hand, active and withdrawn |
+| POST | `/api/admin/flora/manual/check` | What saving a draft would do: matching records, own record or absorbed (reads only) |
+| GET | `/api/admin/flora/manual` | Entries added by hand (`?status=active\|withdrawn\|all`), with what the build makes of each |
+| POST | `/api/admin/flora/manual` | Add a record by hand `{fields, note, keep_distinct, client_token}`; 409 for an excluded pair |
+| GET | `/api/admin/flora/manual/{ref}` | One entry by id or `MAN-` id: fields, history, state |
+| PATCH | `/api/admin/flora/manual/{ref}` | Change an entry the registry does not know under a FLoRA ID yet `{fields, note, keep_distinct, version}` |
+| POST | `/api/admin/flora/manual/{ref}/withdraw` | `{reason, version}`: its source row is marked deleted |
+| POST | `/api/admin/flora/manual/{ref}/restore` | `{reason, version}`: the same row and id come back |
 
 Literal Source Records routes are declared before the `{record_id}` detail route
 so values such as `export.csv` and `duplicates` are not parsed as UUIDs.

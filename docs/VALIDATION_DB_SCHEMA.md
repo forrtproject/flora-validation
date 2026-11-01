@@ -373,6 +373,21 @@ the complete A-side source and judgement history still attached to
 
 ---
 
+### Records added by hand (`manual_records`, `manual_record_events`)
+
+Not validation records: replications and reproductions an admin adds in the FLoRA
+tab when no source holds them (`manual_records.py`). Each save projects the record
+into `source_records` as source `manual`, display id `MAN-000001`, which the FLoRA
+build takes like any other source row (a duplicate of another source's record only
+fills its blanks). `manual_records` keeps the cleaned fields the build reads, the
+internal `note`, `keep_distinct`, `status` (`active` / `withdrawn`), the
+`client_token` that makes a repeated submit return the saved entry, the projected
+`source_record_id` and `display_id`, who created, changed or withdrew it, and a
+`version`. `manual_record_events` is its append-only history (`create`, `edit`,
+`withdraw`, `restore`, with `changes` as `{field: [before, after]}`). Neither table
+is ever deleted from (triggers); see
+[SOURCE_RECORDS.md §3.3](SOURCE_RECORDS.md#33-records-added-by-hand-manual).
+
 ### Additional originals (`unvalidated.origin`, `extra_original_suggestions`)
 
 A replication or reproduction can have more than one original. The extractor codes

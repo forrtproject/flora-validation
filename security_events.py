@@ -63,6 +63,12 @@ FLORA_PREPRINT_WITHDRAWN = "flora.preprint_withdrawn"
 # keeps only the current mark, so a withdrawn one, with its comment, is kept here.
 FLORA_FINDING_DISMISSED = "flora.finding_dismissed"
 FLORA_FINDING_UNDISMISSED = "flora.finding_undismissed"
+# A record added by hand in the FLoRA tab (manual_records.py), changed before it
+# has a FLoRA ID, withdrawn or restored. The entry keeps its own history too.
+FLORA_MANUAL_ADDED = "flora.manual_added"
+FLORA_MANUAL_EDITED = "flora.manual_edited"
+FLORA_MANUAL_WITHDRAWN = "flora.manual_withdrawn"
+FLORA_MANUAL_RESTORED = "flora.manual_restored"
 
 ACTIONS = frozenset({
     ADMIN_SIGNED_IN, ADMIN_SIGN_IN_FAILED, ADMIN_SIGNED_OUT, ADMIN_INVITED,
@@ -73,6 +79,7 @@ ACTIONS = frozenset({
     SOURCE_SYNC_DISPATCHED,
     FLORA_PREPRINT_RULED, FLORA_PREPRINT_WITHDRAWN,
     FLORA_FINDING_DISMISSED, FLORA_FINDING_UNDISMISSED,
+    FLORA_MANUAL_ADDED, FLORA_MANUAL_EDITED, FLORA_MANUAL_WITHDRAWN, FLORA_MANUAL_RESTORED,
 })
 
 

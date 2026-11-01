@@ -1,6 +1,6 @@
 # Source Records: the combined input
 
-source_records is the shared input collection for final preparation. It combines published sheet rows, approved extractor reviews and separately published disagreement records.
+source_records is the shared input collection for final preparation. It combines published sheet rows, approved extractor reviews, separately published disagreement records and records added by hand in the FLoRA tab.
 
 [Open interactive guide](../index.html#view=overview&node=storage-sources)
 
@@ -11,6 +11,7 @@ Code snapshot: 29 October 2026, `2f3a89c`.
 - Accepted Google entry-sheet rows.
 - Approved validated rows projected by sync_validated.py.
 - Explicitly published Observatory adjudication decisions, when that feature is enabled.
+- Records added by hand in the FLoRA tab (source manual, MAN- display IDs), written by manual_records.py on every save.
 
 ## What happens
 

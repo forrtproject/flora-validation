@@ -15,6 +15,7 @@ Code snapshot: 29 October 2026, `2f3a89c`.
 1. The service builds a derived view and attaches permanent IDs.
 2. Open a record to correct fields, inspect merged source rows, review checks, or restore a previous correction.
 3. Use Download full CSV for what the public API currently serves; Export filtered CSV for the current tab view.
+4. Add record by hand adds a record no source holds: a MAN- source row at once, with its FLoRA ID at the next pipeline run, or merged into an existing record with the same identifiers, filling only its blanks.
 
 ## What is saved, and where
 

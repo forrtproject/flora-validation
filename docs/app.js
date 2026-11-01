@@ -9530,7 +9530,7 @@ $("#forgot-email-input").addEventListener("keydown", (e) => { if (e.key === "Ent
    duplicate ruling, which says whether a row feeds FLoRA at all.
    ============================================================ */
 
-let _srcFilter  = "all";   // all | replication | reproduction | validated | flagged | deleted
+let _srcFilter  = "all";   // all | replication | reproduction | validated | manual | flagged | deleted
 let _srcStatus  = "";
 let _srcSearch  = "";
 let _srcPage    = 1;
@@ -9547,6 +9547,8 @@ function srcQueryParams() {
   // Our own validated records, projected into the grid by sync_validated.py. A
   // registry key rather than a paper type, since it holds both kinds.
   if (_srcFilter === "validated")  p.source   = "validated";
+  // Records added by hand in the FLoRA tab (manual_records.py), MAN- rows.
+  if (_srcFilter === "manual")     p.source   = "manual";
   // Rows of records no longer validated: kept, marked deleted, out of FLoRA.
   if (_srcFilter === "deleted")    p.deleted  = "only";
   if (_srcStatus) p.status = _srcStatus;
@@ -9600,6 +9602,7 @@ function renderSourceRecords(data) {
   set("#sfc-repro", c.reproductions);
   set("#sfc-flagged", c.flagged);
   set("#sfc-validated", c.validated);
+  set("#sfc-manual", c.manual);
   set("#sfc-deleted", c.deleted);
 
   const body  = $("#src-table-body");
@@ -9714,6 +9717,7 @@ function resetFloraView() {
     const select = $(id); if (select) select.value = "";
   });
   resetFloraDedupView();
+  resetFloraManualView();
 }
 
 function floraQueryParams() {
@@ -9846,6 +9850,10 @@ function renderFloraRecords(data) {
           (r.edited_fields
             ? ' <span class="flora-edited-badge" title="Corrected: ' +
               escapeHtml(r.edited_fields.split(" ").join(", ")) + '">corrected</span>' : "") +
+          (r.source === "manual"
+            ? ' <span class="flora-edited-badge flora-manual-badge"' +
+              tip("Added by hand in this tab. Who added it and why are in its entry, under Added by hand.") +
+              ">added by hand</span>" : "") +
           floraFindingsChip(r.open_findings) +
           (r.export_id && r.export_id !== r.flora_id
             ? '<br><small title="Permanent ID in the CSV">CSV: ' + escapeHtml(r.export_id) + '</small>' : '') + "</td>" +
@@ -9863,8 +9871,12 @@ function renderFloraRecords(data) {
         "<td>" + floraIdentifierCell(r.doi_r, r.url_r, r.oa_work_id_r) +
           '<br><small>' + srcShorten(r.ref_r, 58) + "</small></td>" +
         "<td>" + floraOutcomeCell(r) + "</td>" +
-        '<td><button class="ghost-btn flora-view-btn" type="button" data-flora-id="' +
-          escapeHtml(r.flora_id || "") + '"' + (r.flora_id ? "" : " disabled") + ">Open</button></td>" +
+        // A record added by hand has its entry to open until it has an ID.
+        (!r.flora_id && r.source === "manual"
+          ? '<td><button class="ghost-btn flora-manual-btn" type="button" data-manual-id="' +
+            escapeHtml(r.source_display_id || "") + '">Open entry</button></td>'
+          : '<td><button class="ghost-btn flora-view-btn" type="button" data-flora-id="' +
+            escapeHtml(r.flora_id || "") + '"' + (r.flora_id ? "" : " disabled") + ">Open</button></td>") +
       "</tr>"
     ).join("");
   }
@@ -9913,6 +9925,7 @@ async function fetchFloraRecords() {
     const data = await adminApi("/flora?" + floraQueryString());
     renderFloraRecords(data);
     fetchFloraStats();
+    fetchManualCount();
   } catch (e) {
     body.innerHTML = '<tr><td colspan="7" class="admin-loading">Error: ' +
                      escapeHtml(e.message) + "</td></tr>";
@@ -9928,6 +9941,10 @@ $("#flora-filters")?.addEventListener("click", (e) => {
     .forEach(b => b.classList.toggle("active", b === btn));
   _floraFilter = btn.dataset.filter;
   _floraPage = 1;
+  // Added by hand lists the entries themselves: one merged into another record has
+  // no row of its own in the grid.
+  if (_floraFilter === "manual") { showFloraManualView(); return; }
+  resetFloraManualView();
   fetchFloraRecords();
 });
 
@@ -10004,6 +10021,8 @@ $("#flora-export-all-btn")?.addEventListener("click", (event) => {
 });
 
 $("#flora-table-body")?.addEventListener("click", (e) => {
+  const entry = e.target.closest(".flora-manual-btn");
+  if (entry) { openManualRecord(entry.dataset.manualId); return; }
   const btn = e.target.closest(".flora-view-btn");
   if (!btn || !btn.dataset.floraId) return;
   openFloraRecord(btn.dataset.floraId);
@@ -10218,7 +10237,7 @@ function renderFloraRecord(rec) {
     : "";
 
   if (!editing) {
-    $("#flora-detail-body").innerHTML = provenance +
+    $("#flora-detail-body").innerHTML = provenance + floraManualBox(rec) +
       '<div class="src-dup-warn">This record has no FLoRA ID yet, so it cannot be corrected. ' +
       "Run the pipeline (Source Records tab) to assign one.</div>" + contextTable;
     return;
@@ -10233,6 +10252,7 @@ function renderFloraRecord(rec) {
 
   $("#flora-detail-body").innerHTML =
     provenance +
+    floraManualBox(rec) +
     floraConflictBox(rec) +
     floraFindings(rec) +
     '<p class="flora-edit-note">Saving logs each change, with its note, under Changes, and updates the ' +
@@ -10527,6 +10547,8 @@ async function restoreFloraRecord(changeId) {
 
 $("#flora-detail-body")?.addEventListener("click", (e) => {
   if (e.target.closest("#flora-save-btn")) { saveFloraRecord(); return; }
+  const entry = e.target.closest(".flora-manual-open");
+  if (entry) { openManualRecord(entry.dataset.manualId); return; }
   const choose = e.target.closest(".flora-choose-btn");
   if (choose) { confirmFloraOutcome(choose.dataset.outcome); return; }
   const restore = e.target.closest(".flora-restore-btn");
@@ -10566,6 +10588,655 @@ $("#flora-detail-body")?.addEventListener("input", (e) => {
 $("#flora-detail-close")?.addEventListener("click", closeFloraRecord);
 if ($("#flora-detail-modal")) onBackdropClick($("#flora-detail-modal"), closeFloraRecord);
 
+/* ---------- FLoRA: records added by hand ----------
+   An admin adds a replication or reproduction that no source holds
+   (manual_records.py). Each save is a MAN- source row at once, so the record is in
+   the grid straight away and gets its FLoRA ID at the next pipeline run. One with
+   the identifiers of a record another source holds is absorbed into that record
+   instead: it keeps its ID and values, the entry only fills its blanks. Duplicates
+   are warnings, never refusals; every answer says which of the two happens. The
+   entries are listed from their own table under "Added by hand", since an absorbed
+   one has no row of its own in the grid. */
+
+let _manualOptions = null;      // the form's vocabularies, fetched once
+let _manualCurrent = null;      // the entry open in the form, as the server sent it; null for a new one
+let _manualToken = null;        // made when a new form opens: a repeated submit returns the saved entry
+let _manualCheckTimer = null;
+let _manualCheckSeq = 0;        // a duplicate check that comes back after a newer one is dropped
+let _manualOpenSeq = 0;         // likewise for a load that comes back after the form moved on
+let _manualSaving = false;
+let _manualListSeq = 0;         // an entries list that comes back after a newer one is dropped
+let _manualShowWithdrawn = false;
+
+const MANUAL_ORIGINAL = [
+  { f: "doi_o", label: "DOI", hint: "10.1234/abcd" },
+  { f: "url_o", label: "Link", hint: "https://…" },
+  { f: "ref_o", label: "Reference (APA)", hint: "Required without a DOI", long: true },
+  { f: "study_o", label: "Study", hint: "Study number within the paper" },
+  { f: "alt_identifier_o", label: "Alternative identifier" },
+];
+const MANUAL_REPLICATION = [
+  { f: "doi_r", label: "DOI", hint: "A DOI or a link is required" },
+  { f: "url_r", label: "Link", hint: "https://…" },
+  { f: "year_r", label: "Year", hint: "2024" },
+  { f: "ref_r", label: "Reference (APA)", hint: "Required without a DOI", long: true },
+  { f: "alt_identifier_r", label: "Alternative identifier" },
+  { f: "abstract_r", label: "Abstract", hint: "Filled from the DOI's metadata when left blank", long: true },
+];
+const MANUAL_AXES = [
+  { verdict: "outcome_computation", quote: "outcome_computational_quote",
+    source: "out_quote_computational_source", label: "Computational" },
+  { verdict: "outcome_robustness", quote: "outcome_robustness_quote",
+    source: "out_quote_robust_source", label: "Robustness" },
+];
+const MANUAL_REPLICATION_OUTCOME = ["outcome", "outcome_quote", "out_quote_source"];
+const MANUAL_STATE_LABELS = {
+  awaiting_id: "Its own record, no FLoRA ID yet", in_flora: "In FLoRA",
+  absorbed: "Merged into another record", withdrawn: "Withdrawn",
+  ruled_duplicate: "Ruled a duplicate", excluded: "Excluded", left_out: "Left out", unknown: "Not in the build",
+};
+
+function manualFieldNames() {
+  return [...MANUAL_ORIGINAL, ...MANUAL_REPLICATION].map((x) => x.f)
+    .concat(MANUAL_REPLICATION_OUTCOME, MANUAL_AXES.flatMap((a) => [a.verdict, a.quote, a.source]));
+}
+
+/** The flat reproduction outcome both verdicts give, as the build derives it. */
+function manualDerivedOutcome(computation, robustness) {
+  const c = (_manualOptions?.outcome_computation || []).filter((v) => v !== "cannot_be_determined");
+  const r = (_manualOptions?.outcome_robustness || []).filter((v) => v !== "cannot_be_determined");
+  return c.includes(computation) && r.includes(robustness) ? computation + ", " + robustness : "cannot_be_determined";
+}
+
+function manualControl(name, value, opts) {
+  const v = floraBlank(value) ? "" : String(value);
+  const attrs = ' class="src-input' + (opts.long ? " src-textarea" : "") + '" id="fm-' + name +
+    '" data-mfield="' + name + '"' + (opts.disabled ? " disabled" : "") +
+    (opts.hint ? ' placeholder="' + escapeHtml(opts.hint) + '"' : "");
+  if (opts.choices) {
+    const choices = opts.choices.slice();
+    if (v && !choices.includes(v)) choices.unshift(v);
+    return "<select" + attrs + '><option value="">—</option>' + choices.map((c) =>
+      '<option value="' + escapeHtml(c) + '"' + (c === v ? " selected" : "") + ">" + escapeHtml(c) + "</option>"
+    ).join("") + "</select>";
+  }
+  if (opts.long) return "<textarea" + attrs + ' rows="3">' + escapeHtml(v) + "</textarea>";
+  return '<input type="text"' + attrs + ' value="' + escapeHtml(v) + '">';
+}
+
+function manualField(name, label, value, opts) {
+  return '<div class="src-field' + (opts.long ? " src-field-long" : "") + '" data-mfield-row="' + name + '">' +
+    '<label for="fm-' + name + '">' + escapeHtml(label) + (opts.required ? ' <span class="flora-manual-req">required</span>' : "") +
+    "</label><div>" + manualControl(name, value, opts) +
+    '<div class="flora-manual-error" data-error-for="' + name + '" hidden></div></div></div>';
+}
+
+/** What the build makes of an entry. Once the registry knows it under a FLoRA ID, its
+ *  own or that of the record it is merged into, it is frozen: the fix is made in that
+ *  record's FLoRA editor, which the button opens. */
+function manualStateBox(entry) {
+  const s = entry.state || {};
+  let actions = "";
+  if (s.flora_id && !s.retired && entry.status === "active") {
+    actions += ' <button type="button" class="ghost-btn flora-manual-open-record" data-flora-id="' +
+      escapeHtml(s.flora_id) + '">Fix it in the FLoRA editor for ' + escapeHtml(s.flora_id) + "</button>";
+  } else if (s.into_flora_id) {
+    actions += ' <button type="button" class="ghost-btn flora-manual-open-record" data-flora-id="' +
+      escapeHtml(s.into_flora_id) + '">Open ' + escapeHtml(s.into_flora_id) + "</button>";
+  }
+  return '<div class="flora-manual-state flora-manual-state-' + escapeHtml(s.code || "unknown") + '" role="status">' +
+    "<b>" + escapeHtml(MANUAL_STATE_LABELS[s.code] || "State") + ".</b> " + escapeHtml(s.message || "") + actions + "</div>";
+}
+
+function manualHistory(events) {
+  if (!events || !events.length) return "";
+  const what = { create: "Added", edit: "Changed", withdraw: "Withdrew", restore: "Restored" };
+  return '<details class="flora-changes" id="flora-manual-history"><summary>History (' + events.length + ")</summary>" +
+    '<div class="admin-table-wrap"><table class="admin-table flora-changes-table"><thead><tr>' +
+    "<th>When</th><th>Who</th><th>What</th><th>Note</th></tr></thead><tbody>" +
+    events.map((e) => {
+      const changes = Object.keys(e.changes || {}).map((field) => {
+        const [before, after] = e.changes[field];
+        return '<div class="flora-change-field"><code>' + escapeHtml(field) + "</code> " +
+          floraChangeValue(before) + " → " + floraChangeValue(after) + "</div>";
+      }).join("");
+      return "<tr><td>" + escapeHtml(new Date(e.occurred_at).toLocaleString()) + "</td><td>" +
+        escapeHtml(e.admin_handle) + "</td><td>" + escapeHtml(what[e.action] || e.action) +
+        (e.action === "create" ? "" : changes) + "</td><td>" +
+        (e.note ? escapeHtml(e.note) : '<span class="src-dim2">—</span>') + "</td></tr>";
+    }).join("") + "</tbody></table></div></details>";
+}
+
+/** Withdraw (with a reason, confirmed in the form, never a browser dialog) or restore. */
+function manualLifecycle(entry) {
+  const s = entry.state || {};
+  if (entry.status === "withdrawn") {
+    return '<div class="flora-manual-lifecycle"><h4>Restore</h4>' +
+      "<p>It comes back with the same source row " + escapeHtml(entry.display_id) +
+      (s.flora_id ? " and, at the next pipeline run, its FLoRA ID " + escapeHtml(s.flora_id) : "") +
+      ", unless another source has taken its identifiers meanwhile.</p>" +
+      '<input class="src-input" id="flora-manual-restore-note" type="text" maxlength="1000" ' +
+      'placeholder="Note (optional)" aria-label="Note on the restore">' +
+      ' <button type="button" class="ghost-btn" id="flora-manual-restore">Restore</button></div>';
+  }
+  // What withdrawing does depends on the registry, so the server says it (withdraw_effect).
+  const effect = s.withdraw_effect || "It leaves the FLoRA tab at once.";
+  return '<div class="flora-manual-lifecycle"><button type="button" class="ghost-btn" id="flora-manual-withdraw-start">' +
+    "Withdraw from FLoRA…</button>" +
+    '<div class="flora-manual-confirm hidden" id="flora-manual-withdraw-box"><p>' + escapeHtml(effect) +
+    " The entry and its source row are kept, marked withdrawn, and can be restored.</p>" +
+    '<label for="flora-manual-reason">Why is it withdrawn? <span class="flora-manual-req">required</span></label>' +
+    '<textarea class="src-input src-textarea" id="flora-manual-reason" maxlength="1000" rows="2"></textarea>' +
+    '<div class="flora-manual-error" data-error-for="reason" hidden></div>' +
+    '<div class="flora-manual-confirm-actions"><button type="button" class="btn-primary flora-manual-danger" ' +
+    'id="flora-manual-withdraw">Withdraw</button> <button type="button" class="ghost-btn" ' +
+    'id="flora-manual-withdraw-cancel">Keep it</button></div></div></div>';
+}
+
+/** The form: a new entry, or an existing one (read-only once it is frozen). */
+function renderManualForm(entry) {
+  _manualCurrent = entry;
+  const editable = !entry || Boolean(entry.state && entry.state.editable);
+  const v = entry || { type: "replication" };
+  const kind = v.type === "reproduction" ? "reproduction" : "replication";
+  const opts = _manualOptions || {};
+  const field = (spec, required) => manualField(spec.f, spec.label, v[spec.f],
+    { long: spec.long, hint: editable ? spec.hint : "", disabled: !editable, required });
+  $("#flora-manual-title").textContent = entry ? entry.display_id + " · added by hand" : "Add a record by hand";
+
+  const head = entry
+    ? manualStateBox(entry) + '<p class="flora-detail-source">Added by <b>' + escapeHtml(entry.created_by) + "</b> on " +
+      escapeHtml(new Date(entry.created_at).toLocaleString()) +
+      (entry.updated_by && entry.version > 1 ? " · last changed by <b>" + escapeHtml(entry.updated_by) + "</b>" : "") +
+      " · source record <code>" + escapeHtml(entry.display_id) + "</code></p>"
+    : '<p class="flora-edit-note">For a replication or reproduction that no source holds. It goes through the same ' +
+      "build as every other row: if a record already has its identifiers, this entry only fills that record’s " +
+      "blanks. It appears in this tab at once and gets its FLoRA ID at the next pipeline run.</p>";
+
+  const typeRow = '<div class="flora-manual-type" role="radiogroup" aria-label="Type">' +
+    ["replication", "reproduction"].map((t) =>
+      '<label><input type="radio" name="flora-manual-type" value="' + t + '"' + (t === kind ? " checked" : "") +
+      (editable ? "" : " disabled") + "> " + (t === "replication" ? "Replication" : "Reproduction") + "</label>"
+    ).join("") + "</div>";
+
+  const replicationOutcome = '<div class="src-group flora-manual-outcome" data-outcome-for="replication">' +
+    "<h4>Outcome</h4>" +
+    manualField("outcome", "Outcome", v.outcome, { choices: opts.outcomes || [], disabled: !editable, required: true }) +
+    manualField("outcome_quote", "Quote", v.outcome_quote, { long: true, disabled: !editable, required: true }) +
+    manualField("out_quote_source", "Quote source", v.out_quote_source,
+      { disabled: !editable, hint: editable ? "abstract when the quote is in it, else full_text" : "" }) + "</div>";
+  const reproductionOutcome = MANUAL_AXES.map((a) =>
+    '<div class="src-group flora-manual-outcome" data-outcome-for="reproduction"><h4>' + a.label + "</h4>" +
+    manualField(a.verdict, "Verdict", v[a.verdict], { choices: opts[a.verdict] || [], disabled: !editable, required: true }) +
+    manualField(a.quote, "Quote", v[a.quote], { long: true, disabled: !editable,
+      hint: editable ? "Required unless the verdict is not checked" : "" }) +
+    manualField(a.source, "Quote source", v[a.source], { disabled: !editable,
+      hint: editable ? "abstract when the quote is in it, else full_text" : "" }) + "</div>"
+  ).join("") + '<p class="flora-manual-derived" data-outcome-for="reproduction">FLoRA outcome: ' +
+    '<b id="flora-manual-derived"></b></p>';
+
+  // Once kept apart, its source row is ruled distinct; that ruling is changed in Source Records.
+  const keep = '<label class="flora-manual-keep hidden" id="flora-manual-keep-row"' +
+    (v.keep_distinct ? tip("Its source row is ruled a different study; change that in Source Records.") : "") +
+    '><input type="checkbox" id="flora-manual-keep"' + (v.keep_distinct ? " checked" : "") +
+    (editable && !v.keep_distinct ? "" : " disabled") + "> " +
+    "This is a different study from the record(s) above — keep it as its own record</label>";
+
+  const save = editable
+    ? '<div class="src-save-bar"><span id="flora-manual-msg" class="src-dim2"></span>' +
+      '<button type="button" class="ghost-btn" id="flora-manual-cancel">' + (entry ? "Close" : "Cancel") + "</button>" +
+      '<button type="button" class="btn-primary" id="flora-manual-save">' + (entry ? "Save changes" : "Add to FLoRA") +
+      "</button></div>"
+    : '<div class="src-save-bar"><span id="flora-manual-msg" class="src-dim2"></span>' +
+      '<button type="button" class="ghost-btn" id="flora-manual-cancel">Close</button></div>';
+
+  $("#flora-manual-body").innerHTML =
+    head +
+    '<div id="flora-manual-notice" class="flora-manual-notice hidden" role="status"></div>' +
+    typeRow +
+    '<div class="src-group"><h4>Original</h4>' +
+      MANUAL_ORIGINAL.map((x) => field(x, false)).join("") + "</div>" +
+    '<div class="src-group"><h4 id="flora-manual-side">' + (kind === "reproduction" ? "Reproduction" : "Replication") + "</h4>" +
+      MANUAL_REPLICATION.map((x) => field(x, false)).join("") + "</div>" +
+    replicationOutcome + reproductionOutcome +
+    '<div class="src-group"><h4>Why is it added?</h4>' +
+      manualField("note", "Internal note", v.note, { long: true, disabled: !editable, required: true,
+        hint: editable ? "Where it comes from and why it is added. Never published." : "" }) + "</div>" +
+    '<div id="flora-manual-dups" class="flora-manual-dups" aria-live="polite"></div>' + keep +
+    (entry ? manualHistory(entry.events) + manualLifecycle(entry) : "") +
+    save;
+  manualTypeChanged(false);
+  // An entry being changed shows what it shares at once; a new one once its identifiers are typed.
+  if (entry && editable) runManualCheck();
+}
+
+/** Show the outcome block of the chosen type, and the reproduction's derived outcome. */
+function manualTypeChanged(check = true) {
+  const body = $("#flora-manual-body");
+  const kind = body.querySelector('input[name="flora-manual-type"]:checked')?.value || "replication";
+  body.querySelectorAll("[data-outcome-for]").forEach((el) => el.classList.toggle("hidden", el.dataset.outcomeFor !== kind));
+  const side = $("#flora-manual-side");
+  if (side) side.textContent = kind === "reproduction" ? "Reproduction" : "Replication";
+  const derived = $("#flora-manual-derived");
+  if (derived) derived.textContent = manualDerivedOutcome($("#fm-outcome_computation")?.value, $("#fm-outcome_robustness")?.value);
+  if (check) scheduleManualCheck();
+}
+
+function collectManualPayload() {
+  const body = $("#flora-manual-body");
+  const kind = body.querySelector('input[name="flora-manual-type"]:checked')?.value || "replication";
+  const fields = { type: kind };
+  const other = kind === "replication" ? MANUAL_AXES.flatMap((a) => [a.verdict, a.quote, a.source]) : MANUAL_REPLICATION_OUTCOME;
+  manualFieldNames().forEach((name) => {
+    const control = $("#fm-" + name);
+    const value = control ? control.value.trim() : "";
+    fields[name] = other.includes(name) || !value ? null : value;
+  });
+  // The tick counts only while it is offered: hidden, there is nothing to keep apart.
+  const keepShown = !$("#flora-manual-keep-row")?.classList.contains("hidden");
+  return { fields, note: ($("#fm-note")?.value || "").trim(),
+           keep_distinct: keepShown && Boolean($("#flora-manual-keep")?.checked) };
+}
+
+function scheduleManualCheck() {
+  clearTimeout(_manualCheckTimer);
+  _manualCheckTimer = setTimeout(runManualCheck, 400);
+}
+
+async function runManualCheck() {
+  clearTimeout(_manualCheckTimer);
+  const seq = ++_manualCheckSeq;
+  const box = $("#flora-manual-dups");
+  if (!box) return;
+  const p = collectManualPayload();
+  try {
+    const res = await adminApi("/flora/manual/check", "POST", {
+      fields: p.fields, keep_distinct: p.keep_distinct, manual_id: _manualCurrent ? _manualCurrent.manual_id : null });
+    if (seq !== _manualCheckSeq) return;
+    renderManualMatches(res);
+  } catch (e) {
+    if (seq !== _manualCheckSeq) return;
+    box.innerHTML = '<p class="faq-error">Could not check for duplicates: ' + escapeHtml(e.message) + "</p>";
+  }
+}
+
+function manualMatchItem(m) {
+  const id = m.flora_id || m.display_id;
+  return "<li><code>" + escapeHtml(m.display_id) + "</code> <span class=\"src-dim2\">" + escapeHtml(m.source) +
+    (m.flora_id && m.flora_id !== m.display_id ? " · FLoRA " + escapeHtml(m.flora_id) : "") +
+    (m.flora_id ? "" : " · no FLoRA ID yet") + (m.duplicate_status ? " · ruled " + escapeHtml(m.duplicate_status) : "") +
+    "</span>" + (m.flora_id ? ' <button type="button" class="link-btn flora-manual-open-record" data-flora-id="' +
+    escapeHtml(id) + '">Open ' + escapeHtml(id) + " to correct it instead</button>" : "") + "</li>";
+}
+
+/** The duplicate check, as a warning: saving stays possible, except for an exclusion. */
+function renderManualMatches(res) {
+  const box = $("#flora-manual-dups");
+  const save = $("#flora-manual-save");
+  const keepRow = $("#flora-manual-keep-row");
+  if (!box) return;
+  if (!res || !res.ready) {
+    box.innerHTML = "";
+    keepRow?.classList.add("hidden");
+    if (save) save.disabled = false;
+    return;
+  }
+  const m = res.matches || {};
+  const shared = (m.same_identifiers || []).concat(m.same_dois_one_link || []);
+  const editable = !_manualCurrent || _manualCurrent.state?.editable;
+  keepRow?.classList.toggle("hidden", !shared.length || !editable);
+  const keepBox = $("#flora-manual-keep");
+  if (keepRow?.classList.contains("hidden") && keepBox && !keepBox.disabled) keepBox.checked = false;
+  if (save) save.disabled = Boolean(res.excluded);
+  const list = (title, items) => items && items.length
+    ? '<div class="flora-manual-matches"><b>' + escapeHtml(title) + "</b><ul>" + items.map(manualMatchItem).join("") + "</ul></div>" : "";
+  const hidden = (res.hidden || []).length
+    ? '<div class="flora-manual-matches"><b>Source rows the build leaves out</b><ul>' + res.hidden.map((h) =>
+        "<li><code>" + escapeHtml(h.display_id) + '</code> <span class="src-dim2">' + escapeHtml(h.source) +
+        (h.deleted ? " · deleted" : "") + (h.duplicate_status === "duplicate" ? " · ruled a duplicate" : "") +
+        "</span></li>").join("") + "</ul></div>" : "";
+  const validating = (res.in_validation || []).length
+    ? '<div class="flora-manual-matches"><b>On this website</b><ul>' + res.in_validation.map((r) =>
+        "<li>" + (r.same_original
+          ? "This pair is being validated (entry <code>" + escapeHtml(r.record_id.slice(0, 8)) + "</code>, " +
+            escapeHtml(r.validation_status) + "); it reaches FLoRA as a VAL- row."
+          : "Entry <code>" + escapeHtml(r.record_id.slice(0, 8)) + "</code> has this replication with another original" +
+            (r.validated ? ". To add another original to a validated entry, use Entries → Additional originals, so it " +
+              "follows the entry’s corrections." : ".")) + "</li>").join("") + "</ul></div>" : "";
+  const absorbed = res.placement && res.placement.kind === "absorbed";
+  const tone = res.excluded ? "flora-manual-dups-error" : absorbed ? "src-dup-warn" : "flora-manual-dups-ok";
+  const headline = res.excluded
+    ? "These identifiers are on the exclusion list (" + res.excluded + "), so it cannot be added."
+    : res.message;
+  box.innerHTML = '<div class="' + tone + '"><p>' + escapeHtml(headline) + "</p>" +
+    list("Same identifiers", m.same_identifiers) +
+    list("Same DOIs, only one with a replication link", m.same_dois_one_link) +
+    list("Same replication, another original", m.same_replication) +
+    list("Same paper pair, the other type", m.same_pair_other_type) +
+    hidden + validating + "</div>";
+}
+
+function clearManualErrors() {
+  $("#flora-manual-body").querySelectorAll(".flora-manual-error").forEach((el) => { el.hidden = true; el.textContent = ""; });
+  $("#flora-manual-body").querySelectorAll(".flora-manual-invalid").forEach((el) => el.classList.remove("flora-manual-invalid"));
+}
+
+function markManualField(name, message) {
+  const error = $("#flora-manual-body").querySelector('[data-error-for="' + CSS.escape(name) + '"]');
+  const control = $("#fm-" + name) || (name === "reason" ? $("#flora-manual-reason") : null);
+  if (error) { error.textContent = message; error.hidden = false; }
+  if (control) { control.classList.add("flora-manual-invalid"); control.focus(); }
+  return Boolean(error);
+}
+
+/** A refusal: a field marked where the server names one, the message otherwise. */
+function manualFailed(err, fallback) {
+  const d = err.detail;
+  if (err.status === 422 && d && typeof d === "object" && !Array.isArray(d) && d.field && markManualField(d.field, d.message)) {
+    return "Fix the marked field.";
+  }
+  if (err.status === 422 && Array.isArray(d)) {
+    d.forEach((x) => markManualField(String((x.loc || []).slice(-1)[0] || ""), x.msg));
+    return "Fix the marked fields.";
+  }
+  return (fallback || "") + err.message;
+}
+
+function showManualNotice(res) {
+  const box = $("#flora-manual-notice");
+  if (!box || !res || !res.notice) return;
+  box.innerHTML = "<p>" + escapeHtml(res.notice) + "</p>" + (res.run_pipeline
+    ? '<button type="button" class="ghost-btn" id="flora-manual-run">Run pipeline now</button> ' +
+      '<span class="src-dim2" id="flora-manual-run-msg"></span>' : "");
+  box.classList.remove("hidden");
+}
+
+async function saveManualRecord() {
+  if (_manualSaving) return;
+  clearManualErrors();
+  const p = collectManualPayload();
+  const button = $("#flora-manual-save");
+  const msg = $("#flora-manual-msg");
+  _manualSaving = true;
+  if (button) button.disabled = true;
+  if (msg) msg.textContent = "Saving…";
+  const seq = _manualOpenSeq;
+  try {
+    const res = _manualCurrent
+      ? await adminApi("/flora/manual/" + encodeURIComponent(_manualCurrent.manual_id), "PATCH",
+          { fields: p.fields, note: p.note, keep_distinct: p.keep_distinct, version: _manualCurrent.version })
+      : await adminApi("/flora/manual", "POST",
+          { fields: p.fields, note: p.note, keep_distinct: p.keep_distinct, client_token: _manualToken });
+    // Closed meanwhile: the form is gone, but the lists still catch up.
+    if (seq !== _manualOpenSeq) { refreshManualViews(); return; }
+    renderManualForm(res);
+    showManualNotice(res);
+    refreshManualViews();
+  } catch (err) {
+    if (seq !== _manualOpenSeq) return;
+    if (err.status === 409 && err.detail && err.detail.code === "version_conflict") {
+      await openManualRecord(_manualCurrent.manual_id);
+      const reloaded = $("#flora-manual-msg");
+      if (reloaded) reloaded.textContent = "Someone else changed this entry: it is reloaded. Make your change again.";
+      return;
+    }
+    if (msg) msg.textContent = manualFailed(err, "Not saved: ");
+  } finally {
+    // A form opened meanwhile has its own state (showManualModal reset it).
+    if (seq !== _manualOpenSeq) return;
+    _manualSaving = false;
+    const again = $("#flora-manual-save");
+    if (again && !($("#flora-manual-dups .flora-manual-dups-error"))) again.disabled = false;
+  }
+}
+
+async function manualLifecycleAction(path, body, button) {
+  clearManualErrors();
+  const seq = _manualOpenSeq;
+  button.disabled = true;
+  try {
+    const res = await adminApi("/flora/manual/" + encodeURIComponent(_manualCurrent.manual_id) + path, "POST",
+      Object.assign({ version: _manualCurrent.version }, body));
+    if (seq !== _manualOpenSeq) return;
+    renderManualForm(res);
+    showManualNotice(res);
+    refreshManualViews();
+  } catch (err) {
+    if (seq !== _manualOpenSeq) return;
+    button.disabled = false;
+    if (err.status === 409 && err.detail && err.detail.code === "version_conflict") {
+      await openManualRecord(_manualCurrent.manual_id);
+      const msg = $("#flora-manual-msg");
+      if (msg) msg.textContent = "Someone else changed this entry: it is reloaded. Try again.";
+      return;
+    }
+    const msg = $("#flora-manual-msg");
+    const text = manualFailed(err, "Could not do that: ");
+    if (msg) msg.textContent = text;
+  }
+}
+
+async function runPipelineFromManual(button) {
+  const msg = $("#flora-manual-run-msg");
+  button.disabled = true;
+  try {
+    await adminApi("/source-sync/dispatch", "POST", {});
+    if (msg) msg.textContent = "Queued. The run gives this record its FLoRA ID; follow it under Source Records.";
+  } catch (e) {
+    if (e.status === 409) {
+      if (msg) msg.textContent = "A pipeline run is already in progress. It includes this record if it has not " +
+        "reached its FLoRA IDs stage yet; otherwise the next run does.";
+    } else {
+      button.disabled = false;
+      if (msg) msg.textContent = "Could not start the pipeline: " + e.message;
+    }
+  }
+}
+
+async function loadManualOptions() {
+  if (!_manualOptions) _manualOptions = await adminApi("/flora/manual/options");
+  return _manualOptions;
+}
+
+function showManualModal() {
+  _manualSaving = false;
+  $("#flora-manual-modal").classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+}
+
+async function openManualForm() {
+  const seq = ++_manualOpenSeq;
+  _manualToken = _newSubmissionId();
+  showManualModal();
+  $("#flora-manual-body").innerHTML = '<p class="admin-loading">Loading…</p>';
+  try {
+    await loadManualOptions();
+    if (seq !== _manualOpenSeq) return;
+    renderManualForm(null);
+  } catch (e) {
+    if (seq !== _manualOpenSeq) return;
+    $("#flora-manual-body").innerHTML = '<p class="admin-loading">Error: ' + escapeHtml(e.message) + "</p>";
+  }
+}
+
+async function openManualRecord(ref) {
+  const seq = ++_manualOpenSeq;
+  showManualModal();
+  $("#flora-manual-body").innerHTML = '<p class="admin-loading">Loading…</p>';
+  try {
+    const [, entry] = await Promise.all([loadManualOptions(), adminApi("/flora/manual/" + encodeURIComponent(ref))]);
+    if (seq !== _manualOpenSeq) return;
+    renderManualForm(entry);
+  } catch (e) {
+    if (seq !== _manualOpenSeq) return;
+    $("#flora-manual-body").innerHTML = '<p class="admin-loading">Error: ' + escapeHtml(e.message) + "</p>";
+  }
+}
+
+function closeManualForm() {
+  _manualOpenSeq++;
+  _manualCheckSeq++;
+  clearTimeout(_manualCheckTimer);
+  _manualCurrent = null;
+  $("#flora-manual-modal").classList.add("hidden");
+  // The record editor can be open underneath: it keeps the page from scrolling.
+  if ($("#flora-detail-modal")?.classList.contains("hidden")) document.body.style.overflow = "";
+}
+
+/** After a save: the grid, the chip's count and the entries list catch up. */
+function refreshManualViews() {
+  fetchManualCount();
+  if (_floraFilter === "manual") fetchManualEntries();
+  else if (!$("#admin-tab-flora")?.classList.contains("hidden")) fetchFloraRecords();
+}
+
+async function fetchManualCount() {
+  try {
+    const c = await adminApi("/flora/manual/counts");
+    const el = $("#ffc-manual");
+    if (el) el.textContent = c.active == null ? "—" : c.active;
+  } catch (_) { /* the chip keeps its last count */ }
+}
+
+function floraManualGrid() {
+  const tab = $("#admin-tab-flora");
+  return [$("#flora-pager"), tab?.querySelector(".src-toolbar"), tab?.querySelector(".admin-table-wrap")];
+}
+
+function resetFloraManualView() {
+  $("#flora-manual-view")?.classList.add("hidden");
+  floraManualGrid().forEach((el) => el?.classList.remove("hidden"));
+}
+
+function showFloraManualView() {
+  floraManualGrid().forEach((el) => el?.classList.add("hidden"));
+  $("#flora-manual-view")?.classList.remove("hidden");
+  fetchManualEntries();
+}
+
+async function fetchManualEntries() {
+  const box = $("#flora-manual-list");
+  if (!box) return;
+  const seq = ++_manualListSeq;
+  box.innerHTML = '<p class="admin-loading">Loading…</p>';
+  try {
+    const data = await adminApi("/flora/manual?status=" + (_manualShowWithdrawn ? "all" : "active"));
+    if (seq === _manualListSeq) renderManualEntries(data);
+  } catch (e) {
+    if (seq !== _manualListSeq) return;
+    box.innerHTML = '<p class="admin-loading">Error: ' + escapeHtml(e.message) + "</p>";
+  }
+}
+
+function manualIdentifier(doi, url, ref) {
+  return (doi ? '<code class="flora-doi">' + escapeHtml(doi) + "</code>"
+    : url ? '<span class="flora-url">' + srcShorten(url, 40) + "</span>"
+    : '<span class="flora-missing">no identifier</span>') + (ref ? "<br><small>" + srcShorten(ref, 58) + "</small>" : "");
+}
+
+function renderManualEntries(data) {
+  const entries = data.entries || [];
+  const c = data.counts || {};
+  const count = $("#ffc-manual");
+  if (count && c.active != null) count.textContent = c.active;
+  $("#flora-manual-summary").textContent = (c.active ?? 0) + " active · " + (c.withdrawn ?? 0) + " withdrawn";
+  const box = $("#flora-manual-list");
+  if (!entries.length) {
+    box.innerHTML = '<p class="admin-empty">No records have been added by hand' +
+      (_manualShowWithdrawn ? "." : " (withdrawn ones are hidden).") + "</p>";
+    return;
+  }
+  box.innerHTML = '<div class="admin-table-wrap"><table class="admin-table src-table flora-manual-table"><thead><tr>' +
+    "<th>Entry</th><th>Type</th><th>Original</th><th>Replication</th><th>Outcome</th><th>In FLoRA</th><th>Added</th><th></th>" +
+    "</tr></thead><tbody>" + entries.map((e) => {
+      const s = e.state || {};
+      const where = s.code === "in_flora" ? "In FLoRA as <code>" + escapeHtml(s.flora_id) + "</code>" + (s.retired ? " (retired)" : "")
+        : s.code === "absorbed" ? "Merged into <code>" + escapeHtml(s.into_flora_id || s.into || "") + "</code>" +
+          (s.into_flora_id ? "" : ' <span class="src-dim2">(no FLoRA ID yet)</span>') +
+          (s.flora_id ? ' <span class="src-dim2">· frozen</span>' : "")
+        : escapeHtml(MANUAL_STATE_LABELS[s.code] || "—");
+      return '<tr class="' + (e.status === "withdrawn" ? "src-deleted" : "") + '"><td><code class="flora-id">' +
+        escapeHtml(e.display_id) + "</code>" + (e.status === "withdrawn"
+          ? ' <span class="src-deleted-badge"' + tip(s.message || "Withdrawn") + ">withdrawn</span>" : "") + "</td>" +
+        "<td>" + escapeHtml(e.type) + "</td>" +
+        "<td>" + manualIdentifier(e.doi_o, null, e.ref_o) + "</td>" +
+        "<td>" + manualIdentifier(e.doi_r, e.url_r, e.ref_r) + "</td>" +
+        "<td>" + escapeHtml(e.outcome || "—") + "</td>" +
+        '<td class="flora-manual-where"' + tip(s.message || "") + ">" + where + "</td>" +
+        "<td>" + escapeHtml(e.created_by) + '<br><span class="src-dim2">' +
+          escapeHtml(new Date(e.created_at).toLocaleDateString()) + "</span></td>" +
+        '<td><button type="button" class="ghost-btn flora-manual-open" data-manual-id="' + escapeHtml(e.display_id) +
+          '">Open</button></td></tr>';
+    }).join("") + "</tbody></table></div>";
+}
+
+/** In the record editor: the record, or rows merged into it, added by hand. */
+function floraManualBox(rec) {
+  const lines = [];
+  if (rec.source === "manual" && rec.source_display_id) {
+    lines.push("Added by hand as <code>" + escapeHtml(rec.source_display_id) + "</code>");
+  }
+  (rec.merged_sources || []).filter((m) => m.source === "manual").forEach((m) => {
+    lines.push("A record added by hand, <code>" + escapeHtml(m.display_id) + "</code>, is merged into it and only fills blanks");
+  });
+  if (!lines.length) return "";
+  const ids = [rec.source === "manual" ? rec.source_display_id : null]
+    .concat((rec.merged_sources || []).filter((m) => m.source === "manual").map((m) => m.display_id)).filter(Boolean);
+  return '<div class="flora-manual-provenance">' + lines.join("<br>") + ". Who added it and why are in the entry; " +
+    "correct the record here." + ids.map((id) => ' <button type="button" class="link-btn flora-manual-open" data-manual-id="' +
+    escapeHtml(id) + '">Open ' + escapeHtml(id) + "</button>").join("") + "</div>";
+}
+
+$("#flora-add-btn")?.addEventListener("click", openManualForm);
+$("#flora-manual-close")?.addEventListener("click", closeManualForm);
+$("#flora-manual-show-withdrawn")?.addEventListener("change", (e) => {
+  _manualShowWithdrawn = e.target.checked;
+  fetchManualEntries();
+});
+$("#flora-manual-list")?.addEventListener("click", (e) => {
+  const open = e.target.closest(".flora-manual-open");
+  if (open) openManualRecord(open.dataset.manualId);
+});
+$("#flora-manual-body")?.addEventListener("input", (e) => {
+  const name = e.target.dataset?.mfield;
+  if (name === "outcome_computation" || name === "outcome_robustness") manualTypeChanged(false);
+  if (["doi_o", "doi_r", "url_r"].includes(name)) scheduleManualCheck();
+});
+$("#flora-manual-body")?.addEventListener("change", (e) => {
+  if (e.target.name === "flora-manual-type") manualTypeChanged();
+  else if (e.target.id === "flora-manual-keep") scheduleManualCheck();
+  else if (e.target.dataset?.mfield === "outcome_computation" || e.target.dataset?.mfield === "outcome_robustness") manualTypeChanged(false);
+});
+$("#flora-manual-body")?.addEventListener("click", (e) => {
+  if (e.target.closest("#flora-manual-save")) { saveManualRecord(); return; }
+  if (e.target.closest("#flora-manual-cancel")) { closeManualForm(); return; }
+  const run = e.target.closest("#flora-manual-run");
+  if (run) { runPipelineFromManual(run); return; }
+  const record = e.target.closest(".flora-manual-open-record");
+  if (record) { closeManualForm(); openFloraRecord(record.dataset.floraId); return; }
+  if (e.target.closest("#flora-manual-withdraw-start")) {
+    $("#flora-manual-withdraw-box").classList.remove("hidden");
+    e.target.closest("#flora-manual-withdraw-start").classList.add("hidden");
+    $("#flora-manual-withdraw-box").scrollIntoView({ block: "nearest" });
+    $("#flora-manual-reason").focus();
+    return;
+  }
+  if (e.target.closest("#flora-manual-withdraw-cancel")) {
+    $("#flora-manual-withdraw-box").classList.add("hidden");
+    $("#flora-manual-withdraw-start").classList.remove("hidden");
+    return;
+  }
+  const withdraw = e.target.closest("#flora-manual-withdraw");
+  if (withdraw) {
+    const reason = $("#flora-manual-reason").value.trim();
+    if (!reason) { markManualField("reason", "Say why it is withdrawn."); return; }
+    manualLifecycleAction("/withdraw", { reason }, withdraw);
+    return;
+  }
+  const restore = e.target.closest("#flora-manual-restore");
+  if (restore) manualLifecycleAction("/restore", { reason: $("#flora-manual-restore-note").value.trim() }, restore);
+});
+
 /* ---------- FLoRA: preprint duplicate review ---------- */
 
 // Pairs that may be one paper under two DOIs, which the build could not settle.
@@ -10593,6 +11264,7 @@ function resetFloraDedupView() {
 
 function showFloraDedupView() {
   floraDedupGrid().forEach((el) => el?.classList.add("hidden"));
+  $("#flora-manual-view")?.classList.add("hidden");
   $("#flora-dedup-view")?.classList.remove("hidden");
   fetchFloraDedup();
 }
@@ -10891,7 +11563,10 @@ async function undoFloraDedup(button) {
 }
 
 $("#flora-dedup-btn")?.addEventListener("click", showFloraDedupView);
-$("#flora-dedup-back")?.addEventListener("click", () => { resetFloraDedupView(); fetchFloraRecords(); });
+$("#flora-dedup-back")?.addEventListener("click", () => {
+  resetFloraDedupView();
+  if (_floraFilter === "manual") showFloraManualView(); else fetchFloraRecords();
+});
 $("#flora-unregistered")?.addEventListener("click", (e) => {
   if (e.target.closest(".flora-dedup-open")) showFloraDedupView();
 });
@@ -11234,8 +11909,20 @@ function renderSourceRecord(r) {
       " are kept.</div>"
     : "";
 
+  // A row added by hand in the FLoRA tab: who added it and why, from its raw row, and
+  // the entry, where it is changed or withdrawn.
+  const raw = r.raw || {};
+  const byHand = r.source === "manual"
+    ? '<div class="flora-manual-provenance">Added by hand by <b>' + escapeHtml(raw.created_by || "an admin") + "</b>" +
+      (raw.created_at ? " on " + escapeHtml(String(raw.created_at).slice(0, 16)) : "") +
+      (raw.note ? ". Why: " + escapeHtml(raw.note) : "") +
+      ' <button type="button" class="ghost-btn src-manual-open" data-manual-id="' + escapeHtml(r.display_id) +
+      '">Open entry</button></div>'
+    : "";
+
   $("#src-detail-body").innerHTML =
     deletedBanner +
+    byHand +
     '<div class="src-detail-meta">' +
       '<span class="src-type-badge src-type-' + r.type + '">' + escapeHtml(r.type) + "</span> " +
       '<span class="src-dim2">' + escapeHtml(r.source) + " · sheet ID " +
@@ -11315,6 +12002,13 @@ $("#src-export-btn").onclick = async () => {
 
 $("#src-detail-close").onclick = closeSourceRecord;
 $("#src-detail-body").addEventListener("click", (e) => {
+  const entry = e.target.closest(".src-manual-open");
+  if (entry) {
+    closeSourceRecord();
+    switchAdminTab("flora");
+    openManualRecord(entry.dataset.manualId);
+    return;
+  }
   const open = e.target.closest(".src-flora-open");
   if (!open) return;
   closeSourceRecord();

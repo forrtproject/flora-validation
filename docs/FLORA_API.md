@@ -117,6 +117,13 @@ the same replication DOI. Linked entries expose their citation fields and
 permanent row IDs. Replication/reproduction entries also include type, outcome,
 quote/source, and the available allowlisted evidence fields.
 
+A record's `source` names where it came from, and is not a closed list: besides
+the entry sheets' labels it can be `validated` (validated on this website),
+`adjudicated` (an approved answer to a disagreement) or `manual` (a record the
+FLoRA team added by hand). The permanent ID of a record added by hand is its
+source record's, such as `MAN-000001`, unless it matches a record of the
+reference snapshot.
+
 Anonymous DOI responses include these derived fields once, at the top level:
 
 - `outcome_mix`: counts of nonblank replication outcomes.

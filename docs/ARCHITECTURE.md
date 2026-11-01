@@ -20,6 +20,9 @@ flora-validation/
 │                        points); review.py: admins approve, publish to Source
 │                        Records (source `adjudicated`, ADJ-) or withdraw;
 │                        export.py: final and analysis CSVs
+├── manual_records.py    Records an admin adds by hand in the FLoRA tab: stored in
+│                        manual_records and projected into Source Records (source
+│                        `manual`, MAN-) on every save; withdraw and restore
 ├── db_schema.sql        DDL for fresh deployments (idempotent)
 ├── db_migrate.py        Migrates old pairs/coders/judgements schema to new schema
 ├── data/                extracted_latest.csv + immutable UTC/run-ID archives
@@ -298,6 +301,8 @@ See [VALIDATION_DB_SCHEMA.md](VALIDATION_DB_SCHEMA.md) for full DDL and JSONB sh
 | `validators` | `id`, `handle`, `vote_score`, `total_points`, `validator_tier` |
 | `unvalidated` | `record_id`, `pair_id`, `validation_status`, `validator_1/2` JSONB, `llm_validator` JSONB; `origin`/`parent_record_id`/`inherits_outcome` for originals an admin added |
 | `extra_original_suggestions` | other originals a validator suggested with a judgement; open, accepted (with the record it became) or dismissed |
+| `manual_records` | records an admin added by hand in the FLoRA tab, projected into `source_records` as `MAN-` rows; `status` active/withdrawn, never deleted |
+| `manual_record_events` | append-only history of each record added by hand: create, edit, withdraw, restore, with who, when and `{field: [before, after]}` |
 | `validation_queue` | `queue_id`, `record_id`, `validator_slot`, `is_validated`, all check fields |
 | `validation_skips` | application-append-only `record_id`/validator/reason/comment/timestamp history; removed only with a retired record (archived in `retired_records`) |
 | `submission_failure_releases` | server-observed save-failure audit, hashed one-time capability, explicit recovery state; never counted as a validator skip |

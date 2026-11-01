@@ -72,11 +72,13 @@ LEVEL_TITLES = {PROBLEM: "Problems", POSSIBLE_PROBLEM: "Possible problems"}
 LEVEL_NOTES = {POSSIBLE_PROBLEM: "Heuristics: a person decides whether each one is a problem."}
 
 # What the build publishes as `source`: the transform's output labels for the
-# registry's sources, and the two sources published under their own key, the
-# website's validated records (sync_validated.SOURCE_KEY) and the adjudication's
-# answers (adjudication.review.SOURCE_KEY). Taken from OUTPUT_SOURCES rather than
+# registry's sources, and the three sources published under their own key, the
+# website's validated records (sync_validated.SOURCE_KEY), the adjudication's
+# answers (adjudication.review.SOURCE_KEY) and the records added by hand in the
+# FLoRA tab (manual_records.SOURCE_KEY). Taken from OUTPUT_SOURCES rather than
 # listed again, so a registry key that a broken mapping lets through is reported.
-VALID_SOURCES = frozenset(transform_sources.OUTPUT_SOURCES.values()) | {"validated", "adjudicated"}
+VALID_SOURCES = (frozenset(transform_sources.OUTPUT_SOURCES.values())
+                 | {"validated", "adjudicated", preprint_dedup.MANUAL_SOURCE})
 VALID_TYPES = {"replication", "reproduction"}
 URL_COLUMNS = ["url_r", "oa_url_o", "oa_url_r", "url_o"]
 # Filled from the enrichment cache (enrich_works), not from a source record, so a

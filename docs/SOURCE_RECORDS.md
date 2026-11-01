@@ -18,6 +18,7 @@ operate it, and what goes wrong.
 3. [The entry sheets](#3-the-entry-sheets)
    - [3.1 What is different about spreadsheet B](#31-what-is-different-about-spreadsheet-b)
    - [3.2 Our own validated records](#32-our-own-validated-records-validated)
+   - [3.3 Records added by hand](#33-records-added-by-hand-manual)
 4. [Prerequisite: the sheet UUID](#4-prerequisite-the-sheet-uuid)
 5. [The registry (`sources.yml`)](#5-the-registry-sourcesyml)
 6. [The sync (`sync_sources.py`)](#6-the-sync-sync_sourcespy)
@@ -70,6 +71,8 @@ it, and produces the same column shape.
     │   6 integrity gates → filter to accepted → INSERT ONLY
     ▼
   source_records  (Postgres, 1,653 rows)   ◄── authoritative from here on; never edited by hand
+    ▲   also: sync_validated.py (VAL-), the adjudication (ADJ-), and every save of a
+    │   record added by hand in the FLoRA tab, manual_records.py (MAN-, §3.3)
     │
     ├─► Admin panel "Source Records" tab
     │      browse · search · filter · read-only record panel · duplicate review
@@ -248,6 +251,118 @@ so an unshared sheet cannot also stop our own records from refreshing.
 python sync_validated.py --dry-run
 python sync_validated.py
 ```
+
+### 3.3 Records added by hand (`manual`)
+
+Not a sheet either. In the FLoRA tab an admin can add a replication or reproduction
+that no source holds (**Add record by hand**). [`manual_records.py`](../manual_records.py)
+stores it in `manual_records`, with its history in `manual_record_events`, and every
+save projects it into `source_records` in the same transaction, under source key
+`manual` and prefix `MAN-`, the way the adjudication publishes ADJ- rows. So it is in
+this grid and its duplicate queue at once, in the FLoRA tab at once (a live build), and
+gets its FLoRA ID at the next pipeline run, nightly or **Run pipeline now** from the
+save notice. It is published as `source = "manual"`; the note and the admin's name stay
+in `raw` and the entry, and are never published.
+
+- **A table of its own, not `validated` with another origin.** Those rows would publish
+  as `validated`/VAL-, so they could not be told apart; take the website records'
+  precedence in a merge; and flow into `validated_export.csv`, dashboards and points.
+- **Fields.** The columns the build reads, cleaned at save as a correction to the same
+  field is (`flora_edits.clean_value`). Required: the type; a DOI or a reference for the
+  original; a DOI or a link for the replication, and its reference without a DOI; a
+  replication's outcome (one `outcome_alias` maps onto itself), quote and quote source;
+  both of a reproduction's verdicts, each with a quote and its source unless it is
+  "not checked"; and an internal note on where it comes from. A blank quote source is
+  worked out from the abstract. `study_r` is left out: the build has no column for it.
+- **Duplicates are warned about, then absorbed.** As the admin types, the form lists
+  records with the same identifiers, or the same DOIs where only one has a replication
+  link; hidden source rows with the same fingerprint; and the website's records of the
+  same replication being validated. None of it blocks the save, except identifiers on
+  the exclusion list (409). Saved, an entry with another record's identifiers is
+  absorbed into it: `load()` puts `manual` rows last, so the dedup (step 5) keeps the
+  other row, and the pair merge (step 5b) makes the group's row from the other rows
+  alone, the entry filling only blanks. The record keeps its ID and its values: no
+  joined quote, no "mixed" outcome, no outcome clash. The entry fills them once every
+  duplicate step is done (`preprint_dedup.apply_hand_fills`), so a value it supplies
+  never competes with another source's row in a later merge, and it never replaces a
+  quote the record has (`fill_blanks_by_hand`). The optional tick "a different
+  study — keep it as its own record" rules the source row `distinct` (only when it does
+  share identifiers; `source_records_service.resolve_duplicate`), and it becomes a record
+  of its own. Only that row is ruled, so the group stays open in the Duplicates queue
+  until someone rules on the other.
+- **And the other way round: a hand record with its FLoRA ID keeps it.** Whoever was
+  there first keeps the values. Once an entry is a FLoRA record (its row is the source
+  row of a live `flora_records` record), a sheet or website row with its identifiers that
+  arrives later is absorbed into it exactly as an entry arriving second would be: the
+  hand record keeps its ID and values, the newcomer fills only blanks; no website
+  precedence, no joined quotes, no "mixed" outcome, no clash; the same in steps 5, 5b
+  and 6b. The build asks the registry which rows are a live record's source row
+  (`transform_sources.load_live_primaries`, only when entries are present; the FLoRA
+  tab's cache already changes with the registry) and `preprint_dedup._yields` decides,
+  group by group, which rows only fill blanks. Against another source's FLoRA record a
+  hand record still yields: an entry never takes over a record with an ID. Otherwise no
+  preprint rule drops a hand record that has its ID. Rows filling one record fill it
+  together, whichever step folded them in: those of the record's own kind first (for a
+  hand record, the entries that were there with it), then in load order. A newcomer
+  ruled distinct becomes a record of its own; ruling the hand row distinct leaves the
+  ID where it is. An entry with no FLoRA ID yet is absorbed as before, also by a row
+  arriving after it.
+- **Preprint and published versions too.** An entry never removes or moves another
+  source's record through the preprint rules either (2b rulings, 6b detection;
+  `preprint_dedup`). Where the replication DOI to keep is held only by entries and the
+  one to drop by another source, it is turned round: that record stays, with its ID,
+  DOI and values, and the entries are absorbed into it (blanks only, ids recorded).
+  An entry the rules drop beside another source's record is absorbed into it the same
+  way. On the original side the automatic rule never moves another source's records to
+  a DOI only entries hold; the entries move to theirs instead. A confirmed original-side
+  ruling moves the same records with or without an entry. Switching a record to the
+  published DOI is a correction in its FLoRA editor. Pairs held for review stay so.
+- **Every answer says which.** `manual_records.placements()` runs the build's duplicate
+  steps (2, 2b, 3, 4, 5 and 5b, with the build's own functions where it has them) on
+  the source rows that can share a record with the entry, with the entry last, and the
+  save notice names the outcome: a record of its own (with **Run pipeline now**), or
+  absorbed into REPL-000397 (whose FLoRA ID it names), with no new ID to come. The
+  preprint detection after enrichment (6b) is not predicted: it needs the metadata.
+- **Changed until the registry knows it under a FLoRA ID.** That is its own ID (minted
+  from its display id), or the ID of the record it is the source row of, is absorbed
+  into or was part of (`flora_records` primary, merged or historical source ids), as long
+  as the build still puts it in that record. From then on the entry is frozen and the
+  fix is made in the FLoRA editor for that record (§9.4): one place to correct a record.
+  An entry absorbed into a record with no ID yet stays editable, and so does one a
+  ruling in Source Records has since taken out of its record, until the next run gives
+  it its own ID. Withdraw and restore work either way.
+- **Published only with titles.** A record without a title on a side is left out of
+  `flora.csv` and the public API (`drop_untitled`), though the tab lists it. Titles come
+  from the DOI's metadata (fetched at the pipeline run) or are read from the reference
+  (step 8b), so the form asks for a reference only without a DOI. The entry says so: the
+  save notice when it is known at once (a DOI the metadata lookup did not find, and no
+  reference), the entry from the build otherwise.
+- **Withdrawn, never deleted.** Withdraw takes a reason and marks the source row deleted.
+  What happens to the record is said before and after: alone in it, a registered record
+  retires at the next refresh and its ID is never reused; holding other rows, it stays,
+  built from them, with its ID; absorbed, nothing is retired and what the entry filled
+  goes. Restore brings back the same row and display id, and its ID at the next refresh
+  unless another source has taken its identifiers meanwhile. Triggers refuse `DELETE`
+  on `manual_records` and any rewrite of `manual_record_events`.
+- **Where to find them.** The FLoRA tab's **Added by hand** chip lists the entries from
+  `manual_records`, since an absorbed one has no row of its own in the grid; this
+  grid's **Added by hand** chip lists their source rows.
+
+```
+GET    /api/admin/flora/manual/options        vocabularies and limits
+GET    /api/admin/flora/manual/counts         entries by status (the chip)
+POST   /api/admin/flora/manual/check          what saving a draft would do (reads only)
+GET    /api/admin/flora/manual?status=        the entries, with what the build makes of each
+POST   /api/admin/flora/manual                add (201; a repeated client_token answers 200)
+GET    /api/admin/flora/manual/{id or MAN-}   one entry: fields, history, state
+PATCH  /api/admin/flora/manual/{id or MAN-}   change it while it has no FLoRA ID {fields, note, version}
+POST   /api/admin/flora/manual/{id}/withdraw  {reason, version}
+POST   /api/admin/flora/manual/{id}/restore   {reason (a note), version}
+```
+
+Declared before `/api/admin/flora/{flora_id}`, which would take `manual` for a record
+id. Each write is in the audit trail (`flora.manual_added`, `_edited`, `_withdrawn`,
+`_restored`).
 
 ---
 
@@ -487,7 +602,7 @@ Server-side paging at 50 rows. Columns: ID, type, original, replication, outcome
 status, reviewed, open. *Reviewed* is the stamp left by the editor this tab used to
 have; it no longer changes.
 
-- **Filter chips** — All · Replications · Reproductions · Validated · Duplicates · Deleted
+- **Filter chips** — All · Replications · Reproductions · Validated · Added by hand · Duplicates · Deleted
 - **Search** — reference, DOI, `display_id`, `study_o` (press Enter)
 - **Status dropdown** — the three accepted values
 - **Sortable headers** — click to sort, click again to reverse
@@ -510,6 +625,7 @@ shown exactly as the source supplied them. Nothing in the panel can be edited.
   A row absorbed into another by deduplication names the record it was absorbed into.
   A row ruled a duplicate, excluded or deleted feeds none, and the panel says so
 - Edits made in this panel before corrections moved to FLoRA are listed at the bottom
+- A row added by hand (§3.3) says who added it, when and why, with **Open entry**
 - ‹ and › walk the rows of the *current filter* without returning to the grid; the
   counter reads `412 / 1653`
 
@@ -615,14 +731,21 @@ A **pure function of the database** — it writes nothing back. Six operations, 
    stay two rows, as in R, whose key is `doi_o` with `url_r`, else `doi_r`. URLs are
    compared without the scheme, `www.`, `utm_` tracking parameters or a trailing slash.
    A row with no identifier at all is never a duplicate. Rows a reviewer ruled
-   `distinct` are exempt.
+   `distinct` are exempt. Rows added by hand come last (`load()` orders
+   `source = 'manual'` after the rest), so one never survives over another source's
+   row; there, and in `merge_doi_pair_dups()`, it only fills blanks (§3.3). A hand
+   record that is already a FLoRA record is the exception: it goes first in its group,
+   and the rows arriving after it fill its blanks.
 6. **Project** to the 14 FLoRA columns and strip `DUMMY_*` placeholder DOIs.
 
 ### Ordering matters
 
 The order above is not arbitrary. Cleaning before exclusions would make url-keyed
 exclusions unmatchable. Deduplicating before cleaning would miss rows that only look
-identical after normalisation.
+identical after normalisation. And the order of the rows matters too: each duplicate
+step keeps a group's first row, in `display_id` order, so `load()` puts rows added by
+hand last whatever their `MAN-` prefix sorts as, and the build moves the rows that
+only fill blanks after the others in each group before the dedup (§3.3).
 
 ### Current output
 
@@ -1008,6 +1131,7 @@ rather than after an arbitrary delay.
 | `GET /api/admin/flora/{flora_id}` | One full row for the editor (§9.4), with its check findings and when the checks last ran (§9.5) |
 | `GET /api/admin/flora/checks/summary` | Open findings by check and level, and the last run of each part (§9.5) |
 | `POST` / `DELETE /api/admin/flora/findings/dismiss` | Mark a finding "Not a problem" (`{finding_key, note}`), or withdraw the mark (`{finding_key}`) (§9.5) |
+| `/api/admin/flora/manual…` | Records added by hand: add, check for duplicates, list, change, withdraw, restore (§3.3) |
 
 The export uses the same column order as the nightly artifact — `FLORA_COLUMNS` then
 `PROVENANCE_COLUMNS` — so the two files are interchangeable rather than subtly
@@ -1466,6 +1590,21 @@ but after the dedup so a correction can never change which records exist.
 **Record-level editing, not inline cell editing.** Abstracts and quotes are far too long
 to edit in a grid cell, and editors work record by record, not cell by cell.
 
+**Records added by hand have a table of their own.** Rows in `validated` with another
+origin would publish as VAL- rows nobody could tell apart from validated records, take
+their precedence in a merge, and reach every export and tally of validator work. A table
+projected into `source_records` (§3.3) keeps them a source like any other, labelled.
+
+**A record added by hand never takes over another source's record, and keeps its own.**
+`load()` puts `manual` rows last, the pair merge lets them fill only blanks, and the
+preprint rules never drop or move another source's record for a DOI only entries hold,
+so an admin's entry cannot change the ID, DOI, outcome or quotes of a record a sheet or
+the website holds. The mirror holds too: whoever was there first keeps the values, so
+a hand record that is already a FLoRA record keeps its ID and values against a row
+arriving later. That needs the registry, not only the source rows: arrival time alone
+(`first_seen_at`) would let a restored or re-identified entry take a record over. A
+duplicate is a warning, not a refusal; the save says when the entry will be absorbed.
+
 **`content_fingerprint` is computed by the database.** It was originally computed in
 Python at insert and frozen forever, so a reviewer correcting a DOI left a stale
 fingerprint — hiding real duplicates *and* leaving false flags a reviewer might act on
@@ -1504,6 +1643,7 @@ by deleting a good row. A trigger keeps it correct.
 | [`transform_sources.py`](../transform_sources.py) | Six-operation transform to the FLoRA columns |
 | [`source_records_service.py`](../source_records_service.py) | All SQL and logic; no FastAPI types; read-only apart from duplicate rulings |
 | [`flora_edits.py`](../flora_edits.py) | Corrections to FLoRA records: validation, storage, applied on top of every build |
+| [`manual_records.py`](../manual_records.py) | Records added by hand in the FLoRA tab: validation, projection to MAN- source rows, placement, withdraw/restore (§3.3) |
 | [`entry_checks.py`](../entry_checks.py) | The FLoRA checks over the stored dataset, on the website's scheduler; findings in `flora_check_findings` |
 | [`app.py`](../app.py) | Thin routes (search for `Source records — entry-sheet datatable`) |
 | [`db_schema.sql`](../db_schema.sql) | Tables, constraints, triggers, rule-table seeds |
