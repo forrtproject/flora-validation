@@ -281,8 +281,12 @@ validator to judge a highlight that isn't there; natural order is restored in
 Python afterwards. `COUNT(*) OVER ()` runs before `LIMIT`, so a truncated list
 still reports the true size of the set.
 
-Known gap: there is still no way to report an original the extractor *missed*. Use
-"Can't tell" plus a comment until one exists.
+An original the extractor *missed* is suggested with the judgement ("This study has
+more than one original"). An admin adds it as a record of its own: at once on an entry
+that is already validated and admin-checked, or, while reviewing an entry the LLM and
+both validators have judged, drafted in its "Additional originals" section and saved
+together with it by Mark as Resolved (refused as a whole if one original is wrong).
+See [VALIDATION_DB_SCHEMA.md, Additional originals](VALIDATION_DB_SCHEMA.md).
 
 Any answer can carry a correction: `corrected_doi_o`, `corrected_title_o`,
 `corrected_outcome`, `corrected_type`, `corrected_title_r`, `corrected_url_r`,
@@ -862,6 +866,9 @@ GET    /api/admin/stats · /dashboard · /validators
 GET    /api/admin/entries                        list + filter + search + sort
 GET    /api/admin/entries/{record_id}
 POST   /api/admin/entries/{record_id}/approve · /flag-review · /note · /resolve
+GET    /api/admin/entries/{record_id}/extra-originals · POST (add at once)
+POST   /api/admin/entries/{record_id}/extra-originals/suggestions/{id}/dismiss
+POST   /api/admin/entries/{record_id}/extra-original/remove
 POST   /api/admin/queue/{queue_id}/flag
 GET    /api/admin/serving-config · PUT · GET /preview
 GET    /api/admin/restricted · POST /api/admin/assign

@@ -6993,6 +6993,17 @@ body.has-maint-banner #admin-screen {
   padding: 0.5rem 0.75rem;
   border-left: 3px solid var(--rule);
 }
+/* A refused original: the server's message inside it, and the field at fault. */
+.xo-error {
+  margin: 0.3rem 0 0.6rem;
+  padding: 0.45rem 0.7rem;
+  border-left: 3px solid var(--red);
+  background: #fbeaea;
+  font-size: 0.85rem;
+  color: var(--red);
+}
+.xo-invalid { border-color: var(--red) !important; box-shadow: 0 0 0 1px var(--red); }
+.xo-draft-note { margin-top: 0.6rem; font-weight: 500; color: var(--ink-soft); }
 .admin-hide-mine {
   display: inline-flex;
   align-items: center;

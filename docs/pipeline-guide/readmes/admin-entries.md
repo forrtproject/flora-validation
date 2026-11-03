@@ -14,6 +14,7 @@ Code snapshot: 29 October 2026, `2f3a89c`.
 
 1. Filter or search the table, then open Review to see the evidence and current decision.
 2. Use Approve for a consensus record, or edit the fields and choose Mark as Resolved.
+3. Additional originals adds other original studies of a replication or reproduction, each as a validated record of its own: at once on an entry that is validated and admin-checked, or drafted while reviewing an entry the LLM and both validators have judged, and saved with Mark as Resolved.
 
 ## What is saved, and where
 
@@ -63,15 +64,15 @@ Saves only the admin note, including who saved it and when. An empty note clears
 
 ### [Mark as Resolved](admin-entries--mark-as-resolved.md)
 
-POST /resolve validates the edited type, original, outcome and evidence; saves the final decision. For reproductions both axes are required.
+POST /resolve validates the edited type, original, outcome and evidence; saves the final decision. For reproductions both axes are required. Additional originals drafted in the entry are created in the same transaction; if one is refused, nothing is saved and the message names the original, the field and what is wrong.
 
-**Saves:** unvalidated.final_* and admin fields; replaces this record's validated row; admin_decisions.
+**Saves:** unvalidated.final_* and admin fields; replaces this record's validated row; admin_decisions; drafted additional originals as new unvalidated + validated rows.
 
 **Visible:** After commit; then downstream sync/preparation is required.
 
 ### [Merge duplicate (conflict dialog)](admin-entries--merge-duplicate-conflict-dialog.md)
 
-If the proposed identity already belongs to another validated record, explicitly keep that survivor and link this duplicate to it.
+If the proposed identity already belongs to another validated record, explicitly keep that survivor and link this duplicate to it. Its added and drafted additional originals move to the survivor; if the survivor cannot take them, nothing is saved.
 
 **Saves:** validated_record_merges; duplicate is rejected in unvalidated, removed from validated, and open assignments completed; survivor preserved.
 

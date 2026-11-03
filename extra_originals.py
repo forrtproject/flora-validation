@@ -210,21 +210,184 @@ def parent_block(rec: dict, published: dict | None) -> tuple[str, str] | None:
 
     An inherited outcome needs a published one, and an admin must have reviewed it:
     an auto-validated record can still be sent back for review, which would leave
-    its added originals publishing an outcome nobody has confirmed.
+    its added originals publishing an outcome nobody has confirmed. Before that,
+    originals can be drafted and sent with Mark as Resolved (draft_block), which
+    creates them once the resolve has published the entry, in the same transaction.
     """
     if rec.get("origin") == ORIGIN_CHILD:
         return ("extra_original_on_child",
                 "This is an added original. Add originals on the entry it belongs to.")
     if rec.get("validation_status") != "validated" or published is None:
         return ("parent_not_validated",
-                "Approve or resolve this entry first. Its suggestions stay here until then.")
+                "This entry is not validated yet, so originals cannot be added to it on "
+                "their own. Draft them with the entry: they are saved when you click "
+                "Mark as Resolved.")
     if not rec.get("admin_checked"):
         return ("parent_not_admin_checked",
-                "No admin has reviewed this entry yet (a rule validated it). "
-                "Confirm it with Mark as Resolved first.")
+                "No admin has reviewed this entry yet (a rule validated it), so originals "
+                "cannot be added to it on their own. Draft them with the entry: they are "
+                "saved when you click Mark as Resolved.")
     if published.get("type") not in ("replication", "reproduction"):
         return ("parent_type", "Only a replication or a reproduction can have originals added.")
     return None
+
+
+# ── Drafting originals to be saved with Mark as Resolved ──────────────────────
+
+# A record's status in plain words, for refusals that name a record.
+_STATUS_WORDS = {"validated": "validated", "need_review": "needs review",
+                 "consensus_reached": "awaiting approval", "unvalidated": "not judged yet",
+                 "validation_inprogress": "being judged", "rejected": "rejected"}
+
+
+def _clip(value, limit: int = 80) -> str:
+    value = text(value)
+    return value if len(value) <= limit else value[:limit - 1].rstrip() + "…"
+
+
+def _ref(record_id, title_o, doi_o, status, relation: str, parent_record_id=None) -> dict:
+    """A record a refusal points at, enough for the admin's screen to link to it.
+    relation: 'own_original' (the entry itself), 'added_original', 'extractor_record'
+    or 'survivor' (the entry a duplicate is merged into)."""
+    rid = str(record_id)
+    ref = {"record_id": rid, "short_id": rid[:8], "title_o": text(title_o),
+           "doi_o": text(doi_o), "validation_status": status, "relation": relation}
+    if parent_record_id:
+        ref["parent_record_id"] = str(parent_record_id)
+    return ref
+
+
+def _describe(ref: dict) -> str:
+    """'entry 1a2b3c4d (“A title”, 10.1/abc, validated)'."""
+    bits = [f"“{_clip(ref['title_o'])}”" if ref.get("title_o") else "", ref.get("doi_o") or "",
+            _STATUS_WORDS.get(ref.get("validation_status"), ref.get("validation_status") or "")]
+    bits = [b for b in bits if b]
+    return f"entry {ref['short_id']}" + (f" ({', '.join(bits)})" if bits else "")
+
+
+def _lookup_ref(cur, record_id, relation: str) -> dict:
+    """_ref for a record known only by id: its values as published, else as coded."""
+    cur.execute(
+        """
+        SELECT u.record_id::text AS record_id, u.validation_status,
+               u.parent_record_id::text AS parent_record_id,
+               COALESCE(v.title_o, NULLIF(u.final_title_o, ''), u.title_o) AS title_o,
+               COALESCE(v.doi_o, u.final_doi_o, u.doi_o) AS doi_o
+        FROM unvalidated u LEFT JOIN validated v ON v.record_id = u.record_id
+        WHERE u.record_id = %s
+        """,
+        (str(record_id),),
+    )
+    row = cur.fetchone() or {}
+    return _ref(record_id, row.get("title_o"), row.get("doi_o"), row.get("validation_status"),
+                relation, row.get("parent_record_id"))
+
+
+def _and_join(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def _llm_answer(stored) -> dict | None:
+    """The stored LLM answer as a dict; the column may arrive as a JSON string."""
+    if isinstance(stored, str):
+        try:
+            stored = json.loads(stored)
+        except ValueError:
+            return None
+    return stored if isinstance(stored, dict) else None
+
+
+def missing_judgements(cur, rec: dict) -> list[str]:
+    """The judgements an entry still lacks, in words; [] when it has all three.
+
+    The validators: both human slots of validation_queue (human_1, human_2) are
+    is_validated, the rows consensus and the resolve's two-submission check read.
+    The LLM: unvalidated.llm_validator holds its answer; consensus writes it there
+    and never marks the queue's 'llm' slot. An answer that is an error judged
+    nothing, so it counts as missing; so does an empty one.
+    """
+    cur.execute(
+        "SELECT validator_slot FROM validation_queue WHERE record_id = %s "
+        "AND is_validated = TRUE AND validator_slot IN ('human_1', 'human_2')",
+        (str(rec["record_id"]),),
+    )
+    done = {r["validator_slot"] for r in cur.fetchall()}
+    missing = [label for slot, label in (("human_1", "validator 1's judgement"),
+                                         ("human_2", "validator 2's judgement"))
+               if slot not in done]
+    llm = _llm_answer(rec.get("llm_validator"))
+    if not llm:
+        missing.append("the LLM check")
+    elif "error" in llm:
+        missing.append("the LLM check (its last call failed)")
+    return missing
+
+
+def merged_into(cur, record_id) -> str | None:
+    """The survivor a duplicate was merged into, or None."""
+    cur.execute("SELECT survivor_record_id::text AS survivor_record_id "
+                "FROM validated_record_merges WHERE duplicate_record_id = %s", (str(record_id),))
+    row = cur.fetchone()
+    return row["survivor_record_id"] if row else None
+
+
+def draft_block(cur, rec: dict, merged_into_id=None, decision: dict | None = None,
+                final_type: str | None = None) -> tuple[str, str, dict] | None:
+    """Why originals cannot be drafted on this entry and saved with Mark as
+    Resolved, or None when they can: (code, reason, extra details).
+
+    The rule: the entry is resolvable by this admin (not an added original, not
+    merged, the self-approval rule allows it), it is not being rejected, and the
+    LLM and both validators have judged it (missing_judgements). Its type is the
+    resolve form's, which offers only replication and reproduction; the server
+    sees it as final_type. `decision` is app._self_approval's answer for the
+    signed-in admin; the resolve checks that itself before this runs.
+    """
+    if rec.get("origin") == ORIGIN_CHILD:
+        return ("extra_original_on_child",
+                "This is an added original. Add originals on the entry it belongs to.",
+                {"parent_record_id": str(rec.get("parent_record_id"))})
+    if merged_into_id:
+        survivor = _lookup_ref(cur, merged_into_id, "survivor")
+        return ("entry_already_merged",
+                f"This entry was merged into {_describe(survivor)}. Add originals on that "
+                "entry instead.", {"survivor": survivor})
+    if decision and not decision.get("allowed", True):
+        return ("not_your_decision", text(decision.get("reason"))
+                or "You validated this entry, so another admin needs to decide it.", {})
+    if final_type == "not_validation":
+        return ("extra_originals_with_reject",
+                "This entry is being rejected as neither a replication nor a reproduction, "
+                "so it cannot have additional originals.", {})
+    missing = missing_judgements(cur, rec)
+    if missing:
+        return ("judgements_missing",
+                "Additional originals can be added to this entry once the LLM and both "
+                f"validators have judged it. Still missing: {_and_join(missing)}.",
+                {"missing": missing})
+    return None
+
+
+def check_resolve_drafts(cur, rec: dict, final_type: str | None, count: int,
+                         merged_into_id=None) -> None:
+    """Refuse originals sent with Mark as Resolved that this entry may not take.
+    Runs before the resolve writes anything; a refusal rolls back the whole
+    request, so the entry stays as it was."""
+    block = draft_block(cur, rec, merged_into_id=merged_into_id, final_type=final_type)
+    if not block:
+        return
+    code, reason, extra = block
+    drafts = f"the {count} additional original{'s' if count != 1 else ''} you drafted"
+    # The child and merged reasons already say where to add them instead.
+    actions = {
+        "extra_original_on_child": f"That is entry {text(extra.get('parent_record_id'))[:8]}.",
+        "extra_originals_with_reject":
+            f"Remove {drafts} to reject it, or set its type to replication or reproduction.",
+        "judgements_missing":
+            f"Remove {drafts} and resolve the entry; once it is resolved, originals are "
+            "added to it straight away.",
+    }
+    _refuse(409, code, f"Nothing was saved. {reason} {actions.get(code, '')}".strip(), **extra)
 
 
 def _family(cur, rec: dict) -> list[dict]:
@@ -295,8 +458,13 @@ def _group_suggestions(rows: list[dict]) -> list[dict]:
     return out
 
 
-def read_view(cur, record_id) -> dict:
-    """Everything the admin's "Additional originals" section shows for a record."""
+def read_view(cur, record_id, decision: dict | None = None) -> dict:
+    """Everything the admin's "Additional originals" section shows for a record.
+
+    parent.mode says what the section offers: 'add' (can_add: each original is
+    published at once), 'draft' (originals are drafted and saved with Mark as
+    Resolved, see draft_block) or 'blocked' (mode_reason says why). `decision` is
+    the signed-in admin's self-approval answer (app._self_approval)."""
     cur.execute("SELECT * FROM unvalidated WHERE record_id = %s", (str(record_id),))
     row = cur.fetchone()
     if not row:
@@ -304,6 +472,12 @@ def read_view(cur, record_id) -> dict:
     rec = dict(row)
     published = published_row(cur, record_id)
     block = parent_block(rec, published)
+    # Drafting is for an entry still to be resolved; a published, admin-reviewed
+    # one of another type stays blocked (parent_type).
+    draftable = block is not None and block[0] in ("parent_not_validated",
+                                                   "parent_not_admin_checked")
+    draft = draft_block(cur, rec, merged_into(cur, record_id), decision) if draftable else None
+    mode = "add" if block is None else "draft" if draftable and draft is None else "blocked"
     parent = {
         "record_id": str(rec["record_id"]), "origin": rec.get("origin"),
         "validation_status": rec.get("validation_status"),
@@ -313,6 +487,14 @@ def read_view(cur, record_id) -> dict:
         "block_code": block[0] if block else None,
         "block_reason": block[1] if block else None,
         "published": ({k: published.get(k) for k in _PUBLISHED_COLUMNS} if published else None),
+        "mode": mode,
+        "mode_code": draft[0] if draft else None,
+        "mode_reason": draft[1] if draft else None,
+        "missing_judgements": (draft[2].get("missing", []) if draft else []),
+        # Before the first resolve there is no published row: drafts start from these.
+        "current": {"study_r": rec.get("study_r"),
+                    "abstract_r": rec.get("final_abstract_r") or rec.get("abstract_r"),
+                    "type": rec.get("final_type") or rec.get("type")},
     }
     if rec.get("origin") == ORIGIN_CHILD:
         return {"parent": parent, "parent_record_id": str(rec["parent_record_id"]),
@@ -415,10 +597,39 @@ _WORK_ID = re.compile(r"^W\d+$")
 
 
 def _refuse(status: int, code: str, message: str, index: int | None = None, **extra):
+    """Raise a structured refusal: code, message (what is wrong and what to do),
+    and for one original its index, the form field at fault (`field`), and the
+    record it collides with (`conflict`, see _ref), when there is one."""
     detail = {"code": code, "message": message, **extra}
     if index is not None:
         detail["index"] = index
     raise ExtraOriginalError(status, detail)
+
+
+def _which(index: int, item: dict) -> str:
+    """'Original #2 (“A title”, 10.1/abc)': the number the form shows, and enough
+    of the paper to find it in a long list."""
+    bits = [f"“{_clip(item.get('title_o'))}”" if text(item.get("title_o")) else "",
+            normalize_doi(item.get("doi_o"))]
+    bits = [b for b in bits if b]
+    return f"Original #{index + 1}" + (f" ({', '.join(bits)})" if bits else "")
+
+
+def _refuse_original(status: int, code: str, index: int, item: dict, field: str | None,
+                     problem: str, action: str, conflict: dict | None = None, **extra):
+    """_refuse for one original: '<Original #n (title, DOI)> <problem>. <action>'."""
+    label = _which(index, item)
+    if conflict:
+        extra["conflict"] = conflict
+        extra.setdefault("existing_record_id", conflict["record_id"])
+    if field:
+        extra["field"] = field
+    _refuse(status, code, f"{label} {problem} {action}", index, label=label, **extra)
+
+
+def _identity_field(v: dict) -> str:
+    """The form field that carries an original's identity: its DOI, else its title."""
+    return "doi_o" if v.get("doi_o") else "title_o"
 
 
 def _original_key(v: dict) -> str:
@@ -436,27 +647,36 @@ def _child_values(index: int, item: dict, published: dict, admin: dict) -> dict:
     from extractor_vocab import (REPLICATION_OUTCOMES, derive_reproduction_outcome,
                                  normalize_axis_value, normalize_outcome,
                                  normalize_quote_source)
-    n = index + 1
     doi_o = normalize_doi(item.get("doi_o"))
     title_o = text(item.get("title_o"))
     ref_o = text(item.get("ref_o"))
     url_o = text(item.get("url_o"))
     year_o = text(item.get("year_o"))
     work_id = text(item.get("oa_work_id_o"))
+
+    def wrong(code, field, problem, action):
+        _refuse_original(422, code, index, item, field, problem, action)
+
     if not title_o:
-        _refuse(422, "title_required", f"Original #{n} needs a title.", index)
+        wrong("title_required", "title_o", "has no title.",
+              "Every original needs one: enter the original paper's title.")
     if doi_o and not doi_o.lower().startswith("10."):
-        _refuse(422, "invalid_doi", f"Original #{n}: a DOI starts with 10.", index)
+        wrong("invalid_doi", "doi_o", f"has “{_clip(doi_o, 60)}” as its DOI, but a DOI starts "
+              "with 10. (for example 10.1037/xge0000123).",
+              "Correct it, or clear it and give the full reference instead.")
     if not doi_o and not ref_o:
-        _refuse(422, "reference_required",
-                f"Original #{n} has no DOI, so it needs a reference: FLoRA describes an "
-                "original without a DOI by its reference alone.", index)
+        wrong("reference_required", "ref_o", "has no DOI, so it needs a reference: FLoRA "
+              "describes an original without a DOI by its reference alone.",
+              "Enter the full reference, or add the DOI.")
     if url_o and not is_http_url(url_o):
-        _refuse(422, "invalid_url", f"Original #{n}: the link must start with http:// or https://.", index)
+        wrong("invalid_url", "url_o", "has a link that does not start with http:// or https://.",
+              "Correct the link, or clear it.")
     if year_o and not _YEAR.match(year_o):
-        _refuse(422, "invalid_year", f"Original #{n}: the year must be four digits.", index)
+        wrong("invalid_year", "year_o", f"has “{_clip(year_o, 20)}” as its year, but a year has "
+              "four digits.", "Enter it like 2018, or clear it.")
     if work_id and not _WORK_ID.match(work_id):
-        _refuse(422, "invalid_work_id", f"Original #{n}: an OpenAlex id looks like W123456.", index)
+        wrong("invalid_work_id", "oa_work_id_o", f"has “{_clip(work_id, 20)}” as its OpenAlex id, "
+              "but one looks like W123456789.", "Correct it, or clear it.")
 
     study_r = (text(item.get("study_r")) if item.get("study_r") is not None
                else text(published.get("study_r")))
@@ -489,15 +709,21 @@ def _child_values(index: int, item: dict, published: dict, admin: dict) -> dict:
             return chosen
         return quote_source_for(quote, v["abstract_r"]) if quote else None
 
+    inherit = "or untick “Give it its own outcome” so it follows the entry's."
     if ptype == "reproduction":
-        try:
-            computation = normalize_axis_value("outcome_computation", item.get("outcome_computation"))
-            robustness = normalize_axis_value("outcome_robustness", item.get("outcome_robustness"))
-        except ValueError as exc:
-            _refuse(422, "invalid_outcome", f"Original #{n}: {exc}", index)
-        if not computation or not robustness:
-            _refuse(422, "outcome_required",
-                    f"Original #{n}: choose both reproduction verdicts, or let it inherit the entry's.", index)
+        axes = {}
+        for axis, label in (("outcome_computation", "computational reproducibility"),
+                            ("outcome_robustness", "robustness")):
+            try:
+                axes[axis] = normalize_axis_value(axis, item.get(axis))
+            except ValueError as exc:
+                wrong("invalid_outcome", axis, f"has an unknown {label} verdict ({exc}).",
+                      f"Choose one from the list, {inherit}")
+            if not axes[axis]:
+                wrong("outcome_required", axis, f"has its own outcome, but no {label} verdict. "
+                      "This entry is a reproduction, which needs both verdicts.",
+                      f"Choose it, {inherit}")
+        computation, robustness = axes["outcome_computation"], axes["outcome_robustness"]
         comp_quote = text(item.get("outcome_computational_quote")) or None
         rob_quote = text(item.get("outcome_robustness_quote")) or None
         v.update({
@@ -510,8 +736,9 @@ def _child_values(index: int, item: dict, published: dict, admin: dict) -> dict:
     else:
         outcome = normalize_outcome(item.get("outcome"))
         if outcome not in REPLICATION_OUTCOMES or outcome == "not_a_replication":
-            _refuse(422, "outcome_required",
-                    f"Original #{n}: choose an outcome, or let it inherit the entry's.", index)
+            wrong("outcome_required", "outcome",
+                  "has its own outcome, but no replication outcome is chosen.",
+                  f"Choose one, {inherit}")
         quote = text(item.get("outcome_quote")) or None
         v.update({"outcome": outcome, "outcome_quote": quote,
                   "out_quote_source": source(quote, item.get("out_quote_source"))})
@@ -532,7 +759,8 @@ def _published_match(cur, v: dict, exclude_record_id=None) -> dict | None:
             else "COALESCE(v.original_key, '') = '' AND lower(COALESCE(v.title_o, '')) = lower(%s)")
     cur.execute(
         f"""
-        SELECT v.record_id::text AS record_id, u.origin, u.parent_record_id::text AS parent_record_id
+        SELECT v.record_id::text AS record_id, u.origin, u.parent_record_id::text AS parent_record_id,
+               v.title_o, v.doi_o, u.validation_status
         FROM validated v
         LEFT JOIN unvalidated u ON u.record_id = v.record_id
         WHERE {rep} AND COALESCE(v.study_r, '') = %s
@@ -561,7 +789,9 @@ def _pending_sibling(cur, parent: dict, v: dict) -> dict | None:
         value = v["title_o"]
     cur.execute(
         f"""
-        SELECT u.record_id::text AS record_id, u.validation_status
+        SELECT u.record_id::text AS record_id, u.validation_status,
+               COALESCE(NULLIF(u.final_title_o, ''), u.title_o) AS title_o,
+               COALESCE(u.final_doi_o, u.doi_o) AS doi_o
         FROM unvalidated u
         WHERE lower(u.doi_r) = lower(%s)
           AND u.origin = 'extractor'
@@ -634,7 +864,11 @@ def _insert_child(cur, child_id: str, parent_id: str, v: dict, admin: dict) -> b
 def create_children(cur, parent_id, items: list[dict], admin: dict) -> list[dict]:
     """Add originals to a published, admin-reviewed record: one new record each,
     with its row in validated. All of them or none; the first problem is refused
-    with the index of the entry it concerns."""
+    with the index of the entry it concerns, the field at fault and, for a
+    duplicate, the record it duplicates (_refuse_original).
+
+    Called by the add route, and by Mark as Resolved once it has published the
+    entry, in the same transaction (app.admin_resolve)."""
     import uuid
 
     parent_id = str(parent_id)
@@ -649,8 +883,8 @@ def create_children(cur, parent_id, items: list[dict], admin: dict) -> list[dict
     if block:
         _refuse(409, block[0], block[1])
 
-    # An admin may not turn their own suggestion (as a validator) into a record:
-    # that would be deciding their own judgement. Adding by hand is open to anyone.
+    # An admin may add an original they suggested themselves as a validator: the
+    # log names who added it (log_decision), as it does for one added by hand.
     wanted = [int(s) for item in items for s in (item.get("from_suggestion_ids") or [])]
     if wanted:
         cur.execute(
@@ -658,66 +892,105 @@ def create_children(cur, parent_id, items: list[dict], admin: dict) -> list[dict
             "WHERE record_id = %s AND suggestion_id = ANY(%s)",
             (parent_id, wanted),
         )
-        found = {r["suggestion_id"]: dict(r) for r in cur.fetchall()}
-        if set(wanted) - set(found):
-            _refuse(422, "unknown_suggestion", "A suggestion named here is not on this entry.")
-        own = admin.get("validator_id")
-        if own and any(s["validator_id"] == own for s in found.values()):
-            _refuse(403, "own_suggestion",
-                    "You suggested this original as a validator, so another admin needs to add it.")
+        found = {r["suggestion_id"] for r in cur.fetchall()}
+        for i, item in enumerate(items):
+            if {int(s) for s in (item.get("from_suggestion_ids") or [])} - found:
+                _refuse_original(422, "unknown_suggestion", i, item, None,
+                                 "comes from a validator's suggestion that is not on this "
+                                 "entry (any more).",
+                                 "Reload the section, or remove it and add the original by hand.")
 
     values = [_child_values(i, item, published, admin) for i, item in enumerate(items)]
     own_key = (text(published.get("original_key")).lower()
                or "title:" + text(published.get("title_o")).lower(),
                text(published.get("study_o")))
+    own_ref = _ref(parent_id, published.get("title_o"), published.get("doi_o"),
+                   parent.get("validation_status"), "own_original")
+
+    def family_ref(r: dict) -> tuple[str, dict]:
+        """Words for a record of this replication, and its _ref."""
+        if r.get("origin") != ORIGIN_CHILD:
+            ref = _ref(r["record_id"], r.get("title_o"), r.get("doi_o"),
+                       r.get("validation_status"), "extractor_record")
+            return "an extractor-coded original of this replication", ref
+        ref = _ref(r["record_id"], r.get("title_o"), r.get("doi_o"), r.get("validation_status"),
+                   "added_original", r.get("parent_record_id"))
+        if r.get("parent_record_id") == parent_id:
+            return "an original already added to this entry", ref
+        return ("an original added to another entry of this replication "
+                f"(entry {text(r.get('parent_record_id'))[:8]})"), ref
+
     # FLoRA's build makes one record of rows sharing type | doi_o | doi_r | url_r
     # (transform_sources.dedup_keys), and an added original carries its entry's type
     # and replication. Two originals without a DOI would publish as one, the later
     # row's values replacing the other's. A duplicate ruling can separate them only
     # after the nightly sync has published the merged record, so a DOI-less original
-    # is refused while this replication already has one.
-    doi_less = [("this entry's own original", parent_id)] if not text(published.get("doi_o")) else []
-    doi_less += [(f"the original of entry {r['record_id']}", r["record_id"])
-                 for r in _family(cur, parent) if not text(r["doi_o"])]
-    seen = set()
+    # is refused while this replication already has one. Each: (words, record, index).
+    doi_less = ([(f"this entry's own original, {_describe(own_ref)}", own_ref, None)]
+                if not text(published.get("doi_o")) else [])
+    for r in _family(cur, parent):
+        if not text(r["doi_o"]):
+            whose, ref = family_ref(r)
+            doi_less.append((f"{whose}, {_describe(ref)}", ref, None))
+    seen = {}
     for i, v in enumerate(values):
-        n = i + 1
+        item, field = items[i], _identity_field(v)
+        same = "DOI" if v["doi_o"] else "title"
         ident = (_original_key(v).lower() or "title:" + v["title_o"].lower(), v["study_o"])
         if ident == own_key and v["study_r"] == text(published.get("study_r")):
-            _refuse(409, "extra_original_is_own",
-                    f"Original #{n} is this entry's own original (same study).", i)
+            _refuse_original(409, "extra_original_is_own", i, item, field,
+                             f"is this entry's own original, {_describe(own_ref)}: the same "
+                             f"{same} and the same study numbers.",
+                             "Remove it from the list. If it is another study of that paper, "
+                             "enter the study numbers.", own_ref)
         if (ident, v["study_r"]) in seen:
-            _refuse(422, "duplicate_in_batch", f"Original #{n} repeats an earlier one.", i)
-        seen.add((ident, v["study_r"]))
+            j = seen[(ident, v["study_r"])]
+            _refuse_original(422, "duplicate_in_batch", i, item, field,
+                             f"repeats original #{j + 1} in this list: the same {same} and the "
+                             "same study numbers.",
+                             "Remove one of them, or enter the study numbers if they are "
+                             "different studies.", other_index=j)
+        seen[(ident, v["study_r"])] = i
         hit = _published_match(cur, v)
         if hit:
-            whose = ("an original already added to this entry"
-                     if hit.get("parent_record_id") == parent_id
-                     else "an original already published for this replication")
-            _refuse(409, "extra_original_published", f"Original #{n} is {whose}.", i,
-                    existing_record_id=hit["record_id"])
+            if hit["record_id"] == parent_id:
+                whose, ref = "this entry's own original", own_ref
+            else:
+                whose, ref = family_ref(hit)
+                if ref["relation"] == "extractor_record":
+                    whose = "an extractor-coded original already published for this replication"
+            _refuse_original(409, "extra_original_published", i, item, field,
+                             f"duplicates {whose}, {_describe(ref)}: the same {same} and the "
+                             "same study numbers.",
+                             "Remove it from the list. If it is another study of that paper, "
+                             "enter the study numbers.", ref)
         sibling = _pending_sibling(cur, parent, v)
         if sibling:
-            _refuse(409, "extra_original_coded",
-                    f"Original #{n} is already coded for this replication by the extractor "
-                    f"(entry {sibling['record_id']}, {sibling['validation_status']}). "
-                    "Validate that entry instead.", i, existing_record_id=sibling["record_id"])
+            ref = _ref(sibling["record_id"], sibling.get("title_o"), sibling.get("doi_o"),
+                       sibling.get("validation_status"), "extractor_record")
+            _refuse_original(409, "extra_original_coded", i, item, field,
+                             "is already coded for this replication by the extractor, "
+                             f"{_describe(ref)}, which is still being validated.",
+                             "That entry's own validation will publish it: remove it from "
+                             "the list.", ref)
         if not v["doi_o"]:
             if doi_less:
-                whose, existing = doi_less[0]
-                _refuse(409, "extra_original_no_doi",
-                        f"Original #{n} has no DOI, and neither does {whose}. FLoRA would "
-                        "publish the two as one record, so an original without a DOI "
-                        "cannot be added to this replication.", i,
-                        **({"existing_record_id": existing} if existing else {}))
-            doi_less.append((f"original #{n}", None))
+                whose, ref, other = doi_less[0]
+                _refuse_original(409, "extra_original_no_doi", i, item, "doi_o",
+                                 f"has no DOI, and neither does {whose}. FLoRA would publish "
+                                 "the two as one record, so a second original without a DOI "
+                                 "cannot be added to this replication.",
+                                 "Add its DOI if it has one; otherwise leave it out.", ref,
+                                 **({"other_index": other} if other is not None else {}))
+            doi_less.append((f"original #{i + 1} in this list", None, i))
 
     created = []
     for i, (item, v) in enumerate(zip(items, values)):
         child_id = str(uuid.uuid4())
         if not _insert_child(cur, child_id, parent_id, v, admin):
-            _refuse(409, "extra_original_published",
-                    f"Original #{i + 1} was published by someone else a moment ago.", i)
+            _refuse_original(409, "extra_original_published", i, item, _identity_field(v),
+                             "was published by someone else a moment ago.",
+                             "Reload the section to see it, then remove it from the list.")
         ids = [int(s) for s in (item.get("from_suggestion_ids") or [])]
         if ids:
             cur.execute(
@@ -738,6 +1011,53 @@ def create_children(cur, parent_id, items: list[dict], admin: dict) -> list[dict
                      {"extra_original": [None, child_id], "original": [None, label]})
         created.append({"record_id": child_id, "doi_o": v["doi_o"], "title_o": v["title_o"]})
     return created
+
+
+def create_on_survivor(cur, duplicate_id, survivor_id, items: list[dict], admin: dict,
+                       drafted_type: str | None = None) -> list[dict]:
+    """Mark as Resolved turned into a duplicate merge: the originals drafted on the
+    duplicate go to the survivor, which has the same replication and original, as
+    its added originals and open suggestions already have (repoint_children runs
+    first). The survivor must take originals itself (parent_block), or the whole
+    resolve is refused, naming it. Duplicates are checked against the survivor.
+    `drafted_type` is the duplicate's type in the resolve form: an own outcome
+    drafted for it does not fit a survivor of the other type."""
+    cur.execute("SELECT * FROM unvalidated WHERE record_id = %s FOR UPDATE", (str(survivor_id),))
+    row = cur.fetchone()
+    survivor = dict(row) if row else None
+    published = published_row(cur, survivor_id) if survivor else None
+    block = (parent_block(survivor, published) if survivor
+             else ("survivor_missing", "it no longer exists"))
+    ref = (_lookup_ref(cur, survivor_id, "survivor") if survivor
+           else _ref(survivor_id, None, None, None, "survivor"))
+    if block:
+        why = {
+            "parent_not_validated": "it is not validated",
+            "parent_not_admin_checked": "no admin has reviewed it yet (a rule validated it)",
+            "parent_type": "it is not a replication or a reproduction",
+            "extra_original_on_child": "it is itself an added original",
+        }.get(block[0], block[1])
+        n = len(items)
+        _refuse(409, "survivor_not_eligible",
+                f"Nothing was saved. This entry duplicates {_describe(ref)}, so merging it moves "
+                f"the {n} additional original{'s' if n != 1 else ''} you drafted to that entry, "
+                f"but that entry cannot take originals: {why}. Remove the drafted originals to "
+                "merge, and add them on that entry once an admin has resolved it; or correct "
+                "this entry so it no longer duplicates that one.",
+                survivor=ref, reason_code=block[0], duplicate_record_id=str(duplicate_id))
+    survivor_type = published.get("type")
+    if drafted_type and drafted_type != survivor_type:
+        for i, item in enumerate(items):
+            if item.get("own_outcome"):
+                _refuse_original(409, "survivor_type_differs", i, item, None,
+                                 f"has its own {drafted_type} outcome, but this entry duplicates "
+                                 f"{_describe(ref)}, a {survivor_type}, and merging moves the "
+                                 "drafted originals there.",
+                                 "Nothing was saved. Untick “Give it its own outcome” so it "
+                                 "follows that entry's outcome, or remove it and add it on "
+                                 "that entry.",
+                                 survivor=ref, duplicate_record_id=str(duplicate_id))
+    return create_children(cur, survivor_id, items, admin)
 
 
 # ── Keeping added originals in step with their entry ──────────────────────────

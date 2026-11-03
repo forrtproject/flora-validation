@@ -826,6 +826,31 @@ class ReplyRequest(BaseModel):
     body: str
 
 
+class ExtraOriginalCreate(BaseModel):
+    """One original to add. Lengths are checked here; formats and the rules
+    between fields in extra_originals._child_values, which can name the entry."""
+    from_suggestion_ids: list[int] = Field(default_factory=list, max_length=20)
+    doi_o: str | None = Field(default=None, max_length=300)
+    oa_work_id_o: str | None = Field(default=None, max_length=20)
+    title_o: str = Field(default="", max_length=1000)
+    ref_o: str | None = Field(default=None, max_length=2000)
+    year_o: str | None = Field(default=None, max_length=10)
+    url_o: str | None = Field(default=None, max_length=1000)
+    study_o: str | None = Field(default=None, max_length=50)
+    study_r: str | None = Field(default=None, max_length=50)   # None = the entry's
+    # Off: the outcome follows the entry's. On: these fields, by the entry's type.
+    own_outcome: bool = False
+    outcome: str | None = Field(default=None, max_length=100)
+    outcome_quote: str | None = Field(default=None, max_length=5000)
+    out_quote_source: str | None = Field(default=None, max_length=100)
+    outcome_computation: str | None = Field(default=None, max_length=100)
+    outcome_computational_quote: str | None = Field(default=None, max_length=5000)
+    out_quote_computational_source: str | None = Field(default=None, max_length=100)
+    outcome_robustness: str | None = Field(default=None, max_length=100)
+    outcome_robustness_quote: str | None = Field(default=None, max_length=5000)
+    out_quote_robust_source: str | None = Field(default=None, max_length=100)
+
+
 class AdminResolveRequest(BaseModel):
     admin_name: str
     type_check: str
@@ -861,6 +886,10 @@ class AdminResolveRequest(BaseModel):
     # The server accepts it only when this exact record currently conflicts with
     # the named authoritative validated record.
     merge_into_record_id: str | None = None
+    # Additional originals drafted in the entry's section, created once this resolve
+    # has published the entry, in the same transaction: a refused one refuses the
+    # whole resolve. On a duplicate merge they go to the survivor.
+    extra_originals: list[ExtraOriginalCreate] = Field(default_factory=list, max_length=10)
 
 
 class ServingConfigRequest(BaseModel):
@@ -5160,9 +5189,11 @@ def _extra_originals_call(fn, *args, **kwargs):
 @app.get("/api/admin/entries/{record_id}/extra-originals")
 def admin_extra_originals(record_id: str, admin: dict = Depends(current_admin)):
     """The validators' suggested originals for a record, the originals already
-    added to it, and whether more can be added now."""
+    added to it, and whether more can be added now, drafted to be saved with Mark
+    as Resolved (parent.mode), or neither."""
     with db() as cur:
-        return _extra_originals_call(extra_originals.read_view, cur, record_id)
+        return _extra_originals_call(extra_originals.read_view, cur, record_id,
+                                     decision=_self_approval(cur, record_id, admin))
 
 
 @app.post("/api/admin/entries/{record_id}/extra-originals/suggestions/{suggestion_id}/dismiss")
@@ -5172,31 +5203,6 @@ def admin_dismiss_extra_original(record_id: str, suggestion_id: int,
         n = _extra_originals_call(extra_originals.dismiss_suggestion,
                                   cur, record_id, suggestion_id, admin)
     return {"dismissed": n}
-
-
-class ExtraOriginalCreate(BaseModel):
-    """One original to add. Lengths are checked here; formats and the rules
-    between fields in extra_originals._child_values, which can name the entry."""
-    from_suggestion_ids: list[int] = Field(default_factory=list, max_length=20)
-    doi_o: str | None = Field(default=None, max_length=300)
-    oa_work_id_o: str | None = Field(default=None, max_length=20)
-    title_o: str = Field(default="", max_length=1000)
-    ref_o: str | None = Field(default=None, max_length=2000)
-    year_o: str | None = Field(default=None, max_length=10)
-    url_o: str | None = Field(default=None, max_length=1000)
-    study_o: str | None = Field(default=None, max_length=50)
-    study_r: str | None = Field(default=None, max_length=50)   # None = the entry's
-    # Off: the outcome follows the entry's. On: these fields, by the entry's type.
-    own_outcome: bool = False
-    outcome: str | None = Field(default=None, max_length=100)
-    outcome_quote: str | None = Field(default=None, max_length=5000)
-    out_quote_source: str | None = Field(default=None, max_length=100)
-    outcome_computation: str | None = Field(default=None, max_length=100)
-    outcome_computational_quote: str | None = Field(default=None, max_length=5000)
-    out_quote_computational_source: str | None = Field(default=None, max_length=100)
-    outcome_robustness: str | None = Field(default=None, max_length=100)
-    outcome_robustness_quote: str | None = Field(default=None, max_length=5000)
-    out_quote_robust_source: str | None = Field(default=None, max_length=100)
 
 
 class ExtraOriginalsCreateRequest(BaseModel):
@@ -5783,8 +5789,13 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
             (record_id,),
         )
         prior_merge = cur.fetchone()
+        xo_items = [o.model_dump() for o in req.extra_originals]
         if prior_merge:
             survivor_id = prior_merge["survivor_record_id"]
+            if xo_items:
+                # Even on a repeated request: a merged entry takes no originals.
+                _extra_originals_call(extra_originals.check_resolve_drafts, cur, rec, None,
+                                      len(xo_items), merged_into_id=survivor_id)
             if req.merge_into_record_id == survivor_id:
                 return {
                     "resolved": True, "merged": True, "already_merged": True,
@@ -5815,6 +5826,11 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
         # An original an admin added had no validators; it edits only its original
         # and outcome, and takes the replication's details and type from its entry.
         is_added_original = rec.get("origin") == extra_originals.ORIGIN_CHILD
+        # Originals drafted with this resolve: refused, before anything is written,
+        # for an added original, a reject, or an entry without all three judgements.
+        if xo_items:
+            _extra_originals_call(extra_originals.check_resolve_drafts, cur, rec, final_type,
+                                  len(xo_items))
         if is_added_original:
             _extra_originals_call(
                 extra_originals.check_child_resolve, cur, rec,
@@ -6066,9 +6082,15 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
             # added to the duplicate are its now.
             extra_originals.repoint_children(cur, record_id, conflict_id, admin)
             _log_decision(cur, record_id, admin, "merged", rec)
+            # So are the ones drafted with this resolve, checked against it; one it
+            # cannot take refuses the whole merge.
+            created = (_extra_originals_call(extra_originals.create_on_survivor, cur, record_id,
+                                             conflict_id, xo_items, admin, drafted_type=final_type)
+                       if xo_items else [])
             return {
                 "resolved": True, "merged": True,
                 "record_id": record_id, "survivor_record_id": conflict_id,
+                "extra_originals_created": created,
             }
 
         if req.merge_into_record_id:
@@ -6143,8 +6165,15 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
             # that would collide one of them with a published record is refused.
             _extra_originals_call(extra_originals.sync_children, cur, record_id, admin=admin)
         _log_decision(cur, record_id, admin, "resolved", rec)
+        # The originals drafted with this resolve, built from the values just
+        # published. The entry is validated and admin-checked now, so parent_block
+        # passes; any refusal rolls the resolve back with them.
+        created = (_extra_originals_call(extra_originals.create_children, cur, record_id,
+                                         xo_items, admin)
+                   if xo_items else [])
 
-    return {"resolved": True, "rejected": False, "record_id": record_id}
+    return {"resolved": True, "rejected": False, "record_id": record_id,
+            "extra_originals_created": created}
 
 
 # ---------------------------------------------------------------------------

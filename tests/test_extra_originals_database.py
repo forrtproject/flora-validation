@@ -415,7 +415,7 @@ def test_only_a_published_admin_reviewed_entry_takes_originals(admin_api, local_
     assert _add(client, child, {"doi_o": "10.7/m", "title_o": "M"}).json()["detail"]["code"] == "extra_original_on_child"
 
 
-def test_an_admin_does_not_add_their_own_suggestion(admin_api, local_database):
+def test_an_admin_may_add_their_own_suggestion(admin_api, local_database):
     client, who = admin_api
     with local_database, _cursor(local_database) as cur:
         parent = _published_parent(cur)
@@ -423,8 +423,15 @@ def test_an_admin_does_not_add_their_own_suggestion(admin_api, local_database):
         cur.execute("SELECT validator_id FROM extra_original_suggestions WHERE suggestion_id = %s", (sid,))
         who["validator_id"] = cur.fetchone()["validator_id"]
     response = _add(client, parent, {"doi_o": "10.7/new", "title_o": "New", "from_suggestion_ids": [sid]})
-    assert response.status_code == 403
-    assert _add(client, parent, {"doi_o": "10.7/new", "title_o": "New"}).status_code == 200
+    assert response.status_code == 200, response.text
+    child = response.json()["created"][0]["record_id"]
+    with _cursor(local_database) as cur:
+        cur.execute("SELECT status, resolved_by FROM extra_original_suggestions WHERE suggestion_id = %s", (sid,))
+        assert tuple(cur.fetchone().values()) == ("accepted", "sophie")
+        cur.execute("SELECT admin_handle FROM admin_decisions WHERE record_id = %s AND action = %s",
+                    (child, "extra_original_added"))
+        assert [r["admin_handle"] for r in cur.fetchall()] == ["sophie"]
+    local_database.commit()
 
 
 def test_rejecting_the_entry_takes_its_added_originals_with_it(admin_api, local_database):
@@ -531,3 +538,220 @@ def test_an_added_original_reaches_flora_on_its_own_and_leaves_cleanly(admin_api
         assert [r["gone"] for r in cur.fetchall()] == [True]
     conn.commit()
     assert published() == {"10.7/own": before["10.7/own"]}
+
+
+# ── phase 6: originals drafted with Mark as Resolved ─────────────────────────
+
+LLM_ANSWER = {"model": "gemini", "context": "sanity_check", "type_check": "correct",
+              "original_check": "correct", "outcome_check": "correct"}
+
+
+def _pending_entry(cur, slots=("human_1", "human_2"), llm=LLM_ANSWER, status="need_review", **columns):
+    """An extractor record waiting for an admin: judged in `slots`, with `llm` as
+    the LLM's stored answer (None: no answer yet). Same replication and original
+    as _published_parent's defaults."""
+    fields = {"pair_id": f"p-{uuid.uuid4().hex[:6]}", "doi_r": "10.7/rep", "study_r": "1",
+              "title_r": "A replication", "doi_o": "10.7/own", "study_o": "", "title_o": "Own",
+              "abstract_r": "We found no effect at all.", **columns}
+    if llm is not None:
+        fields["llm_validator"] = llm
+    record_id = _record(cur, status=status, **fields)
+    for slot in slots:
+        cur.execute("INSERT INTO validation_queue (record_id, validator_slot, is_shown, "
+                    "is_validated, type_check, original_check, outcome_check) "
+                    "VALUES (%s, %s, TRUE, TRUE, 'correct', 'correct', 'correct')",
+                    (record_id, slot))
+    return record_id
+
+
+def _one(conn, sql, *params):
+    with _cursor(conn) as cur:
+        cur.execute(sql, params)
+        row = cur.fetchone()
+    conn.commit()
+    return dict(row) if row else None
+
+
+def _children(conn, parent):
+    return _one(conn, "SELECT COUNT(*) AS n FROM unvalidated WHERE parent_record_id = %s", parent)["n"]
+
+
+def test_resolve_saves_the_drafted_originals_with_the_entry(admin_api, local_database):
+    client, _ = admin_api
+    with local_database, _cursor(local_database) as cur:
+        entry = _pending_entry(cur)
+        sid = _suggest(cur, entry, "ana", doi_o="10.7/new")
+    assert client.get(f"/api/admin/entries/{entry}/extra-originals").json()["parent"]["mode"] == "draft"
+    response = _resolve(client, entry, corrected_title_r="A replication, corrected", extra_originals=[
+        {"doi_o": "10.7/new", "title_o": "New", "from_suggestion_ids": [sid]},
+        {"title_o": "A book", "ref_o": "Smith (1990). A book.", "own_outcome": True,
+         "outcome": "mixed", "outcome_quote": "Partly."}])
+    assert response.status_code == 200, response.text
+    created = response.json()["extra_originals_created"]
+    assert [c["title_o"] for c in created] == ["New", "A book"]
+    u = _row(local_database, "unvalidated", entry)
+    assert (u["validation_status"], u["admin_checked"]) == ("validated", True)
+    for c in created:
+        child = _row(local_database, "unvalidated", c["record_id"])
+        assert (str(child["parent_record_id"]), child["validation_status"]) == (entry, "validated")
+        # Built from what the resolve published, the corrected replication title included.
+        assert _row(local_database, "validated", c["record_id"])["title_r"] == "A replication, corrected"
+    assert _row(local_database, "validated", created[0]["record_id"])["outcome"] == "failed"   # inherited
+    assert _row(local_database, "validated", created[1]["record_id"])["outcome"] == "mixed"
+    suggestion = _one(local_database, "SELECT status, resolved_record_id::text AS r "
+                                      "FROM extra_original_suggestions WHERE suggestion_id = %s", sid)
+    assert suggestion == {"status": "accepted", "r": created[0]["record_id"]}
+    with _cursor(local_database) as cur:
+        cur.execute("SELECT action FROM admin_decisions WHERE record_id = %s ORDER BY decision_id", (entry,))
+        assert [r["action"] for r in cur.fetchall()] == ["resolved", "extra_original_added", "extra_original_added"]
+    local_database.commit()
+    # Resolved and admin-checked now: further originals are added at once.
+    assert client.get(f"/api/admin/entries/{entry}/extra-originals").json()["parent"]["mode"] == "add"
+
+
+def test_one_refused_original_rolls_back_the_whole_resolve(admin_api, local_database):
+    client, _ = admin_api
+    with local_database, _cursor(local_database) as cur:
+        entry = _pending_entry(cur)
+        sid = _suggest(cur, entry, "ana", doi_o="10.7/new")
+        sibling = _published_parent(cur, doi_o="10.7/pub", title_o="Published sibling")
+    response = _resolve(client, entry, corrected_title_r="Changed", extra_originals=[
+        {"doi_o": "10.7/new", "title_o": "New", "from_suggestion_ids": [sid]},
+        {"doi_o": "10.7/PUB", "title_o": "Same as the sibling"}])
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert (detail["code"], detail["index"], detail["field"]) == ("extra_original_published", 1, "doi_o")
+    assert detail["conflict"] == {"record_id": sibling, "short_id": sibling[:8],
+                                  "title_o": "Published sibling", "doi_o": "10.7/pub",
+                                  "validation_status": "validated", "relation": "extractor_record"}
+    assert detail["message"] == (
+        f"Original #2 (“Same as the sibling”, 10.7/PUB) duplicates an extractor-coded original already "
+        f"published for this replication, entry {sibling[:8]} (“Published sibling”, 10.7/pub, validated): "
+        "the same DOI and the same study numbers. Remove it from the list. If it is another study of "
+        "that paper, enter the study numbers.")
+
+    # Nothing was saved: not the entry, not the first original, not the suggestion.
+    u = _row(local_database, "unvalidated", entry)
+    assert (u["validation_status"], u["admin_checked"], u["final_title_r"]) == ("need_review", False, None)
+    assert _row(local_database, "validated", entry) is None
+    assert _children(local_database, entry) == 0
+    assert _one(local_database, "SELECT status FROM extra_original_suggestions WHERE suggestion_id = %s",
+                sid)["status"] == "open"
+    assert _one(local_database, "SELECT COUNT(*) AS n FROM admin_decisions WHERE record_id = %s",
+                entry)["n"] == 0
+
+    # A wrong field is named too.
+    response = _resolve(client, entry, extra_originals=[{"doi_o": "10.7/x", "title_o": " "}])
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert (detail["code"], detail["index"], detail["field"]) == ("title_required", 0, "title_o")
+    assert detail["message"] == ("Original #1 (10.7/x) has no title. Every original needs one: "
+                                 "enter the original paper's title.")
+    assert _row(local_database, "unvalidated", entry)["validation_status"] == "need_review"
+
+
+def test_a_merge_moves_the_drafted_originals_to_the_survivor(admin_api, local_database):
+    client, _ = admin_api
+    with local_database, _cursor(local_database) as cur:
+        survivor = _published_parent(cur)
+        duplicate = _pending_entry(cur)                  # the same replication and original
+        sid = _suggest(cur, duplicate, "ana", doi_o="10.7/new")
+    drafts = [{"doi_o": "10.7/new", "title_o": "New", "from_suggestion_ids": [sid]}]
+    first = _resolve(client, duplicate, extra_originals=drafts)
+    assert first.status_code == 409 and first.json()["detail"]["code"] == "validated_duplicate_conflict"
+    assert _children(local_database, duplicate) == _children(local_database, survivor) == 0
+
+    response = _resolve(client, duplicate, extra_originals=drafts, merge_into_record_id=survivor)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["merged"], body["survivor_record_id"]) == (True, survivor)
+    child = body["extra_originals_created"][0]["record_id"]
+    assert str(_row(local_database, "unvalidated", child)["parent_record_id"]) == survivor
+    assert _row(local_database, "validated", child)["doi_o"] == "10.7/new"
+    assert _children(local_database, duplicate) == 0
+    # The suggestion moved with the merge and is answered there.
+    assert _one(local_database, "SELECT record_id::text AS r, status FROM extra_original_suggestions "
+                                "WHERE suggestion_id = %s", sid) == {"r": survivor, "status": "accepted"}
+
+    # The merged entry takes no more originals, even on a repeat of the merge.
+    again = _resolve(client, duplicate, merge_into_record_id=survivor,
+                     extra_originals=[{"doi_o": "10.7/other", "title_o": "Other"}])
+    assert again.status_code == 409, again.text
+    assert again.json()["detail"]["code"] == "entry_already_merged"
+    assert again.json()["detail"]["survivor"]["record_id"] == survivor
+    assert _children(local_database, survivor) == 1
+
+
+def test_a_survivor_that_cannot_take_originals_refuses_the_merge(admin_api, local_database):
+    client, _ = admin_api
+    with local_database, _cursor(local_database) as cur:
+        survivor = _published_parent(cur, admin_checked=False)       # auto-validated
+        duplicate = _pending_entry(cur)
+    response = _resolve(client, duplicate, merge_into_record_id=survivor,
+                        extra_originals=[{"doi_o": "10.7/new", "title_o": "New"}])
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert (detail["code"], detail["reason_code"]) == ("survivor_not_eligible", "parent_not_admin_checked")
+    assert detail["survivor"]["record_id"] == survivor
+    assert f"entry {survivor[:8]} (“Own”, 10.7/own, validated)" in detail["message"]
+    # Not merged: the duplicate is still waiting, the survivor unchanged, no originals.
+    assert _row(local_database, "unvalidated", duplicate)["validation_status"] == "need_review"
+    assert _one(local_database, "SELECT COUNT(*) AS n FROM validated_record_merges")["n"] == 0
+    assert _children(local_database, survivor) == _children(local_database, duplicate) == 0
+    # Without the drafts the merge goes through.
+    assert _resolve(client, duplicate, merge_into_record_id=survivor).status_code == 200
+
+
+@pytest.mark.parametrize("slots,llm,missing", [
+    (("human_1",), LLM_ANSWER, ["validator 2's judgement"]),
+    (("human_1", "human_2"), None, ["the LLM check"]),
+    (("human_1", "human_2"), {"model": "gemini", "error": "timeout"}, ["the LLM check (its last call failed)"]),
+])
+def test_drafted_originals_need_all_three_judgements(admin_api, local_database, slots, llm, missing):
+    client, _ = admin_api
+    with local_database, _cursor(local_database) as cur:
+        entry = _pending_entry(cur, slots=slots, llm=llm)
+    parent = client.get(f"/api/admin/entries/{entry}/extra-originals").json()["parent"]
+    assert (parent["mode"], parent["mode_code"], parent["missing_judgements"]) == \
+        ("blocked", "judgements_missing", missing)
+    response = _resolve(client, entry, extra_originals=[{"doi_o": "10.7/new", "title_o": "New"}])
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert (detail["code"], detail["missing"]) == ("judgements_missing", missing)
+    assert detail["message"].startswith("Nothing was saved.")
+    assert _row(local_database, "unvalidated", entry)["validation_status"] == "need_review"
+    assert _children(local_database, entry) == 0
+    # The same resolve without them goes through, and originals are then added at once.
+    assert _resolve(client, entry).status_code == 200
+    assert client.get(f"/api/admin/entries/{entry}/extra-originals").json()["parent"]["mode"] == "add"
+
+
+def test_an_auto_validated_entry_s_drafts_go_with_mark_as_resolved(admin_api, local_database):
+    client, _ = admin_api
+    with local_database, _cursor(local_database) as cur:
+        auto = _published_parent(cur, admin_checked=False, llm_validator=LLM_ANSWER)
+    parent = client.get(f"/api/admin/entries/{auto}/extra-originals").json()["parent"]
+    assert (parent["mode"], parent["block_code"]) == ("draft", "parent_not_admin_checked")
+    response = _resolve(client, auto, extra_originals=[{"doi_o": "10.7/new", "title_o": "New"}])
+    assert response.status_code == 200, response.text
+    assert _row(local_database, "unvalidated", auto)["admin_checked"] is True
+    assert _children(local_database, auto) == 1
+
+
+def test_a_reject_or_an_added_original_takes_no_drafted_originals(admin_api, local_database):
+    client, _ = admin_api
+    drafts = [{"doi_o": "10.7/new", "title_o": "New"}]
+    with local_database, _cursor(local_database) as cur:
+        entry = _pending_entry(cur)
+        parent = _published_parent(cur, doi_r="10.7/other-rep")
+    response = _resolve(client, entry, type_check="incorrect", corrected_type="not_validation",
+                        original_check="incorrect", outcome_check="incorrect", extra_originals=drafts)
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "extra_originals_with_reject"
+    assert _row(local_database, "unvalidated", entry)["validation_status"] == "need_review"
+
+    child = _add(client, parent, {"doi_o": "10.7/a", "title_o": "A"}).json()["created"][0]["record_id"]
+    response = _resolve(client, child, extra_originals=drafts)
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "extra_original_on_child"
+    assert _children(local_database, child) == 0

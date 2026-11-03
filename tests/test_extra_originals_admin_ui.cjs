@@ -62,6 +62,7 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     ],
   };
   let createResponse = null;
+  let resolveResponse = null;
   let failNextGet = false;
 
   await page.route("**/*", async route => {
@@ -85,6 +86,10 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     }
     if (url.pathname === `/api/admin/entries/${P}/extra-originals` && request.method() === "POST") {
       const [status, json] = createResponse || [200, { created: [], parent_record_id: P }];
+      return route.fulfill({ status, json });
+    }
+    if (url.pathname === `/api/admin/entries/${P}/resolve` && request.method() === "POST") {
+      const [status, json] = resolveResponse || [200, { resolved: true, rejected: false, record_id: P, extra_originals_created: [] }];
       return route.fulfill({ status, json });
     }
     if (url.pathname.includes("/dismiss")) return route.fulfill({ status: 200, json: { dismissed: 2 } });
@@ -266,8 +271,129 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     assert.equal(await page.locator("#xo-add-on").count(), 0);
     assert.equal(await page.locator("[data-xo-use]").isDisabled(), true);
 
+    // ── Drafted with Mark as Resolved ─────────────────────────────────────────
+    // An entry still to be resolved, judged by the LLM and both validators: the
+    // originals are drafted and go with the resolve.
+    const pending = { ...record, validation_status: "need_review", admin_checked: false,
+                      study_r: "1", abstract_r: "The entry's own abstract." };
+    const draftView = {
+      parent: { record_id: P, origin: "extractor", validation_status: "need_review", admin_checked: false,
+                type: "replication", can_add: false, block_code: "parent_not_validated",
+                block_reason: "This entry is not validated yet.", published: null,
+                mode: "draft", mode_code: null, mode_reason: null, missing_judgements: [],
+                current: { study_r: "1", abstract_r: "The entry's own abstract.", type: "replication" } },
+      parent_record_id: null, children: [],
+      suggestions: [{ key: "doi:10.9/new", doi_o: "10.9/new", url_o: "", title_o: "Suggested", study_o: "3",
+                      notes: [], open_suggestion_ids: [7], status: "open", is_own_original: false,
+                      coded_match: null, suggested_by: [{ suggestion_id: 7, validator_name: "ana", status: "open" }] }],
+    };
+    const reviewFresh = async (rec, v, summary) => {
+      view = v;
+      await page.evaluate(() => {
+        for (const k of Object.keys(_adminXoCache)) delete _adminXoCache[k];
+        for (const k of Object.keys(_adminXoDrafts)) delete _adminXoDrafts[k];
+      });
+      await review(rec, summary);
+    };
+    const resolves = () => requests.filter(r => r.method === "POST" && r.path.endsWith("/resolve"));
+    await reviewFresh(pending, draftView, { open_suggestions: 1, children: 0 });
+    await page.locator("[data-xo-use]").waitFor();
+
+    // A validator's suggestion opens a pre-filled draft; drafts start from the entry's
+    // own values, as there is nothing published yet; the form has no button of its own.
+    assert.equal(await page.locator("[data-xo-use]").isDisabled(), false);
+    await page.locator("[data-xo-use]").click();
+    assert.equal(await page.locator("#xo-add-on").isChecked(), true);
+    const hint = await page.locator("#xo-add-body .xo-hint").first().textContent();
+    assert.match(hint, /saved together with the entry when you click Mark as Resolved/);
+    assert.match(hint, /reach Source Records and FLoRA at the next nightly sync/);
+    assert.equal(await page.locator("#xo-add-save").count(), 0);
+    assert.equal(await field("doi_o").inputValue(), "10.9/new");
+    assert.equal(await field("study_r").inputValue(), "1");
+    assert.match(await page.locator("#xo-add-list .xo-abstract").textContent(), /The entry's own abstract\./);
+
+    // A second by hand, with its own outcome: its fields follow the type chosen in the
+    // resolve form, not the stored one.
+    await page.locator("#xo-add-more").click();
+    await field("doi_o").fill("10.5555/second");
+    await field("title_o").fill("Second original");
+    await page.locator("#xo-add-list .xo-open [data-xoa-own]").check();
+    assert.equal(await field("outcome").count(), 1);
+    await page.locator("#ar-type-sel").selectOption("reproduction");
+    await page.waitForFunction(() => document.querySelectorAll('#xo-add-list .xo-open [data-xoa-field="outcome_computation"]').length === 1);
+    assert.equal(await page.locator("#xo-add-type").textContent(), "reproduction");
+    await page.locator("#ar-type-sel").selectOption("replication");
+    await page.waitForFunction(() => document.querySelectorAll('#xo-add-list .xo-open [data-xoa-field="outcome"]').length === 1);
+    await field("outcome").selectOption("mixed");
+    await page.locator("#ar-outcome-sel").selectOption("failed");
+    assert.match(await page.locator("#xo-admin > summary").textContent(), /2 drafted/);
+
+    // The server refuses #2: nothing is saved; the drafts and the resolve form stay,
+    // #2 opens with its DOI marked and the whole message in it.
+    await page.locator('#xo-add-list [data-xoa-open="0"]').click();
+    const refusal = "Original #2 (“Second original”, 10.5555/second) duplicates an original already added " +
+      "to this entry, entry 22222222 (“Added before”, 10.5555/second, validated): the same DOI and the same " +
+      "study numbers. Remove it from the list. If it is another study of that paper, enter the study numbers.";
+    resolveResponse = [409, { detail: { code: "extra_original_published", index: 1, field: "doi_o", message: refusal,
+      conflict: { record_id: C, short_id: "22222222", title_o: "Added before", doi_o: "10.5555/second",
+                  validation_status: "validated", relation: "added_original" } } }];
+    await page.locator("#admin-resolve-btn").click();
+    assert.equal(await okDialog(), "Error: " + refusal);
+    const sentResolve = resolves().at(-1).body;
+    assert.deepEqual(sentResolve.extra_originals.map(o => [o.doi_o, o.title_o, o.own_outcome, o.from_suggestion_ids]),
+                     [["10.9/new", "Suggested", false, [7]], ["10.5555/second", "Second original", true, []]]);
+    assert.equal(sentResolve.extra_originals[1].outcome, "mixed");
+    assert.equal(sentResolve.outcome_check, "correct", "the entry's own form is sent as it was");
+    assert.equal(await page.locator("#xo-add-list .xo-open").getAttribute("data-xoa-entry"), "1");
+    assert.equal(await field("doi_o").getAttribute("aria-invalid"), "true");
+    assert.match(await field("doi_o").getAttribute("class"), /xo-invalid/);
+    assert.equal(await field("title_o").getAttribute("aria-invalid"), null);
+    assert.equal((await page.locator("#xo-add-list .xo-open .xo-error").textContent()).trim().startsWith(refusal), true);
+    assert.equal(await page.locator("#xo-add-list .xo-error [data-xo-open-child]").getAttribute("data-xo-open-child"), C);
+    assert.equal(await page.locator("#xo-add-list .xo-item").count(), 2);
+    assert.equal(await field("title_o").inputValue(), "Second original");
+    assert.equal(await page.locator("#ar-outcome-sel").inputValue(), "failed");
+    assert.equal(await page.locator("#admin-resolve-btn").isDisabled(), false);
+    assert.match(await page.locator("#admin-resolve-btn").textContent(), /Mark as Resolved/);
+    assert.equal(await page.locator("#admin-detail-modal").isHidden(), false);
+
+    // Rejecting says the drafts would be discarded; cancelling sends nothing.
+    const before = resolves().length;
+    await page.locator("#admin-reject-btn").click();
+    await page.locator("#dialog-modal:not(.hidden)").waitFor();
+    assert.match(await page.locator("#dialog-message").textContent(),
+                 /The 2 additional originals you drafted for it will be discarded\./);
+    await page.locator("#dialog-buttons button", { hasText: "Cancel" }).click();
+    assert.equal(resolves().length, before);
+
+    // Accepted: the entry and its originals are saved together, the drafts cleared.
+    resolveResponse = [200, { resolved: true, rejected: false, record_id: P,
+                              extra_originals_created: [{ record_id: C }, { record_id: "x" }] }];
+    await page.locator("#admin-resolve-btn").click();
+    await page.waitForFunction(() => document.querySelector("#toast")?.textContent.includes("2 additional originals added"));
+    assert.doesNotMatch(await page.locator("#toast").textContent(), /Validators suggested/, "the used suggestion is not waiting");
+    assert.equal(await page.evaluate((id) => id in _adminXoDrafts, P), false);
+
+    // Without all three judgements: the reason, and no form.
+    await reviewFresh(pending, { ...draftView, parent: { ...draftView.parent, mode: "blocked",
+      mode_code: "judgements_missing", missing_judgements: ["the LLM check"],
+      mode_reason: "Additional originals can be added to this entry once the LLM and both validators have judged it. Still missing: the LLM check." } },
+      { open_suggestions: 1, children: 0 });
+    await page.locator(".admin-xo-notice").waitFor();
+    assert.match(await page.locator(".admin-xo-notice").textContent(), /Still missing: the LLM check\./);
+    assert.equal(await page.locator("#xo-add-on").count(), 0);
+    assert.equal(await page.locator("[data-xo-use]").isDisabled(), true);
+
+    // A rejected entry stored as neither type: the section appears once the resolve
+    // form is opened, as a replication.
+    await reviewFresh({ ...pending, validation_status: "rejected", final_type: "not_validation" }, draftView,
+                      { open_suggestions: 0, children: 0 });
+    assert.equal(await page.locator("#xo-admin").isHidden(), true);
+    await page.locator("#confirm-is-rep-btn").click();
+    await page.waitForFunction(() => !document.querySelector("#xo-admin").classList.contains("hidden"));
+
     assert.deepEqual(errors, []);
-    console.log("Extra originals admin checks passed: lazy section, escaping, safe links, badges, dismiss, child banner, add form, errors by entry, suggestion prefill.");
+    console.log("Extra originals admin checks passed: lazy section, escaping, safe links, badges, dismiss, child banner, add form, errors by entry, suggestion prefill, drafts with Mark as Resolved, refusal in place, blocked without three judgements, type follows the form.");
   } finally {
     await browser.close();
   }

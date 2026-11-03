@@ -1670,7 +1670,11 @@ the caller. State-changing requests are refused unless they originate from
 | POST | `/api/admin/entries/{record_id}/approve` | Approve pending consensus |
 | POST | `/api/admin/entries/{record_id}/flag-review` | Move pending record to review |
 | POST | `/api/admin/entries/{record_id}/note` | Save persistent admin note |
-| POST | `/api/admin/entries/{record_id}/resolve` | Correct and accept/reject a record; a confirmed `merge_into_record_id` performs an explicit audited duplicate merge |
+| GET | `/api/admin/entries/{record_id}/extra-originals` | The entry's Additional originals section: validators' suggestions, added originals, and whether originals are added at once, drafted for Mark as Resolved, or blocked (with why) |
+| POST | `/api/admin/entries/{record_id}/extra-originals` | Add up to 10 originals at once to a validated, admin-checked entry; all or none, refusals name the original and field |
+| POST | `/api/admin/entries/{record_id}/extra-originals/suggestions/{suggestion_id}/dismiss` | Dismiss a validator's suggested original |
+| POST | `/api/admin/entries/{record_id}/extra-original/remove` | Remove an added original; it leaves FLoRA at the next sync and its suggestions reopen |
+| POST | `/api/admin/entries/{record_id}/resolve` | Correct and accept/reject a record; a confirmed `merge_into_record_id` performs an explicit audited duplicate merge; optional `extra_originals` (up to 10) are created with it in one transaction, on the survivor after a merge (see VALIDATION_DB_SCHEMA.md, Additional originals) |
 | POST | `/api/admin/queue/{queue_id}/flag` | Toggle judgement flag and optionally message validator |
 | GET | `/api/admin/maintenance/runs` | At least seven days of run summaries, plus the retire settings |
 | GET | `/api/admin/maintenance/runs/{run_id}` | Complete retained log for one run |

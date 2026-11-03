@@ -7,6 +7,7 @@ cursor, and the wiring is checked in the source. The database behaviour is in
 tests/test_extra_originals_database.py (opt-in, FLORA_TEST_DATABASE_URL).
 """
 import inspect
+import json
 import re
 from pathlib import Path
 
@@ -372,6 +373,129 @@ def test_originals_are_added_only_to_an_admin_reviewed_published_record():
     assert xo.parent_block({**PARENT, "validation_status": "need_review"}, PUBLISHED)[0] == "parent_not_validated"
     assert xo.parent_block(PARENT, None)[0] == "parent_not_validated"
     assert xo.parent_block({**PARENT, "admin_checked": False}, PUBLISHED)[0] == "parent_not_admin_checked"
+    # Not "only after validation": the reasons point to drafting with Mark as Resolved.
+    for rec, pub in (({**PARENT, "validation_status": "need_review"}, None),
+                     ({**PARENT, "admin_checked": False}, PUBLISHED)):
+        assert "saved when you click Mark as Resolved" in xo.parent_block(rec, pub)[1]
+
+
+# ── drafting originals to be saved with Mark as Resolved ──────────────────────
+
+JUDGED = [{"validator_slot": "human_1"}, {"validator_slot": "human_2"}]
+LLM_OK = {"model": "m", "context": "sanity_check", "type_check": "correct",
+          "original_check": "correct", "outcome_check": "correct"}
+PENDING = {**PARENT, "validation_status": "need_review", "admin_checked": False,
+           "llm_validator": LLM_OK, "parent_record_id": None, "study_r": "1",
+           "abstract_r": "Raw abstract.", "final_abstract_r": None}
+SURVIVOR_ID = "5a5a5a5a-0000-4000-8000-000000000000"
+
+
+def _gate_route(slots=JUDGED, merged=None):
+    def route(sql, params):
+        if "FROM validation_queue" in sql:
+            return list(slots)
+        if "FROM validated_record_merges" in sql:
+            return [{"survivor_record_id": merged}] if merged else []
+        if "FROM unvalidated u LEFT JOIN validated v" in sql:
+            return [{"record_id": params[0], "validation_status": "validated", "parent_record_id": None,
+                     "title_o": "The survivor", "doi_o": "10.1/own"}]
+        return []
+    return route
+
+
+def test_drafting_needs_both_validators_and_an_llm_answer():
+    cur = RoutingCursor(_gate_route())
+    assert xo.draft_block(cur, PENDING) is None
+    sql, params = next((s, p) for s, p in cur.statements if "FROM validation_queue" in s)
+    assert "is_validated = TRUE AND validator_slot IN ('human_1', 'human_2')" in sql
+    assert params == ("p",)
+    # The answer may arrive as a JSON string.
+    assert xo.draft_block(RoutingCursor(_gate_route()), {**PENDING, "llm_validator": json.dumps(LLM_OK)}) is None
+
+    code, reason, extra = xo.draft_block(RoutingCursor(_gate_route(slots=JUDGED[:1])),
+                                         {**PENDING, "llm_validator": None})
+    assert code == "judgements_missing"
+    assert extra["missing"] == ["validator 2's judgement", "the LLM check"]
+    assert reason.endswith("Still missing: validator 2's judgement and the LLM check.")
+    # An LLM call that failed judged nothing.
+    _, reason, extra = xo.draft_block(RoutingCursor(_gate_route()),
+                                      {**PENDING, "llm_validator": json.dumps({"error": "timeout"})})
+    assert extra["missing"] == ["the LLM check (its last call failed)"]
+    # Nor did an empty answer.
+    for empty in ({}, "{}"):
+        _, _, extra = xo.draft_block(RoutingCursor(_gate_route()), {**PENDING, "llm_validator": empty})
+        assert extra["missing"] == ["the LLM check"]
+
+
+def test_drafting_is_refused_on_a_child_a_merged_entry_a_reject_or_another_admin_s_decision():
+    cur = RoutingCursor(_gate_route())
+    child = {**PENDING, "origin": "admin_extra_original", "parent_record_id": "p0"}
+    assert xo.draft_block(cur, child)[0] == "extra_original_on_child"
+    code, reason, extra = xo.draft_block(cur, PENDING, merged_into_id=SURVIVOR_ID)
+    assert code == "entry_already_merged"
+    assert reason == ("This entry was merged into entry 5a5a5a5a (“The survivor”, 10.1/own, validated). "
+                      "Add originals on that entry instead.")
+    assert extra["survivor"]["record_id"] == SURVIVOR_ID and extra["survivor"]["relation"] == "survivor"
+    mine = {"allowed": False, "reason": "You validated this entry, so another admin needs to decide it."}
+    assert xo.draft_block(cur, PENDING, decision=mine)[:2] == ("not_your_decision", mine["reason"])
+    assert xo.draft_block(cur, PENDING, decision={"allowed": True}) is None
+    assert xo.draft_block(cur, PENDING, final_type="not_validation")[0] == "extra_originals_with_reject"
+
+
+def test_the_resolve_refuses_drafts_it_may_not_take_and_says_what_to_do():
+    err = _refusal(xo.check_resolve_drafts, RoutingCursor(_gate_route()),
+                   {**PENDING, "llm_validator": None}, "replication", 2)
+    assert (err.status, err.detail["code"], err.detail["missing"]) == (409, "judgements_missing", ["the LLM check"])
+    assert err.detail["message"] == (
+        "Nothing was saved. Additional originals can be added to this entry once the LLM and both "
+        "validators have judged it. Still missing: the LLM check. Remove the 2 additional originals "
+        "you drafted and resolve the entry; once it is resolved, originals are added to it straight away.")
+    err = _refusal(xo.check_resolve_drafts, RoutingCursor(_gate_route()), PENDING, "not_validation", 1)
+    assert err.detail["code"] == "extra_originals_with_reject"
+    assert "Remove the 1 additional original you drafted to reject it" in err.detail["message"]
+    err = _refusal(xo.check_resolve_drafts, RoutingCursor(_gate_route()), PENDING, None, 1,
+                   merged_into_id=SURVIVOR_ID)
+    assert err.detail["code"] == "entry_already_merged" and err.detail["survivor"]["short_id"] == "5a5a5a5a"
+    xo.check_resolve_drafts(RoutingCursor(_gate_route()), PENDING, "reproduction", 3)
+
+
+@pytest.mark.parametrize("rec,slots,decision,mode,code", [
+    (PARENT, JUDGED, None, "add", None),                                    # validated, admin-checked
+    (PENDING, JUDGED, None, "draft", None),                                 # all three judgements
+    ({**PENDING, "validation_status": "validated"}, JUDGED, None, "draft", None),   # auto-validated
+    ({**PENDING, "llm_validator": None}, JUDGED, None, "blocked", "judgements_missing"),
+    (PENDING, JUDGED[1:], None, "blocked", "judgements_missing"),
+    (PENDING, JUDGED, {"allowed": False, "reason": "Not yours."}, "blocked", "not_your_decision"),
+])
+def test_the_view_says_whether_originals_are_added_now_drafted_or_blocked(rec, slots, decision, mode, code):
+    published = PUBLISHED if rec["validation_status"] == "validated" else None
+
+    def route(sql, params):
+        if "SELECT * FROM unvalidated WHERE record_id" in sql:
+            return [rec]
+        if "SELECT * FROM validated WHERE record_id" in sql:
+            return [published] if published else []
+        return _gate_route(slots)(sql, params)
+    parent = xo.read_view(RoutingCursor(route), "p", decision=decision)["parent"]
+    assert (parent["mode"], parent["mode_code"], parent["can_add"]) == (mode, code, mode == "add")
+    assert bool(parent["mode_reason"]) is (mode == "blocked")
+    if mode != "add":
+        assert parent["current"] == {"study_r": "1", "abstract_r": "Raw abstract.", "type": "replication"}
+
+
+def test_a_reviewed_entry_published_as_another_type_is_not_offered_drafting():
+    rec = {**PENDING, "validation_status": "validated", "admin_checked": True}
+    published = {**PUBLISHED, "type": "not_validation"}
+
+    def route(sql, params):
+        if "SELECT * FROM unvalidated WHERE record_id" in sql:
+            return [rec]
+        if "SELECT * FROM validated WHERE record_id" in sql:
+            return [published]
+        return _gate_route()(sql, params)
+    parent = xo.read_view(RoutingCursor(route), "p")["parent"]
+    assert (parent["mode"], parent["block_code"], parent["mode_code"]) == ("blocked", "parent_type", None)
+    assert parent["block_reason"] == "Only a replication or a reproduction can have originals added."
 
 
 def test_the_view_flags_own_and_already_coded_originals():
@@ -503,20 +627,32 @@ def _item(**fields):
     return {"title_o": "Another original", "doi_o": "10.5/new", **fields}
 
 
-@pytest.mark.parametrize("fields,code", [
-    ({"title_o": " "}, "title_required"),
-    ({"doi_o": "Smith 2019"}, "invalid_doi"),
-    ({"doi_o": "", "ref_o": ""}, "reference_required"),
-    ({"url_o": "javascript:alert(1)"}, "invalid_url"),
-    ({"year_o": "19"}, "invalid_year"),
-    ({"oa_work_id_o": "X12"}, "invalid_work_id"),
-    ({"own_outcome": True, "outcome": "not_a_replication"}, "outcome_required"),
-    ({"own_outcome": True, "outcome": ""}, "outcome_required"),
+@pytest.mark.parametrize("fields,code,field", [
+    ({"title_o": " "}, "title_required", "title_o"),
+    ({"doi_o": "Smith 2019"}, "invalid_doi", "doi_o"),
+    ({"doi_o": "", "ref_o": ""}, "reference_required", "ref_o"),
+    ({"url_o": "javascript:alert(1)"}, "invalid_url", "url_o"),
+    ({"year_o": "19"}, "invalid_year", "year_o"),
+    ({"oa_work_id_o": "X12"}, "invalid_work_id", "oa_work_id_o"),
+    ({"own_outcome": True, "outcome": "not_a_replication"}, "outcome_required", "outcome"),
+    ({"own_outcome": True, "outcome": ""}, "outcome_required", "outcome"),
 ])
-def test_a_wrong_entry_is_refused_with_its_index(fields, code):
+def test_a_wrong_entry_is_refused_with_its_index_and_field(fields, code, field):
     err = _refusal(xo._child_values, 2, _item(**fields), PUB, ADMIN)
-    assert (err.status, err.detail["code"], err.detail["index"]) == (422, code, 2)
-    assert "#3" in err.detail["message"]
+    assert (err.status, err.detail["code"], err.detail["index"], err.detail["field"]) == (422, code, 2, field)
+    assert err.detail["message"].startswith("Original #3")
+    assert err.detail["message"].startswith(err.detail["label"])
+
+
+def test_a_refusal_says_which_original_what_is_wrong_and_what_to_do():
+    err = _refusal(xo._child_values, 0, _item(year_o="19"), PUB, ADMIN)
+    assert err.detail["message"] == (
+        "Original #1 (“Another original”, 10.5/new) has “19” as its year, but a year has four "
+        "digits. Enter it like 2018, or clear it.")
+    err = _refusal(xo._child_values, 1, {"title_o": "A book", "doi_o": ""}, PUB, ADMIN)
+    assert err.detail["message"] == (
+        "Original #2 (“A book”) has no DOI, so it needs a reference: FLoRA describes an original "
+        "without a DOI by its reference alone. Enter the full reference, or add the DOI.")
 
 
 def test_an_inheriting_original_takes_the_entry_s_outcome_and_blank_keys_are_empty():
@@ -543,10 +679,11 @@ def test_an_own_reproduction_outcome_needs_both_axes():
     repro = {**PUB, "type": "reproduction"}
     err = _refusal(xo._child_values, 0, _item(own_outcome=True, outcome_computation="computational issues"),
                    repro, ADMIN)
-    assert err.detail["code"] == "outcome_required"
+    assert (err.detail["code"], err.detail["field"]) == ("outcome_required", "outcome_robustness")
+    assert "no robustness verdict" in err.detail["message"]
     err = _refusal(xo._child_values, 0, _item(own_outcome=True, outcome_computation="bogus",
                                               outcome_robustness="robust"), repro, ADMIN)
-    assert err.detail["code"] == "invalid_outcome"
+    assert (err.detail["code"], err.detail["field"]) == ("invalid_outcome", "outcome_computation")
     v = xo._child_values(0, _item(own_outcome=True, outcome_computation="computational issues",
                                   outcome_robustness="robust", outcome_robustness_quote="Robust."),
                          repro, ADMIN)
@@ -586,16 +723,25 @@ def test_originals_are_added_only_to_a_published_admin_reviewed_entry():
     assert not any("INSERT" in s for s in cur.sql())
 
 
-def test_an_admin_cannot_add_their_own_suggestion_but_may_add_by_hand():
+def test_an_admin_may_add_their_own_suggestion_and_the_log_names_them():
+    """ADMIN is validator 42, who made suggestion 5: adding it is allowed, and
+    logged under the admin's handle like any other addition."""
     mine = [{"suggestion_id": 5, "validator_id": 42, "status": "open"}]
     cur = RoutingCursor(_create_route(suggestions=mine))
-    err = _refusal(xo.create_children, cur, "p", [_item(from_suggestion_ids=[5])], ADMIN)
-    assert (err.status, err.detail["code"]) == (403, "own_suggestion")
-    cur = RoutingCursor(_create_route(suggestions=mine))
-    assert len(xo.create_children(cur, "p", [_item()], ADMIN)) == 1
+    created = xo.create_children(cur, "p", [_item(from_suggestion_ids=[5])], ADMIN)
+    assert len(created) == 1
+    accept = next(p for s, p in cur.statements if "SET status = 'accepted'" in s)
+    assert accept == (created[0]["record_id"], "sophie", "p", [5])
+    logs = [p for s, p in cur.statements if "INSERT INTO admin_decisions" in s]
+    assert [(p[2], p[3]) for p in logs] == [("sophie", "extra_original_added")] * 2
+    assert '"own_suggestion"' not in inspect.getsource(xo.create_children)
+
+
+def test_an_unknown_suggestion_names_the_original_that_carries_it():
     err = _refusal(xo.create_children, RoutingCursor(_create_route()), "p",
-                   [_item(from_suggestion_ids=[77])], ADMIN)
-    assert (err.status, err.detail["code"]) == (422, "unknown_suggestion")
+                   [_item(), _item(doi_o="10.5/other", from_suggestion_ids=[77])], ADMIN)
+    assert (err.status, err.detail["code"], err.detail["index"]) == (422, "unknown_suggestion", 1)
+    assert err.detail["message"].startswith("Original #2 (“Another original”, 10.5/other)")
 
 
 @pytest.mark.parametrize("items,route,code,status", [
@@ -612,6 +758,108 @@ def test_every_collision_is_refused_with_a_reason(items, route, code, status):
     err = _refusal(xo.create_children, cur, "p", items, ADMIN)
     assert (err.status, err.detail["code"]) == (status, code)
     assert err.detail["message"]
+
+
+ADDED_ID = "c0ffee00-0000-4000-8000-000000000000"
+
+
+@pytest.mark.parametrize("route,code,relation,message", [
+    ({"published_hit": {"record_id": ADDED_ID, "origin": "admin_extra_original", "parent_record_id": "p",
+                        "title_o": "Added before", "doi_o": "10.5/new", "validation_status": "validated"}},
+     "extra_original_published", "added_original",
+     "Original #1 (“Another original”, 10.5/new) duplicates an original already added to this entry, "
+     "entry c0ffee00 (“Added before”, 10.5/new, validated): the same DOI and the same study numbers. "
+     "Remove it from the list. If it is another study of that paper, enter the study numbers."),
+    ({"published_hit": {"record_id": ADDED_ID, "origin": "extractor", "parent_record_id": None,
+                        "title_o": "Coded", "doi_o": "10.5/NEW", "validation_status": "validated"}},
+     "extra_original_published", "extractor_record",
+     "Original #1 (“Another original”, 10.5/new) duplicates an extractor-coded original already published "
+     "for this replication, entry c0ffee00 (“Coded”, 10.5/NEW, validated): the same DOI and the same "
+     "study numbers. Remove it from the list. If it is another study of that paper, enter the study numbers."),
+    ({"sibling": {"record_id": ADDED_ID, "validation_status": "need_review", "title_o": "Sibling",
+                  "doi_o": "10.5/new"}},
+     "extra_original_coded", "extractor_record",
+     "Original #1 (“Another original”, 10.5/new) is already coded for this replication by the extractor, "
+     "entry c0ffee00 (“Sibling”, 10.5/new, needs review), which is still being validated. That entry's "
+     "own validation will publish it: remove it from the list."),
+])
+def test_a_duplicate_names_the_record_it_duplicates(route, code, relation, message):
+    err = _refusal(xo.create_children, RoutingCursor(_create_route(**route)), "p", [_item()], ADMIN)
+    detail = err.detail
+    assert (detail["code"], detail["index"], detail["field"], detail["message"]) == (code, 0, "doi_o", message)
+    assert detail["conflict"]["relation"] == relation and detail["conflict"]["short_id"] == "c0ffee00"
+    assert detail["existing_record_id"] == ADDED_ID
+
+
+def test_the_entry_s_own_original_and_a_repeat_in_the_list_are_named():
+    err = _refusal(xo.create_children, RoutingCursor(_create_route()), "p",
+                   [_item(doi_o="10.1/OWN", title_o="Own again")], ADMIN)
+    assert err.detail["conflict"]["relation"] == "own_original" and err.detail["conflict"]["record_id"] == "p"
+    assert err.detail["message"].startswith(
+        "Original #1 (“Own again”, 10.1/OWN) is this entry's own original, entry p (“Own”, 10.1/own, validated)")
+    err = _refusal(xo.create_children, RoutingCursor(_create_route()), "p",
+                   [_item(), _item(doi_o="10.5/x"), _item(title_o="Again")], ADMIN)
+    assert (err.detail["index"], err.detail["other_index"]) == (2, 0)
+    assert "repeats original #1 in this list" in err.detail["message"]
+    # Without a DOI the title is the identity, and the field to fix.
+    book = {"doi_o": "", "ref_o": "Smith (1990). A book.", "title_o": "A book"}
+    err = _refusal(xo.create_children, RoutingCursor(_create_route()), "p",
+                   [_item(**book), _item(**book)], ADMIN)
+    assert (err.detail["code"], err.detail["field"]) == ("duplicate_in_batch", "title_o")
+
+
+def _survivor_route(admin_checked):
+    survivor = {"record_id": SURVIVOR_ID, "origin": "extractor", "validation_status": "validated",
+                "admin_checked": admin_checked, "doi_r": "10.1/rep"}
+    base = _create_route(parent=survivor)
+
+    def route(sql, params):
+        if "FROM unvalidated u LEFT JOIN validated v" in sql:
+            return [{"record_id": SURVIVOR_ID, "validation_status": "validated", "parent_record_id": None,
+                     "title_o": "The survivor", "doi_o": "10.1/own"}]
+        return base(sql, params)
+    return route
+
+
+def test_drafts_of_a_merged_duplicate_are_added_to_the_survivor():
+    cur = RoutingCursor(_survivor_route(admin_checked=True))
+    created = xo.create_on_survivor(cur, "dup", SURVIVOR_ID, [_item()], ADMIN)
+    insert = next((s, p) for s, p in cur.statements if s.startswith("INSERT INTO unvalidated"))
+    row = dict(zip(insert[0].split("(", 1)[1].split(")", 1)[0].split(", "), insert[1]))
+    assert row["parent_record_id"] == SURVIVOR_ID and row["record_id"] == created[0]["record_id"]
+
+
+def test_a_survivor_that_cannot_take_originals_refuses_the_merge_naming_it():
+    cur = RoutingCursor(_survivor_route(admin_checked=False))
+    err = _refusal(xo.create_on_survivor, cur, "dup", SURVIVOR_ID, [_item(), _item(doi_o="10.5/b")], ADMIN)
+    detail = err.detail
+    assert (err.status, detail["code"], detail["reason_code"]) == (409, "survivor_not_eligible",
+                                                                   "parent_not_admin_checked")
+    assert detail["survivor"]["short_id"] == "5a5a5a5a" and detail["duplicate_record_id"] == "dup"
+    assert detail["message"].startswith(
+        "Nothing was saved. This entry duplicates entry 5a5a5a5a (“The survivor”, 10.1/own, validated), "
+        "so merging it moves the 2 additional originals you drafted to that entry, but that entry cannot "
+        "take originals: no admin has reviewed it yet (a rule validated it).")
+    assert not any(s.startswith("INSERT") for s in cur.sql())
+
+
+def test_an_own_outcome_drafted_for_the_other_type_is_refused_on_merge():
+    cur = RoutingCursor(_survivor_route(admin_checked=True))
+    items = [_item(), _item(doi_o="10.5/b", own_outcome=True, outcome_computation="computational issues",
+                            outcome_robustness="robust")]
+    err = _refusal(xo.create_on_survivor, cur, "dup", SURVIVOR_ID, items, ADMIN, drafted_type="reproduction")
+    detail = err.detail
+    assert (err.status, detail["code"], detail["index"]) == (409, "survivor_type_differs", 1)
+    # No field to mark: the form shows the duplicate's type, not the survivor's.
+    assert "field" not in detail and detail["survivor"]["short_id"] == "5a5a5a5a"
+    assert detail["message"].startswith("Original #2 (")
+    assert ("has its own reproduction outcome, but this entry duplicates entry 5a5a5a5a (“The survivor”, "
+            "10.1/own, validated), a replication, and merging moves the drafted originals there. "
+            "Nothing was saved.") in detail["message"]
+    assert not any(s.startswith("INSERT") for s in cur.sql())
+    # One that follows the survivor's outcome goes there whatever the type.
+    assert xo.create_on_survivor(RoutingCursor(_survivor_route(admin_checked=True)), "dup", SURVIVOR_ID,
+                                 [_item()], ADMIN, drafted_type="reproduction")
 
 
 BOOK = {"doi_o": "", "title_o": "A book", "ref_o": "Smith (1990). A book."}
@@ -951,6 +1199,28 @@ def test_resolve_treats_an_added_original_as_its_own_kind_of_record():
     assert "extra_originals.after_child_resolved(cur, record_id, published_before, admin)" in resolve
 
 
+def test_resolve_saves_drafted_originals_with_the_entry_in_one_transaction():
+    model = APP.split("class AdminResolveRequest(BaseModel):", 1)[1].split("\nclass ", 1)[0]
+    assert "extra_originals: list[ExtraOriginalCreate] = Field(default_factory=list, max_length=10)" in model
+    assert APP.index("class ExtraOriginalCreate(BaseModel):") < APP.index("class AdminResolveRequest(BaseModel):")
+    resolve = _fn(APP, "admin_resolve")
+    assert resolve.count("with db() as cur:") == 1
+    # Refused before anything is written; a merged entry even on a repeated request.
+    check = "extra_originals.check_resolve_drafts, cur, rec, final_type"
+    assert resolve.index(check) < resolve.index("UPDATE unvalidated SET")
+    assert resolve.index("merged_into_id=survivor_id") < resolve.index('"already_merged": True')
+    # Created from the published values: after the entry's validated row and the sync
+    # of its existing added originals.
+    create = "extra_originals.create_children, cur, record_id"
+    assert resolve.index("INSERT INTO validated (") < resolve.index(create)
+    assert resolve.index("_extra_originals_call(extra_originals.sync_children, cur, record_id") < resolve.index(create)
+    # A merge sends them to the survivor, after its existing originals moved there.
+    merge = "extra_originals.create_on_survivor, cur, record_id"
+    assert resolve.index("extra_originals.repoint_children(cur, record_id, conflict_id, admin)") < resolve.index(merge)
+    # The section's mode depends on who is signed in (the self-approval rule).
+    assert "decision=_self_approval(cur, record_id, admin)" in _fn(APP, "admin_extra_originals")
+
+
 def test_added_originals_stay_out_of_extractor_and_validator_metrics():
     dashboard, stats = _fn(APP, "admin_dashboard"), _fn(APP, "admin_stats")
     pipeline = dashboard.split("AS auto_validated", 1)[1].split("pipeline = dict", 1)[0]
@@ -983,5 +1253,46 @@ def test_the_add_form_has_no_abstract_field_and_its_limits_match_the_server():
 
 
 def test_approve_and_resolve_point_to_waiting_suggestions():
-    assert 'showToast(_xoPendingNote(recordId, "Entry resolved."))' in APP_JS
+    # Resolve leaves out the suggestions its drafted originals just answered.
+    assert 'showToast(_xoPendingNote(recordId, addedNote(resp, "Entry resolved."), used));' in APP_JS
     assert 'showToast(_xoPendingNote(recordId, "Entry approved."))' in APP_JS
+
+
+def _js_fn(head):
+    return APP_JS.split(head, 1)[1].split("\n}\n", 1)[0]
+
+
+def test_resolve_sends_the_drafted_originals_and_shows_a_refusal_in_place():
+    submit = _js_fn("async function submitAdminResolve(recordId) {")
+    assert "const drafted = _xoResolveDrafts(recordId);" in submit
+    assert "body.extra_originals = drafted.map(_xoAdminPayload);" in submit
+    assert submit.count("_xoShowError(recordId,") == 2              # the resolve, and the merge retry
+    assert "confirmValidatedDuplicateMerge(e.detail, drafted.length)" in submit
+    drafts = _js_fn("function _xoResolveDrafts(recordId) {")
+    assert 'draft.mode !== "draft"' in drafts and "!draft.on" in drafts
+    show = _js_fn("function _xoShowError(recordId, detail) {")
+    for part in ("draft.open = detail.index", "field: detail.field", "section.open = true", "scrollIntoView"):
+        assert part in show, part
+
+
+def test_rejecting_an_entry_with_drafted_originals_says_they_are_discarded():
+    panel = APP_JS[APP_JS.index("function renderAdminDetail(data) {"):]
+    panel = panel[:panel.index("\n}\n")]
+    reject = panel[panel.index('$("#admin-reject-btn")?.addEventListener("click"'):]
+    confirm = reject[:reject.index("if (!sure) return;")]
+    assert "_xoResolveDrafts(rec.record_id).length" in confirm and "will be discarded" in confirm
+    assert "delete _adminXoDrafts[rec.record_id];" in reject[:reject.index("advanceToNextAdminEntry")]
+
+
+def test_the_section_follows_the_type_in_the_resolve_form():
+    shell = _js_fn("function _adminExtraOriginalsShell(rec, data) {")
+    assert shell.count('return "";') == 1                            # only an added original has none
+    wire = _js_fn("function _wireAdminExtraOriginals(rec, data) {")
+    assert '$("#ar-type-sel")?.addEventListener("change", follow);' in wire
+    assert '$(".not-val-decision")?.addEventListener("click", follow);' in wire
+    # Own-outcome fields follow the form's type in draft mode, the published one otherwise.
+    entry_type = _js_fn("function _xoEntryType(parent) {")
+    assert '_xoMode(parent) === "draft"' in entry_type and "_xoFormType(" in entry_type
+    # Before the first resolve there is no published row: drafts start from the entry.
+    assert "parent.current?.study_r" in _js_fn("function _blankAdminXo(parent) {")
+    assert "parent.current?.abstract_r" in _js_fn("function _xoAbstract(parent) {")

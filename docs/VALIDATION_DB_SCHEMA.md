@@ -408,10 +408,37 @@ The logic is in `extra_originals.py`.
   extractor sync (import, re-key, retire, orphan report) never sees one. It has no
   `validation_queue` slots: never served, never judged by consensus, never counted as
   validator work (the dashboard counts it apart as "Added originals").
-- **Created** only on a parent that is validated **and** admin-checked, as
-  `validation_status = 'validated'`, `admin_checked = TRUE`, `admin_name` = the admin,
+- **Created** only on a parent that is validated **and** admin-checked (`parent_block`),
+  as `validation_status = 'validated'`, `admin_checked = TRUE`, `admin_name` = the admin,
   with a `validated` row (`admin_approved = TRUE`) that reaches Source Records as a VAL-
   row at the next sync. Each creation is logged in `admin_decisions` on both records.
+  Two ways in:
+  - **At once** (`POST /api/admin/entries/{id}/extra-originals`) on an entry that is
+    already validated and admin-checked.
+  - **With Mark as Resolved** (`extra_originals` in `POST …/resolve`, up to 10) on an
+    entry still to be resolved, auto-validated ones included. The admin drafts them in
+    the entry's section; the resolve creates them after it has written the entry's
+    `validated` row and synced its existing added originals, in the same transaction,
+    so they take the corrected, published values. Any refused original rolls back the
+    whole resolve: the entry stays as it was, nothing is created, no suggestion is
+    marked accepted. Allowed only when the entry is resolvable by this admin, is not
+    being rejected, and has all three judgements: both human slots in
+    `validation_queue` (`human_1`, `human_2`) `is_validated`, and a non-empty LLM
+    answer without an `error` key in `unvalidated.llm_validator` (the queue's `llm`
+    slot is never marked). `read_view` reports this as `parent.mode`: `add`, `draft` or
+    `blocked` (with `mode_reason`, else `block_reason`); an entry already validated and
+    admin-checked is never offered drafting, so one published as another type stays
+    `blocked`. When the resolve becomes a confirmed duplicate merge, the drafted
+    originals go to the survivor, which must itself take originals
+    (`create_on_survivor`, else `survivor_not_eligible`); duplicates are checked against
+    it, and a drafted original with its own outcome is refused if the survivor is the
+    other type (`survivor_type_differs`).
+- **Refusals** are structured: `code`, `message` (which original, what is wrong, what to
+  do), `index` and `field` for the original at fault, and `conflict` for the record it
+  duplicates (`record_id`, `short_id`, `title_o`, `doi_o`, `validation_status`,
+  `relation`: `own_original`, `added_original` or `extractor_record`).
+- An admin may add an original they suggested themselves as a validator; the log names
+  who added it.
 - **Identity**: key columns are stored as `''`, never NULL. A new original is refused if
   it is the parent's own (same original and study), already published for the
   replication (DOI compared case-insensitively), or still being validated as an

@@ -1,6 +1,6 @@
 # Merge duplicate (conflict dialog)
 
-If the proposed identity already belongs to another validated record, explicitly keep that survivor and link this duplicate to it.
+If the proposed identity already belongs to another validated record, explicitly keep that survivor and link this duplicate to it. Its added and drafted additional originals move to the survivor; if the survivor cannot take them, nothing is saved.
 
 [Open interactive guide](../index.html#view=admin&node=admin-entries--merge-duplicate-conflict-dialog)
 
@@ -12,7 +12,7 @@ Code snapshot: 29 October 2026, `2f3a89c`.
 
 ## What happens
 
-1. If the proposed identity already belongs to another validated record, explicitly keep that survivor and link this duplicate to it.
+1. If the proposed identity already belongs to another validated record, explicitly keep that survivor and link this duplicate to it. Its added and drafted additional originals move to the survivor; if the survivor cannot take them, nothing is saved.
 
 ## What is saved, and where
 

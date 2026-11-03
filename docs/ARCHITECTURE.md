@@ -299,7 +299,7 @@ See [VALIDATION_DB_SCHEMA.md](VALIDATION_DB_SCHEMA.md) for full DDL and JSONB sh
 | Table | Key columns |
 | --- | --- |
 | `validators` | `id`, `handle`, `vote_score`, `total_points`, `validator_tier` |
-| `unvalidated` | `record_id`, `pair_id`, `validation_status`, `validator_1/2` JSONB, `llm_validator` JSONB; `origin`/`parent_record_id`/`inherits_outcome` for originals an admin added |
+| `unvalidated` | `record_id`, `pair_id`, `validation_status`, `validator_1/2` JSONB, `llm_validator` JSONB; `origin`/`parent_record_id`/`inherits_outcome` for originals an admin added (at once to a resolved entry, or drafted and saved with its Mark as Resolved) |
 | `extra_original_suggestions` | other originals a validator suggested with a judgement; open, accepted (with the record it became) or dismissed |
 | `manual_records` | records an admin added by hand in the FLoRA tab, projected into `source_records` as `MAN-` rows; `status` active/withdrawn, never deleted |
 | `manual_record_events` | append-only history of each record added by hand: create, edit, withdraw, restore, with who, when and `{field: [before, after]}` |

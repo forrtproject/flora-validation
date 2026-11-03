@@ -5880,19 +5880,34 @@ function _adminChildBanner(rec) {
     </div>`;
 }
 
+const _XO_TYPES = ["replication", "reproduction"];
+
 function _adminExtraOriginalsShell(rec, data) {
   if (rec.origin === "admin_extra_original") return "";
-  const type = rec.final_type || rec.type;
-  if (!["replication", "reproduction"].includes(type)) return "";
+  // Shown for a replication or a reproduction: the type stored, or the one chosen
+  // in the resolve form once it is on screen (_xoFollowFormType).
+  const hidden = !_XO_TYPES.includes(rec.final_type || rec.type);
   const summary = data.extra_originals_summary || {};
   const open = Number(summary.open_suggestions) || 0;
   const added = Number(summary.children) || 0;
-  // Collapsed unless a validator's suggestion is waiting.
+  const drafted = _xoDraftedCount(rec.record_id);
+  // Collapsed unless a validator's suggestion, or an original drafted earlier, is waiting.
   return `
-    <details id="xo-admin" class="admin-xo" data-record-id="${escapeHtml(rec.record_id)}"${open ? " open" : ""}>
-      <summary>Additional originals${open ? ` · ${open} suggested` : ""}${added ? ` · ${added} added` : ""}</summary>
+    <details id="xo-admin" class="admin-xo${hidden ? " hidden" : ""}" data-record-id="${escapeHtml(rec.record_id)}"${open || drafted ? " open" : ""}>
+      <summary>${_xoSectionTitle(open, added, drafted)}</summary>
       <div id="xo-admin-body" class="admin-xo-body"><p class="faq-loading">Loading…</p></div>
     </details>`;
+}
+
+function _xoSectionTitle(open, added, drafted) {
+  return `Additional originals${open ? ` · ${open} suggested` : ""}${added ? ` · ${added} added` : ""}` +
+         `${drafted ? ` · ${drafted} drafted` : ""}`;
+}
+
+// Originals drafted on an entry and not yet saved (switched-on form only).
+function _xoDraftedCount(recordId) {
+  const draft = _adminXoDrafts[recordId];
+  return draft && draft.on ? draft.entries.length : 0;
 }
 
 function _wireAdminExtraOriginals(rec, data) {
@@ -5906,6 +5921,28 @@ function _wireAdminExtraOriginals(rec, data) {
   details.addEventListener("toggle", () => {
     if (details.open && !details.dataset.loaded) _loadAdminExtraOriginals(rec.record_id, { fresh: true });
   });
+  // The section, and the own-outcome fields of drafted originals, follow the type
+  // in the resolve form: its selector, "It's a …", and "Review / edit fields" on a
+  // rejected entry. A timeout, so the form's own handlers have run first.
+  const follow = () => setTimeout(() => _xoFollowFormType(rec), 0);
+  $("#ar-type-sel")?.addEventListener("change", follow);
+  $(".not-val-decision")?.addEventListener("click", follow);
+  _xoFollowFormType(rec);
+}
+
+// The type the entry gets when resolved: the resolve form's while the form is on
+// screen (it offers only replication and reproduction), otherwise `fallback`.
+function _xoFormType(fallback) {
+  const form = $("#ar-normal-form");
+  const sel = $("#ar-type-sel");
+  return sel && form && !form.classList.contains("hidden") ? sel.value : fallback;
+}
+
+function _xoFollowFormType(rec) {
+  const details = $("#xo-admin");
+  if (!details || details.dataset.recordId !== String(rec.record_id)) return;
+  details.classList.toggle("hidden", !_XO_TYPES.includes(_xoFormType(rec.final_type || rec.type)));
+  _adminXoDrafts[rec.record_id]?.render?.();
 }
 
 async function _loadAdminExtraOriginals(recordId, { fresh = false } = {}) {
@@ -5922,9 +5959,7 @@ async function _loadAdminExtraOriginals(recordId, { fresh = false } = {}) {
     const open = (xo.suggestions || []).filter((g) => g.status === "open").length;
     const added = (xo.children || []).length;
     const summary = $("#xo-admin > summary");
-    if (summary) {
-      summary.textContent = `Additional originals${open ? ` · ${open} suggested` : ""}${added ? ` · ${added} added` : ""}`;
-    }
+    if (summary) summary.textContent = _xoSectionTitle(open, added, _xoDraftedCount(recordId));
     _renderAdminExtraOriginals($("#xo-admin-body"), xo);
   } catch (e) {
     // Not on another entry's section; and the next opening of this one tries again.
@@ -5964,7 +5999,7 @@ function _xoSuggestionRow(g, parent) {
     g.status === "accepted" ? `<span class="xo-badge">added</span>` : "",
     g.status === "dismissed" ? `<span class="xo-badge">dismissed</span>` : "",
   ].join("");
-  const usable = parent.can_add && !g.is_own_original && !match;
+  const usable = _xoMode(parent) !== "blocked" && !g.is_own_original && !match;
   const actions = g.status === "open" ? `
         <button type="button" class="btn-outline" data-xo-use="${escapeHtml(g.key)}"${usable ? "" : " disabled"}>Use as additional original</button>
         <button type="button" class="ghost-btn" data-xo-dismiss="${Number(g.open_suggestion_ids[0])}">Dismiss</button>` : "";
@@ -5989,7 +6024,8 @@ function _renderAdminExtraOriginals(body, xo) {
   const children = xo.children || [];
   const suggestions = xo.suggestions || [];
   body.innerHTML = `
-    ${parent.can_add ? "" : `<p class="admin-xo-notice">${escapeHtml(parent.block_reason || "")}</p>`}
+    ${_xoMode(parent) === "blocked"
+      ? `<p class="admin-xo-notice">${escapeHtml(parent.mode_reason || parent.block_reason || "")}</p>` : ""}
     ${children.length ? `
       <h4 class="admin-xo-h">Added</h4>
       <ul class="admin-xo-list">${children.map(_xoChildRow).join("")}</ul>` : ""}
@@ -6048,9 +6084,14 @@ async function _removeAdminExtraOriginal(childId, parentId) {
 }
 
 // Approve and resolve move on to the next entry, so say where the validators'
-// suggested originals for this one can be found again.
-function _xoPendingNote(recordId, message) {
-  const open = Number(_adminDetailCache[recordId]?.extra_originals_summary?.open_suggestions) || 0;
+// suggested originals for this one can be found again. `used`: the suggestion ids
+// the resolve just turned into originals, which are no longer waiting.
+function _xoPendingNote(recordId, message, used = []) {
+  const xo = _adminXoCache[recordId];
+  const open = xo
+    ? (xo.suggestions || []).filter((g) => g.status === "open" &&
+        !(g.open_suggestion_ids || []).every((id) => used.includes(id))).length
+    : Number(_adminDetailCache[recordId]?.extra_originals_summary?.open_suggestions) || 0;
   return open
     ? `${message} Validators suggested ${open} other original${open === 1 ? "" : "s"}: find ${open === 1 ? "it" : "them"} under Suggested originals.`
     : message;
@@ -6061,15 +6102,43 @@ function _xoPendingNote(recordId, message) {
 // suggestion's "Use as additional original" opens a pre-filled entry here, so
 // both ways end in the same form and the same request. Entries survive a re-render
 // of the section (per entry record), not a page reload.
+//
+// Two modes (parent.mode, extra_originals.read_view): "add" on a validated,
+// admin-reviewed entry, where the form's own button publishes them at once; and
+// "draft" on an entry still to be resolved, where they go with Mark as Resolved
+// (submitAdminResolve) and are saved, or refused, together with the entry.
 const _adminXoDrafts = {};
 const _XO_ADMIN_LIMITS = { doi_o: 300, oa_work_id_o: 20, title_o: 1000, ref_o: 2000, year_o: 4,
                            url_o: 1000, study_o: 50, study_r: 50, outcome_quote: 5000,
                            outcome_computational_quote: 5000, outcome_robustness_quote: 5000 };
 
-function _blankAdminXo(published) {
+// What the section offers; a payload from before the modes had only can_add.
+function _xoMode(parent) {
+  return parent.mode || (parent.can_add ? "add" : "blocked");
+}
+
+// The type a drafted original's own outcome is coded in: the published one when it
+// is added at once, the one chosen in the resolve form when it goes with it.
+function _xoEntryType(parent) {
+  return _xoMode(parent) === "draft"
+    ? _xoFormType(parent.current?.type || parent.type)
+    : parent.type;
+}
+
+// The replication's abstract as the original will get it: when it goes with Mark as
+// Resolved, as the resolve form has it; else as published; else as stored (there is
+// no published row before the first resolve).
+function _xoAbstract(parent) {
+  if (_xoMode(parent) === "draft" && $("#ar-abstract-r")) return $("#ar-abstract-r").value;
+  if (parent.published) return parent.published.abstract_r || "";
+  return parent.current?.abstract_r || "";
+}
+
+function _blankAdminXo(parent) {
+  const studyR = parent.published ? parent.published.study_r : parent.current?.study_r;
   return {
     from_suggestion_ids: [], doi_o: "", oa_work_id_o: "", title_o: "", ref_o: "", year_o: "",
-    url_o: "", study_o: "", study_r: (published && published.study_r) || "", own_outcome: false,
+    url_o: "", study_o: "", study_r: studyR || "", own_outcome: false,
     outcome: "", outcome_quote: "", out_quote_source: "",
     outcome_computation: "", outcome_computational_quote: "", out_quote_computational_source: "",
     outcome_robustness: "", outcome_robustness_quote: "", out_quote_robust_source: "",
@@ -6078,7 +6147,7 @@ function _blankAdminXo(published) {
 
 function _adminXoDraft(parent) {
   if (!_adminXoDrafts[parent.record_id]) {
-    _adminXoDrafts[parent.record_id] = { on: false, entries: [], open: -1 };
+    _adminXoDrafts[parent.record_id] = { on: false, entries: [], open: -1, error: null };
   }
   return _adminXoDrafts[parent.record_id];
 }
@@ -6089,51 +6158,65 @@ function _xoAdminSummaryText(e, i) {
   return `#${i + 1} · ` + bits.filter(Boolean).join(" · ");
 }
 
-function _xoAdminOutcomeFields(e, i, type) {
+// ` xo-invalid" aria-invalid="true` for the field a refusal named, else "".
+function _xoBad(name, badField) {
+  return name === badField ? ' xo-invalid" aria-invalid="true' : "";
+}
+
+function _xoAdminOutcomeFields(e, i, type, badField = null) {
   const quote = (name, label) => `
       <label class="admin-form-label">${label}</label>
-      <textarea class="admin-textarea" data-xoa-idx="${i}" data-xoa-field="${name}"
+      <textarea class="admin-textarea${_xoBad(name, badField)}" data-xoa-idx="${i}" data-xoa-field="${name}"
                 maxlength="${_XO_ADMIN_LIMITS[name]}">${escapeHtml(e[name] || "")}</textarea>`;
   const source = (name) => `
       <select class="admin-select" data-xoa-idx="${i}" data-xoa-field="${name}">${_adminQuoteSourceOptions(e[name] || "")}</select>`;
   if (type === "reproduction") {
     return `
       <label class="admin-form-label">Computational reproducibility</label>
-      <select class="admin-select" data-xoa-idx="${i}" data-xoa-field="outcome_computation">${_axisOptions(_REPRO_COMPUTATION, e.outcome_computation)}</select>
+      <select class="admin-select${_xoBad("outcome_computation", badField)}" data-xoa-idx="${i}" data-xoa-field="outcome_computation">${_axisOptions(_REPRO_COMPUTATION, e.outcome_computation)}</select>
       ${quote("outcome_computational_quote", "Quote for the computational verdict")}
       ${source("out_quote_computational_source")}
       <label class="admin-form-label">Robustness</label>
-      <select class="admin-select" data-xoa-idx="${i}" data-xoa-field="outcome_robustness">${_axisOptions(_REPRO_ROBUSTNESS, e.outcome_robustness)}</select>
+      <select class="admin-select${_xoBad("outcome_robustness", badField)}" data-xoa-idx="${i}" data-xoa-field="outcome_robustness">${_axisOptions(_REPRO_ROBUSTNESS, e.outcome_robustness)}</select>
       ${quote("outcome_robustness_quote", "Quote for the robustness verdict")}
       ${source("out_quote_robust_source")}`;
   }
   return `
       <label class="admin-form-label">Outcome</label>
-      <select class="admin-select" data-xoa-idx="${i}" data-xoa-field="outcome">
+      <select class="admin-select${_xoBad("outcome", badField)}" data-xoa-idx="${i}" data-xoa-field="outcome">
         <option value="">— choose —</option>${_outcomeOptionsFor("replication", e.outcome || "")}
       </select>
       ${quote("outcome_quote", "Outcome quote")}
       ${source("out_quote_source")}`;
 }
 
-function _xoAdminEntryForm(e, i, parent) {
+// A link to the record a refusal names (a duplicate, the survivor), when it has one.
+function _xoConflictLink(conflict) {
+  if (!conflict?.record_id) return "";
+  return ` <button type="button" class="link-btn" data-xo-open-child="${escapeHtml(conflict.record_id)}">Open entry ${escapeHtml(conflict.short_id || conflict.record_id.slice(0, 8))}</button>`;
+}
+
+function _xoAdminEntryForm(e, i, parent, error = null) {
+  const failed = error && error.index === i ? error : null;
+  const bad = failed ? failed.field : null;
   const input = (name, label, placeholder = "") => `
       <label class="xo-label">${label}
-        <input type="text" class="xo-input" data-xoa-idx="${i}" data-xoa-field="${name}"
+        <input type="text" class="xo-input${_xoBad(name, bad)}" data-xoa-idx="${i}" data-xoa-field="${name}"
                maxlength="${_XO_ADMIN_LIMITS[name]}" placeholder="${escapeHtml(placeholder)}"
                value="${escapeHtml(e[name] || "")}">
       </label>`;
-  const abstract = (parent.published && parent.published.abstract_r) || "";
+  const abstract = _xoAbstract(parent);
   return `
         <li class="xo-item xo-open" data-xoa-entry="${i}">
           <div class="xo-item-head">
             <span class="xo-num">Original #${i + 1}${e.from_suggestion_ids.length ? " · from a validator's suggestion" : ""}</span>
             <button type="button" class="link-btn xo-remove-text" data-xoa-remove="${i}">Remove</button>
           </div>
+          ${failed ? `<p class="xo-error" role="alert">${escapeHtml(failed.message)}${_xoConflictLink(failed.conflict)}</p>` : ""}
           ${input("doi_o", "DOI", "10.1000/xyz")}
           ${input("title_o", "Title (required)")}
           <label class="xo-label">Reference (required without a DOI)
-            <textarea class="admin-textarea" data-xoa-idx="${i}" data-xoa-field="ref_o"
+            <textarea class="admin-textarea${_xoBad("ref_o", bad)}" data-xoa-idx="${i}" data-xoa-field="ref_o"
                       maxlength="${_XO_ADMIN_LIMITS.ref_o}" placeholder="Smith, J. (2018). The effect of…">${escapeHtml(e.ref_o || "")}</textarea>
           </label>
           <div class="xo-row">
@@ -6152,56 +6235,85 @@ function _xoAdminEntryForm(e, i, parent) {
             <input type="checkbox" data-xoa-own="${i}"${e.own_outcome ? " checked" : ""}>
             Give it its own outcome and quote (otherwise it follows this entry's)
           </label>
-          ${e.own_outcome ? `<div class="xo-own-fields">${_xoAdminOutcomeFields(e, i, parent.type)}</div>` : ""}
+          ${e.own_outcome ? `<div class="xo-own-fields">${_xoAdminOutcomeFields(e, i, _xoEntryType(parent), bad)}</div>` : ""}
         </li>`;
 }
 
 function _renderAdminXoAddSection(body, xo) {
   const parent = xo.parent || {};
   const host = body.querySelector("#xo-add-section");
-  if (!host || !parent.can_add) return;
+  const mode = _xoMode(parent);
+  if (!host || mode === "blocked") return;
   const draft = _adminXoDraft(parent);
+  draft.mode = mode;
+  const hint = mode === "draft"
+    ? "Each one becomes a validated record under your name, with this entry's replication details as you resolve them. Nothing is saved yet: they are saved together with the entry when you click Mark as Resolved, and reach Source Records and FLoRA at the next nightly sync."
+    : "Each one becomes a validated record under your name, with this entry's replication details. It reaches Source Records and FLoRA at the next nightly sync.";
   host.innerHTML = `
     <h4 class="admin-xo-h">Add additional originals</h4>
     <label class="xo-toggle"><input type="checkbox" id="xo-add-on"${draft.on ? " checked" : ""}>
-      Add other originals of this ${escapeHtml(parent.type || "record")}</label>
+      Add other originals of this <span id="xo-add-type"></span></label>
     <div id="xo-add-body"${draft.on ? "" : ' class="hidden"'}>
-      <p class="xo-hint">Each one becomes a validated record under your name, with this entry's replication details. It reaches Source Records and FLoRA at the next nightly sync.</p>
+      <p class="xo-hint">${hint}</p>
       <ol id="xo-add-list" class="xo-list"></ol>
       <button type="button" id="xo-add-more" class="link-btn xo-add">+ Add another original</button>
-      <div class="admin-xo-actions"><button type="button" id="xo-add-save" class="btn-primary"></button></div>
+      ${mode === "add"
+        ? `<div class="admin-xo-actions"><button type="button" id="xo-add-save" class="btn-primary"></button></div>`
+        : `<p id="xo-draft-note" class="xo-hint xo-draft-note"></p>`}
     </div>`;
   const list = host.querySelector("#xo-add-list");
   const render = () => {
     if (draft.open < 0 || draft.open >= draft.entries.length) draft.open = draft.entries.length - 1;
-    list.innerHTML = draft.entries.map((e, i) => i === draft.open ? _xoAdminEntryForm(e, i, parent) : `
+    list.innerHTML = draft.entries.map((e, i) => i === draft.open ? _xoAdminEntryForm(e, i, parent, draft.error) : `
         <li class="xo-item xo-collapsed">
           <button type="button" class="xo-summary" data-xoa-open="${i}">${escapeHtml(_xoAdminSummaryText(e, i))} ▸</button>
           <button type="button" class="xo-remove" data-xoa-remove="${i}" aria-label="Remove original ${i + 1}">✕</button>
         </li>`).join("");
-    const save = host.querySelector("#xo-add-save");
+    host.querySelector("#xo-add-type").textContent = _xoEntryType(parent) || "record";
+    const section = $("#xo-admin");
+    if (section?.dataset.recordId === String(parent.record_id)) {
+      section.querySelector(":scope > summary").textContent = _xoSectionTitle(
+        (xo.suggestions || []).filter((g) => g.status === "open").length,
+        (xo.children || []).length, _xoDraftedCount(parent.record_id));
+    }
     const n = draft.entries.length;
-    save.textContent = n === 1 ? "Add this original" : `Add these ${n} originals`;
-    save.disabled = n === 0;
+    const save = host.querySelector("#xo-add-save");
+    if (save) {
+      save.textContent = n === 1 ? "Add this original" : `Add these ${n} originals`;
+      save.disabled = n === 0;
+    }
+    const note = host.querySelector("#xo-draft-note");
+    if (note) {
+      note.textContent = n
+        ? `${n} original${n === 1 ? "" : "s"} drafted: saved with this entry when you click Mark as Resolved.`
+        : "";
+    }
   };
   draft.render = render;
   host.querySelector("#xo-add-on").onchange = (ev) => {
     draft.on = ev.target.checked;
     host.querySelector("#xo-add-body").classList.toggle("hidden", !draft.on);
-    if (draft.on && !draft.entries.length) draft.entries.push(_blankAdminXo(parent.published));
+    if (draft.on && !draft.entries.length) draft.entries.push(_blankAdminXo(parent));
     render();
   };
   host.querySelector("#xo-add-more").onclick = () => {
     if (draft.entries.length >= 10) { showToast("Up to 10 originals at a time."); return; }
-    draft.entries.push(_blankAdminXo(parent.published));
+    draft.entries.push(_blankAdminXo(parent));
     draft.open = draft.entries.length - 1;
     render();
   };
   list.onclick = (ev) => {
     const opener = ev.target.closest("[data-xoa-open]");
     const remover = ev.target.closest("[data-xoa-remove]");
+    const conflict = ev.target.closest("[data-xo-open-child]");
     if (opener) { draft.open = Number(opener.dataset.xoaOpen); render(); }
-    if (remover) { draft.entries.splice(Number(remover.dataset.xoaRemove), 1); draft.open = -1; render(); }
+    if (remover) {
+      draft.entries.splice(Number(remover.dataset.xoaRemove), 1);
+      draft.open = -1;
+      draft.error = null;              // its index no longer points at the same entry
+      render();
+    }
+    if (conflict) openAdminDetail(conflict.dataset.xoOpenChild);
   };
   // Typing updates the entry in place without a re-render, so focus stays put.
   const update = (ev) => {
@@ -6216,18 +6328,20 @@ function _renderAdminXoAddSection(body, xo) {
   };
   list.oninput = update;
   list.onchange = update;
-  host.querySelector("#xo-add-save").onclick = () => _submitAdminExtraOriginals(parent, draft);
+  const save = host.querySelector("#xo-add-save");
+  if (save) save.onclick = () => _submitAdminExtraOriginals(parent, draft);
   render();
 }
 
 // "Use as additional original": a pre-filled entry in the add form, carrying the
-// suggestions it answers so they are marked as added.
+// suggestions it answers so they are marked as added. In draft mode too: it is then
+// saved with Mark as Resolved.
 function _useXoSuggestion(xo, g) {
   const parent = xo.parent || {};
   const draft = _adminXoDraft(parent);
   draft.on = true;
   draft.entries.push({
-    ..._blankAdminXo(parent.published),
+    ..._blankAdminXo(parent),
     from_suggestion_ids: [...g.open_suggestion_ids],
     doi_o: g.doi_o || "", url_o: _xoSafeHref(g.url_o) || "", title_o: g.title_o || "",
     study_o: (g.study_o || "").split(",")[0].trim(),
@@ -6254,9 +6368,44 @@ function _xoAdminPayload(e) {
   return out;
 }
 
+// The originals drafted to go with Mark as Resolved on this entry: only in draft
+// mode, with the form switched on and the section on screen. Else [].
+function _xoResolveDrafts(recordId) {
+  const draft = _adminXoDrafts[recordId];
+  const section = $("#xo-admin");
+  if (!draft || draft.mode !== "draft" || !draft.on || !draft.entries.length) return [];
+  if (!section || section.dataset.recordId !== String(recordId) || section.classList.contains("hidden")) return [];
+  return draft.entries;
+}
+
+// A refused original (the server's detail names it by index, with the field at
+// fault): open the section and that entry, mark the field, show the message in it
+// and scroll there. The drafts stay as they were. False when the refusal names none.
+function _xoShowError(recordId, detail) {
+  const draft = _adminXoDrafts[recordId];
+  if (!draft || typeof detail?.index !== "number" || detail.index >= draft.entries.length) return false;
+  draft.on = true;
+  draft.open = detail.index;
+  draft.error = { index: detail.index, field: detail.field || null,
+                  message: detail.message || "", conflict: detail.conflict || null };
+  const section = $("#xo-admin");
+  if (section && section.dataset.recordId === String(recordId)) {
+    section.open = true;
+    const on = $("#xo-add-on");
+    if (on) on.checked = true;
+    $("#xo-add-body")?.classList.remove("hidden");
+  }
+  draft.render?.();
+  const entry = $("#xo-add-list .xo-open");
+  entry?.scrollIntoView({ block: "center", behavior: "smooth" });
+  entry?.querySelector(".xo-invalid")?.focus({ preventScroll: true });
+  return true;
+}
+
 async function _submitAdminExtraOriginals(parent, draft) {
   const save = $("#xo-add-save");
   if (save) { save.disabled = true; save.textContent = "Adding…"; }
+  draft.error = null;
   try {
     const resp = await adminApi(`/entries/${parent.record_id}/extra-originals`, "POST",
                                 { originals: draft.entries.map(_xoAdminPayload) });
@@ -6266,14 +6415,9 @@ async function _submitAdminExtraOriginals(parent, draft) {
     showToast(`Added ${n} original${n === 1 ? "" : "s"}. ${n === 1 ? "It reaches" : "They reach"} Source Records and FLoRA at the next nightly sync.`);
     await _loadAdminExtraOriginals(parent.record_id, { fresh: true });
   } catch (e) {
-    // The server names the entry at fault; open it so the admin sees what to fix.
-    if (typeof e.detail?.index === "number" && e.detail.index < draft.entries.length) {
-      draft.open = e.detail.index;
-      draft.render?.();
-      $("#xo-add-list .xo-open")?.scrollIntoView({ block: "center", behavior: "smooth" });
-    }
+    // The server names the entry at fault: open it, mark the field, show why.
     if (save) { save.disabled = false; }
-    draft.render?.();
+    if (!_xoShowError(parent.record_id, e.detail)) draft.render?.();
     await showAlert(e.message);
   }
 }
@@ -7140,9 +7284,12 @@ function renderAdminDetail(data) {
     // Rejecting is final for this record, and both types belong in FLoRA: say
     // which it is before doing it, naming the other-type button as it reads now.
     const other = $("#admin-other-type-btn")?.dataset.type || "reproduction";
+    // A rejected entry has no originals: drafted ones are discarded, so say so.
+    const drafted = _xoResolveDrafts(rec.record_id).length;
     const sure = await showConfirm(
       "Reject this record as neither a replication nor a reproduction? It will be left out of FLoRA. " +
-      `If it is a ${other}, use “It's a ${other}” instead.`);
+      `If it is a ${other}, use “It's a ${other}” instead.` +
+      (drafted ? ` The ${drafted} additional original${drafted === 1 ? "" : "s"} you drafted for it will be discarded.` : ""));
     if (!sure) return;
     btn.disabled = true;
     btn.textContent = "Rejecting…";
@@ -7155,6 +7302,7 @@ function renderAdminDetail(data) {
         corrected_type: "not_validation",
         admin_notes:    $("#admin-note-text")?.value.trim() || null,
       });
+      delete _adminXoDrafts[rec.record_id];
       showToast("Record rejected — not in FLoRA.");
       await advanceToNextAdminEntry();
     } catch (e) {
@@ -7272,7 +7420,7 @@ function renderAdminDetail(data) {
   }
 }
 
-async function confirmValidatedDuplicateMerge(detail) {
+async function confirmValidatedDuplicateMerge(detail, drafted = 0) {
   const survivor = detail?.survivor || {};
   const value = (v, fallback = "—") => escapeHtml(v || fallback);
   const duplicateId = value(detail?.duplicate_record_id);
@@ -7295,6 +7443,10 @@ async function confirmValidatedDuplicateMerge(detail) {
         B stays unchanged and remains in validated exports. A leaves validated output,
         while its extraction data and validator judgements remain linked in the audit trail.
       </p>
+      ${drafted ? `<p style="margin-top:0.7rem;margin-bottom:0">
+        The ${drafted} additional original${drafted === 1 ? "" : "s"} you drafted for A
+        ${drafted === 1 ? "is" : "are"} added to <strong>B</strong> instead, checked against B’s originals.
+        If B cannot take ${drafted === 1 ? "it" : "them"}, nothing is merged.</p>` : ""}
     </div>`;
   return showDialog({
     icon: "⇢",
@@ -7398,24 +7550,45 @@ async function submitAdminResolve(recordId) {
     corrected_robustness_source:    newType === "reproduction" ? ($("#ar-robustness-source")?.value || null) : null,
     admin_notes:             $("#admin-note-text")?.value.trim() || null,
   };
+  // Additional originals drafted in the entry's section are saved with it, in the
+  // same transaction: one the server refuses refuses the resolve, and nothing is saved.
+  const drafted = _xoResolveDrafts(recordId);
+  if (drafted.length) {
+    if (_adminXoDrafts[recordId]) _adminXoDrafts[recordId].error = null;
+    body.extra_originals = drafted.map(_xoAdminPayload);
+  }
+  const used = drafted.flatMap((d) => d.from_suggestion_ids || []);
+  const addedNote = (resp, message) => {
+    const n = (resp?.extra_originals_created || []).length;
+    return n ? `${message} ${n} additional original${n === 1 ? "" : "s"} added; ` +
+               `${n === 1 ? "it reaches" : "they reach"} Source Records and FLoRA at the next nightly sync.`
+             : message;
+  };
+  const saved = () => { delete _adminXoDrafts[recordId]; delete _adminXoCache[recordId]; };
 
   try {
-    await adminApi(`/entries/${recordId}/resolve`, "POST", body);
-    showToast(_xoPendingNote(recordId, "Entry resolved."));
+    const resp = await adminApi(`/entries/${recordId}/resolve`, "POST", body);
+    showToast(_xoPendingNote(recordId, addedNote(resp, "Entry resolved."), used));
+    saved();
     await advanceToNextAdminEntry();
   } catch (e) {
     if (e.status === 409 && e.detail?.code === "validated_duplicate_conflict") {
-      const confirmed = await confirmValidatedDuplicateMerge(e.detail);
+      const confirmed = await confirmValidatedDuplicateMerge(e.detail, drafted.length);
       if (confirmed) {
         btn.textContent = "Merging…";
         body.merge_into_record_id = e.detail.survivor_record_id;
         try {
-          await adminApi(`/entries/${recordId}/resolve`, "POST", body);
-          showToast("Duplicate merged; existing validated record kept.");
+          const resp = await adminApi(`/entries/${recordId}/resolve`, "POST", body);
+          showToast(addedNote(resp, "Duplicate merged; existing validated record kept."));
+          saved();
           await advanceToNextAdminEntry();
           return;
         } catch (mergeError) {
+          btn.disabled = false;
+          btn.textContent = "Mark as Resolved →";
+          _xoShowError(recordId, mergeError.detail);
           await showAlert("Merge failed: " + mergeError.message);
+          return;
         }
       }
       btn.disabled = false;
@@ -7424,6 +7597,8 @@ async function submitAdminResolve(recordId) {
     }
     btn.disabled = false;
     btn.textContent = "Mark as Resolved →";
+    // A drafted original at fault: it opens, marked, with the message in it.
+    _xoShowError(recordId, e.detail);
     await showAlert("Error: " + e.message);
   }
 }
