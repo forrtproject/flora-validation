@@ -281,12 +281,44 @@ validator to judge a highlight that isn't there; natural order is restored in
 Python afterwards. `COUNT(*) OVER ()` runs before `LIMIT`, so a truncated list
 still reports the true size of the set.
 
+#### The paper review table
+
+With `PAPER_REVIEW_ENABLED` on, a replication with a DOI in the normal pool opens in one
+table when it has several coded originals, and "Add another original" opens the same table
+from the one-record screen (`paper_review.py`, "Paper review" in `docs/app.js`).
+Reproductions, the hard pool, assignments and onboarding keep the one-record screen; choosing
+"Actually reproduction" in the table continues that paper one record at a time.
+
+- `POST /api/paper-review/claim` reserves this validator's open records for the paper. It is
+  safe to repeat. A sibling the validator cannot judge is listed for context, with no reason
+  and no verdict. One validator can never hold both slots of a record (`_claim_free_slot`).
+- The type is asked once. Each original gets its own "right paper?" answer. Originals share an
+  outcome check only when their extracted outcome and quote both match; a row without a quote
+  or with a replacement paper is never merged, and "outcome differs for this one" separates a
+  row by hand.
+- Submitting queues **one ordinary `/api/judge` per record**, so consensus, LLM checks, retries
+  and recovery stay per record. `additional_checks.paper_review` records the outcome check each
+  judgement answered and whether it was shared, for audit.
+- Admins see the paper's coded originals on each entry, can approve those awaiting approval
+  together, and can list shared answers with the "Shared outcome check" filter.
+
+#### Wrong paper, no replacement
+
+An original marked wrong with no replacement has no outcome to judge: `outcome_check` is
+`not_applicable`, on both screens. A replacement has one, so it is asked for. Assignments and
+onboarding still ask.
+
+When both validators say so, the record waits in `need_review` with no final values
+(`removal_proposed` in `consensus_engine.py`), listed under "Original to remove". The admin's
+"Remove this original" rejects that record only, so nothing is published for it and its
+siblings are untouched; correcting the original in the form and resolving remains possible.
+
 An original the extractor *missed* is suggested with the judgement ("This study has
 more than one original"). An admin adds it as a record of its own: at once on an entry
 that is already validated and admin-checked, or, while reviewing an entry the LLM and
-both validators have judged, drafted in its "Additional originals" section and saved
+both validators have judged, drafted in its "Other originals" section and saved
 together with it by Mark as Resolved (refused as a whole if one original is wrong).
-See [VALIDATION_DB_SCHEMA.md, Additional originals](VALIDATION_DB_SCHEMA.md).
+See [VALIDATION_DB_SCHEMA.md, Other originals](VALIDATION_DB_SCHEMA.md).
 
 Any answer can carry a correction: `corrected_doi_o`, `corrected_title_o`,
 `corrected_outcome`, `corrected_type`, `corrected_title_r`, `corrected_url_r`,
@@ -365,6 +397,10 @@ points = validator.vote_score
        + 2  if outcome_check  == "correct"
        + 1  if validator_notes is non-empty
 ```
+
+A paper answered in the review table is scored as one piece of work: `vote_score` and the note
+bonus are paid once per paper, each original answered pays 2, and each outcome check answered
+pays 2, whatever the answer, so originals sharing a check share those 2 points (`paper_review.points`).
 
 Assignment submissions are worth **double**. Skips score zero and increment
 `skipped_count`. The validator must select a reason; eligibility, data-quality, and

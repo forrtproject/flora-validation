@@ -2250,6 +2250,14 @@ CREATE INDEX IF NOT EXISTS idx_flora_check_findings_records
 CREATE INDEX IF NOT EXISTS idx_flora_check_findings_open
     ON flora_check_findings (part, check_code) WHERE resolved_at IS NULL;
 
+-- ── Wrong paper, no replacement: no outcome to judge ───────────────────────────
+-- A validator who marks an original wrong and names no other answers no outcome
+-- check. Additive: the constraint only widens, so existing rows stay valid and a
+-- rollback leaves any 'not_applicable' row readable as "not checked".
+ALTER TABLE validation_queue DROP CONSTRAINT IF EXISTS validation_queue_outcome_check_check;
+ALTER TABLE validation_queue ADD CONSTRAINT validation_queue_outcome_check_check
+    CHECK (outcome_check IN ('correct', 'incorrect', 'not_applicable'));
+
 -- ── Additional originals ──────────────────────────────────────────────────────
 -- A replication or reproduction can have more originals than the extractor
 -- coded. An admin adds each one as a record of its own (origin

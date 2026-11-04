@@ -1,5 +1,5 @@
 /* Run with: node tests/test_extra_originals_validator_ui.cjs
- * "This study has more than one original" on the validation screen: the panel
+ * "Add another original" on the validation screen: the panel
  * appears once Gate II is answered (not for "neither", not in onboarding), "+"
  * collapses earlier entries to one line, ✕ removes one, a reload restores the
  * draft, and /api/judge receives the complete entries only.

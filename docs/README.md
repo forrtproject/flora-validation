@@ -242,6 +242,7 @@ Use a disposable database for development unless you intend those actions to run
 | `EXTRACTOR_MAINTENANCE_LOG` | No | `logs/extractor_maintenance.log` | Combined log file for the extractor pipeline; each run's complete log is also kept in `extractor_maintenance_runs` |
 | `EXTRACTOR_STAGE_TIMEOUT_SECONDS` | No | `7200` | Maximum runtime for each sync/report/retire subprocess |
 | `EXTRACTOR_LOCK_WAIT_SECONDS` | No | `15` | Brief advisory-lock retry for an already-reserved run |
+| `PAPER_REVIEW_ENABLED` | No | off | Opens replications with several coded originals in one review table. See `docs/PROJECT.md`, "The paper review table" |
 | `ADJUDICATION_ENABLED` | No | `0` | Switches on the Observatory-disagreements feature (`adjudication/`, its own PostgreSQL schema `adjudication`); a failed setup leaves it off, is retried once a minute, and never affects the app. See [Observatory disagreements](#observatory-disagreements-adjudication) |
 | `SUBMISSION_FAILURE_STAMP_TTL_MINUTES` | No | `30` | Lifetime of a one-time automatic-release capability issued after a server-observed judgement failure |
 | `OPENALEX_MAILTO` | No | maintainer email embedded in code | Polite-pool contact sent to OpenAlex (`enrich_works.py`, the backfills, the adjudication importer) and to Crossref (the network checks' DOI lookup for originals, `validate_flora_network.py`) |
@@ -1668,13 +1669,14 @@ the caller. State-changing requests are refused unless they originate from
 | GET | `/api/admin/entries` | Filtered/paginated validation entry grid |
 | GET | `/api/admin/entries/{record_id}` | Full review detail and queue rows |
 | POST | `/api/admin/entries/{record_id}/approve` | Approve pending consensus |
+| POST | `/api/admin/entries/{record_id}/remove-original` | Confirm that both validators were right to mark the original wrong with no replacement: rejects this record only |
 | POST | `/api/admin/entries/{record_id}/flag-review` | Move pending record to review |
 | POST | `/api/admin/entries/{record_id}/note` | Save persistent admin note |
-| GET | `/api/admin/entries/{record_id}/extra-originals` | The entry's Additional originals section: validators' suggestions, added originals, and whether originals are added at once, drafted for Mark as Resolved, or blocked (with why) |
+| GET | `/api/admin/entries/{record_id}/extra-originals` | The entry's Other originals section: validators' suggestions, added originals, and whether originals are added at once, drafted for Mark as Resolved, or blocked (with why) |
 | POST | `/api/admin/entries/{record_id}/extra-originals` | Add up to 10 originals at once to a validated, admin-checked entry; all or none, refusals name the original and field |
 | POST | `/api/admin/entries/{record_id}/extra-originals/suggestions/{suggestion_id}/dismiss` | Dismiss a validator's suggested original |
 | POST | `/api/admin/entries/{record_id}/extra-original/remove` | Remove an added original; it leaves FLoRA at the next sync and its suggestions reopen |
-| POST | `/api/admin/entries/{record_id}/resolve` | Correct and accept/reject a record; a confirmed `merge_into_record_id` performs an explicit audited duplicate merge; optional `extra_originals` (up to 10) are created with it in one transaction, on the survivor after a merge (see VALIDATION_DB_SCHEMA.md, Additional originals) |
+| POST | `/api/admin/entries/{record_id}/resolve` | Correct and accept/reject a record; a confirmed `merge_into_record_id` performs an explicit audited duplicate merge; optional `extra_originals` (up to 10) are created with it in one transaction, on the survivor after a merge (see VALIDATION_DB_SCHEMA.md, Other originals) |
 | POST | `/api/admin/queue/{queue_id}/flag` | Toggle judgement flag and optionally message validator |
 | GET | `/api/admin/maintenance/runs` | At least seven days of run summaries, plus the retire settings |
 | GET | `/api/admin/maintenance/runs/{run_id}` | Complete retained log for one run |

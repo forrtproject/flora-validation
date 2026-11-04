@@ -288,7 +288,7 @@ def test_the_page_sends_complete_suggestions_only_and_never_for_neither():
 def test_the_panel_lives_between_the_gates_and_not_in_onboarding():
     """An answered gate collapses its body, so the panel cannot sit inside Gate II."""
     gate2_end = APP_JS.index('<div id="oc-saved-confirm"')
-    block = APP_JS.index('${onboarding ? "" : _extraOriginalsBlock()}')
+    block = APP_JS.index('${onboarding ? "" : _extraOriginalsBlock(p)}')
     assert gate2_end < block < APP_JS.index('<div class="gate hidden" id="gate-3">')
 
 
@@ -447,12 +447,12 @@ def test_the_resolve_refuses_drafts_it_may_not_take_and_says_what_to_do():
                    {**PENDING, "llm_validator": None}, "replication", 2)
     assert (err.status, err.detail["code"], err.detail["missing"]) == (409, "judgements_missing", ["the LLM check"])
     assert err.detail["message"] == (
-        "Nothing was saved. Additional originals can be added to this entry once the LLM and both "
-        "validators have judged it. Still missing: the LLM check. Remove the 2 additional originals "
+        "Nothing was saved. Other originals can be added to this entry once the LLM and both "
+        "validators have judged it. Still missing: the LLM check. Remove the 2 other originals "
         "you drafted and resolve the entry; once it is resolved, originals are added to it straight away.")
     err = _refusal(xo.check_resolve_drafts, RoutingCursor(_gate_route()), PENDING, "not_validation", 1)
     assert err.detail["code"] == "extra_originals_with_reject"
-    assert "Remove the 1 additional original you drafted to reject it" in err.detail["message"]
+    assert "Remove the 1 other original you drafted to reject it" in err.detail["message"]
     err = _refusal(xo.check_resolve_drafts, RoutingCursor(_gate_route()), PENDING, None, 1,
                    merged_into_id=SURVIVOR_ID)
     assert err.detail["code"] == "entry_already_merged" and err.detail["survivor"]["short_id"] == "5a5a5a5a"
@@ -838,7 +838,7 @@ def test_a_survivor_that_cannot_take_originals_refuses_the_merge_naming_it():
     assert detail["survivor"]["short_id"] == "5a5a5a5a" and detail["duplicate_record_id"] == "dup"
     assert detail["message"].startswith(
         "Nothing was saved. This entry duplicates entry 5a5a5a5a (“The survivor”, 10.1/own, validated), "
-        "so merging it moves the 2 additional originals you drafted to that entry, but that entry cannot "
+        "so merging it moves the 2 other originals you drafted to that entry, but that entry cannot "
         "take originals: no admin has reviewed it yet (a rule validated it).")
     assert not any(s.startswith("INSERT") for s in cur.sql())
 
@@ -1166,6 +1166,7 @@ def test_every_place_that_unpublishes_a_record_handles_its_added_originals():
                           "extra_originals.repoint_children(cur, record_id, conflict_id, admin)",
                           "_extra_originals_call(extra_originals.sync_children, cur, record_id, admin=admin)"),
         "admin_approve": ("_extra_originals_call(extra_originals.sync_children, cur, record_id, admin=admin)",),
+        "admin_remove_original": ("extra_originals.reject_children(cur, record_id, admin)",),
     }
     assert sorted(set(owners)) == sorted(exempt | set(handled))
     assert owners.count("admin_resolve") == 3

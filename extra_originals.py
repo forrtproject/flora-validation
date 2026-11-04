@@ -1,4 +1,4 @@
-"""Additional originals: more than one original study for one replication.
+"""Other originals: more than one original study for one replication.
 
 The extractor codes one record per (replication, original) pair, and a validator
 judges one of them at a time. When a paper replicates (or reproduces) an original
@@ -358,11 +358,11 @@ def draft_block(cur, rec: dict, merged_into_id=None, decision: dict | None = Non
     if final_type == "not_validation":
         return ("extra_originals_with_reject",
                 "This entry is being rejected as neither a replication nor a reproduction, "
-                "so it cannot have additional originals.", {})
+                "so it cannot have other originals.", {})
     missing = missing_judgements(cur, rec)
     if missing:
         return ("judgements_missing",
-                "Additional originals can be added to this entry once the LLM and both "
+                "Other originals can be added to this entry once the LLM and both "
                 f"validators have judged it. Still missing: {_and_join(missing)}.",
                 {"missing": missing})
     return None
@@ -377,7 +377,7 @@ def check_resolve_drafts(cur, rec: dict, final_type: str | None, count: int,
     if not block:
         return
     code, reason, extra = block
-    drafts = f"the {count} additional original{'s' if count != 1 else ''} you drafted"
+    drafts = f"the {count} other original{'s' if count != 1 else ''} you drafted"
     # The child and merged reasons already say where to add them instead.
     actions = {
         "extra_original_on_child": f"That is entry {text(extra.get('parent_record_id'))[:8]}.",
@@ -459,7 +459,7 @@ def _group_suggestions(rows: list[dict]) -> list[dict]:
 
 
 def read_view(cur, record_id, decision: dict | None = None) -> dict:
-    """Everything the admin's "Additional originals" section shows for a record.
+    """Everything the admin's "Other originals" section shows for a record.
 
     parent.mode says what the section offers: 'add' (can_add: each original is
     published at once), 'draft' (originals are drafted and saved with Mark as
@@ -1040,7 +1040,7 @@ def create_on_survivor(cur, duplicate_id, survivor_id, items: list[dict], admin:
         n = len(items)
         _refuse(409, "survivor_not_eligible",
                 f"Nothing was saved. This entry duplicates {_describe(ref)}, so merging it moves "
-                f"the {n} additional original{'s' if n != 1 else ''} you drafted to that entry, "
+                f"the {n} other original{'s' if n != 1 else ''} you drafted to that entry, "
                 f"but that entry cannot take originals: {why}. Remove the drafted originals to "
                 "merge, and add them on that entry once an admin has resolved it; or correct "
                 "this entry so it no longer duplicates that one.",

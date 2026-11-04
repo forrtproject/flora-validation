@@ -7130,3 +7130,70 @@ body.has-maint-banner #admin-screen {
 .btn-primary.flora-manual-danger { background: var(--red); border-color: var(--red); }
 .flora-manual-table td { vertical-align: top; }
 .flora-manual-where { max-width: 16rem; }
+
+
+/* ---------- Paper review: every original of a paper on one screen ---------- */
+.card.paper-review .pair-header { border-radius: 1.5rem 1.5rem 0 0; }
+.card.paper-review .abstract.expanded { max-height: 15rem; overflow: auto; }
+.pr-body { padding-top: 1rem; }
+.pr-oc-hint { font-size: 0.8rem; color: var(--muted); margin: -0.4rem 0 0.7rem; }
+.pr-type { margin-bottom: 1rem; max-width: 46rem; }
+.pr-type .question { color: var(--muted); font-family: 'Fraunces', Georgia, serif; font-style: italic; margin-bottom: 0.5rem; }
+.pr-flag { font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.06em;
+  border: 1px solid var(--rule); border-radius: 999px; padding: 0.1rem 0.45rem; color: var(--muted); background: var(--bg); white-space: nowrap; font-style: normal; }
+.pr-choices { display: flex; flex-wrap: wrap; border: 1px solid var(--ink); border-radius: 0.6rem; overflow: hidden; }
+.pr-choices button { flex: 1 1 auto; padding: 0.42rem 0.65rem; font: 500 0.84rem 'Inter Tight', sans-serif; color: var(--ink);
+  background: transparent; border: 0; border-right: 1px solid var(--ink); cursor: pointer; text-align: left; }
+.pr-choices button:last-child { border-right: 0; }
+.pr-choices button:hover:not(:disabled) { background: var(--bg-alt); }
+.pr-choices button:disabled { opacity: 0.4; cursor: not-allowed; }
+.pr-choices button.sel { background: var(--ink); color: var(--bg); }
+.pr-choices button.sel.ok { background: var(--green); }
+.pr-choices button.sel.no { background: var(--red); }
+.pr-choices button.sel.un { background: var(--amber); }
+.pr-choices.small button { font-size: 0.76rem; padding: 0.25rem 0.5rem; }
+.pr-table-wrap { overflow-x: auto; margin: 0 -1.5rem; }
+.pr-table { border-collapse: collapse; width: 100%; min-width: 880px; }
+.pr-table th, .pr-admin-table th { font: 400 0.62rem 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--muted); text-align: left; padding: 0.45rem 0.8rem; border-bottom: 1px solid var(--ink); vertical-align: bottom; }
+.pr-count { text-transform: none; letter-spacing: 0; }
+.pr-table td { padding: 0.65rem 0.8rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.pr-table th:first-child, .pr-table td:first-child { padding-left: 1.5rem; }
+.pr-original { width: 36%; position: relative; }
+.pr-num { position: absolute; left: 0.55rem; top: 0.72rem; font: 0.72rem 'JetBrains Mono', monospace; color: var(--accent); }
+.pr-title { font-family: 'Fraunces', Georgia, serif; font-size: 1rem; line-height: 1.3; }
+.pr-meta { font: 0.68rem 'JetBrains Mono', monospace; color: var(--muted); margin-top: 0.15rem; overflow-wrap: anywhere; }
+.pr-why { display: block; margin-top: 0.3rem; font-size: 0.72rem; }
+.pr-evidence { margin-top: 0.3rem; border-left: 2px solid var(--accent); padding-left: 0.55rem; font-size: 0.8rem; color: var(--muted); }
+.pr-fix { margin-top: 0.45rem; border-left: 2px solid var(--accent); padding-left: 0.55rem; font-size: 0.78rem; color: var(--muted); }
+.pr-fix input, .pr-draft input, .pr-note textarea, .pr-quote-edit { width: 100%; box-sizing: border-box; padding: 0.35rem 0.55rem; margin-top: 0.25rem;
+  font: 0.84rem 'Inter Tight', sans-serif; color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 6px; }
+.pr-answer { width: 15rem; }
+.pr-check { background: #faf6ee; border-left: 1px solid var(--rule); min-width: 24rem; }
+.pr-check.shared { border-left: 3px solid var(--accent); }
+.pr-check-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.3rem; }
+.pr-check-head .outcome-label { margin: 0; }
+.pr-quote { font-family: 'Fraunces', Georgia, serif; font-style: italic; font-size: 0.92rem; border-left: 2px solid var(--accent); padding-left: 0.6rem; margin-bottom: 0.5rem; overflow-wrap: anywhere; }
+.pr-sub { font-size: 0.78rem; color: var(--muted); margin: 0.45rem 0 0.25rem; }
+.pr-none { font-size: 0.82rem; color: var(--muted); }
+.pr-wrong .pr-title { text-decoration: line-through; opacity: 0.6; }
+.pr-context { opacity: 0.72; }
+.pr-add-btn { display: block; width: 100%; margin-top: 0.8rem; padding: 0.5rem 0.8rem; text-align: left; font: 500 0.9rem 'Inter Tight', sans-serif;
+  color: var(--ink); background: transparent; border: 1px dashed var(--ink); border-radius: 0.6rem; cursor: pointer; }
+.pr-add-btn:hover { background: var(--bg-alt); }
+.pr-draft { margin-top: 0.8rem; padding: 0.7rem 0.8rem; background: #faf6ee; border: 1px solid var(--accent); border-radius: 0.6rem; }
+.pr-draft-head { display: flex; align-items: center; gap: 0.6rem; font-size: 0.9rem; }
+.pr-draft-head .link-btn { margin-left: auto; }
+.pr-draft-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 0.4rem 0.7rem; margin-top: 0.4rem; }
+.pr-draft-grid label { font-size: 0.76rem; color: var(--muted); }
+.pr-draft-grid .full { grid-column: 1 / -1; }
+.pr-note { display: block; margin-top: 0.9rem; font-size: 0.78rem; color: var(--muted); }
+.pr-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem; margin-top: 0.9rem; padding-top: 0.8rem; border-top: 1px solid var(--rule); }
+.pr-progress { font-size: 0.86rem; color: var(--muted); }
+.pr-removal-actions { margin-top: 0.5rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+.admin-paper-set { margin-top: 1rem; padding: 0.7rem 1rem; border: 1px solid var(--rule); border-radius: 0.8rem; background: var(--bg); }
+.admin-paper-set summary { cursor: pointer; font-weight: 600; font-size: 0.92rem; }
+.admin-paper-set .pr-table-wrap { margin: 0.5rem 0; }
+.pr-admin-table { border-collapse: collapse; width: 100%; font-size: 0.84rem; }
+.pr-admin-table td { padding: 0.4rem 0.8rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.pr-admin-table tr.is-current { background: var(--bg-alt); }

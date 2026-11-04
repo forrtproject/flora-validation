@@ -213,7 +213,7 @@ CREATE TABLE validation_queue (
 
     type_check          TEXT        CHECK (type_check     IN ('correct', 'incorrect')),
     original_check      TEXT        CHECK (original_check IN ('correct', 'incorrect')),
-    outcome_check       TEXT        CHECK (outcome_check  IN ('correct', 'incorrect')),
+    outcome_check       TEXT        CHECK (outcome_check  IN ('correct', 'incorrect', 'not_applicable')),
 
     corrected_doi_o     TEXT,
     corrected_title_o   TEXT,
@@ -388,11 +388,11 @@ internal `note`, `keep_distinct`, `status` (`active` / `withdrawn`), the
 is ever deleted from (triggers); see
 [SOURCE_RECORDS.md §3.3](SOURCE_RECORDS.md#33-records-added-by-hand-manual).
 
-### Additional originals (`unvalidated.origin`, `extra_original_suggestions`)
+### Other originals (`unvalidated.origin`, `extra_original_suggestions`)
 
 A replication or reproduction can have more than one original. The extractor codes
 one record per (replication, original) pair and may miss some; a validator can
-suggest the others with a judgement ("This study has more than one original"), and
+suggest the others with a judgement ("Add another original"), and
 an admin adds each one, from a suggestion or by hand, as a **record of its own**.
 The logic is in `extra_originals.py`.
 

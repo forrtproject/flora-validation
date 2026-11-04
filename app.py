@@ -34,6 +34,8 @@ import hmac
 import resend
 import db_pool
 import extra_originals
+import paper_review
+from consensus_engine import NO_OUTCOME, removal_proposed
 import flora_service
 import flora_store
 import manual_records
@@ -699,6 +701,8 @@ def _enrich_pair(pair: dict, cur=None) -> dict:
     pair.setdefault("title_o", "")
     pair.setdefault("outcome_phrase", pair.get("outcome_quote", ""))
     if cur is not None:
+        pair["paper_review"] = paper_review.available(pair)
+    if cur is not None:
         pair["coded_originals"], pair["coded_originals_total"] = _coded_originals(
             cur, pair.get("doi_r"), pair.get("record_id"))
     return pair
@@ -734,7 +738,9 @@ class JudgeRequest(BaseModel):
     submission_id: UUID | None = None
     type_check: str                     # "correct" | "incorrect"
     original_check: str                 # "correct" | "incorrect"
-    outcome_check: str                  # "correct" | "incorrect"
+    # "correct" | "incorrect", or "not_applicable" for an original marked wrong with
+    # no replacement: there is no paper whose outcome could be judged.
+    outcome_check: str
     corrected_title_r: str | None = None
     corrected_study_r: str | None = None  # legacy client alias for corrected_title_r
     corrected_url_r: str | None = None
@@ -1131,6 +1137,28 @@ def _improved_outcome_evidence(req: JudgeRequest, rec: dict, target_type: str | 
         if words and words != _quote_words(rec.get(shown_column)):
             return True
     return False
+
+
+def _no_outcome_request(req: JudgeRequest, corrected_title_o: str | None) -> JudgeRequest:
+    """A judgement with no outcome: only an original marked wrong with no replacement.
+    A replacement has an outcome someone must check, and "Can't tell" has a paper."""
+    checks = _request_additional_checks(req)
+    if (req.original_check != "incorrect" or checks.get("was_unsure_original")
+            or (req.corrected_doi_o or "").strip() or (corrected_title_o or "").strip()):
+        raise HTTPException(
+            400, "Only an original marked wrong with no replacement can have no outcome")
+    if req.type_check == "incorrect" and req.corrected_type == "not_validation":
+        raise HTTPException(400, "A record rejected as neither type does not use 'not_applicable'")
+    if req.type_check == "incorrect" and req.corrected_type not in {"replication", "reproduction"}:
+        raise HTTPException(400, "corrected_type must be replication or reproduction")
+    return req.model_copy(update={
+        field: None for field in (
+            "corrected_outcome", "corrected_outcome_quote",
+            "corrected_outcome_computation", "corrected_computational_quote",
+            "corrected_computational_source", "corrected_outcome_robustness",
+            "corrected_robustness_quote", "corrected_robustness_source",
+        )
+    })
 
 
 def _with_quote_reworded(req: JudgeRequest, reworded: bool) -> JudgeRequest:
@@ -1856,6 +1884,34 @@ def _claim_one_pair(cur, coder_id: int, started: bool, mode: str = "normal"):
     if not row:
         return None
     record_id = row["record_id"]
+    queue_id = _claim_free_slot(cur, coder_id, record_id, started)
+    if not queue_id:
+        return None  # lost a race — caller can try again
+    pair = _enrich_pair(dict(row), cur)
+    pair["queue_id"]    = str(queue_id)
+    pair["judge_count"] = row["judge_count"]
+    return pair
+
+
+def _claim_free_slot(cur, coder_id: int, record_id, started: bool):
+    """Take a free human slot on this record, returning its queue_id or None.
+
+    One validator may hold only one of a record's two slots, or the record would get
+    one person's judgement twice. The record lock makes that check safe against the
+    same browser's buffer top-up, which can run alongside a paper review claim. It
+    never waits: a buffer top-up takes several records in random order, so blocking
+    here could deadlock, and a locked record is simply not claimed this time. A paper
+    review claim already holds its records, so this succeeds for it.
+    """
+    cur.execute("SELECT record_id FROM unvalidated WHERE record_id = %s FOR UPDATE SKIP LOCKED", (record_id,))
+    if not cur.fetchone():
+        return None
+    cur.execute(
+        "SELECT 1 FROM validation_queue WHERE record_id = %s AND validator_id = %s LIMIT 1",
+        (record_id, coder_id),
+    )
+    if cur.fetchone():
+        return None
     started_sql = "NOW()" if started else "NULL"
     cur.execute(
         f"""
@@ -1878,16 +1934,13 @@ def _claim_one_pair(cur, coder_id: int, started: bool, mode: str = "normal"):
     )
     claimed = cur.fetchone()
     if not claimed:
-        return None  # lost a race — caller can try again
+        return None
     cur.execute(
         "UPDATE unvalidated SET validation_status = 'validation_inprogress' "
         "WHERE record_id = %s AND validation_status = 'unvalidated'",
         (record_id,),
     )
-    pair = _enrich_pair(dict(row), cur)
-    pair["queue_id"]    = str(claimed["queue_id"])
-    pair["judge_count"] = row["judge_count"]
-    return pair
+    return claimed["queue_id"]
 
 
 # POST, not GET: this claims queue rows. A state-changing GET can be driven
@@ -1969,6 +2022,24 @@ def next_pairs(count: int = 3, buffered_only: bool = False,
         total = cur.fetchone()["total"]
 
     return {"pairs": out, "done": done, "total": total}
+
+
+class PaperReviewRequest(BaseModel):
+    record_id: str
+
+
+@app.post("/api/paper-review/claim")
+def claim_paper_review(req: PaperReviewRequest,
+                       validator: dict = Depends(current_validator)):
+    """Reserve this validator's open records for a paper and return the coded set."""
+    if not paper_review.enabled():
+        raise HTTPException(404, "The paper review is not enabled")
+    with db() as cur:
+        result = paper_review.claim(cur, validator["coder_id"], req.record_id,
+                                    _claim_free_slot, oa_url_for)
+    if result is None:
+        raise HTTPException(409, "This paper cannot open in the review table")
+    return result
 
 
 @app.post("/api/pairs/{queue_id}/start")
@@ -2675,11 +2746,14 @@ def judge(req: JudgeRequest,
         raise HTTPException(400, "type_check must be 'correct' or 'incorrect'")
     if req.original_check not in VALID_CHECKS:
         raise HTTPException(400, "original_check must be 'correct' or 'incorrect'")
-    if req.outcome_check not in VALID_CHECKS:
-        raise HTTPException(400, "outcome_check must be 'correct' or 'incorrect'")
+    no_outcome = req.outcome_check == NO_OUTCOME
+    if req.outcome_check not in VALID_CHECKS and not no_outcome:
+        raise HTTPException(400, "outcome_check must be 'correct', 'incorrect' or 'not_applicable'")
 
     corrected_title_r = _requested_title(req, "r")
     corrected_title_o = _requested_title(req, "o")
+    if no_outcome:
+        req = _no_outcome_request(req, corrected_title_o)
 
     with db() as cur:
         # Look up the record and the validator
@@ -2693,13 +2767,17 @@ def judge(req: JudgeRequest,
         record_id = rec["record_id"]
         rec = dict(rec)
         req = _same_outcome_as_agreement(req, rec.get("type"), rec.get("outcome"))
-        target_type, target_outcome, target_computation, target_robustness = _validated_outcome_request(
-            req,
-            rec.get("type"),
-            rec.get("outcome"),
-            rec.get("outcome_computation"),
-            rec.get("outcome_robustness"),
-        )
+        if no_outcome:
+            target_type = (req.corrected_type if req.type_check == "incorrect" else None) or rec.get("type")
+            target_outcome = target_computation = target_robustness = None
+        else:
+            target_type, target_outcome, target_computation, target_robustness = _validated_outcome_request(
+                req,
+                rec.get("type"),
+                rec.get("outcome"),
+                rec.get("outcome_computation"),
+                rec.get("outcome_robustness"),
+            )
         corrected_outcome = (
             target_outcome
             if target_type == "replication"
@@ -2738,7 +2816,15 @@ def judge(req: JudgeRequest,
         validator_slot = slot_row["validator_slot"]
         reworded = _improved_outcome_evidence(req, rec, target_type)
         req = _with_quote_reworded(req, reworded)
-        pts = _points_for(req, validator["vote_score"], improved_evidence=reworded)
+        review_note = paper_review.marker(req.additional_checks)
+        if review_note:
+            # Serialises the paper's records for this validator, so its base score
+            # and shared outcome checks are counted once however fast they arrive.
+            cur.execute("SELECT id FROM validators WHERE id = %s FOR UPDATE", (coder_id,))
+            pts = paper_review.points(cur, rec, coder_id, req, validator["vote_score"],
+                                      reworded, review_note)
+        else:
+            pts = _points_for(req, validator["vote_score"], improved_evidence=reworded)
         # Hard-pool records (undeterminable outcome / no abstract) earn double.
         if _record_is_hard(cur, record_id):
             pts *= 2
@@ -4733,6 +4819,7 @@ def _llm_dissent_field(f, label):
         f"AND u.validator_1->>'{f}' = u.validator_2->>'{f}' "
         f"AND u.llm_validator->>'{f}' IS NOT NULL "
         f"AND u.llm_validator->>'{f}' <> u.validator_1->>'{f}' "
+        f"AND u.validator_1->>'{f}' <> '{NO_OUTCOME}' "
         f"THEN '{label}' END)"
     )
 
@@ -4742,6 +4829,27 @@ _LLM_DISSENT_SQL = (
     f"{_llm_dissent_field('original_check', 'original')}, "
     f"{_llm_dissent_field('outcome_check', 'outcome')}"
     "), '')"
+)
+
+def _marked_wrong_sql(column: str) -> str:
+    """SQL form of consensus_engine.marked_wrong_without_replacement."""
+    return (
+        f"u.{column}->>'original_check' = 'incorrect' "
+        f"AND COALESCE(u.{column}->>'corrected_type', '') <> 'not_validation' "
+        f"AND NOT COALESCE(u.{column}->'additional_checks' ? 'was_unsure_original', FALSE) "
+        f"AND NOT COALESCE(u.{column}->'additional_checks' ? 'senior_reject', FALSE) "
+        f"AND COALESCE(btrim(u.{column}->>'corrected_doi_o'), '') = '' "
+        f"AND COALESCE(btrim(u.{column}->>'corrected_title_o'), '') = ''"
+    )
+
+
+_ORIGINAL_REMOVAL_SQL = (
+    f"(u.validation_status = 'need_review' AND {_marked_wrong_sql('validator_1')} "
+    f"AND {_marked_wrong_sql('validator_2')})"
+)
+_SHARED_OUTCOME_SQL = (
+    "(u.validator_1->'additional_checks'->'paper_review'->>'outcome_shared' = 'true' "
+    "OR u.validator_2->'additional_checks'->'paper_review'->>'outcome_shared' = 'true')"
 )
 
 # Records shown in the Skipped admin panel. Repeated events by one validator are
@@ -4845,6 +4953,10 @@ def admin_entries(
         # Validators suggested other originals no admin has acted on yet. Approve
         # and resolve move on to the next entry, so this is how they are found again.
         "extra_originals":  f"WHERE {_OPEN_EXTRA_SUGGESTIONS_SQL}",
+        # Both validators said wrong paper and neither named another.
+        "original_removal": f"WHERE {_ORIGINAL_REMOVAL_SQL}",
+        # One outcome answer covered several originals: the audit sample.
+        "shared_outcome":   f"WHERE {_SHARED_OUTCOME_SQL}",
     }.get(filter, "")
 
     if hide_mine and my_id:
@@ -4974,6 +5086,10 @@ def admin_entries(
         c_quality = cur.fetchone()["n"]
         cur.execute(f"SELECT COUNT(*) AS n FROM unvalidated u WHERE {_OPEN_EXTRA_SUGGESTIONS_SQL}")
         c_extra = cur.fetchone()["n"]
+        cur.execute(f"SELECT COUNT(*) AS n FROM unvalidated u WHERE {_ORIGINAL_REMOVAL_SQL}")
+        c_removal = cur.fetchone()["n"]
+        cur.execute(f"SELECT COUNT(*) AS n FROM unvalidated u WHERE {_SHARED_OUTCOME_SQL}")
+        c_shared = cur.fetchone()["n"]
 
     return {
         "entries": entries,
@@ -4995,6 +5111,8 @@ def admin_entries(
             "admin_checked": c_admin,
             "quality_flagged": c_quality,
             "extra_originals": c_extra,
+            "original_removal": c_removal,
+            "shared_outcome": c_shared,
         },
     }
 
@@ -5021,6 +5139,7 @@ def admin_entry_detail(record_id: str, admin: dict = Depends(current_admin)):
                 record[field] = json.loads(val)
 
         self_approval = _self_approval(cur, record_id, admin)
+        paper_originals = paper_review.admin_paper_set(cur, record)
         cur.execute(
             "SELECT decided_at, admin_handle, action, status_before, status_after, changes "
             "FROM admin_decisions WHERE record_id = %s ORDER BY decided_at",
@@ -5153,6 +5272,8 @@ def admin_entry_detail(record_id: str, admin: dict = Depends(current_admin)):
     )
     abstracts_differ  = _norm(v1.get("corrected_abstract")) != _norm(v2.get("corrected_abstract"))
 
+    original_removal = (record.get("validation_status") == "need_review"
+                        and removal_proposed(v1, v2))
     abstract_only_conflict = (
         record.get("validation_status") == "need_review"
         and checks_agree
@@ -5165,6 +5286,8 @@ def admin_entry_detail(record_id: str, admin: dict = Depends(current_admin)):
             "self_approval": self_approval,
             "decisions": decisions,
             "abstract_only_conflict": abstract_only_conflict,
+            "original_removal": original_removal,
+            "paper_originals": paper_originals,
             "validator_stats": validator_stats,
             "duplicate_merge": duplicate_merge,
             "skip_history": skip_history,
@@ -5668,6 +5791,40 @@ def admin_approve(record_id: str, admin: dict = Depends(current_admin)):
         _log_decision(cur, record_id, admin, "approved", rec)
 
     return {"approved": True, "record_id": record_id}
+
+
+@app.post("/api/admin/entries/{record_id}/remove-original")
+def admin_remove_original(record_id: str, admin: dict = Depends(current_admin)):
+    """Confirm that both validators were right: this original was not replicated.
+
+    The record is rejected, so nothing is published for it. Its siblings are separate
+    records and are not touched.
+    """
+    with db() as cur:
+        cur.execute("SELECT * FROM unvalidated WHERE record_id = %s FOR UPDATE", (record_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Record not found")
+        rec = dict(row)
+        if rec["validation_status"] != "need_review" or not removal_proposed(
+                _as_dict(rec.get("validator_1")), _as_dict(rec.get("validator_2"))):
+            raise HTTPException(409, "This entry is not waiting for its original to be removed")
+        _require_may_decide(cur, record_id, admin)
+        cur.execute(
+            """
+            UPDATE unvalidated SET
+                validation_status = 'rejected',
+                admin_checked     = TRUE,
+                admin_name        = %s,
+                updated_at        = NOW()
+            WHERE record_id = %s
+            """,
+            (admin["handle"], record_id),
+        )
+        cur.execute("DELETE FROM validated WHERE record_id = %s", (record_id,))
+        extra_originals.reject_children(cur, record_id, admin)
+        _log_decision(cur, record_id, admin, "original_removed", rec)
+    return {"removed": True, "record_id": record_id}
 
 
 @app.post("/api/admin/entries/{record_id}/flag-review")

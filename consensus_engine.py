@@ -31,6 +31,9 @@ from extractor_vocab import (
 )
 
 _CHECK_FIELDS = ["type_check", "original_check", "outcome_check"]
+# outcome_check for an original marked wrong with no replacement: no paper, so no
+# outcome to judge. Never equals an LLM answer, so it cannot win a tiebreak.
+NO_OUTCOME = "not_applicable"
 _CORRECTION_FIELDS = [
     "corrected_doi_o", "corrected_title_o", "corrected_outcome", "corrected_type",
     "corrected_title_r", "corrected_url_r",
@@ -113,6 +116,25 @@ def _original_disputed(h: dict) -> bool:
     its DOI and OpenAlex work with a corrected title (none at all, with neither).
     An admin puts the right original together."""
     return h.get("original_check") == "incorrect"
+
+
+def marked_wrong_without_replacement(h: dict) -> bool:
+    """Wrong paper, and no suggestion for the right one. Judged on what the validator
+    said rather than on outcome_check, so a judgement from a page that still asked
+    for the outcome counts the same."""
+    if h.get("original_check") != "incorrect" or _effective_corrected_type(h) == "not_validation":
+        return False
+    checks = _additional_checks(h)
+    if checks.get("was_unsure_original") or checks.get("senior_reject"):
+        return False
+    return not ((h.get("corrected_doi_o") or "").strip() or (h.get("corrected_title_o") or "").strip())
+
+
+def removal_proposed(h1: dict | None, h2: dict | None) -> bool:
+    """Both validators say this original is not what the paper replicated and neither
+    names another: there is nothing to publish. An admin confirms the removal."""
+    return bool(h1 and h2 and marked_wrong_without_replacement(h1)
+                and marked_wrong_without_replacement(h2))
 
 
 def auto_validation_rule(h1: dict, h2: dict, llm: dict | None,
@@ -319,6 +341,10 @@ def _quote_flagged(h: dict) -> bool:
 
 def _checks_agree(h1: dict, h2: dict) -> bool:
     return all(h1.get(f) == h2.get(f) for f in _CHECK_FIELDS)
+
+
+def effective_corrected_type(human: dict) -> str | None:
+    return _effective_corrected_type(human)
 
 
 def _effective_corrected_type(human: dict) -> str | None:
@@ -759,6 +785,14 @@ def evaluate_consensus(cur, record_id: str) -> None:
     # or a mis-copied quote that needs fixing. This intentionally also stops the
     # senior auto-validate shortcut. The LLM's answer is stored for the admin only.
     if _quote_flagged(h1) or _quote_flagged(h2):
+        llm = _store_only_answer(record, run_llm_validation(record, context="sanity_check"))
+        _update_status(cur, record_id, "need_review", False, None, llm, record)
+        return
+
+    # Two validators, no original: nothing here may reach FLoRA. The LLM's answer is
+    # stored for the admin only, and final values stay empty so approval cannot
+    # publish the extracted original and outcome.
+    if removal_proposed(h1, h2):
         llm = _store_only_answer(record, run_llm_validation(record, context="sanity_check"))
         _update_status(cur, record_id, "need_review", False, None, llm, record)
         return
