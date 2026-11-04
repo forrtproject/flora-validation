@@ -7539,7 +7539,7 @@ function renderAdminDetail(data) {
             </tr>`).join("")}
           </tbody>
         </table>
-      </details>` : `<p class="fp-no-changes">No field corrections — raw values will be published as-is.</p>`;
+      </details>` : `<p class="fp-no-changes">${data.original_removal ? "No field corrections." : "No field corrections — raw values will be published as-is."}</p>`;
 
     return `<div class="final-preview-card">
       <div class="final-preview-header">
