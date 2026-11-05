@@ -1,5 +1,5 @@
 /* Run with: node tests/test_extra_originals_admin_ui.cjs
- * The "Additional originals" section of an admin entry: collapsed unless a
+ * The "Other originals" section of an admin entry: collapsed unless a
  * suggestion waits, loaded only when opened, suggestions shown escaped with safe
  * links and their badges, Dismiss, the banner on an added original, and the form
  * that adds originals (by hand or from a suggestion).
@@ -117,7 +117,7 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     await review(record, { open_suggestions: 0, children: 1 });
     const section = page.locator("#xo-admin");
     assert.equal(await section.evaluate(d => d.open), false);
-    assert.match(await section.locator("summary").textContent(), /Additional originals · 1 added/);
+    assert.match(await section.locator("summary").textContent(), /Other originals · 1 added/);
     assert.equal(gets(), 0);
     await section.locator("summary").click();
     await page.locator(".admin-xo-item").first().waitFor();
@@ -163,7 +163,7 @@ const XSS = '<img src=x onerror="window.__xss=1">';
                    admin_name: "sophie" + XSS, inherits_outcome: false }, {});
     assert.equal(await page.locator("#xo-admin").count(), 0);
     const banner = await page.locator(".admin-xo-banner").textContent();
-    assert.match(banner, /Additional original/);
+    assert.match(banner, /Another original/);
     assert.match(banner, /it has an outcome of its own/);
     assert.equal(await page.evaluate(() => window.__xss), undefined);
 
@@ -244,7 +244,7 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     assert.equal(await field("outcome_computation").count(), 1);
     assert.equal(await field("outcome_robustness_quote").count(), 1);
 
-    // "Use as additional original" opens a pre-filled entry carrying the suggestions.
+    // "Use as another original" opens a pre-filled entry carrying the suggestions.
     await fresh({ ...view, parent: { ...view.parent, type: "replication" }, suggestions: [{
       key: "doi:10.9/new", doi_o: "10.9/new", url_o: "", title_o: "Suggested", study_o: "3, 4",
       notes: [], open_suggestion_ids: [7, 8], status: "open", is_own_original: false, coded_match: null,
@@ -362,7 +362,7 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     await page.locator("#admin-reject-btn").click();
     await page.locator("#dialog-modal:not(.hidden)").waitFor();
     assert.match(await page.locator("#dialog-message").textContent(),
-                 /The 2 additional originals you drafted for it will be discarded\./);
+                 /The 2 other originals you drafted for it will be discarded\./);
     await page.locator("#dialog-buttons button", { hasText: "Cancel" }).click();
     assert.equal(resolves().length, before);
 
@@ -370,14 +370,14 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     resolveResponse = [200, { resolved: true, rejected: false, record_id: P,
                               extra_originals_created: [{ record_id: C }, { record_id: "x" }] }];
     await page.locator("#admin-resolve-btn").click();
-    await page.waitForFunction(() => document.querySelector("#toast")?.textContent.includes("2 additional originals added"));
+    await page.waitForFunction(() => document.querySelector("#toast")?.textContent.includes("2 other originals added"));
     assert.doesNotMatch(await page.locator("#toast").textContent(), /Validators suggested/, "the used suggestion is not waiting");
     assert.equal(await page.evaluate((id) => id in _adminXoDrafts, P), false);
 
     // Without all three judgements: the reason, and no form.
     await reviewFresh(pending, { ...draftView, parent: { ...draftView.parent, mode: "blocked",
       mode_code: "judgements_missing", missing_judgements: ["the LLM check"],
-      mode_reason: "Additional originals can be added to this entry once the LLM and both validators have judged it. Still missing: the LLM check." } },
+      mode_reason: "Other originals can be added to this entry once the LLM and both validators have judged it. Still missing: the LLM check." } },
       { open_suggestions: 1, children: 0 });
     await page.locator(".admin-xo-notice").waitFor();
     assert.match(await page.locator(".admin-xo-notice").textContent(), /Still missing: the LLM check\./);

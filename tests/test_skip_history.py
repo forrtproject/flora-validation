@@ -269,7 +269,7 @@ def test_submission_failure_release_is_scoped_single_use_and_not_a_skip():
 
 def test_client_persists_submission_identity_and_structured_stamp_metadata():
     assert "httpErr.detail = err.detail" in JS
-    enqueue = JS.split("function _enqueueSubmit(payload, paper)", 1)[1].split(
+    enqueue = JS.split("function _enqueueSubmit(payload, paper, paperGroup = null)", 1)[1].split(
         "async function _processSubmitQueue()", 1
     )[0]
     assert "payload.submission_id || _newSubmissionId()" in enqueue

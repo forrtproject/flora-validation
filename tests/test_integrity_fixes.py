@@ -32,7 +32,8 @@ def test_normal_judgement_claim_is_locked_and_conditionally_completed():
 
 def test_assignment_is_locked_and_conditionally_completed():
     body = _function_body(APP, "assignment_judge", "judge")
-    assert "AND status = 'open' FOR UPDATE" in body
+    assert "SELECT * FROM unvalidated WHERE record_id = %s FOR UPDATE" in body
+    assert "SELECT id, status FROM assignments WHERE record_id = %s AND validator_id = %s FOR UPDATE" in body
     assert "WHERE id = %s AND status = 'open' RETURNING id" in body
     assert "This assignment was already submitted" in body
 

@@ -151,6 +151,7 @@ def run(apply: bool) -> None:
                 if ce.identity_taken(cur, rec, final):
                     duplicates += 1
                     continue
+                cur.execute("SAVEPOINT auto_validate_entry")
                 cur.execute(
                     """
                     UPDATE unvalidated SET validation_status = 'validated',
@@ -161,8 +162,12 @@ def run(apply: bool) -> None:
                     (rule, rec["record_id"]),
                 )
                 if cur.rowcount:
-                    ce._insert_validated(cur, rec, final)
-                    validated += 1
+                    if ce._insert_validated(cur, rec, final):
+                        validated += 1
+                    else:
+                        # Taken since the check above: it stays waiting for an admin.
+                        cur.execute("ROLLBACK TO SAVEPOINT auto_validate_entry")
+                        duplicates += 1
             conn.commit()
             print(f"\nAuto-validated {validated} entr{'y' if validated == 1 else 'ies'}."
                   + (f" Left {duplicates} duplicate(s) of another listed entry for an admin"

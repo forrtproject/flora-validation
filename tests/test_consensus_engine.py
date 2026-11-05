@@ -487,7 +487,6 @@ def test_no_auto_validation_unless_the_ai_check_agrees(llm):
 
 
 @pytest.mark.parametrize("fix", [
-    {},                                              # nothing supplied: the wrong original
     {"corrected_doi_o": "10.1000/right"},            # keeps the wrong paper's title
     {"corrected_title_o": "The right original"},     # keeps the wrong paper's DOI and work
 ])
@@ -501,6 +500,20 @@ def test_a_disputed_original_always_waits_for_an_admin(fix):
     with patch("consensus_engine.run_llm_validation", return_value=llm):
         evaluate_consensus(cur, "rec-001")
     assert _status_of(cur) == "consensus_reached"
+
+
+@pytest.mark.parametrize("h2_outcome", ["not_applicable", "correct"])
+def test_two_wrong_papers_with_no_replacement_cannot_be_approved_as_they_are(h2_outcome):
+    """Nothing is left to publish. It waits for an admin with no final values, and
+    counts the same when one judgement came from a page that still asked for an outcome."""
+    from consensus_engine import evaluate_consensus
+    h1 = {**H1_AGREE, "original_check": "incorrect", "outcome_check": "not_applicable"}
+    h2 = {**H2_AGREE, "original_check": "incorrect", "outcome_check": h2_outcome}
+    cur = _make_cur([h1, h2], BASE_RECORD, senior_count=2)
+    with patch("consensus_engine.run_llm_validation", return_value=LLM_AGREE_ALL):
+        evaluate_consensus(cur, "rec-001")
+    assert _status_of(cur) == "need_review"
+    assert "final_outcome" not in str(cur.execute.call_args_list)
 
 
 def test_a_duplicate_of_a_validated_entry_waits_for_an_admin():

@@ -1,6 +1,6 @@
 # Mark as Resolved
 
-POST /resolve validates the edited type, original, outcome and evidence; saves the final decision. For reproductions both axes are required. Additional originals drafted in the entry are created in the same transaction; if one is refused, nothing is saved and the message names the original, the field and what is wrong.
+POST /resolve validates the edited type, original, outcome and evidence; saves the final decision. For reproductions both axes are required. Other originals drafted in the entry are created in the same transaction; if one is refused, nothing is saved and the message names the original, the field and what is wrong.
 
 [Open interactive guide](../index.html#view=admin&node=admin-entries--mark-as-resolved)
 
@@ -12,11 +12,11 @@ Code snapshot: 29 October 2026, `2f3a89c`.
 
 ## What happens
 
-1. POST /resolve validates the edited type, original, outcome and evidence; saves the final decision. For reproductions both axes are required. Additional originals drafted in the entry are created in the same transaction; if one is refused, nothing is saved and the message names the original, the field and what is wrong.
+1. POST /resolve validates the edited type, original, outcome and evidence; saves the final decision. For reproductions both axes are required. Other originals drafted in the entry are created in the same transaction; if one is refused, nothing is saved and the message names the original, the field and what is wrong.
 
 ## What is saved, and where
 
-- unvalidated.final_* and admin fields; replaces this record's validated row; admin_decisions; drafted additional originals as new unvalidated + validated rows.
+- unvalidated.final_* and admin fields; replaces this record's validated row; admin_decisions; drafted other originals as new unvalidated + validated rows.
 
 ## When it updates
 

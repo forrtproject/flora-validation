@@ -1,6 +1,6 @@
 # Assign / Reassign
 
-POST /api/admin/assign creates or replaces the record's named assignment and marks it open.
+POST /api/admin/assign creates or replaces the record's named assignment and marks it open. A record already validated or rejected is refused.
 
 [Open interactive guide](../index.html#view=admin&node=admin-restricted--assign-reassign)
 
@@ -12,7 +12,7 @@ Code snapshot: 29 October 2026, `2f3a89c`.
 
 ## What happens
 
-1. POST /api/admin/assign creates or replaces the record's named assignment and marks it open.
+1. POST /api/admin/assign creates or replaces the record's named assignment and marks it open. A record already validated or rejected is refused.
 
 ## What is saved, and where
 

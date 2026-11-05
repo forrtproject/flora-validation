@@ -239,6 +239,46 @@ def test_technical_failure_is_accepted_before_the_extractor_emits_it():
         == "technical failure"
 
 
+def test_a_stalled_gemini_call_gives_up(monkeypatch):
+    """A server that accepts the request and never answers. /api/judge holds a row
+    lock through this call, so it must end on its own."""
+    import socket
+    import threading
+    import time
+    import llm_validator
+
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(5)
+    monkeypatch.setenv("GOOGLE_GEMINI_BASE_URL", f"http://127.0.0.1:{server.getsockname()[1]}")
+    monkeypatch.setenv("GEMINI_API_KEY", "not-a-key")
+    monkeypatch.setattr(llm_validator, "_GEMINI_TIMEOUT_MS", 300, raising=False)
+    finished = {}
+
+    def call():
+        started = time.monotonic()
+        try:
+            llm_validator._call_gemini("prompt", "replication")
+        except Exception as exc:
+            finished["error"] = exc
+        finished["seconds"] = time.monotonic() - started
+
+    caller = threading.Thread(target=call, daemon=True)
+    caller.start()
+    caller.join(6)
+    server.close()
+    assert not caller.is_alive(), "the call has no timeout"
+    assert "error" in finished and finished["seconds"] < 6
+
+
+def test_the_real_gemini_call_sets_a_timeout():
+    import llm_validator
+    with patch("llm_validator.genai.Client") as client, patch.dict("os.environ", {"GEMINI_API_KEY": "x"}):
+        llm_validator._call_gemini("prompt", "replication")
+    assert client.call_args.kwargs["http_options"].timeout == llm_validator._GEMINI_TIMEOUT_MS
+    assert 0 < llm_validator._GEMINI_TIMEOUT_MS <= 60_000   # milliseconds, in the SDK's unit
+
+
 def test_run_llm_validation_retries_once_on_failure():
     """_call_gemini is called twice when first call fails then succeeds."""
     from llm_validator import run_llm_validation

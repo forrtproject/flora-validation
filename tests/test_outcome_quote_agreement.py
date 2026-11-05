@@ -620,8 +620,9 @@ def test_the_tiebreaker_retry_leaves_converted_records_to_the_script(local_datab
                     "'{corrected_outcome}', '\"mixed\"') WHERE record_id = %s", (untouched,))
     backfill.run(apply=True, reevaluate=False, include_unverified=True)
     retried = []
+    monkeypatch.setattr(consensus_engine, "run_llm_validation", lambda record, context: {"error": "again"})
     monkeypatch.setattr(consensus_engine, "evaluate_consensus",
-                        lambda cur, record_id: retried.append(str(record_id)))
+                        lambda cur, record_id, llm_answer=None: retried.append(str(record_id)))
     monkeypatch.setattr(flora, "DATABASE_URL", os.environ["DATABASE_URL"])
     try:
         flora._retry_tiebreakers()
@@ -961,10 +962,10 @@ def test_the_chip_never_claims_a_better_quote_that_is_not_there():
 def test_evidence_is_sent_only_with_the_type_it_evidences():
     payload = APP_JS[APP_JS.index("const payload = {"):]
     payload = payload[:payload.index("};")]
-    assert "corrected_outcome_quote: isReplication ?" in payload
+    assert "corrected_outcome_quote: isReplication && judgedOutcome ?" in payload
     for field in ("computational_quote", "computational_source",
                   "robustness_quote", "robustness_source"):
-        assert f"corrected_{field}:" in payload and "isReproduction ?" in payload
+        assert f"corrected_{field}:" in payload and "isReproduction && judgedOutcome ?" in payload
 
 
 def test_the_submission_says_the_outcome_was_agreed_and_the_quote_disputed():

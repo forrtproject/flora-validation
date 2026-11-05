@@ -224,6 +224,23 @@ _LATEST = """
 """
 
 
+_REFUSED = object()
+
+
+def _stored_value(export_id, field: str, value, record_type):
+    """A logged correction as a build may use it, or _REFUSED.
+
+    The log is replayed on every build, so a row that would not pass today (an older
+    rule, a hand edit) must neither reach the public data nor stop the build: it is
+    skipped and logged, and the record builds with its derived value.
+    """
+    try:
+        return clean_value(field, value, record_type)
+    except (TypeError, ValueError) as exc:
+        print(f"[flora_edits] correction skipped on {export_id}: {exc}")
+        return _REFUSED
+
+
 def _table_exists(cur) -> bool:
     """The nightly job runs from the repository and can reach the database before
     the deployed site's init_db() has created the table."""
@@ -253,15 +270,18 @@ def load_identifiers(cur) -> dict:
     if not _table_exists(cur):
         return {}
     cur.execute(f"""
-        SELECT c.corrections, f.primary_source_record_id::text AS primary_id,
+        SELECT c.export_id, c.corrections, f.primary_source_record_id::text AS primary_id,
                f.merged_source_record_ids::text[] AS merged_ids,
                f.historical_source_record_ids::text[] AS historical_ids
         FROM ({_LATEST}) c JOIN flora_records f ON f.export_id = c.export_id
     """)
     records = []
     for row in cur.fetchall():
-        fields = {field: value for field, value in (row["corrections"] or {}).items()
+        # Editable on every record type, so the type does not change the answer.
+        fields = {field: _stored_value(row["export_id"], field, value, "replication")
+                  for field, value in (row["corrections"] or {}).items()
                   if field in IDENTIFIER_FIELDS}
+        fields = {field: value for field, value in fields.items() if value is not _REFUSED}
         if fields:
             candidates = [row["primary_id"], *(row["merged_ids"] or []),
                           *(row["historical_ids"] or [])]
@@ -371,6 +391,9 @@ def apply(cur, frame, corrections: "dict | None" = None):
         applied = {}
         for field, value in fields.items():
             if field not in allowed:
+                continue
+            value = _stored_value(export_id, field, value, record_type)
+            if value is _REFUSED:
                 continue
             applied[field] = before[field] if field in before else (
                 _text(out.at[idx, field]) if field in out.columns else None)

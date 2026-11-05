@@ -9,6 +9,8 @@ const state = {
   onboardingResults: [],
 };
 
+const NO_OUTCOME = "not_applicable";   // consensus_engine.NO_OUTCOME
+
 function blankJudgement() {
   return {
     type: null,
@@ -502,10 +504,12 @@ function buildConsensusSummary(v1, v2, llm) {
 
   const outS = summarize(
     groupBy(j => j.outcome_check === "correct" ? "ok"
+               : j.outcome_check === NO_OUTCOME ? "none"
                : j.corrected_outcome ? j.corrected_outcome
                : j.additional_checks?.was_unsure_outcome ? "unsure"
                : "incorrect"),
     s => s === "ok" ? "the outcome is correct"
+       : s === "none" ? "no outcome applies"
        : s === "unsure" ? "the outcome is unclear"
        : s === "incorrect" ? "the outcome is wrong"
        : `the outcome should be ${fmtOutcome(s)}`
@@ -1655,6 +1659,7 @@ function closeHistory() {
 }
 
 function _histCheckChip(value, label) {
+  if (value === NO_OUTCOME) return `<span class="hist-check unsure" title="${label}: not needed, wrong paper">–</span>`;
   if (!value) return `<span class="hist-check unsure" title="${label}">?</span>`;
   return value === "correct"
     ? `<span class="hist-check correct" title="${label}">✓</span>`
@@ -1838,6 +1843,8 @@ function _detailCheckRow(label, extracted, checkVal, corrected, unsure = false) 
     ? `<span class="hd-chk hd-chk-na">? Couldn't tell</span>`
     : checkVal === "incorrect"
     ? `<span class="hd-chk hd-chk-fail">✗ Corrected</span>`
+    : checkVal === NO_OUTCOME
+    ? `<span class="hd-chk hd-chk-na">— Not needed: wrong paper</span>`
     : `<span class="hd-chk hd-chk-na">— Not checked</span>`;
   const extrHtml = extracted
     ? `<div class="hd-row-val"><span class="hd-row-tag">Extracted</span><span>${escapeHtml(String(extracted))}</span></div>`
@@ -2325,7 +2332,7 @@ let splitLayout = localStorage.getItem("flora.splitLayout") !== "0"; // default 
 
 function applySplitLayout() {
   const cards = [$("#pair-card"), $("#onb-card")].filter(Boolean);
-  cards.forEach(c => c.classList.toggle("split-layout", splitLayout));
+  cards.forEach(c => c.classList.toggle("split-layout", splitLayout && !c.classList.contains("paper-review")));
 }
 
 // Apply on startup
@@ -2530,8 +2537,8 @@ function _replayGates(card, draft) {
   // reflect that resolved state and reveal gate-3.
   if (a.original === "wrong") {
     const hasSuggestion  = a.corrected_doi_o || a.corrected_study_o;
-    const reachedOutcome = a.outcome || a.corrected_outcome ||
-                           a.repro_computation || a.repro_robustness;
+    const reachedOutcome = !_wrongPaperHasNoOutcome(body) && (a.outcome || a.corrected_outcome ||
+                           a.repro_computation || a.repro_robustness);
     if (hasSuggestion || reachedOutcome) {
       const oc = card.querySelector("#original-correction");
       if (hasSuggestion) {
@@ -2703,6 +2710,10 @@ function _showActivePair(pair) {
   $("#done-screen").classList.add("hidden");
   $("#pair-card").classList.remove("hidden");
   state.currentPair = pair;
+  if (_paperReviewOn(pair) && (pair.coded_originals || []).length >= 2) {
+    _openPaperReview(pair);
+    return;
+  }
   const pair_id  = pair.pair_id;
   const draftRaw = pair.resumed ? localStorage.getItem(_DRAFT_KEY(pair_id)) : null;
   const draft    = draftRaw ? (() => { try { return JSON.parse(draftRaw); } catch { return null; } })() : null;
@@ -2784,7 +2795,7 @@ function _isTerminalErr(e) {
 
 function _slotNoLongerOwned(e) {
   const m = (e && e.message) || "";
-  return /No open slot|Already judged|already submitted|no longer assigned/i.test(m);
+  return /No open slot|Already judged|already submitted|no longer assigned|already been decided/i.test(m);
 }
 
 function _newSubmissionId() {
@@ -2799,7 +2810,7 @@ function _newSubmissionId() {
   });
 }
 
-function _enqueueSubmit(payload, paper) {
+function _enqueueSubmit(payload, paper, paperGroup = null) {
   const submissionId = payload.submission_id || _newSubmissionId();
   const queuedPayload = { ...payload, submission_id: submissionId };
   _submitQueue.push({
@@ -2807,6 +2818,7 @@ function _enqueueSubmit(payload, paper) {
     payload: queuedPayload,
     record_id: payload.record_id,
     paper,
+    paper_group: paperGroup,
     attempts: 0,
     queued_at: Date.now(),
     owner_id: state.coder?.coder_id ?? null,
@@ -2840,7 +2852,7 @@ async function _processSubmitQueue() {
     try {
       const resp = await api("/judge", "POST", item.payload);
       _submitQueue.splice(idx, 1); _persistSubmits();
-      _celebratePoints(resp.points_earned);
+      _celebrateQueued(item, resp.points_earned);
       refreshStats().catch(() => {});
       refreshLeaderboard().catch(() => {});
     } catch (e) {
@@ -2940,6 +2952,17 @@ function _celebratePoints(points) {
     confetti({ particleCount: 60, spread: 60, origin: { y: 0.5 },
                colors: ["#b54614", "#1a1612", "#d6a87e", "#4a6b3e"], scalar: 0.9 });
   }
+}
+
+// A paper's records arrive one by one but earn one celebration, when the last lands.
+const _paperGroupPoints = {};
+function _celebrateQueued(item, points) {
+  if (!item.paper_group) return _celebratePoints(points);
+  const group = item.paper_group;
+  _paperGroupPoints[group] = (_paperGroupPoints[group] || 0) + (points || 0);
+  if (_submitQueue.some(it => it.paper_group === group && !it.blocked)) return;
+  _celebratePoints(_paperGroupPoints[group]);
+  delete _paperGroupPoints[group];
 }
 
 // One description of a queued item, shared by every recovery view.
@@ -3333,7 +3356,7 @@ function _codedOriginalsBlock(p) {
     </div>`;
 }
 
-/* ---------- Additional originals (Gate II suggestions) ---------- */
+/* ---------- Other originals (Gate II suggestions) ---------- */
 
 // A replication or reproduction can have more than one original, and the
 // extractor may have coded only some of them. The validator suggests the others
@@ -3345,10 +3368,16 @@ function _codedOriginalsBlock(p) {
 const XO_LIMITS = { doi_or_url: 500, title: 1000, study: 50, note: 1000 };
 const XO_MAX = 10;
 
-function _extraOriginalsBlock() {
+function _extraOriginalsBlock(p) {
+  if (_paperReviewOn(p)) {
+    return `
+      <div id="extra-originals" class="xo-panel hidden">
+        <button type="button" id="pr-add-another" class="pr-add-btn">＋ Add another original</button>
+      </div>`;
+  }
   return `
       <div id="extra-originals" class="xo-panel hidden">
-        <label class="xo-toggle"><input type="checkbox" id="xo-has-more"> This study has more than one original</label>
+        <label class="xo-toggle"><input type="checkbox" id="xo-has-more"> Add another original</label>
         <div id="xo-body" class="xo-body hidden">
           <p class="xo-hint">Suggest each other original this paper replicates or reproduces. An admin reviews your suggestions; your answer above stays as it is.</p>
           <ol id="xo-list" class="xo-list"></ol>
@@ -3411,6 +3440,11 @@ function _renderExtraOriginalsList(container) {
 }
 
 function _wireExtraOriginals(container) {
+  const addAnother = container.querySelector("#pr-add-another");
+  if (addAnother) {
+    addAnother.onclick = () => _openPaperReview(state.currentPair, { addAnother: true });
+    return;
+  }
   const panel = container.querySelector("#extra-originals");
   if (!panel) return;
   const checkbox = panel.querySelector("#xo-has-more");
@@ -3481,14 +3515,48 @@ function _extraOriginalsPayload(j) {
 /* ---------- Pair rendering (normal + onboarding) ---------- */
 let _pairShownAt = null;
 
-function renderPairInto(container, p, { onboarding, judgeCount }) {
-  if (!onboarding) _pairShownAt = Date.now();
-  const isHard = !onboarding && state.mode === "hard" && !state.assignment;
-  const outcomeLabel = (p.outcome || "uninformative").toLowerCase();
+function _pairHeaderHtml(p, onboarding) {
   const doiUrl = p.doi_r ? `https://doi.org/${p.doi_r}` : null;
   const oaUrl = p.oa_url_r || (p.url_r && p.url_r !== doiUrl ? p.url_r : null);
   const scholarQuery = encodeURIComponent(`${p.title_r || ""} ${p.authors_r || ""}`);
   const scholarUrl = `https://scholar.google.com/scholar?q=${scholarQuery}`;
+  const lockIcon = (open) => `<span class="oa-lock ${open ? "open" : "gated"}" aria-label="${open ? "open access" : "gated"}">${open ? "🔓" : "🔒"}</span>`;
+  return `
+    <div class="pair-header">
+      <div class="pair-meta">
+${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
+        ${onboarding ? "" : `<button class="skip-btn" id="skip-btn">Skip / report issue</button>`}
+      </div>
+
+      <div class="abstract-block">
+        <div class="title-row">
+          <h2 id="title-text">${escapeHtml(p.title_r || "(untitled)")}</h2>
+          <button class="link-btn" id="fix-title-btn" title="Fix a typographical error in this title">fix typo</button>
+        </div>
+        <input type="text" class="title-edit hidden" id="title-edit" placeholder="Corrected title…">
+        <div class="authors">${escapeHtml(p.authors_r || "?")} · ${fmtYear(p.year_r)}${p.study_r ? " · Study " + escapeHtml(p.study_r) : ""}${p.journal_r ? " · " + escapeHtml(p.journal_r) : ""}${doiUrl ? ` · <a href="${escapeHtml(oaUrl || doiUrl)}" target="_blank" rel="noopener" title="${oaUrl ? "Open access PDF" : "Publisher page (likely paywalled)"}">${lockIcon(!!oaUrl)} ${escapeHtml(p.doi_r)}</a>` : ""}</div>
+        <div class="abstract expanded" id="abstract-text">${escapeHtml(p.abstract_r || "(no abstract available)")}</div>
+        <textarea class="abstract-edit hidden" id="abstract-edit"></textarea>
+        <div class="abstract-tools">
+          <button class="link-btn" id="edit-abstract-btn">edit abstract</button>
+          <span class="abstract-tools-spacer"></span>
+          <a href="${escapeHtml(scholarUrl)}" target="_blank" rel="noopener" title="Search for an alternate copy">Scholar</a>
+          <button class="link-btn" id="suggest-url-r-btn" title="Suggest the correct link for this paper">suggest link</button>
+          <button class="link-btn" id="doi-r-published-btn" title="If the replication is a preprint, add the DOI of the published article, if it is available">published DOI</button>
+        </div>
+        <input type="text" class="title-edit hidden" id="url-r-edit" placeholder="https://… correct link for this paper">
+        <div class="field-hint hidden" id="doi-r-published-hint">If the replication is a preprint, add the DOI of the published article, if it is available.</div>
+        <input type="text" class="title-edit hidden" id="doi-r-published-edit" placeholder="10.xxxx/… DOI of the published article">
+      </div>
+    </div>
+  `;
+}
+
+function renderPairInto(container, p, { onboarding, judgeCount }) {
+  container.classList.remove("paper-review");
+  if (!onboarding) _pairShownAt = Date.now();
+  const isHard = !onboarding && state.mode === "hard" && !state.assignment;
+  const outcomeLabel = (p.outcome || "uninformative").toLowerCase();
   const oUrl = p.doi_o ? `https://doi.org/${p.doi_o}` : null;
   const oOaUrl = p.oa_url_o || null;
   // DOI-less originals (books, chapters, pre-DOI papers): no doi.org link exists.
@@ -3529,33 +3597,7 @@ function renderPairInto(container, p, { onboarding, judgeCount }) {
     : "Is the extracted outcome correct? Check the quote below against the paper.";
 
   container.innerHTML = `
-    <div class="pair-header">
-      <div class="pair-meta">
-${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
-        ${onboarding ? "" : `<button class="skip-btn" id="skip-btn">Skip / report issue</button>`}
-      </div>
-
-      <div class="abstract-block">
-        <div class="title-row">
-          <h2 id="title-text">${escapeHtml(p.title_r || "(untitled)")}</h2>
-          <button class="link-btn" id="fix-title-btn" title="Fix a typographical error in this title">fix typo</button>
-        </div>
-        <input type="text" class="title-edit hidden" id="title-edit" placeholder="Corrected title…">
-        <div class="authors">${escapeHtml(p.authors_r || "?")} · ${fmtYear(p.year_r)}${p.study_r ? " · Study " + escapeHtml(p.study_r) : ""}${p.journal_r ? " · " + escapeHtml(p.journal_r) : ""}${doiUrl ? ` · <a href="${escapeHtml(oaUrl || doiUrl)}" target="_blank" rel="noopener" title="${oaUrl ? "Open access PDF" : "Publisher page (likely paywalled)"}">${lockIcon(!!oaUrl)} ${escapeHtml(p.doi_r)}</a>` : ""}</div>
-        <div class="abstract expanded" id="abstract-text">${escapeHtml(p.abstract_r || "(no abstract available)")}</div>
-        <textarea class="abstract-edit hidden" id="abstract-edit"></textarea>
-        <div class="abstract-tools">
-          <button class="link-btn" id="edit-abstract-btn">edit abstract</button>
-          <span class="abstract-tools-spacer"></span>
-          <a href="${escapeHtml(scholarUrl)}" target="_blank" rel="noopener" title="Search for an alternate copy">Scholar</a>
-          <button class="link-btn" id="suggest-url-r-btn" title="Suggest the correct link for this paper">suggest link</button>
-          <button class="link-btn" id="doi-r-published-btn" title="If the replication is a preprint, add the DOI of the published article, if it is available">published DOI</button>
-        </div>
-        <input type="text" class="title-edit hidden" id="url-r-edit" placeholder="https://… correct link for this paper">
-        <div class="field-hint hidden" id="doi-r-published-hint">If the replication is a preprint, add the DOI of the published article, if it is available.</div>
-        <input type="text" class="title-edit hidden" id="doi-r-published-edit" placeholder="10.xxxx/… DOI of the published article">
-      </div>
-    </div>
+    ${_pairHeaderHtml(p, onboarding)}
 
     <div class="pair-body">
       <div class="gate" id="gate-1">
@@ -3618,6 +3660,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
           <span style="font-size:0.9rem;font-weight:600;color:var(--ink)">Suggest the correct paper</span>
           <span style="font-size:0.78rem;color:var(--muted)">(optional — you can skip this)</span>
         </div>
+        ${onboarding ? "" : `<p class="pr-oc-hint">Add it and you'll check its outcome. Without one, no outcome is needed.</p>`}
         <div id="oc-form">
           <label style="font-size:0.8rem;color:var(--muted);display:block;margin-bottom:0.2rem">DOI or URL</label>
           <input id="corrected-doi-input" type="text" placeholder="e.g. https://doi.org/10.1000/xyz"
@@ -3633,7 +3676,7 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
         <div id="oc-saved-confirm" class="hidden" style="font-size:0.85rem;color:var(--green)">✓ Suggestion saved — <button class="link-btn" id="oc-edit-btn" style="font-size:0.82rem">edit</button></div>
       </div>
 
-      ${onboarding ? "" : _extraOriginalsBlock()}
+      ${onboarding ? "" : _extraOriginalsBlock(p)}
 
       <div class="gate hidden" id="gate-3">
         <div class="gate-header-row">
@@ -3758,16 +3801,24 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
     if (gate3) gate3.classList.remove("hidden");
   }
 
-  if (doiInput)   doiInput.oninput   = () => { state.judgement.corrected_doi_o   = doiInput.value.trim()   || null; };
-  if (studyInput) studyInput.oninput = () => { state.judgement.corrected_study_o = studyInput.value.trim() || null; };
+  const pairBody = container.querySelector(".pair-body");
+  if (doiInput)   doiInput.oninput   = () => { state.judgement.corrected_doi_o   = doiInput.value.trim()   || null; updateSubmitState(pairBody); };
+  if (studyInput) studyInput.oninput = () => { state.judgement.corrected_study_o = studyInput.value.trim() || null; updateSubmitState(pairBody); };
 
   if (ocSaveBtn) {
     ocSaveBtn.onclick = () => {
       state.judgement.corrected_doi_o   = doiInput?.value.trim()   || null;
       state.judgement.corrected_study_o = studyInput?.value.trim() || null;
+      const replaced = state.judgement.corrected_doi_o || state.judgement.corrected_study_o;
+      if (!replaced && !onboarding && !state.assignment) {
+        if (ocPanel) ocPanel.classList.add("hidden");
+        updateSubmitState(container.querySelector(".pair-body"));
+        return;
+      }
       if (ocForm)    ocForm.classList.add("hidden");
       if (ocConfirm) ocConfirm.classList.remove("hidden");
       _revealGate3();
+      updateSubmitState(container.querySelector(".pair-body"));
     };
   }
 
@@ -3778,7 +3829,8 @@ ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
       if (doiInput)   doiInput.value   = "";
       if (studyInput) studyInput.value = "";
       if (ocPanel)    ocPanel.classList.add("hidden");
-      _revealGate3();
+      if (onboarding || state.assignment) _revealGate3();
+      updateSubmitState(container.querySelector(".pair-body"));
     };
   }
 
@@ -4245,9 +4297,14 @@ function onChoice(btn) {
     if (btn.dataset.original === "wrong") {
       const ocPanel   = pairBody.querySelector("#original-correction");
       const ocConfirm = pairBody.querySelector("#oc-saved-confirm");
-      const resolved  = (ocConfirm && !ocConfirm.classList.contains("hidden")) ||
-                        (!ocPanel  || ocPanel.classList.contains("hidden"));
-      if (resolved) gate3.classList.remove("hidden");
+      const saved     = ocConfirm && !ocConfirm.classList.contains("hidden");
+      if (_wrongPaperHasNoOutcome(pairBody)) {
+        // No paper, no outcome: only a saved replacement has one to check.
+        const replaced = saved && (state.judgement.corrected_doi_o || state.judgement.corrected_study_o);
+        gate3.classList.toggle("hidden", !replaced);
+      } else if (saved || !ocPanel || ocPanel.classList.contains("hidden")) {
+        gate3.classList.remove("hidden");
+      }
       // else leave gate-3 hidden — save/skip handlers will reveal it
     } else {
       gate3.classList.remove("hidden");
@@ -4685,6 +4742,12 @@ function _applyOutcomeMode(pairBody) {
   }
 }
 
+// A wrong paper with no replacement has no outcome to judge. Onboarding keeps its
+// answer key, and an assignment resolves the record so it always needs one.
+function _wrongPaperHasNoOutcome(pairBody) {
+  return !state.assignment && !pairBody?.closest?.("#onb-card");
+}
+
 function updateSubmitState(pairBody) {
   const j = state.judgement;
   const btnEl = (pairBody || document).querySelector("#submit-btn");
@@ -4707,7 +4770,9 @@ function updateSubmitState(pairBody) {
        // hold one the disabled button no longer offers).
        (j.outcome !== "correct" || !!_canonicalOutcome(state.currentPair?.outcome)) &&
        (!j.outcome_quote_fix || _hasBetterQuote(j, state.currentPair))); // replication flow
-  const ready = j.type === "not_validation" || (j.type && j.original && outcomeReady);
+  const noOutcome = j.original === "wrong" && !j.corrected_doi_o && !j.corrected_study_o &&
+    _wrongPaperHasNoOutcome(pairBody);
+  const ready = j.type === "not_validation" || (j.type && j.original && (outcomeReady || noOutcome));
   const btn = (pairBody || document).querySelector("#submit-btn");
   if (btn) btn.disabled = !ready;
 }
@@ -4840,31 +4905,8 @@ async function onSkip() {
   }
 }
 
-async function submitJudgement() {
-  const btn = $("#submit-btn");
-  if (!btn || btn.disabled) return;
-  btn.disabled = true;
-  clearPairTimer();
-
-  const j = state.judgement;
-  const p = state.currentPair;
-
-  // Hard-mode "I cannot access this article" — report it (no judgement, no
-  // points) and move on. The record leaves circulation for the admin queue.
-  if (j.no_access) {
-    _clearDraft(p.pair_id);
-    try {
-      await api("/restricted", "POST", { record_id: String(p.record_id) });
-      showToast("Sent to the review team.");
-    } catch (e) {
-      await showAlert(e.message);
-      btn.disabled = false;
-      return;
-    }
-    await loadNextPair(false);
-    return;
-  }
-
+// One record's /judge request, from what its page showed and what was answered.
+function _buildJudgePayload(p, j) {
   const isNotValidation = j.type === "not_validation";
   const pType = (p.type || "").toLowerCase();
   const typeCheck = (!isNotValidation && j.type === pType) ? "correct" : "incorrect";
@@ -4873,22 +4915,25 @@ async function submitJudgement() {
 
   // "Can't tell" collapses to "incorrect" in the check columns, so preserve the
   // real intent in additional_checks — consensus uses it to route to review.
+  const noOutcome = !isNotValidation && !state.assignment && j.original === "wrong" &&
+    !j.corrected_doi_o && !j.corrected_study_o;
+  const judgedOutcome = !isNotValidation && !noOutcome;
   const addl = {};
   if (!isNotValidation && j.original === "unsure") addl.was_unsure_original = true;
-  if (!isNotValidation && j.outcome  === "unsure") addl.was_unsure_outcome  = true;
+  if (judgedOutcome && j.outcome  === "unsure") addl.was_unsure_outcome  = true;
   // The outcome was agreed; only its evidence was disputed. Kept so the review
   // screen can say so — the verdict itself stays a plain "correct".
-  if (!isNotValidation && j.type === "replication" && j.outcome === "correct" &&
+  if (judgedOutcome && j.type === "replication" && j.outcome === "correct" &&
       j.outcome_quote_fix) {
     addl.outcome_quote_disputed = true;
   }
   // The outcome this page showed. A nightly import can change the record's
   // outcome while the page is open, and the server must not read a correction
   // made against the old value as agreement with the new one.
-  if (!isNotValidation && j.type === "replication" && p.outcome) {
+  if (judgedOutcome && j.type === "replication" && p.outcome) {
     addl.shown_outcome = p.outcome;
   }
-  if (!isNotValidation && j.type === "reproduction" &&
+  if (judgedOutcome && j.type === "reproduction" &&
       (j.repro_computation_check === "unsure" || j.repro_robustness_check === "unsure")) {
     addl.was_unsure_outcome = true;
     addl.unsure_reproduction_axes = [
@@ -4896,7 +4941,7 @@ async function submitJudgement() {
       j.repro_robustness_check === "unsure" ? "robustness" : null,
     ].filter(Boolean);
   }
-  if (!isNotValidation && j.type === "reproduction") {
+  if (judgedOutcome && j.type === "reproduction") {
     // Preserve the explicit buttons that were clicked. Equal values do not imply
     // "Looks right": a same-value correction and "Can't tell" are still not an
     // affirmative agreement and must not earn the agreement bonus.
@@ -4912,7 +4957,7 @@ async function submitJudgement() {
   // a hint. Skipped where checking is meaningless: full-text-quote records, hard
   // mode / assignments (no reliable abstract), "not a replication" calls, or no
   // quote/abstract to compare.
-  if (!isNotValidation && state.mode !== "hard" && !state.assignment &&
+  if (judgedOutcome && state.mode !== "hard" && !state.assignment &&
       p.out_quote_source !== "full_text") {
     const effQuote    = (j.edited_outcome_quote || p.outcome_phrase || "").trim();
     const effAbstract = (j.edited_abstract || p.abstract_r || "").trim();
@@ -4938,26 +4983,27 @@ async function submitJudgement() {
     type_check:     isNotValidation ? "incorrect" : typeCheck,
     original_check: isNotValidation ? "incorrect" : (j.original === "correct" ? "correct" : "incorrect"),
     outcome_check:  isNotValidation ? "incorrect"
+                  : noOutcome ? NO_OUTCOME
                   : j.type === "reproduction" ? reproOutcomeCheck()
                   : (j.outcome === "correct" ? "correct" : "incorrect"),
     additional_checks:       Object.keys(addl).length ? addl : null,
     corrected_type:          correctedType || null,
     corrected_doi_o:         j.corrected_doi_o   || null,
     corrected_title_o:       j.corrected_study_o || null,
-    corrected_outcome:       j.corrected_outcome || null,
+    corrected_outcome:       judgedOutcome ? (j.corrected_outcome || null) : null,
     // Evidence travels only with the type it evidences. An edit made before the
     // validator switched type (to reproduction, or to "neither") stays in state
     // but describes a judgement they are no longer submitting.
-    corrected_outcome_quote: isReplication ? (j.edited_outcome_quote || null) : null,
+    corrected_outcome_quote: isReplication && judgedOutcome ? (j.edited_outcome_quote || null) : null,
     // Reproduction axes, sent unjoined. Null on replications, and null on the
     // axis the validator did not re-evidence — a blank quote means "no change",
     // not "clear the extractor's".
-    corrected_outcome_computation:  j.repro_computation || null,
-    corrected_computational_quote:  isReproduction ? (j.edited_computational_quote || null) : null,
-    corrected_computational_source: isReproduction ? (j.edited_computational_source || null) : null,
-    corrected_outcome_robustness:   j.repro_robustness || null,
-    corrected_robustness_quote:     isReproduction ? (j.edited_robustness_quote || null) : null,
-    corrected_robustness_source:    isReproduction ? (j.edited_robustness_source || null) : null,
+    corrected_outcome_computation:  judgedOutcome ? (j.repro_computation || null) : null,
+    corrected_computational_quote:  isReproduction && judgedOutcome ? (j.edited_computational_quote || null) : null,
+    corrected_computational_source: isReproduction && judgedOutcome ? (j.edited_computational_source || null) : null,
+    corrected_outcome_robustness:   judgedOutcome ? (j.repro_robustness || null) : null,
+    corrected_robustness_quote:     isReproduction && judgedOutcome ? (j.edited_robustness_quote || null) : null,
+    corrected_robustness_source:    isReproduction && judgedOutcome ? (j.edited_robustness_source || null) : null,
     corrected_abstract:      j.edited_abstract || null,
     corrected_title_r:       j.corrected_study_r || null,
     corrected_url_r:         j.corrected_url_r || null,
@@ -4966,6 +5012,35 @@ async function submitJudgement() {
     // Other originals the validator suggested. Not for "neither": no original.
     extra_originals:         isNotValidation ? null : _extraOriginalsPayload(j),
   };
+  return payload;
+}
+
+async function submitJudgement() {
+  const btn = $("#submit-btn");
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  clearPairTimer();
+
+  const j = state.judgement;
+  const p = state.currentPair;
+
+  // Hard-mode "I cannot access this article" — report it (no judgement, no
+  // points) and move on. The record leaves circulation for the admin queue.
+  if (j.no_access) {
+    _clearDraft(p.pair_id);
+    try {
+      await api("/restricted", "POST", { record_id: String(p.record_id) });
+      showToast("Sent to the review team.");
+    } catch (e) {
+      await showAlert(e.message);
+      btn.disabled = false;
+      return;
+    }
+    await loadNextPair(false);
+    return;
+  }
+
+  const payload = _buildJudgePayload(p, j);
 
   // Assignment validation — resolves the record directly (double points),
   // submitted synchronously (not via the optimistic queue) and one-off.
@@ -4982,6 +5057,14 @@ async function submitJudgement() {
     } catch (e) {
       await showAlert(e.message);
       btn.disabled = false;
+      if (e.detail?.code === "record_already_decided") {
+        // Nothing here can be saved any more, so the screen does not stay on it.
+        _clearDraft(p.pair_id);
+        state.assignment = null;
+        $("#assignment-banner").classList.add("hidden");
+        await refreshAssignments();
+        await loadNextPair();
+      }
     }
     return;
   }
@@ -5019,6 +5102,610 @@ function submitOnboarding() {
   if (!ready) return;
   const errors = evaluateOnboarding(pair, j);
   showOnboardingFeedback(pair, errors);
+}
+
+/* ---------- Paper review: every original of a paper on one screen ---------- */
+
+// One table for a replication paper with several coded originals. The type is asked
+// once. Each original gets its own "right paper?" answer. Originals share an outcome
+// check only when their extracted outcome and quote both match. Submitting sends one
+// ordinary judgement per record through the same durable queue as the normal screen,
+// so consensus, retries and recovery stay per record. See paper_review.py.
+const _PAPER_DRAFT_KEY = (doi) => `flora.paperdraft.${state.coder?.coder_id}.${String(doi).toLowerCase()}`;
+const _PAPER_OPT_OUT_KEY = (doi) => `flora.paperreview.optout.${state.coder?.coder_id}.${String(doi).toLowerCase()}`;
+
+function _paperReviewOn(p) {
+  if (!p?.paper_review || state.assignment || state.mode === "hard") return false;
+  try { return !localStorage.getItem(_PAPER_OPT_OUT_KEY(p.doi_r)); } catch { return true; }
+}
+
+const _prLive = () => state.paperReview.originals.filter(o => o.judgeable);
+const _prNormQuote = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+const _prShortName = (o) => `${String(o.authors_o || "?").split(/[,;]/)[0].trim()} ${fmtYear(o.year_o)}`;
+const _prEvidence = (s) => String(s || "").split(" | ")[0].split(/;\s*stated_count=/)[0].trim();
+
+function _prHasReplacement(o) {
+  const pr = state.paperReview, fix = pr.fix[o.record_id] || {};
+  return pr.orig[o.record_id] === "wrong" && !!((fix.doi || "").trim() || (fix.title || "").trim());
+}
+
+function _prNeedsOutcome(o) {
+  return state.paperReview.orig[o.record_id] !== "wrong" || _prHasReplacement(o);
+}
+
+// The check this original's outcome is answered in. A quote-less outcome never
+// merges (there is no shared evidence to compare), and neither does a replacement,
+// whose outcome belongs to a different paper.
+function _prCheckKey(o) {
+  const quote = _prNormQuote(o.outcome_phrase);
+  if (state.paperReview.pulled[o.record_id] || _prHasReplacement(o) || !quote) return `r:${o.record_id}`;
+  return `q:${o.outcome || ""}|${quote}`;
+}
+
+function _prChecks() {
+  const checks = new Map();
+  for (const o of _prLive()) {
+    const key = _prCheckKey(o);
+    if (!checks.has(key)) checks.set(key, { key, rows: [], outcome: o.outcome, quote: o.outcome_phrase || "" });
+    checks.get(key).rows.push(o);
+  }
+  return [...checks.values()];
+}
+
+const _prAsked = (check) => check.rows.filter(_prNeedsOutcome);
+
+function _prCheckDone(check) {
+  const answer = state.paperReview.out[check.key];
+  if (!answer?.answer) return false;
+  if (answer.answer === "right") return !!_canonicalOutcome(check.outcome);
+  if (answer.answer === "better") return _quoteWords(answer.quote) !== _quoteWords(check.quote) && !!(answer.quote || "").trim();
+  if (answer.answer === "wrong") return !!answer.corrected;
+  return true;
+}
+
+function _prRemaining() {
+  const pr = state.paperReview;
+  if (!pr.type) return 1;
+  if (pr.type === "not_validation") return 0;
+  return _prLive().filter(o => !pr.orig[o.record_id]).length +
+    _prChecks().filter(c => _prAsked(c).length && !_prCheckDone(c)).length;
+}
+
+async function _openPaperReview(pair, { addAnother = false } = {}) {
+  if (!addAnother) _showLoadingCard();
+  let set;
+  try {
+    set = await api("/paper-review/claim", "POST", { record_id: String(pair.record_id) });
+  } catch (e) {
+    if (addAnother) { showToast("Couldn't open the review table. Your answers are kept."); return; }
+    _showActivePair({ ...pair, paper_review: false });   // the one-record screen always works
+    return;
+  }
+  // A judgement still in the durable queue must not be answered a second time.
+  const pending = _pendingRecordIds();
+  set.originals = set.originals.map(o => pending.has(String(o.record_id)) ? { ...o, judgeable: false } : o);
+  if (state.currentPair !== pair) {   // the validator has moved on
+    _prReturnToBuffer(set.originals, pair);
+    return;
+  }
+  const claimed = new Set(set.originals.filter(o => o.judgeable).map(o => String(o.record_id)));
+  _pairBuffer = _pairBuffer.filter(b => !claimed.has(String(b.record_id)));
+
+  // Answers already given on the one-record screen carry over: from the page when
+  // adding another original, from its saved draft when a pair resumes in the table.
+  let carried = addAnother ? state.judgement : null;
+  if (!carried && pair.resumed) {
+    try { carried = JSON.parse(localStorage.getItem(_DRAFT_KEY(pair.pair_id))); } catch (_) { /* no draft */ }
+    if (carried) carried = _prepareDraft(carried, pair);
+  }
+  state.judgement = carried || _prepareDraft(null, pair);
+  state.paperReview = {
+    pair, originals: set.originals, group: _newSubmissionId(), type: null,
+    orig: {}, fix: {}, pulled: {}, out: {}, why: {}, drafts: [],
+  };
+  const pr = state.paperReview;
+  _prRestoreDraft(pair);
+  if (carried) _prCarryAnswers(carried, pair);
+  if (addAnother) pr.drafts.push(_blankXo());
+  if (pr.type === "reproduction") return _prContinueOneByOne();
+
+  const card = $("#pair-card");
+  card.classList.add("paper-review");
+  card.classList.remove("split-layout");
+  card.innerHTML = `${_pairHeaderHtml(pair, false)}<div class="pair-body pr-body" id="pr-body"></div>`;
+  wireEditButtons(card, pair);
+  _restoreDraftInputs(card, state.judgement);
+  card.querySelector("#skip-btn").onclick = _onSkipPaper;
+  const body = card.querySelector("#pr-body");
+  body.addEventListener("click", _onPaperReviewClick);
+  body.addEventListener("input", _onPaperReviewInput);
+  _pairShownAt = Date.now();
+  _clearDraft(pair.pair_id);
+  // Saved header corrections live in state.judgement, outside the table's own events.
+  _draftInterval = setInterval(_prSaveDraft, 10_000);
+  card.querySelector(".pair-header").addEventListener("click", () => setTimeout(_prSaveDraft));
+  card.querySelector(".pair-header").addEventListener("focusout", () => setTimeout(_prSaveDraft));
+  _renderPaperReview();
+  clearInterval(_prHoldTimer);
+  _prHoldTimer = setInterval(_prHoldBeat, _PAPER_HOLD_REFRESH_MS);
+}
+
+// The table's rows are short holds (paper_review.claim), renewed here while it is
+// open, so a paper nobody is at frees itself. Idle sign-out ends a forgotten tab.
+const _PAPER_HOLD_REFRESH_MS = 5 * 60 * 1000;
+let _prHoldTimer = null;
+
+async function _prHoldBeat() {
+  const pr = state.paperReview;
+  if (!pr || state.currentPair !== pr.pair) {
+    clearInterval(_prHoldTimer);
+    _prHoldTimer = null;
+    return;
+  }
+  try { await _prSyncHolds(); } catch (_) { /* the next beat tries again */ }
+}
+
+async function _prHeldIds() {
+  const resp = await api("/paper-review/refresh", "POST", { record_ids: _prLive().map(o => String(o.record_id)) });
+  return new Set(resp.held);
+}
+
+// Checks the table against the server. A hold can lapse while the table stays open (a
+// laptop asleep past the reaper's 45 minutes). What is still free is retaken; a row
+// that cannot be leaves the table and the validator is told, with every other answer
+// kept. Returns whether every row is still held.
+async function _prSyncHolds() {
+  const pr = state.paperReview;
+  const held = await _prHeldIds();
+  if (state.paperReview !== pr) return false;
+  let lost = _prLive().filter(o => !held.has(String(o.record_id)));
+  if (!lost.length) return true;
+  const anchor = _prLive().find(o => held.has(String(o.record_id)));
+  if (anchor) {
+    try {
+      const set = await api("/paper-review/claim", "POST", { record_id: String(anchor.record_id) });
+      if (state.paperReview !== pr) return false;
+      const back = new Set(set.originals.filter(o => o.judgeable).map(o => String(o.record_id)));
+      lost = lost.filter(o => !back.has(String(o.record_id)));
+    } catch (_) { /* a row that cannot be confirmed is not offered */ }
+  }
+  if (!lost.length) return true;
+  const names = lost.map(_prShortName).join(", ");
+  lost.forEach(o => { o.judgeable = false; });
+  const left = _prLive().length;
+  if (left) _renderPaperReview();
+  else _prSaveDraft();
+  await showAlert(left
+    ? `Your hold on ${names} ran out while this page was open, and it can no longer be answered here. Your other answers are kept.`
+    : "Your hold on this paper ran out while this page was open. Your answers are saved as a draft, and return if the paper is served to you again.");
+  if (!left && state.paperReview === pr) {
+    state.paperReview = null;
+    await loadNextPair();
+  }
+  return false;
+}
+
+function _prCarryAnswers(j, pair) {
+  const pr = state.paperReview, id = String(pair.record_id);
+  const row = pr.originals.find(o => String(o.record_id) === id);
+  pr.type = j.type || pr.type;
+  if (!row?.judgeable || !j.original) return;
+  pr.orig[id] = j.original;
+  pr.fix[id] = { doi: j.corrected_doi_o || "", title: j.corrected_study_o || "" };
+  if (j.outcome) {
+    pr.out[_prCheckKey(row)] = {
+      answer: j.outcome === "correct" ? (j.outcome_quote_fix ? "better" : "right") : j.outcome,
+      corrected: j.corrected_outcome || null,
+      quote: j.edited_outcome_quote || row.outcome_phrase || "",
+    };
+  }
+}
+
+const _prDoi = (o) => String(o.doi_o || "").trim().toLowerCase();
+const _prFingerprint = (o) => `${_prDoi(o)}|${o.outcome || ""}|${_prNormQuote(o.outcome_phrase)}`;
+
+function _prSaveDraft() {
+  const pr = state.paperReview;
+  if (!pr) return;
+  try {
+    localStorage.setItem(_PAPER_DRAFT_KEY(pr.pair.doi_r), JSON.stringify({
+      judgement: state.judgement, type: pr.type, orig: pr.orig, fix: pr.fix,
+      pulled: pr.pulled, out: pr.out, drafts: pr.drafts,
+      fingerprints: Object.fromEntries(_prLive().map(o => [o.record_id, _prFingerprint(o)])),
+    }));
+  } catch (_) { /* a full store costs the draft, never the page */ }
+}
+
+// A nightly import can change a record while its draft waits. An outcome answer made
+// against other evidence must be given again.
+function _prRestoreDraft(pair) {
+  const pr = state.paperReview;
+  let draft = null;
+  try { draft = JSON.parse(localStorage.getItem(_PAPER_DRAFT_KEY(pair.doi_r))); } catch (_) { /* no draft */ }
+  if (!draft) return;
+  const live = new Map(_prLive().map(o => [String(o.record_id), o]));
+  const keep = (obj) => Object.fromEntries(Object.entries(obj || {}).filter(([id]) => live.has(id)));
+  pr.type = draft.type || null;
+  pr.orig = keep(draft.orig); pr.fix = keep(draft.fix); pr.pulled = keep(draft.pulled);
+  pr.drafts = Array.isArray(draft.drafts) ? draft.drafts : [];
+  if (draft.judgement) state.judgement = { ...state.judgement, ...draft.judgement };
+  const changed = [...live.entries()].some(([id, o]) => draft.fingerprints?.[id] !== _prFingerprint(o));
+  if (!changed) pr.out = draft.out || {};
+  // Another DOI is another paper: "right paper?" was not answered about this one.
+  for (const [id, o] of live) {
+    if (!String(draft.fingerprints?.[id] ?? "").startsWith(`${_prDoi(o)}|`)) {
+      delete pr.orig[id]; delete pr.fix[id]; delete pr.pulled[id];
+    }
+  }
+  const gone = Object.keys(draft.orig || {}).filter(id => !live.has(id)).length;
+  if (gone) showToast(`${gone} answer${gone === 1 ? "" : "s"} in your draft cannot be used: another validator has that original now.`);
+  else if (changed && Object.keys(draft.out || {}).length) showToast("A record changed since your draft. Check the outcomes again.");
+}
+
+function _prClearDraft(doi) {
+  try { localStorage.removeItem(_PAPER_DRAFT_KEY(doi)); } catch (_) { /* nothing to clear */ }
+}
+
+function _prAuthors(authors) {
+  const names = String(authors || "?").split(";").map(s => s.trim()).filter(Boolean);
+  return names.length > 3 ? `${names[0]} et al.` : names.join("; ");
+}
+
+function _prOriginalMeta(o) {
+  const href = _xoSafeHref(o.url_o);
+  const link = o.doi_o
+    ? `<a href="https://doi.org/${escapeHtml(o.doi_o)}" target="_blank" rel="noopener">${escapeHtml(o.doi_o)}</a>`
+    : o.oa_work_id_o
+    ? `<a href="https://openalex.org/${escapeHtml(o.oa_work_id_o)}" target="_blank" rel="noopener">OpenAlex ↗</a>`
+    : href
+    ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">link ↗</a>`
+    : `<span class="cs-nodoi">no registered DOI</span>`;
+  const open = o.oa_url_o ? ` · <a href="${escapeHtml(o.oa_url_o)}" target="_blank" rel="noopener">🔓 OA</a>` : "";
+  const study = o.study_o ? ` · Study ${escapeHtml(o.study_o)}` : "";
+  return `${escapeHtml(_prAuthors(o.authors_o))} · ${escapeHtml(fmtYear(o.year_o))}${study} · ${link}${open}`;
+}
+
+function _prOriginalCell(o, number) {
+  const pr = state.paperReview, id = o.record_id, evidence = _prEvidence(o.link_evidence);
+  const fix = pr.fix[id] || {};
+  return `
+    <td class="pr-original">
+      <span class="pr-num">${number}</span>
+      <div class="pr-title">${escapeHtml(o.title_o || "(no title)")}</div>
+      <div class="pr-meta">${_prOriginalMeta(o)}</div>
+      ${evidence ? `<button type="button" class="link-btn pr-why" data-pr="why" data-id="${id}">${pr.why[id] ? "hide" : "why was this coded?"}</button>` : ""}
+      ${pr.why[id] && evidence ? `<div class="pr-evidence">${escapeHtml(evidence)}</div>` : ""}
+      ${pr.orig[id] === "wrong" ? `
+        <div class="pr-fix">
+          <label>Know the right paper? Add it and you'll check its outcome. Otherwise nothing more is needed.</label>
+          <input type="text" data-pr-input="fix-doi" data-id="${id}" placeholder="DOI or URL (optional)" value="${escapeHtml(fix.doi || "")}">
+          <input type="text" data-pr-input="fix-title" data-id="${id}" placeholder="Title (optional)" value="${escapeHtml(fix.title || "")}">
+        </div>` : ""}
+    </td>`;
+}
+
+function _prAnswerCell(o, checkRows) {
+  const pr = state.paperReview, id = o.record_id, answer = pr.orig[id];
+  const canSeparate = _prNeedsOutcome(o) && !_prHasReplacement(o) && _prNormQuote(o.outcome_phrase) &&
+    (pr.pulled[id] || checkRows.filter(_prNeedsOutcome).length > 1);
+  return `
+    <td class="pr-answer">
+      <div class="pr-choices">
+        ${[["correct", "Correct", "ok"], ["wrong", "Wrong", "no"], ["unsure", "Can't tell", "un"]].map(([v, l, c]) =>
+          `<button type="button" class="${c}${answer === v ? " sel" : ""}" data-pr="orig" data-id="${id}" data-v="${v}">${l}</button>`).join("")}
+      </div>
+      ${canSeparate ? `<button type="button" class="link-btn pr-why" data-pr="${pr.pulled[id] ? "unpull" : "pull"}" data-id="${id}">${
+        pr.pulled[id] ? "same outcome as the others" : "outcome differs for this one"}</button>` : ""}
+    </td>`;
+}
+
+function _prCheckCell(check) {
+  const pr = state.paperReview, asked = _prAsked(check), key = escapeHtml(check.key);
+  const answer = pr.out[check.key] || {};
+  if (!asked.length) {
+    return `<td class="pr-check" rowspan="${check.rows.length}"><span class="pr-none">Marked as the wrong paper, so there is no outcome to check.</span></td>`;
+  }
+  const replaced = asked.length === 1 && _prHasReplacement(asked[0]);
+  const heading = asked.length > 1 ? `One check for these ${asked.length} originals`
+    : replaced ? "Outcome for the paper you added"
+    : check.rows.length > 1 ? `For ${escapeHtml(_prShortName(asked[0]))}` : "";
+  const label = (check.outcome || "").toLowerCase();
+  const canAgree = !!_canonicalOutcome(check.outcome);
+  const choices = [["right", "Looks right", "ok"], ["better", "Right outcome, better quote", "ok"],
+                   ["wrong", "Mischaracterised", "no"], ["unsure", "Can't tell", "un"]];
+  return `
+    <td class="pr-check${asked.length > 1 ? " shared" : ""}" rowspan="${check.rows.length}">
+      <div class="pr-check-head">
+        <span class="outcome-label ${escapeHtml(label)}">${check.outcome ? escapeHtml(fmtOutcome(label)) : "No outcome extracted"}</span>
+        ${heading ? `<strong>${heading}</strong>` : ""}
+      </div>
+      <div class="pr-quote">${check.quote ? `“${escapeHtml(check.quote)}”` : "<em>No outcome quote was extracted.</em>"}</div>
+      <div class="pr-choices">
+        ${choices.map(([v, l, c]) => `<button type="button" class="${c}${answer.answer === v ? " sel" : ""}" data-pr="out" data-key="${key}" data-v="${v}"${v !== "unsure" && v !== "wrong" && !canAgree ? " disabled" : ""}>${l}</button>`).join("")}
+      </div>
+      ${answer.answer === "wrong" ? `
+        <p class="pr-sub">What is the correct outcome?</p>
+        <div class="pr-choices small">
+          ${["successful", "failed", "mixed", _FLAWED_OUTCOME, "uninformative", "descriptive only", "cannot_be_determined"]
+            .filter(v => v !== _canonicalOutcome(check.outcome))
+            .map(v => `<button type="button" class="${answer.corrected === v ? "sel" : ""}" data-pr="corr" data-key="${key}" data-v="${escapeHtml(v)}">${escapeHtml(fmtOutcome(v))}</button>`).join("")}
+        </div>` : ""}
+      ${answer.answer === "better" || answer.answer === "wrong" ? `
+        <textarea class="pr-quote-edit" rows="2" data-pr-input="quote" data-key="${key}" placeholder="A quote that shows it…">${escapeHtml(answer.quote ?? check.quote)}</textarea>` : ""}
+    </td>`;
+}
+
+function _prDraftForm(entry, i) {
+  const input = (field, label, cls = "") => `
+    <label class="${cls}">${label}<input type="text" maxlength="${XO_LIMITS[field]}" data-pr-input="draft" data-i="${i}" data-field="${field}" value="${escapeHtml(entry[field] || "")}"></label>`;
+  return `
+    <div class="pr-draft">
+      <div class="pr-draft-head"><strong>Another original</strong><span class="pr-flag">your suggestion · an admin reviews it</span>
+        <button type="button" class="link-btn" data-pr="draft-remove" data-i="${i}">remove</button></div>
+      <div class="pr-draft-grid">
+        ${input("doi_or_url", "DOI or link", "wide")}${input("study", "Study (optional)")}
+        ${input("title", "Title or reference, if there is no DOI", "full")}
+        ${input("note", "Note (optional): anything the admin should know, such as a different outcome or quote", "full")}
+      </div>
+    </div>`;
+}
+
+function _prFooter() {
+  const pr = state.paperReview, n = _prLive().length, left = _prRemaining();
+  const suggestions = pr.drafts.filter(_xoComplete).length;
+  const text = pr.type === "not_validation"
+    ? `Rejects the paper for ${n === 1 ? "this original" : `all ${n} originals`}`
+    : left ? `${left} answer${left === 1 ? "" : "s"} left`
+    : `Ready: ${n} judgement${n === 1 ? "" : "s"}${suggestions ? ` and ${suggestions} suggestion${suggestions === 1 ? "" : "s"}` : ""}`;
+  return `<span class="pr-progress">${text}</span>
+    <button type="button" class="btn-primary" id="pr-submit" data-pr="submit"${left ? " disabled" : ""}>${n > 1 ? `Submit all ${n}` : "Submit"}</button>`;
+}
+
+function _renderPaperReview() {
+  const pr = state.paperReview, body = $("#pr-body");
+  if (!pr || !body) return;
+  const p = pr.pair, n = _prLive().length, rejected = pr.type === "not_validation";
+  const other = "reproduction";
+  let number = 0;
+  const rows = [];
+  if (!rejected) {
+    for (const check of _prChecks()) {
+      check.rows.forEach((o, i) => {
+        number++;
+        rows.push(`<tr class="${_prNeedsOutcome(o) ? "" : "pr-wrong"}">${_prOriginalCell(o, number)}${_prAnswerCell(o, check.rows)}${i === 0 ? _prCheckCell(check) : ""}</tr>`);
+      });
+    }
+    for (const o of pr.originals.filter(x => !x.judgeable)) {
+      number++;
+      rows.push(`<tr class="pr-context"><td class="pr-original"><span class="pr-num">${number}</span>
+        <div class="pr-title">${escapeHtml(o.title_o || "(no title)")}</div><div class="pr-meta">${_prOriginalMeta(o)}</div></td>
+        <td colspan="2"><span class="pr-flag">no answer needed from you</span></td></tr>`);
+    }
+  }
+  body.innerHTML = `
+    <div class="pr-type">
+      <p class="question">The system classified this paper as&ensp;<span class="outcome-label ${escapeHtml(p.type)}">${escapeHtml(p.type)}</span>&ensp;— is that correct?
+        ${n > 1 ? `<span class="pr-flag">asked once for all ${n}</span>` : ""}</p>
+      <div class="pr-choices">
+        <button type="button" class="ok${pr.type === p.type ? " sel" : ""}" data-pr="type" data-v="${escapeHtml(p.type)}">✓ Correct</button>
+        <button type="button" class="un" data-pr="type" data-v="${other}">Actually ${other}</button>
+        <button type="button" class="no${rejected ? " sel" : ""}" data-pr="type" data-v="not_validation">✗ Not either type</button>
+      </div>
+    </div>
+    ${pr.type && !rejected ? `
+      <div class="pr-table-wrap">
+        <table class="pr-table">
+          <thead><tr><th>Original <span class="pr-count">(${n} to check)</span></th><th>Right paper?</th><th>Outcome: originals with the same outcome and quote share one check</th></tr></thead>
+          <tbody>${rows.join("")}</tbody>
+        </table>
+      </div>
+      ${pr.drafts.map(_prDraftForm).join("")}
+      ${pr.drafts.length < XO_MAX ? `<button type="button" class="pr-add-btn" data-pr="draft-add">＋ Add another original</button>` : ""}` : ""}
+    ${pr.type ? `
+      <label class="pr-note">Note (optional)
+        <textarea rows="2" data-pr-input="note">${escapeHtml(state.judgement.comment || "")}</textarea></label>
+      <div class="pr-foot" id="pr-foot">${_prFooter()}</div>` : ""}`;
+  _prSaveDraft();
+}
+
+function _prRefreshFooter() {
+  const foot = $("#pr-foot");
+  if (foot) foot.innerHTML = _prFooter();
+  _prSaveDraft();
+}
+
+// Rows the table reserved but will not answer go back to the front of the prefetch
+// buffer. /next-pairs never serves a record this validator already holds, so nothing
+// else would hand them back. Each shares the paper's details with `pair` and has its
+// own from the claim. In hard mode they lapse, like the buffer on a mode switch.
+function _prReturnToBuffer(originals, pair) {
+  if (state.mode === "hard") return;
+  const current = String(state.currentPair?.record_id), pending = _pendingRecordIds();
+  const rows = originals.filter(o => {
+    const id = String(o.record_id);
+    return o.judgeable && id !== current && !pending.has(id) && !_pairBuffer.some(b => String(b.record_id) === id);
+  });
+  _pairBuffer.unshift(...rows.map(o => ({
+    ...pair, ...o, started: false, resumed: false,
+    coded_originals: (pair.coded_originals || []).map(c => ({ ...c, is_current: String(c.record_id) === String(o.record_id) })),
+  })));
+}
+
+// Reproductions are coded on two axes per record, which the table does not ask.
+function _prContinueOneByOne() {
+  const pr = state.paperReview, pair = pr.pair;
+  state.paperReview = null;
+  try { localStorage.setItem(_PAPER_OPT_OUT_KEY(pair.doi_r), "1"); } catch (_) { /* the screen still works */ }
+  _prClearDraft(pair.doi_r);
+  const saved = state.judgement;
+  _showActivePair(pair);
+  _prReturnToBuffer(pr.originals, pair);
+  state.judgement = { ...state.judgement, corrected_study_r: saved.corrected_study_r, edited_abstract: saved.edited_abstract,
+                      corrected_url_r: saved.corrected_url_r, doi_r_published: saved.doi_r_published, comment: saved.comment };
+  const card = $("#pair-card");
+  _restoreDraftInputs(card, state.judgement);
+  _replayGates(card, { type: "reproduction" });
+  showToast("Reproductions are coded on two axes, so these originals continue one at a time.");
+}
+
+function _onPaperReviewClick(e) {
+  const el = e.target.closest("[data-pr]");
+  if (!el || el.disabled) return;
+  const pr = state.paperReview, action = el.dataset.pr, id = el.dataset.id, value = el.dataset.v, key = el.dataset.key;
+  if (action === "type") {
+    if (value === "reproduction") return _prContinueOneByOne();
+    pr.type = value;
+  } else if (action === "orig") {
+    pr.orig[id] = pr.orig[id] === value ? null : value;
+    if (!pr.orig[id]) delete pr.orig[id];
+  } else if (action === "why") pr.why[id] = !pr.why[id];
+  else if (action === "pull") pr.pulled[id] = true;
+  else if (action === "unpull") delete pr.pulled[id];
+  else if (action === "out") {
+    const check = _prChecks().find(c => c.key === key);
+    const previous = pr.out[key] || {};
+    pr.out[key] = previous.answer === value ? {} : { answer: value, corrected: null, quote: previous.quote ?? check?.quote ?? "" };
+  } else if (action === "corr") pr.out[key].corrected = value;
+  else if (action === "draft-add") pr.drafts.push(_blankXo());
+  else if (action === "draft-remove") pr.drafts.splice(Number(el.dataset.i), 1);
+  else if (action === "submit") return _submitPaperReview();
+  _renderPaperReview();
+}
+
+function _onPaperReviewInput(e) {
+  const el = e.target, kind = el.dataset.prInput, pr = state.paperReview;
+  if (!kind) return;
+  if (kind === "note") state.judgement.comment = el.value;
+  else if (kind === "quote") pr.out[el.dataset.key].quote = el.value;
+  else if (kind === "draft") pr.drafts[Number(el.dataset.i)][el.dataset.field] = el.value;
+  else {
+    const id = el.dataset.id, row = pr.originals.find(o => o.record_id === id);
+    const had = _prHasReplacement(row);
+    pr.fix[id] = { ...(pr.fix[id] || {}), [kind === "fix-doi" ? "doi" : "title"]: el.value };
+    if (had !== _prHasReplacement(row)) {
+      // A replacement moves the row into its own check. Typing carries on.
+      const selector = `[data-pr-input="${kind}"][data-id="${id}"]`;
+      _renderPaperReview();
+      const next = $("#pr-body").querySelector(selector);
+      next?.focus();
+      next?.setSelectionRange(next.value.length, next.value.length);
+      return;
+    }
+  }
+  _prRefreshFooter();
+}
+
+function _prJudgementFor(o, attachSuggestions) {
+  const pr = state.paperReview, s = state.judgement, id = o.record_id;
+  const fix = pr.fix[id] || {};
+  const answer = _prNeedsOutcome(o) ? (pr.out[_prCheckKey(o)] || {}) : {};
+  const edited = (answer.answer === "better" || answer.answer === "wrong") &&
+    _quoteWords(answer.quote) !== _quoteWords(o.outcome_phrase) ? (answer.quote || "").trim() : "";
+  return {
+    ...blankJudgement(),
+    corrected_study_r: s.corrected_study_r, corrected_url_r: s.corrected_url_r,
+    doi_r_published: s.doi_r_published, edited_abstract: s.edited_abstract, comment: s.comment,
+    type: pr.type,
+    original: pr.orig[id] || null,
+    corrected_doi_o: pr.orig[id] === "wrong" ? ((fix.doi || "").trim() || null) : null,
+    corrected_study_o: pr.orig[id] === "wrong" ? ((fix.title || "").trim() || null) : null,
+    outcome: answer.answer === "right" || answer.answer === "better" ? "correct" : (answer.answer || null),
+    outcome_quote_fix: answer.answer === "better",
+    corrected_outcome: answer.answer === "wrong" ? answer.corrected : null,
+    edited_outcome_quote: edited || null,
+    has_extra_originals: attachSuggestions && pr.drafts.length > 0,
+    extra_originals: attachSuggestions ? pr.drafts : [],
+  };
+}
+
+async function _submitPaperReview() {
+  const pr = state.paperReview, card = $("#pair-card");
+  if (!pr || _prRemaining()) return;
+  ["#url-r-edit", "#doi-r-published-edit"].forEach((sel) => {
+    const el = card.querySelector(sel);
+    if (el && !el.classList.contains("hidden")) el.blur();
+  });
+  if (!card.querySelector("#title-edit")?.classList.contains("hidden")) {
+    _shakeAndHint(card.querySelector("#fix-title-btn"), "The title correction is not saved yet. Save it to continue.");
+    return;
+  }
+  if (!card.querySelector("#abstract-edit")?.classList.contains("hidden")) {
+    _shakeAndHint(card.querySelector("#edit-abstract-btn"), 'You have an unsaved abstract edit — click "save edited abstract" first.');
+    return;
+  }
+  // Each original is its own check, except a paper rejected as a whole.
+  const originalsRead = pr.type === "not_validation" ? 1 : _prLive().length;
+  if (!await _confirmNotTooFast(TOO_FAST_THRESHOLD_MS * originalsRead)) return;
+  if (state.paperReview !== pr) return;
+  // A row whose hold lapsed would only be refused later, in the background.
+  try {
+    if (!await _prSyncHolds()) return;
+  } catch (_) { /* offline: the durable queue sends these when it can */ }
+  if (state.paperReview !== pr) return;
+
+  const live = _prLive(), checks = _prChecks();
+  const pair = pr.pair;
+  // Suggestions travel once, on a row that stays: one marked wrong with no replacement
+  // can be removed by an admin, and its suggestions would go with it.
+  const carrier = live.find(_prNeedsOutcome) || live[0];
+  const items = live.map((o) => {
+    const check = checks.find(c => c.key === _prCheckKey(o));
+    const asked = _prAsked(check);
+    const payload = _buildJudgePayload({ ...pair, ...o }, _prJudgementFor(o, o === carrier));
+    payload.additional_checks = {
+      ...(payload.additional_checks || {}),
+      paper_review: {
+        originals: live.length,
+        outcome_group: _prNeedsOutcome(o) && pr.type !== "not_validation" ? String(asked[0].record_id) : `none:${o.record_id}`,
+        outcome_shared: _prNeedsOutcome(o) && pr.type !== "not_validation" && asked.length > 1,
+      },
+    };
+    return { payload, label: `${pair.title_r || pair.doi_r} · ${_prShortName(o)}` };
+  });
+  _prClearDraft(pair.doi_r);
+  state.paperReview = null;
+  for (const item of items) _enqueueSubmit(item.payload, item.label, pr.group);
+  await loadNextPair(false);
+}
+
+async function _onSkipPaper() {
+  const pr = state.paperReview;
+  if (!pr) return;
+  const details = await showSkipReasonDialog();
+  if (!details || state.paperReview !== pr) return;
+  const failures = [];
+  const released = (o) => { o.judgeable = false; delete pr.orig[o.record_id]; };
+  for (const o of _prLive()) {
+    try {
+      await api("/skip", "POST", { record_id: String(o.record_id), pair_id: o.pair_id,
+                                   reason_code: details.reason_code, comment: details.comment });
+      released(o);
+    } catch (e) {
+      if (_slotNoLongerOwned(e)) released(o);
+      else failures.push(e.message);
+    }
+  }
+  if (failures.length) {
+    // A released row has left the table, or submitting it would only be refused. So
+    // has one the server no longer gives this validator (a skip whose answer got lost).
+    try {
+      const held = await _prHeldIds();
+      _prLive().filter(o => !held.has(String(o.record_id))).forEach(released);
+    } catch (_) { /* the rows released above are out either way */ }
+    if (_prLive().length) {
+      _renderPaperReview();
+      await showAlert(`Some originals could not be released: ${failures[0]} They stay in this table with your answers.`);
+      return;
+    }
+  }
+  _prClearDraft(pr.pair.doi_r);
+  state.paperReview = null;
+  showToast(details.reason_code === "inaccessible" ? "Sent to Restricted access." : "Paper skipped — context saved.");
+  try {
+    await refreshAll();
+  } catch (e) {
+    await showAlert(`The paper was released, but the next record could not load: ${e.message}`);
+  }
 }
 
 /* ---------- Guided Tour ---------- */
@@ -5240,13 +5927,13 @@ document.addEventListener("keydown", (e) => {
     // "Right outcome, better quote" and Enter must choose it, not submit the
     // previous answer. One that merely kept focus after a mouse click still
     // gives Enter to Submit, the shortcut this handler exists for.
-    if (e.target.closest?.("button, a") && e.target.id !== "submit-btn") {
+    if (e.target.closest?.("button, a") && !["submit-btn", "pr-submit"].includes(e.target.id)) {
       let fromKeyboard = false;
       try { fromKeyboard = e.target.matches(":focus-visible"); } catch (_) {}
       if (fromKeyboard) return;
     }
     e.preventDefault();
-    const btn = $("#submit-btn");
+    const btn = $("#pr-submit") || $("#submit-btn");
     if (btn && !btn.disabled) btn.click();
   }
 });
@@ -5415,22 +6102,24 @@ async function guardedSubmit() {
     return;
   }
 
+  if (await _confirmNotTooFast()) await submitJudgement();
+}
+
+async function _confirmNotTooFast(thresholdMs = TOO_FAST_THRESHOLD_MS) {
   const elapsed = _pairShownAt ? Date.now() - _pairShownAt : Infinity;
-  if (elapsed < TOO_FAST_THRESHOLD_MS) {
-    const result = await showDialog({
-      icon: "⚡",
-      title: "That was fast.",
-      message: "You submitted in under 17 seconds. Are you sure you had enough time to read it?",
-      buttons: [
-        { label: "Yes, submit anyway →", value: "submit", primary: true },
-        { label: "Read it again",         value: "reread" },
-        { label: "Rest my eyes — log out", value: "logout", muted: true },
-      ],
-    });
-    if (result === "reread")  return;
-    if (result === "logout") { logout(); return; }
-  }
-  await submitJudgement();
+  if (elapsed >= thresholdMs) return true;
+  const result = await showDialog({
+    icon: "⚡",
+    title: "That was fast.",
+    message: `You submitted in under ${Math.round(thresholdMs / 1000)} seconds. Are you sure you had enough time to read it?`,
+    buttons: [
+      { label: "Yes, submit anyway →", value: "submit", primary: true },
+      { label: "Read it again",         value: "reread" },
+      { label: "Rest my eyes — log out", value: "logout", muted: true },
+    ],
+  });
+  if (result === "logout") { logout(); return false; }
+  return result !== "reread";
 }
 
 /* ---------- FAQ Modal ---------- */
@@ -5636,6 +6325,10 @@ function renderAdminCounts(counts) {
   $("#fc-admin-comments").textContent   = counts.admin_comments ?? 0;
   const fcQuality = $("#fc-quality-flagged");
   if (fcQuality) fcQuality.textContent = counts.quality_flagged ?? 0;
+  const fcRemoval = $("#fc-original-removal");
+  if (fcRemoval) fcRemoval.textContent = counts.original_removal ?? 0;
+  const fcShared = $("#fc-shared-outcome");
+  if (fcShared) fcShared.textContent = counts.shared_outcome ?? 0;
   const fcExtra = $("#fc-extra-originals");
   if (fcExtra) fcExtra.textContent = counts.extra_originals ?? 0;
   $("#fc-validated").textContent        = counts.validated;
@@ -5846,7 +6539,106 @@ function _trackRecordTitle(st) {
          `judgement${st.flags === 1 ? "" : "s"} flagged · ${st.judged || 0} submitted in total`;
 }
 
-/* ---------- Additional originals (admin entry detail) ---------- */
+/* ---------- Paper review (admin entry detail) ---------- */
+
+function _adminRemovalBanner(data) {
+  if (!data.original_removal) return "";
+  const allowed = data.self_approval?.allowed !== false;
+  // An added original is published from this entry, so it has to go first.
+  const added = Number(data.extra_originals_summary?.children) || 0;
+  const note = !allowed ? (data.self_approval?.reason || "")
+    : added ? `This entry has ${added} added original${added === 1 ? "" : "s"}. Remove ${added === 1 ? "it" : "them"} under "Other originals" first.`
+    : "";
+  return `
+    <div class="admin-quote-banner pr-removal">
+      <strong>Both validators marked this original as the wrong paper, and neither named another.</strong>
+      Nothing is published for it unless you act. Removing it leaves the paper's other originals as they are.
+      If you know the right paper, correct it in the form below and resolve instead.
+      <div class="pr-removal-actions">
+        <button type="button" id="admin-remove-original-btn" class="btn-reject-outline"${allowed && !added ? "" : " disabled"}>✗ Remove this original</button>
+        ${note ? `<span class="admin-reject-note">${escapeHtml(note)}</span>` : ""}
+      </div>
+    </div>`;
+}
+
+function _adminPaperOriginals(data) {
+  const set = Array.isArray(data.paper_originals) ? data.paper_originals : [];
+  if (!set.length) return "";
+  const word = (check) => ({ correct: "✓", incorrect: "✗", not_applicable: "–" })[check] || "?";
+  const answers = (list) => (list || []).length ? list.map(word).join(" ") : "not yet";
+  const waiting = set.filter(o => o.validation_status === "consensus_reached");
+  const rows = set.map(o => `
+    <tr class="${o.is_current ? "is-current" : ""}">
+      <td>
+        <div class="pr-title">${escapeHtml(o.final_title_o || o.title_o || "(no title)")}</div>
+        <div class="pr-meta">${escapeHtml(_prAuthors(o.authors_o))} · ${escapeHtml(fmtYear(o.year_o))}${o.final_doi_o || o.doi_o ? ` · ${escapeHtml(o.final_doi_o || o.doi_o)}` : ""}</div>
+      </td>
+      <td>${escapeHtml(o.validation_status.replace(/_/g, " "))}</td>
+      <td title="Original check, one mark per validator">${answers(o.original_checks)}</td>
+      <td title="Outcome check, one mark per validator">${answers(o.outcome_checks)}${o.shared_check ? ` <span class="pr-flag">shared</span>` : ""}</td>
+      <td>${escapeHtml(fmtOutcome(o.final_outcome || o.outcome || ""))}</td>
+      <td>${o.is_current ? `<span class="pr-flag">this entry</span>` : `<button type="button" class="link-btn" data-paper-open="${escapeHtml(o.record_id)}">open</button>`}</td>
+    </tr>`).join("");
+  return `
+    <details class="admin-paper-set" open>
+      <summary>This paper has ${set.length} coded originals${waiting.length ? ` · ${waiting.length} awaiting approval` : ""}</summary>
+      <div class="pr-table-wrap">
+        <table class="pr-admin-table">
+          <thead><tr><th>Original</th><th>Status</th><th>Right paper?</th><th>Outcome check</th><th>Outcome</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      ${waiting.length > 1 ? `<button type="button" class="btn-outline" id="admin-approve-paper-btn">Approve the ${waiting.length} awaiting approval</button>` : ""}
+    </details>`;
+}
+
+function _wireAdminPaperReview(rec, data) {
+  document.querySelectorAll("[data-paper-open]").forEach((btn) => {
+    btn.onclick = () => openAdminDetail(btn.dataset.paperOpen);
+  });
+  const remove = $("#admin-remove-original-btn");
+  if (remove) {
+    remove.onclick = async () => {
+      if (!await showConfirm("Remove this original? It will be left out of FLoRA. The paper's other originals are not affected.")) return;
+      remove.disabled = true;
+      try {
+        await adminApi(`/entries/${rec.record_id}/remove-original`, "POST");
+        delete _adminDetailCache[rec.record_id];
+        showToast("Original removed — not in FLoRA.");
+        await advanceToNextAdminEntry();
+      } catch (e) {
+        remove.disabled = false;
+        await showAlert("Error: " + e.message);
+      }
+    };
+  }
+  const approveAll = $("#admin-approve-paper-btn");
+  if (approveAll) {
+    approveAll.onclick = async () => {
+      const waiting = data.paper_originals.filter(o => o.validation_status === "consensus_reached");
+      if (!await showConfirm(`Approve ${waiting.length} originals of this paper? Each is published with the values its validators agreed on.`)) return;
+      approveAll.disabled = true;
+      const failed = [];
+      for (const o of waiting) {
+        try {
+          await adminApi(`/entries/${o.record_id}/approve`, "POST");
+          delete _adminDetailCache[o.record_id];
+        } catch (e) {
+          failed.push(`${_prShortName(o)}: ${e.message}`);
+        }
+      }
+      // Every entry of the paper lists these statuses, so none of them can be reused.
+      for (const o of data.paper_originals) delete _adminDetailCache[o.record_id];
+      delete _adminDetailCache[rec.record_id];
+      if (failed.length) await showAlert(`${waiting.length - failed.length} approved, ${failed.length} not.\n${failed.join("\n")}`);
+      else showToast(`${waiting.length} originals approved.`);
+      fetchAdminEntries(false);
+      await openAdminDetail(rec.record_id);
+    };
+  }
+}
+
+/* ---------- Other originals (admin entry detail) ---------- */
 
 // A replication or reproduction can have more than one original. Validators
 // suggest them with their judgement; here an admin sees those suggestions and the
@@ -5872,7 +6664,7 @@ function _adminChildBanner(rec) {
   if (rec.origin !== "admin_extra_original") return "";
   return `
     <div class="admin-xo-banner">
-      <strong>Additional original</strong> — added by ${escapeHtml(rec.admin_name || "an admin")}
+      <strong>Another original</strong> — added by ${escapeHtml(rec.admin_name || "an admin")}
       to <button type="button" class="link-btn" id="xo-open-parent" data-id="${escapeHtml(rec.parent_record_id)}">its entry</button>.
       Its replication details always follow that entry;
       ${rec.inherits_outcome ? "so does its outcome." : "it has an outcome of its own."}
@@ -5900,7 +6692,7 @@ function _adminExtraOriginalsShell(rec, data) {
 }
 
 function _xoSectionTitle(open, added, drafted) {
-  return `Additional originals${open ? ` · ${open} suggested` : ""}${added ? ` · ${added} added` : ""}` +
+  return `Other originals${open ? ` · ${open} suggested` : ""}${added ? ` · ${added} added` : ""}` +
          `${drafted ? ` · ${drafted} drafted` : ""}`;
 }
 
@@ -5966,7 +6758,7 @@ async function _loadAdminExtraOriginals(recordId, { fresh = false } = {}) {
     if ($("#xo-admin")?.dataset.recordId !== String(recordId)) return;
     delete details.dataset.loaded;
     const body = $("#xo-admin-body");
-    if (body) body.innerHTML = `<p class="faq-error">Could not load additional originals (${escapeHtml(e.message)}).</p>`;
+    if (body) body.innerHTML = `<p class="faq-error">Could not load other originals (${escapeHtml(e.message)}).</p>`;
   }
 }
 
@@ -6001,7 +6793,7 @@ function _xoSuggestionRow(g, parent) {
   ].join("");
   const usable = _xoMode(parent) !== "blocked" && !g.is_own_original && !match;
   const actions = g.status === "open" ? `
-        <button type="button" class="btn-outline" data-xo-use="${escapeHtml(g.key)}"${usable ? "" : " disabled"}>Use as additional original</button>
+        <button type="button" class="btn-outline" data-xo-use="${escapeHtml(g.key)}"${usable ? "" : " disabled"}>Use as another original</button>
         <button type="button" class="ghost-btn" data-xo-dismiss="${Number(g.open_suggestion_ids[0])}">Dismiss</button>` : "";
   const meta = [
     _xoPaperLink(g.doi_o, g.url_o),
@@ -6072,7 +6864,7 @@ async function _removeAdminExtraOriginal(childId, parentId) {
     await adminApi(`/entries/${childId}/extra-original/remove`, "POST");
     delete _adminDetailCache[childId];
     if (parentId) { delete _adminDetailCache[parentId]; delete _adminXoCache[parentId]; }
-    showToast("Additional original removed.");
+    showToast("Other original removed.");
     if ($("#xo-admin")?.dataset.recordId === String(parentId)) {
       await _loadAdminExtraOriginals(parentId, { fresh: true });
     } else {
@@ -6097,9 +6889,9 @@ function _xoPendingNote(recordId, message, used = []) {
     : message;
 }
 
-// The "Add additional originals" form. Off until switched on, even with no
+// The "Add other originals" form. Off until switched on, even with no
 // suggestions; "+" adds an entry and folds the earlier ones to one line. A
-// suggestion's "Use as additional original" opens a pre-filled entry here, so
+// suggestion's "Use as another original" opens a pre-filled entry here, so
 // both ways end in the same form and the same request. Entries survive a re-render
 // of the section (per entry record), not a page reload.
 //
@@ -6250,7 +7042,7 @@ function _renderAdminXoAddSection(body, xo) {
     ? "Each one becomes a validated record under your name, with this entry's replication details as you resolve them. Nothing is saved yet: they are saved together with the entry when you click Mark as Resolved, and reach Source Records and FLoRA at the next nightly sync."
     : "Each one becomes a validated record under your name, with this entry's replication details. It reaches Source Records and FLoRA at the next nightly sync.";
   host.innerHTML = `
-    <h4 class="admin-xo-h">Add additional originals</h4>
+    <h4 class="admin-xo-h">Add other originals</h4>
     <label class="xo-toggle"><input type="checkbox" id="xo-add-on"${draft.on ? " checked" : ""}>
       Add other originals of this <span id="xo-add-type"></span></label>
     <div id="xo-add-body"${draft.on ? "" : ' class="hidden"'}>
@@ -6333,7 +7125,7 @@ function _renderAdminXoAddSection(body, xo) {
   render();
 }
 
-// "Use as additional original": a pre-filled entry in the add form, carrying the
+// "Use as another original": a pre-filled entry in the add form, carrying the
 // suggestions it answers so they are marked as added. In draft mode too: it is then
 // saved with Mark as Resolved.
 function _useXoSuggestion(xo, g) {
@@ -6648,6 +7440,7 @@ function renderAdminDetail(data) {
     const shortRow = (fieldLabel, extracted, checkVal, corrDisplay, agreedNote = "", unsure = false) => {
       const agreed = checkVal === "correct";
       const extrText = escapeHtml(String(extracted || "—"));
+      if (checkVal === NO_OUTCOME) return `<div class="chk-row"><span class="chk-label">${fieldLabel}</span><span class="chk-extr-val">${extrText}</span><span class="chk-na-note">not needed: ${who} marked the wrong paper, with no replacement</span></div>`;
       if (agreed) return `<div class="chk-row"><span class="chk-label">${fieldLabel}</span><span class="chk-extr-val">${extrText}</span><span class="chk-ok">✓ ${who} agreed</span>${agreedNote}</div>`;
       // "Can't tell" is stored as incorrect with nothing suggested; it is neither.
       if (unsure && !corrDisplay) return `<div class="chk-row"><span class="chk-label">${fieldLabel}</span><span class="chk-extr-val">${extrText}</span><span class="chk-uncertain">? ${who} couldn't tell</span></div>`;
@@ -6801,7 +7594,8 @@ function renderAdminDetail(data) {
         ${queueId ? `<button class="val-flag-btn${isFlagged ? " flagged" : ""}" data-queue-id="${queueId}" title="${isFlagged ? "Unflag judgement" : "Flag judgement as problematic"}">🚩</button>` : ""}
       </div>
       ${isFlagged && flagReason ? `<div class="flag-reason-bar">🚩 Flagged: ${escapeHtml(flagReason)}</div>` : ""}
-      <div class="admin-val-meta">${fmtDate(v.validated_at)}${v.points != null ? ` · +${v.points} pts` : ""}</div>
+      <div class="admin-val-meta">${fmtDate(v.validated_at)}${v.points != null ? ` · +${v.points} pts` : ""}${
+        v.additional_checks?.paper_review?.outcome_shared ? ` · <span class="pr-flag" title="This outcome answer covered ${Number(v.additional_checks.paper_review.originals) || "several"} originals of the paper">shared outcome check</span>` : ""}</div>
       <div class="admin-val-checks">
         ${shortRow("Type",    shown.type,    v.type_check,    typeCorr)}
         ${longRow("Orig. Title", shown.title_o, v.original_check, v.corrected_title_o || null)}
@@ -6872,12 +7666,12 @@ function renderAdminDetail(data) {
             </tr>`).join("")}
           </tbody>
         </table>
-      </details>` : `<p class="fp-no-changes">No field corrections — raw values will be published as-is.</p>`;
+      </details>` : `<p class="fp-no-changes">${data.original_removal ? "No field corrections." : "No field corrections — raw values will be published as-is."}</p>`;
 
     return `<div class="final-preview-card">
       <div class="final-preview-header">
         <span class="fp-title">Final Preview</span>
-        <span class="fp-subtitle">what gets published to FLoRA if approved</span>
+        <span class="fp-subtitle">${data.original_removal ? "what would be published if you resolve it; nothing is otherwise" : "what gets published to FLoRA if approved"}</span>
       </div>
       <div class="fp-fields">
         <div class="fp-row"><span class="fp-label">Replication</span><span class="fp-value">${escapeHtml(finalStudyR || "—")}</span></div>
@@ -7041,9 +7835,11 @@ function renderAdminDetail(data) {
     approved: "Approved", resolved: "Resolved", rejected: "Rejected — not in FLoRA",
     merged: "Merged into another entry", flagged_for_review: "Flagged for review",
     sent_back: "Sent back for review (was auto-validated)",
-    extra_original_added: "Additional original added",
-    extra_original_removed: "Additional original removed",
-    extra_originals_moved: "Additional originals moved here",
+    original_removed: "Removed — wrong original",
+    reopened_by_import: "Re-opened — the extractor replaced the removed original",
+    extra_original_added: "Another original added",
+    extra_original_removed: "Other original removed",
+    extra_originals_moved: "Other originals moved here",
     inherited_update: "Updated from its entry",
     own_outcome_set: "Given its own outcome",
     rejected_with_parent: "Excluded with its entry",
@@ -7068,6 +7864,7 @@ function renderAdminDetail(data) {
     ${autoBanner}
     ${selfBanner}
     ${qualityBanner}
+    ${_adminRemovalBanner(data)}
     ${abstractBanner}
     ${quoteBanner}
     ${duplicateMergeBanner}
@@ -7110,7 +7907,9 @@ function renderAdminDetail(data) {
 
         ${rec.validation_status === "rejected" ? `
         <div class="not-val-decision">
-          <p class="not-val-who">⚠ This record was <strong>rejected</strong> — neither a replication nor a reproduction, so not in FLoRA${notValWho ? ` — by <strong>${notValWho}</strong>` : ""}. Validation happens once — it won't be sent back for re-validation.</p>
+          ${(data.decisions || []).at(-1)?.action === "original_removed"
+            ? `<p class="not-val-who">⚠ This original was <strong>removed</strong>: both validators marked it as the wrong paper, so it is not in FLoRA. The paper's other originals are separate entries.</p>`
+            : `<p class="not-val-who">⚠ This record was <strong>rejected</strong> — neither a replication nor a reproduction, so not in FLoRA${notValWho ? ` — by <strong>${notValWho}</strong>` : ""}. Validation happens once — it won't be sent back for re-validation.</p>`}
           <p class="not-val-hint">If it is a reproduction, open it as one and code the two axes. To change anything else, review and edit the fields.</p>
           <div class="not-val-buttons">
             <button id="notval-is-repro-btn" class="btn-outline" data-type="reproduction">↻ It's a reproduction</button>
@@ -7215,9 +8014,11 @@ function renderAdminDetail(data) {
         </div>
       </div>
     </div>
+    ${_adminPaperOriginals(data)}
     ${_adminExtraOriginalsShell(rec, data)}
   `;
   _wireAdminExtraOriginals(rec, data);
+  _wireAdminPaperReview(rec, data);
 
   // "It's a reproduction" / "It's a replication": the other FLoRA type is a
   // correction of the type, not a rejection. Open the edit panel (hidden behind
@@ -7289,7 +8090,7 @@ function renderAdminDetail(data) {
     const sure = await showConfirm(
       "Reject this record as neither a replication nor a reproduction? It will be left out of FLoRA. " +
       `If it is a ${other}, use “It's a ${other}” instead.` +
-      (drafted ? ` The ${drafted} additional original${drafted === 1 ? "" : "s"} you drafted for it will be discarded.` : ""));
+      (drafted ? ` The ${drafted} other original${drafted === 1 ? "" : "s"} you drafted for it will be discarded.` : ""));
     if (!sure) return;
     btn.disabled = true;
     btn.textContent = "Rejecting…";
@@ -7444,7 +8245,7 @@ async function confirmValidatedDuplicateMerge(detail, drafted = 0) {
         while its extraction data and validator judgements remain linked in the audit trail.
       </p>
       ${drafted ? `<p style="margin-top:0.7rem;margin-bottom:0">
-        The ${drafted} additional original${drafted === 1 ? "" : "s"} you drafted for A
+        The ${drafted} other original${drafted === 1 ? "" : "s"} you drafted for A
         ${drafted === 1 ? "is" : "are"} added to <strong>B</strong> instead, checked against B’s originals.
         If B cannot take ${drafted === 1 ? "it" : "them"}, nothing is merged.</p>` : ""}
     </div>`;
@@ -7550,7 +8351,7 @@ async function submitAdminResolve(recordId) {
     corrected_robustness_source:    newType === "reproduction" ? ($("#ar-robustness-source")?.value || null) : null,
     admin_notes:             $("#admin-note-text")?.value.trim() || null,
   };
-  // Additional originals drafted in the entry's section are saved with it, in the
+  // Other originals drafted in the entry's section are saved with it, in the
   // same transaction: one the server refuses refuses the resolve, and nothing is saved.
   const drafted = _xoResolveDrafts(recordId);
   if (drafted.length) {
@@ -7560,7 +8361,7 @@ async function submitAdminResolve(recordId) {
   const used = drafted.flatMap((d) => d.from_suggestion_ids || []);
   const addedNote = (resp, message) => {
     const n = (resp?.extra_originals_created || []).length;
-    return n ? `${message} ${n} additional original${n === 1 ? "" : "s"} added; ` +
+    return n ? `${message} ${n} other original${n === 1 ? "" : "s"} added; ` +
                `${n === 1 ? "it reaches" : "they reach"} Source Records and FLoRA at the next nightly sync.`
              : message;
   };
@@ -8663,7 +9464,7 @@ function renderAdminDashboard(d) {
         <div class="dash-card ${q.agreement_rate !== null && q.agreement_rate >= 0.75 ? "dash-card-green" : "dash-card-amber"}">
           <span class="dash-card-val">${agreeRate}</span>
           <span class="dash-card-label">Full Agreement Rate</span>
-          <span class="dash-card-sub">${q.full_agreements} of ${q.records_with_2_validators} records</span>
+          <span class="dash-card-sub">${q.full_agreements} of ${q.records_compared ?? q.records_with_2_validators} records</span>
         </div>
         <div class="dash-card dash-card-muted">
           <span class="dash-card-val">${p.tiebreakers}</span>
@@ -11076,7 +11877,7 @@ function renderManualMatches(res) {
           ? "This pair is being validated (entry <code>" + escapeHtml(r.record_id.slice(0, 8)) + "</code>, " +
             escapeHtml(r.validation_status) + "); it reaches FLoRA as a VAL- row."
           : "Entry <code>" + escapeHtml(r.record_id.slice(0, 8)) + "</code> has this replication with another original" +
-            (r.validated ? ". To add another original to a validated entry, use Entries → Additional originals, so it " +
+            (r.validated ? ". To add another original to a validated entry, use Entries → Other originals, so it " +
               "follows the entry’s corrections." : ".")) + "</li>").join("") + "</ul></div>" : "";
   const absorbed = res.placement && res.placement.kind === "absorbed";
   const tone = res.excluded ? "flora-manual-dups-error" : absorbed ? "src-dup-warn" : "flora-manual-dups-ok";
