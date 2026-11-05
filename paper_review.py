@@ -13,12 +13,14 @@ The first version covers replications with a DOI in the normal pool. Reproductio
 one-record screen. PAPER_REVIEW_ENABLED turns the table on.
 """
 import os
+from uuid import UUID
 
 from consensus_engine import NO_OUTCOME, effective_corrected_type
 
-_PAPER_LIMIT = 50
+PAPER_LIMIT = 50
 
-_HARD_RECORD = "(u.outcome = 'cannot_be_determined' OR u.abstract_r IS NULL OR u.abstract_r = '')"
+_HARD_RECORD = ("(u.outcome IS NOT DISTINCT FROM 'cannot_be_determined' "
+                "OR u.abstract_r IS NULL OR u.abstract_r = '')")
 
 # The same set _coded_originals lists: an extractor record that is not rejected.
 _SAME_PAPER = ("lower(u.doi_r) = lower(%s) AND u.validation_status <> 'rejected'"
@@ -27,7 +29,7 @@ _SAME_PAPER = ("lower(u.doi_r) = lower(%s) AND u.validation_status <> 'rejected'
 _CONTEXT_FIELDS = ("record_id", "title_o", "authors_o", "year_o", "study_o", "study_r",
                    "doi_o", "url_o", "oa_work_id_o")
 _JUDGEABLE_FIELDS = ("pair_id", "title_r", "doi_r", "type", "outcome", "outcome_quote",
-                     "out_quote_source", "abstract_r", "link_evidence")
+                     "out_quote_source", "abstract_r", "link_evidence", "ref_o")
 
 
 def enabled() -> bool:
@@ -62,19 +64,54 @@ def _sort_key(row: dict):
 
 def _own_slot(cur, coder_id: int, record_id):
     cur.execute(
-        "SELECT queue_id, is_validated, started_at FROM validation_queue "
+        "SELECT queue_id, is_validated FROM validation_queue "
         "WHERE validator_id = %s AND record_id = %s LIMIT 1",
         (coder_id, record_id),
     )
     return cur.fetchone()
 
 
+def refresh(cur, coder_id: int, record_ids) -> list[str]:
+    """Renew this validator's buffered holds on these records and return the records
+    they still hold, so an open table can tell when a hold lapsed.
+
+    Never waits, and locks only queue rows: a row locked elsewhere (a reaper pass,
+    this validator's own submission) is passed over and renewed next time. A started
+    slot has nothing to renew: its lock counts from started_at.
+    """
+    ids = [str(r) for r in record_ids]
+    cur.execute(
+        """
+        UPDATE validation_queue SET shown_at = NOW()
+        WHERE queue_id IN (
+            SELECT queue_id FROM validation_queue
+            WHERE validator_id = %s AND record_id = ANY(%s::uuid[]) AND is_validated = FALSE
+              AND validator_slot IN ('human_1', 'human_2') AND started_at IS NULL
+            FOR UPDATE SKIP LOCKED
+        )
+        """,
+        (coder_id, ids),
+    )
+    cur.execute(
+        """
+        SELECT record_id::text AS record_id FROM validation_queue
+        WHERE validator_id = %s AND record_id = ANY(%s::uuid[]) AND is_validated = FALSE
+          AND validator_slot IN ('human_1', 'human_2')
+        """,
+        (coder_id, ids),
+    )
+    return [r["record_id"] for r in cur.fetchall()]
+
+
 def claim(cur, coder_id: int, record_id: str, claim_slot, oa_url_for) -> dict | None:
     """Reserve this validator's open records for the paper and return the set.
 
-    Safe to repeat: a slot the validator already holds is kept, and a buffered one
-    is promoted to the active lock. Returns None unless the validator holds an open
-    slot on `record_id`, or when that record cannot open in the table.
+    Safe to repeat: a slot the validator already holds is kept. Slots taken here are
+    buffered holds on the reaper's short lock, renewed by `refresh` while the table is
+    open, not started ones: only the record the validator was served keeps its 5-day
+    lock, so an abandoned paper frees itself and that record brings the validator back
+    to their draft. Returns None unless the validator holds an open slot on
+    `record_id`, or when that record cannot open in the table.
 
     `claim_slot(cur, coder_id, record_id, started)` takes a free human slot and
     returns its queue_id, or None if another validator got there first.
@@ -95,15 +132,18 @@ def claim(cur, coder_id: int, record_id: str, claim_slot, oa_url_for) -> dict | 
 
     # Locks the open records by record_id before any queue row changes, so two claims
     # on one paper, or a claim and a reaper pass, always take them in the same order.
+    # Never waits: /api/judge holds a record's lock through its Gemini call, and a
+    # validator opening a paper must not sit behind that. A record locked elsewhere is
+    # left out of this claim: _claim_free_slot passes it over and it lists as context.
     cur.execute(
         f"""
         SELECT u.record_id FROM unvalidated u
         WHERE {_SAME_PAPER}
         ORDER BY u.record_id
         LIMIT %s
-        FOR UPDATE OF u
+        FOR UPDATE OF u SKIP LOCKED
         """,
-        (base["doi_r"], _PAPER_LIMIT),
+        (base["doi_r"], PAPER_LIMIT),
     )
     cur.fetchall()
     cur.execute(
@@ -111,7 +151,7 @@ def claim(cur, coder_id: int, record_id: str, claim_slot, oa_url_for) -> dict | 
         SELECT u.record_id, u.pair_id, u.doi_r, u.title_r, u.study_r, u.type, u.outcome,
                u.outcome_quote, u.out_quote_source, u.abstract_r, u.validation_status,
                u.restricted_access, {_HARD_RECORD} AS is_hard,
-               u.doi_o, u.study_o, u.title_o, u.year_o, u.url_o, u.oa_work_id_o,
+               u.doi_o, u.study_o, u.title_o, u.year_o, u.url_o, u.ref_o, u.oa_work_id_o,
                rm.authors_o, rm.original_rank, rm.link_evidence
         FROM unvalidated u
         LEFT JOIN record_metadata rm ON rm.record_id = u.record_id
@@ -119,13 +159,13 @@ def claim(cur, coder_id: int, record_id: str, claim_slot, oa_url_for) -> dict | 
         ORDER BY u.record_id
         LIMIT %s
         """,
-        (base["doi_r"], _PAPER_LIMIT),
+        (base["doi_r"], PAPER_LIMIT),
     )
     rows = [dict(r) for r in cur.fetchall()]
     record_ids = [r["record_id"] for r in rows]
     cur.execute(
         """
-        SELECT record_id, queue_id, is_validated, started_at
+        SELECT record_id, queue_id, is_validated
         FROM validation_queue
         WHERE validator_id = %s AND record_id = ANY(%s::uuid[])
         """,
@@ -143,7 +183,7 @@ def claim(cur, coder_id: int, record_id: str, claim_slot, oa_url_for) -> dict | 
         # reproduction or hard-pool sibling stays on its own screen.
         if _judgeable(row, base_type):
             if not slot:
-                queue_id = claim_slot(cur, coder_id, row["record_id"], started=True)
+                queue_id = claim_slot(cur, coder_id, row["record_id"], started=False)
                 if not queue_id:
                     # This browser's buffer top-up may have got there first.
                     slot = _own_slot(cur, coder_id, row["record_id"])
@@ -151,10 +191,6 @@ def claim(cur, coder_id: int, record_id: str, claim_slot, oa_url_for) -> dict | 
             slot = None
         if slot and not slot["is_validated"]:
             queue_id = slot["queue_id"]
-            if slot["started_at"] is None:
-                cur.execute(
-                    "UPDATE validation_queue SET started_at = NOW(), shown_at = NOW() "
-                    "WHERE queue_id = %s", (queue_id,))
 
         entry = {field: row.get(field) for field in _CONTEXT_FIELDS}
         entry["record_id"] = rid
@@ -165,6 +201,7 @@ def claim(cur, coder_id: int, record_id: str, claim_slot, oa_url_for) -> dict | 
             entry.update({field: row.get(field) for field in _JUDGEABLE_FIELDS})
             entry["outcome_phrase"] = row.get("outcome_quote") or ""
         originals.append(entry)
+    refresh(cur, coder_id, [o["record_id"] for o in originals if o["judgeable"]])
     return {"doi_r": base["doi_r"], "originals": originals}
 
 
@@ -177,6 +214,27 @@ def marker(additional_checks) -> dict | None:
     if not isinstance(note, dict) or not isinstance(note.get("outcome_group"), str):
         return None
     return note
+
+
+def table_note(cur, rec: dict, additional_checks) -> dict | None:
+    """The note, if this judgement can have come from the table. Points follow it, and
+    additional_checks is whatever the browser sent, so a note counts only with the
+    table on, on a record the table can open, with the group the table writes: this
+    record's "none:" group, or a record of the same paper. Anything else is judged
+    as an ordinary record."""
+    note = marker(additional_checks)
+    if not note or not available(rec):
+        return None
+    group, record_id = note["outcome_group"], str(rec["record_id"])
+    if group in (record_id, f"none:{record_id}"):
+        return note
+    try:
+        sibling = str(UUID(group))
+    except ValueError:
+        return None
+    cur.execute("SELECT 1 FROM unvalidated u WHERE u.record_id = %s AND lower(u.doi_r) = lower(%s)",
+                (sibling, rec["doi_r"]))
+    return note if cur.fetchone() else None
 
 
 def points(cur, rec: dict, coder_id: int, req, vote_score: int, improved_evidence: bool,
@@ -236,7 +294,7 @@ def admin_paper_set(cur, record: dict) -> list[dict]:
         ORDER BY rm.original_rank NULLS LAST, u.year_o NULLS LAST, u.title_o, u.record_id
         LIMIT %s
         """,
-        (doi, _PAPER_LIMIT),
+        (doi, PAPER_LIMIT),
     )
     rows = [dict(r) for r in cur.fetchall()]
     if len(rows) < 2:

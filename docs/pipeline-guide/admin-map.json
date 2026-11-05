@@ -1351,7 +1351,7 @@
       "actions": [
         {
           "label": "Assign / Reassign",
-          "does": "POST /api/admin/assign creates or replaces the record's named assignment and marks it open.",
+          "does": "POST /api/admin/assign creates or replaces the record's named assignment and marks it open. A record already validated or rejected is refused.",
           "saves": "assignments and security_events.",
           "when": "After save; recipient receives it through assigned-work refresh.",
           "sources": [

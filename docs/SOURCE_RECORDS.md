@@ -1149,6 +1149,10 @@ editable fields are a form, grouped Original, Replication (or Reproduction), Out
 (or Computational / Robustness). Identity, provenance and the values the build computes
 from others (DOI hashes, OpenAlex work ids, author overlap) are shown beneath as context.
 
+Every build replays the log through the same rules the editor applies (`clean_value`). A
+stored correction that fails them is skipped and logged, so one bad row can neither reach
+the public data nor stop a build, and that record keeps its derived value.
+
 **The change log.** Every save appends one row to `flora_record_changes`, the FLoRA
 counterpart of the website records' `admin_decisions`: who made it, when, each field it
 changed as `[before, after]`, and a note on each of those changes (`notes`, by field). A

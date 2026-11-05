@@ -46,6 +46,7 @@ import psycopg2
 import pandas as pd
 from dotenv import load_dotenv
 from console_encoding import use_utf8_output
+import extra_originals
 
 from extractor_vocab import (
     check_csv_vocabulary,
@@ -685,8 +686,120 @@ def _rekey_candidates(slot_records: list, incoming_pair_ids: set,
             and record["record_id"] not in rekeyed_record_ids]
 
 
+def _removed_original_was_replaced(cur, existing: dict, incoming: dict) -> bool:
+    """Did an admin remove this record's original, and does this re-key ship another?
+
+    The newest decision that left the record rejected says why it is rejected: "not
+    a replication" is about the paper, which a new original does not change, and a
+    re-key of the replication's DOI alone leaves the removed original where it was.
+    """
+    cur.execute(
+        """
+        SELECT (SELECT d.action FROM admin_decisions d
+                WHERE d.record_id = u.record_id AND d.status_after = 'rejected'
+                ORDER BY d.decided_at DESC, d.decision_id DESC LIMIT 1) = 'original_removed'
+               AND (lower(btrim(COALESCE(u.doi_o, ''))) <> lower(btrim(COALESCE(%(doi_o)s, '')))
+                    OR (COALESCE(u.doi_o, '') = '' AND COALESCE(%(doi_o)s, '') = ''
+                        AND lower(btrim(COALESCE(u.title_o, ''))) <> lower(btrim(COALESCE(%(title_o)s, ''))))),
+               u.validator_1, u.validator_2
+        FROM unvalidated u WHERE u.record_id = %(record_id)s
+        """,
+        {"doi_o": incoming["doi_o"], "title_o": incoming["title_o"], "record_id": existing["record_id"]},
+    )
+    row = cur.fetchone()
+    if not (row and row[0]):
+        return False
+    # The decision log does not hear of every rejection: a senior's reject, or two
+    # validators and the LLM agreeing it is not a replication, are never logged, so a
+    # reopened record they rejected again would still show the old removal as its
+    # newest. Its judgements say what rejected it now.
+    from consensus_engine import removal_proposed
+    return removal_proposed(row[1], row[2])
+
+
+def _archive_removed_original(cur, existing: dict, incoming: dict) -> None:
+    """Keep what the two validators and the admin decided about the old original,
+    the record, its metadata, its judgements and its skips, whole, in the archive the
+    retire step uses. The record stays: only its slots start over."""
+    cur.execute(
+        """
+        INSERT INTO retired_records (
+            record_id, pair_id, reason, detail, superseded_by,
+            unvalidated_row, metadata_row, queue_rows, skip_rows, retired_by)
+        SELECT u.record_id, u.pair_id, 'original_replaced', %s, %s, to_jsonb(u),
+               (SELECT to_jsonb(m) FROM record_metadata m WHERE m.record_id = u.record_id),
+               COALESCE((SELECT jsonb_agg(to_jsonb(q)) FROM validation_queue q
+                          WHERE q.record_id = u.record_id), '[]'::jsonb),
+               COALESCE((SELECT jsonb_agg(to_jsonb(s)) FROM validation_skips s
+                          WHERE s.record_id = u.record_id), '[]'::jsonb),
+               'csv_to_db re-key'
+        FROM unvalidated u WHERE u.record_id = %s
+        """,
+        ("Removed by an admin as the wrong original; the extractor then shipped another "
+         "at the same work and rank.", incoming["pair_id"], existing["record_id"]),
+    )
+    if cur.rowcount != 1:
+        raise RuntimeError(f"could not archive {existing['record_id']}; rolling back")
+
+
+def _reopen_with_clean_slots(cur, record_id: str) -> None:
+    """Send a record back to the start: unvalidated, no judgements, no decisions.
+    Its two queue rows are reused, because skips and messages point at them."""
+    cur.execute(
+        """
+        UPDATE validation_queue SET
+            is_shown = FALSE, is_validated = FALSE, validator_id = NULL, validator_name = NULL,
+            type_check = NULL, original_check = NULL, outcome_check = NULL,
+            corrected_doi_o = NULL, corrected_title_o = NULL, corrected_outcome = NULL,
+            corrected_type = NULL, corrected_outcome_quote = NULL, corrected_abstract = NULL,
+            corrected_url_r = NULL, corrected_title_r = NULL, corrected_study_r = NULL,
+            corrected_study_o = NULL, corrected_outcome_computation = NULL,
+            corrected_computational_quote = NULL, corrected_computational_source = NULL,
+            corrected_outcome_robustness = NULL, corrected_robustness_quote = NULL,
+            corrected_robustness_source = NULL, doi_r_published = NULL,
+            additional_checks = NULL, validator_notes = NULL, points = 0,
+            flagged = FALSE, flag_reason = NULL,
+            shown_at = NULL, started_at = NULL, validated_at = NULL
+        WHERE record_id = %s AND validator_slot IN ('human_1', 'human_2')
+        """,
+        (record_id,),
+    )
+    cur.execute(
+        """
+        UPDATE unvalidated SET
+            validation_status = 'unvalidated', is_tiebreaker = FALSE,
+            validator_1 = NULL, validator_2 = NULL, llm_validator = NULL,
+            admin_checked = FALSE, admin_name = NULL, admin_override = FALSE,
+            quality_flags = DEFAULT, quality_checked_at = NULL,
+            auto_validated_rule = NULL, auto_validated_at = NULL,
+            final_type = NULL, final_doi_o = NULL, final_title_o = NULL, final_study_o = NULL,
+            final_doi_r = NULL, final_title_r = NULL, final_study_r = NULL, final_url_r = NULL,
+            final_abstract_r = NULL, final_outcome = NULL, final_outcome_quote = NULL,
+            final_out_quote_source = NULL, out_quote_source_by = NULL,
+            final_outcome_computation = NULL, final_computational_quote = NULL,
+            final_computational_source = NULL, final_outcome_robustness = NULL,
+            final_robustness_quote = NULL, final_robustness_source = NULL,
+            updated_at = NOW()
+        WHERE record_id = %s
+        """,
+        (record_id,),
+    )
+
+
 def _refresh_rekeyed_record(cur, existing: dict, incoming: dict) -> None:
-    """Apply an authoritative source re-key without overwriting final decisions."""
+    """Apply an authoritative source re-key without overwriting final decisions.
+
+    The one exception is an original an admin removed: when the extractor ships
+    another at the same work and rank, that decision was about a paper this record
+    no longer codes, so the record starts over, its history kept in retired_records
+    and admin_decisions."""
+    original_replaced = (existing["validation_status"] == "rejected"
+                         and _removed_original_was_replaced(cur, existing, incoming))
+    if original_replaced:
+        cur.execute("SELECT pair_id, doi_o, title_o FROM unvalidated WHERE record_id = %s",
+                    (existing["record_id"],))
+        old_pair_id, old_doi_o, old_title_o = cur.fetchone()
+        _archive_removed_original(cur, existing, incoming)
     cur.execute(
         """
         UPDATE unvalidated SET
@@ -719,7 +832,19 @@ def _refresh_rekeyed_record(cur, existing: dict, incoming: dict) -> None:
         """,
         (incoming["oa_work_id_o"], incoming["oa_work_id_r"], existing["record_id"]),
     )
-    if existing["has_validator_activity"] and existing["validation_status"] != "rejected":
+    if original_replaced:
+        _reopen_with_clean_slots(cur, existing["record_id"])
+        extra_originals.log_decision(
+            cur, existing["record_id"], {"handle": "import"}, "reopened_by_import",
+            {"pair_id": [old_pair_id, incoming["pair_id"]],
+             "doi_o": [old_doi_o, incoming["doi_o"]],
+             "title_o": [old_title_o, incoming["title_o"]]},
+            "rejected", "unvalidated")
+        _note_admin(cur, existing["record_id"],
+                    "⚠ Re-opened by the import: the original an admin removed was replaced "
+                    "by the extractor. The earlier judgements are in retired_records.")
+        print(f"  Re-opened {existing['record_id']}: its removed original was replaced")
+    elif existing["has_validator_activity"] and existing["validation_status"] != "rejected":
         note = (
             "Source pair_id changed after extraction (usually a corrected DOI). "
             "Raw source values were refreshed; prior validator/final values require review."

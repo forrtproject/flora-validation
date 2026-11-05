@@ -131,6 +131,38 @@ def test_corrections_replace_the_derived_values_by_published_id():
     assert out.set_index("source_record_id")["edited_fields"].isna()[["s2", "s3"]].all()
 
 
+def test_a_correction_that_fails_the_rules_is_skipped_and_logged(capsys):
+    """The log is replayed on every build, with nothing else between a bad row and the
+    public data. One bad row must neither land there nor stop the build."""
+    out = flora_edits.apply(None, _frame(), {"FLORA-000001": {
+        "doi_o": "not a doi", "year_o": "last year", "url_o": "javascript:alert(1)",
+        "outcome": "kinda worked", "title_o": "Fine title"}})
+    row = out.set_index("source_record_id").loc["s1"]
+    assert row["title_o"] == "Fine title" and row["edited_fields"] == "title_o"
+    assert row["year_o"] == 1972 and row["outcome"] == "failed"
+    assert row.get("doi_o") != "not a doi" and row.get("url_o") != "javascript:alert(1)"
+    assert out.attrs["flora_edits"] == {"FLORA-000001": {"title_o": "Old title"}}
+    log = capsys.readouterr().out
+    assert log.count("correction skipped on FLORA-000001") == 4
+    assert "kinda worked" not in log or "outcome must be" in log
+
+
+def test_a_stored_correction_is_applied_as_the_editor_would_store_it():
+    out = flora_edits.apply(None, _frame(), {"FLORA-000001": {"title_o": "  <b>Spaced</b> title  "}})
+    assert out.set_index("source_record_id").loc["s1", "title_o"] ==         flora_edits.clean_value("title_o", "  <b>Spaced</b> title  ", "replication")
+
+
+def test_a_bad_identifier_correction_never_reaches_the_build(capsys):
+    """Identifiers go on the frame before apply() runs, so they are cleaned there too."""
+    rows = [{"export_id": "FLORA-000001", "corrections": {"doi_o": "not a doi", "url_r": "https://ok.example/x"},
+             "primary_id": "s1", "merged_ids": [], "historical_ids": []}]
+    cur = Mock()
+    cur.fetchone.return_value = {"present": True}
+    cur.fetchall.side_effect = [rows, [{"id": "s1"}]]
+    assert flora_edits.load_identifiers(cur)["records"] == [(["s1"], {"url_r": "https://ok.example/x"})]
+    assert "correction skipped on FLORA-000001" in capsys.readouterr().out
+
+
 def test_the_input_frame_is_left_alone():
     frame = _frame()
     flora_edits.apply(None, frame, {"FLORA-000001": {"title_o": "New title"}})

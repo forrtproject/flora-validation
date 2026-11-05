@@ -13,7 +13,7 @@ Code snapshot: 29 October 2026, `2f3a89c`.
 ## What happens
 
 1. The validator opens the item in My Assignments; the server confirms that the assignment belongs to them.
-2. Submit calls /api/assignment-judge synchronously and the interface waits for the response.
+2. Submit calls /api/assignment-judge synchronously and the interface waits for the response. If the record was decided in the meantime the server answers 409: nothing is saved, the validator is told, and the screen moves on.
 3. The server writes corrections and a review summary, completes the assignment, clears restricted_access, and awards double points.
 4. A definite eligible answer becomes consensus_reached for admin approval. Explicit uncertainty becomes need_review. A neither-type decision becomes rejected.
 

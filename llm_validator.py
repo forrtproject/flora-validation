@@ -42,6 +42,10 @@ from extractor_vocab import (
 
 _LLM_VOTE_SCORE = 15
 _MODEL_NAME = "gemini-3.1-flash-lite"
+# Per attempt, in the SDK's milliseconds. /api/judge holds the record's row lock
+# through this call and run_llm_validation makes two attempts, so a stalled Gemini
+# keeps that lock for at most twice this.
+_GEMINI_TIMEOUT_MS = 30_000
 
 # Outcome vocabulary. The valid labels come from extractor_vocab, which is also
 # what db_schema.sql's `unvalidated_outcome_check` mirrors — showing the model a
@@ -241,7 +245,8 @@ def _response_schema(record_type: str) -> dict:
 
 
 def _call_gemini(prompt: str, record_type: str) -> str:
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"],
+                          http_options=types.HttpOptions(timeout=_GEMINI_TIMEOUT_MS))
     config = types.GenerateContentConfig(
         response_mime_type="application/json",
         response_schema=_response_schema(record_type),

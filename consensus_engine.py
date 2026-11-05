@@ -34,6 +34,9 @@ _CHECK_FIELDS = ["type_check", "original_check", "outcome_check"]
 # outcome_check for an original marked wrong with no replacement: no paper, so no
 # outcome to judge. Never equals an LLM answer, so it cannot win a tiebreak.
 NO_OUTCOME = "not_applicable"
+# A record in one of these has been decided, and only an admin moves it on. The same
+# definition of "not open" as the assignment list (app.my_assignments).
+DECIDED_STATUSES = ("validated", "rejected")
 _CORRECTION_FIELDS = [
     "corrected_doi_o", "corrected_title_o", "corrected_outcome", "corrected_type",
     "corrected_title_r", "corrected_url_r",
@@ -195,10 +198,10 @@ def validated_identity_conflict(
 
 
 def identity_taken(cur, record: dict, final: dict, lock: bool = True) -> bool:
-    """Would publishing `final` (as _insert_validated would) take over another
-    entry's row in validated? Its upsert replaces a row with the same identity, so
-    a duplicate would silently unpublish the other entry. An admin merges those
-    (admin_resolve's duplicate dialog); nothing publishes one unattended."""
+    """Would publishing `final` (as _insert_validated would) collide with another
+    entry's row in validated? An admin merges those (admin_resolve's duplicate
+    dialog); nothing publishes one unattended. This check can lose a race to a
+    concurrent publish; _insert_validated cannot, and refuses too."""
     prior_doi_o = (record["final_doi_o"] if record.get("final_doi_o") is not None
                    else record.get("doi_o"))
     return validated_identity_conflict(
@@ -592,7 +595,14 @@ def _update_status(cur, record_id: str, status: str, is_tiebreaker: bool,
             extra_originals.reject_children(cur, record_id)
 
 
-def _insert_validated(cur, record: dict, final: dict) -> None:
+def _insert_validated(cur, record: dict, final: dict) -> bool:
+    """Publish this record. Returns False, with validated as it was, if another entry
+    holds the identity: that entry's row must not be overwritten, and the caller sends
+    this one to an admin to merge. The answer comes from the insert itself, because a
+    check made before it can lose the race to a concurrent publish."""
+    # Undoes the DELETE below when the insert is refused: a record re-keyed back to
+    # review can still have a row that stays published until an admin decides.
+    cur.execute("SAVEPOINT publish_validated")
     # Remove any prior row for this record first: the natural key
     # (doi/title + within-paper study numbers) is mutable, so a correction to those
     # fields would otherwise leave a stale duplicate under the old key.
@@ -620,36 +630,11 @@ def _insert_validated(cur, record: dict, final: dict) -> None:
             doi_r_published, alt_identifier_r, validated_at)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (doi_r, study_r, title_r, original_key, study_o, title_o) DO UPDATE SET
-            -- original_key is doi_o, or oa_work_id_o when the original has no
-            -- registered DOI (books, chapters, pre-DOI papers). doi_o is '' for
-            -- ALL of those, so keying on it merged distinct originals that also
-            -- shared a title. See db_schema.sql.
-            record_id        = EXCLUDED.record_id,
-            title_r          = EXCLUDED.title_r,
-            year_r           = EXCLUDED.year_r,
-            url_r            = EXCLUDED.url_r,
-            ref_r            = EXCLUDED.ref_r,
-            abstract_r       = EXCLUDED.abstract_r,
-            title_o          = EXCLUDED.title_o,
-            year_o           = EXCLUDED.year_o,
-            url_o            = EXCLUDED.url_o,
-            ref_o            = EXCLUDED.ref_o,
-            oa_work_id_o     = EXCLUDED.oa_work_id_o,
-            oa_work_id_r     = EXCLUDED.oa_work_id_r,
-            type             = EXCLUDED.type,
-            outcome          = EXCLUDED.outcome,
-            outcome_quote    = EXCLUDED.outcome_quote,
-            out_quote_source = EXCLUDED.out_quote_source,
-            outcome_computation            = EXCLUDED.outcome_computation,
-            outcome_computational_quote    = EXCLUDED.outcome_computational_quote,
-            out_quote_computational_source = EXCLUDED.out_quote_computational_source,
-            outcome_robustness             = EXCLUDED.outcome_robustness,
-            outcome_robustness_quote       = EXCLUDED.outcome_robustness_quote,
-            out_quote_robust_source        = EXCLUDED.out_quote_robust_source,
-            doi_r_published  = EXCLUDED.doi_r_published,
-            alt_identifier_r = EXCLUDED.alt_identifier_r,
-            validated_at     = NOW()
+        -- original_key is doi_o, or oa_work_id_o when the original has no registered
+        -- DOI (books, chapters, pre-DOI papers). doi_o is '' for ALL of those, so
+        -- keying on it merged distinct originals that also shared a title. See
+        -- db_schema.sql.
+        ON CONFLICT (doi_r, study_r, title_r, original_key, study_o, title_o) DO NOTHING
         """,
         (
             record.get("record_id"),
@@ -686,13 +671,18 @@ def _insert_validated(cur, record: dict, final: dict) -> None:
             datetime.now(timezone.utc).isoformat(),
         ),
     )
+    if cur.rowcount == 0:
+        cur.execute("ROLLBACK TO SAVEPOINT publish_validated")
+        return False
+    cur.execute("RELEASE SAVEPOINT publish_validated")
     # Originals an admin added to this record follow what it now publishes. Not
     # strict: no admin is here to decide, so one that would collide is skipped.
     if extra_originals.may_have_children(record):
         extra_originals.sync_children(cur, record.get("record_id"), strict=False)
+    return True
 
 
-def evaluate_consensus(cur, record_id: str) -> None:
+def evaluate_consensus(cur, record_id: str, llm_answer: dict | None = None) -> None:
     """
     Called after each human submission. Reads completed human rows from
     validation_queue, applies the decision tree, and writes the outcome
@@ -701,6 +691,8 @@ def evaluate_consensus(cur, record_id: str) -> None:
     Args:
         cur: open psycopg2 cursor (caller manages transaction/commit)
         record_id: UUID of the record being evaluated
+        llm_answer: an answer the caller already has, in place of asking Gemini here,
+            so that it need not hold the record's row lock across the call
     """
     cur.execute(
         """
@@ -748,6 +740,15 @@ def evaluate_consensus(cur, record_id: str) -> None:
         record_cols = [d[0] for d in cur.description]
         record = dict(zip(record_cols, record_row))
 
+    # Decided already: re-evaluating would overwrite that decision with the validators'
+    # values and leave the published row behind. Status, not admin_checked: a validated
+    # record the import re-keyed to need_review keeps admin_checked and is open again.
+    if record.get("validation_status") in DECIDED_STATUSES:
+        return
+
+    def ask_llm(context: str) -> dict:
+        return llm_answer if llm_answer is not None else run_llm_validation(record, context=context)
+
     # A reject made through the senior-reject path is authoritative: once a senior
     # has used it, neither the second validator nor the LLM can overturn it. This
     # makes the conclusion 'rejected' regardless of the order in which the two
@@ -775,7 +776,7 @@ def evaluate_consensus(cur, record_id: str) -> None:
     # The LLM still runs, but only so the admin sees its answer: it never decides.
     # An errored call keeps a clean answer stored earlier (_store_only_answer).
     if _is_unsure(h1) or _is_unsure(h2):
-        llm = _store_only_answer(record, run_llm_validation(record, context="sanity_check"))
+        llm = _store_only_answer(record, ask_llm("sanity_check"))
         _update_status(cur, record_id, "need_review", False, None, llm, record)
         return
 
@@ -785,7 +786,7 @@ def evaluate_consensus(cur, record_id: str) -> None:
     # or a mis-copied quote that needs fixing. This intentionally also stops the
     # senior auto-validate shortcut. The LLM's answer is stored for the admin only.
     if _quote_flagged(h1) or _quote_flagged(h2):
-        llm = _store_only_answer(record, run_llm_validation(record, context="sanity_check"))
+        llm = _store_only_answer(record, ask_llm("sanity_check"))
         _update_status(cur, record_id, "need_review", False, None, llm, record)
         return
 
@@ -793,7 +794,7 @@ def evaluate_consensus(cur, record_id: str) -> None:
     # stored for the admin only, and final values stay empty so approval cannot
     # publish the extracted original and outcome.
     if removal_proposed(h1, h2):
-        llm = _store_only_answer(record, run_llm_validation(record, context="sanity_check"))
+        llm = _store_only_answer(record, ask_llm("sanity_check"))
         _update_status(cur, record_id, "need_review", False, None, llm, record)
         return
 
@@ -807,7 +808,7 @@ def evaluate_consensus(cur, record_id: str) -> None:
         # Both validators agree this is not a replication → LLM confirms or sends to admin
         if (_effective_corrected_type(h1) == "not_validation" and
                 _effective_corrected_type(h2) == "not_validation"):
-            llm = run_llm_validation(record, context="sanity_check")
+            llm = ask_llm("sanity_check")
             if not llm.get("error") and _llm_matches(llm, h1):
                 _update_status(cur, record_id, "rejected", False, None, llm, record)
             else:
@@ -815,15 +816,16 @@ def evaluate_consensus(cur, record_id: str) -> None:
                 _update_status(cur, record_id, "need_review", False, None, llm, record)
             return
 
-        llm = run_llm_validation(record, context="sanity_check")
+        llm = ask_llm("sanity_check")
         final = _resolve_final(record, h1, h2)
         rule = auto_validation_rule(h1, h2, llm, trusted_count, experienced_count)
-        if rule and identity_taken(cur, record, final):
-            rule = None      # a duplicate of a validated entry: an admin merges it
+        # A duplicate of a validated entry goes to an admin to merge, whether this
+        # check finds it or the insert does, having lost a race to a concurrent publish.
+        if rule and (identity_taken(cur, record, final) or not _insert_validated(cur, record, final)):
+            rule = None
         if rule:
             # An auto-validation rule applies — validated, no admin review needed.
             _update_status(cur, record_id, "validated", False, final, llm, record, auto_rule=rule)
-            _insert_validated(cur, record, final)
         else:
             # Normal agreement — admin must approve
             _update_status(cur, record_id, "consensus_reached", False, final, llm, record)
@@ -831,12 +833,12 @@ def evaluate_consensus(cur, record_id: str) -> None:
     elif checks_ok and not corrections_ok:
         # Branch 2: checks agree but corrections differ → need_review. The LLM
         # sanity check runs only so the admin sees its answer; it never decides.
-        llm = _store_only_answer(record, run_llm_validation(record, context="sanity_check"))
+        llm = _store_only_answer(record, ask_llm("sanity_check"))
         _update_status(cur, record_id, "need_review", False, None, llm, record)
 
     else:
         # Branch 3: checks differ → LLM tiebreaker
-        llm = run_llm_validation(record, context="tiebreaker")
+        llm = ask_llm("tiebreaker")
 
         if llm.get("error"):
             _update_status(cur, record_id, "need_review", True, None, llm, record)

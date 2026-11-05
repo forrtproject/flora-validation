@@ -276,7 +276,10 @@ load .env
 
 The schema is designed to be re-executable: it uses `IF NOT EXISTS`, guarded
 `DO` blocks, upserts, and repeatable data updates. It is still real migration
-work and can lock or rewrite rows during startup.
+work and can lock or rewrite rows during startup. Its last step enables row-level
+security on every table in `public` that the connecting role owns and that no extension
+owns; other owners' tables are skipped, and the app is unaffected because owners
+bypass it (nothing is `FORCE`d).
 
 When `unvalidated` is empty and `data/extracted_latest.csv` exists, startup runs
 the importer with `check=True` and the explicit `--allow-legacy-schema` flag used
@@ -427,6 +430,13 @@ identity backfills—study numbers and matching-paper OpenAlex IDs—propagate i
 If an upstream correction changes `pair_id`, the importer uses the stable
 `(work_id, original_rank)` source slot to re-key the existing raw record. It
 refuses an ambiguous source-slot match instead of merging records arbitrarily.
+A rejected record stays rejected, with one exception: when an admin removed its
+original ("Remove this original", the newest rejecting entry in `admin_decisions`)
+and the re-key ships a different original, the record returns to `unvalidated` with
+clean slots. Its earlier state is archived in `retired_records` (reason
+`original_replaced`) and the re-opening is logged as `reopened_by_import`. A record
+rejected as neither a replication nor a reproduction is about the paper and stays
+rejected, as does a removed original whose re-key only corrected the replication DOI.
 Blank or duplicate resolved `pair_id` values, missing required OpenAlex lineage,
 and DOI-less originals without a stable OpenAlex identity fail validation before
 database writes.
@@ -523,7 +533,8 @@ cannot receive a record already associated with their `validator_id`, and only
 records with a free human slot are candidates.
 
 Normal mode excludes records with no abstract or outcome
-`cannot_be_determined`. Hard mode contains those records and awards double
+`cannot_be_determined`; a record with no outcome at all but an abstract is in normal
+mode. Hard mode contains those records and awards double
 backend points. Restricted-access records are removed from both pools until an
 administrator assigns them.
 
@@ -690,7 +701,8 @@ waiting for approval, using the sanity check each already had and publishing wha
 an admin approval would (`consensus_engine.approval_values`); it is a dry run
 unless given `--apply`, and saves the entries to `backups/` first. Admin approval
 now also refuses to publish a duplicate of an entry already validated (409):
-resolving it offers the merge.
+resolving it offers the merge. That holds for two approvals at the same moment too:
+the insert itself refuses, so one of them gets the 409.
 
 An admin who validated an entry may decide it (approve, resolve, reject) only when
 the other validator agreed with them; the server refuses otherwise, and the panel
@@ -972,12 +984,15 @@ Gemini response schema, and server-side coercion. A small synonym map handles
 common replication-label near misses; an unknown suggestion is dropped and the
 outcome check becomes uncertain.
 
-Gemini calls retry once. Persistent failures return an error object instead of
+Each Gemini attempt times out after 30 seconds (`llm_validator._GEMINI_TIMEOUT_MS`), because
+`/api/judge` holds the record's row lock through the call. Gemini calls retry once. Persistent failures return an error object instead of
 raising through the submission transaction. The nightly retry job revisits only
 open records whose stored Gemini object contains `error`: it re-runs consensus on a
 `need_review` tiebreaker, and on any other `need_review` or `consensus_reached`
 record it only saves the new answer. Genuine three-way disagreements are not
-repeatedly called.
+repeatedly called. Neither retry holds the record's row lock across the call: the write
+happens under the lock only if the record is unchanged, so an admin decision made during
+the call stands.
 
 ## Administrator workflow
 
@@ -1622,8 +1637,10 @@ the caller. State-changing requests are refused unless they originate from
 | POST | `/api/update-seen` | Record current update version |
 | GET | `/api/my-judgements` | Latest 100 completed judgements for the signed-in validator |
 | GET | `/api/my-judgements/{queue_id}` | One judgement, final record, and message thread |
-| POST | `/api/next-pairs` | Resume/claim active and buffered pairs; normal/hard mode |
+| POST | `/api/next-pairs` | Resume/claim active and buffered pairs; normal/hard mode. A record lost to another claimer is left out and the claim tries the next |
 | POST | `/api/pairs/{queue_id}/start` | Promote a buffered claim to started |
+| POST | `/api/paper-review/claim` | Reserve this validator's open records of a paper as buffered holds; never waits for a row lock (`PAPER_REVIEW_ENABLED`) |
+| POST | `/api/paper-review/refresh` | Renew an open review table's holds and return the records still held |
 | GET | `/api/health` | Process-only liveness check |
 | POST | `/api/restricted` | Report inaccessible hard-mode article and release slot |
 | GET | `/api/my-assignments` | Open restricted assignments for the signed-in validator |

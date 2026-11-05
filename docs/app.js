@@ -2795,7 +2795,7 @@ function _isTerminalErr(e) {
 
 function _slotNoLongerOwned(e) {
   const m = (e && e.message) || "";
-  return /No open slot|Already judged|already submitted|no longer assigned/i.test(m);
+  return /No open slot|Already judged|already submitted|no longer assigned|already been decided/i.test(m);
 }
 
 function _newSubmissionId() {
@@ -5057,6 +5057,14 @@ async function submitJudgement() {
     } catch (e) {
       await showAlert(e.message);
       btn.disabled = false;
+      if (e.detail?.code === "record_already_decided") {
+        // Nothing here can be saved any more, so the screen does not stay on it.
+        _clearDraft(p.pair_id);
+        state.assignment = null;
+        $("#assignment-banner").classList.add("hidden");
+        await refreshAssignments();
+        await loadNextPair();
+      }
     }
     return;
   }
@@ -5104,7 +5112,7 @@ function submitOnboarding() {
 // ordinary judgement per record through the same durable queue as the normal screen,
 // so consensus, retries and recovery stay per record. See paper_review.py.
 const _PAPER_DRAFT_KEY = (doi) => `flora.paperdraft.${state.coder?.coder_id}.${String(doi).toLowerCase()}`;
-const _PAPER_OPT_OUT_KEY = (doi) => `flora.paperreview.optout.${String(doi).toLowerCase()}`;
+const _PAPER_OPT_OUT_KEY = (doi) => `flora.paperreview.optout.${state.coder?.coder_id}.${String(doi).toLowerCase()}`;
 
 function _paperReviewOn(p) {
   if (!p?.paper_review || state.assignment || state.mode === "hard") return false;
@@ -5173,10 +5181,13 @@ async function _openPaperReview(pair, { addAnother = false } = {}) {
     _showActivePair({ ...pair, paper_review: false });   // the one-record screen always works
     return;
   }
-  if (state.currentPair !== pair) return;   // the validator has moved on
   // A judgement still in the durable queue must not be answered a second time.
   const pending = _pendingRecordIds();
   set.originals = set.originals.map(o => pending.has(String(o.record_id)) ? { ...o, judgeable: false } : o);
+  if (state.currentPair !== pair) {   // the validator has moved on
+    _prReturnToBuffer(set.originals, pair);
+    return;
+  }
   const claimed = new Set(set.originals.filter(o => o.judgeable).map(o => String(o.record_id)));
   _pairBuffer = _pairBuffer.filter(b => !claimed.has(String(b.record_id)));
 
@@ -5215,6 +5226,63 @@ async function _openPaperReview(pair, { addAnother = false } = {}) {
   card.querySelector(".pair-header").addEventListener("click", () => setTimeout(_prSaveDraft));
   card.querySelector(".pair-header").addEventListener("focusout", () => setTimeout(_prSaveDraft));
   _renderPaperReview();
+  clearInterval(_prHoldTimer);
+  _prHoldTimer = setInterval(_prHoldBeat, _PAPER_HOLD_REFRESH_MS);
+}
+
+// The table's rows are short holds (paper_review.claim), renewed here while it is
+// open, so a paper nobody is at frees itself. Idle sign-out ends a forgotten tab.
+const _PAPER_HOLD_REFRESH_MS = 5 * 60 * 1000;
+let _prHoldTimer = null;
+
+async function _prHoldBeat() {
+  const pr = state.paperReview;
+  if (!pr || state.currentPair !== pr.pair) {
+    clearInterval(_prHoldTimer);
+    _prHoldTimer = null;
+    return;
+  }
+  try { await _prSyncHolds(); } catch (_) { /* the next beat tries again */ }
+}
+
+async function _prHeldIds() {
+  const resp = await api("/paper-review/refresh", "POST", { record_ids: _prLive().map(o => String(o.record_id)) });
+  return new Set(resp.held);
+}
+
+// Checks the table against the server. A hold can lapse while the table stays open (a
+// laptop asleep past the reaper's 45 minutes). What is still free is retaken; a row
+// that cannot be leaves the table and the validator is told, with every other answer
+// kept. Returns whether every row is still held.
+async function _prSyncHolds() {
+  const pr = state.paperReview;
+  const held = await _prHeldIds();
+  if (state.paperReview !== pr) return false;
+  let lost = _prLive().filter(o => !held.has(String(o.record_id)));
+  if (!lost.length) return true;
+  const anchor = _prLive().find(o => held.has(String(o.record_id)));
+  if (anchor) {
+    try {
+      const set = await api("/paper-review/claim", "POST", { record_id: String(anchor.record_id) });
+      if (state.paperReview !== pr) return false;
+      const back = new Set(set.originals.filter(o => o.judgeable).map(o => String(o.record_id)));
+      lost = lost.filter(o => !back.has(String(o.record_id)));
+    } catch (_) { /* a row that cannot be confirmed is not offered */ }
+  }
+  if (!lost.length) return true;
+  const names = lost.map(_prShortName).join(", ");
+  lost.forEach(o => { o.judgeable = false; });
+  const left = _prLive().length;
+  if (left) _renderPaperReview();
+  else _prSaveDraft();
+  await showAlert(left
+    ? `Your hold on ${names} ran out while this page was open, and it can no longer be answered here. Your other answers are kept.`
+    : "Your hold on this paper ran out while this page was open. Your answers are saved as a draft, and return if the paper is served to you again.");
+  if (!left && state.paperReview === pr) {
+    state.paperReview = null;
+    await loadNextPair();
+  }
+  return false;
 }
 
 function _prCarryAnswers(j, pair) {
@@ -5233,6 +5301,9 @@ function _prCarryAnswers(j, pair) {
   }
 }
 
+const _prDoi = (o) => String(o.doi_o || "").trim().toLowerCase();
+const _prFingerprint = (o) => `${_prDoi(o)}|${o.outcome || ""}|${_prNormQuote(o.outcome_phrase)}`;
+
 function _prSaveDraft() {
   const pr = state.paperReview;
   if (!pr) return;
@@ -5240,7 +5311,7 @@ function _prSaveDraft() {
     localStorage.setItem(_PAPER_DRAFT_KEY(pr.pair.doi_r), JSON.stringify({
       judgement: state.judgement, type: pr.type, orig: pr.orig, fix: pr.fix,
       pulled: pr.pulled, out: pr.out, drafts: pr.drafts,
-      fingerprints: Object.fromEntries(_prLive().map(o => [o.record_id, `${o.outcome || ""}|${_prNormQuote(o.outcome_phrase)}`])),
+      fingerprints: Object.fromEntries(_prLive().map(o => [o.record_id, _prFingerprint(o)])),
     }));
   } catch (_) { /* a full store costs the draft, never the page */ }
 }
@@ -5258,10 +5329,17 @@ function _prRestoreDraft(pair) {
   pr.orig = keep(draft.orig); pr.fix = keep(draft.fix); pr.pulled = keep(draft.pulled);
   pr.drafts = Array.isArray(draft.drafts) ? draft.drafts : [];
   if (draft.judgement) state.judgement = { ...state.judgement, ...draft.judgement };
-  const changed = [...live.entries()].some(([id, o]) =>
-    draft.fingerprints?.[id] !== `${o.outcome || ""}|${_prNormQuote(o.outcome_phrase)}`);
+  const changed = [...live.entries()].some(([id, o]) => draft.fingerprints?.[id] !== _prFingerprint(o));
   if (!changed) pr.out = draft.out || {};
-  else if (Object.keys(draft.out || {}).length) showToast("A record changed since your draft. Check the outcomes again.");
+  // Another DOI is another paper: "right paper?" was not answered about this one.
+  for (const [id, o] of live) {
+    if (!String(draft.fingerprints?.[id] ?? "").startsWith(`${_prDoi(o)}|`)) {
+      delete pr.orig[id]; delete pr.fix[id]; delete pr.pulled[id];
+    }
+  }
+  const gone = Object.keys(draft.orig || {}).filter(id => !live.has(id)).length;
+  if (gone) showToast(`${gone} answer${gone === 1 ? "" : "s"} in your draft cannot be used: another validator has that original now.`);
+  else if (changed && Object.keys(draft.out || {}).length) showToast("A record changed since your draft. Check the outcomes again.");
 }
 
 function _prClearDraft(doi) {
@@ -5274,16 +5352,17 @@ function _prAuthors(authors) {
 }
 
 function _prOriginalMeta(o) {
+  const href = _xoSafeHref(o.url_o);
   const link = o.doi_o
     ? `<a href="https://doi.org/${escapeHtml(o.doi_o)}" target="_blank" rel="noopener">${escapeHtml(o.doi_o)}</a>`
     : o.oa_work_id_o
     ? `<a href="https://openalex.org/${escapeHtml(o.oa_work_id_o)}" target="_blank" rel="noopener">OpenAlex ↗</a>`
-    : o.url_o
-    ? `<a href="${escapeHtml(o.url_o)}" target="_blank" rel="noopener">link ↗</a>`
+    : href
+    ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener">link ↗</a>`
     : `<span class="cs-nodoi">no registered DOI</span>`;
   const open = o.oa_url_o ? ` · <a href="${escapeHtml(o.oa_url_o)}" target="_blank" rel="noopener">🔓 OA</a>` : "";
   const study = o.study_o ? ` · Study ${escapeHtml(o.study_o)}` : "";
-  return `${escapeHtml(_prAuthors(o.authors_o))} · ${fmtYear(o.year_o)}${study} · ${link}${open}`;
+  return `${escapeHtml(_prAuthors(o.authors_o))} · ${escapeHtml(fmtYear(o.year_o))}${study} · ${link}${open}`;
 }
 
 function _prOriginalCell(o, number) {
@@ -5435,6 +5514,23 @@ function _prRefreshFooter() {
   _prSaveDraft();
 }
 
+// Rows the table reserved but will not answer go back to the front of the prefetch
+// buffer. /next-pairs never serves a record this validator already holds, so nothing
+// else would hand them back. Each shares the paper's details with `pair` and has its
+// own from the claim. In hard mode they lapse, like the buffer on a mode switch.
+function _prReturnToBuffer(originals, pair) {
+  if (state.mode === "hard") return;
+  const current = String(state.currentPair?.record_id), pending = _pendingRecordIds();
+  const rows = originals.filter(o => {
+    const id = String(o.record_id);
+    return o.judgeable && id !== current && !pending.has(id) && !_pairBuffer.some(b => String(b.record_id) === id);
+  });
+  _pairBuffer.unshift(...rows.map(o => ({
+    ...pair, ...o, started: false, resumed: false,
+    coded_originals: (pair.coded_originals || []).map(c => ({ ...c, is_current: String(c.record_id) === String(o.record_id) })),
+  })));
+}
+
 // Reproductions are coded on two axes per record, which the table does not ask.
 function _prContinueOneByOne() {
   const pr = state.paperReview, pair = pr.pair;
@@ -5443,6 +5539,7 @@ function _prContinueOneByOne() {
   _prClearDraft(pair.doi_r);
   const saved = state.judgement;
   _showActivePair(pair);
+  _prReturnToBuffer(pr.originals, pair);
   state.judgement = { ...state.judgement, corrected_study_r: saved.corrected_study_r, edited_abstract: saved.edited_abstract,
                       corrected_url_r: saved.corrected_url_r, doi_r_published: saved.doi_r_published, comment: saved.comment };
   const card = $("#pair-card");
@@ -5536,15 +5633,25 @@ async function _submitPaperReview() {
     _shakeAndHint(card.querySelector("#edit-abstract-btn"), 'You have an unsaved abstract edit — click "save edited abstract" first.');
     return;
   }
-  if (!await _confirmNotTooFast()) return;
+  // Each original is its own check, except a paper rejected as a whole.
+  const originalsRead = pr.type === "not_validation" ? 1 : _prLive().length;
+  if (!await _confirmNotTooFast(TOO_FAST_THRESHOLD_MS * originalsRead)) return;
+  if (state.paperReview !== pr) return;
+  // A row whose hold lapsed would only be refused later, in the background.
+  try {
+    if (!await _prSyncHolds()) return;
+  } catch (_) { /* offline: the durable queue sends these when it can */ }
   if (state.paperReview !== pr) return;
 
   const live = _prLive(), checks = _prChecks();
   const pair = pr.pair;
-  const items = live.map((o, i) => {
+  // Suggestions travel once, on a row that stays: one marked wrong with no replacement
+  // can be removed by an admin, and its suggestions would go with it.
+  const carrier = live.find(_prNeedsOutcome) || live[0];
+  const items = live.map((o) => {
     const check = checks.find(c => c.key === _prCheckKey(o));
     const asked = _prAsked(check);
-    const payload = _buildJudgePayload({ ...pair, ...o }, _prJudgementFor(o, i === 0));
+    const payload = _buildJudgePayload({ ...pair, ...o }, _prJudgementFor(o, o === carrier));
     payload.additional_checks = {
       ...(payload.additional_checks || {}),
       paper_review: {
@@ -5567,17 +5674,29 @@ async function _onSkipPaper() {
   const details = await showSkipReasonDialog();
   if (!details || state.paperReview !== pr) return;
   const failures = [];
+  const released = (o) => { o.judgeable = false; delete pr.orig[o.record_id]; };
   for (const o of _prLive()) {
     try {
       await api("/skip", "POST", { record_id: String(o.record_id), pair_id: o.pair_id,
                                    reason_code: details.reason_code, comment: details.comment });
+      released(o);
     } catch (e) {
-      if (!_slotNoLongerOwned(e)) failures.push(e.message);
+      if (_slotNoLongerOwned(e)) released(o);
+      else failures.push(e.message);
     }
   }
   if (failures.length) {
-    await showAlert(`Some originals could not be released: ${failures[0]} Your answers are kept.`);
-    return;
+    // A released row has left the table, or submitting it would only be refused. So
+    // has one the server no longer gives this validator (a skip whose answer got lost).
+    try {
+      const held = await _prHeldIds();
+      _prLive().filter(o => !held.has(String(o.record_id))).forEach(released);
+    } catch (_) { /* the rows released above are out either way */ }
+    if (_prLive().length) {
+      _renderPaperReview();
+      await showAlert(`Some originals could not be released: ${failures[0]} They stay in this table with your answers.`);
+      return;
+    }
   }
   _prClearDraft(pr.pair.doi_r);
   state.paperReview = null;
@@ -5808,13 +5927,13 @@ document.addEventListener("keydown", (e) => {
     // "Right outcome, better quote" and Enter must choose it, not submit the
     // previous answer. One that merely kept focus after a mouse click still
     // gives Enter to Submit, the shortcut this handler exists for.
-    if (e.target.closest?.("button, a") && e.target.id !== "submit-btn") {
+    if (e.target.closest?.("button, a") && !["submit-btn", "pr-submit"].includes(e.target.id)) {
       let fromKeyboard = false;
       try { fromKeyboard = e.target.matches(":focus-visible"); } catch (_) {}
       if (fromKeyboard) return;
     }
     e.preventDefault();
-    const btn = $("#submit-btn");
+    const btn = $("#pr-submit") || $("#submit-btn");
     if (btn && !btn.disabled) btn.click();
   }
 });
@@ -5986,13 +6105,13 @@ async function guardedSubmit() {
   if (await _confirmNotTooFast()) await submitJudgement();
 }
 
-async function _confirmNotTooFast() {
+async function _confirmNotTooFast(thresholdMs = TOO_FAST_THRESHOLD_MS) {
   const elapsed = _pairShownAt ? Date.now() - _pairShownAt : Infinity;
-  if (elapsed >= TOO_FAST_THRESHOLD_MS) return true;
+  if (elapsed >= thresholdMs) return true;
   const result = await showDialog({
     icon: "⚡",
     title: "That was fast.",
-    message: "You submitted in under 17 seconds. Are you sure you had enough time to read it?",
+    message: `You submitted in under ${Math.round(thresholdMs / 1000)} seconds. Are you sure you had enough time to read it?`,
     buttons: [
       { label: "Yes, submit anyway →", value: "submit", primary: true },
       { label: "Read it again",         value: "reread" },
@@ -6425,14 +6544,19 @@ function _trackRecordTitle(st) {
 function _adminRemovalBanner(data) {
   if (!data.original_removal) return "";
   const allowed = data.self_approval?.allowed !== false;
+  // An added original is published from this entry, so it has to go first.
+  const added = Number(data.extra_originals_summary?.children) || 0;
+  const note = !allowed ? (data.self_approval?.reason || "")
+    : added ? `This entry has ${added} added original${added === 1 ? "" : "s"}. Remove ${added === 1 ? "it" : "them"} under "Other originals" first.`
+    : "";
   return `
     <div class="admin-quote-banner pr-removal">
       <strong>Both validators marked this original as the wrong paper, and neither named another.</strong>
       Nothing is published for it unless you act. Removing it leaves the paper's other originals as they are.
       If you know the right paper, correct it in the form below and resolve instead.
       <div class="pr-removal-actions">
-        <button type="button" id="admin-remove-original-btn" class="btn-reject-outline"${allowed ? "" : " disabled"}>✗ Remove this original</button>
-        ${allowed ? "" : `<span class="admin-reject-note">${escapeHtml(data.self_approval?.reason || "")}</span>`}
+        <button type="button" id="admin-remove-original-btn" class="btn-reject-outline"${allowed && !added ? "" : " disabled"}>✗ Remove this original</button>
+        ${note ? `<span class="admin-reject-note">${escapeHtml(note)}</span>` : ""}
       </div>
     </div>`;
 }
@@ -6447,7 +6571,7 @@ function _adminPaperOriginals(data) {
     <tr class="${o.is_current ? "is-current" : ""}">
       <td>
         <div class="pr-title">${escapeHtml(o.final_title_o || o.title_o || "(no title)")}</div>
-        <div class="pr-meta">${escapeHtml(_prAuthors(o.authors_o))} · ${fmtYear(o.year_o)}${o.final_doi_o || o.doi_o ? ` · ${escapeHtml(o.final_doi_o || o.doi_o)}` : ""}</div>
+        <div class="pr-meta">${escapeHtml(_prAuthors(o.authors_o))} · ${escapeHtml(fmtYear(o.year_o))}${o.final_doi_o || o.doi_o ? ` · ${escapeHtml(o.final_doi_o || o.doi_o)}` : ""}</div>
       </td>
       <td>${escapeHtml(o.validation_status.replace(/_/g, " "))}</td>
       <td title="Original check, one mark per validator">${answers(o.original_checks)}</td>
@@ -6503,6 +6627,9 @@ function _wireAdminPaperReview(rec, data) {
           failed.push(`${_prShortName(o)}: ${e.message}`);
         }
       }
+      // Every entry of the paper lists these statuses, so none of them can be reused.
+      for (const o of data.paper_originals) delete _adminDetailCache[o.record_id];
+      delete _adminDetailCache[rec.record_id];
       if (failed.length) await showAlert(`${waiting.length - failed.length} approved, ${failed.length} not.\n${failed.join("\n")}`);
       else showToast(`${waiting.length} originals approved.`);
       fetchAdminEntries(false);
@@ -7709,6 +7836,7 @@ function renderAdminDetail(data) {
     merged: "Merged into another entry", flagged_for_review: "Flagged for review",
     sent_back: "Sent back for review (was auto-validated)",
     original_removed: "Removed — wrong original",
+    reopened_by_import: "Re-opened — the extractor replaced the removed original",
     extra_original_added: "Another original added",
     extra_original_removed: "Other original removed",
     extra_originals_moved: "Other originals moved here",
@@ -9336,7 +9464,7 @@ function renderAdminDashboard(d) {
         <div class="dash-card ${q.agreement_rate !== null && q.agreement_rate >= 0.75 ? "dash-card-green" : "dash-card-amber"}">
           <span class="dash-card-val">${agreeRate}</span>
           <span class="dash-card-label">Full Agreement Rate</span>
-          <span class="dash-card-sub">${q.full_agreements} of ${q.records_with_2_validators} records</span>
+          <span class="dash-card-sub">${q.full_agreements} of ${q.records_compared ?? q.records_with_2_validators} records</span>
         </div>
         <div class="dash-card dash-card-muted">
           <span class="dash-card-val">${p.tiebreakers}</span>

@@ -620,8 +620,9 @@ def test_the_tiebreaker_retry_leaves_converted_records_to_the_script(local_datab
                     "'{corrected_outcome}', '\"mixed\"') WHERE record_id = %s", (untouched,))
     backfill.run(apply=True, reevaluate=False, include_unverified=True)
     retried = []
+    monkeypatch.setattr(consensus_engine, "run_llm_validation", lambda record, context: {"error": "again"})
     monkeypatch.setattr(consensus_engine, "evaluate_consensus",
-                        lambda cur, record_id: retried.append(str(record_id)))
+                        lambda cur, record_id, llm_answer=None: retried.append(str(record_id)))
     monkeypatch.setattr(flora, "DATABASE_URL", os.environ["DATABASE_URL"])
     try:
         flora._retry_tiebreakers()

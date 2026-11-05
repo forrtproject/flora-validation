@@ -2252,8 +2252,12 @@ CREATE INDEX IF NOT EXISTS idx_flora_check_findings_open
 
 -- ── Wrong paper, no replacement: no outcome to judge ───────────────────────────
 -- A validator who marks an original wrong and names no other answers no outcome
--- check. Additive: the constraint only widens, so existing rows stay valid and a
--- rollback leaves any 'not_applicable' row readable as "not checked".
+-- check. Additive: the constraint only widens, so existing rows stay valid. A
+-- rollback is not harmless, though. The previous release's _checks_agree and
+-- _corrections_agree count two 'not_applicable' answers as agreement, and its
+-- _resolve_final keeps the extracted original and outcome, so such a record can reach
+-- consensus_reached and be published with the original both validators called wrong.
+-- After a rollback, run the check in docs/PROJECT.md, "Wrong paper, no replacement".
 ALTER TABLE validation_queue DROP CONSTRAINT IF EXISTS validation_queue_outcome_check_check;
 ALTER TABLE validation_queue ADD CONSTRAINT validation_queue_outcome_check_check
     CHECK (outcome_check IN ('correct', 'incorrect', 'not_applicable'));
@@ -2417,3 +2421,32 @@ CREATE TRIGGER trg_manual_records_no_delete BEFORE DELETE ON manual_records
 DROP TRIGGER IF EXISTS trg_manual_records_no_truncate ON manual_records;
 CREATE TRIGGER trg_manual_records_no_truncate BEFORE TRUNCATE ON manual_records
     FOR EACH STATEMENT EXECUTE FUNCTION prevent_flora_identity_deletion();
+
+-- ── Row-level security ────────────────────────────────────────────────────────
+-- Every table in public that this role owns has it on, including any added later: a
+-- table with no policy then answers only its owner and roles that bypass RLS, not an
+-- API role that reaches the schema. The app connects as the owner, and owners bypass
+-- RLS (no FORCE here), so it is unaffected. A table of another owner, or one belonging
+-- to an extension, is left alone: ALTER TABLE would fail on the first, and boot must
+-- not fail over a table this application does not manage.
+DO $$
+DECLARE
+    open_table regclass;
+BEGIN
+    FOR open_table IN
+        SELECT c.oid::regclass
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relkind IN ('r', 'p')
+          AND NOT c.relrowsecurity
+          AND pg_get_userbyid(c.relowner) = current_user
+          AND NOT EXISTS (
+              SELECT 1 FROM pg_depend d
+              WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid AND d.deptype = 'e'
+          )
+    LOOP
+        EXECUTE format('ALTER TABLE %s ENABLE ROW LEVEL SECURITY', open_table);
+    END LOOP;
+END
+$$;

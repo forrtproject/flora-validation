@@ -111,8 +111,10 @@ def app_db(local_database, monkeypatch):
     the LLM fail the test unless a test replaces them."""
     monkeypatch.setattr(flora, "DATABASE_URL", os.environ["DATABASE_URL"])
     monkeypatch.setattr(consensus_engine, "evaluate_consensus",
-                        lambda cur, record_id: pytest.fail("consensus re-run"))
+                        lambda cur, record_id, llm_answer=None: pytest.fail("consensus re-run"))
     monkeypatch.setattr(llm_validator, "run_llm_validation",
+                        lambda record, context: pytest.fail("Gemini called"))
+    monkeypatch.setattr(consensus_engine, "run_llm_validation",
                         lambda record, context: pytest.fail("Gemini called"))
     try:
         yield local_database
@@ -217,8 +219,9 @@ def test_the_job_runs_the_tiebreaker_retry_then_the_other_errors(app_db, monkeyp
     tiebreaker = _insert(app_db, tiebreaker=True, doi_r="10.9999/tie")
     other = _insert(app_db, doi_r="10.9999/other")
     order = []
+    monkeypatch.setattr(consensus_engine, "run_llm_validation", lambda record, context: {"error": "again"})
     monkeypatch.setattr(consensus_engine, "evaluate_consensus",
-                        lambda cur, record_id: order.append(("consensus", str(record_id))))
+                        lambda cur, record_id, llm_answer=None: order.append(("consensus", str(record_id))))
 
     def ask(record, context):
         order.append(("answer", str(record["record_id"])))

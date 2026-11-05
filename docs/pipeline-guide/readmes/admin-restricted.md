@@ -36,7 +36,7 @@ Code snapshot: 29 October 2026, `2f3a89c`.
 
 ### [Assign / Reassign](admin-restricted--assign-reassign.md)
 
-POST /api/admin/assign creates or replaces the record's named assignment and marks it open.
+POST /api/admin/assign creates or replaces the record's named assignment and marks it open. A record already validated or rejected is refused.
 
 **Saves:** assignments and security_events.
 

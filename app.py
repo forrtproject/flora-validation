@@ -33,9 +33,10 @@ import hashlib
 import hmac
 import resend
 import db_pool
+import consensus_engine
 import extra_originals
 import paper_review
-from consensus_engine import NO_OUTCOME, removal_proposed
+from consensus_engine import DECIDED_STATUSES, NO_OUTCOME, removal_proposed
 import flora_service
 import flora_store
 import manual_records
@@ -1752,7 +1753,10 @@ _PAIR_SELECT = """
 
 # A record is "hard" when its outcome is undeterminable or it has no abstract.
 # These earn double points and are served only in hard mode.
-_HARD_COND = "(u.outcome = 'cannot_be_determined' OR u.abstract_r IS NULL OR u.abstract_r = '')"
+# IS NOT DISTINCT FROM keeps this TRUE or FALSE: a NULL here would fall out of both pools
+# in _mode_sql, because NOT NULL is NULL. paper_review._HARD_RECORD is the same test.
+_HARD_COND = ("(u.outcome IS NOT DISTINCT FROM 'cannot_be_determined' "
+              "OR u.abstract_r IS NULL OR u.abstract_r = '')")
 
 
 def _mode_sql(mode: str) -> str:
@@ -1862,7 +1866,12 @@ def _claim_one_pair(cur, coder_id: int, started: bool, mode: str = "normal"):
 
     When priority serving is enabled, each claim draws from the priority pool with
     probability = priority_share, else from the rest — falling back to the other
-    pool if the chosen one is empty, so a validator is never blocked."""
+    pool if the chosen one is empty, so a validator is never blocked.
+
+    A record _claim_free_slot refuses (another claimer has it locked, or this
+    validator's own top-up got there first) is left out and the attempts run again:
+    giving up would end a session on the done screen with records still free. Each
+    pass leaves out one more record, so this ends when no candidate is left."""
     cfg = _serving_config(cur)
     pred = _priority_predicate(cfg)
     if pred:
@@ -1876,17 +1885,22 @@ def _claim_one_pair(cur, coder_id: int, started: bool, mode: str = "normal"):
         attempts = []
     attempts.append(("", ()))   # final fallback: the whole pool
 
-    row = None
-    for extra_where, extra_params in attempts:
-        row = _select_pair_candidate(cur, coder_id, mode, extra_where, extra_params)
-        if row:
+    lost: list[str] = []
+    while True:
+        leave_out = "AND u.record_id <> ALL(%s::uuid[])" if lost else ""
+        left_out = (lost,) if lost else ()
+        row = None
+        for extra_where, extra_params in attempts:
+            row = _select_pair_candidate(cur, coder_id, mode, f"{extra_where} {leave_out}",
+                                         (*extra_params, *left_out))
+            if row:
+                break
+        if not row:
+            return None
+        queue_id = _claim_free_slot(cur, coder_id, row["record_id"], started)
+        if queue_id:
             break
-    if not row:
-        return None
-    record_id = row["record_id"]
-    queue_id = _claim_free_slot(cur, coder_id, record_id, started)
-    if not queue_id:
-        return None  # lost a race — caller can try again
+        lost.append(str(row["record_id"]))
     pair = _enrich_pair(dict(row), cur)
     pair["queue_id"]    = str(queue_id)
     pair["judge_count"] = row["judge_count"]
@@ -1901,10 +1915,18 @@ def _claim_free_slot(cur, coder_id: int, record_id, started: bool):
     same browser's buffer top-up, which can run alongside a paper review claim. It
     never waits: a buffer top-up takes several records in random order, so blocking
     here could deadlock, and a locked record is simply not claimed this time. A paper
-    review claim already holds its records, so this succeeds for it.
+    review claim already holds its records, so this succeeds for it. Under that lock
+    the record is checked again: the caller read it before an admin may have closed or
+    restricted it, as _SERVABLE_SQL decides for serving.
     """
-    cur.execute("SELECT record_id FROM unvalidated WHERE record_id = %s FOR UPDATE SKIP LOCKED", (record_id,))
-    if not cur.fetchone():
+    cur.execute(
+        "SELECT validation_status, restricted_access FROM unvalidated "
+        "WHERE record_id = %s FOR UPDATE SKIP LOCKED",
+        (record_id,),
+    )
+    record = cur.fetchone()
+    if (not record or record["validation_status"] not in ("unvalidated", "validation_inprogress")
+            or record["restricted_access"] is True):
         return None
     cur.execute(
         "SELECT 1 FROM validation_queue WHERE record_id = %s AND validator_id = %s LIMIT 1",
@@ -1961,6 +1983,25 @@ def next_pairs(count: int = 3, buffered_only: bool = False,
     out = []
     with db() as cur:
         if not buffered_only:
+            # A slot an older release left open on a record since decided is refused on
+            # submit, so it is freed here: resuming it would hand the same record back on
+            # every load until the reaper's 5 days. Queue rows only, and never waits.
+            cur.execute(
+                """
+                UPDATE validation_queue
+                SET validator_id = NULL, validator_name = NULL,
+                    is_shown = FALSE, shown_at = NULL, started_at = NULL
+                WHERE queue_id IN (
+                    SELECT vq.queue_id FROM validation_queue vq
+                    JOIN unvalidated u ON u.record_id = vq.record_id
+                    WHERE vq.validator_id = %s AND vq.is_validated = FALSE
+                      AND vq.validator_slot IN ('human_1', 'human_2')
+                      AND u.validation_status = ANY(%s)
+                    FOR UPDATE OF vq SKIP LOCKED
+                )
+                """,
+                (coder_id, list(DECIDED_STATUSES)),
+            )
             # Resume an already-active pair, but only if it belongs to the
             # requested mode's pool (so switching modes doesn't drag the parked
             # pair from the other mode back in — it stays locked & resumable).
@@ -2025,7 +2066,7 @@ def next_pairs(count: int = 3, buffered_only: bool = False,
 
 
 class PaperReviewRequest(BaseModel):
-    record_id: str
+    record_id: UUID
 
 
 @app.post("/api/paper-review/claim")
@@ -2035,11 +2076,25 @@ def claim_paper_review(req: PaperReviewRequest,
     if not paper_review.enabled():
         raise HTTPException(404, "The paper review is not enabled")
     with db() as cur:
-        result = paper_review.claim(cur, validator["coder_id"], req.record_id,
+        result = paper_review.claim(cur, validator["coder_id"], str(req.record_id),
                                     _claim_free_slot, oa_url_for)
     if result is None:
         raise HTTPException(409, "This paper cannot open in the review table")
     return result
+
+
+class PaperReviewRefreshRequest(BaseModel):
+    record_ids: list[UUID] = Field(max_length=paper_review.PAPER_LIMIT)
+
+
+@app.post("/api/paper-review/refresh")
+def refresh_paper_review(req: PaperReviewRefreshRequest,
+                         validator: dict = Depends(current_validator)):
+    """Renew an open table's holds and say which records this validator still holds."""
+    if not paper_review.enabled():
+        raise HTTPException(404, "The paper review is not enabled")
+    with db() as cur:
+        return {"held": paper_review.refresh(cur, validator["coder_id"], req.record_ids)}
 
 
 @app.post("/api/pairs/{queue_id}/start")
@@ -2080,6 +2135,46 @@ def health():
 
 class RestrictedRequest(BaseModel):
     record_id: str
+
+
+def _refuse_if_decided(rec: dict) -> None:
+    """A validated or rejected record takes no more judgements: the caller holds its
+    row lock, and a late submission must not overwrite what was decided, or leave a
+    rejected record published. The browser closes the item on this answer."""
+    if rec["validation_status"] in DECIDED_STATUSES:
+        raise HTTPException(409, detail={
+            "code": "record_already_decided",
+            "message": "This entry has already been decided, so your answer was not "
+                       "saved and no points were added.",
+        })
+
+
+def _release_open_slots(cur, record_id: str) -> None:
+    """Nobody is still working on this record: free every unanswered human slot."""
+    cur.execute(
+        """
+        UPDATE validation_queue
+        SET validator_id = NULL, validator_name = NULL,
+            is_shown = FALSE, shown_at = NULL, started_at = NULL
+        WHERE record_id = %s AND is_validated = FALSE
+          AND validator_slot IN ('human_1', 'human_2')
+        """,
+        (record_id,),
+    )
+
+
+def _close_open_work(cur, record_id: str) -> None:
+    """A decision ends what was still open on the record, so nobody is left working on
+    it: its assignment closes and its unanswered slots go."""
+    cur.execute(
+        """
+        UPDATE assignments
+           SET status = 'done', completed_at = COALESCE(completed_at, NOW())
+         WHERE record_id = %s AND status = 'open'
+        """,
+        (record_id,),
+    )
+    _release_open_slots(cur, record_id)
 
 
 def _release_skipped_slot(cur, record_id: str, validator_id: int):
@@ -2567,19 +2662,24 @@ def assignment_judge(req: JudgeRequest,
     corrected_title_o = _requested_title(req, "o")
 
     with db() as cur:
-        cur.execute("SELECT * FROM unvalidated WHERE record_id = %s", (req.record_id,))
+        # Locked so an admin's decision is either seen here or made after this one.
+        cur.execute("SELECT * FROM unvalidated WHERE record_id = %s FOR UPDATE", (req.record_id,))
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, f"record_id '{req.record_id}' not found")
         rec = dict(row)
 
         cur.execute(
-            "SELECT id FROM assignments WHERE record_id = %s AND validator_id = %s "
-            "AND status = 'open' FOR UPDATE",
+            "SELECT id, status FROM assignments WHERE record_id = %s AND validator_id = %s FOR UPDATE",
             (req.record_id, coder_id),
         )
         assignment = cur.fetchone()
         if not assignment:
+            raise HTTPException(404, "No open assignment for you on this record")
+        # Before the assignment's own status: closing a record closes its assignment,
+        # and the assignee is owed the reason rather than "no open assignment".
+        _refuse_if_decided(rec)
+        if assignment["status"] != "open":
             raise HTTPException(404, "No open assignment for you on this record")
         assignment_id = assignment["id"]
 
@@ -2717,6 +2817,14 @@ def assignment_judge(req: JudgeRequest,
              final_robustness, final_robustness_quote, final_robustness_source, final_doi_pub,
              json.dumps(summary), req.record_id),
         )
+        if new_status == "rejected":
+            # As everywhere a record is rejected: nothing of it stays published.
+            cur.execute("DELETE FROM validated WHERE record_id = %s", (req.record_id,))
+            if extra_originals.may_have_children(rec):
+                extra_originals.reject_children(cur, req.record_id)
+        # This answer settled the record, so a validator still holding a slot must not
+        # overwrite it with a late one.
+        _release_open_slots(cur, req.record_id)
         cur.execute(
             "UPDATE assignments SET status = 'done', completed_at = NOW() "
             "WHERE id = %s AND status = 'open' RETURNING id",
@@ -2766,6 +2874,13 @@ def judge(req: JudgeRequest,
             raise HTTPException(404, f"record_id '{req.record_id}' not found")
         record_id = rec["record_id"]
         rec = dict(rec)
+        # Not for a validator whose answer is already in: a retry of one that did land
+        # (the last judgement validated the record, its response was lost) is told
+        # there is no open slot, as before, not that its answer was not saved.
+        cur.execute("SELECT 1 FROM validation_queue WHERE record_id = %s AND validator_id = %s "
+                    "AND is_validated = TRUE LIMIT 1", (record_id, coder_id))
+        if not cur.fetchone():
+            _refuse_if_decided(rec)
         req = _same_outcome_as_agreement(req, rec.get("type"), rec.get("outcome"))
         if no_outcome:
             target_type = (req.corrected_type if req.type_check == "incorrect" else None) or rec.get("type")
@@ -2816,11 +2931,13 @@ def judge(req: JudgeRequest,
         validator_slot = slot_row["validator_slot"]
         reworded = _improved_outcome_evidence(req, rec, target_type)
         req = _with_quote_reworded(req, reworded)
-        review_note = paper_review.marker(req.additional_checks)
+        review_note = paper_review.table_note(cur, rec, req.additional_checks)
         if review_note:
             # Serialises the paper's records for this validator, so its base score
             # and shared outcome checks are counted once however fast they arrive.
-            cur.execute("SELECT id FROM validators WHERE id = %s FOR UPDATE", (coder_id,))
+            # NO KEY: a plain FOR UPDATE would also stop this validator's next claim,
+            # whose foreign key to this row would wait out the Gemini call below.
+            cur.execute("SELECT id FROM validators WHERE id = %s FOR NO KEY UPDATE", (coder_id,))
             pts = paper_review.points(cur, rec, coder_id, req, validator["vote_score"],
                                       reworded, review_note)
         else:
@@ -3204,13 +3321,15 @@ def senior_reject(req: SeniorRejectRequest,
 
         # Match /judge and /skip lock ordering: record row first, queue row next.
         cur.execute(
-            "SELECT record_id FROM unvalidated WHERE record_id = %s FOR UPDATE",
+            "SELECT record_id, validation_status, origin, admin_checked FROM unvalidated "
+            "WHERE record_id = %s FOR UPDATE",
             (req.record_id,),
         )
         rec = cur.fetchone()
         if not rec:
             raise HTTPException(404, f"record_id '{req.record_id}' not found")
         record_id = rec["record_id"]
+        _refuse_if_decided(rec)
 
         cur.execute(
             """
@@ -3263,8 +3382,16 @@ def senior_reject(req: SeniorRejectRequest,
             f"UPDATE unvalidated SET {jsonb_col} = %s, validation_status = 'rejected', updated_at = NOW() WHERE record_id = %s",
             (summary, record_id),
         )
-        # Rejected → must not remain in the authoritative export table.
+        # Rejected → must not remain in the authoritative export table. Nor may an
+        # added original: a validated entry re-keyed to review can hold an open slot.
         cur.execute("DELETE FROM validated WHERE record_id = %s", (record_id,))
+        if extra_originals.may_have_children(rec):
+            extra_originals.reject_children(cur, record_id)
+        cur.execute(
+            "UPDATE assignments SET status = 'done', completed_at = COALESCE(completed_at, NOW()) "
+            "WHERE record_id = %s AND status = 'open'",
+            (record_id,),
+        )
 
         # Fill the partner's still-open human slot with the senior's own reject so
         # both rows carry the senior's credentials — the record shows two matching
@@ -3981,10 +4108,17 @@ def admin_dashboard(admin: dict = Depends(current_admin)):
         cur.execute("""
             SELECT
                 COUNT(*) AS records_with_2,
+                -- "No outcome to judge" is not an answer to compare, so a record
+                -- holding one says nothing about agreement on outcomes.
+                COUNT(*) FILTER (WHERE
+                    q1.outcome_check IS DISTINCT FROM 'not_applicable' AND
+                    q2.outcome_check IS DISTINCT FROM 'not_applicable'
+                ) AS records_compared,
                 COUNT(*) FILTER (WHERE
                     q1.type_check     = q2.type_check     AND
                     q1.original_check = q2.original_check AND
-                    q1.outcome_check  = q2.outcome_check
+                    q1.outcome_check  = q2.outcome_check  AND
+                    q1.outcome_check IS DISTINCT FROM 'not_applicable'
                 ) AS full_agreements
             FROM (
                 SELECT record_id, type_check, original_check, outcome_check
@@ -4039,9 +4173,10 @@ def admin_dashboard(admin: dict = Depends(current_admin)):
 
     disagreements = _disagreements(a_rows, b_rows)
 
-    records_with_2  = int(agree_row["records_with_2"]  or 0)
-    full_agreements = int(agree_row["full_agreements"] or 0)
-    agreement_rate  = round(full_agreements / records_with_2, 3) if records_with_2 > 0 else None
+    records_with_2   = int(agree_row["records_with_2"]  or 0)
+    records_compared = int(agree_row["records_compared"] or 0)
+    full_agreements  = int(agree_row["full_agreements"] or 0)
+    agreement_rate   = round(full_agreements / records_compared, 3) if records_compared > 0 else None
 
     return {
         "pipeline": {k: int(v) for k, v in pipeline.items()},
@@ -4051,6 +4186,7 @@ def admin_dashboard(admin: dict = Depends(current_admin)):
             "total_judgements":        int(vrow["total_judgements"]),
             "active_validators":       int(vrow["active_validators"]),
             "records_with_2_validators": records_with_2,
+            "records_compared":        records_compared,
             "full_agreements":         full_agreements,
             "agreement_rate":          agreement_rate,
         },
@@ -4152,9 +4288,13 @@ def admin_assign(req: AssignRequest, request: Request,
     """Assign a restricted record to a validator (reassign replaces)."""
     admin_handle = admin["handle"]
     with db() as cur:
-        cur.execute("SELECT 1 FROM unvalidated WHERE record_id = %s", (req.record_id,))
-        if not cur.fetchone():
+        cur.execute("SELECT validation_status FROM unvalidated WHERE record_id = %s FOR UPDATE",
+                    (req.record_id,))
+        rec = cur.fetchone()
+        if not rec:
             raise HTTPException(404, "Record not found")
+        if rec["validation_status"] in DECIDED_STATUSES:
+            raise HTTPException(409, "This entry has already been decided, so there is nothing to assign")
         cur.execute("SELECT 1 FROM validators WHERE id = %s", (req.validator_id,))
         if not cur.fetchone():
             raise HTTPException(404, "Validator not found")
@@ -4796,16 +4936,21 @@ def whoami(request: Request):
 # humans have submitted. The LLM is deliberately not a voter here: a clean human
 # consensus must never read as 0% just because the LLM dissents. LLM dissent is
 # surfaced separately (llm_dissent below). Computed in SQL so it's sortable.
+# "No outcome to judge" is not an answer, so such a record is scored on two checks.
 def _agree_field(f):
     return f"(u.validator_1->>'{f}' = u.validator_2->>'{f}')"
 
+_OUTCOMES_JUDGED_SQL = (
+    f"(u.validator_1->>'outcome_check' IS DISTINCT FROM '{NO_OUTCOME}' "
+    f"AND u.validator_2->>'outcome_check' IS DISTINCT FROM '{NO_OUTCOME}')"
+)
 _AGREEMENT_SQL = (
     "(CASE WHEN u.validator_1 IS NOT NULL AND u.validator_2 IS NOT NULL "
     "THEN round(100.0 * ("
     f"(CASE WHEN {_agree_field('type_check')} THEN 1 ELSE 0 END) + "
     f"(CASE WHEN {_agree_field('original_check')} THEN 1 ELSE 0 END) + "
-    f"(CASE WHEN {_agree_field('outcome_check')} THEN 1 ELSE 0 END)"
-    ") / 3.0)::int ELSE NULL END)"
+    f"(CASE WHEN {_OUTCOMES_JUDGED_SQL} AND {_agree_field('outcome_check')} THEN 1 ELSE 0 END)"
+    f") / (CASE WHEN {_OUTCOMES_JUDGED_SQL} THEN 3.0 ELSE 2.0 END))::int ELSE NULL END)"
 )
 
 # LLM dissent: comma-separated list of checks where the LLM ran cleanly, the two
@@ -5698,21 +5843,27 @@ def admin_approve(record_id: str, admin: dict = Depends(current_admin)):
         approved_robustness_quote = approved["outcome_robustness_quote"]
         approved_robustness_source = approved["out_quote_robust_source"]
 
-        # The upsert below would take over another entry's row with the same
-        # identity, unpublishing it. Resolving offers the duplicate merge instead,
-        # except into an original an admin added: that one has to go first.
-        conflict = _validated_identity_conflict(
-            cur, record_id, doi_r=rec["doi_r"], study_r=rec["study_r"],
-            title_r=approved["title_r"], doi_o=approved["doi_o"],
-            oa_work_id_o=_wid.get("oa_work_id_o"), study_o=rec["study_o"],
-            title_o=approved["title_o"],
-        )
-        if conflict:
+        # Another entry already holds this identity: never publish over it. Resolving
+        # offers the duplicate merge instead, except into an original an admin added:
+        # that one has to go first.
+        def identity_conflict():
+            return _validated_identity_conflict(
+                cur, record_id, doi_r=rec["doi_r"], study_r=rec["study_r"],
+                title_r=approved["title_r"], doi_o=approved["doi_o"],
+                oa_work_id_o=_wid.get("oa_work_id_o"), study_o=rec["study_o"],
+                title_o=approved["title_o"],
+            )
+
+        def refuse_duplicate(conflict):
             child_conflict = extra_originals.child_conflict_detail(cur, conflict)
             if child_conflict:
                 raise HTTPException(409, detail=child_conflict)
             raise HTTPException(409, "This entry matches one that is already validated. "
                                      "Open it and use Mark as Resolved to merge the two.")
+
+        conflict = identity_conflict()
+        if conflict:
+            refuse_duplicate(conflict)
 
         # Drop any prior row for this record (the natural key is mutable, so a
         # correction could otherwise leave a stale duplicate under the old key).
@@ -5730,37 +5881,17 @@ def admin_approve(record_id: str, admin: dict = Depends(current_admin)):
             ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
                       %s,%s,%s,%s,%s,%s,%s,%s,
                       %s,%s, TRUE)
-            ON CONFLICT (doi_r, study_r, title_r, original_key, study_o, title_o) DO UPDATE SET
             -- original_key is doi_o, or oa_work_id_o when the original has no
             -- registered DOI (books, chapters, pre-DOI papers). doi_o is '' for
             -- ALL of those, so keying on it merged distinct originals that also
             -- shared a title. See db_schema.sql.
-                record_id        = EXCLUDED.record_id,
-                title_r          = EXCLUDED.title_r,
-                year_r           = EXCLUDED.year_r,
-                url_r            = EXCLUDED.url_r,
-                ref_r            = EXCLUDED.ref_r,
-                abstract_r       = EXCLUDED.abstract_r,
-                title_o          = EXCLUDED.title_o,
-                year_o           = EXCLUDED.year_o,
-                url_o            = EXCLUDED.url_o,
-                ref_o            = EXCLUDED.ref_o,
-                oa_work_id_o     = EXCLUDED.oa_work_id_o,
-                oa_work_id_r     = EXCLUDED.oa_work_id_r,
-                type             = EXCLUDED.type,
-                outcome          = EXCLUDED.outcome,
-                outcome_quote    = EXCLUDED.outcome_quote,
-                out_quote_source = EXCLUDED.out_quote_source,
-                outcome_computation            = EXCLUDED.outcome_computation,
-                outcome_computational_quote    = EXCLUDED.outcome_computational_quote,
-                out_quote_computational_source = EXCLUDED.out_quote_computational_source,
-                outcome_robustness             = EXCLUDED.outcome_robustness,
-                outcome_robustness_quote       = EXCLUDED.outcome_robustness_quote,
-                out_quote_robust_source        = EXCLUDED.out_quote_robust_source,
-                doi_r_published  = EXCLUDED.doi_r_published,
-                alt_identifier_r = EXCLUDED.alt_identifier_r,
-                admin_approved   = TRUE,
-                validated_at     = NOW()
+            --
+            -- A concurrent approval may publish the same identity after the locked
+            -- check above. Never overwrite it: leave this insert empty, detect that
+            -- below, and answer as the check does.
+            ON CONFLICT (doi_r, study_r, title_r, original_key, study_o, title_o)
+            DO NOTHING
+            RETURNING record_id
             """,
             (
                 record_id,
@@ -5786,8 +5917,11 @@ def admin_approve(record_id: str, admin: dict = Depends(current_admin)):
                 rec.get("doi_r_published"), rec.get("alt_identifier_r"),
             ),
         )
+        if not cur.fetchone():
+            refuse_duplicate(identity_conflict())
         # Originals added to this entry follow what it now publishes.
         _extra_originals_call(extra_originals.sync_children, cur, record_id, admin=admin)
+        _close_open_work(cur, record_id)
         _log_decision(cur, record_id, admin, "approved", rec)
 
     return {"approved": True, "record_id": record_id}
@@ -5798,7 +5932,8 @@ def admin_remove_original(record_id: str, admin: dict = Depends(current_admin)):
     """Confirm that both validators were right: this original was not replicated.
 
     The record is rejected, so nothing is published for it. Its siblings are separate
-    records and are not touched.
+    records and are not touched. Originals an admin added to it would leave with it,
+    so they have to be removed first: this is refused while one is live.
     """
     with db() as cur:
         cur.execute("SELECT * FROM unvalidated WHERE record_id = %s FOR UPDATE", (record_id,))
@@ -5810,6 +5945,14 @@ def admin_remove_original(record_id: str, admin: dict = Depends(current_admin)):
                 _as_dict(rec.get("validator_1")), _as_dict(rec.get("validator_2"))):
             raise HTTPException(409, "This entry is not waiting for its original to be removed")
         _require_may_decide(cur, record_id, admin)
+        added = extra_originals.detail_summary(cur, record_id)["children"]
+        if added:
+            raise HTTPException(409, detail={
+                "code": "original_removal_blocked_by_added_originals",
+                "message": f"This entry has {added} added original{'' if added == 1 else 's'}, "
+                           "published from it. Remove them first, then remove this original.",
+                "added_originals": added,
+            })
         cur.execute(
             """
             UPDATE unvalidated SET
@@ -5822,7 +5965,7 @@ def admin_remove_original(record_id: str, admin: dict = Depends(current_admin)):
             (admin["handle"], record_id),
         )
         cur.execute("DELETE FROM validated WHERE record_id = %s", (record_id,))
-        extra_originals.reject_children(cur, record_id, admin)
+        _close_open_work(cur, record_id)
         _log_decision(cur, record_id, admin, "original_removed", rec)
     return {"removed": True, "record_id": record_id}
 
@@ -6105,6 +6248,7 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
                 extra_originals.child_left(cur, rec, admin)
             else:
                 extra_originals.reject_children(cur, record_id, admin)
+            _close_open_work(cur, record_id)
             _log_decision(cur, record_id, admin, "rejected", rec)
             return {"resolved": True, "rejected": True, "record_id": record_id}
 
@@ -6227,14 +6371,7 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
                 """,
                 (admin_handle, record_id),
             )
-            cur.execute(
-                """
-                UPDATE assignments
-                   SET status = 'done', completed_at = COALESCE(completed_at, NOW())
-                 WHERE record_id = %s AND status = 'open'
-                """,
-                (record_id,),
-            )
+            _close_open_work(cur, record_id)
             # The survivor has the same replication and original, so the originals
             # added to the duplicate are its now.
             extra_originals.repoint_children(cur, record_id, conflict_id, admin)
@@ -6321,6 +6458,7 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
             # Originals added to this entry follow what it now publishes; a change
             # that would collide one of them with a published record is refused.
             _extra_originals_call(extra_originals.sync_children, cur, record_id, admin=admin)
+        _close_open_work(cur, record_id)
         _log_decision(cur, record_id, admin, "resolved", rec)
         # The originals drafted with this resolve, built from the values just
         # published. The entry is validated and admin-checked now, so parent_block
@@ -7124,6 +7262,44 @@ def admin_start_maintenance(
 # Nightly CSV sync scheduler
 # ---------------------------------------------------------------------------
 
+def _is_stuck_tiebreaker(row) -> bool:
+    """Still a record _retry_tiebreakers is for: waiting for an admin, a tiebreaker,
+    and its stored LLM answer is an error."""
+    stored = row["llm_validator"]
+    return (row["validation_status"] == "need_review" and row["is_tiebreaker"]
+            and isinstance(stored, dict) and "error" in stored)
+
+
+def _retry_tiebreaker(record_id: str) -> bool:
+    """Ask Gemini again for one stuck tiebreaker and re-run consensus on the answer.
+    Returns whether it did.
+
+    No row lock is held across the call: an admin deciding this record meanwhile must
+    not wait on Gemini. Consensus then runs under the lock, only if the record is
+    still exactly what Gemini was asked about, so a decision made during the call
+    stands and the answer is dropped; the next night asks again if it is still stuck."""
+    with db() as cur:
+        cur.execute("SELECT * FROM unvalidated WHERE record_id = %s", (record_id,))
+        record = cur.fetchone()
+    if record is None or not _is_stuck_tiebreaker(record):
+        return False
+    answer = consensus_engine.run_llm_validation(dict(record), context="tiebreaker")
+    with db() as cur:
+        cur.execute(
+            "SELECT validation_status, is_tiebreaker, llm_validator, updated_at "
+            "FROM unvalidated WHERE record_id = %s FOR UPDATE",
+            (record_id,),
+        )
+        current = cur.fetchone()
+        if (current is None or not _is_stuck_tiebreaker(current)
+                or current["llm_validator"] != record["llm_validator"]
+                or current["updated_at"] != record["updated_at"]):
+            print(f"[retry_tiebreakers] {record_id}: changed while Gemini answered, left as is")
+            return False
+        consensus_engine.evaluate_consensus(cur, record_id, llm_answer=answer)
+    return True
+
+
 def _retry_tiebreakers() -> None:
     """Re-run consensus on tiebreaker records whose LLM call actually errored earlier.
 
@@ -7133,7 +7309,6 @@ def _retry_tiebreakers() -> None:
     human/admin: re-running them would waste paid LLM calls nightly and could flip
     their status purely from LLM nondeterminism. Run by _nightly_llm_retry, under
     its lock."""
-    from consensus_engine import evaluate_consensus
     try:
         with db() as cur:
             # Not records holding a judgement backfill_outcome_agreement.py
@@ -7154,9 +7329,8 @@ def _retry_tiebreakers() -> None:
             ids = [str(r["record_id"]) for r in cur.fetchall()]
         print(f"[retry_tiebreakers] Found {len(ids)} stuck tiebreaker record(s)")
         for record_id in ids:
-            with db() as cur:
-                evaluate_consensus(cur, record_id)
-            print(f"[retry_tiebreakers] Re-evaluated {record_id}")
+            if _retry_tiebreaker(record_id):
+                print(f"[retry_tiebreakers] Re-evaluated {record_id}")
     except Exception:
         import traceback
         print("[retry_tiebreakers] ERROR:")

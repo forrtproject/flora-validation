@@ -292,6 +292,22 @@ Reproductions, the hard pool, assignments and onboarding keep the one-record scr
 - `POST /api/paper-review/claim` reserves this validator's open records for the paper. It is
   safe to repeat. A sibling the validator cannot judge is listed for context, with no reason
   and no verdict. One validator can never hold both slots of a record (`_claim_free_slot`).
+  It never waits for a row lock: a record locked elsewhere, for example by another validator's
+  `/api/judge` during its Gemini call, is left out of that claim and lists as context.
+- The claimed rows are buffered holds on the reaper's 45-minute lock, not started slots. Only
+  the record the validator was served keeps its 5-day lock. `POST /api/paper-review/refresh`
+  renews the holds every five minutes while the table is open and answers which records are
+  still held, so an abandoned paper frees itself, and the served record later brings the
+  validator back to their draft, where the claim takes the free rows again. Idle sign-out ends
+  a forgotten tab.
+- A hold can lapse with the table still open (a laptop asleep past 45 minutes). The refresh, and
+  a check before submitting, notice. A row still free is retaken; a row another validator has
+  now leaves the table, the validator is told by name, and every other answer stays. If no
+  hold is left the answers stay as a draft and the validator is told.
+- "Actually reproduction", and moving on while a claim is under way, put the rows the table
+  reserved back at the front of the prefetch buffer, so they continue one at a time. In hard
+  mode they lapse instead, like the normal buffer on a mode switch. A paper skip that fails
+  partway takes the released rows out of the table, so what stays can still be submitted.
 - The type is asked once. Each original gets its own "right paper?" answer. Originals share an
   outcome check only when their extracted outcome and quote both match; a row without a quote
   or with a replacement paper is never merged, and "outcome differs for this one" separates a
@@ -312,6 +328,30 @@ When both validators say so, the record waits in `need_review` with no final val
 (`removal_proposed` in `consensus_engine.py`), listed under "Original to remove". The admin's
 "Remove this original" rejects that record only, so nothing is published for it and its
 siblings are untouched; correcting the original in the form and resolving remains possible.
+It is refused while the entry has live added originals, which are published from it: the
+banner says so, and the admin removes those first. If the extractor later ships a different
+original at the same work and rank, the import sends the record back to `unvalidated` with
+clean slots and archives its history in `retired_records`.
+
+**After rolling this release back**, check these records. The previous release counts two
+`not_applicable` answers as agreement and keeps the extracted original and outcome, so a
+re-evaluated record can reach `consensus_reached` and be published with the original both
+validators called wrong. The previous release also has no "Remove this original", so the
+record stays on the admin to correct or reject through Mark as Resolved:
+
+```sql
+-- rollback-check: no-outcome judgements past review
+SELECT u.record_id, u.validation_status, u.admin_checked, u.doi_r, u.doi_o, u.final_doi_o, u.title_o
+FROM unvalidated u
+WHERE u.validation_status IN ('consensus_reached', 'validated')
+  AND EXISTS (SELECT 1 FROM validation_queue q
+              WHERE q.record_id = u.record_id AND q.is_validated
+                AND q.outcome_check = 'not_applicable');
+```
+
+Do not approve a `consensus_reached` row from this list. Flag it for review instead. A
+`validated` row is fine only if an admin corrected its original (`final_doi_o` differs from
+`doi_o`, or the title changed); otherwise send it back or reject it through Mark as Resolved.
 
 An original the extractor *missed* is suggested with the judgement ("This study has
 more than one original"). An admin adds it as a record of its own: at once on an entry
@@ -340,7 +380,8 @@ with an unsure answer straight to `need_review` rather than treating it as `inco
 `guardedSubmit()` runs a gauntlet before a judgement is accepted: unsaved title /
 paper-suggestion / quote / abstract edits block with a shake-and-hint; the abstract
 must be non-empty in normal mode; a sub-17-second submission gets an "are you sure"
-dialog.
+dialog. In the review table that is 17 seconds per original, or 17 for a paper rejected as
+a whole.
 
 **Quote-in-abstract gate** (added Aug 2026): at submission the effective outcome quote
 (the validator's edit, else the extracted one) is fuzzily matched against the
@@ -378,7 +419,23 @@ access.
 ### Assignments
 
 Admins can assign a specific record to a specific validator. Assignments appear in a
-dedicated banner and are worth **double points**.
+dedicated banner and are worth **double points**. An assignment takes the record's row
+lock, so it cannot cross an admin's decision. A decided record (validated or rejected)
+cannot be assigned, and an assignment on one answers 409: the validator is told their
+answer was not saved and no points were added, and the screen moves on. A submitted
+assignment frees any slot still held on the record, and an assignment that rejects it
+takes its published row and added originals with it, like every other rejection.
+
+### A decided record stays decided
+
+An admin's decision (approve, resolve, reject, merge, remove an original) closes the
+record's open assignment and frees its unanswered slots. `/api/judge`, `/api/senior-reject`
+and `evaluate_consensus` refuse a record in `validated` or `rejected`
+(`consensus_engine.DECIDED_STATUSES`), so a late submission cannot flip it or overwrite its
+final values; the browser's queue closes that item and says the record was already closed.
+The test is the status, not `admin_checked`: a validated record the import re-keyed to
+`need_review` keeps `admin_checked` and is open again, so its held slot and the tiebreaker
+retry still work.
 
 ### Messages
 
@@ -653,7 +710,9 @@ admin APIs return validator names and comments. Skips do not change consensus.
 
 The Entries table's **Agreement %** measures the two *human* validators only: the share
 of the three checks (type / original / outcome) on which V1 and V2 gave the same
-answer — so 0 / 33 / 67 / 100%, and blank until both humans have submitted. The LLM is
+answer — so 0 / 33 / 67 / 100%, and blank until both humans have submitted. An outcome
+check of `not_applicable` is no answer: that record is scored on its other two checks,
+and the dashboard's agreement rate leaves it out. The LLM is
 **not** a voter. When the LLM ran cleanly and contradicts an answer the humans agree
 on, the cell instead shows a 🤖✗ marker whose tooltip lists the dissenting checks —
 that's the signal that a record like "both humans reject, LLM disagrees" is in review.
@@ -699,7 +758,10 @@ stays authoritative and unchanged; A is removed from validated output but retain
 with its extraction metadata and judgements. `validated_record_merges` records the
 two record ids, admin handle, timestamp, and proposed resolution snapshot. A
 concurrent insert uses `ON CONFLICT DO NOTHING` and returns to the same confirmation
-flow rather than mutating B.
+flow rather than mutating B. Every path that publishes does the same, so two duplicates
+published at once can never leave one validated with no row: `admin_approve` answers
+409 as its duplicate check does, and an unattended publish (`_insert_validated`, from
+consensus or `auto_validate_waiting.py`) leaves the record waiting for an admin to merge.
 
 ---
 
@@ -878,6 +940,8 @@ POST /api/onboarding/complete
 POST /api/update-seen                  dismiss the "what's new" gate
 GET  /api/next-pairs                   batch-claim (count, mode, buffered_only)
 POST /api/pairs/{queue_id}/start
+POST /api/paper-review/claim           reserve a paper's open records as buffered holds
+POST /api/paper-review/refresh         renew an open table's holds; returns those still held
 POST /api/judge                        submit a judgement
 POST /api/skip                        release claim + save reason/comment history
                                       (reason_code optional: old pages default to prefer_another)

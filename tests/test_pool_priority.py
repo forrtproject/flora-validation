@@ -24,3 +24,12 @@ def test_preview_and_serving_share_one_definition_of_servable():
     # No second, hand-maintained copy that could drift.
     assert "restricted_access IS NOT TRUE" not in serving
     assert "restricted_access IS NOT TRUE" not in preview
+
+
+def test_the_hard_test_cannot_be_null():
+    """NOT (NULL OR FALSE OR FALSE) is NULL, which would drop a record with no outcome
+    from both pools. paper_review keeps its own copy of the test."""
+    import paper_review
+    assert "u.outcome = " not in APP.split("_HARD_COND = ", 1)[1].split("\n\n", 1)[0]
+    assert "u.outcome = " not in paper_review._HARD_RECORD
+    assert "IS NOT DISTINCT FROM 'cannot_be_determined'" in paper_review._HARD_RECORD

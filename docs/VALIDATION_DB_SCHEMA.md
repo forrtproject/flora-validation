@@ -645,7 +645,9 @@ For a routine `full` run (the nightly job and the primary admin action):
 10. Retires the pairs flora-extractor names in `data/retired_pairs.csv` at the same
     commit (`EXTRACTOR_AUTO_RETIRE`, on by default): untouched records are archived
     whole in `retired_records`, then deleted; touched ones are flagged in
-    `admin_notes`. The summary is `safety_report.retire`.
+    `admin_notes`. The summary is `safety_report.retire`. `retired_records` also keeps
+    (reason `original_replaced`) the state of a record the import re-opened because the
+    extractor replaced an original an admin had removed.
 
 Nothing is deleted for mere absence from the CSV; the retire stage is the only
 route. Any sync failure or safety block skips the report and the retire stage.

@@ -68,3 +68,21 @@ def test_points_use_the_paper_rules():
     assert paper_review.points(Cursor([earlier]), rec, 1, req(), 10, False, note) == 2
     assert paper_review.points(Cursor([earlier]), rec, 1, req(), 10, True, {"outcome_group": "h"}) == 5
     assert paper_review.points(Cursor([]), rec, 1, req(outcome_check="not_applicable"), 10, False, note) == 12
+
+
+def test_the_rollback_warning_says_what_the_previous_release_does():
+    """Consensus before removal_proposed: two "no outcome" answers look like agreement
+    and the extracted original and outcome survive, so a rollback is not harmless and
+    neither the schema nor the rollout notes may say it is."""
+    from pathlib import Path
+    from consensus_engine import _checks_agree, _corrections_agree, _resolve_final
+
+    root = Path(__file__).resolve().parent.parent
+    assert _checks_agree(WRONG, WRONG) and _corrections_agree(WRONG, WRONG)
+    final = _resolve_final({"type": "replication", "outcome": "failed", "doi_o": "10.1/wrong",
+                            "title_o": "Wrong paper", "doi_r": "10.1/x"}, WRONG, WRONG)
+    assert (final["doi_o"], final["title_o"], final["outcome"]) == ("10.1/wrong", "Wrong paper", "failed")
+    schema = (root / "db_schema.sql").read_text(encoding="utf-8")
+    assert 'readable as "not checked"' not in schema
+    assert 'run the check in docs/PROJECT.md, "Wrong paper, no replacement"' in schema
+    assert "-- rollback-check:" in (root / "docs" / "PROJECT.md").read_text(encoding="utf-8")

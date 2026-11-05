@@ -121,8 +121,9 @@ place for retry; only a confirmed release clears them.
 ## Consensus Engine
 
 `consensus_engine.evaluate_consensus(cur, record_id)` is called after every human
-submission. It reads both completed human rows from `validation_queue` and applies
-the following decision tree:
+submission. It leaves a record in `validated` or `rejected` alone; `/api/judge` has
+already refused one with 409. Otherwise it reads both completed human rows from
+`validation_queue` and applies the following decision tree:
 
 | Condition | LLM called? | Outcome |
 | --- | --- | --- |
@@ -137,7 +138,9 @@ the following decision tree:
 When a winner is selected, the engine sets the coherent `unvalidated.final_*` shape,
 including separate reproduction computation/robustness axes and their evidence.
 Senior consensus may write `validated` immediately; other winners stop at
-`consensus_reached` for admin approval.
+`consensus_reached` for admin approval. A publish that finds the identity taken writes
+nothing over the other entry's row and stops at `consensus_reached` too, for an admin to
+merge.
 
 ---
 

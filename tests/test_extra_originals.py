@@ -1154,10 +1154,9 @@ def test_every_place_that_unpublishes_a_record_handles_its_added_originals():
     until someone decides which it is."""
     pattern = r"DELETE FROM validated WHERE record_id = %s"
     owners = [re.findall(r"\ndef (\w+)\(", APP[:m.start()])[-1] for m in re.finditer(pattern, APP)]
-    # Exempt: senior reject needs an open human slot, which a record with children
-    # never has; flag-review deletes only for an auto-validated record (validated AND
+    # Exempt: flag-review deletes only for an auto-validated record (validated AND
     # NOT admin_checked), and only admin-checked records are given children.
-    exempt = {"senior_reject", "admin_flag_review"}
+    exempt = {"admin_flag_review"}
     handled = {
         # admin_resolve deletes three times: reject (cascade, or re-open for a
         # child), merge (children move to the survivor), re-insert (children follow).
@@ -1166,7 +1165,10 @@ def test_every_place_that_unpublishes_a_record_handles_its_added_originals():
                           "extra_originals.repoint_children(cur, record_id, conflict_id, admin)",
                           "_extra_originals_call(extra_originals.sync_children, cur, record_id, admin=admin)"),
         "admin_approve": ("_extra_originals_call(extra_originals.sync_children, cur, record_id, admin=admin)",),
-        "admin_remove_original": ("extra_originals.reject_children(cur, record_id, admin)",),
+        # Refused while an added original is live, so it never takes one along.
+        "admin_remove_original": ('extra_originals.detail_summary(cur, record_id)["children"]',),
+        "assignment_judge": ("extra_originals.reject_children(cur, req.record_id)",),
+        "senior_reject": ("extra_originals.reject_children(cur, record_id)",),
     }
     assert sorted(set(owners)) == sorted(exempt | set(handled))
     assert owners.count("admin_resolve") == 3
