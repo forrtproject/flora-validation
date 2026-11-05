@@ -126,6 +126,24 @@ def test_get_repeated_dois_and_prefix_buckets_keep_full_aggregates(public_datase
     assert [entry["doi"] for entry in buckets["def"]] == [REPLICATION]
     assert buckets["000"] == []
     assert buckets["def"][0]["record"]["originals"][0]["id"] == "FLORA-000001"
+    # The paper found carries its own relationships' IDs, and they resolve.
+    digest = buckets["def"][0]["id_md5s"][0]
+    assert buckets["def"][0]["ids"][0] == "FLORA-000001"
+    assert client.get("/v1/id-lookup", params={"id_md5": digest}).json()["results"][digest]["id"] == "FLORA-000001"
+
+
+def test_a_paper_found_by_doi_lists_its_relationship_ids_on_every_route(public_dataset):
+    _, client, rows = public_dataset
+    # Each DOI in its own role; REPLICATION repeats a pair under two distinct IDs.
+    for doi, positions in {ORIGINAL: (0, 1, 3), REPLICATION: (0, 3), SECOND: (1,), OTHER: (2,)}.items():
+        found = [client.post("/v1/original-lookup", json={"dois": [doi]}).json()["results"][doi],
+                 client.get("/v1/original-lookup", params={"dois": doi}).json()["results"][doi],
+                 client.post("/v1/original-lookup",
+                             json={"dois": [doi], "apiEmail": "reader@example.org"}).json()["results"][doi],
+                 client.get("/v1/search", params={"q": doi}).json()["results"][doi]]
+        for record in found:
+            assert record["ids"] == [rows[i]["id"] for i in positions], doi
+            assert record["id_md5s"] == [rows[i]["id_md5"] for i in positions], doi
 
 
 def test_api_email_suppression_does_not_poison_cached_public_payload(public_dataset):

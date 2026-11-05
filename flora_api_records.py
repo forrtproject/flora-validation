@@ -2,7 +2,8 @@
 
 One published FLoRA ID identifies a relationship, not a DOI. Several relationships
 can share both DOIs, so their identities stay on the relationship entries and are
-never deduplicated by paper pair. No network, database, or cache side effects.
+never deduplicated by paper pair. A DOI record lists them all in `ids` and `id_md5s`
+and has no single `id` of its own. No network, database, or cache side effects.
 """
 from __future__ import annotations
 
@@ -148,7 +149,7 @@ def _entry(row, side):
 
 def _new_record(doi):
     return {
-        "doi": doi, "types": [], "doi_hash": None,
+        "doi": doi, "types": [], "doi_hash": None, "ids": [], "id_md5s": [],
         **{field: None for field in BIB_FIELDS},
         "record": {"stats": {}, "originals": [], "replications": [], "reproductions": []},
     }
@@ -156,6 +157,13 @@ def _new_record(doi):
 
 def _missing(value):
     return value is None or value == "" or value == [] or value == {}
+
+
+def _add_identity(record, entry):
+    # A row whose two sides share a DOI reaches the same record twice.
+    if entry["id"] is not None and entry["id"] not in record["ids"]:
+        record["ids"].append(entry["id"])
+        record["id_md5s"].append(entry["id_md5"])
 
 
 def _merge(record, entry, citations):
@@ -182,12 +190,14 @@ def build_records(rows):
             if "original" not in record_o["types"]:
                 record_o["types"].append("original")
             _merge(record_o, original, _citation_fields(row, "o"))
+            _add_identity(record_o, original)
             record_o["record"][role + "s"].append(replication)
         if doi_r:
             record_r = records.setdefault(normalize_doi(doi_r), _new_record(doi_r))
             if role not in record_r["types"]:
                 record_r["types"].append(role)
             _merge(record_r, replication, _citation_fields(row, "r"))
+            _add_identity(record_r, replication)
             # Even an original without a DOI is a published relationship whose
             # permanent row ID must remain reachable from the replication DOI.
             record_r["record"]["originals"].append(original)

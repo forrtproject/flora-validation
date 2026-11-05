@@ -267,6 +267,7 @@ def test_both_forms_of_a_sici_doi_find_the_record(local_database):  # noqa: F811
         # Answered under the DOI as the client sent it; the record reads as published.
         assert list(result) == [form]
         assert result[form]["doi"] == SICI_ENCODED, form
+        assert result[form]["ids"] == ["FLORA-000001"], form
     for doi in (SICI, SICI_ENCODED):
         prefix = hashlib.md5(doi.encode()).hexdigest()[:3]
         bucket = client.get("/v1/prefix-lookup", params={"prefix": prefix}).json()["results"][prefix]

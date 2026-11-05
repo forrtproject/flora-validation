@@ -51,12 +51,14 @@ DOI-prefix associations are retained; a missing short hash is derived from the
 normalized DOI. `/v1/id-lookup` requires the complete 32-character MD5 of `id`
 and accepts uppercase hexadecimal input. These are separate lookup contracts.
 
-A DOI may participate in many published relationships, so DOI aggregates do
-not receive an invented top-level row ID. Instead, every entry in
-`record.originals`, `record.replications`, and `record.reproductions` carries
-its own permanent `id` and `id_md5`. Distinct records sharing the same DOI pair
-remain separate entries. Metadata uses the first nonempty value in publication
-order; record counts and unique-DOI counts remain separate.
+A DOI may participate in many published relationships, so a DOI aggregate has
+no single row ID. Its top-level `ids` and `id_md5s` arrays list the permanent ID
+and ID hash of every active relationship it belongs to, in publication order and
+at matching positions. Every entry in `record.originals`, `record.replications`,
+and `record.reproductions` also carries the permanent `id` and `id_md5` of its
+own relationship. Distinct records sharing the same DOI pair remain separate
+entries. Metadata uses the first nonempty value in publication order; record
+counts and unique-DOI counts remain separate.
 
 ## Request examples
 
@@ -90,8 +92,9 @@ artifact contains captured request/response examples from an isolated API check.
 
 ## DOI response fields
 
-Each DOI record has `doi`, `types`, `doi_hash`, `title`, `authors`, `journal`,
-`year`, `volume`, `issue`, `pages`, `apa_ref`, `bibtex_ref`, `url`, and `record`.
+Each DOI record has `doi`, `types`, `doi_hash`, `ids`, `id_md5s`, `title`,
+`authors`, `journal`, `year`, `volume`, `issue`, `pages`, `apa_ref`, `bibtex_ref`,
+`url`, and `record`.
 JSON author/BibTeX cells are decoded when they contain valid JSON; ordinary
 BibTeX citation text stays text. `types` uses the stable order `original`,
 `replication`, `reproduction`, including every role the paper has.

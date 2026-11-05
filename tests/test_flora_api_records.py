@@ -36,6 +36,29 @@ def test_same_doi_pair_keeps_each_permanent_relationship_and_unique_counts():
     assert replication["record"]["stats"]["n_unique_original_dois"] == 1
 
 
+def test_doi_record_lists_every_relationship_it_belongs_to_in_publication_order():
+    records = build_records([row(), changed("FLORA-000002", doi_r="10.1234/second"),
+                             changed("FLORA-000003", doi_o="10.1234/replication", doi_r="10.1234/third")])
+    assert records["10.1234/original"]["ids"] == ["FLORA-000001", "FLORA-000002"]
+    assert records["10.1234/original"]["id_md5s"] == [hashlib.md5(identifier.encode()).hexdigest()
+                                                      for identifier in ("FLORA-000001", "FLORA-000002")]
+    # As replication of one paper and original of another, in the same list.
+    assert records["10.1234/replication"]["ids"] == ["FLORA-000001", "FLORA-000003"]
+    assert records["10.1234/third"]["ids"] == ["FLORA-000003"]
+
+
+def test_row_whose_two_sides_share_a_doi_lists_its_id_once():
+    record = build_records([changed(doi_r="10.1234/original")])["10.1234/original"]
+    assert record["ids"] == ["FLORA-000001"]
+    assert len(record["id_md5s"]) == 1
+
+
+def test_listed_ids_survive_the_legacy_client_payload():
+    record = build_records([row()])["10.1234/original"]
+    assert serialize_record(record, include_derived=False)["ids"] == ["FLORA-000001"]
+    assert serialize_record(record, include_derived=False)["id_md5s"] == record["id_md5s"]
+
+
 def test_multiple_paper_roles_have_stable_order_and_first_nonempty_metadata():
     records = build_records([
         changed(title_o=None, doi_o=" HTTPS://DOI.ORG/10.1234/ORIGINAL "),
