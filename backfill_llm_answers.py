@@ -21,6 +21,16 @@ for each and stores it, as consensus now would. A record is picked when
 The dry run also counts the records with both judgements and no answer that are
 none of these (a senior reject, say); they are left alone.
 
+CONVERTED RECORDS
+backfill_outcome_agreement.py re-read some judgements after consensus had sent the
+record to review without an answer, so they no longer look like one of the three
+cases: most now read as a disagreement. Consensus is not what left them without an
+answer, and neither the nightly retry nor a plain run here picks them up.
+--include-converted fills these too. A record counts when one of its judgements
+keeps outcome_agreement_original and the judgements as submitted, with those values
+put back, fall in one of the three cases. The marker alone is not enough. The answer
+is stored the same way: the record stays where it is and an admin still decides it.
+
 Only llm_validator is written: never the status, the tiebreaker flag, the final
 values, the quality flags, updated_at or the validated table. Consensus is not
 re-run.
@@ -59,6 +69,8 @@ Usage:
     python backfill_llm_answers.py --apply              # fill every open record listed
     python backfill_llm_answers.py --include-closed     # dry run with validated and rejected too
                                                         # (add --apply to fill those as well)
+    python backfill_llm_answers.py --include-converted  # dry run with the converted records too
+                                                        # (add --apply to fill those as well)
 """
 import argparse
 import json
@@ -91,6 +103,8 @@ CHECKS_DIFFER = "checks_differ"
 # Where the answer is only stored for the admin: the records this fills.
 STORE_ONLY_CASES = (CANT_TELL, QUOTE_FLAGGED, CORRECTIONS_DIFFER)
 OTHER_CASES = (SENIOR_REJECT, AGREEMENT, CHECKS_DIFFER)
+# Not a way through consensus: see classify.
+CONVERTED = "converted"
 
 LABELS = {
     CANT_TELL: "Can't tell",
@@ -99,6 +113,7 @@ LABELS = {
     SENIOR_REJECT: "senior reject (final, no LLM)",
     AGREEMENT: "checks and corrections agree",
     CHECKS_DIFFER: "checks differ (tiebreaker)",
+    CONVERTED: "converted",
 }
 
 
@@ -116,6 +131,26 @@ def case_of(h1: dict, h2: dict) -> str:
     if ce._checks_agree(h1, h2):
         return AGREEMENT if ce._corrections_agree(h1, h2) else CORRECTIONS_DIFFER
     return CHECKS_DIFFER
+
+
+def _as_submitted(h: dict) -> dict:
+    """The judgement before backfill_outcome_agreement.py re-read it, if it did: that
+    script keeps the two values it replaced in outcome_agreement_original."""
+    original = ce._additional_checks(h).get("outcome_agreement_original")
+    if not isinstance(original, dict):
+        return h
+    return {**h, "outcome_check": original.get("outcome_check"),
+            "corrected_outcome": original.get("corrected_outcome")}
+
+
+def classify(h1: dict, h2: dict) -> str:
+    """case_of, plus CONVERTED for judgements that were one of the three cases as
+    submitted and left them only when backfill_outcome_agreement.py re-read one."""
+    case = case_of(h1, h2)
+    if case in (AGREEMENT, CHECKS_DIFFER) and \
+            case_of(_as_submitted(h1), _as_submitted(h2)) in STORE_ONLY_CASES:
+        return CONVERTED
+    return case
 
 
 def _judgements(cur, record_ids: list[str]) -> dict[str, list[dict]]:
@@ -147,21 +182,21 @@ def survey(cur) -> list[dict]:
     found = []
     for record_id, humans in _judgements(cur, list(records)).items():
         if len(humans) == 2 and record_id in records:
-            found.append({**records[record_id], "case": case_of(*humans)})
+            found.append({**records[record_id], "case": classify(*humans)})
     found.sort(key=lambda r: (r["validation_status"] not in OPEN_STATUSES,
                               r["updated_at"], r["record_id"]))
     return found
 
 
-def _current(cur, record_id: str, statuses: tuple) -> dict | None:
+def _current(cur, record_id: str, statuses: tuple, cases: tuple) -> dict | None:
     """The whole record as it is now, if it still qualifies: no answer yet, in
-    scope, and its judgements still one of the three cases."""
+    scope, and its judgements still one of the cases being filled."""
     cur.execute("SELECT * FROM unvalidated WHERE record_id = %s", (record_id,))
     row = cur.fetchone()
     if row is None or row["llm_validator"] is not None or row["validation_status"] not in statuses:
         return None
     humans = _judgements(cur, [record_id]).get(record_id, [])
-    if len(humans) != 2 or case_of(*humans) not in STORE_ONLY_CASES:
+    if len(humans) != 2 or classify(*humans) not in cases:
         return None
     return dict(row)
 
@@ -177,7 +212,8 @@ def _title(rec: dict) -> str:
     return (rec.get("final_title_r") or rec.get("title_r") or "")[:60]
 
 
-def _report(found: list[dict], todo: list[dict], selected: int, include_closed: bool) -> None:
+def _report(found: list[dict], todo: list[dict], selected: int, include_closed: bool,
+            include_converted: bool) -> None:
     def count(cases, status_group):
         return sum(1 for r in found if r["case"] in cases and r["validation_status"] in status_group)
 
@@ -193,6 +229,9 @@ def _report(found: list[dict], todo: list[dict], selected: int, include_closed: 
     for case in OTHER_CASES:
         print(f"    {LABELS[case]:<32}{count((case,), OPEN_STATUSES):>7}"
               f"{count((case,), CLOSED_STATUSES):>8}")
+    note = "filled too" if include_converted else "--include-converted fills these"
+    print(f"  {'converted out of these cases:':<34}{count((CONVERTED,), OPEN_STATUSES):>7}"
+          f"{count((CONVERTED,), CLOSED_STATUSES):>8}   ({note})")
     scope = "open and closed" if include_closed else "open only (--include-closed adds closed)"
     print(f"\n  Scope: {scope}. open = {', '.join(OPEN_STATUSES)}; "
           f"closed = {', '.join(CLOSED_STATUSES)}.")
@@ -203,7 +242,7 @@ def _report(found: list[dict], todo: list[dict], selected: int, include_closed: 
               f"{LABELS[rec['case']]:<18} {_title(rec)}")
 
 
-def _fill(conn, todo: list[dict], statuses: tuple) -> dict:
+def _fill(conn, todo: list[dict], statuses: tuple, cases: tuple) -> dict:
     """Ask Gemini for each record and store the answer; see the module docstring."""
     saved = {"filled_record_ids": [], "answers": {}, "statuses_in_scope": list(statuses)}
     backup = write_backup(saved, prefix="llm_backfill")
@@ -213,7 +252,7 @@ def _fill(conn, todo: list[dict], statuses: tuple) -> dict:
         record_id = item["record_id"]
         head = f"  [{n}/{len(todo)}] {record_id}  {LABELS[item['case']]:<18}"
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            record = _current(cur, record_id, statuses)
+            record = _current(cur, record_id, statuses, cases)
         conn.rollback()                      # nothing open while Gemini answers
         if record is None:
             skipped += 1
@@ -253,13 +292,15 @@ def _fill(conn, todo: list[dict], statuses: tuple) -> dict:
     return {"filled": filled, "errored": errored, "skipped": skipped, "backup": backup}
 
 
-def run(apply: bool, include_closed: bool = False, limit: int | None = None) -> dict | None:
+def run(apply: bool, include_closed: bool = False, limit: int | None = None,
+        include_converted: bool = False) -> dict | None:
     database_url = os.environ.get("DATABASE_URL", "")
     if not database_url:
         raise EnvironmentError("DATABASE_URL must be set in environment or .env")
     if apply and not os.environ.get("GEMINI_API_KEY"):
         raise EnvironmentError("GEMINI_API_KEY must be set in environment or .env to ask Gemini")
     statuses = OPEN_STATUSES + (CLOSED_STATUSES if include_closed else ())
+    cases = STORE_ONLY_CASES + ((CONVERTED,) if include_converted else ())
     conn = psycopg2.connect(database_url)
     conn.autocommit = False
     try:
@@ -267,16 +308,16 @@ def run(apply: bool, include_closed: bool = False, limit: int | None = None) -> 
             found = survey(cur)
         conn.rollback()                      # read only; a dry run holds nothing
         in_scope = [r for r in found
-                    if r["case"] in STORE_ONLY_CASES and r["validation_status"] in statuses]
+                    if r["case"] in cases and r["validation_status"] in statuses]
         todo = in_scope[:limit] if limit is not None else in_scope
-        _report(found, todo, len(in_scope), include_closed)
+        _report(found, todo, len(in_scope), include_closed, include_converted)
         if not apply:
             print("\nDry run — nothing written. Re-run with --apply to fill the records listed.")
             return None
         if not todo:
             print("\nNothing to fill.")
             return {"filled": 0, "errored": 0, "skipped": 0, "backup": None}
-        return _fill(conn, todo, statuses)
+        return _fill(conn, todo, statuses, cases)
     except Exception:
         conn.rollback()
         raise
@@ -290,8 +331,11 @@ if __name__ == "__main__":
     parser.add_argument("--apply", action="store_true", help="ask Gemini and store the answers")
     parser.add_argument("--include-closed", action="store_true",
                         help="validated and rejected records too (history only)")
+    parser.add_argument("--include-converted", action="store_true",
+                        help="records backfill_outcome_agreement.py moved out of the three cases too")
     parser.add_argument("--limit", type=int, metavar="N", help="handle at most N records")
     args = parser.parse_args()
     if args.limit is not None and args.limit < 1:
         parser.error("--limit must be at least 1")
-    run(args.apply, include_closed=args.include_closed, limit=args.limit)
+    run(args.apply, include_closed=args.include_closed, limit=args.limit,
+        include_converted=args.include_converted)

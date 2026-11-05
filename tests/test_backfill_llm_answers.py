@@ -20,6 +20,7 @@ from psycopg2.extras import RealDictCursor
 import backfill_llm_answers as backfill
 import consensus_engine as ce
 import llm_validator
+from backfill_outcome_agreement import converted
 from tests.test_consensus_engine import BASE_RECORD, H1_AGREE, LLM_ERROR, _written
 from tests.test_preparation_database import local_database  # noqa: F401
 
@@ -57,6 +58,14 @@ JUDGEMENTS = {
                                                   "quote_not_in_abstract": True}},
     "unreadable_checks": {"additional_checks": "not json"},
 }
+
+
+# A judgement backfill_outcome_agreement.py re-read: "Mischaracterised -> mixed" on a
+# record whose outcome is mixed. The script's own output, not a copy of its format.
+CONVERTED_MIXED = converted({**PLAIN, "outcome_check": "incorrect", "corrected_outcome": "mixed",
+                             "additional_checks": {}}, history=True)
+CONVERTED_JSON = {**CONVERTED_MIXED,
+                  "additional_checks": json.dumps(CONVERTED_MIXED["additional_checks"])}
 
 
 def _h(slot, name_or_fields):
@@ -112,6 +121,34 @@ def test_senior_rejects_agreements_and_tiebreakers_are_not_selected(first, secon
 ])
 def test_cases_are_tested_in_evaluate_consensus_order(first, second, case):
     assert backfill.case_of(*_pair(first, second)) == case
+
+
+@pytest.mark.parametrize("first, second, case", [
+    (CONVERTED_MIXED, "outcome_failed", backfill.CONVERTED),    # corrections differed
+    ("outcome_failed", CONVERTED_MIXED, backfill.CONVERTED),
+    (CONVERTED_JSON, "outcome_failed", backfill.CONVERTED),
+    (CONVERTED_MIXED, "plain", backfill.AGREEMENT),             # as submitted: a tiebreaker
+    (CONVERTED_MIXED, "outcome_mixed", backfill.CHECKS_DIFFER),  # as submitted: agreed
+    (CONVERTED_MIXED, CONVERTED_MIXED, backfill.AGREEMENT),
+    (CONVERTED_MIXED, "unsure_original", backfill.CANT_TELL),   # still one of the three
+    (CONVERTED_MIXED, "quote_flagged", backfill.QUOTE_FLAGGED),
+    (CONVERTED_MIXED, "senior_reject", backfill.SENIOR_REJECT),
+])
+def test_converted_only_where_the_judgements_as_submitted_were_one_of_the_three(
+        first, second, case):
+    assert backfill.classify(*_pair(first, second)) == case
+
+
+def test_converted_needs_the_values_the_conversion_replaced():
+    marker_only = {**CONVERTED_MIXED, "additional_checks": {"outcome_agreement_backfilled": True}}
+    assert backfill.classify(*_pair(marker_only, "outcome_failed")) == backfill.CHECKS_DIFFER
+
+
+def test_without_a_conversion_classify_is_case_of():
+    for first in JUDGEMENTS:
+        for second in JUDGEMENTS:
+            h1, h2 = _pair(first, second)
+            assert backfill.classify(h1, h2) == backfill.case_of(h1, h2)
 
 
 RECORD = {**BASE_RECORD, "llm_validator": None}
@@ -520,3 +557,70 @@ def test_limit_handles_at_most_n_records(db, monkeypatch, capsys):
     result = backfill.run(apply=True, limit=2)
     assert result["filled"] == 1 and len(calls) == 3
     assert all(_row(db, rid)["llm_validator"] == CLEAN for rid in records)
+
+
+def test_converted_records_are_filled_only_when_asked_and_only_their_answer(
+        db, monkeypatch, capsys):
+    opened = _seed(db, CONVERTED_MIXED, "outcome_failed")
+    closed = _seed(db, CONVERTED_MIXED, "outcome_failed", status="validated")
+    tiebreaker = _seed(db, "outcome_failed", "plain")
+    plain = _seed(db, "plain", "doi_o_corrected")
+    before = {rid: _row(db, rid) for rid in (opened, closed, tiebreaker)}
+    calls = []
+
+    def ask(record, context):
+        calls.append((record["record_id"], context))
+        return CLEAN
+
+    monkeypatch.setattr(llm_validator, "run_llm_validation", ask)
+    backfill.run(apply=False)
+    out = capsys.readouterr().out
+    assert re.search(r"converted out of these cases:\s+1\s+1\s+\(--include-converted", out)
+    assert re.search(r"checks differ \(tiebreaker\)\s+1\s+0\n", out)
+    assert opened not in out
+
+    # A plain run leaves them, as it did before the option existed.
+    assert backfill.run(apply=True)["filled"] == 1
+    assert calls == [(plain, "sanity_check")]
+    assert _row(db, opened) == before[opened]
+
+    backfill.run(apply=False, include_converted=True)
+    out = capsys.readouterr().out
+    assert opened in out and closed not in out and tiebreaker not in out
+    assert "Gemini calls --apply would make: 1\n" in out
+
+    result = backfill.run(apply=True, include_converted=True)
+    assert result["filled"] == 1
+    assert calls[1:] == [(opened, "sanity_check")]
+    after = _row(db, opened)
+    assert after["llm_validator"] == CLEAN
+    assert after["validation_status"] == "need_review" and after["is_tiebreaker"] is False
+    assert _without_answer(after) == _without_answer(before[opened])
+    assert _row(db, closed) == before[closed]
+    assert _row(db, tiebreaker) == before[tiebreaker]
+
+    assert backfill.run(apply=True, include_converted=True, include_closed=True)["filled"] == 1
+    assert calls[2:] == [(closed, "sanity_check")]
+    assert _row(db, closed)["llm_validator"] == CLEAN
+
+
+def test_a_converted_record_whose_judgement_changed_meanwhile_is_left_alone(db, monkeypatch, capsys):
+    record_id = _seed(db, CONVERTED_MIXED, "outcome_failed")
+    monkeypatch.setattr(llm_validator, "run_llm_validation",
+                        lambda record, context: pytest.fail("asked Gemini"))
+    real_current, seen = backfill._current, []
+
+    def undo_first(cur, rid, statuses, cases):
+        if not seen:
+            seen.append(rid)
+            with db, db.cursor() as other:
+                other.execute(
+                    "UPDATE validation_queue SET additional_checks = additional_checks "
+                    "- 'outcome_agreement_original' WHERE record_id = %s", (rid,))
+        return real_current(cur, rid, statuses, cases)
+
+    monkeypatch.setattr(backfill, "_current", undo_first)
+    result = backfill.run(apply=True, include_converted=True)
+    assert seen == [record_id]
+    assert result["filled"] == 0 and result["skipped"] == 1
+    assert _row(db, record_id)["llm_validator"] is None
