@@ -1,6 +1,6 @@
 # Approve
 
-POST /api/admin/entries/{id}/approve accepts the agreed values and marks the entry validated.
+In an open Pending Approval row: re-reads the entry and stops if it changed, asks a second time if there is any warning, such as a paper's originals differing on the link or abstract, then POST /api/admin/entries/{id}/approve accepts the agreed values and marks the entry validated. Other filters link to the row instead.
 
 [Open interactive guide](../index.html#view=admin&node=admin-entries--approve)
 
@@ -12,7 +12,7 @@ Code snapshot: 29 October 2026, `2f3a89c`.
 
 ## What happens
 
-1. POST /api/admin/entries/{id}/approve accepts the agreed values and marks the entry validated.
+1. In an open Pending Approval row: re-reads the entry and stops if it changed, asks a second time if there is any warning, such as a paper's originals differing on the link or abstract, then POST /api/admin/entries/{id}/approve accepts the agreed values and marks the entry validated. Other filters link to the row instead.
 
 ## What is saved, and where
 
@@ -24,5 +24,5 @@ Code snapshot: 29 October 2026, `2f3a89c`.
 
 ## Find it in the code
 
-- [docs/app.js:5605 — quickApprove](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/docs/app.js#L5605) · [complete script](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/docs/app.js)
+- [docs/app.js:7793 — _apSendApprove](https://github.com/forrtproject/flora-validation/blob/main/docs/app.js#L7793) · [complete script](https://github.com/forrtproject/flora-validation/blob/main/docs/app.js)
 - [app.py:5388 — admin_approve](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/app.py#L5388) · [complete script](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/app.py)

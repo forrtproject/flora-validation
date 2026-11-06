@@ -317,6 +317,10 @@ Reproductions, the hard pool, assignments and onboarding keep the one-record scr
   judgement answered and whether it was shared, for audit.
 - Admins see the paper's coded originals on each entry, can approve those awaiting approval
   together, and can list shared answers with the "Shared outcome check" filter.
+- The entry detail's `paper_differs_on` lists the fields (`url_r`, `abstract_r`) on which
+  originals that are `consensus_reached` or `validated` differ, since each record publishes
+  its own copy (`paper_review.paper_differs_on`). Admins see it as a warning, never a block;
+  in Pending Approval it takes the second press like any other warning.
 
 #### Wrong paper, no replacement
 
@@ -689,7 +693,7 @@ Eight tabs:
 
 | Tab | What it does |
 |---|---|
-| **Entries** | Every record, filterable by All / Pending Approval / Needs Review / Skipped / Admin comments / Validated / Excluded. Shows validator handles, distinct skip counts, human agreement % (with an LLM-dissent marker — see below), and LLM errors. Approve, flag for review, add notes, resolve conflicts. |
+| **Entries** | Every record, filterable by All / Pending Approval / Needs Review / Skipped / Admin comments / Validated / Excluded. Shows validator handles, distinct skip counts, human agreement % (with an LLM-dissent marker — see below), and LLM errors. Approve, flag for review and add notes in the Pending Approval filter, whose rows open in place; the other filters link to that row. Resolve conflicts in the full review. |
 | **Source Records** | The entry-sheet table — see [SOURCE_RECORDS.md](SOURCE_RECORDS.md) |
 | **Validator Stats** | Per-validator throughput, accuracy, flagged judgements; set tier |
 | **Admins** | Add/remove admins, toggle trusted, set the site banner |

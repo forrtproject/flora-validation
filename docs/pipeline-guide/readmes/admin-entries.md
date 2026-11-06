@@ -13,7 +13,7 @@ Code snapshot: 29 October 2026, `2f3a89c`.
 ## What happens
 
 1. Filter or search the table, then open Review to see the evidence and current decision.
-2. Use Approve for a consensus record, or edit the fields and choose Mark as Resolved.
+2. In the Pending Approval filter, open a row to see what approving publishes and what still needs a look, then Approve, Flag for review or leave a note there. To change anything, open Review, edit the fields and choose Mark as Resolved.
 3. Other originals adds other original studies of a replication or reproduction, each as a validated record of its own: at once on an entry that is validated and admin-checked, or drafted while reviewing an entry the LLM and both validators have judged, and saved with Mark as Resolved.
 
 ## What is saved, and where
@@ -48,7 +48,7 @@ Reads matching entries and their details; no study decision is changed.
 
 ### [Approve](admin-entries--approve.md)
 
-POST /api/admin/entries/{id}/approve accepts the agreed values and marks the entry validated.
+In an open Pending Approval row: re-reads the entry and stops if it changed, asks a second time if there is any warning, such as a paper's originals differing on the link or abstract, then POST /api/admin/entries/{id}/approve accepts the agreed values and marks the entry validated. Other filters link to the row instead.
 
 **Saves:** unvalidated status/admin fields; validated row; admin_decisions.
 

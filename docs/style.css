@@ -7194,6 +7194,226 @@ body.has-maint-banner #admin-screen {
 .admin-paper-set { margin-top: 1rem; padding: 0.7rem 1rem; border: 1px solid var(--rule); border-radius: 0.8rem; background: var(--bg); }
 .admin-paper-set summary { cursor: pointer; font-weight: 600; font-size: 0.92rem; }
 .admin-paper-set .pr-table-wrap { margin: 0.5rem 0; }
+.paper-differs { margin: 1rem 0 0; padding: 0.55rem 0.9rem; border: 1px solid var(--amber); border-radius: 0.6rem; background: #fdf3e0; color: var(--ink-soft); font-size: 0.86rem; }
+.paper-differs + .admin-paper-set { margin-top: 0.5rem; }
 .pr-admin-table { border-collapse: collapse; width: 100%; font-size: 0.84rem; }
 .pr-admin-table td { padding: 0.4rem 0.8rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
 .pr-admin-table tr.is-current { background: var(--bg-alt); }
+
+/* ---------- Pending Approval: the entry list as an expandable table ----------
+   Builds on .admin-table, the Final Preview card (.fp-*), .chk-*, .aq-*, .admin-xo and
+   .admin-paper-set, which keep their own rules; only what those do not cover is here. */
+
+/* Fixed columns: opening a row, or what a panel holds, must never move them, and a
+   long title must not push the table past its frame. Below the minimum it scrolls
+   sideways inside .admin-table-wrap, as the regular table does. */
+.ap-table { table-layout: fixed; min-width: 58rem; }
+.ap-table #admin-entries-head th:nth-child(1) { width: 2.7rem; }
+.ap-table #admin-entries-head th:nth-child(3) { width: 6.5rem; }
+.ap-table #admin-entries-head th:nth-child(4) { width: 8rem; }
+.ap-table #admin-entries-head th:nth-child(5) { width: 8rem; }
+.ap-table #admin-entries-head th:nth-child(6) { width: 6.3rem; }
+.ap-table #admin-entries-head th:nth-child(7) { width: 12.5rem; }
+.ap-table #admin-entries-head th:nth-child(8) { width: 6.2rem; }
+
+/* .admin-table's own rules reach every td in it, the tables inside panels included. */
+.ap-table td { vertical-align: top; white-space: normal; }
+.ap-panel thead th { white-space: normal; }
+/* The regular table truncates titles to one short line. This one has room, and the
+   title is what an admin reads first. */
+.ap-table .admin-cell-study { max-width: none; overflow: hidden; }
+.ap-table .ap-cell-validators { font-size: 0.78rem; color: var(--ink-soft); }
+.ap-table .admin-review-btn { margin-left: 0; }
+/* .admin-flag leaves room on its left for following a title; here chips start the cell. */
+.ap-cell-look .admin-flag,
+.ap-cell-look .aq-row-flag { margin: 0 0.3rem 0.2rem 0; }
+.ap-cell-look .admin-note-flag { margin-left: 0; }
+.flag-stop { background: #fde8e8; color: var(--red); }
+
+.ap-row { cursor: pointer; scroll-margin-top: calc(var(--header-h) + 0.5rem); }
+.ap-row-open { background: var(--bg-alt); }
+.ap-row-decided .ap-title { color: var(--muted); }
+
+.ap-toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.ap-toggle:hover .ap-title { text-decoration: underline; text-underline-offset: 3px; }
+.ap-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.ap-chevron {
+  flex-shrink: 0;
+  color: var(--muted);
+  transition: transform 0.12s;
+}
+.ap-toggle[aria-expanded="true"] .ap-chevron { transform: rotate(90deg); }
+.ap-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.ap-toggle[aria-expanded="true"] .ap-title { -webkit-line-clamp: unset; }
+/* One line under the title: rows stay short enough to scan fifty of them. */
+.ap-sub {
+  display: block;
+  margin: 0.1rem 0 0 1.1rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The panel row: a block of text, not a table row. */
+.admin-table tbody tr.ap-panel-row:hover { background: transparent; }
+.admin-table td:has(> .ap-panel) {
+  padding: 0;
+  cursor: auto;
+}
+.ap-panel {
+  padding: 0.9rem 1.1rem 1.1rem 1.1rem;
+  border-left: 3px solid var(--accent);
+  background: var(--bg);
+  font-size: 0.85rem;
+}
+.ap-panel[aria-busy="true"] .ap-body { opacity: 0.6; }
+.ap-panel > .ap-flags:empty { display: none; }
+
+.ap-flags .admin-self-banner { margin-bottom: 0.6rem; }
+.ap-quality { margin: 0 0 0.6rem; }
+.ap-warn-list {
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.9rem 0.55rem 1.7rem;
+  border: 1px solid var(--amber);
+  border-radius: 0.6rem;
+  background: #fdf3e0;
+  color: var(--ink-soft);
+}
+.ap-warn-list li + li { margin-top: 0.2rem; }
+
+.ap-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 1rem;
+  align-items: start;
+  margin-bottom: 0.75rem;
+}
+.ap-cols .final-preview-card { margin-bottom: 0; }
+
+.ap-compare-wrap { overflow-x: auto; }
+.ap-compare {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.ap-compare th,
+.ap-compare td {
+  padding: 0.3rem 0.45rem;
+  vertical-align: top;
+  text-align: left;
+  border-bottom: 1px solid var(--rule);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.ap-compare thead th {
+  font-weight: 600;
+  color: var(--ink);
+  background: transparent;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.ap-compare tbody th {
+  font-weight: 500;
+  color: var(--muted);
+  width: 6.5rem;
+}
+.ap-judge-sub { display: block; font-weight: 400; }
+.ap-compare .ap-diff { background: #fdf3e0; }
+.ap-compare .ap-llm-off { background: #fde8e8; }
+/* The difference is also said in words: colour alone would not reach everyone. */
+.ap-diff-mark {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--amber);
+}
+.ap-llm-off .ap-diff-mark { color: var(--red); }
+.ap-compare .chk-collapsible-summary { padding: 0; }
+
+.ap-panel .paper-differs { margin: 0 0 0.5rem; }
+.ap-panel .admin-paper-set { margin: 0 0 0.75rem; }
+.ap-panel .admin-xo { margin-bottom: 0.75rem; }
+.ap-notes { margin-bottom: 0.75rem; }
+.ap-notes .admin-notes-title { cursor: text; }
+.ap-note-hint { margin-left: 0.6rem; }
+
+.ap-actions:focus { outline: none; }
+.ap-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.ap-approve { padding: 0.45rem 1rem; font-size: 0.85rem; }
+.ap-buttons .btn-outline { padding: 0.4rem 0.9rem; font-size: 0.82rem; }
+.ap-buttons .btn-outline:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: transparent;
+  color: var(--ink);
+}
+
+.ap-block-list {
+  margin: 0 0 0.6rem;
+  padding: 0.55rem 0.9rem 0.55rem 1.7rem;
+  border: 1px solid var(--red);
+  border-radius: 0.6rem;
+  background: #fbeaea;
+  color: var(--ink-soft);
+}
+.ap-notice {
+  margin-bottom: 0.6rem;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--amber);
+  border-radius: 0.6rem;
+  background: #fdf3e0;
+  color: var(--ink-soft);
+}
+.ap-decided {
+  margin-bottom: 0.6rem;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.6rem;
+  background: var(--bg-alt);
+  color: var(--ink-soft);
+}
+.ap-confirm-title {
+  margin-bottom: 0.45rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+.ap-confirm-title:focus,
+.ap-notice:focus,
+.ap-decided:focus,
+.ap-panel .faq-error:focus { outline: none; }
+
+@media (max-width: 900px) {
+  .ap-cols { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ap-chevron { transition: none; }
+}

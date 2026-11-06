@@ -13,6 +13,9 @@ The first version covers replications with a DOI in the normal pool. Reproductio
 one-record screen. PAPER_REVIEW_ENABLED turns the table on.
 """
 import os
+import re
+from difflib import SequenceMatcher
+from itertools import combinations
 from uuid import UUID
 
 from consensus_engine import NO_OUTCOME, effective_corrected_type
@@ -278,18 +281,99 @@ def points(cur, rec: dict, coder_id: int, req, vote_score: int, improved_evidenc
     return total
 
 
-def admin_paper_set(cur, record: dict) -> list[dict]:
-    """Every coded original of this entry's paper, for the admin entry detail."""
+# Each record keeps its own copy of the paper's details, and these two reach flora.csv
+# through sync_validated.py, so records that differ on them publish one paper two ways.
+# The title and the published DOI do not reach it.
+_PAPER_COPIES = ("url_r", "final_url_r", "abstract_r", "final_abstract_r",
+                 "published", "published_url_r", "published_abstract_r")
+
+# Only these count. That also covers a merged duplicate: the merge leaves it rejected,
+# and neither resolve nor flag-review nor an import takes it out of that status.
+_ON_THE_WAY_TO_FLORA = ("consensus_reached", "validated")
+
+_LINK_WRAPPING = re.compile(r"^(?:https?://)?(?:www\.|dx\.)?|/+$")
+# A tag by its shape, with attributes only as name=value: "p<q and r>s" is not one.
+_MARKUP = re.compile(r"</?[a-z][a-z0-9:.-]*(?:\s[^<>]*=[^<>]*)?\s*/?>", re.IGNORECASE)
+# A word, or one character of a script written without spaces, where a whole abstract
+# would otherwise be one word and any edit a different abstract.
+_UNSPACED = "\u3040-\u30ff\u3400-\u9fff"
+_WORD = re.compile(rf"[{_UNSPACED}]|(?:(?![{_UNSPACED}])\w)+")
+# The heading a source puts first, glued to the text or not: "AIMS:", "AbstractIn one".
+_LEADING_LABEL = re.compile(r"^\W*(?:Abstract(?=[A-Z])|(?i:abstract|summary|background"
+                            r"|introduction|objectives?|aims?|purpose)\b)")
+# How much of the words, in order, two abstracts must share to be one abstract. The
+# publisher's and the preprint's wording of one abstract share 0.83 of theirs
+# (10.1093/alcalc/agaa009), a registered plan and its results 0.62 (10.1098/rsos.190699).
+_SAME_ABSTRACT = 0.75
+
+
+def _link_key(value) -> str:
+    return _LINK_WRAPPING.sub("", (value or "").strip().lower())
+
+
+def _abstract_key(value) -> tuple[str, ...]:
+    return tuple(_WORD.findall(_LEADING_LABEL.sub("", _MARKUP.sub(" ", value or "")).lower()))
+
+
+def _abstracts_differ(keys: set) -> bool:
+    # Sorted: the ratio can depend on which of the two goes first, and the answer must
+    # not depend on the order of the rows.
+    return any(SequenceMatcher(None, a, b, autojunk=False).ratio() < _SAME_ABSTRACT
+               for a, b in combinations(sorted(keys), 2))
+
+
+def _publishes(row: dict, field: str):
+    """This record's copy of a field in FLoRA. A validated record's is in the validated
+    table: an import rewrites the extracted value and leaves that row alone. The others
+    would publish what approving takes, as consensus_engine.approval_values does."""
+    if row.get("published"):
+        return row.get(f"published_{field}")
+    return row.get(f"final_{field}") or row.get(field)
+
+
+def paper_differs_on(rows: list[dict]) -> list[str]:
+    """Which fields would reach FLoRA differently from these records of one paper.
+
+    A blank is missing, not a disagreement. Abstracts are compared by _abstract_key and
+    _SAME_ABSTRACT, so a small edit to one does not count.
+    """
+    counted = [r for r in rows if r.get("validation_status") in _ON_THE_WAY_TO_FLORA]
+
+    def keys(field, key):
+        return {k for k in (key(_publishes(r, field)) for r in counted) if k}
+
+    differs = []
+    if len(keys("url_r", _link_key)) > 1:
+        differs.append("url_r")
+    if _abstracts_differ(keys("abstract_r", _abstract_key)):
+        differs.append("abstract_r")
+    return differs
+
+
+def admin_paper_set(cur, record: dict) -> tuple[list[dict], list[str]]:
+    """Every coded original of this entry's paper, for the admin entry detail, and the
+    fields those originals would publish differently (paper_differs_on)."""
     doi = (record.get("doi_r") or "").strip()
     if not doi:
-        return []
+        return [], []
     cur.execute(
         f"""
         SELECT u.record_id::text AS record_id, u.title_o, u.final_title_o, u.year_o, u.doi_o,
                u.final_doi_o, u.outcome, u.final_outcome, u.validation_status,
-               u.validator_1, u.validator_2, rm.authors_o, rm.original_rank
+               u.validator_1, u.validator_2, rm.authors_o, rm.original_rank,
+               u.url_r, u.final_url_r, u.abstract_r, u.final_abstract_r,
+               v.record_id IS NOT NULL AS published, v.url_r AS published_url_r,
+               v.abstract_r AS published_abstract_r
         FROM unvalidated u
         LEFT JOIN record_metadata rm ON rm.record_id = u.record_id
+        -- LATERAL: validated.record_id is not unique, so a plain join could list an
+        -- original twice. A row left behind by a record now waiting does not count:
+        -- approving replaces it.
+        LEFT JOIN LATERAL (
+            SELECT vr.record_id, vr.url_r, vr.abstract_r FROM validated vr
+            WHERE u.validation_status = 'validated' AND vr.record_id = u.record_id
+            ORDER BY vr.validated_at DESC LIMIT 1
+        ) v ON TRUE
         WHERE lower(u.doi_r) = lower(%s) AND u.origin = 'extractor'
         ORDER BY rm.original_rank NULLS LAST, u.year_o NULLS LAST, u.title_o, u.record_id
         LIMIT %s
@@ -298,9 +382,12 @@ def admin_paper_set(cur, record: dict) -> list[dict]:
     )
     rows = [dict(r) for r in cur.fetchall()]
     if len(rows) < 2:
-        return []
+        return [], []
+    differs_on = paper_differs_on(rows)
     out = []
     for row in rows:
+        for field in _PAPER_COPIES:
+            del row[field]
         judgements = [v for v in (row.pop("validator_1"), row.pop("validator_2")) if isinstance(v, dict)]
         row["original_checks"] = [v.get("original_check") for v in judgements]
         row["outcome_checks"] = [v.get("outcome_check") for v in judgements]
@@ -309,4 +396,4 @@ def admin_paper_set(cur, record: dict) -> list[dict]:
             for v in judgements)
         row["is_current"] = row["record_id"] == str(record.get("record_id"))
         out.append(row)
-    return out
+    return out, differs_on

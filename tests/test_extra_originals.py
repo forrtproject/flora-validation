@@ -1258,7 +1258,7 @@ def test_the_add_form_has_no_abstract_field_and_its_limits_match_the_server():
 def test_approve_and_resolve_point_to_waiting_suggestions():
     # Resolve leaves out the suggestions its drafted originals just answered.
     assert 'showToast(_xoPendingNote(recordId, addedNote(resp, "Entry resolved."), used));' in APP_JS
-    assert 'showToast(_xoPendingNote(recordId, "Entry approved."))' in APP_JS
+    assert 'showToast(_xoPendingNote(id, "Entry approved."));' in APP_JS
 
 
 def _js_fn(head):

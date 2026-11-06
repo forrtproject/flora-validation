@@ -1255,6 +1255,22 @@ or after at least two distinct validators have reported `eligibility_unclear` or
 `data_quality`. Repeated skips by one validator remain auditable but cannot meet a
 threshold by themselves.
 
+In the **Pending Approval** filter the rows open in place. An open row shows what
+approving would publish, what each validator and the LLM said, the paper's other
+coded originals, suggested originals and the admin note, with any warnings at the
+top. An admin can approve, flag for review or save the note there; the row then
+leaves the list and the next one opens. Everything else stays in the full review,
+which is also where a rejection is made. The other filters have no Approve button:
+**Approve →** goes to that entry's row in Pending Approval and opens it.
+
+Each original of a paper keeps its own copy of the paper's link and abstract, and
+both reach FLoRA. When originals that are `consensus_reached` or `validated` differ
+on either, the open row and the full review warn that they would publish the paper
+two ways. It is a warning, never a block. Links ignore case, scheme, `www.`/`dx.` and
+a trailing slash. Abstracts ignore markup, case, punctuation and a leading label, and
+count as one abstract when at least 75% of their words match, so a small edit to one
+does not show.
+
 The detail view includes raw/final values, independent reproduction axes and
 their evidence, human/LLM summaries, queue rows, validator history counts, flags,
 notes, quote-source controls, and correction fields. **Skip history** is collapsed
@@ -1266,7 +1282,11 @@ default and is not counted as skip activity.
 
 - **Approve** accepts only `consensus_reached`, marks the row `validated`, and
   inserts the effective final values into `validated` (using the validated
-  identity conflict key for its upsert).
+  identity conflict key for its upsert). Just before sending it, the browser
+  re-reads the entry and stops if what the panel shows has changed or the entry was
+  decided; the server does not compare values, so a change in the last moment can
+  still pass. Any warning on the entry needs a second press, and an admin the
+  self-approval rule stops can neither approve nor flag from the panel.
 - **Flag for review** moves a pending approval back to `need_review` and can save
   an admin note.
 - **Resolve** can correct type, both paper identities/titles/links, abstract,

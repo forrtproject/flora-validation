@@ -462,6 +462,17 @@ const PAIR = {
     assert.doesNotMatch(await page.evaluate(d => _adminRemovalBanner({ ...d, extra_originals_summary: { children: 0 } }), data),
                         /id="admin-remove-original-btn"[^>]*disabled/);
 
+    // Originals that would publish the paper two ways: above the list, naming what differs.
+    const differing = fields => page.evaluate(([d, f]) => _adminPaperOriginals({ ...d, paper_differs_on: f }), [data, fields]);
+    assert.doesNotMatch(panel, /two ways/, "a payload without the key shows nothing");
+    assert.doesNotMatch(await differing([]), /two ways/);
+    const both = await differing(["url_r", "abstract_r"]);
+    assert.match(both, /<p class="paper-differs">These originals would publish the paper two ways: they differ on the link and abstract\.<\/p>\s*<details class="admin-paper-set"/);
+    assert.match(both, /Approve the 2 awaiting approval/, "the warning leaves the button as it was");
+    assert.match(await differing(["url_r"]), /they differ on the link\.</);
+    assert.match(await differing(["abstract_r"]), /they differ on the abstract\.</);
+    assert.ok(!(await differing(["<img src=x>"])).includes("<img"), "the fields are escaped");
+
     // Text from the extractor goes through escapeHtml, and only web links become links.
     const meta = await page.evaluate(() => _prOriginalMeta({ authors_o: "A", year_o: "<img src=x>", url_o: "javascript:alert(1)" }));
     assert.ok(!meta.includes("<img"), "the year is escaped");

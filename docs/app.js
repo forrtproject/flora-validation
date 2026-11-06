@@ -6191,6 +6191,8 @@ let _adminSortDir   = "desc";    // "asc" | "desc"
 let _adminEntryIds   = [];   // ordered record_ids on current page
 let _adminCurrentIdx = -1;  // index of currently open record
 let _adminDetailCache = {};  // record_id → preloaded detail data
+let _adminFetchSeq = 0;     // the latest entry-list request; an older answer is dropped
+let _adminResetOwed = false; // a reset's Loading row is up and not yet answered
 const ADMIN_PER_PAGE = 50;
 
 async function adminApi(path, method = "GET", body = null) {
@@ -6272,12 +6274,22 @@ async function signOutAdmin() {
   location.reload();
 }
 
-async function fetchAdminEntries(resetState = true) {
+// seek: a record_id to find and open in Pending Approval (_apGoTo).
+async function fetchAdminEntries(resetState = true, seek = null) {
+  const seq = ++_adminFetchSeq;
+  _apSyncHead();                       // before the Loading row, so its colspan is right
+  const approval = _apActive();
+  const cols = $("#admin-entries-head").children.length;
   const body = $("#admin-table-body");
   if (resetState) {
-    body.innerHTML = '<tr><td colspan="11" class="admin-loading">Loading…</td></tr>';
+    if (approval) _apForgetRows();
+    body.innerHTML = `<tr><td colspan="${cols}" class="admin-loading">Loading…</td></tr>`;
     $("#admin-empty").classList.add("hidden");
+    _adminResetOwed = true;
   }
+  // A soft refresh can overtake a reset, whose answer is then dropped. It takes on
+  // the reset, or "Loading…" would stay with no Retry if it failed too.
+  const reset = _adminResetOwed;
 
   try {
     const searchParam = _adminSearch ? `&search=${encodeURIComponent(_adminSearch)}` : "";
@@ -6286,16 +6298,25 @@ async function fetchAdminEntries(resetState = true) {
     const data = await adminApi(
       `/entries?filter=${_adminFilter}&page=${_adminPage}&per_page=${ADMIN_PER_PAGE}${searchParam}${sortParam}${mineParam}`
     );
+    if (seq !== _adminFetchSeq) return;   // a newer request's answer is the one to show
+    if (approval && !data.entries.length && data.total > 0 && _adminPage > 1) {
+      _apPageBack(data.total);
+      return fetchAdminEntries(resetState, seek);
+    }
+    if (seek && !data.entries.some((e) => e.record_id === seek)) {
+      return fetchAdminEntries(resetState, _apSeekOn(data.total, seek));
+    }
+    _adminResetOwed = false;
     // "Hide entries I validated" needs this admin account linked to its validator one.
     $("#admin-hide-mine-wrap")?.classList.toggle("hidden", !data.viewer_linked);
     renderAdminCounts(data.counts);
-    renderAdminTable(data.entries, data.total);
+    (approval ? renderApprovalTable : renderAdminTable)(data.entries, data.total);
     _updateSortIndicators();
     renderAdminPagination(data.total, data.page);
-    if (resetState) {
+    if (reset) {
       _adminEntryIds = data.entries.map(e => e.record_id);
       _adminDetailCache = {};
-      preloadAdminDetails();
+      if (!approval) preloadAdminDetails();
     } else {
       // Mid-review background refresh: rebuild the nav list from the fresh data so
       // it can't drift from the re-rendered table, but keep the admin on the record
@@ -6306,13 +6327,16 @@ async function fetchAdminEntries(resetState = true) {
       const idx = _adminEntryIds.indexOf(viewedId);
       _adminCurrentIdx = idx >= 0 ? idx : Math.min(_adminCurrentIdx, _adminEntryIds.length - 1);
     }
+    if (seek) _apArrive(seek);
   } catch (e) {
-    if (resetState) {
-      body.innerHTML = `<tr><td colspan="11" class="admin-loading">
+    if (seq !== _adminFetchSeq) return;
+    if (reset) {
+      _adminResetOwed = false;
+      body.innerHTML = `<tr><td colspan="${cols}" class="admin-loading">
         Error: ${escapeHtml(e.message)}
         <button id="admin-retry-btn" style="margin-left:0.75rem;font-size:0.78rem;padding:0.3rem 0.8rem;border-radius:999px;border:1px solid var(--ink);background:transparent;cursor:pointer;">↺ Retry</button>
       </td></tr>`;
-      document.getElementById("admin-retry-btn")?.addEventListener("click", () => fetchAdminEntries());
+      document.getElementById("admin-retry-btn")?.addEventListener("click", () => fetchAdminEntries(true, seek));
     }
   }
 }
@@ -6431,8 +6455,9 @@ function renderAdminTable(entries, total) {
     const agreeCell = (ap == null)
       ? '<span class="agree-na">—</span>'
       : `<span class="agree-pct ${ap >= 100 ? "agree-full" : ap >= 67 ? "agree-mid" : "agree-low"}">${ap}%</span>${llmMark}`;
+    // Approve is in the Pending Approval panel, beside the checks it depends on.
     const approveCell = e.validation_status === "consensus_reached"
-      ? `<button class="admin-approve-btn" data-id="${e.record_id}">Approve ✓</button>`
+      ? `<button type="button" class="link-btn admin-to-pending" data-id="${e.record_id}"${e.mine ? " data-mine" : ""} title="Go to this entry in Pending Approval, where it can be approved">Approve →</button>`
       : `<span class="agree-na">—</span>`;
     const reviewCell = `<button class="admin-review-btn ghost-btn" data-id="${e.record_id}">Review →</button>`;
     const approvedBy = e.admin_name
@@ -6456,8 +6481,8 @@ function renderAdminTable(entries, total) {
   body.querySelectorAll(".admin-review-btn").forEach((btn) => {
     btn.onclick = () => openAdminDetail(btn.dataset.id);
   });
-  body.querySelectorAll(".admin-approve-btn").forEach((btn) => {
-    btn.onclick = () => quickApprove(btn.dataset.id, btn);
+  body.querySelectorAll(".admin-to-pending").forEach((btn) => {
+    btn.onclick = () => _apGoTo(btn.dataset.id, "mine" in btn.dataset);
   });
 }
 
@@ -6472,20 +6497,6 @@ function renderAdminPagination(total, page) {
   `;
   $("#admin-prev").onclick = () => { _adminPage--; fetchAdminEntries(); };
   $("#admin-next").onclick = () => { _adminPage++; fetchAdminEntries(); };
-}
-
-async function quickApprove(recordId, btn) {
-  btn.disabled = true;
-  btn.textContent = "…";
-  try {
-    await adminApi(`/entries/${recordId}/approve`, "POST");
-    showToast(_xoPendingNote(recordId, "Entry approved."));
-    fetchAdminEntries();
-  } catch (e) {
-    btn.disabled = false;
-    btn.textContent = "Approve ✓";
-    await showAlert("Error: " + e.message);
-  }
 }
 
 const PRELOAD_WINDOW = 15;
@@ -6503,6 +6514,1469 @@ function preloadAdminDetails() {
     }
   }
 }
+
+/* ---------- Pending Approval: the entry list as an expandable table ---------- */
+
+// Only the pending_approval filter renders through here. Every other filter keeps
+// renderAdminTable, with a link to the row here in place of an Approve button. The
+// list, its filters, search, sort, "Hide entries I validated" and pagination stay in
+// fetchAdminEntries.
+//
+// Endpoints:
+//   GET  /entries/{id}                    the panel, and again just before deciding
+//   GET  /entries/{id}/extra-originals    only when the entry has suggestions or children
+//   POST /entries/{id}/approve            no body
+//   POST /entries/{id}/flag-review        {}
+//   POST /entries/{id}/note               { note }
+// Never /resolve: it has no status check, and everything it does stays on the full
+// review screen.
+
+const _AP_FILTER = "pending_approval";
+// The sortable columns of this view. A sort left over from another filter on a
+// column this view does not have is dropped on entering it.
+const _AP_SORTS = new Set(["", "study", "type", "outcome", "agreement"]);
+const _AP_HEAD = `
+  <th class="admin-cell-num">#</th>
+  <th class="th-sort" data-sort="study">Study</th>
+  <th class="th-sort" data-sort="type">Type</th>
+  <th class="th-sort" data-sort="outcome">Outcome</th>
+  <th>Validators</th>
+  <th class="th-sort" data-sort="agreement" title="Checks (of 3) where both validators agree.">Agreement</th>
+  <th>Needs a look</th>
+  <th><span class="sr-only">Full review</span></th>`;
+const _AP_COLUMNS = 8;
+// A double click must not reach what slid under the pointer, or arm and confirm
+// an approval in one gesture.
+const _AP_DOUBLE_CLICK_MS = 700;
+
+const _apOpen = new Set();     // record_ids expanded; any number may be
+const _apState = {};           // record_id → what its panel knows (_apRow)
+// record_id → { text, base }: typed and not saved, and the stored note it started
+// from. Survives collapsing and re-rendering, not a page reload, like _adminXoDrafts.
+const _apNoteDrafts = {};
+let _apHeadOn = false;
+let _apStandardHead = "";      // the regular head, put back on leaving the filter
+let _apPendingIndex = null;    // a decided row's place, for the refresh to fill
+let _apReturnTo = null;        // { id, index } of the entry whose full review is open
+let _apLastDecisionAt = 0;
+
+function _apActive() {
+  return _adminFilter === _AP_FILTER;
+}
+
+function _apRow(id) {
+  if (!_apState[id]) {
+    _apState[id] = {
+      entry: null,             // the list row
+      data: null,              // GET /entries/{id}
+      shownPrint: null,        // _apPrint of what the panel last drew (_apRenderPanel)
+      xo: null, xoFailed: false,
+      // idle → loading → ready ⇄ busy; error (load failed); decided (no longer
+      // waiting, kept on screen until dismissed); gone (no such record).
+      phase: "idle",
+      busy: "",                // "approve" | "flag", while phase is busy
+      gen: 0,                  // the load in progress; an older one is ignored
+      orphan: false,           // open, and no longer on this page of the list
+      error: null,             // what failed; the buttons stay
+      refused: null,           // why the server refused approval; Approve stays off
+      notice: null,            // something changed; look again
+      confirming: false,       // Approve pressed with something still to check
+      armedAt: 0,
+    };
+  }
+  return _apState[id];
+}
+
+function _apRowEl(id) {
+  return $(`#admin-table-body tr.ap-row[data-id="${CSS.escape(id)}"]`);
+}
+function _apPanelEl(id) {
+  return document.getElementById(`ap-panel-${id}`);
+}
+function _apRows() {
+  return [...document.querySelectorAll("#admin-table-body tr.ap-row")];
+}
+
+/* ---- The head, on entering and leaving the filter ---- */
+
+function _apSyncHead() {
+  const on = _apActive();
+  if (on === _apHeadOn) return;
+  const head = $("#admin-entries-head");
+  if (on) {
+    _apStandardHead = head.innerHTML;
+    head.innerHTML = _AP_HEAD;
+    if (!_AP_SORTS.has(_adminSort)) _adminSort = "";
+  } else {
+    head.innerHTML = _apStandardHead;
+    _apForgetRows();
+  }
+  _apHeadOn = on;
+  head.closest("table").classList.toggle("ap-table", on);
+  $("#admin-empty").textContent = "No entries match this filter.";
+}
+
+function _apForgetRows() {
+  _apOpen.clear();
+  Object.keys(_apState).forEach((id) => delete _apState[id]);
+  _apPendingIndex = null;
+}
+
+// The last row of the last page was decided: show what is now the last page, and
+// keep focus at its end rather than on its first row.
+function _apPageBack(total) {
+  _adminPage = Math.ceil(total / ADMIN_PER_PAGE);
+  if (_apPendingIndex !== null) _apPendingIndex = ADMIN_PER_PAGE;
+}
+
+/* ---- The collapsed row ---- */
+
+function _apAgreement(e) {
+  const ap = e.agreement_pct;
+  if (ap == null) return '<span class="agree-na">—</span>';
+  return `<span class="agree-pct ${ap >= 100 ? "agree-full" : ap >= 67 ? "agree-mid" : "agree-low"}">${Number(ap)}%</span>`;
+}
+
+// What would make an admin look twice, worst first. Everything is from the list
+// payload, so the column works before any row is opened. "Not your decision" needs
+// the detail payload: the list says only that the admin validated it (e.mine).
+function _apChips(e) {
+  const st = _apState[e.record_id];
+  const qf = Number(e.quality_flag_count) || 0;
+  const suggested = Number(e.open_extra_suggestions) || 0;
+  const skippers = Number(e.skip_validator_count) || 0;
+  const blocked = st?.data?.self_approval?.allowed === false;
+  return [
+    st?.phase === "decided" ? '<span class="admin-flag flag-stop">already decided</span>' : "",
+    qf ? `<span class="aq-row-flag" title="${qf} data-quality problem${qf === 1 ? "" : "s"} — may need excluding">&#9888; ${qf}</span>` : "",
+    e.llm_dissent
+      ? `<span class="admin-flag flag-llm" title="LLM disagrees with the validators on: ${escapeHtml(e.llm_dissent)}">LLM ✗ ${escapeHtml(e.llm_dissent)}</span>` : "",
+    e.has_llm_error ? '<span class="admin-flag flag-llm" title="The LLM check failed">LLM error</span>' : "",
+    !e.has_llm ? '<span class="admin-flag flag-llm" title="No LLM check on this entry">no LLM</span>' : "",
+    e.is_tiebreaker ? '<span class="admin-flag flag-tie" title="The validators disagreed and the LLM broke the tie">TIE</span>' : "",
+    suggested ? `<span class="admin-flag flag-xo" title="Validators suggested other originals">+${suggested} suggested</span>` : "",
+    e.skip_review_required
+      ? `<span class="admin-flag flag-tie" title="${Number(e.skip_event_count) || 0} skips from ${skippers} validators; ${Number(e.skip_issue_validator_count) || 0} reported a problem">skipped by ${skippers}</span>` : "",
+    blocked ? '<span class="admin-flag flag-stop" title="Another admin needs to decide this entry">not your decision</span>'
+      : e.mine ? '<span class="admin-flag flag-mine" title="You validated this entry">YOU</span>' : "",
+    _apNoteDrafts[e.record_id] ? '<span class="admin-flag flag-xo" title="You typed a note that is not saved yet">note not saved</span>' : "",
+    e.admin_notes
+      ? `<span class="admin-note-flag" title="${escapeHtml((e.note_saved_by ? e.note_saved_by + ": " : "") + e.admin_notes)}">📝</span>` : "",
+  ].join("");
+}
+
+function _apRowCells(e, n) {
+  const id = escapeHtml(e.record_id);
+  const expanded = _apOpen.has(e.record_id);
+  const title = e.final_title_r || e.title_r || e.doi_r || "—";
+  const original = e.effective_title_o || e.effective_doi_o;
+  const names = [e.v1_handle, e.v2_handle].filter(Boolean).map(escapeHtml).join(" · ");
+  const tc = Number(e.trusted_validator_count) || 0;
+  const trust = tc
+    ? `<span class="admin-trust-badge" title="${tc > 1 ? "Both validators are trusted" : "One trusted validator"}">${tc > 1 ? "⭐⭐" : "⭐"}</span>`
+    : "";
+  return `
+    <td class="admin-cell-num">${Number(n)}</td>
+    <td class="admin-cell-study">
+      <button type="button" class="ap-toggle" data-ap="toggle" data-id="${id}" aria-expanded="${expanded}"${expanded ? ` aria-controls="ap-panel-${id}"` : ""}>
+        <span class="ap-chevron" aria-hidden="true">▸</span>
+        <span class="ap-title">${escapeHtml(title)}</span>
+      </button>
+      <span class="ap-sub">${e.study_r ? `<span class="chk-na-note">Study ${escapeHtml(e.study_r)}</span> ` : ""}${original ? `↳ ${escapeHtml(String(original))}` : ""}</span>
+    </td>
+    <td>${escapeHtml(e.final_type || e.type || "—")}</td>
+    <td>${escapeHtml(fmtOutcome(e.final_outcome || e.outcome) || "—")}</td>
+    <td class="ap-cell-validators">${names || '<span class="agree-na">—</span>'}${trust}</td>
+    <td class="admin-cell-agree">${_apAgreement(e)}</td>
+    <td class="ap-cell-look">${_apChips(e) || '<span class="agree-na">—</span>'}</td>
+    <td class="admin-cell-review"><button type="button" class="admin-review-btn ghost-btn" data-ap="full" data-id="${id}">Review →</button></td>`;
+}
+
+// Rewrite a row only when it changed, and leave focus where it was.
+function _apSetCells(row, html) {
+  if (row.dataset.sig === html) return;
+  const focused = row.contains(document.activeElement) ? document.activeElement.dataset.ap : null;
+  row.innerHTML = html;
+  row.dataset.sig = html;
+  if (focused) row.querySelector(`[data-ap="${focused}"]`)?.focus({ preventScroll: true });
+}
+
+function _apRefreshRow(id) {
+  const st = _apState[id];
+  const row = _apRowEl(id);
+  if (!st?.entry || !row) return;
+  _apSetCells(row, _apRowCells(st.entry, row.querySelector(".admin-cell-num")?.textContent));
+}
+
+// The element after a row and its panel.
+function _apAfterRow(row) {
+  const next = row.nextElementSibling;
+  return next?.classList.contains("ap-panel-row") ? next.nextElementSibling : next;
+}
+
+function _apEmptyText() {
+  if (_adminSearch) return "No entries awaiting approval match this search.";
+  const left = Number($("#fc-pending-approval")?.textContent) || 0;
+  if (_adminHideMine && left) return "Only entries you validated are left. Another admin decides those.";
+  return "Nothing is waiting for approval.";
+}
+
+// Rows are matched by record_id and left alone when nothing changed, not rebuilt
+// like renderAdminTable's: a refresh after deciding one entry must not take the
+// note an admin is typing, or the open sections, in another.
+function renderApprovalTable(entries, total) {
+  const body = $("#admin-table-body");
+  const listed = new Set(entries.map((e) => e.record_id));
+
+  // The Loading… row. :scope, or this reaches the rows of the tables inside panels.
+  body.querySelectorAll(":scope > tr:not(.ap-row):not(.ap-panel-row)").forEach((tr) => tr.remove());
+  _apRows().forEach((row) => {
+    const id = row.dataset.id;
+    if (listed.has(id)) return;
+    const st = _apRow(id);
+    if (st.phase === "decided" || st.phase === "gone") return;   // until dismissed
+    if (_apOpen.has(id)) {
+      // Open and no longer listed: say why, rather than vanish under the admin. A
+      // decision in flight will say so itself.
+      if (!st.orphan && st.phase !== "busy") { st.orphan = true; _apLoad(id); }
+      return;
+    }
+    _apDropRow(id);
+  });
+
+  const nothing = !entries.length && !body.querySelector("tr.ap-row");
+  const empty = $("#admin-empty");
+  empty.classList.toggle("hidden", !nothing);
+  if (nothing) empty.textContent = _apEmptyText();
+
+  const offset = (_adminPage - 1) * ADMIN_PER_PAGE;
+  let cursor = body.firstElementChild;
+  entries.forEach((e, i) => {
+    const id = e.record_id;
+    while (cursor && !listed.has(cursor.dataset.id)) cursor = _apAfterRow(cursor);
+    const st = _apRow(id);
+    st.entry = e;
+    st.orphan = false;
+    const html = _apRowCells(e, offset + i + 1);
+    let row = _apRowEl(id);
+    if (!row) {
+      row = document.createElement("tr");
+      row.className = "ap-row";
+      row.dataset.id = id;
+      body.insertBefore(row, cursor);
+    } else if (row === cursor) {
+      cursor = _apAfterRow(row);
+    } else {
+      body.insertBefore(row, cursor);
+      const panel = _apPanelEl(id);
+      if (panel) row.after(panel);
+    }
+    const changed = row.dataset.sig !== html;
+    _apSetCells(row, html);
+    if (changed && _apOpen.has(id) && st.phase === "ready") _apRenderActions(id);
+  });
+
+  _apSettleFocus();
+}
+
+/* ---- Focus and announcements ---- */
+
+function _apFocusRow(row) {
+  row.querySelector(".ap-toggle")?.focus({ preventScroll: true });
+  row.scrollIntoView({ block: "nearest" });
+}
+
+// Screen readers hear nothing from #toast, which has no live region.
+function _apAnnounce(text) {
+  let live = $("#ap-live");
+  if (!live) {
+    live = document.createElement("div");
+    live.id = "ap-live";
+    live.className = "sr-only";
+    live.setAttribute("role", "status");
+    $("#admin-tab-entries").appendChild(live);
+  }
+  live.textContent = text;
+}
+
+// After a decision: the next row is open and has focus, on its toggle and never on
+// its Approve, so two presses of Enter cannot approve two entries.
+function _apMoveOn(index) {
+  if (index < 0) return;
+  const rows = _apRows();
+  if (rows[index]) {
+    _apExpand(rows[index].dataset.id);
+    _apFocusRow(rows[index]);
+    return;
+  }
+  // Nothing below it yet: the refresh may pull a row up from the next page.
+  _apPendingIndex = index;
+  if (rows.length) _apFocusRow(rows[rows.length - 1]);
+}
+
+function _apFocusEmpty() {
+  const empty = $("#admin-empty");
+  empty.tabIndex = -1;
+  empty.focus();
+}
+
+function _apSettleFocus() {
+  const modalOpen = !$("#admin-detail-modal").classList.contains("hidden");
+  if (_apReturnTo && !modalOpen) {
+    const { id, index } = _apReturnTo;
+    _apReturnTo = null;
+    const row = _apRowEl(id) || _apRows()[index] || _apRows().at(-1);
+    if (_apOpen.has(id) && _apRowEl(id)) _apLoad(id);   // full review may have changed it
+    if (row) _apFocusRow(row);
+    else _apFocusEmpty();
+    return;
+  }
+  if (_apPendingIndex === null || modalOpen) return;
+  const index = _apPendingIndex;
+  _apPendingIndex = null;
+  // The admin has moved on to something else in the meantime: leave them there.
+  const active = document.activeElement;
+  if (active && active !== document.body && !active.classList.contains("ap-toggle")) return;
+  const rows = _apRows();
+  if (rows[index]) {
+    _apExpand(rows[index].dataset.id);
+    _apFocusRow(rows[index]);
+  } else if (rows.length) {
+    _apFocusRow(rows[rows.length - 1]);
+  } else {
+    _apFocusEmpty();
+  }
+}
+
+/* ---- Arriving from another filter ---- */
+
+// The other filters link to a row here instead of approving it, because the checks
+// are in the panel. The list has no "page of this record", so fetchAdminEntries looks
+// for it page by page.
+function _apGoTo(id, mine) {
+  // Only a list read before the box was ticked still shows the admin's own entries.
+  if (mine && _adminHideMine) {
+    _adminHideMine = false;
+    $("#admin-hide-mine").checked = false;
+    showToast("“Hide entries I validated” is off, to show this entry.");
+  }
+  setAdminFilter($(`#admin-filters [data-filter="${_AP_FILTER}"]`), id);
+}
+
+// One step of that: the next page. Null after the last: it was decided after that
+// list was read.
+function _apSeekOn(total, seek) {
+  if (_adminPage * ADMIN_PER_PAGE < total) {
+    _adminPage += 1;
+    return seek;
+  }
+  _adminPage = 1;
+  showToast("That entry is no longer waiting for approval.");
+  return null;
+}
+
+function _apArrive(id) {
+  _apExpand(id);
+  const row = _apRowEl(id);
+  if (row) _apFocusRow(row);
+}
+
+/* ---- Opening a row ---- */
+
+function _apToggle(id) {
+  if (_apOpen.has(id)) _apCollapse(id);
+  else _apExpand(id);
+}
+
+function _apExpand(id) {
+  const row = _apRowEl(id);
+  if (!row) return;
+  _apOpen.add(id);
+  let panel = _apPanelEl(id);
+  if (!panel) {
+    panel = document.createElement("tr");
+    panel.className = "ap-panel-row";
+    panel.id = `ap-panel-${id}`;
+    panel.dataset.id = id;
+    panel.innerHTML = `<td colspan="${_AP_COLUMNS}">
+      <div class="ap-panel" aria-busy="true">
+        <div class="ap-flags"></div>
+        <div class="ap-body"></div>
+        <div class="ap-actions" tabindex="-1"></div>
+      </div></td>`;
+    row.after(panel);
+  }
+  panel.classList.remove("hidden");
+  row.classList.add("ap-row-open");
+  const toggle = row.querySelector(".ap-toggle");
+  toggle.setAttribute("aria-expanded", "true");
+  toggle.setAttribute("aria-controls", panel.id);
+  if (_apRow(id).phase === "idle") _apLoad(id);
+}
+
+function _apCollapse(id) {
+  const row = _apRowEl(id);
+  const panel = _apPanelEl(id);
+  const inside = panel?.contains(document.activeElement);
+  _apOpen.delete(id);
+  if (_apState[id]) _apState[id].confirming = false;
+  panel?.classList.add("hidden");
+  row?.classList.remove("ap-row-open");
+  const toggle = row?.querySelector(".ap-toggle");
+  toggle?.setAttribute("aria-expanded", "false");
+  toggle?.removeAttribute("aria-controls");
+  if (inside) toggle?.focus();
+}
+
+function _apDropRow(id) {
+  _apPanelEl(id)?.remove();
+  _apRowEl(id)?.remove();
+  _apOpen.delete(id);
+  delete _apState[id];
+}
+
+// The suggestions shown beside an entry, when it has any. As on the full screen the
+// entry can be decided if they fail to load: the count in the detail stands in, so a
+// failed load never hides that there is something to check.
+async function _apReadXo(id, st) {
+  const summary = st.data.extra_originals_summary || {};
+  st.xo = null;
+  st.xoFailed = false;
+  if (!Number(summary.open_suggestions) && !Number(summary.children)) return;
+  try {
+    st.xo = await adminApi(`/entries/${id}/extra-originals`);
+  } catch {
+    st.xoFailed = true;
+  }
+}
+
+// What a panel reads stays in st.data. It never goes in _adminDetailCache, which
+// openAdminDetail would serve: a panel can stay open for hours.
+async function _apLoad(id) {
+  const st = _apRow(id);
+  const gen = ++st.gen;
+  st.phase = "loading";
+  st.error = st.refused = st.notice = null;
+  st.confirming = false;
+  _apRenderPanel(id);
+  const stale = () => _apState[id] !== st || st.gen !== gen;
+
+  let data;
+  try {
+    data = await adminApi(`/entries/${id}`);
+  } catch (e) {
+    if (stale()) return;
+    st.phase = e.status === 404 ? "gone" : "error";
+    st.error = e.message;
+    _apRenderPanel(id);
+    return;
+  }
+  if (stale()) return;
+  st.data = data;
+  if (data.record.validation_status !== "consensus_reached") {
+    _apMarkDecided(id);
+    return;
+  }
+  await _apReadXo(id, st);
+  if (stale()) return;
+  st.phase = "ready";
+  _apRenderPanel(id);
+  _apRefreshRow(id);
+  _apAnnounce("Details loaded.");
+}
+
+function _apMarkDecided(id) {
+  const st = _apState[id];
+  st.phase = "decided";
+  st.confirming = false;
+  st.refused = null;
+  _apRenderPanel(id);
+  _apRefreshRow(id);
+  _apRowEl(id)?.classList.add("ap-row-decided");
+  fetchAdminEntries(false);                  // the counts, and whatever else moved
+}
+
+/* ---- What approving publishes ---- */
+
+// derive_reproduction_outcome, for two values of the stored vocabulary.
+function _apReproOutcome(computation, robustness) {
+  return computation === "cannot_be_determined" || robustness === "cannot_be_determined"
+    ? "cannot_be_determined" : `${computation}, ${robustness}`;
+}
+
+// Mirrors consensus_engine.approval_values() and the INSERT in app.admin_approve;
+// tests/test_approval_preview_parity.py holds the two together. Deliberately not the
+// full screen's Final Preview: that falls back to validators' proposals, which only
+// Mark as Resolved saves. And deliberately the raw doi_r: approve never reads final_doi_r.
+function _apPublished(rec) {
+  const type = rec.final_type || rec.type;
+  const repro = type === "reproduction";
+  const computation = repro ? rec.final_outcome_computation || rec.outcome_computation : null;
+  const robustness = repro ? rec.final_outcome_robustness || rec.outcome_robustness : null;
+  return {
+    type,
+    outcome: computation && robustness ? _apReproOutcome(computation, robustness)
+      : rec.final_outcome || rec.outcome,
+    outcome_computation: computation,
+    outcome_computational_quote: repro ? rec.final_computational_quote || rec.outcome_computational_quote : null,
+    out_quote_computational_source: repro ? rec.final_computational_source || rec.out_quote_computational_source : null,
+    outcome_robustness: robustness,
+    outcome_robustness_quote: repro ? rec.final_robustness_quote || rec.outcome_robustness_quote : null,
+    out_quote_robust_source: repro ? rec.final_robustness_source || rec.out_quote_robust_source : null,
+    title_r: rec.final_title_r || rec.title_r,
+    doi_r: rec.doi_r,
+    url_r: rec.final_url_r || rec.url_r,
+    abstract_r: rec.final_abstract_r || rec.abstract_r,
+    doi_r_published: rec.doi_r_published,
+    alt_identifier_r: rec.alt_identifier_r,
+    // A deliberately blank original DOI stays blank.
+    doi_o: rec.final_doi_o != null ? rec.final_doi_o : rec.doi_o,
+    title_o: rec.final_title_o || rec.title_o,
+    outcome_quote: rec.final_outcome_quote || rec.outcome_quote,
+    out_quote_source: rec.final_out_quote_source || rec.out_quote_source,
+  };
+}
+
+// The replication outcomes approval_values() accepts.
+const _AP_OUTCOMES = new Set(["successful", "failed", "mixed", _FLAWED_OUTCOME, "uninformative",
+                              "descriptive only", "cannot_be_determined"]);
+
+// The refusals of approval_values(), so the button says so before it is pressed.
+// Not the only check: the server's answer is still shown if it refuses a spelling
+// the database should not hold (normalize_axis_value, normalize_outcome).
+function _apCannotApprove(pub) {
+  if (pub.type === "reproduction") {
+    return pub.outcome_computation && pub.outcome_robustness
+      ? null : "Resolve both reproduction axes before approval.";
+  }
+  return pub.type === "replication" && _AP_OUTCOMES.has(pub.outcome)
+    ? null : "Resolve a valid replication outcome before approval.";
+}
+
+const _AP_LEGACY_KEYS = { corrected_title_r: "corrected_study_r", corrected_title_o: "corrected_study_o" };
+function _apSaid(v, key) {
+  return (v && (v[key] || v[_AP_LEGACY_KEYS[key]])) || null;
+}
+
+function _apTypeLabel(type) {
+  return type === "not_validation" ? NOT_IN_FLORA_LABEL : type;
+}
+
+function _apSameValue(a, b) {
+  const norm = (s) => String(s ?? "").trim().toLowerCase()
+    .replace(/^(?:https?:\/\/(?:dx\.)?doi\.org\/|doi:)\s*/, "");
+  return norm(a) === norm(b);
+}
+
+// A validator's proposal that approving will not publish: the losing side of a
+// tiebreak, chiefly (_resolve_final keeps only the winner's corrections), and a
+// corrected replication DOI, which approve ignores. Field edits need full review.
+const _AP_PROPOSALS = [
+  ["corrected_type", "type", "type"],
+  ["corrected_outcome", "outcome", "outcome"],
+  ["corrected_title_o", "title_o", "original title"],
+  ["corrected_doi_o", "doi_o", "original DOI"],
+  ["corrected_title_r", "title_r", "replication title"],
+  ["corrected_url_r", "url_r", "replication link"],
+  ["doi_r_published", "doi_r_published", "published DOI"],
+];
+
+function _apNotCarried(rec, pub) {
+  const out = [];
+  for (const v of [rec.validator_1, rec.validator_2]) {
+    if (!v) continue;
+    const who = v.validator_name || "A validator";
+    for (const [key, field, label] of _AP_PROPOSALS) {
+      if (key === "corrected_type" && v.type_check !== "incorrect") continue;
+      if (key === "corrected_outcome" && pub.type === "reproduction") continue;
+      const said = _apSaid(v, key);
+      if (!said || _apSameValue(said, pub[field])) continue;
+      const shown = key === "corrected_type" ? _apTypeLabel(said)
+        : key === "corrected_outcome" ? fmtOutcome(said) : said;
+      out.push({ who, label, value: shown });
+    }
+  }
+  if (rec.final_doi_r && !_apSameValue(rec.final_doi_r, rec.doi_r)) {
+    out.push({ who: "An earlier decision", label: "replication DOI", value: rec.final_doi_r });
+  }
+  return out;
+}
+
+// The LLM against two validators who agree: _llm_dissent_field in app.py. A check they
+// left as not needed has no answer for it to contradict.
+function _apDissents(a, b, llm, f) {
+  return a[f] != null && a[f] === b[f] && a[f] !== NO_OUTCOME && llm[f] != null && llm[f] !== a[f];
+}
+
+// That test over the detail payload, so it follows a re-read. The list's e.llm_dissent
+// is the same.
+function _apLlmDissent(rec) {
+  const [v1, v2, llm] = [rec.validator_1, rec.validator_2, rec.llm_validator];
+  if (!v1 || !v2 || !llm || "error" in llm) return [];
+  return [["type_check", "type"], ["original_check", "original"], ["outcome_check", "outcome"]]
+    .filter(([f]) => _apDissents(v1, v2, llm, f))
+    .map(([, label]) => label);
+}
+
+/* ---- What stops Approve, and what it asks about first ---- */
+
+// Approve is off, with the reason beside it. The full screen's rule: keep the button,
+// disabled, so nobody wonders where it went.
+function _apBlocks(id) {
+  const st = _apState[id];
+  const data = st?.data;
+  if (!data) return [];
+  const out = [];
+  // Short: the banner at the top of the panel has the full reason.
+  if (data.self_approval?.allowed === false) {
+    out.push("You validated this entry, so another admin needs to decide it.");
+  }
+  const drafted = _xoDraftedCount(id);
+  if (drafted) {
+    out.push(`You drafted ${drafted} additional original${drafted === 1 ? "" : "s"} for this entry. ` +
+             `${drafted === 1 ? "It is" : "They are"} saved with Mark as Resolved, so finish in full review.`);
+  }
+  const cannot = _apCannotApprove(_apPublished(data.record));
+  if (cannot) out.push(cannot);
+  if (st.refused) out.push(st.refused);
+  return out;
+}
+
+// What an admin must have seen before this entry can be approved. None of it stops
+// the server. Each is on screen at the top of the panel, and Approve asks once more
+// when there are any. As HTML.
+function _apWarnings(id) {
+  const st = _apState[id];
+  const data = st?.data;
+  if (!data) return [];
+  const rec = data.record;
+  const e = st.entry || {};
+  const pub = _apPublished(rec);
+  const out = [];
+
+  const quality = Array.isArray(rec.quality_flags) ? rec.quality_flags.length : 0;
+  if (quality) {
+    out.push(`${quality} data-quality problem${quality === 1 ? "" : "s"}: this record may need to be excluded.`);
+  }
+  if (rec.is_tiebreaker) out.push("The validators disagreed and the LLM broke the tie.");
+  const dissent = _apLlmDissent(rec);
+  if (dissent.length) out.push(`The LLM disagrees with both validators on: ${escapeHtml(dissent.join(", "))}.`);
+  if (rec.llm_validator?.error) out.push("The LLM check failed, so no AI check stands behind this entry.");
+  else if (!rec.llm_validator) out.push("The LLM has not checked this entry.");
+
+  const open = Number(data.extra_originals_summary?.open_suggestions) || 0;
+  if (open) {
+    out.push(`Validators suggested ${open} other original${open === 1 ? "" : "s"}. Approving leaves ` +
+             `${open === 1 ? "it" : "them"} open under Suggested originals.`);
+  }
+  const differs = _paperDiffersHtml(data);
+  if (differs) out.push(differs);
+  for (const p of _apNotCarried(rec, pub)) {
+    out.push(`${escapeHtml(p.who)} proposed a different ${escapeHtml(p.label)}: ` +
+             `${escapeHtml(p.value)}. Approving does not publish it.`);
+  }
+  const quoted = [rec.validator_1, rec.validator_2]
+    .filter((v) => v?.additional_checks?.quote_not_in_abstract)
+    .map((v) => v.validator_name || "a validator");
+  if (quoted.length) {
+    out.push(`The outcome quote may not be from the abstract (auto-flagged for ${escapeHtml(quoted.join(" and "))}).`);
+  }
+  if (e.skip_review_required) {
+    const n = Number(e.skip_issue_validator_count) || 0;
+    out.push(`${Number(e.skip_validator_count) || 0} validators skipped this entry` +
+             `${n ? `, ${n} reporting a problem` : ""}. The reasons are in full review.`);
+  }
+  return out;
+}
+
+/* ---- The panel ---- */
+
+function _apDate(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? String(iso)
+    : date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function _apPublishCard(rec, pub) {
+  const row = (label, value) =>
+    `<div class="fp-row"><span class="fp-label">${label}</span><span class="fp-value">${value}</span></div>`;
+  const doi = (d) => _xoPaperLink(d, "") || "—";
+  // As origIdLink: a DOI cleared as wrong has no safe stand-in.
+  const originalId = pub.doi_o ? doi(pub.doi_o)
+    : rec.doi_o ? '<span class="chk-na-note">DOI cleared — no verified link available</span>'
+    : `${_xoPaperLink("", rec.url_o || (rec.oa_work_id_o ? `https://openalex.org/${rec.oa_work_id_o}` : ""))} <span class="chk-na-note">no registered DOI</span>`;
+  const changes = [
+    ["Replication title", rec.title_r, pub.title_r],
+    ["Replication URL", rec.url_r, pub.url_r],
+    ["Original title", rec.title_o, pub.title_o],
+    ["Original DOI", rec.doi_o, pub.doi_o],
+    ["Type", rec.type, pub.type],
+    ["Outcome", fmtOutcome(rec.outcome), fmtOutcome(pub.outcome)],
+    ["Quote", rec.outcome_quote, pub.outcome_quote],
+  ].filter(([, before, after]) => (before || "") !== (after || ""));
+  const clip = (s) => escapeHtml(String(s || "—").substring(0, 80));
+  return `
+    <div class="final-preview-card">
+      <div class="final-preview-header">
+        <span class="fp-title">Final Preview</span>
+        <span class="fp-subtitle">what gets published to FLoRA if approved</span>
+      </div>
+      <div class="fp-fields">
+        ${row("Replication", escapeHtml(pub.title_r || "—"))}
+        ${rec.study_r ? row("Study number(s)", escapeHtml(rec.study_r)) : ""}
+        ${row("DOI", `${doi(pub.doi_r)} · ${escapeHtml(fmtYear(rec.year_r))}`)}
+        ${pub.url_r ? row("URL", _xoPaperLink("", pub.url_r) || escapeHtml(pub.url_r)) : ""}
+        ${pub.doi_r_published ? row("Published DOI", doi(pub.doi_r_published)) : ""}
+        ${pub.alt_identifier_r ? row("Alt. identifiers", escapeHtml(pub.alt_identifier_r)) : ""}
+        <div class="fp-row fp-divider"></div>
+        ${row("Original", escapeHtml(pub.title_o || "—"))}
+        ${rec.study_o ? row("Study number(s)", escapeHtml(rec.study_o)) : ""}
+        ${row("DOI", originalId)}
+        <div class="fp-row fp-divider"></div>
+        ${row("Type", escapeHtml(pub.type || "—"))}
+        ${row("Outcome", escapeHtml(fmtOutcome(pub.outcome) || "—"))}
+        ${pub.type === "reproduction" ? `
+          ${row("Computation", escapeHtml(fmtOutcome(pub.outcome_computation) || "Not coded"))}
+          ${row("Robustness", escapeHtml(fmtOutcome(pub.outcome_robustness) || "Not coded"))}` : ""}
+        ${pub.outcome_quote ? `<div class="fp-row fp-quote-row"><span class="fp-label">Quote</span><span class="fp-value fp-quote">"${escapeHtml(pub.outcome_quote)}"</span></div>` : ""}
+        ${pub.outcome_quote ? row("Quote source", escapeHtml(fmtOutcome(pub.out_quote_source) || "not set")) : ""}
+      </div>
+      ${pub.abstract_r ? `<details class="fp-abstract"><summary>Abstract</summary><p class="fp-abstract-text">${escapeHtml(pub.abstract_r)}</p></details>` : ""}
+      ${changes.length ? `
+        <table class="fp-changes-table">
+          <caption class="sr-only">Corrected by the validators</caption>
+          <thead><tr><th>Corrected</th><th>Extracted</th><th>Published</th></tr></thead>
+          <tbody>${changes.map(([field, before, after]) => `
+            <tr><td class="fp-ch-field">${field}</td>
+                <td class="fp-ch-before">${clip(before)}</td>
+                <td class="fp-ch-after">${clip(after)}</td></tr>`).join("")}
+          </tbody>
+        </table>` : '<p class="fp-no-changes">No field corrections — the extracted values are published as they are.</p>'}
+    </div>`;
+}
+
+// One verdict, as text and as a key to compare two validators by.
+function _apVerdictKey(v, check) {
+  const fix = check === "type_check" ? (v.type_check === "incorrect" ? v.corrected_type : null)
+    : check === "original_check" ? (v.corrected_doi_o || _apSaid(v, "corrected_title_o"))
+    : v.corrected_outcome;
+  return `${v[check] ?? ""}|${fix ?? ""}`;
+}
+
+function _apVerdict(v, check) {
+  if (!v) return '<span class="chk-na">—</span>';
+  const val = v[check];
+  if (val === NO_OUTCOME) {
+    return `<span class="chk-na-note">not needed: ${escapeHtml(v.validator_name || "validator")} marked the wrong paper, with no replacement</span>`;
+  }
+  if (val === "correct") return '<span class="chk-ok">✓ correct</span>';
+  if (val === "uncertain") return '<span class="chk-uncertain" title="The LLM couldn\'t confidently judge this from the abstract">? uncertain</span>';
+  if (val !== "incorrect") return '<span class="chk-na">—</span>';
+  // "Can't tell" is stored as incorrect; its own flag says it was neither answer.
+  const unsure = (check === "original_check" && v.additional_checks?.was_unsure_original) ||
+                 (check === "outcome_check" && v.additional_checks?.was_unsure_outcome);
+  if (unsure) return '<span class="chk-uncertain">? couldn\'t tell</span>';
+  const fix = check === "type_check" ? _apTypeLabel(v.corrected_type)
+    : check === "original_check" ? (v.corrected_doi_o || _apSaid(v, "corrected_title_o"))
+    : fmtOutcome(v.corrected_outcome);
+  return `<span class="chk-fail">✗ incorrect</span>${fix ? ` <span class="chk-correction">→ ${escapeHtml(fix)}</span>` : ""}`;
+}
+
+function _apLongCell(text) {
+  if (!text) return '<span class="chk-na">—</span>';
+  const s = String(text);
+  if (s.length <= 60) return escapeHtml(s);
+  return `<details class="chk-collapsible">
+      <summary class="chk-collapsible-summary"><span class="chk-collapse-preview">${escapeHtml(s.substring(0, 55))}…</span></summary>
+      <span class="chk-long-val">${escapeHtml(s)}</span>
+    </details>`;
+}
+
+function _apJudgeHead(judge, vstats) {
+  const v = judge.v;
+  if (!v) return `<th scope="col">${judge.label}<span class="chk-na-note ap-judge-sub">not submitted</span></th>`;
+  const tier = v.validator_tier ?? 0;
+  const st = vstats[v.validator_id];
+  return `<th scope="col">
+      ${escapeHtml(v.validator_name || judge.label)}
+      ${tier >= 2 ? '<span class="tier-badge tier-senior">Senior</span>' : tier >= 1 ? '<span class="tier-badge tier-trusted">Trusted</span>' : ""}
+      ${st ? `<span class="val-name-stats ap-judge-sub" title="${escapeHtml(_trackRecordTitle(st))}">${escapeHtml(_trackRecordText(st))}</span>` : ""}
+      ${judge.slot?.flagged ? `<span class="chk-fail ap-judge-sub">🚩 flagged${judge.slot.flag_reason ? `: ${escapeHtml(judge.slot.flag_reason)}` : ""}</span>` : ""}
+    </th>`;
+}
+
+// Three columns of what was said, rows only where someone said something. Where the
+// two validators part, the row is marked in text as well as colour.
+function _apCompareHtml(data) {
+  const rec = data.record;
+  const slots = data.queue_slots || [];
+  const vstats = data.validator_stats || {};
+  const judges = [
+    { label: "Validator 1", v: rec.validator_1, slot: slots.find((s) => s.validator_slot === "human_1") },
+    { label: "Validator 2", v: rec.validator_2, slot: slots.find((s) => s.validator_slot === "human_2") },
+  ];
+  const llm = rec.llm_validator;
+  const llmLive = llm && !("error" in llm);
+  const [a, b] = [judges[0].v, judges[1].v];
+  const ctx = llm?.context === "tiebreaker" ? '<span class="tier-badge tier-tiebreaker">Tiebreaker</span>'
+    : llm?.context === "sanity_check" ? '<span class="tier-badge tier-sanity">Sanity Check</span>' : "";
+
+  const checkRow = (check, label) => {
+    const differ = a && b && _apVerdictKey(a, check) !== _apVerdictKey(b, check);
+    const off = llmLive && a && b && _apDissents(a, b, llm, check);
+    return `<tr${differ ? ' class="ap-diff"' : ""}>
+      <th scope="row">${label}${differ ? ' <span class="ap-diff-mark">differs</span>' : ""}</th>
+      <td>${_apVerdict(a, check)}</td>
+      <td>${_apVerdict(b, check)}</td>
+      <td${off ? ' class="ap-llm-off"' : ""}>${llmLive ? _apVerdict(llm, check) : llm ? '<span class="chk-fail">error</span>' : '<span class="chk-na">—</span>'}${off ? ' <span class="ap-diff-mark">dissents</span>' : ""}</td>
+    </tr>`;
+  };
+  const axisRow = (label, key, raw) => {
+    if ((rec.final_type || rec.type) !== "reproduction") return "";
+    const said = (v) => (v ? fmtOutcome(v[key] || (v.outcome_check === "correct" ? raw : null)) || "—" : "—");
+    const differ = a && b && said(a) !== said(b);
+    return `<tr${differ ? ' class="ap-diff"' : ""}><th scope="row">${label}${differ ? ' <span class="ap-diff-mark">differs</span>' : ""}</th>
+      <td>${escapeHtml(said(a))}</td><td>${escapeHtml(said(b))}</td><td><span class="chk-na">—</span></td></tr>`;
+  };
+  const editRow = (label, key) => {
+    const [x, y] = [_apSaid(a, key), _apSaid(b, key)];
+    if (!x && !y) return "";
+    return `<tr><th scope="row">${label}</th><td>${_apLongCell(x)}</td><td>${_apLongCell(y)}</td><td><span class="chk-na">—</span></td></tr>`;
+  };
+  const noteRow = () => {
+    const [x, y, z] = [a?.validator_notes, b?.validator_notes, llm?.error || llm?.notes];
+    if (!x && !y && !z) return "";
+    return `<tr><th scope="row">Notes</th><td>${_apLongCell(x)}</td><td>${_apLongCell(y)}</td><td>${_apLongCell(z)}</td></tr>`;
+  };
+
+  return `
+    <div class="ap-compare-wrap">
+      <table class="ap-compare">
+        <caption class="sr-only">What each validator and the LLM said</caption>
+        <thead><tr>
+          <td></td>
+          ${judges.map((j) => _apJudgeHead(j, vstats)).join("")}
+          <th scope="col">LLM ${ctx}${llm?.model ? `<span class="chk-na-note ap-judge-sub">${escapeHtml(llm.model)}</span>` : ""}</th>
+        </tr></thead>
+        <tbody>
+          ${checkRow("type_check", "Type")}
+          ${checkRow("original_check", "Original")}
+          ${checkRow("outcome_check", "Outcome")}
+          ${axisRow("Computation", "corrected_outcome_computation", rec.outcome_computation)}
+          ${axisRow("Robustness", "corrected_outcome_robustness", rec.outcome_robustness)}
+          ${editRow("Title fix", "corrected_title_r")}
+          ${editRow("Link fix", "corrected_url_r")}
+          ${editRow("Published DOI", "doi_r_published")}
+          ${editRow("Quote", "corrected_outcome_quote")}
+          ${editRow("Abstract", "corrected_abstract")}
+          ${noteRow()}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+// Read-only: "Approve the N awaiting approval" stays on the full screen. Its own open
+// action too, since several panels can be on screen and leaving one saves its note.
+function _apPaperHtml(id, data) {
+  const set = Array.isArray(data.paper_originals) ? data.paper_originals : [];
+  if (!set.length) return "";
+  return _paperOriginalsHtml(set, (o) =>
+    `<button type="button" class="link-btn" data-ap="open" data-id="${escapeHtml(id)}" data-to="${escapeHtml(o.record_id)}">open</button>`,
+    "", _paperDiffersHtml(data));
+}
+
+// Read-only. "Use as additional original" needs the draft form, and Dismiss sits
+// beside it, so both stay in full review.
+function _apXoHtml(st) {
+  const summary = st.data.extra_originals_summary || {};
+  const open = Number(summary.open_suggestions) || 0;
+  const added = Number(summary.children) || 0;
+  if (!open && !added) return "";
+  const groups = (st.xo?.suggestions || []).filter((g) => g.status === "open");
+  const row = (g) => {
+    const who = (g.suggested_by || []).map((s) => escapeHtml(s.validator_name || "a validator")).join(", ");
+    const meta = [_xoPaperLink(g.doi_o, g.url_o), g.study_o ? "Study " + escapeHtml(g.study_o) : "", "suggested by " + who]
+      .filter(Boolean).join(" · ");
+    return `<li class="admin-xo-item">
+        <div class="admin-xo-title">${escapeHtml(g.title_o || g.doi_o || g.url_o || "(untitled)")}</div>
+        <div class="admin-xo-meta">${meta}</div>
+        ${(g.notes || []).length ? `<div class="admin-xo-notes">${g.notes.map((n) => `“${escapeHtml(n)}”`).join(" ")}</div>` : ""}
+      </li>`;
+  };
+  return `
+    <details class="admin-xo"${open ? " open" : ""}>
+      <summary>${_xoSectionTitle(open, added, 0)}</summary>
+      <div class="admin-xo-body">
+        ${groups.length ? `<ul class="admin-xo-list">${groups.map(row).join("")}</ul>` : ""}
+        ${st.xoFailed ? '<p class="faq-error">Could not load the suggestions.</p>' : ""}
+        <p class="chk-na-note">To add or dismiss one, open full review.</p>
+      </div>
+    </details>`;
+}
+
+function _apNoteHint(id) {
+  if (!_apNoteDrafts[id]) return "";
+  const phase = _apState[id]?.phase;
+  return phase === "gone" ? "Not saved, and this entry can no longer take it."
+    : phase === "decided" ? "Not saved yet. Removing this row saves it first."
+    : "Not saved yet. Approving or flagging saves it first.";
+}
+
+function _apNoteBox(id, rec) {
+  const draft = _apNoteDrafts[id];
+  const eid = escapeHtml(id);
+  return `
+    <div class="admin-notes-box ap-notes">
+      <div class="admin-notes-header">
+        <label class="admin-notes-title" for="ap-note-${eid}">Admin Notes</label>
+        <span class="admin-notes-meta" data-ap-note-meta>${rec.note_saved_by
+          ? `Last saved by <strong>${escapeHtml(rec.note_saved_by)}</strong> · ${escapeHtml(_apDate(rec.note_saved_at))}`
+          : "No notes yet"}</span>
+      </div>
+      <textarea id="ap-note-${eid}" class="admin-textarea admin-notes-textarea" data-ap-note data-id="${eid}"
+                placeholder="Add a note for other admins — e.g. DOI doesn't resolve, waiting on a decision…">${escapeHtml(draft ? draft.text : rec.admin_notes || "")}</textarea>
+      <button type="button" class="btn-save-note" data-ap="note" data-id="${eid}">Save Note</button>
+      <span class="chk-na-note ap-note-hint">${_apNoteHint(id)}</span>
+    </div>`;
+}
+
+function _apBodyHtml(id) {
+  const st = _apState[id];
+  const data = st.data;
+  const rec = data.record;
+  // "What gets published if approved" would mislead now. A typed note is kept.
+  if (st.phase === "decided" || st.phase === "gone") {
+    return _apNoteDrafts[id] ? _apNoteBox(id, rec) : "";
+  }
+  const last = (data.decisions || []).at(-1);
+  const pendingNote = last
+    ? `<p class="chk-na-note">Last admin decision: ${escapeHtml(last.action.replace(/_/g, " "))} by ${escapeHtml(last.admin_handle || "an admin")}, ${escapeHtml(_apDate(last.decided_at))}.</p>`
+    : "";
+  return `
+    <div class="ap-cols">
+      <div>${_apPublishCard(rec, _apPublished(rec))}</div>
+      <div>${_apCompareHtml(data)}${pendingNote}</div>
+    </div>
+    ${_apPaperHtml(id, data)}
+    ${_apXoHtml(st)}
+    ${_apNoteBox(id, rec)}`;
+}
+
+function _apFlagsHtml(id) {
+  const st = _apState[id];
+  const data = st?.data;
+  if (!data || st.phase === "decided" || st.phase === "gone") return "";
+  const rec = data.record;
+  const self = data.self_approval || {};
+  const flags = Array.isArray(rec.quality_flags) ? rec.quality_flags : [];
+  // The quality line comes first and repeats the list just above it here; the
+  // confirmation at the buttons still needs it.
+  const warnings = _apWarnings(id).slice(flags.length ? 1 : 0);
+  return `
+    ${self.mine ? (self.allowed
+      ? `<div class="admin-self-banner admin-self-ok"><strong>You validated this entry.</strong> The other validator agreed with you, so you may decide it.</div>`
+      : `<div class="admin-self-banner"><strong>${escapeHtml(self.reason || "You validated this entry, so another admin needs to decide it.")}</strong></div>`) : ""}
+    ${flags.length ? `<ul class="aq-list ap-quality">${flags.map((f) => `
+      <li class="aq-item">
+        <span class="aq-label">${escapeHtml(f.label || f.code || "Check failed")}</span>
+        ${f.detail ? `<span class="aq-detail">${escapeHtml(f.detail)}</span>` : ""}
+      </li>`).join("")}</ul>` : ""}
+    ${warnings.length ? `<ul class="ap-warn-list">${warnings.map((w) => `<li>${w}</li>`).join("")}</ul>` : ""}`;
+}
+
+function _apMessagesHtml(st) {
+  return `
+    ${st.notice ? `<p class="ap-notice" role="alert" data-ap-focus tabindex="-1">${escapeHtml(st.notice)}</p>` : ""}
+    ${st.error ? `<p class="faq-error" role="alert" data-ap-focus tabindex="-1">${escapeHtml(st.error)}</p>` : ""}`;
+}
+
+function _apDecidedHtml(id) {
+  const st = _apState[id];
+  const rec = st.data.record;
+  const eid = escapeHtml(id);
+  const last = (st.data.decisions || []).at(-1);
+  const status = (STATUS_LABELS[rec.validation_status] || {}).text || rec.validation_status;
+  const how = rec.validation_status === "validated" && !rec.admin_checked
+    ? `A rule validated it: ${_autoValidatedHow(rec.auto_validated_rule)}.`
+    : last
+    ? `${escapeHtml(last.action.replace(/_/g, " "))} by ${escapeHtml(last.admin_handle || "an admin")}, ${escapeHtml(_apDate(last.decided_at))}.`
+    : "";
+  return `
+    ${_apMessagesHtml(st)}
+    <p class="ap-decided" role="status" data-ap-focus tabindex="-1"><strong>Already decided, now ${escapeHtml(status)}:</strong> ${how}</p>
+    <div class="ap-buttons">
+      <button type="button" class="btn-outline" data-ap="dismiss" data-id="${eid}">Remove from this list</button>
+      <button type="button" class="btn-outline" data-ap="full" data-id="${eid}">Open it →</button>
+    </div>`;
+}
+
+function _apActionsHtml(id) {
+  const st = _apState[id];
+  const eid = escapeHtml(id);
+  const busy = st.phase === "busy";
+  const fullBtn = `<button type="button" class="btn-outline" data-ap="full" data-id="${eid}"${busy ? " disabled" : ""}>Open full review →</button>`;
+
+  if (st.phase === "idle" || st.phase === "loading") return "";
+  if (st.phase === "error") {
+    return `
+      <p class="faq-error" role="alert" data-ap-focus tabindex="-1">Could not load this entry: ${escapeHtml(st.error)}</p>
+      <div class="ap-buttons">
+        <button type="button" class="btn-outline" data-ap="retry" data-id="${eid}">↺ Retry</button>${fullBtn}
+      </div>`;
+  }
+  if (st.phase === "gone") {
+    return `
+      <p class="ap-decided" role="status" data-ap-focus tabindex="-1">This entry no longer exists.</p>
+      <div class="ap-buttons"><button type="button" class="btn-outline" data-ap="dismiss" data-id="${eid}">Remove from this list</button></div>`;
+  }
+  if (st.phase === "decided") return _apDecidedHtml(id);
+
+  const warnings = _apWarnings(id);
+  if (st.confirming && warnings.length) {
+    return `
+      ${_apMessagesHtml(st)}
+      <div class="ap-confirm" role="group" aria-labelledby="ap-confirm-${eid}">
+        <p id="ap-confirm-${eid}" class="ap-confirm-title" data-ap-focus tabindex="-1">Approve with ${warnings.length} thing${warnings.length === 1 ? "" : "s"} still open?</p>
+        <ul class="ap-warn-list">${warnings.map((w) => `<li>${w}</li>`).join("")}</ul>
+        <div class="ap-buttons">
+          <button type="button" class="admin-approve-btn ap-approve" data-ap="confirm" data-id="${eid}">Yes, approve ✓</button>
+          <button type="button" class="btn-outline" data-ap="cancel" data-id="${eid}">Go back</button>
+          ${fullBtn}
+        </div>
+      </div>`;
+  }
+
+  const blocks = _apBlocks(id);
+  const self = st.data.self_approval?.allowed === false;
+  const whyId = `ap-why-${eid}`;
+  return `
+    ${_apMessagesHtml(st)}
+    ${blocks.length ? `<ul id="${whyId}" class="ap-block-list"${st.refused ? ' role="alert"' : ""}>${blocks.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>` : ""}
+    <div class="ap-buttons">
+      <button type="button" class="admin-approve-btn ap-approve" data-ap="approve" data-id="${eid}"
+              ${busy || blocks.length ? "disabled" : ""}${blocks.length ? ` aria-describedby="${whyId}"` : ""}>${busy && st.busy === "approve" ? "Approving…" : "Approve ✓"}</button>
+      <button type="button" class="btn-outline" data-ap="flag" data-id="${eid}"
+              ${busy || self ? "disabled" : ""}${self ? ` aria-describedby="${whyId}"` : ""}>${busy && st.busy === "flag" ? "Flagging…" : "⚑ Flag for review"}</button>
+      ${fullBtn}
+      ${warnings.length && !blocks.length ? `<span class="chk-na-note">${warnings.length} to check first</span>` : ""}
+    </div>`;
+}
+
+function _apRenderActions(id, takeFocus = false) {
+  const panel = _apPanelEl(id);
+  if (!panel || !_apState[id]) return;
+  panel.querySelector(".ap-flags").innerHTML = _apFlagsHtml(id);
+  const box = panel.querySelector(".ap-actions");
+  const hadFocus = takeFocus || box.contains(document.activeElement);
+  box.innerHTML = _apActionsHtml(id);
+  // A decision saves the note and then drops the row: typing on would go nowhere.
+  const note = panel.querySelector("[data-ap-note]");
+  if (note) note.readOnly = _apState[id].phase === "busy";
+  // Only when the admin was here: a load finishing must not pull focus off the row.
+  if (hadFocus) (box.querySelector("[data-ap-focus]") || box).focus({ preventScroll: true });
+}
+
+// The only place the body is drawn, and so the only place st.shownPrint is written.
+function _apRenderPanel(id) {
+  const panel = _apPanelEl(id);
+  const st = _apState[id];
+  if (!panel || !st) return;
+  const active = document.activeElement;
+  const inside = panel.contains(active);
+  const typing = inside && active.matches("[data-ap-note]");
+  panel.querySelector(".ap-panel").setAttribute("aria-busy", String(st.phase === "loading"));
+  panel.querySelector(".ap-body").innerHTML = st.data
+    ? _apBodyHtml(id)
+    : st.phase === "loading" ? '<p class="faq-loading">Loading…</p>' : "";
+  st.shownPrint = st.data ? _apPrint(st.data) : null;
+  _apRenderActions(id, inside && !typing);
+  if (typing) panel.querySelector("[data-ap-note]")?.focus({ preventScroll: true });
+}
+
+// What the panel draws from a read, to tell whether a later read still matches it.
+function _apPrint(data) {
+  const rec = data.record;
+  // Approving a paper's originals one by one is the ordinary way through it, and must
+  // not stop each next one. A sibling flagged or excluded is news.
+  const siblings = (data.paper_originals || []).map((o) => ({ ...o,
+    validation_status: o.validation_status === "validated" ? "consensus_reached" : o.validation_status }));
+  return JSON.stringify([_apPublished(rec), rec.validator_1, rec.validator_2, rec.llm_validator,
+                         rec.quality_flags, rec.is_tiebreaker, siblings, data.paper_differs_on || [],
+                         data.extra_originals_summary, data.self_approval?.allowed]);
+}
+
+// Every re-read that is kept comes through here, so st.data never moves on without
+// the panel. The comparison is with what was last drawn, not with the last read: a
+// read kept undrawn would make the next one look unchanged, and approve values nobody
+// saw, since the server compares nothing.
+async function _apAdopt(id, fresh) {
+  const st = _apState[id];
+  const changed = _apPrint(fresh) !== st.shownPrint;
+  st.data = fresh;
+  st.confirming = false;
+  if (fresh.record.validation_status !== "consensus_reached") {
+    _apMarkDecided(id);
+    return;
+  }
+  if (changed) {
+    st.notice = "This entry changed while it was open. Check it again before deciding." +
+                (st.notice ? ` ${st.notice}` : "");
+    st.refused = null;
+  }
+  st.phase = "ready";
+  _apRenderPanel(id);
+  _apRefreshRow(id);
+  if (!changed) return;
+  // Drawn first, so nothing can be decided on a read the panel has not shown yet.
+  await _apReadXo(id, st);
+  if (_apState[id] === st && (st.xo || st.xoFailed)) _apRenderPanel(id);
+}
+
+/* ---- Notes ---- */
+
+function _apNoteConflict(id, rec) {
+  const draft = _apNoteDrafts[id];
+  if (!draft) return false;
+  const stored = rec.admin_notes || "";
+  // The same text is this note, saved earlier with the answer lost.
+  return stored !== draft.base && stored.trim() !== draft.text.trim();
+}
+
+// Another admin's note would be overwritten without either of them knowing: /note
+// is last write wins. Stop once and show it; saving again replaces it knowingly.
+function _apShowNoteConflict(id, rec) {
+  const st = _apState[id];
+  const draft = _apNoteDrafts[id];
+  draft.base = rec.admin_notes || "";
+  st.notice = `${rec.note_saved_by || "Another admin"} saved a note while you were typing: “${draft.base}”. ` +
+              "Saving yours replaces it.";
+}
+
+async function _apPostNote(id) {
+  const draft = _apNoteDrafts[id];
+  if (!draft) return;
+  const note = draft.text.trim();
+  await adminApi(`/entries/${id}/note`, "POST", { note: note || null });
+  const st = _apState[id];
+  for (const row of [st?.data?.record, st?.entry]) {
+    if (!row) continue;
+    row.admin_notes = note || null;
+    row.note_saved_by = _adminHandle;
+    row.note_saved_at = new Date().toISOString();
+  }
+  const box = _apPanelEl(id)?.querySelector(".ap-notes");
+  const meta = box?.querySelector("[data-ap-note-meta]");
+  if (meta) meta.innerHTML = `Last saved by <strong>${escapeHtml(_adminHandle || "admin")}</strong> · just now`;
+  // What was typed while that went is still not saved, on top of what now is.
+  const typed = box?.querySelector("[data-ap-note]")?.value ?? _apNoteDrafts[id]?.text ?? note;
+  if (typed.trim() === note) delete _apNoteDrafts[id];
+  else _apNoteDrafts[id] = { text: typed, base: note };
+  const hint = box?.querySelector(".ap-note-hint");
+  if (hint) hint.textContent = _apNoteHint(id);
+  _apRefreshRow(id);
+}
+
+// Save a typed note, after a read of its own: another admin's note must be seen before
+// it is replaced. Every way out of a panel comes through here, so none can overwrite
+// a note unseen or drop one unsaved. True when nothing is left unsaved. False when the
+// note, or what was typed after it, did not go, and the panel, opened if it was not,
+// says why.
+async function _apSaveTyped(id) {
+  if (!_apNoteDrafts[id]) return true;
+  const st = _apState[id];
+  // Typed before the list changed, on a row not read since: show it first.
+  if (!st?.data) { _apExpand(id); return false; }
+  try {
+    const fresh = await adminApi(`/entries/${id}`);
+    if (_apState[id] !== st) return false;
+    if (_apNoteConflict(id, fresh.record)) {
+      _apExpand(id);
+      _apShowNoteConflict(id, fresh.record);
+      await _apAdopt(id, fresh);
+      return false;
+    }
+    await _apPostNote(id);
+    if (!_apNoteDrafts[id]) return true;
+    // Typed on while it went: the hint says that part is not saved.
+    if (st.phase === "busy") st.phase = "ready";
+    _apRenderActions(id);
+    return false;
+  } catch (e) {
+    if (_apState[id] !== st) return false;
+    _apExpand(id);
+    st.error = "Note not saved: " + e.message;
+    if (st.phase === "busy") st.phase = "ready";
+    _apRenderActions(id);
+    return false;
+  }
+}
+
+async function _apSaveNote(id, btn) {
+  const st = _apState[id];
+  if (!st?.data || !_apNoteDrafts[id] || st.phase === "busy") return;
+  btn.disabled = true;
+  btn.textContent = "Saving…";
+  st.error = st.notice = null;
+  if (await _apSaveTyped(id)) {
+    btn.textContent = "Saved ✓";
+    _apRenderActions(id);
+    setTimeout(() => { btn.textContent = "Save Note"; btn.disabled = false; }, 2500);
+    return;
+  }
+  btn.textContent = "Save Note";
+  btn.disabled = false;
+}
+
+/* ---- Deciding ---- */
+
+// Read the entry again just before deciding. Approve refuses an entry no longer
+// waiting, but flag-review does not (it takes need_review and auto-validated entries
+// too), and neither would say that the values changed under a panel left open. This
+// narrows the window; it does not close it, and the server stays the judge. False when
+// the panel has been redrawn with the reason. When it matches, st.data stays as it
+// is: nothing the panel shows has moved.
+async function _apStillCurrent(id) {
+  const st = _apState[id];
+  const fresh = await adminApi(`/entries/${id}`);
+  if (_apState[id] !== st) return false;
+  if (fresh.record.validation_status === "consensus_reached" && _apPrint(fresh) === st.shownPrint) return true;
+  await _apAdopt(id, fresh);
+  return false;
+}
+
+async function _apDecide(id, busy, send, done) {
+  const st = _apState[id];
+  if (!st || st.phase !== "ready") return;
+  if (Date.now() - _apLastDecisionAt < _AP_DOUBLE_CLICK_MS) return;
+  st.phase = "busy";
+  st.busy = busy;
+  st.error = st.notice = null;
+  _apRenderActions(id);
+  let sent = false;
+  try {
+    // The note first, so a refusal cannot lose it, and the comparison last, so that
+    // nothing stands between it and the decision: the server cannot be told what the
+    // admin saw, and approve publishes whatever is stored when it lands.
+    if (!await _apSaveTyped(id)) return;
+    if (!await _apStillCurrent(id)) return;
+    sent = true;
+    await send();
+  } catch (e) {
+    await _apRefused(id, e, sent);
+    return;
+  }
+  done();
+}
+
+function _apApprove(id) {
+  const st = _apState[id];
+  if (!st || st.phase !== "ready" || _apBlocks(id).length) return;
+  if (_apWarnings(id).length) {
+    st.confirming = true;
+    st.armedAt = Date.now();
+    _apRenderActions(id);
+    return;
+  }
+  _apSendApprove(id);
+}
+
+function _apConfirmApprove(id) {
+  const st = _apState[id];
+  if (!st?.confirming || Date.now() - st.armedAt < _AP_DOUBLE_CLICK_MS) return;
+  // What _apDecide would refuse, refused here, with the question still up to answer.
+  if (st.phase !== "ready" || Date.now() - _apLastDecisionAt < _AP_DOUBLE_CLICK_MS) return;
+  st.confirming = false;
+  _apSendApprove(id);
+}
+
+function _apSendApprove(id) {
+  return _apDecide(id, "approve",
+    () => adminApi(`/entries/${id}/approve`, "POST"),
+    () => {
+      showToast(_xoPendingNote(id, "Entry approved."));
+      _apLeave(id, "#fc-validated", "Approved.");
+    });
+}
+
+function _apFlag(id) {
+  // Off on screen too. The server would accept it, so this is the panel's own rule.
+  if (_apState[id]?.data?.self_approval?.allowed === false) return;
+  return _apDecide(id, "flag",
+    () => adminApi(`/entries/${id}/flag-review`, "POST", {}),
+    () => {
+      showToast("Record flagged for review.");
+      _apLeave(id, "#fc-needs-review", "Flagged for review.");
+    });
+}
+
+// Why it did not go through, shown in the panel: a dialog would leave the row.
+//   404, or 400 from flag-review: the entry moved on.
+//   403: the self-approval rule, whatever the panel believed.
+//   409, or 400 from approve: only full review can settle it (a duplicate to merge,
+//        an added original in the way, a missing outcome), so Approve stays off.
+//   No status: the request may or may not have landed, so look before saying.
+// A read taken here goes through _apAdopt like any other. `sent`: the decision itself
+// went out, rather than a read before it.
+async function _apRefused(id, e, sent) {
+  const st = _apState[id];
+  if (!st) { await showAlert("Error: " + e.message); return; }
+  st.confirming = false;
+  let fresh = null;
+  if (e.status === undefined || e.status === 400 || e.status === 404) {
+    try {
+      fresh = await adminApi(`/entries/${id}`);
+    } catch (again) {
+      if (again.status === 404 && _apState[id] === st) {
+        st.phase = "gone";
+        _apRenderPanel(id);
+        return;
+      }
+    }
+    if (_apState[id] !== st) return;
+    if (fresh && fresh.record.validation_status !== "consensus_reached") {
+      const decisions = fresh.decisions || [];
+      const isNew = decisions.length > (st.data.decisions || []).length;
+      if (sent && e.status === undefined && isNew && _adminHandle && decisions.at(-1).admin_handle === _adminHandle) {
+        // It landed; only the answer was lost.
+        showToast("Saved.");
+        _apLeave(id, null, "Saved.");
+        return;
+      }
+      await _apAdopt(id, fresh);
+      return;
+    }
+  }
+  if (e.status === 403) {
+    st.data.self_approval = { ...(st.data.self_approval || {}), mine: true, allowed: false, reason: e.message };
+  } else if (e.status === 409 || e.status === 400) {
+    st.refused = e.message;
+  } else if (e.status === undefined) {
+    st.error = !sent ? "Could not reach the server, so nothing was sent. Try again."
+      : fresh ? "Could not reach the server, and the entry is still waiting. Try again."
+      : "Could not reach the server, and cannot tell whether that went through. Check the entry before trying again.";
+  } else {
+    st.error = e.message;
+  }
+  st.phase = "ready";
+  if (fresh) {
+    await _apAdopt(id, fresh);
+    return;
+  }
+  _apRefreshRow(id);
+  _apRenderActions(id);
+}
+
+// The entry is decided: out of the list, the counts follow at once, and the next
+// row opens, as the full screen moves to the next entry (advanceToNextAdminEntry).
+function _apLeave(id, into, spoken) {
+  const index = _apRows().findIndex((row) => row.dataset.id === id);
+  if (into) _apLastDecisionAt = Date.now();
+  _adminEntryIds = _adminEntryIds.filter((x) => x !== id);
+  delete _adminDetailCache[id];
+  delete _adminXoCache[id];
+  delete _apNoteDrafts[id];
+  _apDropRow(id);
+  if (into) {
+    _apBump("#fc-pending-approval", -1);
+    _apBump(into, 1);
+  }
+  _apMoveOn(index);
+  if (spoken) _apAnnounce(spoken);
+  fetchAdminEntries(false);
+}
+
+function _apBump(sel, by) {
+  const el = $(sel);
+  const n = Number(el?.textContent);
+  if (el && el.textContent !== "" && Number.isFinite(n)) el.textContent = Math.max(0, n + by);
+}
+
+// "Remove from this list". A typed note is saved first, as on every way out, except
+// where the entry no longer exists: the note box stayed on screen until this press.
+async function _apDismiss(id, btn) {
+  const st = _apState[id];
+  if (!st) return;
+  btn.disabled = true;
+  st.error = st.notice = null;
+  if (st.phase === "gone" || await _apSaveTyped(id)) _apLeave(id, null, "");
+  else btn.disabled = false;
+}
+
+// To the full screen. openAdminDetail and what moves on from it (Skip, the next entry
+// after Mark as Resolved) serve _adminDetailCache when they can, so it starts empty
+// and they read for themselves. A note typed here goes first, or it would not be in
+// that form.
+async function _apOpenFull(id, from = id) {
+  if (_apState[from]?.phase === "busy") return;
+  if (!await _apSaveTyped(from)) return;
+  _apReturnTo = { id: from, index: _apRows().findIndex((row) => row.dataset.id === from) };
+  _adminDetailCache = {};
+  openAdminDetail(id);
+}
+
+/* ---- Events: one set, delegated, on the table body ---- */
+
+function _apOnClick(ev) {
+  if (!_apActive()) return;
+  const el = ev.target.closest("[data-ap]");
+  if (!el) {
+    // Anywhere else on the row opens it too, unless text is being selected.
+    const row = ev.target.closest("tr.ap-row");
+    if (row && !ev.target.closest("a, button") && String(getSelection()) === "") _apToggle(row.dataset.id);
+    return;
+  }
+  const id = el.dataset.id;
+  switch (el.dataset.ap) {
+    case "toggle":  _apToggle(id); break;
+    case "retry":   _apLoad(id); break;
+    case "approve": _apApprove(id); break;
+    case "confirm": _apConfirmApprove(id); break;
+    case "flag":    _apFlag(id); break;
+    case "note":    _apSaveNote(id, el); break;
+    case "full":    _apOpenFull(id); break;
+    case "open":    _apOpenFull(el.dataset.to, id); break;
+    case "dismiss": _apDismiss(id, el); break;
+    case "cancel":
+      _apState[id].confirming = false;
+      _apRenderActions(id);
+      _apPanelEl(id)?.querySelector('[data-ap="approve"]')?.focus();
+      break;
+  }
+}
+
+function _apOnInput(ev) {
+  if (!_apActive() || !ev.target.matches("[data-ap-note]")) return;
+  const id = ev.target.dataset.id;
+  const rec = _apState[id]?.data?.record;
+  if (!rec) return;
+  const stored = rec.admin_notes || "";
+  if (ev.target.value.trim() === stored.trim()) delete _apNoteDrafts[id];
+  else _apNoteDrafts[id] = { text: ev.target.value, base: _apNoteDrafts[id]?.base ?? stored };
+  const hint = ev.target.closest(".ap-notes")?.querySelector(".ap-note-hint");
+  if (hint) hint.textContent = _apNoteHint(id);
+  _apRefreshRow(id);
+}
+
+// Escape closes the confirmation, then the panel. Not from the note: it would be
+// an easy way to lose sight of unsaved text.
+function _apOnKeydown(ev) {
+  if (ev.key !== "Escape" || !_apActive() || ev.target.matches("textarea")) return;
+  const panel = ev.target.closest(".ap-panel-row");
+  if (!panel) return;
+  const id = panel.dataset.id;
+  if (_apState[id]?.confirming) {
+    _apState[id].confirming = false;
+    _apRenderActions(id);
+    panel.querySelector('[data-ap="approve"]')?.focus();
+  } else {
+    _apCollapse(id);
+  }
+}
+
+$("#admin-table-body").addEventListener("click", _apOnClick);
+$("#admin-table-body").addEventListener("input", _apOnInput);
+$("#admin-table-body").addEventListener("keydown", _apOnKeydown);
 
 async function openAdminDetail(recordId) {
   const modal = $("#admin-detail-modal");
@@ -6561,9 +8035,20 @@ function _adminRemovalBanner(data) {
     </div>`;
 }
 
-function _adminPaperOriginals(data) {
-  const set = Array.isArray(data.paper_originals) ? data.paper_originals : [];
-  if (!set.length) return "";
+// The originals of one paper keep their own copies of its link and abstract, and each
+// copy reaches FLoRA. The server says which differ (paper_review.paper_differs_on). A
+// warning, never a block. As HTML, or "" when they agree.
+function _paperDiffersHtml(data) {
+  const fields = Array.isArray(data.paper_differs_on) ? data.paper_differs_on : [];
+  if (!fields.length) return "";
+  const names = fields.map((f) => ({ url_r: "link", abstract_r: "abstract" })[f] || f);
+  return `These originals would publish the paper two ways: they differ on the ${escapeHtml(_nameList(names))}.`;
+}
+
+// A paper's coded originals. `open` builds the button on the rows of other entries.
+// The panels in Pending Approval have their own; `footer` is for the full screen.
+// `warning` stands above the list, so that collapsing the list does not hide it.
+function _paperOriginalsHtml(set, open, footer = "", warning = "") {
   const word = (check) => ({ correct: "✓", incorrect: "✗", not_applicable: "–" })[check] || "?";
   const answers = (list) => (list || []).length ? list.map(word).join(" ") : "not yet";
   const waiting = set.filter(o => o.validation_status === "consensus_reached");
@@ -6577,9 +8062,10 @@ function _adminPaperOriginals(data) {
       <td title="Original check, one mark per validator">${answers(o.original_checks)}</td>
       <td title="Outcome check, one mark per validator">${answers(o.outcome_checks)}${o.shared_check ? ` <span class="pr-flag">shared</span>` : ""}</td>
       <td>${escapeHtml(fmtOutcome(o.final_outcome || o.outcome || ""))}</td>
-      <td>${o.is_current ? `<span class="pr-flag">this entry</span>` : `<button type="button" class="link-btn" data-paper-open="${escapeHtml(o.record_id)}">open</button>`}</td>
+      <td>${o.is_current ? `<span class="pr-flag">this entry</span>` : open(o)}</td>
     </tr>`).join("");
   return `
+    ${warning ? `<p class="paper-differs">${warning}</p>` : ""}
     <details class="admin-paper-set" open>
       <summary>This paper has ${set.length} coded originals${waiting.length ? ` · ${waiting.length} awaiting approval` : ""}</summary>
       <div class="pr-table-wrap">
@@ -6588,8 +8074,18 @@ function _adminPaperOriginals(data) {
           <tbody>${rows}</tbody>
         </table>
       </div>
-      ${waiting.length > 1 ? `<button type="button" class="btn-outline" id="admin-approve-paper-btn">Approve the ${waiting.length} awaiting approval</button>` : ""}
+      ${footer}
     </details>`;
+}
+
+function _adminPaperOriginals(data) {
+  const set = Array.isArray(data.paper_originals) ? data.paper_originals : [];
+  if (!set.length) return "";
+  const waiting = set.filter(o => o.validation_status === "consensus_reached");
+  return _paperOriginalsHtml(set,
+    (o) => `<button type="button" class="link-btn" data-paper-open="${escapeHtml(o.record_id)}">open</button>`,
+    waiting.length > 1 ? `<button type="button" class="btn-outline" id="admin-approve-paper-btn">Approve the ${waiting.length} awaiting approval</button>` : "",
+    _paperDiffersHtml(data));
 }
 
 function _wireAdminPaperReview(rec, data) {
@@ -6883,7 +8379,7 @@ function _xoPendingNote(recordId, message, used = []) {
   const open = xo
     ? (xo.suggestions || []).filter((g) => g.status === "open" &&
         !(g.open_suggestion_ids || []).every((id) => used.includes(id))).length
-    : Number(_adminDetailCache[recordId]?.extra_originals_summary?.open_suggestions) || 0;
+    : Number((_adminDetailCache[recordId] || _apState[recordId]?.data)?.extra_originals_summary?.open_suggestions) || 0;
   return open
     ? `${message} Validators suggested ${open} other original${open === 1 ? "" : "s"}: find ${open === 1 ? "it" : "them"} under Suggested originals.`
     : message;
@@ -8428,7 +9924,9 @@ function closeAdminDetail() {
   const flagsOpen = !$("#validator-flags-modal").classList.contains("hidden");
   if (!flagsOpen) {
     document.body.style.overflow = "";
-    fetchAdminEntries();
+    // Pending Approval keeps its open rows, so no reset to empty the cache.
+    if (_apActive()) _adminDetailCache = {};
+    fetchAdminEntries(!_apActive());
   }
 }
 
@@ -10393,9 +11891,7 @@ $("#admin-tabs").addEventListener("click", (e) => {
 $("#admin-logout-btn").onclick = signOutAdmin;
 $("#admin-detail-close").onclick = closeAdminDetail;
 onBackdropClick($("#admin-detail-modal"), closeAdminDetail);
-$("#admin-filters").addEventListener("click", (e) => {
-  const btn = e.target.closest(".admin-filter-btn");
-  if (!btn) return;
+function setAdminFilter(btn, seek = null) {
   $("#admin-filters").querySelectorAll(".admin-filter-btn").forEach((b) => b.classList.remove("active"));
   btn.classList.add("active");
   _adminFilter = btn.dataset.filter;
@@ -10403,7 +11899,11 @@ $("#admin-filters").addEventListener("click", (e) => {
   _adminSearch = "";
   const searchInput = $("#admin-search-input");
   if (searchInput) searchInput.value = "";
-  fetchAdminEntries();
+  fetchAdminEntries(true, seek);
+}
+$("#admin-filters").addEventListener("click", (e) => {
+  const btn = e.target.closest(".admin-filter-btn");
+  if (btn) setAdminFilter(btn);
 });
 
 // Sortable Entries column headers.

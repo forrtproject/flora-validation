@@ -5284,7 +5284,7 @@ def admin_entry_detail(record_id: str, admin: dict = Depends(current_admin)):
                 record[field] = json.loads(val)
 
         self_approval = _self_approval(cur, record_id, admin)
-        paper_originals = paper_review.admin_paper_set(cur, record)
+        paper_originals, paper_differs_on = paper_review.admin_paper_set(cur, record)
         cur.execute(
             "SELECT decided_at, admin_handle, action, status_before, status_after, changes "
             "FROM admin_decisions WHERE record_id = %s ORDER BY decided_at",
@@ -5433,6 +5433,7 @@ def admin_entry_detail(record_id: str, admin: dict = Depends(current_admin)):
             "abstract_only_conflict": abstract_only_conflict,
             "original_removal": original_removal,
             "paper_originals": paper_originals,
+            "paper_differs_on": paper_differs_on,
             "validator_stats": validator_stats,
             "duplicate_merge": duplicate_merge,
             "skip_history": skip_history,

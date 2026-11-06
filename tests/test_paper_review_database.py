@@ -604,6 +604,132 @@ def test_a_reproduction_can_be_wrong_paper_with_no_axes(api, local_database):
     assert response.status_code == 200, response.text
 
 
+OTHER_ABSTRACT = "We propose to repeat a survey of sleep habits among students next year."
+# paper_originals as it was before the paper's copies were compared.
+ORIGINAL_FIELDS = {"record_id", "title_o", "final_title_o", "year_o", "doi_o", "final_doi_o", "outcome",
+                   "final_outcome", "validation_status", "authors_o", "original_rank", "original_checks",
+                   "outcome_checks", "shared_check", "is_current"}
+
+
+def _set_columns(cur, record_id, **columns):
+    assignments = ", ".join(f"{name} = %s" for name in columns)
+    cur.execute(f"UPDATE unvalidated SET {assignments} WHERE record_id = %s", (*columns.values(), record_id))
+
+
+def test_the_detail_names_what_the_originals_would_publish_differently(api, local_database):
+    client, _ = api
+    with local_database, _cursor(local_database) as cur:
+        first = _record(cur, 1, status="consensus_reached")
+        second = _record(cur, 2, status="validated", abstract=OTHER_ABSTRACT)
+        _set_columns(cur, first, url_r="https://doi.org/10.9/paper/")
+        _set_columns(cur, second, url_r="http://dx.doi.org/10.9/PAPER", final_url_r="https://osf.io/abc")
+
+    detail = client.get(f"/api/admin/entries/{first}").json()
+    assert detail["paper_differs_on"] == ["url_r", "abstract_r"]
+    assert {o["record_id"] for o in detail["paper_originals"]} == {first, second}
+    # Compared, then dropped: the rows keep their shape, and no copy travels with them.
+    assert [set(o) for o in detail["paper_originals"]] == [ORIGINAL_FIELDS, ORIGINAL_FIELDS]
+    sent = json.dumps(detail["paper_originals"])
+    assert OTHER_ABSTRACT not in sent and "osf.io" not in sent
+
+    # The same link in other clothes, once the correction is gone.
+    with local_database, _cursor(local_database) as cur:
+        _set_columns(cur, second, final_url_r=None, final_abstract_r=QUOTE)
+        _set_columns(cur, first, abstract_r=f"Abstract: {QUOTE}")
+    assert client.get(f"/api/admin/entries/{second}").json()["paper_differs_on"] == []
+
+
+@pytest.mark.parametrize("status", ["rejected", "need_review"])
+def test_a_sibling_not_on_its_way_to_flora_differs_from_nothing(api, local_database, status):
+    client, _ = api
+    with local_database, _cursor(local_database) as cur:
+        first = _record(cur, 1, status="consensus_reached")
+        second = _record(cur, 2, status="validated")
+        sibling = _record(cur, 3, status=status, abstract=OTHER_ABSTRACT)
+        _set_columns(cur, sibling, url_r="https://osf.io/abc")
+
+    detail = client.get(f"/api/admin/entries/{first}").json()
+    assert len(detail["paper_originals"]) == 3, "it is still listed"
+    assert detail["paper_differs_on"] == []
+
+
+def test_a_merged_duplicate_repeats_its_survivor_and_stops_counting(api, local_database):
+    client, _ = api
+    with local_database, _cursor(local_database) as cur:
+        survivor = _record(cur, 1, status="validated")
+        cur.execute(
+            """INSERT INTO validated (record_id, doi_r, study_r, title_r, abstract_r, doi_o, study_o,
+                                      title_o, type, outcome, outcome_quote, admin_approved)
+               SELECT record_id, doi_r, study_r, title_r, abstract_r, doi_o, study_o, title_o,
+                      type, outcome, outcome_quote, TRUE
+               FROM unvalidated WHERE record_id = %s""",
+            (survivor,))
+        duplicate = _record(cur, 1, status="consensus_reached", abstract=OTHER_ABSTRACT)
+    assert client.get(f"/api/admin/entries/{survivor}").json()["paper_differs_on"] == ["abstract_r"]
+
+    merged = client.post(f"/api/admin/entries/{duplicate}/resolve", json={
+        "admin_name": "boss", "type_check": "correct", "original_check": "correct", "outcome_check": "correct",
+        "merge_into_record_id": survivor})
+    assert merged.status_code == 200, merged.text
+    assert merged.json()["merged"] is True
+
+    detail = client.get(f"/api/admin/entries/{survivor}").json()
+    assert {o["record_id"]: o["validation_status"] for o in detail["paper_originals"]} == {
+        survivor: "validated", duplicate: "rejected"}
+    assert detail["paper_differs_on"] == []
+
+
+def _publish(cur, record_id):
+    cur.execute(
+        """INSERT INTO validated (record_id, doi_r, study_r, title_r, url_r, abstract_r, doi_o, study_o,
+                                  title_o, type, outcome, outcome_quote, admin_approved)
+           SELECT record_id, doi_r, study_r, title_r, url_r, abstract_r, doi_o, study_o, title_o,
+                  type, outcome, outcome_quote, TRUE
+           FROM unvalidated WHERE record_id = %s""",
+        (record_id,))
+
+
+def test_a_validated_record_counts_with_the_copy_it_published(api, local_database):
+    """An import rewrites the extracted value and leaves the published row alone."""
+    client, _ = api
+    with local_database, _cursor(local_database) as cur:
+        published = _record(cur, 1, status="validated")
+        waiting = _record(cur, 2, status="consensus_reached")
+        for record in (published, waiting):
+            _set_columns(cur, record, url_r="https://osf.io/published")
+        _publish(cur, published)
+        _set_columns(cur, published, url_r="https://osf.io/reimported", abstract_r=OTHER_ABSTRACT)
+    detail = client.get(f"/api/admin/entries/{waiting}").json()
+    assert detail["paper_differs_on"] == []
+    assert len(detail["paper_originals"]) == 2
+
+    with local_database, _cursor(local_database) as cur:
+        _set_columns(cur, waiting, url_r="https://osf.io/reimported")
+    assert client.get(f"/api/admin/entries/{waiting}").json()["paper_differs_on"] == ["url_r"]
+
+
+def test_an_old_published_row_does_not_speak_for_a_record_still_waiting(api, local_database):
+    """Approving replaces that row, so what counts is what approving would publish."""
+    client, _ = api
+    with local_database, _cursor(local_database) as cur:
+        reopened = _record(cur, 1, status="consensus_reached")
+        other = _record(cur, 2, status="consensus_reached")
+        _publish(cur, reopened)
+        _set_columns(cur, reopened, url_r="https://osf.io/new")
+        _set_columns(cur, other, url_r="https://osf.io/other")
+    assert client.get(f"/api/admin/entries/{other}").json()["paper_differs_on"] == ["url_r"]
+
+
+def test_a_paper_of_one_record_has_nothing_to_differ_on(api, local_database):
+    client, _ = api
+    with local_database, _cursor(local_database) as cur:
+        alone = _record(cur, 1, status="consensus_reached")
+        no_doi = _record(cur, 2, status="consensus_reached", doi_r="")
+    for record in (alone, no_doi):
+        detail = client.get(f"/api/admin/entries/{record}").json()
+        assert (detail["paper_originals"], detail["paper_differs_on"]) == ([], [])
+
+
 def _two_wrong(client, who, record, coders):
     for coder in coders:
         who["coder_id"] = coder
