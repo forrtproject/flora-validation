@@ -576,6 +576,35 @@ def _children(conn, parent):
     return _one(conn, "SELECT COUNT(*) AS n FROM unvalidated WHERE parent_record_id = %s", parent)["n"]
 
 
+def test_only_a_changed_quote_source_is_recorded_as_the_admins(admin_api, local_database):
+    """The form sends the stored source back on every save. Both tables, as the
+    Final Preview reads one and the backfill's lock is on the other."""
+    client, who = admin_api
+    with local_database, _cursor(local_database) as cur:
+        record_id = _published_parent(cur, out_quote_source="discussion")
+
+    def stored():
+        draft = _row(local_database, "unvalidated", record_id)
+        published = _row(local_database, "validated", record_id)
+        return ((draft["final_out_quote_source"], draft["out_quote_source_by"]),
+                (published["out_quote_source"], published["out_quote_source_by"]))
+
+    def resolved(**fields):
+        response = _resolve(client, record_id, **fields)
+        assert response.status_code == 200, response.text
+        return stored()
+
+    # Saved as it stood: the extractor's value stays, in nobody's name.
+    assert resolved(out_quote_source="discussion") == (("discussion", None),) * 2
+    # A real choice.
+    assert resolved(out_quote_source="results") == (("results", "sophie"),) * 2
+    # Another admin saves it, in another spelling: still Sophie's choice.
+    who["handle"] = "luke"
+    assert resolved(out_quote_source="Results") == (("results", "sophie"),) * 2
+    # Nothing sent: detected, as before, in nobody's name.
+    assert resolved() == (("full_text", None),) * 2
+
+
 def test_resolve_saves_the_drafted_originals_with_the_entry(admin_api, local_database):
     client, _ = admin_api
     with local_database, _cursor(local_database) as cur:
@@ -680,6 +709,97 @@ def test_a_merge_moves_the_drafted_originals_to_the_survivor(admin_api, local_da
     assert again.json()["detail"]["code"] == "entry_already_merged"
     assert again.json()["detail"]["survivor"]["record_id"] == survivor
     assert _children(local_database, survivor) == 1
+
+
+def test_the_conflict_describes_both_records_and_saves_nothing(admin_api, local_database):
+    client, _ = admin_api
+    with local_database, _cursor(local_database) as cur:
+        survivor = _published_parent(cur, outcome="successful")
+        duplicate = _pending_entry(cur, title_r="A replicatoin")
+        sid = _suggest(cur, duplicate, "ana", doi_o="10.7/new")
+    before = _row(local_database, "unvalidated", duplicate)
+
+    response = _resolve(client, duplicate, corrected_title_r="A replication", admin_notes="Mine")
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert detail["survivor_record_id"] == survivor
+    assert detail["duplicate"] == {
+        "doi_r": "10.7/rep", "study_r": "1", "title_r": "A replication", "doi_o": "10.7/own",
+        "original_key": "10.7/own", "study_o": "", "title_o": "Own", "type": "replication",
+        "outcome": "failed"}
+    assert detail["survivor"]["outcome"] == "successful"
+    assert detail["matched_fields"] == ["title_r", "doi_r", "study_r", "title_o", "original_key"]
+    assert detail["duplicate_published"] is False
+    assert (detail["added_originals"], detail["open_suggestions"]) == (0, 1)
+
+    # "Nothing has been saved yet": the window's first promise.
+    assert _row(local_database, "unvalidated", duplicate) == before
+    assert _one(local_database, "SELECT COUNT(*) AS n FROM validated_record_merges")["n"] == 0
+    assert _one(local_database, "SELECT status FROM extra_original_suggestions "
+                                "WHERE suggestion_id = %s", sid) == {"status": "open"}
+
+
+def test_a_merge_does_what_the_window_says(admin_api, local_database):
+    client, _ = admin_api
+    with local_database, _cursor(local_database) as cur:
+        survivor = _published_parent(cur, outcome="successful")
+        duplicate = _pending_entry(cur)
+    published = _row(local_database, "validated", survivor)
+
+    response = _resolve(client, duplicate, merge_into_record_id=survivor, admin_notes="Mine",
+                        corrected_abstract_r="An abstract the admin typed, long enough to count.",
+                        corrected_outcome_quote="A quote the admin typed.",
+                        outcome_check="incorrect", corrected_outcome="mixed")
+    assert response.status_code == 200, response.text
+
+    # "marked rejected and linked", and it is not published.
+    merged = _row(local_database, "unvalidated", duplicate)
+    assert (merged["validation_status"], merged["admin_checked"]) == ("rejected", True)
+    assert _row(local_database, "validated", duplicate) is None
+    link = _one(local_database, "SELECT survivor_record_id::text AS s, resolution_snapshot "
+                                "FROM validated_record_merges WHERE duplicate_record_id = %s", duplicate)
+    assert link["s"] == survivor
+    assert link["resolution_snapshot"]["admin_notes"] == "Mine"
+
+    # "Your corrections and note stay on this record", not on the existing one.
+    assert merged["final_abstract_r"].startswith("An abstract the admin typed")
+    assert merged["final_outcome_quote"] == "A quote the admin typed."
+    assert merged["final_outcome"] == "mixed"
+    assert merged["admin_notes"] == "Mine"
+    # "published values ... do not change", to the column.
+    assert _row(local_database, "validated", survivor) == published
+
+    # "A merge cannot be undone": nothing an admin can press brings it back.
+    again = _resolve(client, duplicate)
+    assert (again.status_code, again.json()["detail"]["code"]) == (409, "record_already_merged")
+    assert client.post(f"/api/admin/entries/{duplicate}/approve").status_code == 404
+    assert client.post(f"/api/admin/entries/{duplicate}/flag-review", json={}).status_code == 400
+    assert _row(local_database, "unvalidated", duplicate)["validation_status"] == "rejected"
+
+
+def test_a_published_duplicate_says_so_and_leaves_the_source_records(admin_api, local_database):
+    client, _ = admin_api
+    with local_database, _cursor(local_database) as cur:
+        survivor = _published_parent(cur)
+        # Published under another title, then corrected onto the survivor's.
+        duplicate = _published_parent(cur, title_r="A replicatoin")
+        cur.execute("SELECT validated_record_id::text AS id FROM validated WHERE record_id = %s", (duplicate,))
+        row_id = cur.fetchone()["id"]
+        cur.execute("INSERT INTO source_records (source, sheet_row_id, display_id, type) "
+                    "VALUES ('validated', %s, 'VAL-000001', 'replication')", (row_id,))
+
+    first = _resolve(client, duplicate, corrected_title_r="A replication")
+    assert first.status_code == 409, first.text
+    assert first.json()["detail"]["duplicate_published"] is True
+    assert _row(local_database, "validated", duplicate) is not None
+
+    merged = _resolve(client, duplicate, corrected_title_r="A replication",
+                      merge_into_record_id=survivor)
+    assert merged.status_code == 200, merged.text
+    assert _row(local_database, "validated", duplicate) is None
+    # The row stays, reserved; marked, it stops feeding the FLoRA build.
+    assert _one(local_database, "SELECT deleted_reason FROM source_records WHERE sheet_row_id = %s",
+                row_id) == {"deleted_reason": "The record is no longer validated."}
 
 
 def test_a_survivor_that_cannot_take_originals_refuses_the_merge(admin_api, local_database):

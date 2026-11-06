@@ -1260,26 +1260,25 @@ details[open] .senior-reject-summary::before { content: "▾ "; }
 .admin-note-flag { margin-left: 5px; cursor: help; font-size: 0.85em; }
 
 /* Admin: distinct-validator skip signal in the Entries table */
-.admin-skip-cell { min-width: 7.2rem; }
 .admin-skip-metric {
   display: inline-flex;
   align-items: baseline;
-  gap: 0.25rem;
-  padding: 0.15rem 0.45rem;
+  padding: 0 0.4rem;
   border: 1px solid var(--rule);
   border-radius: 999px;
   color: var(--ink-soft);
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.68rem;
+  cursor: help;
 }
 .admin-skip-metric strong { color: var(--ink); font-size: 0.78rem; }
 .admin-skip-metric.escalated { border-color: var(--amber); background: #f9edcf; }
 .admin-skip-issue {
-  display: block;
-  margin-top: 0.22rem;
+  margin-left: 0.25rem;
   color: var(--red);
-  font-size: 0.66rem;
-  font-weight: 650;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: help;
 }
 
 /* Admin: sortable Entries column headers */
@@ -2976,13 +2975,40 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
 }
 
 .admin-cell-num  { color: var(--muted); font-size: 0.78rem; width: 2.5rem; }
-.admin-cell-study { max-width: clamp(150px, 15vw, 230px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.admin-cell-study { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .admin-cell-validators { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
-.val-badge { display: inline-block; padding: 0.1rem 0.35rem; border-radius: 3px; background: var(--border); color: var(--fg); font-size: 0.7rem; font-weight: 600; margin-right: 2px; cursor: default; }
+.val-badge { display: inline-block; min-width: 1.05rem; padding: 0 0.15rem; border-radius: 3px; background: var(--border); color: var(--fg); font-size: 0.7rem; font-weight: 600; text-align: center; margin-right: 2px; cursor: default; }
 .val-badge:hover { background: var(--accent); color: #fff; }
-.val-badge-llm { background: #e8f0fe; color: #1a56db; }
-.val-badge-llm:hover { background: #1a56db; color: #fff; }
 .val-badge-empty { background: transparent; color: var(--muted); cursor: default; }
+
+/* The Entries list. Fixed columns, so that nothing a cell holds can widen the table:
+   Study takes what the others leave, and text that does not fit in its column is cut
+   with its full value in the title. Below the minimum it scrolls sideways inside
+   .admin-table-wrap. The rules reach the head and rows only, not tables in a panel. */
+.admin-entries-table { table-layout: fixed; min-width: 62rem; }
+.admin-entries-table > thead > tr > th,
+.admin-entries-table > tbody > tr > td { padding-inline: clamp(0.3rem, 0.42vw, 0.5rem); }
+#admin-entries-head th:first-child { width: 3rem; }
+#admin-entries-head [data-sort="type"] { width: 6.2rem; }
+#admin-entries-head [data-sort="outcome"] { width: 8.6rem; }
+#admin-entries-head [data-sort="status"] { width: 8.2rem; }
+#admin-entries-head [data-sort="validators"] { width: 4rem; }
+#admin-entries-head [data-sort="skips"] { width: 4.4rem; }
+#admin-entries-head [data-sort="agreement"] { width: 5.9rem; }
+#admin-entries-head [data-sort="approved_by"] { width: 7.2rem; }
+#admin-entries-head th:last-child { width: 6rem; }
+.admin-cell-clip { overflow: hidden; text-overflow: ellipsis; }
+.admin-entries-table .admin-review-btn { margin-left: 0; }
+
+/* A pill that goes to the entry's row in Pending Approval. */
+.admin-status.admin-to-pending {
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.admin-status.admin-to-pending:hover { background: #1a56db; color: #fff; }
+.admin-status.admin-to-pending:focus-visible { outline: 2px solid #1a56db; outline-offset: 1px; }
 
 .admin-loading { text-align: center; padding: 2rem; color: var(--muted); }
 .admin-empty   { text-align: center; padding: 2rem; color: var(--muted); }
@@ -3027,7 +3053,37 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
   margin-top: 0.15rem;
   font-size: 0.78rem;
   color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+/* The Study cell of the Entries list, line by line: the title, cut to leave room for the
+   study label beside it; then the row's markers, if it has any, wrapping as they need.
+   The label is cut too, only if it would take most of the line. */
+.admin-study-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+.admin-study-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.admin-study-label {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.admin-study-marks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem 0.3rem;
+  margin-top: 0.15rem;
+}
+/* These leave room on their left for following a title; here they start the line. */
+.admin-cell-study .admin-study-marks > * { margin-left: 0; }
 
 /* Pagination */
 .admin-pagination {
@@ -3338,6 +3394,14 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
   color: var(--amber);
 }
 
+.admin-source-hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-bottom: 0.6rem;
+}
+.admin-source-hint.is-disputed { color: var(--amber); }
+.admin-source-hint .link-btn.small { font-size: 0.78rem; margin-top: 0; }
+
 .admin-select, .admin-input, .admin-textarea {
   width: 100%;
   padding: 0.45rem 0.7rem;
@@ -3565,6 +3629,122 @@ details[open] > .chk-collapsible-summary::before { transform: rotate(90deg); }
   color: var(--ink-soft);
 }
 .admin-override-banner strong { color: var(--green); }
+.admin-override-banner code { word-break: break-all; }
+
+/* In place of the resolve form on a merged record: a plain statement, not a warning. */
+.admin-merged-note {
+  background: var(--bg-alt);
+  border: 1px solid var(--rule);
+  border-radius: 0.6rem;
+  padding: 1rem 1.1rem;
+  margin-bottom: 1rem;
+}
+.admin-merged-note code { overflow-wrap: anywhere; }
+.admin-merged-note .not-val-who { margin-bottom: 0.75rem; }
+
+/* ---------- Duplicate-merge window (admin) ---------- */
+/* showDialog({ wide: true }). The shared panel's width, centring and padding are
+   inline in index.html, so only !important can replace them for this one dialog.
+   The buttons stay in view while the window scrolls. */
+#dialog-modal .faq-panel.dialog-wide { max-width: 900px !important; text-align: left !important; }
+.dialog-wide .faq-body { max-height: calc(100vh - 4rem); padding: 1.5rem 1.75rem 0 !important; }
+.dialog-wide #dialog-title { margin-top: 0; padding-bottom: 0; border-bottom: none; }
+.dialog-wide #dialog-message { margin-bottom: 0 !important; }
+.dialog-wide #dialog-buttons {
+  position: sticky;
+  bottom: 0;
+  padding: 0.75rem 0 1.25rem;
+  background: var(--bg);
+  border-top: 1px solid var(--rule);
+}
+/* The phone layout hides every .ghost-btn (a game-screen rule); this one is the way out.
+   Same size as the merge button: the safe choice must not be the harder one to read. */
+.dialog-wide #dialog-buttons .ghost-btn {
+  display: block;
+  margin-left: 0;
+  font-family: inherit;
+  font-size: 0.8rem;
+  padding: 0.75rem 1rem;
+}
+
+.merge-window { font-size: 0.88rem; line-height: 1.45; }
+.merge-lead { margin-bottom: 0.8rem; }
+.merge-note { margin: -0.35rem 0 0.8rem; font-size: 0.82rem; }
+
+.merge-compare {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  margin-bottom: 0.8rem;
+  font-size: 0.82rem;
+}
+.merge-compare th, .merge-compare td {
+  padding: 0.3rem 0.55rem;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.merge-compare thead th { background: var(--bg-alt); color: var(--ink); font-weight: 600; }
+.merge-compare thead th:first-child { width: 10rem; }
+.merge-compare thead th:last-child { width: 5.25rem; }
+.merge-compare tbody th { color: var(--muted); font-weight: 500; }
+.merge-compare code.merge-id {
+  display: block;
+  margin-top: 0.1rem;
+  padding: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 400;
+}
+.merge-fate { color: var(--muted); font-weight: 400; }
+.merge-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.merge-side { display: none; }
+.merge-blank { color: var(--muted); font-style: italic; }
+.merge-changed {
+  display: block;
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.merge-status { font-weight: 600; white-space: nowrap; }
+.merge-same .merge-status { color: var(--green); }
+.merge-differs { background: color-mix(in srgb, var(--amber) 18%, transparent); }
+.merge-differs th { box-shadow: inset 3px 0 0 var(--amber); }
+.merge-compare .merge-differs th, .merge-differs .merge-status { color: var(--ink); }
+
+.merge-choices { display: grid; grid-template-columns: 3fr 2fr; gap: 1.5rem; }
+.merge-choices h3 { margin: 0 0 0.25rem; font-size: 0.88rem; color: var(--ink); }
+.merge-choices p { margin-bottom: 0.7rem; }
+.merge-choices ul { margin-bottom: 0.7rem; padding-left: 1.1rem; }
+.merge-choices li { margin-bottom: 0.2rem; }
+
+@media (max-width: 720px) {
+  .dialog-wide .faq-body { padding: 1.1rem 1rem 0 !important; }
+  .dialog-wide #dialog-buttons { flex-direction: column !important; }
+  .dialog-wide #dialog-buttons .ghost-btn { width: 100%; }
+  .merge-compare, .merge-compare thead, .merge-compare tbody, .merge-compare tr,
+  .merge-compare th, .merge-compare td { display: block; width: auto !important; }
+  .merge-compare thead th:first-child, .merge-compare thead th:last-child { display: none; }
+  .merge-compare th, .merge-compare td { border-bottom: none; }
+  .merge-compare tr { position: relative; border-bottom: 1px solid var(--rule); padding: 0.2rem 0; }
+  .merge-status { position: absolute; top: 0.2rem; right: 0; }
+  .merge-side {
+    display: block;
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-weight: 600;
+  }
+  .merge-choices { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}
 
 /* ---------- Data-quality flags (admin review panel) ---------- */
 /* Advisory only: nothing about where a record landed depends on these, so the
@@ -7219,11 +7399,7 @@ body.has-maint-banner #admin-screen {
 /* .admin-table's own rules reach every td in it, the tables inside panels included. */
 .ap-table td { vertical-align: top; white-space: normal; }
 .ap-panel thead th { white-space: normal; }
-/* The regular table truncates titles to one short line. This one has room, and the
-   title is what an admin reads first. */
-.ap-table .admin-cell-study { max-width: none; overflow: hidden; }
 .ap-table .ap-cell-validators { font-size: 0.78rem; color: var(--ink-soft); }
-.ap-table .admin-review-btn { margin-left: 0; }
 /* .admin-flag leaves room on its left for following a title; here chips start the cell. */
 .ap-cell-look .admin-flag,
 .ap-cell-look .aq-row-flag { margin: 0 0.3rem 0.2rem 0; }

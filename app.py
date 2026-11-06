@@ -6040,8 +6040,18 @@ from consensus_engine import (  # noqa: E402
 )
 
 
-def _validated_duplicate_detail(record_id: str, conflict: dict) -> dict:
-    """Structured 409 payload consumed by the admin duplicate-merge dialog."""
+# The six fields validated_identity_conflict compares, in the order the dialog shows them.
+_IDENTITY_FIELDS = ("title_r", "doi_r", "study_r", "title_o", "original_key", "study_o")
+
+
+def _validated_duplicate_detail(cur, record_id: str, conflict: dict, proposed: dict,
+                                published: bool) -> dict:
+    """Structured 409 payload consumed by the admin duplicate-merge dialog.
+
+    `proposed` is this record as the resolve would save it, and `published` says
+    whether it has a row in validated now. Both are for display: the merge itself
+    never reads this payload back."""
+    moving = extra_originals.detail_summary(cur, record_id)
     return {
         "code": "validated_duplicate_conflict",
         "message": (
@@ -6056,6 +6066,14 @@ def _validated_duplicate_detail(record_id: str, conflict: dict) -> dict:
                 "study_o", "title_o", "type", "outcome",
             )
         },
+        # A conflict means the six fields are identical, blanks included, so the
+        # original key is the survivor's too, and the fields named here are the
+        # ones that hold a value. Type and outcome are not compared.
+        "duplicate": {**proposed, "original_key": conflict.get("original_key")},
+        "matched_fields": [f for f in _IDENTITY_FIELDS if conflict.get(f) not in (None, "")],
+        "duplicate_published": published,
+        "added_originals": moving["children"],
+        "open_suggestions": moving["open_suggestions"],
     }
 
 
@@ -6210,22 +6228,17 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
         final_doi_r_pub  = _normalize_doi(req.doi_r_published) if req.doi_r_published  is not None else rec.get("doi_r_published")
         final_alt_ids    = (req.alt_identifier_r.strip() or None) if req.alt_identifier_r is not None else rec.get("alt_identifier_r")
 
-        # Outcome-quote source: honour an explicit admin choice, otherwise (re)detect
-        # from the final quote against the final abstract, falling back to any stored value.
-        from consensus_engine import quote_source_for
-        from extractor_vocab import normalize_quote_source
+        # Outcome-quote source: honour an admin's change, keep what is stored when the
+        # form sends it back, otherwise (re)detect from the final quote against the
+        # final abstract, falling back to any stored value.
+        from consensus_engine import admin_quote_source
         # Any named source, not just abstract/full_text: the extractor names the
         # section a quote came from (discussion, results, …) and pipe-joins several
         # when it spans them. Restricting this to the two computed values meant a
         # granular stored value matched no option in the admin form, so opening and
         # saving a record silently replaced it with an auto-detected guess.
-        _explicit_src = normalize_quote_source(req.out_quote_source)
-        if _explicit_src:
-            final_src, final_src_by = _explicit_src, admin_handle
-        else:
-            final_src = (quote_source_for(final_outcome_q, final_abstract_r)
-                         or rec.get("final_out_quote_source") or rec.get("out_quote_source"))
-            final_src_by = None
+        final_src, final_src_by = admin_quote_source(
+            req.out_quote_source, rec, final_outcome_q, final_abstract_r, admin_handle)
 
         # Admin confirmed this is not a replication → reject it, never insert into FLoRA
         if final_type == "not_validation":
@@ -6307,6 +6320,14 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
             "FROM unvalidated WHERE record_id = %s", (record_id,))
         _wid = cur.fetchone() or {}
 
+        # For the merge dialog, should either check below find a duplicate. Read
+        # here: the publish further down replaces this record's row.
+        proposed = {"doi_r": final_doi_r, "study_r": rec["study_r"], "title_r": final_title_r,
+                    "doi_o": final_doi_o, "study_o": rec["study_o"], "title_o": final_title_o,
+                    "type": final_type, "outcome": final_outcome}
+        cur.execute("SELECT 1 FROM validated WHERE record_id = %s", (record_id,))
+        published_now = cur.fetchone() is not None
+
         # Resolving A to B's natural key must never use an upsert: that would write
         # A's data into B while keeping B's record_id. First report a structured
         # conflict. The UI may then repeat this same request with B's id as an
@@ -6333,7 +6354,8 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
                 })
             if req.merge_into_record_id != conflict_id:
                 raise HTTPException(
-                    409, detail=_validated_duplicate_detail(record_id, conflict)
+                    409, detail=_validated_duplicate_detail(cur, record_id, conflict, proposed,
+                                                            published_now)
                 )
 
             snapshot = {
@@ -6448,7 +6470,8 @@ def admin_resolve(record_id: str, req: AdminResolveRequest, admin: dict = Depend
             if conflict:
                 raise HTTPException(
                     409, detail=(extra_originals.child_conflict_detail(cur, conflict)
-                                 or _validated_duplicate_detail(record_id, conflict))
+                                 or _validated_duplicate_detail(cur, record_id, conflict, proposed,
+                                                                published_now))
                 )
             raise HTTPException(
                 409, "The validated identity changed concurrently; retry the resolution."

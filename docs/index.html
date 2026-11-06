@@ -309,7 +309,7 @@
     </label>
 
     <div class="admin-table-wrap">
-      <table class="admin-table">
+      <table class="admin-table admin-entries-table">
         <thead>
           <tr id="admin-entries-head">
             <th>#</th>
@@ -317,11 +317,10 @@
             <th class="th-sort" data-sort="type">Type</th>
             <th class="th-sort" data-sort="outcome">Outcome</th>
             <th class="th-sort" data-sort="status">Status</th>
-            <th class="th-sort" data-sort="validators">Validators</th>
-            <th class="th-sort" data-sort="skips" title="Skips, and how many validators skipped">Skips</th>
-            <th class="th-sort" data-sort="agreement" title="Checks (of 3) where both validators agree. 🤖✗: the AI disagrees with them.">Agreement</th>
-            <th class="th-sort" data-sort="approved_by">Approved by</th>
-            <th>Approve</th>
+            <th class="th-sort" data-sort="validators" title="Validators. Hover a number for the handle." aria-label="Validators">Vals</th>
+            <th class="th-sort" data-sort="skips" title="How many validators skipped the entry. Hover a number for the skip events and issue reports.">Skips</th>
+            <th class="th-sort" data-sort="agreement" title="Agreement: checks (of 3) where both validators agree. 🤖✗: the AI disagrees with them." aria-label="Agreement">Agree</th>
+            <th class="th-sort" data-sort="approved_by" title="The admin who approved the entry.">Approved by</th>
             <th>Review</th>
           </tr>
         </thead>

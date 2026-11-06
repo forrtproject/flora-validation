@@ -212,6 +212,23 @@ const SOURCE_ID = "7a1c2d4e-0000-4000-8000-000000000009";
     assert.equal(await page.locator("#flora-manual-derived").innerText(), "cannot_be_determined");
     await page.locator('input[name="flora-manual-type"][value="replication"]').check();
 
+    // A blank quote source is worked out on save, so the blank field says what it would be.
+    const sourcePlaceholder = (name) => page.locator("#fm-" + name).getAttribute("placeholder");
+    assert.equal(await sourcePlaceholder("out_quote_source"), "abstract when the quote is in it, else full_text");
+    await page.locator("#fm-abstract_r").fill("It failed, and plainly.");
+    await page.locator("#fm-outcome_quote").fill("it failed");
+    assert.equal(await page.locator("#fm-out_quote_source").inputValue(), "");
+    assert.equal(await sourcePlaceholder("out_quote_source"), "abstract (suggested)");
+    await page.locator("#fm-outcome_quote").fill("from the paper's body");
+    assert.equal(await sourcePlaceholder("out_quote_source"), "full_text (suggested)");
+    await page.locator('input[name="flora-manual-type"][value="reproduction"]').check();
+    await page.locator("#fm-outcome_computational_quote").fill("and plainly");
+    assert.equal(await sourcePlaceholder("out_quote_computational_source"), "abstract (suggested)");
+    assert.equal(await sourcePlaceholder("out_quote_robust_source"), "abstract when the quote is in it, else full_text");
+    await page.locator("#fm-outcome_computational_quote").fill("");
+    await page.locator('input[name="flora-manual-type"][value="replication"]').check();
+    for (const name of ["abstract_r", "outcome_quote"]) await page.locator("#fm-" + name).fill("");
+
     // A field the server refuses is marked.
     createResponse = [422, { detail: { code: "original_required", field: "doi_o", message: "The original needs a DOI." } }];
     await page.locator("#flora-manual-save").click();

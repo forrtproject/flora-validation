@@ -27,6 +27,7 @@ from extractor_vocab import (
     derive_reproduction_outcome,
     normalize_axis_value,
     normalize_outcome,
+    normalize_quote_source,
     split_joined_outcome,
 )
 
@@ -397,6 +398,34 @@ def quote_source_for(quote: str | None, abstract: str | None) -> str | None:
     if not nq:
         return None
     return "abstract" if nq in _normalize(abstract) else "full_text"
+
+
+def admin_quote_source(submitted, rec: dict, quote: str | None, abstract: str | None,
+                       admin_handle: str | None) -> tuple[str | None, str | None]:
+    """What an admin's resolve stores as the outcome quote's source, and under whose
+    name: (source, out_quote_source_by). A name says a person chose the source: the
+    backfill leaves that row alone and the Final Preview says "set by".
+
+      - A source other than the stored one is a real choice: it is used, in the
+        admin's name.
+      - The stored one sent back is not a choice: the form returns what it was given
+        whether or not anyone looked at it. It stays, with the name it already has,
+        an earlier admin's or none. Detecting here would be no fix: it would replace
+        a granular value such as 'discussion' with a guess.
+      - Nothing sent: detected from the final quote against the final abstract,
+        falling back to the stored value, in nobody's name.
+
+    Any named source counts, not just abstract/full_text, and values are compared
+    normalised: 'abstract | discussion' is 'abstract|discussion'. `rec` is the
+    unvalidated row as read before the resolve.
+    """
+    chosen = normalize_quote_source(submitted)
+    stored = rec.get("final_out_quote_source") or rec.get("out_quote_source")
+    if not chosen:
+        return quote_source_for(quote, abstract) or stored, None
+    if chosen == normalize_quote_source(stored):
+        return chosen, rec.get("out_quote_source_by")
+    return chosen, admin_handle
 
 
 def _resolve_quote_source(record: dict, suggested_quotes: list, abstract: str | None = None) -> str | None:

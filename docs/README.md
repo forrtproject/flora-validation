@@ -1255,13 +1255,22 @@ or after at least two distinct validators have reported `eligibility_unclear` or
 `data_quality`. Repeated skips by one validator remain auditable but cannot meet a
 threshold by themselves.
 
+The table is built to fit a laptop screen without scrolling sideways; on narrower
+screens its frame scrolls. **Skips** shows only the number of distinct
+validators, with skip events and issue reports in its tooltip. Validators show as 1
+and 2, with handles in tooltips, and the LLM has no badge because it runs on every
+entry. Long outcomes are cut, with the full text on hover. **Study** puts the title
+and study label on one line, any flags on the next so a long title cannot hide them,
+and an added original's `↳` line below. **Approved by** appears only on the
+**Validated** filter.
+
 In the **Pending Approval** filter the rows open in place. An open row shows what
 approving would publish, what each validator and the LLM said, the paper's other
 coded originals, suggested originals and the admin note, with any warnings at the
 top. An admin can approve, flag for review or save the note there; the row then
 leaves the list and the next one opens. Everything else stays in the full review,
 which is also where a rejection is made. The other filters have no Approve button:
-**Approve →** goes to that entry's row in Pending Approval and opens it.
+the **Pending approval** status pill goes to that entry's row there and opens it.
 
 Each original of a paper keeps its own copy of the paper's link and abstract, and
 both reach FLoRA. When originals that are `consensus_reached` or `validated` differ
@@ -1281,8 +1290,9 @@ default and is not counted as skip activity.
 ### Approve, review, reject, and resolve
 
 - **Approve** accepts only `consensus_reached`, marks the row `validated`, and
-  inserts the effective final values into `validated` (using the validated
-  identity conflict key for its upsert). Just before sending it, the browser
+  inserts the effective final values into `validated`. An entry that matches
+  another validated record is refused with an HTTP 409 that points to Mark as
+  Resolved; it never overwrites that record. Just before sending it, the browser
   re-reads the entry and stops if what the panel shows has changed or the entry was
   decided; the server does not compare values, so a change in the last moment can
   still pass. Any warning on the entry needs a second press, and an admin the
@@ -1292,6 +1302,18 @@ default and is not counted as skip activity.
 - **Resolve** can correct type, both paper identities/titles/links, abstract,
   outcome/quote/source, published DOI, and alternative identifiers. A final type
   of `not_validation` rejects and deletes any `validated` row for that record.
+- **Quote source** in the resolve form is a suggestion, not a choice to make. With
+  a quote and no stored source, the field selects what `quote_source_for` would
+  pick, marks it "(suggested)" with a one-line reason, and follows edits to the
+  quote and abstract until the admin picks a source. An untouched suggestion sends
+  nothing, so the server detects the source and records no name. A stored source
+  always stays selected; when a stored `abstract` or `full_text` contradicts the
+  text, a hint offers a one-click change. `out_quote_source_by` names an admin only
+  when the submitted source differs from the stored one; the stored value sent back
+  keeps the name it had, or none. The added-originals form works the same way, and
+  the manual record form shows the suggestion as a placeholder. The reproduction
+  axis sources on the resolve form get no suggestion, because resolve does not
+  detect them.
 - **Senior fast-reject** is a validator action, but the admin view exposes the
   resulting rejection and allows an override through resolve.
 
@@ -1302,13 +1324,16 @@ ID. This keeps study numbers separate from titles and prevents all blank origina
 DOIs from collapsing onto one identity.
 
 Admin **Resolve** never silently overwrites a different validated record. A
-colliding identity first returns a structured HTTP 409. The browser shows record
-A (the duplicate) and record B (the authoritative survivor) and requires a second,
+colliding identity first returns a structured HTTP 409 and saves nothing. The
+browser compares this record (A, the duplicate) with the existing validated record
+(B, the authoritative survivor), says what a merge does, and requires a second,
 explicit confirmation. A confirmed merge keeps B unchanged in `validated`, marks
-A rejected, preserves A's raw extraction, metadata, and judgements, and writes an
-auditable `validated_record_merges` link with the administrator and resolution
-snapshot. Replaying the same confirmed merge is idempotent; naming a different or
-stale survivor is rejected.
+A rejected, preserves A's raw extraction, metadata, and judgements, keeps the
+form's corrections and note on A alone, and writes an auditable
+`validated_record_merges` link with the administrator and resolution snapshot. A
+merge cannot be undone. Replaying the same confirmed merge is idempotent; naming a
+different or stale survivor is rejected. Afterwards A's review says it was merged and
+offers no resolve actions, only a link to B; admin notes can still be saved.
 
 ### Extractor pipeline operations
 
@@ -2022,7 +2047,9 @@ python build_static.py
 ```
 
 Quote-source backfill updates `validated` only. It never overwrites a source
-locked by a non-null `out_quote_source_by`. `fetch_oa.py` refreshes the Unpaywall
+locked by a non-null `out_quote_source_by`, and `--recompute-all` refreshes only
+`abstract` and `full_text`, never a section name such as `discussion` or a compound
+value. `fetch_oa.py` refreshes the Unpaywall
 cache used for UI links; `build_static.py` regenerates all three docs JSON files
 from root demo inputs. `backfill_flora_history.py` fills the dataset size history
 before the pipeline's first count from the daily flora.csv versions in a
@@ -2173,7 +2200,7 @@ work; inspect them separately from source changes.
 | `tests/test_integrity_fixes.py`, `test_validated_identity.py` | Concurrent completion guards, migration mapping/status, explicit validated duplicate merge, source constraints, and export/backfill integrity |
 | `tests/test_skip_history.py` | Skip audit/escalation, modal behavior, draft preservation, server-issued failure stamps, and automatic-release isolation |
 | `tests/test_sync_csv.py`, `test_extractor_maintenance.py`, `test_extractor_snapshots.py` | Download/archive safety, snapshot thresholds, promotion verification, stage gates, fail-fast behavior, advisory locks, timeout, logs, the retire gate, and the database copy of each snapshot |
-| `tests/test_llm_validator.py`, `test_quote_source.py` | Structured LLM responses, canonical vocabularies, uncertainty, malformed/error retry, and quote-source normalization |
+| `tests/test_llm_validator.py`, `test_quote_source.py` | Structured LLM responses, canonical vocabularies, uncertainty, malformed/error retry, quote-source normalization, the browser suggestion's parity with `quote_source_for`, and when a source is recorded in an admin's name |
 | `tests/test_audit_regressions.py`, `test_extractor_vocab.py`, `test_console_encoding.py`, `test_transform_outcomes.py` | Cross-file regression contracts, shared vocabulary/schema parity, Windows console safety, and Source Records transformation |
 | `tests/__init__.py` | Empty package marker |
 
@@ -2349,10 +2376,10 @@ gone — and a trusted admin can create and delete other admins.
   collides. The administrator must explicitly merge the duplicate into the
   existing survivor; the action is stored in `validated_record_merges`, and a
   resolve race uses `DO NOTHING` rather than overwriting the survivor.
-- The ordinary **Approve** path and senior automatic publication still use
-  `ON CONFLICT DO UPDATE` for the same identity key. The explicit two-record merge
-  confirmation currently protects Admin Resolve, not those publication paths;
-  investigate an unexpected identity collision before approving it.
+- The ordinary **Approve** path and automatic publication also use `DO NOTHING` for
+  the same identity key, so neither overwrites a validated record. Approve answers a
+  collision with an HTTP 409 that points to Mark as Resolved, which keeps the explicit
+  merge the only way to join two records.
 - Source Records axes are constrained and normalized before transformation.
   Unknown combinations are reported rather than silently published as internally
   contradictory raw values.

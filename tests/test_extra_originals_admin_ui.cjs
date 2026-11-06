@@ -328,6 +328,21 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     await page.locator("#ar-outcome-sel").selectOption("failed");
     assert.match(await page.locator("#xo-admin > summary").textContent(), /2 drafted/);
 
+    // Its quote source is suggested against the entry's abstract as the resolve form
+    // has it. The server detects a blank here too, so the draft keeps only a choice.
+    const sourceLabel = () => field("out_quote_source").evaluate(s => s.selectedOptions[0].textContent);
+    const sourceHint = page.locator("#xo-add-list .xo-open .admin-source-hint");
+    assert.equal(await sourceLabel(), "— no quote yet —");
+    await field("outcome_quote").fill("the entry's own abstract");
+    assert.equal(await sourceLabel(), "Abstract (suggested)");
+    assert.equal(await sourceHint.textContent(), "The quote appears in the abstract.");
+    await page.locator("#ar-abstract-r").fill("Rewritten in the form.");
+    assert.equal(await sourceLabel(), "Full text (suggested)");
+    await page.locator("#ar-abstract-r").fill("");   // a blank box keeps the stored abstract
+    assert.equal(await sourceLabel(), "Abstract (suggested)");
+    await page.locator("#ar-abstract-r").fill("The entry's own abstract.");
+    assert.equal(await page.evaluate((id) => _adminXoDrafts[id].entries[1].out_quote_source, P), "");
+
     // The server refuses #2: nothing is saved; the drafts and the resolve form stay,
     // #2 opens with its DOI marked and the whole message in it.
     await page.locator('#xo-add-list [data-xoa-open="0"]').click();
@@ -343,6 +358,8 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     assert.deepEqual(sentResolve.extra_originals.map(o => [o.doi_o, o.title_o, o.own_outcome, o.from_suggestion_ids]),
                      [["10.9/new", "Suggested", false, [7]], ["10.5555/second", "Second original", true, []]]);
     assert.equal(sentResolve.extra_originals[1].outcome, "mixed");
+    assert.equal(sentResolve.extra_originals[1].outcome_quote, "the entry's own abstract");
+    assert.equal(sentResolve.extra_originals[1].out_quote_source, null, "a suggestion is sent as nobody's choice");
     assert.equal(sentResolve.outcome_check, "correct", "the entry's own form is sent as it was");
     assert.equal(await page.locator("#xo-add-list .xo-open").getAttribute("data-xoa-entry"), "1");
     assert.equal(await field("doi_o").getAttribute("aria-invalid"), "true");

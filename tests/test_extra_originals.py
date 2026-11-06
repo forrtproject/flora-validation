@@ -1048,6 +1048,29 @@ def test_a_merged_duplicate_s_originals_move_to_the_survivor():
     assert any("UPDATE extra_original_suggestions SET record_id = %s" in s for s in cur.sql())
 
 
+def test_the_duplicate_conflict_tells_the_merge_window_what_it_shows():
+    from tests.test_dashboard_split import flora
+    conflict = {"record_id": SURVIVOR_ID, "doi_r": "10.1/rep", "study_r": "1", "title_r": "A replication",
+                "doi_o": "", "original_key": "W123", "study_o": "", "title_o": "An original",
+                "type": "replication", "outcome": "successful"}
+    proposed = {"doi_r": "10.1/rep", "study_r": "1", "title_r": "A replication", "doi_o": "",
+                "study_o": "", "title_o": "An original", "type": "replication", "outcome": "failed"}
+    cur = RoutingCursor(lambda sql, params: [{"open_suggestions": 3, "children": 2}])
+    detail = flora._validated_duplicate_detail(cur, "dup", conflict, proposed, True)
+    # What it always carried, which the merge request depends on.
+    assert (detail["code"], detail["duplicate_record_id"], detail["survivor_record_id"]) == (
+        "validated_duplicate_conflict", "dup", SURVIVOR_ID)
+    assert detail["survivor"]["outcome"] == "successful"
+    # This record as it would be saved, keyed as the record it matches.
+    assert detail["duplicate"] == {**proposed, "original_key": "W123"}
+    # A blank field matched too, but it is not what the two have in common.
+    assert detail["matched_fields"] == ["title_r", "doi_r", "study_r", "title_o", "original_key"]
+    assert detail["duplicate_published"] is True
+    assert (detail["added_originals"], detail["open_suggestions"]) == (2, 3)
+    # Read-only: answering the conflict changes nothing.
+    assert all(sql.lstrip().upper().startswith("SELECT") for sql in cur.sql())
+
+
 def test_removing_an_added_original_reopens_its_suggestions():
     rows = {"origin": [{"parent_record_id": "p", "origin": "admin_extra_original"}],
             "child": [{"record_id": "c", "parent_record_id": "p", "validation_status": "validated"}]}
@@ -1270,7 +1293,7 @@ def test_resolve_sends_the_drafted_originals_and_shows_a_refusal_in_place():
     assert "const drafted = _xoResolveDrafts(recordId);" in submit
     assert "body.extra_originals = drafted.map(_xoAdminPayload);" in submit
     assert submit.count("_xoShowError(recordId,") == 2              # the resolve, and the merge retry
-    assert "confirmValidatedDuplicateMerge(e.detail, drafted.length)" in submit
+    assert "confirmValidatedDuplicateMerge(e.detail, drafted.length, {" in submit
     drafts = _js_fn("function _xoResolveDrafts(recordId) {")
     assert 'draft.mode !== "draft"' in drafts and "!draft.on" in drafts
     show = _js_fn("function _xoShowError(recordId, detail) {")

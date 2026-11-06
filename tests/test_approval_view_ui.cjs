@@ -235,8 +235,8 @@ function freshDb() {
     });
     await page.locator("#admin-table-body .admin-review-btn").first().waitFor();
 
-    // ---- Every other filter is the table it was, with a link in place of Approve.
-    assert.equal(await page.locator("#admin-entries-head th").count(), 11);
+    // ---- Every other filter keeps its own table, whose status pill is the link.
+    assert.equal(await page.locator("#admin-entries-head th").count(), 9);
     assert.equal(await page.locator("#admin-table-body .admin-approve-btn").count(), 0);
     assert.equal(await page.locator("#admin-table-body .admin-to-pending").count() > 0, true);
     assert.equal(await page.evaluate(() => typeof quickApprove), "undefined");
@@ -1087,7 +1087,7 @@ function freshDb() {
     await page.locator("#admin-table-body .admin-review-btn").first().waitFor();
     release();
     await page.waitForTimeout(120);
-    assert.equal(await page.locator("#admin-entries-head th").count(), 11);
+    assert.equal(await page.locator("#admin-entries-head th").count(), 9);
     assert.equal(await page.locator("tr.ap-row").count(), 0);
     assert.equal(await page.locator(".ap-table").count(), 0);
 

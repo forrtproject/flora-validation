@@ -48,7 +48,7 @@ Reads matching entries and their details; no study decision is changed.
 
 ### [Approve](admin-entries--approve.md)
 
-In an open Pending Approval row: re-reads the entry and stops if it changed, asks a second time if there is any warning, such as a paper's originals differing on the link or abstract, then POST /api/admin/entries/{id}/approve accepts the agreed values and marks the entry validated. Other filters link to the row instead.
+In an open Pending Approval row: re-reads the entry and stops if it changed, asks a second time if there is any warning, such as a paper's originals differing on the link or abstract, then POST /api/admin/entries/{id}/approve accepts the agreed values and marks the entry validated. On other filters the Pending approval status pill links to the row instead.
 
 **Saves:** unvalidated status/admin fields; validated row; admin_decisions.
 
@@ -72,7 +72,7 @@ POST /resolve validates the edited type, original, outcome and evidence; saves t
 
 ### [Merge duplicate (conflict dialog)](admin-entries--merge-duplicate-conflict-dialog.md)
 
-If the proposed identity already belongs to another validated record, explicitly keep that survivor and link this duplicate to it. Its added and drafted other originals move to the survivor; if the survivor cannot take them, nothing is saved.
+If the proposed identity already belongs to another validated record, explicitly keep that survivor and link this duplicate to it. Its added and drafted other originals move to the survivor; if the survivor cannot take them, nothing is saved. The form's corrections and note stay on the duplicate, and a merge cannot be undone.
 
 **Saves:** validated_record_merges; duplicate is rejected in unvalidated, removed from validated, and open assignments completed; survivor preserved.
 

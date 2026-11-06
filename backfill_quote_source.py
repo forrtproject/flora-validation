@@ -8,13 +8,19 @@ backfill_quote_source.py — Populate `out_quote_source` on rows already in the
 
 By default it only fills rows where `out_quote_source` IS NULL, so existing values
 (from the CSV import or an admin override) are never clobbered. Pass --recompute-all
-to also refresh non-NULL rows — but admin-locked rows (out_quote_source_by IS NOT
-NULL) are always skipped.
+to also refresh values that are themselves computed results: 'abstract' and
+'full_text', in any spelling normalize_quote_source maps to those. Admin-locked rows
+(out_quote_source_by IS NOT NULL) are always skipped.
+
+--recompute-all never replaces a named section or a compound value ('discussion',
+'abstract|discussion'), locked or not. Those come from the extractor or an admin, the
+check can only answer 'abstract' or 'full_text', and a missing lock does not mean
+nobody looked: resolving a record without changing its source records no name.
 
 Usage:
     python backfill_quote_source.py                 # dry-run, NULLs only
     python backfill_quote_source.py --apply         # write (NULLs only)
-    python backfill_quote_source.py --recompute-all # dry-run, refresh all non-locked
+    python backfill_quote_source.py --recompute-all # dry-run, refresh computed values
     python backfill_quote_source.py --recompute-all --apply
 """
 import argparse
@@ -26,12 +32,32 @@ from dotenv import load_dotenv
 from console_encoding import use_utf8_output
 
 from consensus_engine import quote_source_for
+from extractor_vocab import normalize_quote_source
 
 load_dotenv()
 
 # Progress output below uses non-ASCII glyphs; a cp1252 console cannot encode
 # them and print() would abort the run. See console_encoding.py.
 use_utf8_output()
+
+# All the check can answer, so the only stored values it may replace.
+COMPUTED_SOURCES = ("abstract", "full_text")
+
+
+def recomputed_source(row: dict, recompute_all: bool = False) -> str | None:
+    """The source to write to this validated row, or None to leave it alone."""
+    if row.get("out_quote_source_by"):             # admin-locked → never touch
+        return None
+    stored = row.get("out_quote_source")
+    if stored and not recompute_all:               # already set, not recomputing
+        return None
+    named = normalize_quote_source(stored)
+    if named and named not in COMPUTED_SOURCES:    # a section or compound → not ours
+        return None
+    new_src = quote_source_for(row.get("outcome_quote"), row.get("abstract_r"))
+    if new_src is None or new_src == (stored or None):
+        return None                                # no quote, or no change
+    return new_src
 
 
 def run(apply: bool, recompute_all: bool) -> None:
@@ -57,16 +83,9 @@ def run(apply: bool, recompute_all: bool) -> None:
             counts = {"abstract": 0, "full_text": 0}
             samples = []
             for r in rows:
-                if r.get("out_quote_source_by"):          # admin-locked → never touch
+                new_src = recomputed_source(r, recompute_all)
+                if new_src is None:
                     continue
-                if r.get("out_quote_source") and not recompute_all:
-                    continue                               # already set, not recomputing
-
-                new_src = quote_source_for(r.get("outcome_quote"), r.get("abstract_r"))
-                if new_src is None:                        # no quote → leave it
-                    continue
-                if new_src == (r.get("out_quote_source") or None):
-                    continue                               # no change
 
                 changed += 1
                 counts[new_src] += 1
@@ -101,6 +120,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Backfill out_quote_source on validated rows.")
     ap.add_argument("--apply", action="store_true", help="Write changes (default: dry-run)")
     ap.add_argument("--recompute-all", action="store_true",
-                    help="Also refresh non-NULL rows (admin-locked rows are still skipped)")
+                    help="Also refresh computed values, abstract and full_text (named sections "
+                         "and admin-locked rows are still skipped)")
     args = ap.parse_args()
     run(apply=args.apply, recompute_all=args.recompute_all)

@@ -3268,8 +3268,10 @@ function showConfirm(message) {
   });
 }
 
-function showDialog({ icon, title, message, buttons, layout = "column", rawHtml = false }) {
+function showDialog({ icon, title, message, buttons, layout = "column", rawHtml = false, wide = false }) {
   return new Promise(resolve => {
+    // `wide` lasts for this dialog: every other one stays the narrow, centred panel.
+    $("#dialog-modal .faq-panel").classList.toggle("dialog-wide", wide);
     const iconEl  = $("#dialog-icon");
     const titleEl = $("#dialog-title");
     const msgEl   = $("#dialog-message");
@@ -4561,11 +4563,6 @@ function _quoteSourceOptions(selected) {
     .join("");
 }
 
-// Admin resolve panel. Offers the same named sources plus 'full_text' (the value
-// auto-detection produces), and ALWAYS keeps the stored value as an option —
-// including pipe-joined ones like "abstract|discussion". Without that, a granular
-// value matched nothing, the select fell back to "Auto-detect", and merely opening
-// and saving a record replaced a known source with a guess.
 // <option>s for one reproduction axis, from the [value, label, class] triples the
 // validator UI uses — one vocabulary, so the two forms cannot drift.
 function _axisOptions(values, selected) {
@@ -4576,17 +4573,120 @@ function _axisOptions(values, selected) {
 }
 
 
-function _adminQuoteSourceOptions(selected) {
-  const LABELS = {
-    "": "Auto-detect (is the quote in the abstract?)",
-    abstract: "Abstract — quote appears in the abstract",
-    full_text: "Full text — quote is from the paper body",
-  };
-  const known = ["", "abstract", "full_text", ..._QUOTE_SOURCES.filter(s => s !== "abstract")];
+// Where a save will say a quote came from, for showing it as a suggestion. Mirrors
+// consensus_engine.quote_source_for and its _normalize exactly: lowercase, keep only
+// a-z and 0-9, then containment. quoteAppearsInAbstract is the validators' fuzzy check
+// and can disagree, so it is not used. tests/test_quote_source.py runs the two side by side.
+function suggestQuoteSource(quote, abstract) {
+  const normalize = (text) => String(text || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const q = normalize(quote);
+  if (!q) return null;
+  return normalize(abstract).includes(q) ? "abstract" : "full_text";
+}
+
+// How a source reads on screen: "abstract|discussion" is "Abstract + Discussion".
+function _quoteSourceLabel(value) {
+  return String(value || "").split("|").map((part) => part.trim()).filter(Boolean)
+    .map((part) => ["full_text", "fulltext"].includes(part) ? "Full text" : part[0].toUpperCase() + part.slice(1))
+    .join(" + ");
+}
+
+// Admin resolve panel. Offers the real sources: the same named ones, with 'full_text'
+// (the value detection produces) for the validators' spelling of it unless that is what
+// is stored, and ALWAYS keeps the stored value as an option, including pipe-joined ones
+// like "abstract|discussion". Without that, a granular value matched nothing, the select
+// fell back to its blank option, and merely opening and saving a record replaced a known
+// source with a guess. `suggested` marks that option as the system's suggestion; `blank`
+// is the text of the empty option, and null leaves it out.
+function _adminQuoteSourceOptions(selected, { suggested = null, blank = "— not set —" } = {}) {
+  const known = ["abstract", selected === "fulltext" ? "fulltext" : "full_text",
+                 ..._QUOTE_SOURCES.filter(s => s !== "abstract" && s !== "fulltext")];
   const opts = selected && !known.includes(selected) ? [...known, selected] : known;
-  return opts.map(s =>
-    `<option value="${escapeHtml(s)}" ${(selected || "") === s ? "selected" : ""}>${
-      escapeHtml(LABELS[s] || s)}</option>`).join("");
+  const option = (value, text) =>
+    `<option value="${escapeHtml(value)}" ${(selected || "") === value ? "selected" : ""}>${escapeHtml(text)}</option>`;
+  return (blank === null ? [] : [option("", blank)])
+    .concat(opts.map(s => option(s, _quoteSourceLabel(s) + (s === suggested ? " (suggested)" : ""))))
+    .join("");
+}
+
+// Does a stored source say something the abstract check can contradict? Only 'abstract'
+// and 'full_text' do. A section name ("discussion") can hold a quote the abstract has too,
+// and a quote spanning sections ("abstract|discussion") is not wholly in the abstract by
+// nature, so neither is wrong whatever the check says.
+function _quoteSourceContradicted(stored, suggested) {
+  const said = stored === "fulltext" ? "full_text" : stored;
+  return !!suggested && ["abstract", "full_text"].includes(said) && said !== suggested;
+}
+
+// Draws one source field for its quote and abstract, from sel.dataset: `stored` is the
+// source on record, which stays selected whatever the suggestion says, and `chosen` says
+// the admin picked the current value. With neither, the suggestion is selected, marked and
+// explained in the hint, the element after the select. It stays only a suggestion:
+// nothing here is what gets saved (see _quoteSourceToSend).
+function _drawQuoteSource(sel, quote, abstract) {
+  const chosen = sel.dataset.chosen ? sel.value : "";
+  const stored = sel.dataset.stored || "";
+  const suggested = suggestQuoteSource(quote, abstract);
+  const suggesting = !chosen && !stored && !!suggested;
+  const disputed = !chosen && _quoteSourceContradicted(stored, suggested);
+  sel.innerHTML = _adminQuoteSourceOptions(chosen || stored || suggested || "", {
+    suggested: suggesting || disputed ? suggested : null,
+    blank: suggested ? null : "— no quote yet —",
+  });
+  const hint = sel.nextElementSibling;
+  hint.classList.toggle("hidden", !suggesting && !disputed);
+  hint.classList.toggle("is-disputed", disputed);
+  if (disputed) {
+    hint.innerHTML = `This entry says ${escapeHtml(_quoteSourceLabel(stored))}, but the quote ${
+      suggested === "abstract" ? "appears" : "is not"} in the abstract.
+      <button type="button" class="link-btn small" data-use-source="${suggested}">Use ${_quoteSourceLabel(suggested)}</button>`;
+  } else {
+    hint.textContent = suggested === "abstract" ? "The quote appears in the abstract."
+      : "The quote is not in the abstract, so it is taken as coming from the full text.";
+  }
+}
+
+// What resolving sends for a source field. A stored or chosen value goes as it is, and
+// the server records the admin's name only if that differs from the stored one. A
+// suggestion nobody touched goes as null, so the server detects it itself and records no
+// name: leaving it alone is not a choice.
+function _quoteSourceToSend(sel) {
+  return sel && (sel.dataset.stored || sel.dataset.chosen) ? sel.value || null : null;
+}
+
+// The resolve form's source field follows its quote and abstract. The handler does not
+// save a blank quote or abstract as blank, it keeps the stored one, so neither does this.
+function _wireAdminQuoteSource(recordId) {
+  const sel = $("#ar-quote-source");
+  if (!sel) return;
+  const form = $("#ar-normal-form");
+  const draw = () => _drawQuoteSource(sel,
+    $("#ar-quote").value.trim() || form.dataset.origQuote,
+    $("#ar-abstract-r").value.trim() || form.dataset.origAbstractR);
+  $("#ar-quote").addEventListener("input", draw);
+  $("#ar-abstract-r").addEventListener("input", () => {
+    draw();
+    _adminXoDrafts[recordId]?.drawSources?.();
+  });
+  sel.addEventListener("change", () => {
+    sel.dataset.chosen = sel.value ? "1" : "";
+    if (!sel.value) sel.dataset.stored = "";     // the blank is offered only with no quote
+    draw();
+  });
+  $("#ar-quote-source-hint").addEventListener("click", (ev) => {
+    const use = ev.target.closest("[data-use-source]");
+    if (!use) return;
+    sel.value = use.dataset.useSource;
+    sel.dispatchEvent(new Event("change"));
+  });
+  draw();
+}
+
+// A reproduction axis's source. The server detects nothing for these on resolve: null
+// keeps what is stored. So there is no suggestion, and the blank is offered only where
+// nothing is set, as picking it over a value would change nothing.
+function _axisSourceOptions(source) {
+  return _adminQuoteSourceOptions(source, source ? { blank: null } : {});
 }
 
 // One axis of the reproduction judgement: the choices, plus its OWN quote and
@@ -6388,6 +6488,13 @@ const STATUS_LABELS = {
   rejected:             { text: "Excluded",          cls: "status-rejected"    },
 };
 
+// Approved by shows unvalidated.admin_name, which elsewhere can name who excluded the
+// entry or sent it for review, so the column is only on the lists of approved
+// entries. Pending Approval has its own head (_AP_HEAD).
+function _adminHasApprovedBy() {
+  return _adminFilter === "validated" || _adminFilter === "admin_checked";
+}
+
 function renderAdminTable(entries, total) {
   const body = $("#admin-table-body");
 
@@ -6419,15 +6526,15 @@ function renderAdminTable(entries, total) {
     ].join("");
     // A parent and its added originals share the replication's title: name the
     // original too, or the rows look identical.
+    const xoOriginalText = String(e.effective_title_o || e.effective_doi_o || "original");
     const xoOriginal = (e.origin === "admin_extra_original" || e.has_extra_children)
-      ? `<span class="admin-xo-original">↳ ${escapeHtml(String(e.effective_title_o || e.effective_doi_o || "original").substring(0, 60))}</span>`
+      ? `<span class="admin-xo-original" title="${escapeHtml(xoOriginalText)}">↳ ${escapeHtml(xoOriginalText)}</span>`
       : "";
     const validators = [
-      e.has_v1  ? `<span class="val-badge" title="${escapeHtml(e.v1_handle || "Validator 1")}">V1</span>` : `<span class="val-badge val-badge-empty">—</span>`,
-      e.has_v2  ? `<span class="val-badge" title="${escapeHtml(e.v2_handle || "Validator 2")}">V2</span>` : `<span class="val-badge val-badge-empty">—</span>`,
-      e.has_llm ? `<span class="val-badge val-badge-llm" title="LLM validator">LLM</span>` : `<span class="val-badge val-badge-empty">—</span>`,
+      e.has_v1 ? `<span class="val-badge" title="${escapeHtml(e.v1_handle || "Validator 1")}">1</span>` : `<span class="val-badge val-badge-empty">—</span>`,
+      e.has_v2 ? `<span class="val-badge" title="${escapeHtml(e.v2_handle || "Validator 2")}">2</span>` : `<span class="val-badge val-badge-empty">—</span>`,
     ].join("");
-    const study = (e.final_title_r || e.title_r || e.doi_r || "—").substring(0, 60);
+    const study = e.final_title_r || e.title_r || e.doi_r || "—";
     const tc = e.trusted_validator_count || 0;
     const trustBadge = tc === 2
       ? '<span class="admin-trust-badge trust-double" title="Both validators are trusted">⭐⭐</span>'
@@ -6440,13 +6547,16 @@ function renderAdminTable(entries, total) {
     const noteFlag = e.admin_notes
       ? `<span class="admin-note-flag" title="${escapeHtml((e.note_saved_by ? e.note_saved_by + ": " : "") + e.admin_notes)}">📝</span>`
       : "";
+    // A line of their own, so a long title cannot push them out of the cell. A row with
+    // none does not get the line, and stays as tall as the rest of the row needs.
+    const marks = flags + trustBadge + needsAttentionFlag + noteFlag;
     const skipEvents = Number(e.skip_event_count || 0);
     const skipValidators = Number(e.skip_validator_count || 0);
     const issueValidators = Number(e.skip_issue_validator_count || 0);
     const skipEscalated = !!e.skip_review_required;
+    const issueReports = issueValidators ? `${issueValidators} issue report${issueValidators === 1 ? "" : "s"}` : "";
     const skipCell = skipEvents
-      ? `<span class="admin-skip-metric${skipEscalated ? " escalated" : ""}" title="${skipEvents} skip event${skipEvents === 1 ? "" : "s"} from ${skipValidators} distinct validator${skipValidators === 1 ? "" : "s"}"><strong>${skipValidators}</strong> validator${skipValidators === 1 ? "" : "s"}</span>
-         ${issueValidators ? `<span class="admin-skip-issue">${issueValidators} issue report${issueValidators === 1 ? "" : "s"}</span>` : ""}`
+      ? `<span class="admin-skip-metric${skipEscalated ? " escalated" : ""}" title="${skipEvents} skip event${skipEvents === 1 ? "" : "s"} from ${skipValidators} distinct validator${skipValidators === 1 ? "" : "s"}${issueReports ? `, ${issueReports}` : ""}"><strong>${skipValidators}</strong></span>${issueReports ? `<span class="admin-skip-issue" title="${issueReports}">!</span>` : ""}`
       : '<span class="agree-na">—</span>';
     const ap = e.agreement_pct;
     const llmMark = e.llm_dissent
@@ -6455,25 +6565,31 @@ function renderAdminTable(entries, total) {
     const agreeCell = (ap == null)
       ? '<span class="agree-na">—</span>'
       : `<span class="agree-pct ${ap >= 100 ? "agree-full" : ap >= 67 ? "agree-mid" : "agree-low"}">${ap}%</span>${llmMark}`;
-    // Approve is in the Pending Approval panel, beside the checks it depends on.
-    const approveCell = e.validation_status === "consensus_reached"
-      ? `<button type="button" class="link-btn admin-to-pending" data-id="${e.record_id}"${e.mine ? " data-mine" : ""} title="Go to this entry in Pending Approval, where it can be approved">Approve →</button>`
-      : `<span class="agree-na">—</span>`;
+    // Approve is in the Pending Approval panel, beside the checks it depends on, so
+    // the status pill of an entry waiting there goes to its row.
+    const statusCell = e.validation_status === "consensus_reached"
+      ? `<button type="button" class="admin-status ${s.cls} admin-to-pending" data-id="${e.record_id}"${e.mine ? " data-mine" : ""} title="Go to this entry in Pending Approval, where it can be approved">${s.text}</button>`
+      : `<span class="admin-status ${s.cls}"${e.auto_validated ? ` title="No admin reviewed it: ${escapeHtml(_autoValidatedHow(e.auto_validated_rule))}"` : ""}>${s.text}</span>`;
     const reviewCell = `<button class="admin-review-btn ghost-btn" data-id="${e.record_id}">Review →</button>`;
+    const typeText = e.final_type || e.type || "—";
+    const outcomeText = fmtOutcome(e.final_outcome || e.outcome) || "—";
     const approvedBy = e.admin_name
       ? `<span style="font-size:0.8rem;color:var(--muted)">${escapeHtml(e.admin_name)}</span>`
       : "—";
     return `<tr>
       <td class="admin-cell-num">${offset + i + 1}</td>
-      <td class="admin-cell-study" title="${(e.final_title_r || e.title_r || "").replace(/"/g, "&quot;")}">${escapeHtml(study)}${e.study_r ? ` <span class="chk-na-note">Study ${escapeHtml(e.study_r)}</span>` : ""}${flags}${trustBadge}${needsAttentionFlag}${noteFlag}${xoOriginal}</td>
-      <td>${escapeHtml(e.final_type || e.type || "—")}</td>
-      <td>${escapeHtml(fmtOutcome(e.final_outcome || e.outcome) || "—")}</td>
-      <td><span class="admin-status ${s.cls}"${e.auto_validated ? ` title="No admin reviewed it: ${escapeHtml(_autoValidatedHow(e.auto_validated_rule))}"` : ""}>${s.text}</span></td>
+      <td class="admin-cell-study" title="${(e.final_title_r || e.title_r || "").replace(/"/g, "&quot;")}">
+        <div class="admin-study-line"><span class="admin-study-title">${escapeHtml(study)}</span>${e.study_r ? `<span class="chk-na-note admin-study-label" title="Study ${escapeHtml(e.study_r)}">Study ${escapeHtml(e.study_r)}</span>` : ""}</div>
+        ${marks ? `<div class="admin-study-marks">${marks}</div>` : ""}
+        ${xoOriginal}
+      </td>
+      <td class="admin-cell-clip" title="${escapeHtml(typeText)}">${escapeHtml(typeText)}</td>
+      <td class="admin-cell-clip" title="${escapeHtml(outcomeText)}">${escapeHtml(outcomeText)}</td>
+      <td>${statusCell}</td>
       <td class="admin-cell-validators">${validators}</td>
-      <td class="admin-skip-cell">${skipCell}</td>
+      <td>${skipCell}</td>
       <td class="admin-cell-agree">${agreeCell}</td>
-      <td>${approvedBy}</td>
-      <td class="admin-cell-approve">${approveCell}</td>
+      ${_adminHasApprovedBy() ? `<td class="admin-cell-clip"${e.admin_name ? ` title="${escapeHtml(e.admin_name)}"` : ""}>${approvedBy}</td>` : ""}
       <td class="admin-cell-review">${reviewCell}</td>
     </tr>`;
   }).join("");
@@ -6518,9 +6634,9 @@ function preloadAdminDetails() {
 /* ---------- Pending Approval: the entry list as an expandable table ---------- */
 
 // Only the pending_approval filter renders through here. Every other filter keeps
-// renderAdminTable, with a link to the row here in place of an Approve button. The
-// list, its filters, search, sort, "Hide entries I validated" and pagination stay in
-// fetchAdminEntries.
+// renderAdminTable, whose status pill links to the row here in place of an Approve
+// button. The list, its filters, search, sort, "Hide entries I validated" and
+// pagination stay in fetchAdminEntries.
 //
 // Endpoints:
 //   GET  /entries/{id}                    the panel, and again just before deciding
@@ -6555,7 +6671,7 @@ const _apState = {};           // record_id → what its panel knows (_apRow)
 // from. Survives collapsing and re-rendering, not a page reload, like _adminXoDrafts.
 const _apNoteDrafts = {};
 let _apHeadOn = false;
-let _apStandardHead = "";      // the regular head, put back on leaving the filter
+let _apStandardHead = "";      // the regular head in full, as index.html has it
 let _apPendingIndex = null;    // a decided row's place, for the refresh to fill
 let _apReturnTo = null;        // { id, index } of the entry whose full review is open
 let _apLastDecisionAt = 0;
@@ -6601,19 +6717,32 @@ function _apRows() {
 
 function _apSyncHead() {
   const on = _apActive();
-  if (on === _apHeadOn) return;
   const head = $("#admin-entries-head");
-  if (on) {
-    _apStandardHead = head.innerHTML;
-    head.innerHTML = _AP_HEAD;
-    if (!_AP_SORTS.has(_adminSort)) _adminSort = "";
-  } else {
-    head.innerHTML = _apStandardHead;
-    _apForgetRows();
+  if (!_apStandardHead) _apStandardHead = head.innerHTML;
+  if (on !== _apHeadOn) {
+    if (on) {
+      head.innerHTML = _AP_HEAD;
+      if (!_AP_SORTS.has(_adminSort)) _adminSort = "";
+    } else {
+      head.innerHTML = _apStandardHead;
+      _apForgetRows();
+    }
+    _apHeadOn = on;
+    head.closest("table").classList.toggle("ap-table", on);
+    $("#admin-empty").textContent = "No entries match this filter.";
   }
-  _apHeadOn = on;
-  head.closest("table").classList.toggle("ap-table", on);
-  $("#admin-empty").textContent = "No entries match this filter.";
+  if (!on) _adminSyncApprovedBy(head);
+}
+
+// The Approved by column of the regular head, with any sort left on it.
+function _adminSyncApprovedBy(head) {
+  const th = head.querySelector('[data-sort="approved_by"]');
+  if (_adminHasApprovedBy()) {
+    if (!th) head.innerHTML = _apStandardHead;
+  } else if (th) {
+    th.remove();
+    if (_adminSort === "approved_by") _adminSort = "";
+  }
 }
 
 function _apForgetRows() {
@@ -8415,9 +8544,12 @@ function _xoEntryType(parent) {
 
 // The replication's abstract as the original will get it: when it goes with Mark as
 // Resolved, as the resolve form has it; else as published; else as stored (there is
-// no published row before the first resolve).
+// no published row before the first resolve). A blank box is the stored abstract,
+// as the resolve handler keeps it.
 function _xoAbstract(parent) {
-  if (_xoMode(parent) === "draft" && $("#ar-abstract-r")) return $("#ar-abstract-r").value;
+  if (_xoMode(parent) === "draft" && $("#ar-abstract-r")) {
+    return $("#ar-abstract-r").value.trim() || $("#ar-normal-form").dataset.origAbstractR || "";
+  }
   if (parent.published) return parent.published.abstract_r || "";
   return parent.current?.abstract_r || "";
 }
@@ -8456,18 +8588,19 @@ function _xoAdminOutcomeFields(e, i, type, badField = null) {
       <label class="admin-form-label">${label}</label>
       <textarea class="admin-textarea${_xoBad(name, badField)}" data-xoa-idx="${i}" data-xoa-field="${name}"
                 maxlength="${_XO_ADMIN_LIMITS[name]}">${escapeHtml(e[name] || "")}</textarea>`;
-  const source = (name) => `
-      <select class="admin-select" data-xoa-idx="${i}" data-xoa-field="${name}">${_adminQuoteSourceOptions(e[name] || "")}</select>`;
+  const source = (name, quoteName) => `
+      <select class="admin-select" data-xoa-idx="${i}" data-xoa-field="${name}" data-xoa-quote="${quoteName}">${_adminQuoteSourceOptions(e[name] || "")}</select>
+      <p class="admin-source-hint hidden"></p>`;
   if (type === "reproduction") {
     return `
       <label class="admin-form-label">Computational reproducibility</label>
       <select class="admin-select${_xoBad("outcome_computation", badField)}" data-xoa-idx="${i}" data-xoa-field="outcome_computation">${_axisOptions(_REPRO_COMPUTATION, e.outcome_computation)}</select>
       ${quote("outcome_computational_quote", "Quote for the computational verdict")}
-      ${source("out_quote_computational_source")}
+      ${source("out_quote_computational_source", "outcome_computational_quote")}
       <label class="admin-form-label">Robustness</label>
       <select class="admin-select${_xoBad("outcome_robustness", badField)}" data-xoa-idx="${i}" data-xoa-field="outcome_robustness">${_axisOptions(_REPRO_ROBUSTNESS, e.outcome_robustness)}</select>
       ${quote("outcome_robustness_quote", "Quote for the robustness verdict")}
-      ${source("out_quote_robust_source")}`;
+      ${source("out_quote_robust_source", "outcome_robustness_quote")}`;
   }
   return `
       <label class="admin-form-label">Outcome</label>
@@ -8475,7 +8608,7 @@ function _xoAdminOutcomeFields(e, i, type, badField = null) {
         <option value="">— choose —</option>${_outcomeOptionsFor("replication", e.outcome || "")}
       </select>
       ${quote("outcome_quote", "Outcome quote")}
-      ${source("out_quote_source")}`;
+      ${source("out_quote_source", "outcome_quote")}`;
 }
 
 // A link to the record a refusal names (a duplicate, the survivor), when it has one.
@@ -8550,6 +8683,14 @@ function _renderAdminXoAddSection(body, xo) {
         : `<p id="xo-draft-note" class="xo-hint xo-draft-note"></p>`}
     </div>`;
   const list = host.querySelector("#xo-add-list");
+  // The server detects a blank source here too, so an entry holds only what the admin
+  // picked and the suggestion is only shown (each against its own quote).
+  const drawSources = () => list.querySelectorAll("[data-xoa-quote]").forEach((sel) => {
+    const e = draft.entries[Number(sel.dataset.xoaIdx)];
+    sel.dataset.chosen = e[sel.dataset.xoaField] ? "1" : "";
+    _drawQuoteSource(sel, e[sel.dataset.xoaQuote], _xoAbstract(parent));
+  });
+  draft.drawSources = drawSources;
   const render = () => {
     if (draft.open < 0 || draft.open >= draft.entries.length) draft.open = draft.entries.length - 1;
     list.innerHTML = draft.entries.map((e, i) => i === draft.open ? _xoAdminEntryForm(e, i, parent, draft.error) : `
@@ -8576,6 +8717,7 @@ function _renderAdminXoAddSection(body, xo) {
         ? `${n} original${n === 1 ? "" : "s"} drafted: saved with this entry when you click Mark as Resolved.`
         : "";
     }
+    drawSources();
   };
   draft.render = render;
   host.querySelector("#xo-add-on").onchange = (ev) => {
@@ -8612,7 +8754,10 @@ function _renderAdminXoAddSection(body, xo) {
       return;
     }
     const field = ev.target.closest("[data-xoa-field]");
-    if (field) draft.entries[Number(field.dataset.xoaIdx)][field.dataset.xoaField] = field.value;
+    if (field) {
+      draft.entries[Number(field.dataset.xoaIdx)][field.dataset.xoaField] = field.value;
+      drawSources();
+    }
   };
   list.oninput = update;
   list.onchange = update;
@@ -8744,9 +8889,9 @@ function renderAdminDetail(data) {
   const duplicateMerge = data.duplicate_merge;
   const duplicateMergeBanner = duplicateMerge
     ? `<div class="admin-override-banner">
-         <strong>Merged duplicate</strong> — this record was explicitly merged into authoritative record
-         <code style="word-break:break-all">${escapeHtml(duplicateMerge.survivor_record_id)}</code>
-         by ${escapeHtml(duplicateMerge.merged_by || "an admin")}. Its extraction data and judgements are retained here for audit.
+         <strong>Merged duplicate</strong> — ${escapeHtml(duplicateMerge.merged_by || "an admin")} merged this
+         record into validated record <code>${escapeHtml(duplicateMerge.survivor_record_id)}</code>, which was kept.
+         This record is not published. Its extracted data, judgements and the corrections saved at the merge stay here for audit.
        </div>`
     : "";
   const skipHistory = data.skip_history || [];
@@ -9136,6 +9281,11 @@ function renderAdminDetail(data) {
   const finalPreview = () => {
     // Uses outer final* variables computed above
 
+    const suggestedSource = suggestQuoteSource(finalQuote, finalAbstractR);
+    const sourceText = finalSource ? escapeHtml(_quoteSourceLabel(finalSource))
+      : suggestedSource ? `<em>${_quoteSourceLabel(suggestedSource)} (suggested)</em>`
+      : "<em>not set</em>";
+
     const changes = [
       finalStudyR    && finalStudyR    !== rec.title_r        ? ["Replication title", rec.title_r,        finalStudyR]    : null,
       finalDoiR      && finalDoiR      !== rec.doi_r          ? ["Replication DOI",   rec.doi_r,          finalDoiR]      : null,
@@ -9187,7 +9337,7 @@ function renderAdminDetail(data) {
           <div class="fp-row"><span class="fp-label">Computation</span><span class="fp-value">${escapeHtml(fmtOutcome(finalComputation) || "Not coded")}</span></div>
           <div class="fp-row"><span class="fp-label">Robustness</span><span class="fp-value">${escapeHtml(fmtOutcome(finalRobustness) || "Not coded")}</span></div>` : ""}
         ${finalQuote ? `<div class="fp-row fp-quote-row"><span class="fp-label">Quote</span><span class="fp-value fp-quote">"${escapeHtml(finalQuote)}"</span></div>` : ""}
-        ${finalQuote ? `<div class="fp-row"><span class="fp-label">Quote source</span><span class="fp-value">${finalSource === "abstract" ? "Abstract" : finalSource === "full_text" ? "Full text" : "<em>auto-detect on save</em>"}${rec.out_quote_source_by ? ` <span class="fp-src-by">· set by ${escapeHtml(rec.out_quote_source_by)}</span>` : ""}</span></div>` : ""}
+        ${finalQuote ? `<div class="fp-row"><span class="fp-label">Quote source</span><span class="fp-value">${sourceText}${rec.out_quote_source_by ? ` <span class="fp-src-by">· set by ${escapeHtml(rec.out_quote_source_by)}</span>` : ""}</span></div>` : ""}
       </div>
       ${finalAbstractR ? `<details class="fp-abstract"><summary>Abstract${finalAbstractR !== rec.abstract_r ? " (edited)" : ""}</summary><p class="fp-abstract-text">${escapeHtml(finalAbstractR)}</p></details>` : ""}
       ${changesSection}
@@ -9401,7 +9551,16 @@ function renderAdminDetail(data) {
 
         <h3>Admin Resolution</h3>
 
-        ${rec.validation_status === "rejected" ? `
+        ${duplicateMerge ? `
+        <div class="admin-merged-note">
+          <p class="not-val-who">This record was <strong>merged</strong> into validated record
+            <code>${escapeHtml(duplicateMerge.survivor_record_id)}</code>. Nothing is left to resolve here.</p>
+          <div class="not-val-buttons">
+            <button id="admin-open-survivor-btn" class="btn-outline" data-id="${escapeHtml(duplicateMerge.survivor_record_id)}">Open the kept record</button>
+            <button id="admin-skip-btn" class="ghost-btn">Skip →</button>
+          </div>
+        </div>
+        ` : rec.validation_status === "rejected" ? `
         <div class="not-val-decision">
           ${(data.decisions || []).at(-1)?.action === "original_removed"
             ? `<p class="not-val-who">⚠ This original was <strong>removed</strong>: both validators marked it as the wrong paper, so it is not in FLoRA. The paper's other originals are separate entries.</p>`
@@ -9415,7 +9574,7 @@ function renderAdminDetail(data) {
         </div>
         ` : ""}
 
-        <div id="ar-normal-form" class="${rec.validation_status === "rejected" ? "hidden" : ""}"
+        ${duplicateMerge ? "" : `<div id="ar-normal-form" class="${rec.validation_status === "rejected" ? "hidden" : ""}"
              data-orig-study-r="${escapeHtml(storedStudyR || "")}"
              data-orig-doi-r="${escapeHtml(finalDoiR || "")}"
              data-orig-study-o="${escapeHtml(storedStudyO || "")}"
@@ -9425,6 +9584,7 @@ function renderAdminDetail(data) {
           data-orig-outcome-computation="${escapeHtml(finalComputation || "")}"
           data-orig-outcome-robustness="${escapeHtml(finalRobustness || "")}"
              data-orig-abstract-r="${escapeHtml(storedAbstractR || "")}"
+             data-orig-quote="${escapeHtml(storedQuote || "")}"
              data-orig-url-r="${escapeHtml(storedUrlR || "")}"
              data-orig-doi-r-published="${escapeHtml(storedPubDoi)}"
              data-orig-alt-identifier-r="${escapeHtml(finalAltIds)}">
@@ -9465,7 +9625,8 @@ function renderAdminDetail(data) {
           <textarea id="ar-quote" class="admin-textarea" placeholder="Outcome quote…">${escapeHtml(finalQuote || "")}</textarea>
 
           <label class="admin-form-label">Outcome Quote Source</label>
-          <select id="ar-quote-source" class="admin-select">${_adminQuoteSourceOptions(finalSource)}</select>
+          <select id="ar-quote-source" class="admin-select" data-stored="${escapeHtml(finalSource)}" aria-describedby="ar-quote-source-hint"></select>
+          <p id="ar-quote-source-hint" class="admin-source-hint hidden"></p>
 
           <!-- Two independently coded axes, each with its own evidence. A reproduction
                can fail computationally and still find the conclusion robust, so these
@@ -9476,14 +9637,14 @@ function renderAdminDetail(data) {
               _axisOptions(_REPRO_COMPUTATION, finalComputation)}</select>
             <textarea id="ar-computational-quote" class="admin-textarea" placeholder="Quote supporting the computational verdict…">${escapeHtml(finalComputationQuote || "")}</textarea>
             <select id="ar-computational-source" class="admin-select">${
-              _adminQuoteSourceOptions(finalComputationSource)}</select>
+              _axisSourceOptions(finalComputationSource)}</select>
 
             <label class="admin-form-label">Robustness</label>
             <select id="ar-outcome-robustness" class="admin-select">${
               _axisOptions(_REPRO_ROBUSTNESS, finalRobustness)}</select>
             <textarea id="ar-robustness-quote" class="admin-textarea" placeholder="Quote supporting the robustness verdict…">${escapeHtml(finalRobustnessQuote || "")}</textarea>
             <select id="ar-robustness-source" class="admin-select">${
-              _adminQuoteSourceOptions(finalRobustnessSource)}</select>
+              _axisSourceOptions(finalRobustnessSource)}</select>
           </div>
 
           <label class="admin-form-label">Abstract${finalAbstractR !== storedAbstractR ? `<span class="admin-label-note">✎ pre-filled with validator's edit — saved on resolve</span>` : ""}</label>
@@ -9507,7 +9668,7 @@ function renderAdminDetail(data) {
               <span class="admin-reject-note">neither a replication nor a reproduction</span>
             </div>
           </div>
-        </div>
+        </div>`}
       </div>
     </div>
     ${_adminPaperOriginals(data)}
@@ -9515,6 +9676,7 @@ function renderAdminDetail(data) {
   `;
   _wireAdminExtraOriginals(rec, data);
   _wireAdminPaperReview(rec, data);
+  _wireAdminQuoteSource(rec.record_id);
 
   // "It's a reproduction" / "It's a replication": the other FLoRA type is a
   // correction of the type, not a rejection. Open the edit panel (hidden behind
@@ -9543,6 +9705,9 @@ function renderAdminDetail(data) {
     $("#admin-skip-notval-btn")?.addEventListener("click", () => advanceToNextAdminEntry());
   }
   $("#admin-other-type-btn")?.addEventListener("click", (e) => openAsType(e.currentTarget.dataset.type));
+  // A merged record: the resolve form is not drawn, as the server refuses every save
+  // from it (record_already_merged). The kept record need not be on the current list.
+  $("#admin-open-survivor-btn")?.addEventListener("click", (e) => openAdminDetail(e.currentTarget.dataset.id));
   $("#admin-save-note-btn")?.addEventListener("click", async () => {
     const btn = $("#admin-save-note-btn");
     const note = $("#admin-note-text").value.trim();
@@ -9717,42 +9882,127 @@ function renderAdminDetail(data) {
   }
 }
 
-async function confirmValidatedDuplicateMerge(detail, drafted = 0) {
-  const survivor = detail?.survivor || {};
-  const value = (v, fallback = "—") => escapeHtml(v || fallback);
-  const duplicateId = value(detail?.duplicate_record_id);
-  const survivorId = value(detail?.survivor_record_id);
+// The window Mark as Resolved opens when this record would match a validated one
+// (the server's 409, _validated_duplicate_detail in app.py). A match needs six
+// fields identical, so only type and outcome can differ between the two columns.
+// `changed` names the rows whose value comes from an edit in the form.
+async function confirmValidatedDuplicateMerge(detail, drafted = 0, changed = {}) {
+  const mine = detail?.duplicate || {};
+  const kept = detail?.survivor || {};
+  const hasDoi = mine.doi_o || kept.doi_o;
+  const sentence = (v) => v && String(v).charAt(0).toUpperCase() + String(v).slice(1);
+  const rows = [
+    { label: "Replication title", mine: mine.title_r, kept: kept.title_r, changed: changed.title_r },
+    { label: "Replication DOI", mine: mine.doi_r, kept: kept.doi_r, changed: changed.doi_r },
+    { label: "Replication study label", mine: mine.study_r, kept: kept.study_r },
+    { label: "Original title", mine: mine.title_o, kept: kept.title_o, changed: changed.title_o },
+    { label: hasDoi ? "Original DOI" : "Original OpenAlex ID", changed: changed.doi_o,
+      mine: mine.doi_o || mine.original_key, kept: kept.doi_o || kept.original_key },
+    { label: "Original study label", mine: mine.study_o, kept: kept.study_o },
+    { label: "Type", mine: mine.type, kept: kept.type, changed: changed.type, show: sentence },
+    { label: "Outcome", mine: mine.outcome, kept: kept.outcome, changed: changed.outcome,
+      show: (v) => sentence(fmtOutcome(v)) },
+  ];
+  const isSame = (row) => String(row.mine ?? "") === String(row.kept ?? "");
+  const cell = (side, value, note = "") => `
+    <td><span class="merge-side">${side}</span>${value
+      ? escapeHtml(value) : `<span class="merge-blank">blank</span>`}${note}</td>`;
+  const body = rows.map((row) => {
+    const same = isSame(row);
+    const show = row.show || ((v) => v);
+    const status = !same ? "Differs" : row.mine ? "Same" : "Both blank";
+    return `
+      <tr class="${same ? "merge-same" : "merge-differs"}">
+        <th scope="row">${row.label}</th>
+        ${cell("This record", show(row.mine),
+               row.changed ? `<span class="merge-changed">changed in this form</span>` : "")}
+        ${cell("Existing record", show(row.kept))}
+        <td class="merge-status">${status}</td>
+      </tr>`;
+  }).join("");
+
+  const names = {
+    title_r: "replication title", doi_r: "replication DOI", study_r: "replication study label",
+    title_o: "original title", original_key: hasDoi ? "original DOI" : "original OpenAlex ID",
+    study_o: "original study label",
+  };
+  const list = (items) => items.length < 2 ? items.join("")
+    : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
+  const named = (fields) => list(fields.map((field) => names[field]));
+  const matched = Object.keys(names).filter((field) => detail?.matched_fields?.includes(field));
+  const blank = Object.keys(names).filter((field) => !matched.includes(field));
+  const fromForm = changed.title_r || changed.doi_r || changed.title_o || changed.doi_o;
+  const differs = !rows.every(isSame);
+  const count = (n, noun) => n ? `${n} ${noun}${n === 1 ? "" : "s"}` : "";
+  const addedCount = Number(detail?.added_originals) || 0;
+  const suggestionCount = Number(detail?.open_suggestions) || 0;
+  const movingCount = addedCount + suggestionCount;
+  const moving = list([count(addedCount, "added original"),
+                       count(suggestionCount, "open suggestion")].filter(Boolean));
+
+  const consequences = [
+    `This record is marked <strong>rejected</strong> and linked to the existing record. Validator
+     assignments still open on it close.`,
+    detail?.duplicate_published
+      ? `It is published now, so it leaves validated output at once and FLoRA at the next nightly
+         sync. A FLoRA ID that rests on it alone is retired, never reused.`
+      : `It is not published, so nothing leaves FLoRA, and it will never be published.`,
+    `The existing record’s published values and FLoRA ID do not change.`,
+    `<strong>Your corrections and note are not carried over.</strong> They stay on this record for
+     audit, with its extracted data and the validators’ judgements. None of it is published or
+     copied to the existing record.`,
+    ...(moving ? [`${moving} on this record ${movingCount === 1 ? "moves" : "move"} to the existing
+      record.`] : []),
+    ...(drafted ? [`The ${drafted} other original${drafted === 1 ? "" : "s"} you drafted
+      ${drafted === 1 ? "goes" : "go"} to the existing record instead, checked against its
+      originals. If it cannot take ${drafted === 1 ? "it" : "them"}, nothing is merged or saved.`] : []),
+  ];
+
   const message = `
-    <div style="text-align:left;font-size:0.9rem;line-height:1.45">
-      <p>This resolution gives the current record the same identity as an existing
-      validated record. Confirming will <strong>merge A into B</strong>.</p>
-      <div style="padding:0.7rem;margin:0.7rem 0;background:var(--paper-alt,#f6f7f8);border:1px solid var(--border);border-radius:7px">
-        <div style="margin-bottom:0.45rem"><strong>A — duplicate</strong><br><code style="word-break:break-all">${duplicateId}</code></div>
-        <div><strong>B — authoritative survivor</strong><br><code style="word-break:break-all">${survivorId}</code></div>
+    <div class="merge-window">
+      <p class="merge-lead">${fromForm ? "With the changes in this form, this record" : "This record"}
+        has the same ${named(matched) || "identifying fields"} as the validated record
+        below${blank.length && matched.length
+          ? `, and the ${named(blank)} ${blank.length === 1 ? "is" : "are"} blank on both` : ""}.
+        Two validated records cannot share all six fields, so this needs your decision.
+        <strong>Nothing has been saved yet.</strong></p>
+      <table class="merge-compare" aria-label="The two records compared">
+        <thead>
+          <tr>
+            <th scope="col"><span class="merge-hidden">Field</span></th>
+            <th scope="col">This record <span class="merge-fate">(will be merged away)</span>
+              <code class="merge-id">${escapeHtml(detail?.duplicate_record_id)}</code></th>
+            <th scope="col">Existing validated record <span class="merge-fate">(kept)</span>
+              <code class="merge-id">${escapeHtml(detail?.survivor_record_id)}</code></th>
+            <th scope="col"><span class="merge-hidden">Match</span></th>
+          </tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+      ${differs ? `<p class="merge-note">Type and outcome are not part of the match, so they can
+        differ. If you merge, the existing record’s values stay.</p>` : ""}
+      <div class="merge-choices">
+        <section>
+          <h3>If you merge</h3>
+          <ul>${consequences.map((line) => `<li>${line}</li>`).join("")}</ul>
+        </section>
+        <section>
+          <h3>If they are different records</h3>
+          <p>Go back to editing and correct the field that is wrong: Replication Title,
+            Replication DOI, Original Title or Original DOI. Changing any one of them ends this
+            match. Study labels cannot be changed in this form.</p>
+          <p><strong>A merge cannot be undone.</strong> The app has no way to reverse it.</p>
+        </section>
       </div>
-      <p style="margin-bottom:0.35rem"><strong>B’s stored identity</strong></p>
-      <div style="font-size:0.84rem;color:var(--ink-soft)">
-        Replication: ${value(survivor.title_r, "(untitled)")} · ${value(survivor.doi_r, "no DOI")}<br>
-        Original: ${value(survivor.title_o, "(untitled)")} · ${value(survivor.doi_o || survivor.original_key, "no identifier")}<br>
-        Classification: ${value(survivor.type)} · ${value(survivor.outcome)}
-      </div>
-      <p style="margin-top:0.7rem;margin-bottom:0;color:var(--muted)">
-        B stays unchanged and remains in validated exports. A leaves validated output,
-        while its extraction data and validator judgements remain linked in the audit trail.
-      </p>
-      ${drafted ? `<p style="margin-top:0.7rem;margin-bottom:0">
-        The ${drafted} other original${drafted === 1 ? "" : "s"} you drafted for A
-        ${drafted === 1 ? "is" : "are"} added to <strong>B</strong> instead, checked against B’s originals.
-        If B cannot take ${drafted === 1 ? "it" : "them"}, nothing is merged.</p>` : ""}
     </div>`;
   return showDialog({
-    icon: "⇢",
-    title: "Resolve duplicate records",
+    title: "This record matches one that is already validated",
     message,
     rawHtml: true,
+    wide: true,
     buttons: [
-      { label: "Cancel", value: false },
-      { label: "Merge A into B", value: true, primary: true },
+      { label: "Go back to editing", value: false },
+      { label: "Merge into the existing record", value: true, primary: true },
     ],
     layout: "row",
   });
@@ -9836,7 +10086,7 @@ async function submitAdminResolve(recordId) {
     // '' is meaningful here (clear the stored value); null means unchanged.
     doi_r_published:         newPubDoi !== origPubDoi ? newPubDoi : null,
     alt_identifier_r:        newAltIds !== origAltIds ? newAltIds : null,
-    out_quote_source:        $("#ar-quote-source")?.value || null,
+    out_quote_source:        _quoteSourceToSend($("#ar-quote-source")),
     // Reproduction axes. Absent from the form on a replication, so these send null
     // and the resolve handler leaves the stored values alone.
     corrected_outcome_computation:  newType === "reproduction" ? newComputation : null,
@@ -9870,7 +10120,12 @@ async function submitAdminResolve(recordId) {
     await advanceToNextAdminEntry();
   } catch (e) {
     if (e.status === 409 && e.detail?.code === "validated_duplicate_conflict") {
-      const confirmed = await confirmValidatedDuplicateMerge(e.detail, drafted.length);
+      // A blank title or replication DOI is not saved: the stored value stands.
+      const confirmed = await confirmValidatedDuplicateMerge(e.detail, drafted.length, {
+        title_r: studyRChanged && !!newStudyR, doi_r: doiRChanged && !!newDoiR,
+        title_o: studyOChanged && !!newStudyO, doi_o: doiOChanged,
+        type: typeChanged, outcome: outcomeChanged || axesChanged,
+      });
       if (confirmed) {
         btn.textContent = "Merging…";
         body.merge_into_record_id = e.detail.survivor_record_id;
@@ -9884,7 +10139,12 @@ async function submitAdminResolve(recordId) {
           btn.disabled = false;
           btn.textContent = "Mark as Resolved →";
           _xoShowError(recordId, mergeError.detail);
-          await showAlert("Merge failed: " + mergeError.message);
+          // The form did not change, so only the other record can have.
+          const moved = ["duplicate_merge_target_changed", "validated_duplicate_conflict"]
+            .includes(mergeError.detail?.code);
+          await showAlert("Merge failed. " + (moved
+            ? "The existing record changed while this window was open, so nothing was merged. Mark as Resolved again to see the current match."
+            : mergeError.message) + " Your edits are still in the form.");
           return;
         }
       }
@@ -13106,6 +13366,7 @@ const MANUAL_AXES = [
     source: "out_quote_robust_source", label: "Robustness" },
 ];
 const MANUAL_REPLICATION_OUTCOME = ["outcome", "outcome_quote", "out_quote_source"];
+const MANUAL_SOURCE_HINT = "abstract when the quote is in it, else full_text";
 const MANUAL_STATE_LABELS = {
   awaiting_id: "Its own record, no FLoRA ID yet", in_flora: "In FLoRA",
   absorbed: "Merged into another record", withdrawn: "Withdrawn",
@@ -13240,14 +13501,14 @@ function renderManualForm(entry) {
     manualField("outcome", "Outcome", v.outcome, { choices: opts.outcomes || [], disabled: !editable, required: true }) +
     manualField("outcome_quote", "Quote", v.outcome_quote, { long: true, disabled: !editable, required: true }) +
     manualField("out_quote_source", "Quote source", v.out_quote_source,
-      { disabled: !editable, hint: editable ? "abstract when the quote is in it, else full_text" : "" }) + "</div>";
+      { disabled: !editable, hint: editable ? MANUAL_SOURCE_HINT : "" }) + "</div>";
   const reproductionOutcome = MANUAL_AXES.map((a) =>
     '<div class="src-group flora-manual-outcome" data-outcome-for="reproduction"><h4>' + a.label + "</h4>" +
     manualField(a.verdict, "Verdict", v[a.verdict], { choices: opts[a.verdict] || [], disabled: !editable, required: true }) +
     manualField(a.quote, "Quote", v[a.quote], { long: true, disabled: !editable,
       hint: editable ? "Required unless the verdict is not checked" : "" }) +
     manualField(a.source, "Quote source", v[a.source], { disabled: !editable,
-      hint: editable ? "abstract when the quote is in it, else full_text" : "" }) + "</div>"
+      hint: editable ? MANUAL_SOURCE_HINT : "" }) + "</div>"
   ).join("") + '<p class="flora-manual-derived" data-outcome-for="reproduction">FLoRA outcome: ' +
     '<b id="flora-manual-derived"></b></p>';
 
@@ -13284,6 +13545,19 @@ function renderManualForm(entry) {
   manualTypeChanged(false);
   // An entry being changed shows what it shares at once; a new one once its identifiers are typed.
   if (entry && editable) runManualCheck();
+  manualSuggestSources();
+}
+
+/** A blank quote source is worked out from the abstract on save, so each blank field
+ *  shows, as its placeholder, what it would be. */
+function manualSuggestSources() {
+  const abstract = $("#fm-abstract_r")?.value;
+  [{ quote: "outcome_quote", source: "out_quote_source" }, ...MANUAL_AXES].forEach(({ quote, source }) => {
+    const control = $("#fm-" + source);
+    if (!control || control.disabled) return;
+    const suggested = suggestQuoteSource($("#fm-" + quote)?.value, abstract);
+    control.placeholder = suggested ? suggested + " (suggested)" : MANUAL_SOURCE_HINT;
+  });
 }
 
 /** Show the outcome block of the chosen type, and the reproduction's derived outcome. */
@@ -13677,6 +13951,7 @@ $("#flora-manual-body")?.addEventListener("input", (e) => {
   const name = e.target.dataset?.mfield;
   if (name === "outcome_computation" || name === "outcome_robustness") manualTypeChanged(false);
   if (["doi_o", "doi_r", "url_r"].includes(name)) scheduleManualCheck();
+  if (["abstract_r", "outcome_quote", ...MANUAL_AXES.map((a) => a.quote)].includes(name)) manualSuggestSources();
 });
 $("#flora-manual-body")?.addEventListener("change", (e) => {
   if (e.target.name === "flora-manual-type") manualTypeChanged();

@@ -406,6 +406,29 @@ already marked `out_quote_source = 'full_text'`, and when there is no quote or
 abstract to compare. Server-side classification (`quote_source_for` in
 `consensus_engine.py`) is unchanged and still auto-labels the published source.
 
+The admin form shows that classification as a suggestion rather than a choice:
+with no stored source, *Outcome Quote Source* selects what `quote_source_for` would
+say (`suggestQuoteSource` in `docs/app.js` mirrors it, unlike the fuzzy check above),
+marks it "(suggested)" and follows edits to the quote and abstract until the admin
+picks a source. A suggestion left alone is sent as null, so the server detects it and
+`out_quote_source_by` stays empty. A stored source stays selected: a stored `abstract`
+or `full_text` the quote now contradicts gets a hint with a one-click way to the
+suggestion, and a section name is left alone. The resolve form's reproduction axis
+sources are not detected on save, so they get no suggestion.
+
+The form sends a stored source back on every save, so that is not a choice either.
+`admin_quote_source` (`consensus_engine.py`) compares normalised values: a different
+source is used and stamped with the admin's handle; the stored one stays, with whatever
+`out_quote_source_by` already holds, an earlier admin's handle or nothing. It is not
+re-detected, which would replace a value such as `discussion` with a guess. Stamps
+written before this rule cannot be told from real choices, so they stay.
+
+An empty `out_quote_source_by` therefore does not mean nobody looked at the source, so
+`backfill_quote_source.py --recompute-all` refreshes only computed values (`abstract`
+and `full_text`, in any spelling `normalize_quote_source` maps to those) and never
+replaces a section name or compound value such as `abstract|discussion`. A stamped row
+is skipped as ever, and the default run fills only blanks.
+
 ### Modes
 
 - **Normal mode** — records with an abstract
@@ -693,7 +716,7 @@ Eight tabs:
 
 | Tab | What it does |
 |---|---|
-| **Entries** | Every record, filterable by All / Pending Approval / Needs Review / Skipped / Admin comments / Validated / Excluded. Shows validator handles, distinct skip counts, human agreement % (with an LLM-dissent marker — see below), and LLM errors. Approve, flag for review and add notes in the Pending Approval filter, whose rows open in place; the other filters link to that row. Resolve conflicts in the full review. |
+| **Entries** | Every record, filterable by All / Pending Approval / Needs Review / Skipped / Admin comments / Validated / Excluded. Shows which validators have judged the entry (handles in tooltips), distinct skip counts, human agreement % (with an LLM-dissent marker — see below), LLM errors, and who approved it (on the Validated filter only). Long outcomes and handles are cut, with the full text in a tooltip. Approve, flag for review and add notes in the Pending Approval filter, whose rows open in place; on the other filters the Pending approval status pill links to that row. Resolve conflicts in the full review. |
 | **Source Records** | The entry-sheet table — see [SOURCE_RECORDS.md](SOURCE_RECORDS.md) |
 | **Validator Stats** | Per-validator throughput, accuracy, flagged judgements; set tier |
 | **Admins** | Add/remove admins, toggle trusted, set the site banner |
@@ -710,9 +733,18 @@ history but count once toward both rules. Opening the record shows a collapsed
 **Skip history** ledger with timestamp, validator handle, reason, and comment; only
 admin APIs return validator names and comments. Skips do not change consensus.
 
+### The Study column
+
+The Entries table's Study cell puts its title on one line, cut with an ellipsis, with
+the study label beside it and the full title in the cell's tooltip. The row's flags,
+trust badges and note marker get a line of their own, wrapping as they need, so a long
+title cannot push them out of view; a row with none has no such line. The `↳` original
+is on its own line too, cut, with its full text in a tooltip. Pending Approval lays
+its Study cell out differently: its title wraps, and its flags have their own column.
+
 ### The Agreement column
 
-The Entries table's **Agreement %** measures the two *human* validators only: the share
+The Entries table's **Agreement %** (headed **Agree**) measures the two *human* validators only: the share
 of the three checks (type / original / outcome) on which V1 and V2 gave the same
 answer — so 0 / 33 / 67 / 100%, and blank until both humans have submitted. An outcome
 check of `not_applicable` is no answer: that record is scored on its other two checks,
@@ -757,11 +789,19 @@ on. Quote edits pre-fill with the longest edit, mirroring consensus.
 
 If an admin resolution gives record **A** the natural identity already owned by
 validated record **B**, the API returns a structured conflict instead of running an
-overwriting upsert. The admin must confirm **Merge A into B** in a second request. B
-stays authoritative and unchanged; A is removed from validated output but retained
-with its extraction metadata and judgements. `validated_record_merges` records the
-two record ids, admin handle, timestamp, and proposed resolution snapshot. A
-concurrent insert uses `ON CONFLICT DO NOTHING` and returns to the same confirmation
+overwriting upsert, and saves nothing. That identity is six fields, all identical
+(replication title, DOI and study label; original title, key and study label), so of
+what the window compares only type and outcome can differ. The window sets the two
+records side by side and says what a merge does; the admin confirms **Merge into the
+existing record** in a second request, or goes back to change a field. B stays
+authoritative and unchanged; A is removed from validated output but retained with its
+extraction metadata and judgements, and the corrections and note from the form are
+written to A alone, so they never reach B. There is no undo: nothing removes a merge,
+and resolving A again is refused (409 `record_already_merged`), so A's Admin Resolution
+section shows no form or decision, only that A was merged into B and a way to open B.
+A note can still be saved on it. `validated_record_merges` records the two record
+ids, admin handle, timestamp, and proposed resolution snapshot. A concurrent insert
+uses `ON CONFLICT DO NOTHING` and returns to the same confirmation
 flow rather than mutating B. Every path that publishes does the same, so two duplicates
 published at once can never leave one validated with no row: `admin_approve` answers
 409 as its duplicate check does, and an unattended publish (`_insert_validated`, from
@@ -1111,7 +1151,7 @@ Both need the `DATABASE_URL` secret. The hour gap is deliberate so they never co
 | `sync_sources.py` | Entry-sheet ingest → `source_records` |
 | `transform_sources.py` | `source_records` → FLoRA column set |
 | `backfill_oa_work_ids.py` | Fill `oa_work_id_o/_r` from DOIs via OpenAlex |
-| `backfill_quote_source.py` | Populate `out_quote_source` on existing rows |
+| `backfill_quote_source.py` | Populate `out_quote_source` on existing rows; `--recompute-all` refreshes only computed values |
 | `fetch_oa.py` | Unpaywall open-access status for every DOI |
 | `update_originals.py` | Refresh original-study references on existing rows |
 | `update_outcomes.py` | Update outcome classification from a newer `extracted.csv` |

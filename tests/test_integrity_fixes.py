@@ -56,6 +56,16 @@ def test_admin_natural_key_collision_requires_an_explicit_audited_merge():
     assert "DO UPDATE SET" not in insert
 
 
+def test_whether_a_duplicate_is_published_is_read_before_its_row_is_replaced():
+    """The second conflict check runs after the publish deleted this record's row,
+    and the dialog would then call a published record unpublished."""
+    body = _function_body(APP, "admin_resolve", "_source_filters")
+    read = body.index('cur.execute("SELECT 1 FROM validated WHERE record_id = %s", (record_id,))')
+    assert read < body.index("conflict = _validated_identity_conflict(")
+    assert read < body.index('cur.execute("DELETE FROM validated WHERE record_id = %s", (record_id,))\n'
+                             '        cur.execute(\n            """\n            INSERT INTO validated (')
+
+
 def test_validated_duplicate_merge_has_a_durable_audit_table():
     assert "CREATE TABLE IF NOT EXISTS validated_record_merges" in SCHEMA
     assert "duplicate_record_id   UUID        NOT NULL UNIQUE" in SCHEMA
@@ -67,9 +77,10 @@ def test_validated_duplicate_merge_has_a_durable_audit_table():
 def test_admin_ui_requires_confirmation_before_sending_merge_target():
     assert "error.detail = err.detail" in ADMIN_JS
     assert 'e.detail?.code === "validated_duplicate_conflict"' in ADMIN_JS
-    assert 'label: "Merge A into B"' in ADMIN_JS
+    assert '{ label: "Go back to editing", value: false }' in ADMIN_JS
+    assert '{ label: "Merge into the existing record", value: true, primary: true }' in ADMIN_JS
     assert "body.merge_into_record_id = e.detail.survivor_record_id" in ADMIN_JS
-    assert "B stays unchanged and remains in validated exports" in ADMIN_JS
+    assert "The existing record’s published values and FLoRA ID do not change." in ADMIN_JS
     assert "Merged duplicate" in ADMIN_JS
     assert '"duplicate_merge": duplicate_merge' in APP
 
