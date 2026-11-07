@@ -494,10 +494,38 @@ def source_edits(cur, export_id: str) -> list:
     return [dict(row) for row in cur.fetchall()]
 
 
+# Values the editor's Change study type leaves out, though the route takes them:
+# validate_flora flags a replication whose outcome says it is none, and an axis that
+# cannot be determined makes a reproduction's outcome cannot_be_determined, which it
+# flags too. A converted record should not start out flagged.
+_NOT_OFFERED_ON_TYPE_CHANGE = {"outcome": ("not_a_replication",),
+                               "outcome_computation": ("cannot_be_determined",),
+                               "outcome_robustness": ("cannot_be_determined",)}
+
+
+def _type_change(record: dict, derived: dict, in_force: dict) -> "dict | None":
+    """What changing the record to the other type takes: the fields that type shows
+    and this one does not, blank, with its outcome required; the corrections in force
+    it cannot hold; and the type the build gives, while a corrected one differs from
+    it. None for a record of neither type."""
+    other = {"replication": "reproduction", "reproduction": "replication"}.get(record.get("type"))
+    if other is None:
+        return None
+    shown, kept = set(editable_fields(record["type"])), set(editable_fields(other))
+    fields = [{**spec, "required": spec["field"] in CONFIRMED_FIELDS[other],
+               "choices": spec["choices"] and [
+                   choice for choice in spec["choices"]
+                   if choice not in _NOT_OFFERED_ON_TYPE_CHANGE.get(spec["field"], ())]}
+              for spec in field_spec(other) if spec["field"] not in shown]
+    return {"type": other, "fields": fields,
+            "drops": sorted(field for field in in_force if field != "type" and field not in kept),
+            "derived_type": derived.get("type")}
+
+
 def editing_info(cur, record: dict, derived: dict) -> dict:
     """What the editor needs for one record: each editable field with its current
     value — for a corrected one, who changed it last and what the build derives —
-    and the change log."""
+    the change log, and what a change of type takes (_type_change)."""
     export_id = record["export_id"]
     log = history(cur, export_id)
     in_force = (log[0]["corrections"] or {}) if log else {}
@@ -516,7 +544,8 @@ def editing_info(cur, record: dict, derived: dict) -> dict:
                             "change_id": last["change_id"]}
         fields.append(spec)
     return {"version": log[0]["change_id"] if log else 0, "fields": fields,
-            "history": log, "source_edits": source_edits(cur, export_id)}
+            "history": log, "source_edits": source_edits(cur, export_id),
+            "type_change": _type_change(record, derived, in_force)}
 
 
 def _guard(cur, record: dict, expected_version) -> tuple:

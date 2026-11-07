@@ -12817,23 +12817,28 @@ function floraBlank(v) {
   return v === null || v === undefined || v === "";
 }
 
-function floraFieldControl(f) {
+/** A field's control. `attr` ties it to its field: Change study type uses its own,
+ *  so the save, the revert and the note boxes, which look for data-field, never pick
+ *  its controls up. */
+function floraFieldControl(f, attr = "data-field", id = "") {
   const v = floraBlank(f.value) ? "" : String(f.value);
-  const name = escapeHtml(f.field);
+  const name = attr + '="' + escapeHtml(f.field) + '"' + (id ? ' id="' + escapeHtml(id) + '"' : "") +
+    (f.required ? ' required aria-required="true"' : "");
+  const hint = f.hint ? ' placeholder="' + escapeHtml(f.hint) + '"' : "";
   if (f.choices) {
     // The current value stays selectable even off the list, so opening a record
     // can never change it.
     const opts = f.choices.slice();
     if (v && opts.indexOf(v) === -1) opts.unshift(v);
-    return '<select class="src-input" data-field="' + name + '"><option value="">—</option>' +
+    return '<select class="src-input" ' + name + '><option value="">—</option>' +
       opts.map((o) => '<option value="' + escapeHtml(o) + '"' + (o === v ? " selected" : "") + ">" +
         escapeHtml(o) + "</option>").join("") + "</select>";
   }
   if (f.long || /[\r\n]/.test(v)) {
-    return '<textarea class="src-input src-textarea" data-field="' + name + '" rows="3">' +
+    return '<textarea class="src-input src-textarea" ' + name + hint + ' rows="3">' +
       escapeHtml(v) + "</textarea>";
   }
-  return '<input class="src-input" type="text" data-field="' + name + '" value="' + escapeHtml(v) + '">';
+  return '<input class="src-input" type="text" ' + name + hint + ' value="' + escapeHtml(v) + '">';
 }
 
 function floraField(f) {
@@ -12881,7 +12886,9 @@ function floraChangeValue(v) {
 /** The record's change log: one row per save, newest first, closed by default.
  *  Any row can be restored, which puts the record back as it was right after it. */
 function floraChangeLog(editing) {
-  const labels = new Map((editing.fields || []).map((f) => [f.field, f.label]));
+  // The other type's labels too: a change of type logs fields this type does not show.
+  const labels = new Map([...((editing.type_change || {}).fields || []), ...(editing.fields || [])]
+    .map((f) => [f.field, f.label]));
   const log = editing.history || [];
   if (!log.length) return "";
   const inForce = Object.keys(log[0].corrections || {}).length > 0;
@@ -12903,6 +12910,10 @@ function floraChangeLog(editing) {
       ? '<div class="flora-change-kind">' +
         (Object.values(c.changes || {}).some(([before, now]) => before !== now)
           ? "Chose the outcome" : "Confirmed the outcome") + note + "</div>"
+      // Logged as an edit (the table's CHECK has no action for it); an ordinary save
+      // can never move the type, so its `changes` say what it was.
+      : c.action === "edit" && "type" in (c.changes || {})
+      ? '<div class="flora-change-kind">Changed the study type' + note + "</div>"
       : note;
     const action = i === 0
       ? '<span class="flora-change-current">Current</span>'
@@ -12998,6 +13009,7 @@ function renderFloraRecord(rec) {
     groups.map((g) =>
       '<div class="src-group"><h4>' + escapeHtml(g.name) + "</h4>" + g.fields.map(floraField).join("") + "</div>"
     ).join("") +
+    floraTypeChange(rec) +
     contextTable +
     floraChangeLog(editing) +
     floraSourceEdits(editing) +
@@ -13005,6 +13017,69 @@ function renderFloraRecord(rec) {
       '<span id="flora-save-msg" class="src-dim2"></span>' +
       '<button id="flora-save-btn" class="btn-primary" type="button">Save corrections</button>' +
     "</div>";
+}
+
+/** Change a record between replication and reproduction (flora_edits.change_type),
+ *  closed until opened. The other type's outcome is set in the same change, so the
+ *  record is never half converted. The fields are that type's, blank; their controls
+ *  carry data-type-field, so Save corrections never sends them. */
+function floraTypeChange(rec) {
+  const change = (rec.editing || {}).type_change;
+  if (!change) return "";
+  const groups = [];
+  change.fields.forEach((f) => {
+    let group = groups.find((g) => g.name === f.group);
+    if (!group) groups.push(group = { name: f.group, fields: [] });
+    group.fields.push(f);
+  });
+  const field = (f) => {
+    const id = "flora-type-" + f.field;
+    // "(required)" is for the eye: the control's own required says it to a screen
+    // reader, and the label stays the column name.
+    return '<div class="src-field' + (f.long ? " src-field-long" : "") + '"><label for="' + escapeHtml(id) + '">' +
+      escapeHtml(f.label) +
+      (f.required ? ' <span class="flora-manual-req" aria-hidden="true">(required)</span>' : "") + "</label><div>" +
+      floraFieldControl(/_source$/.test(f.field) ? { ...f, hint: MANUAL_SOURCE_HINT } : f, "data-type-field", id) +
+      "</div></div>";
+  };
+  return '<details class="flora-changes" id="flora-type-change"><summary>Change study type</summary>' +
+    '<p class="flora-edit-note">This record is a <b>' + escapeHtml(rec.type) + "</b>" +
+      (change.derived_type
+        ? ' <span class="flora-edited-badge">corrected</span> <span class="src-dim2">built as ' +
+          escapeHtml(change.derived_type) + "</span>"
+        : "") +
+      ". Changing it to a " + escapeHtml(change.type) + " sets " +
+      (change.type === "reproduction" ? "both axes its outcome is derived from" : "its outcome") +
+      " in the same change. It keeps its IDs and source, and a restore under Changes undoes it.</p>" +
+    groups.map((g) =>
+      '<div class="src-group"><h4>' + escapeHtml(g.name) + "</h4>" + g.fields.map(field).join("") + "</div>"
+    ).join("") +
+    '<div class="flora-conflict-actions">' +
+      '<input id="flora-type-note" class="src-input" type="text" maxlength="500" ' +
+        'placeholder="Why (optional)" aria-label="Note on the change of type">' +
+      '<button id="flora-type-submit" class="ghost-btn" type="button" disabled ' +
+        'aria-describedby="flora-type-hint">Change to a ' + escapeHtml(change.type) + "</button>" +
+    "</div>" +
+    '<p id="flora-type-hint">' +
+      escapeHtml(floraTypeHint(change.fields.filter((f) => f.required).map((f) => f.label))) + "</p>" +
+    '<div id="flora-type-msg" class="src-dim2" role="status"></div></details>';
+}
+
+/** What Change study type still needs, and what happens to it on a stale record. */
+function floraTypeHint(missing) {
+  return (missing.length ? "Choose " + missing.join(" and ") + " to change the type. " : "") +
+    "If someone else changed this record since it opened, it reloads and what you entered here is lost.";
+}
+
+/** Change study type's submit is on once every required field is set. */
+function floraTypeReady() {
+  const box = $("#flora-type-change");
+  const change = _floraCurrent && (_floraCurrent.editing || {}).type_change;
+  if (!box || !change) return;
+  const missing = change.fields.filter((f) => f.required &&
+    !box.querySelector('[data-type-field="' + CSS.escape(f.field) + '"]').value.trim()).map((f) => f.label);
+  $("#flora-type-submit").disabled = missing.length > 0 || box.dataset.sending === "1";
+  $("#flora-type-hint").textContent = floraTypeHint(missing);
 }
 
 /** An outcome its duplicate source entries disagree on: choose one of theirs (the
@@ -13175,6 +13250,71 @@ async function confirmFloraOutcome(choice) {
   }
 }
 
+/** Change the record to the other type, with that type's outcome, after saying what
+ *  the change does. The required fields are sent, the others only when filled in: a
+ *  blank that is sent is stored as a deliberate blank. */
+async function changeFloraType() {
+  const rec = _floraCurrent;
+  const change = rec && rec.editing && rec.editing.type_change;
+  const box = $("#flora-type-change");
+  if (!change || !box) return;
+  const btn = $("#flora-type-submit");
+  const msg = $("#flora-type-msg");
+  const fields = {};
+  change.fields.forEach((f) => {
+    const value = box.querySelector('[data-type-field="' + CSS.escape(f.field) + '"]').value;
+    if (f.required || value.trim()) fields[f.field] = value;
+  });
+  const note = $("#flora-type-note").value.trim();
+  const labels = new Map(rec.editing.fields.map((f) => [f.field, f.label]));
+  // Plain text, as the restore's: showConfirm does not render markup.
+  const said = ["Change " + (rec.flora_id || "this record") + " from a " + rec.type + " to a " + change.type + "?",
+    change.fields.filter((f) => f.required).map((f) => f.label + ": " + fields[f.field]).join("; ") + "."];
+  if (change.type === "replication") said.push("Its axes are cleared.");
+  // Going back to the type it was built as, it shows the quote derived for that type.
+  if (change.derived_type) {
+    said.push("It goes back to the type it was built as" +
+      (change.type === "replication" ? ", with the quote it was built with unless you enter one." : "."));
+  } else if (change.type === "replication") {
+    said.push("It keeps the joined axis quote it was built with unless you enter one.");
+  } else if (!fields.outcome_computational_quote && !fields.outcome_robustness_quote) {
+    said.push("It shows no quote until axis quotes are added.");
+  }
+  if (change.drops.length) {
+    said.push("These corrections leave the record and stay in the log: " +
+      change.drops.map((f) => labels.get(f) || f).join(", ") + ".");
+  }
+  const unsaved = collectFloraEdits();
+  if (Object.keys(unsaved.fields).length || unsaved.revert.length) said.push("Unsaved edits are discarded.");
+  if (!(await showConfirm(said.join(" ")))) { btn.focus(); return; }
+  box.dataset.sending = "1";
+  btn.disabled = true;
+  msg.textContent = "Changing the type…";
+  const seq = _floraOpenSeq;
+  try {
+    const res = await adminApi("/flora/" + encodeURIComponent(rec.flora_id) + "/type", "POST", {
+      type: change.type, fields, version: rec.editing.version, notes: note ? { type: note } : {},
+    });
+    const outcome = "Changed to a " + change.type + ". " + floraPublishedNote(res);
+    showToast(outcome);
+    fetchFloraRecords();        // the grid's type, its corrected badge and the counts
+    if (seq !== _floraOpenSeq) return;
+    await openFloraRecord(rec.flora_id, floraNotice(outcome, res.warnings));
+    // The section the focus was in is gone: put it on the one drawn for the new type.
+    if (_floraCurrent !== rec && _floraCurrent?.flora_id === rec.flora_id) {
+      const target = $("#flora-type-change summary") || $("#flora-save-msg");
+      if (target && target.tagName !== "SUMMARY") target.tabIndex = -1;
+      target?.focus();
+    }
+  } catch (err) {
+    delete box.dataset.sending;
+    floraChangeFailed(err, rec, msg);
+    if (err.status === 409) return;     // it reloads; another try could only clash again
+    floraTypeReady();
+    btn.focus();                        // disabling it took the focus away
+  }
+}
+
 /** Only what the editor changed: the server diffs again, but sending untouched
  *  fields would make it validate values nobody meant to correct. */
 function collectFloraEdits() {
@@ -13283,6 +13423,7 @@ async function restoreFloraRecord(changeId) {
 
 $("#flora-detail-body")?.addEventListener("click", (e) => {
   if (e.target.closest("#flora-save-btn")) { saveFloraRecord(); return; }
+  if (e.target.closest("#flora-type-submit")) { changeFloraType(); return; }
   const entry = e.target.closest(".flora-manual-open");
   if (entry) { openManualRecord(entry.dataset.manualId); return; }
   const choose = e.target.closest(".flora-choose-btn");
@@ -13311,6 +13452,7 @@ $("#flora-detail-body")?.addEventListener("click", (e) => {
 });
 
 $("#flora-detail-body")?.addEventListener("input", (e) => {
+  if (e.target.closest("#flora-type-change")) { floraTypeReady(); return; }
   const control = e.target.closest("[data-field]");
   if (!control) return;
   if (control.dataset.revert !== "1") { floraToggleNote(control); return; }

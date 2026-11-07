@@ -713,6 +713,86 @@ def test_a_type_change_cannot_put_a_record_on_an_excluded_identifier():
     assert cur.appended() == []
 
 
+def _type_change(record, derived=None):
+    """What the editor's Change study type offers the record."""
+    return flora_edits.editing_info(_Cur(), record, derived or {})["type_change"]
+
+
+@pytest.mark.parametrize("record, other, required", [
+    (RECORD, "reproduction", ["outcome_computation", "outcome_robustness"]),
+    (REPRODUCTION, "replication", ["outcome"]),
+])
+def test_a_type_change_offers_what_the_other_type_shows_and_this_one_does_not(record, other,
+                                                                              required):
+    change = _type_change(record)
+    assert (change["type"], change["drops"], change["derived_type"]) == (other, [], None)
+    fields = [spec["field"] for spec in change["fields"]]
+    assert fields == [field for field in flora_edits.editable_fields(other)
+                      if field not in flora_edits.editable_fields(record["type"])]
+    assert [spec["field"] for spec in change["fields"] if spec["required"]] == required
+    # Blank: nothing of the record's own values, which belong to the other type's fields.
+    assert not any("value" in spec or "edit" in spec for spec in change["fields"])
+
+
+def test_a_type_change_offers_only_outcomes_the_checks_accept():
+    """The route and the editor's own selects still take every value; the form leaves
+    out the ones validate_flora flags, so a converted record does not start out flagged."""
+    to_replication = {spec["field"]: spec for spec in _type_change(REPRODUCTION)["fields"]}
+    to_reproduction = {spec["field"]: spec for spec in _type_change(RECORD)["fields"]}
+    assert to_replication["outcome"]["choices"] == [
+        choice for choice in flora_edits.CHOICES["outcome"] if choice != "not_a_replication"]
+    assert "cannot_be_determined" in to_replication["outcome"]["choices"]
+    for axis in ("outcome_computation", "outcome_robustness"):
+        assert to_reproduction[axis]["choices"] == [
+            choice for choice in flora_edits.CHOICES[axis] if choice != "cannot_be_determined"]
+    assert to_replication["outcome_quote"]["choices"] is None
+    for outcome in to_replication["outcome"]["choices"]:
+        flora_edits.change_type(_Cur(), REPRODUCTION, {}, "replication", {"outcome": outcome},
+                                0, ADMIN)
+        out = flora_edits.apply(None, _frame(), {
+            "FLORA-000002": {"type": "replication", "outcome": outcome}})
+        assert validate_flora._check_outcomes(out.iloc[[1]]) == [], outcome
+    for computation in to_reproduction["outcome_computation"]["choices"]:
+        for robustness in to_reproduction["outcome_robustness"]["choices"]:
+            axes = {"outcome_computation": computation, "outcome_robustness": robustness}
+            flora_edits.change_type(_Cur(), RECORD, {}, "reproduction", axes, 0, ADMIN)
+            out = flora_edits.apply(None, _frame(), {"FLORA-000001": {"type": "reproduction", **axes}})
+            assert validate_flora._check_outcomes(out.iloc[[0]]) == [], axes
+    # What it leaves out: flagged by the checks, yet still taken by the route.
+    for record, export_id, new_type, fields in [
+            (REPRODUCTION, "FLORA-000002", "replication", {"outcome": "not_a_replication"}),
+            (RECORD, "FLORA-000001", "reproduction", {**AXES, "outcome_robustness": "cannot_be_determined"})]:
+        flora_edits.change_type(_Cur(), record, {}, new_type, fields, 0, ADMIN)
+        out = flora_edits.apply(None, _frame(), {export_id: {"type": new_type, **fields}})
+        row = out.index[out["export_id"] == export_id]
+        assert validate_flora._check_outcomes(out.loc[row]) != []
+    assert "not_a_replication" in {spec["field"]: spec for spec in
+                                   flora_edits.field_spec("replication")}["outcome"]["choices"]
+
+
+def test_a_type_change_names_the_corrections_the_new_type_cannot_hold(monkeypatch):
+    in_force = {"type": "reproduction", **AXES, "outcome_robustness_quote": "Robust.",
+                "title_o": "Mine"}
+    monkeypatch.setattr(flora_edits, "history", lambda cur, export_id: [
+        {"change_id": 4, "changed_at": None, "admin_handle": "luke", "action": "edit",
+         "note": None, "notes": {}, "changes": {}, "corrections": in_force}])
+    change = _type_change(REPRODUCTION, {"type": "replication", "title_o": "Derived"})
+    assert change["drops"] == ["outcome_computation", "outcome_robustness",
+                               "outcome_robustness_quote"]
+    # Corrected: the type the build gives, which this change goes back to.
+    assert (change["type"], change["derived_type"]) == ("replication", "replication")
+    monkeypatch.setattr(flora_edits, "history", lambda cur, export_id: [
+        {"change_id": 4, "changed_at": None, "admin_handle": "luke", "action": "edit",
+         "note": None, "notes": {}, "changes": {}, "corrections": {"outcome": "mixed",
+                                                                   "title_o": "Mine"}}])
+    assert _type_change(RECORD)["drops"] == ["outcome"]
+
+
+@pytest.mark.parametrize("record_type", [None, "meta-analysis"])
+def test_a_record_of_neither_type_is_offered_no_change_of_type(record_type):
+    assert _type_change({**RECORD, "type": record_type}) is None
+
+
 @pytest.mark.parametrize("fields, revert", [({"type": "reproduction"}, []), ({}, ["type"])])
 def test_a_save_cannot_change_the_type(fields, revert):
     """change_type() alone can: it sets the new type's outcome in the same save."""

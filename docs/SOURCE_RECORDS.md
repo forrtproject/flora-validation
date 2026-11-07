@@ -1232,9 +1232,22 @@ to what the build produces is not kept, and a later improvement at the source fl
 through. Edits made to the record's source records before corrections moved here are
 listed under **Earlier edits to its source records**, also closed.
 
+**Changing the study type.** **Change study type**, closed until opened, turns a
+replication into a reproduction or back. It shows the other type's outcome fields,
+blank: both axes, their quotes and quote sources for a reproduction, or `outcome`, its
+quote and source for a replication. The outcome is required, and the change cannot be
+submitted until it is set. The choices leave out the values `validate_flora.py` flags:
+`not_a_replication` for a replication and `cannot_be_determined` for either axis. The
+route and the ordinary fields still accept them. Before anything is sent, a
+confirmation says what the change does: the new outcome, that a reproduction shows no
+quote until axis quotes are added or that a replication's axes are cleared, the
+corrections the new type cannot hold, and that unsaved edits are discarded. In the log
+the change reads **Changed the study type**, with the note under its `type` line. A
+record whose type is already a correction is marked so, with the type it was built as.
+
 | Route | Purpose |
 |---|---|
-| `GET /api/admin/flora/{flora_id}` | The row, plus `editing`: fields, corrections with their derived values, the change log, earlier source edits, version |
+| `GET /api/admin/flora/{flora_id}` | The row, plus `editing`: fields, corrections with their derived values, the change log, earlier source edits, version, and `type_change`, what changing to the other type takes (its fields, the corrections that would leave the record, the type it was built as; null for a record of neither type) |
 | `PATCH /api/admin/flora/{flora_id}` | Save a change `{fields, revert, version, notes}`; `notes` maps a field to the note on its change |
 | `POST /api/admin/flora/{flora_id}/restore` | Restore the state after a change `{change_id, version, note}`; `change_id` 0 is the original |
 | `POST /api/admin/flora/{flora_id}/confirm-outcome` | Settle an outcome clash `{version, note, outcome}`: `outcome` is one the duplicates gave (none: the one shown); logged with action `confirm` |

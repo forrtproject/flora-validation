@@ -6769,6 +6769,8 @@ body.has-maint-banner #admin-screen {
 /* The save bar's account of the last save or restore, kept after the reload. */
 #flora-save-msg .flora-notice { color: var(--green); font-weight: 600; }
 #flora-save-msg .flora-warning { display: block; margin-top: 0.2rem; color: var(--amber); }
+/* Change study type: what its submit still needs, and that a stale record reloads. */
+#flora-type-hint { margin: 0.4rem 0 0.25rem; font-size: 0.78rem; color: var(--muted); line-height: 1.4; }
 
 /* Entry-check findings (entry_checks.py): the list's chip, and the record view's
    section, where a person marks one "Not a problem". Red for a problem, amber for a

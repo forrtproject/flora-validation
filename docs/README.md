@@ -1558,7 +1558,8 @@ correction like any other: the record keeps its published id, `source` and
 quote is built from its axis quotes, so a record converted without them publishes no
 quote until an ordinary save adds them. Corrections the new type cannot hold leave
 the new row but stay in the log. The change is logged with action `edit`, and its
-`changes` include `type`.
+`changes` include `type`. The FLoRA tab's record editor uses this route in its
+**Change study type** section.
 
 ### Source duplicate decisions
 
