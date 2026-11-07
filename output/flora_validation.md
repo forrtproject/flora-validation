@@ -1,10 +1,10 @@
 ## FLoRA structural validation
 
-_Generated: 2026-10-30 03:06:17 UTC | Dataset: 2,850 rows_
+_Generated: 2026-11-07 03:05:12 UTC | Dataset: 2,850 rows_
 
 Each item names the FLoRA record by its FLoRA ID and `doi_o | doi_r` (or `url_r`), says what is wrong and, after the dash, gives the value.
 
-### Problems (44)
+### Problems (45)
 
 **Invalid URLs** (7 findings):
 
@@ -25,7 +25,7 @@ _An outcome outside the allowed set for the row's type, not_a_replication, or mi
 - REPL-000419 (`10.1002/j.2164-585x.1979.tb00097.x | 10.1353/csd.2014.0018`): outcome is blank
 - SCORE-000055 (`10.1017/xps.2014.22 | https://osf.io/8uc5z/files/jmk9d`): outcome is blank
 
-<details><summary><b>Missing required fields</b> (21 findings)</summary>
+<details><summary><b>Missing required fields</b> (22 findings)</summary>
 
 _title_o, title_r, doi_r or url_r, and an identifier for the original: doi_o, a url_o that is a link or DOI (not a title), alt_identifier_o or oa_work_id_o._
 
@@ -36,6 +36,7 @@ _title_o, title_r, doi_r or url_r, and an identifier for the original: doi_o, a 
 - REPL-000234 (`| 10.18148/srm/2012.v6i1.5092`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-000241 (`| 10.1103/physrevstper.10.010110`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-000244 (`| 10.1080/22243534.2015.11828344`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
+- REPL-000306 (`| 10.1017/cnj.2023.13`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-000356 (`| 10.1177/0958928712471227`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-000448 (`| 10.1371/journal.pone.0120644`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-000621 (`| 10.5539/ibr.v5n4p71`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o

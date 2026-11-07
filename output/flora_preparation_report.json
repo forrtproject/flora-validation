@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-10-30T03:05:28+00:00",
+  "generated_at": "2026-11-07T03:04:07+00:00",
   "mode": "database_pipeline",
   "status": "needs_attention",
   "rows": 2850,
@@ -12,7 +12,7 @@
     {
       "name": "structural validation",
       "status": "needs_attention",
-      "detail": "44 problems and 25 possible problems"
+      "detail": "45 problems and 25 possible problems"
     },
     {
       "name": "network validation",
@@ -36,7 +36,7 @@
     "32 records left out for a missing title; see flora_export_log.csv.",
     "59 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.",
     "25 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.",
-    "Structural validation found 44 problems and 25 possible problems.",
+    "Structural validation found 45 problems and 25 possible problems.",
     "Network validation needs review: 40 problems and 8 possible problems."
   ],
   "errors": [],
@@ -1999,6 +1999,18 @@
           {
             "check": "missing_required",
             "flora_ids": [
+              "REPL-000306"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.1017/cnj.2023.13",
+            "key": "missing_required|REPL-000306|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
               "REPL-000356"
             ],
             "column": "doi_o",
@@ -2721,7 +2733,7 @@
       }
     ],
     "suppressed": 0,
-    "problems": 44,
+    "problems": 45,
     "possible_problems": 25,
     "has_problems": true,
     "has_issues": true,
@@ -3070,10 +3082,10 @@
               "REPL-001624"
             ],
             "column": "oa_url_o",
-            "value": "http://eprints.keele.ac.uk/2958/1/M%20Noor%20-%20Intergroup%20forgiveness%20and%20reconciliation.pdf",
+            "value": "http://eprints.keele.ac.uk/2959/1/M%20Noor%20-%20Prescursors%20and%20mediators%20of%20Intergroup%20Reconciliation%20in%20Northern%20Ireland%20-%20a%20new%20model.pdf",
             "detail": "oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record)",
-            "label": "10.1177/0146167208315555 | 10.1002/ejsp.70015",
-            "key": "dead_link|REPL-001624|oa_url_o|http://eprints.keele.ac.uk/2958/1/m%20noor%20-%20intergroup%20forgiveness%20and%20reconciliation.pdf",
+            "label": "10.1348/014466607x238751 | 10.1002/ejsp.70015",
+            "key": "dead_link|REPL-001624|oa_url_o|http://eprints.keele.ac.uk/2959/1/m%20noor%20-%20prescursors%20and%20mediators%20of%20intergroup%20reconciliation%20in%20northern%20ireland%20-%20a%20new%20model.pdf",
             "level": "problem"
           },
           {
@@ -3383,16 +3395,6 @@
           ]
         },
         {
-          "target": "http://hdl.handle.net/10366/159754",
-          "columns": [
-            "oa_url_o"
-          ],
-          "reason": "timed out",
-          "flora_ids": [
-            "FRED-000766"
-          ]
-        },
-        {
           "target": "https://polipapers.upv.es/index.php/MUSE/article/download/10390/11334",
           "columns": [
             "oa_url_r"
@@ -3451,23 +3453,23 @@
         "status": "checked"
       },
       "dois": {
-        "targets": 4631,
-        "cached": 4616,
-        "checked": 15,
+        "targets": 4629,
+        "cached": 4601,
+        "checked": 28,
         "deferred": 0,
         "unchecked": 0
       },
       "urls": {
-        "targets": 3191,
-        "cached": 3155,
-        "checked": 36,
+        "targets": 3195,
+        "cached": 3151,
+        "checked": 44,
         "deferred": 0,
-        "unchecked": 9
+        "unchecked": 8
       },
       "originals": {
-        "targets": 26,
+        "targets": 27,
         "cached": 26,
-        "checked": 0,
+        "checked": 1,
         "deferred": 0,
         "unchecked": 0
       }
@@ -3482,11 +3484,11 @@
     "schema_version": 1,
     "status": "prepared_locally",
     "published": false,
-    "generated_at": "2026-10-30T03:08:30+00:00",
+    "generated_at": "2026-11-07T03:07:10+00:00",
     "filename": "flora.csv",
-    "bytes": 13472053,
-    "sha256": "c783e586431ebd6b52a6fdb94caba770bf7fa41333982ca6fc8e9b44a9887228",
-    "md5": "506408439ef8855e1bfa707c252cf96d",
+    "bytes": 13494370,
+    "sha256": "fa5ccee2b890f4bd0ab3a4f593afbcd1c09c0e692b4103ee1a3117c88fc28876",
+    "md5": "8f45481da824febf20db5b2c0223c719",
     "rows": 2850,
     "columns": [
       "id",
@@ -3544,22 +3546,22 @@
     "version": null,
     "release_notes": "",
     "data_version": {
-      "stored_at": "2026-10-30T03:08:31.088419+00:00",
-      "change_watermark": 166
+      "stored_at": "2026-11-07T03:07:11.417145+00:00",
+      "change_watermark": 322
     }
   },
   "storage": {
     "rows": 2850,
-    "inserted": 3,
-    "updated": 231,
-    "unchanged": 2616,
+    "inserted": 0,
+    "updated": 19,
+    "unchanged": 2831,
     "retired": 0,
     "reactivated": 0,
     "preserved": 0,
     "table": "flora_data",
-    "snapshot_sha256": "c783e586431ebd6b52a6fdb94caba770bf7fa41333982ca6fc8e9b44a9887228",
-    "stored_at": "2026-10-30T03:08:31.088419+00:00",
+    "snapshot_sha256": "fa5ccee2b890f4bd0ab3a4f593afbcd1c09c0e692b4103ee1a3117c88fc28876",
+    "stored_at": "2026-11-07T03:07:11.417145+00:00",
     "status": "committed"
   },
-  "finished_at": "2026-10-30T03:08:35+00:00"
+  "finished_at": "2026-11-07T03:07:14+00:00"
 }

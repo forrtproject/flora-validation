@@ -1,6 +1,6 @@
 ## FLoRA network validation
 
-_Generated: 2026-10-30 03:08:30 UTC | Dataset: 2,850 rows_
+_Generated: 2026-11-07 03:07:10 UTC | Dataset: 2,850 rows_
 
 Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says what is wrong and, after the dash, gives the DOI or link.
 
@@ -40,7 +40,7 @@ Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says wha
 - VAL-000239 (`10.1177/0956797620968526 | 10.5334/irsp.546`): oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `https://biblio.ugent.be/publication/8707609`
 - REPL-001099 (`10.1037/edu0000115 | 10.1037/edu0000433`): oa_url_r is dead (connection refused; an open-access link from enrichment, not from the source record) — `http://orbilu.uni.lu/handle/10993/45413`
 - REPL-001320 (`10.1016/s0022-1031(03)00057-x | 10.1371/journal.pone.0209263`): oa_url_r is dead (HTTP 400; an open-access link from enrichment, not from the source record) — `https://storage.googleapis.com/plos-corpus-prod/10.1371/journal.pone.0209263/1/pone.0209263.pdf?X-Goog-Algorithm=GOOG4-…`
-- REPL-001624 (`10.1177/0146167208315555 | 10.1002/ejsp.70015`): oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `http://eprints.keele.ac.uk/2958/1/M%20Noor%20-%20Intergroup%20forgiveness%20and%20reconciliation.pdf`
+- REPL-001624 (`10.1348/014466607x238751 | 10.1002/ejsp.70015`): oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `http://eprints.keele.ac.uk/2959/1/M%20Noor%20-%20Prescursors%20and%20mediators%20of%20Intergroup%20Reconciliation%20in%…`
 - FRED-000270, VAL-000311: oa_url_o is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `https://autopapers.ssrn.com/sol3/papers.cfm?abstract_id=1324778`
 - FRED-000012 (`10.1037/0022-3514.86.5.680 | 10.1016/j.jesp.2020.104052`): oa_url_o is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `https://autopapers.ssrn.com/sol3/papers.cfm?abstract_id=929932`
 - FRED-000643 (`10.1037/0278-7393.34.1.97 | 10.1126/science.aac4716`): oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `http://hdl.handle.net/10026.1/3213`
@@ -75,16 +75,15 @@ _Heuristics: a person decides whether each one is a problem._
 - REPL-001425 (`| 10.1142/s1084946721500084`): doi_o is blank; Crossref lists this paper with a DOI: 'Poverty and Entrepreneurship in Developing Countries' (2011, Ernesto Amorós) — `10.1093/acprof:oso/9780199580866.003.0010`
 - REPL-001445 (`| 10.1525/collabra.163080`): doi_o is blank; Crossref lists this paper with a DOI: 'The dark side of self- and social perception: Black uniforms and aggression in …' (1988, Frank) — `10.1037/0022-3514.54.1.74`
 
-<details><summary><b>Could not check</b> (9 links)</summary>
+<details><summary><b>Could not check</b> (8 links)</summary>
 
-_Not findings: no answer could be had for these 9, and they are checked again on the next run._
+_Not findings: no answer could be had for these 8, and they are checked again on the next run._
 
-**Links** (9):
+**Links** (8):
 
 - REPL-000009, oa_url_r: HTTP 418 — `https://hrcak.srce.hr/file/334421`
 - REPL-001176, oa_url_r: timed out — `https://cdr.lib.unc.edu/downloads/7w62fg56x`
 - REPL-001436, oa_url_o: timed out — `http://hdl.handle.net/2328/35450`
-- FRED-000766, oa_url_o: timed out — `http://hdl.handle.net/10366/159754`
 - VAL-000159, oa_url_r: TLS: unable to get local issuer certificate — `https://polipapers.upv.es/index.php/MUSE/article/download/10390/11334`
 - REPL-000190, oa_url_o: TLS: unable to get local issuer certificate — `http://hdl.handle.net/10902/7358`
 - REPL-001417, url_r: redirect loop — `https://www.proquest.com/docview/221001969?pq-origsite=gscholar&fromopenview=true&sourcetype=Scholarly%20Journals`
@@ -96,6 +95,6 @@ _Not findings: no answer could be had for these 9, and they are checked again on
 
 **Network validation status: needs review**
 
-- DOIs: 4,631 distinct; 4,616 cached, 15 checked, 0 deferred.
-- Links: 3,191 distinct; 3,155 cached, 36 checked (9 could not be checked), 0 deferred.
-- Originals without a DOI: 26 distinct; 26 cached, 0 checked, 0 deferred.
+- DOIs: 4,629 distinct; 4,601 cached, 28 checked, 0 deferred.
+- Links: 3,195 distinct; 3,151 cached, 44 checked (8 could not be checked), 0 deferred.
+- Originals without a DOI: 27 distinct; 26 cached, 1 checked, 0 deferred.
