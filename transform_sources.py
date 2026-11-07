@@ -184,11 +184,11 @@ META_PAPER_NOTE = "Individual report available at"
 META_PAPER_CANDIDATE_URLS = 5
 
 # JATS/HTML markup that reaches us inside titles and abstracts: <i>, <sup>, <scp>,
-# and whole <mml:math> blocks from publisher XML.
-_TAG_RE = re.compile(r"<[^>]+>")
-# A tag by its shape: a name, "?" or "!" straight after "<" or "</", and no "<"
-# inside: "<i>", "<?Pub Caret?>", "<!-- -->", but not "< .05".
-_DECODED_TAG_RE = re.compile(r"</?[A-Za-z!?][^<>]*>")
+# and whole <mml:math> blocks from publisher XML. A tag by its shape: a name, "?" or
+# "!" straight after "<" or "</", and no "<" inside: "<i>", "<?Pub Caret?>",
+# "<!-- -->", but not "< .05" or "<1.0E-6". Those are comparisons, and anything looser
+# takes the text up to the next ">" with them, however far off it is.
+_TAG_RE = re.compile(r"</?[A-Za-z!?][^<>]*>")
 # A single newline inside a paragraph is a PDF copy artefact — the sentence simply
 # continued. Two or more are a real paragraph break and are preserved.
 _SOFT_BREAK_RE = re.compile(r"(?<!\n)\n(?!\n)")
@@ -274,11 +274,9 @@ def clean_text(value):
     # itself a real one is touched — see _lower_unknown_entity.
     text = unescape_entities(text)
     # Tags stripped again: publisher XML double-encodes, so &amp;lt;i&amp;gt; only
-    # becomes a literal tag once unescaped. Only what looks like a tag: decoded,
-    # "p &lt; .05 when d &gt; 0.5" is a comparison, and _TAG_RE would take the
-    # text between the two signs with it.
+    # becomes a literal tag once unescaped.
     if "<" in text and ">" in text:
-        text = _DECODED_TAG_RE.sub(" ", text)
+        text = _TAG_RE.sub(" ", text)
     text = text.replace("\xa0", " ")
     text = _SOFT_BREAK_RE.sub(" ", text)
     text = _WS_RE.sub(" ", text)

@@ -56,7 +56,8 @@ def test_decoding_leaves_text_that_only_looks_like_an_entity(raw, expected):
 
 
 @pytest.mark.parametrize("raw", ["Smith &notes on &copying", "Rich & Gureckis",
-                                 "the author’s <claim>", "p < .05 when d > 0.5"])
+                                 "the author’s <claim>", "p < .05 when d > 0.5",
+                                 "(p<0.05, t>756.11)"])
 def test_cleaning_clean_text_again_changes_nothing(raw):
     """A FLoRA tab correction is cleaned as it is saved (flora_edits), so text the
     pipeline already cleaned must come through unchanged."""
@@ -74,6 +75,23 @@ def test_cleaning_clean_text_again_changes_nothing(raw):
 def test_a_decoded_comparison_keeps_its_text(raw, expected):
     """Only what looks like a tag goes once decoded; "< .05) ... d >" is not one."""
     assert ts.clean_text(raw) == expected
+
+
+@pytest.mark.parametrize("raw", [
+    "areas related to facial recognition (p<0.05, t>756.11). This increased",
+    "FEV1/FVC ratio < 70%, and a smoking history (p = 0.002, score>3)",
+    "variants with P values <1.0E-6) for either model (OR > 2)",
+    "https://doi.org/10.1002/1097-4679(197407)30:3<417::aid-jclp2270300360>3.0.co;2-s",
+])
+def test_a_comparison_as_it_arrives_keeps_its_text(raw):
+    """A "<" before a number is no tag, however far off the next ">". Reading it as
+    one took everything between the two: most of an abstract, the middle of a quote,
+    and the part of a SICI DOI that makes it a working link."""
+    assert ts.clean_text(raw) == raw
+
+
+def test_a_tag_is_stripped_beside_a_comparison():
+    assert ts.clean_text("<i>P</i> < .05 and <sup>2</sup> > 1") == "P < .05 and 2 > 1"
 
 
 def test_a_double_encoded_link_is_decoded():
