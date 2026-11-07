@@ -1549,6 +1549,17 @@ authors follow a corrected DOI, and every correction after ids are attached. Sav
 quote the record's latest `change_id` as a version; a stale save receives HTTP 409. Any
 row of the log can be restored, which is logged as a change too.
 
+A record's study type changes through its own route,
+`POST /api/admin/flora/{flora_id}/type`, never through an ordinary save. The same
+change must set the new type's outcome, `outcome` for a replication or both axes for
+a reproduction, so a record is never half converted. The type is stored as a
+correction like any other: the record keeps its published id, `source` and
+`flora_id`, every build re-applies it, and a restore undoes it. A reproduction's
+quote is built from its axis quotes, so a record converted without them publishes no
+quote until an ordinary save adds them. Corrections the new type cannot hold leave
+the new row but stay in the log. The change is logged with action `edit`, and its
+`changes` include `type`.
+
 ### Source duplicate decisions
 
 Duplicate groups are computed across both sheets. An admin can mark a row:
@@ -1785,6 +1796,7 @@ All answer 503 while the feature is switched off or not set up.
 | PATCH | `/api/admin/flora/{flora_id}` | Version-checked change `{fields, revert, version, notes}` (a note per field), written through to `flora_data` |
 | POST | `/api/admin/flora/{flora_id}/restore` | Restore the state after a logged change (`change_id` 0: the original) |
 | POST | `/api/admin/flora/{flora_id}/confirm-outcome` | Settle an outcome clash (FLoRA tab, Conflicts) `{version, note, outcome}`: confirm the outcome shown, or choose another the duplicates gave |
+| POST | `/api/admin/flora/{flora_id}/type` | Change a record between replication and reproduction `{type, fields, version, notes}`: `fields` sets the new type's outcome, in one logged change a restore can undo |
 | GET | `/api/admin/flora/manual/options` | Records added by hand: the form's vocabularies |
 | GET | `/api/admin/flora/manual/counts` | Entries added by hand, active and withdrawn |
 | POST | `/api/admin/flora/manual/check` | What saving a draft would do: matching records, own record or absorbed (reads only) |

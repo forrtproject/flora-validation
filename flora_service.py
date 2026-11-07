@@ -527,7 +527,8 @@ def _changed(cur, flora_id: str, change) -> dict:
         after = _find(cur, before["export_id"])
         result["published"] = bool(after) and flora_edits.publish(cur, before, after[0])
         moved = set(result.get("changed_fields", [])) | set(result.get("reverted_fields", []))
-        if after and moved & {"doi_o", "doi_r", "url_r"}:
+        # The type too: the duplicate steps only compare records of one type.
+        if after and moved & {"type", "doi_o", "doi_r", "url_r"}:
             result["warnings"] = flora_edits.duplicate_warnings(dataset(cur), after[0])
     return result
 
@@ -555,6 +556,14 @@ def confirm_outcome(cur, flora_id: str, version: int, admin: dict, note: str = "
     outcomes its duplicates gave (flora_edits.confirm_outcome)."""
     return _changed(cur, flora_id, lambda record, derived: flora_edits.confirm_outcome(
         cur, record, derived, version, admin, note, outcome))
+
+
+def change_type(cur, flora_id: str, new_type: str, fields: dict, version: int,
+                admin: dict, notes: "dict | None" = None) -> dict:
+    """Change a FLoRA record between replication and reproduction: one row of its
+    change log, and its row in flora_data rewritten (flora_edits.change_type)."""
+    return _changed(cur, flora_id, lambda record, derived: flora_edits.change_type(
+        cur, record, derived, new_type, fields, version, admin, notes))
 
 
 def merged_sources(cur, flora_id: str) -> list:

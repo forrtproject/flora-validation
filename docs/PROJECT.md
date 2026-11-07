@@ -1047,6 +1047,7 @@ Read-only apart from duplicate rulings. Records are corrected in the FLoRA tab:
 GET   /api/admin/flora/{flora_id}             record + editable fields + corrections
 PATCH /api/admin/flora/{flora_id}             save a change {fields, revert, version, notes}
 POST  /api/admin/flora/{flora_id}/restore     restore a logged change {change_id, version, note}
+POST  /api/admin/flora/{flora_id}/type        change replication <-> reproduction {type, fields, version, notes}
 ```
 
 **Route ordering matters.** Literal paths (`export.csv`, `sync-status`, `duplicates`)

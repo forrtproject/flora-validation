@@ -7032,6 +7032,23 @@ def admin_flora_confirm_outcome(flora_id: str, req: FloraOutcomeConfirm,
         cur, flora_id, req.version, admin, req.note, req.outcome))
 
 
+class FloraTypeChange(BaseModel):
+    type: str
+    fields: dict = {}             # what the new type needs, and anything else to correct
+    version: int
+    notes: dict[str, str] = {}    # field -> the note on that field's change
+
+
+@app.post("/api/admin/flora/{flora_id}/type")
+def admin_flora_change_type(flora_id: str, req: FloraTypeChange,
+                            admin: dict = Depends(current_admin)):
+    """Change a FLoRA record between replication and reproduction, with what the new
+    type's outcome is, as one logged change. It keeps its permanent id, and a restore
+    undoes it. The source records it derives from are not changed."""
+    return _flora_change(lambda cur: flora_service.change_type(
+        cur, flora_id, req.type, req.fields or {}, req.version, admin, req.notes or {}))
+
+
 # ---------------------------------------------------------------------------
 # Manual entry-sheet sync. The button queues a job; a scheduler on every pod drains
 # the queue under a PostgreSQL advisory lock, so the work happens out of band and

@@ -28,6 +28,10 @@ enrichment refresh can change the derived value underneath, and the correction
 still wins. A field reverted, or restored to before its first change, shows the
 derived value again.
 
+A record's type is corrected the same way, by change_type() alone: one save that
+also sets what the new type's outcome is. apply() takes it first, because the type
+decides which other corrections a record can hold and what follows from them.
+
 Records are keyed on their permanent published id: flora_data.id, which is
 flora_records.export_id. The log references the registry rather than flora_data
 because a row can be corrected before it is first published — a missing title is
@@ -104,6 +108,10 @@ CHOICES = {
     "outcome_computation": sorted(OUTCOME_COMPUTATION_VALUES),
     "outcome_robustness": sorted(OUTCOME_ROBUSTNESS_VALUES),
 }
+# What a record's outcome is: what a confirmation pins, and what a change of type has
+# to set (and a later save has to leave set).
+CONFIRMED_FIELDS = {"replication": ("outcome",),
+                    "reproduction": ("outcome_computation", "outcome_robustness")}
 _YEAR_RE = re.compile(r"^(1[5-9]\d{2}|2\d{3})$")
 NOTE_LIMIT = 500                                    # characters, per note
 
@@ -241,6 +249,16 @@ def _stored_value(export_id, field: str, value, record_type):
         return _REFUSED
 
 
+def _corrected_type(export_id, fields: dict):
+    """The type corrected on a record, or None. Replayed on every build like any
+    correction, so a value that is no type is skipped and logged (_stored_value)."""
+    value = fields.get("type")
+    if value is None or value in tuple(FIELD_GROUPS):
+        return value
+    print(f"[flora_edits] correction skipped on {export_id}: {value!r} is not a record type")
+    return None
+
+
 def _table_exists(cur) -> bool:
     """The nightly job runs from the repository and can reach the database before
     the deployed site's init_db() has created the table."""
@@ -362,6 +380,14 @@ def apply_identifiers(df, identifiers: dict) -> dict:
     return replaced
 
 
+def _from_axes(row) -> dict:
+    """What a reproduction's axes make its outcome, quote and quote source."""
+    return {"outcome": derive_reproduction_outcome(row.get("outcome_computation"),
+                                                   row.get("outcome_robustness")),
+            "outcome_quote": transform_sources.clean_text(transform_sources.derive_quote(row)),
+            "outcome_quote_source": transform_sources.derive_quote_source(row)}
+
+
 def apply(cur, frame, corrections: "dict | None" = None):
     """The frame with every correction in force applied. Returns a copy.
 
@@ -369,6 +395,8 @@ def apply(cur, frame, corrections: "dict | None" = None):
     and its filter) and attrs["flora_edits"] = {export_id: {field: derived value}}.
     Values computed from a corrected field follow it: a reproduction's outcome,
     quote and quote source from its axes, and the author overlap from the authors.
+    A corrected type comes first, and a record corrected to a replication has no
+    axes, as the build leaves a replication.
     """
     if frame.empty or "export_id" not in frame.columns:
         return frame
@@ -385,10 +413,16 @@ def apply(cur, frame, corrections: "dict | None" = None):
         if idx is None:
             # Retired, or registered after this build: nothing to correct here.
             continue
-        record_type = out.at[idx, "type"]
+        built_type = out.at[idx, "type"]
+        corrected_type = _corrected_type(export_id, fields)
+        record_type = corrected_type or built_type
         allowed = set(editable_fields(record_type))
         before = identifier_derived.get(_text(out.at[idx, "source_record_id"])) or {}
         applied = {}
+        if corrected_type and corrected_type != built_type:
+            # On the frame before anything reads it: derive_quote goes by the row's type.
+            applied["type"] = built_type
+            _set(out, idx, "type", corrected_type)
         for field, value in fields.items():
             if field not in allowed:
                 continue
@@ -400,13 +434,12 @@ def apply(cur, frame, corrections: "dict | None" = None):
             _set(out, idx, field, value)
         if not applied:
             continue
-        if record_type == "reproduction" and applied.keys() & set(AXIS_FIELDS):
-            row = out.loc[idx]
-            _set(out, idx, "outcome", derive_reproduction_outcome(
-                row.get("outcome_computation"), row.get("outcome_robustness")))
-            _set(out, idx, "outcome_quote",
-                 transform_sources.clean_text(transform_sources.derive_quote(row)))
-            _set(out, idx, "outcome_quote_source", transform_sources.derive_quote_source(row))
+        if record_type == "reproduction" and applied.keys() & {"type", *AXIS_FIELDS}:
+            for field, value in _from_axes(out.loc[idx]).items():
+                _set(out, idx, field, value)
+        elif "type" in applied:
+            for field in AXIS_FIELDS:
+                _set(out, idx, field, None)
         if applied.keys() & {"author_o", "author_r"}:
             overlap, pct = author_overlap.count(out.at[idx, "author_o"], out.at[idx, "author_r"])
             _set(out, idx, "author_overlap", overlap)
@@ -547,6 +580,17 @@ def _append(cur, export_id, record, derived, in_force, corrections, action, admi
             "corrections": corrections}
 
 
+def _checked_notes(notes) -> dict:
+    """The notes on a change's fields, or ValueError saying why one cannot be kept."""
+    notes = dict(notes or {})
+    for field, text in notes.items():
+        if not isinstance(text, str):
+            raise ValueError(f"The note on {field} must be text")
+        if len(text) > NOTE_LIMIT:
+            raise ValueError(f"The note on {field} is longer than {NOTE_LIMIT} characters")
+    return notes
+
+
 def save(cur, record: dict, derived: dict, fields: dict, revert, expected_version,
          admin: dict, notes: "dict | None" = None) -> dict:
     """Record an editor's changes to one FLoRA record as one row of its log.
@@ -570,12 +614,7 @@ def save(cur, record: dict, derived: dict, fields: dict, revert, expected_versio
         raise ValueError(f"Cannot be corrected on a {record_type or 'record'}: {', '.join(unknown)}")
     if set(fields) & set(revert):
         raise ValueError("A field cannot be changed and reverted in the same save")
-    notes = dict(notes or {})
-    for field, text in notes.items():
-        if not isinstance(text, str):
-            raise ValueError(f"The note on {field} must be text")
-        if len(text) > NOTE_LIMIT:
-            raise ValueError(f"The note on {field} is longer than {NOTE_LIMIT} characters")
+    notes = _checked_notes(notes)
     export_id, in_force = _guard(cur, record, expected_version)
 
     corrections = dict(in_force)
@@ -593,6 +632,14 @@ def save(cur, record: dict, derived: dict, fields: dict, revert, expected_versio
             corrections.pop(field)                  # back to the derived value
         else:
             corrections[field] = new
+    if "type" in corrections:
+        # The build gave this record another type's outcome, or none at all, so
+        # dropping one of these would leave it half converted.
+        needed = [field for field in CONFIRMED_FIELDS.get(record_type, ())
+                  if field in in_force and field not in corrections]
+        if needed:
+            raise ValueError(f"This record's type was changed, so it needs {', '.join(needed)}. "
+                             "Change the type back, or restore an earlier version, to undo it.")
     _refuse_excluded(cur, record, derived, in_force, corrections)
     result = _append(cur, export_id, record, derived, in_force, corrections, "edit",
                      admin, notes=notes)
@@ -611,20 +658,19 @@ def restore(cur, record: dict, derived: dict, change_id: int, expected_version,
         row = cur.fetchone()
         if row is None:
             raise RecordNotFound(f"change {change_id} of {export_id}")
-        allowed = set(editable_fields(record.get("type")))
-        target = {field: value for field, value in (row["corrections"] or {}).items()
-                  if field in allowed}
+        stored = row["corrections"] or {}
+        # The type that row gives the record, not the one it has now: a restore can
+        # cross a change of type, in either direction.
+        allowed = set(editable_fields(_corrected_type(export_id, stored)
+                                      or derived.get("type", record.get("type"))))
+        target = {field: value for field, value in stored.items()
+                  if field in allowed or field == "type"}
     else:
         target = {}
     _refuse_excluded(cur, record, derived, in_force, target)
     result = _append(cur, export_id, record, derived, in_force, target, "restore", admin,
                      note, restored_from=int(change_id) or None)
     return _summary(cur, export_id, result, in_force)
-
-
-# What a confirmation pins: the values a record's outcome is.
-CONFIRMED_FIELDS = {"replication": ("outcome",),
-                    "reproduction": ("outcome_computation", "outcome_robustness")}
 
 
 def outcome_options(record: dict) -> list:
@@ -684,6 +730,56 @@ def confirm_outcome(cur, record: dict, derived: dict, expected_version, admin: d
             corrections.setdefault(field, _text(record.get(field)))
     result = _append(cur, export_id, record, derived, in_force, corrections, "confirm",
                      admin, note=note)
+    return _summary(cur, export_id, result, in_force)
+
+
+def change_type(cur, record: dict, derived: dict, new_type: str, fields: dict,
+                expected_version, admin: dict, notes: "dict | None" = None) -> dict:
+    """Change a record between replication and reproduction, as one row of its log.
+
+    `fields` sets what the new type's outcome is, in the same save, so a record is
+    never half converted: a reproduction's two axes, or a replication's outcome. It
+    can set anything else the new type shows too; a reproduction's quotes and their
+    sources are optional, and a normal save can add them later.
+
+    Corrections in force that the new type cannot hold leave the new row; the log
+    keeps them, so a restore brings them back. Changing to the type the build gives
+    drops the type correction, as save() drops a value equal to the derived one.
+    The record keeps its permanent id, and its flora_id and source.
+
+    Logged with action "edit": the table's CHECK has no action for this, and the
+    row's `changes` say what it is.
+    Raises VersionConflict if another change landed since the caller loaded it.
+    """
+    if new_type not in FIELD_GROUPS:
+        raise ValueError("type must be replication or reproduction")
+    notes = _checked_notes(notes)
+    # The version first: a page loaded before someone else changed the type has to
+    # reload rather than be told the record already is what it asked for.
+    export_id, in_force = _guard(cur, record, expected_version)
+    if new_type == record.get("type"):
+        raise ValueError(f"This record is already a {new_type}")
+    allowed = set(editable_fields(new_type))
+    unknown = sorted(set(fields or {}) - allowed)
+    if unknown:
+        raise ValueError(f"Cannot be corrected on a {new_type}: {', '.join(unknown)}")
+    cleaned = {field: clean_value(field, raw, new_type) for field, raw in (fields or {}).items()}
+    missing = [field for field in CONFIRMED_FIELDS[new_type] if not cleaned.get(field)]
+    if missing:
+        raise ValueError(f"A {new_type} needs {', '.join(missing)}")
+    corrections = {**{field: value for field, value in in_force.items() if field in allowed},
+                   **cleaned}
+    if new_type != derived.get("type", record.get("type")):
+        corrections["type"] = new_type
+    _refuse_excluded(cur, record, derived, in_force, corrections)
+    # A dropped correction's field now shows what the new type makes of it, which is
+    # not the derived value _append would log: a replication has no axes, and a
+    # reproduction's outcome comes from them.
+    follows = (_from_axes({**corrections, "type": new_type})
+               if new_type == "reproduction" else {})
+    shown = {field: follows.get(field) for field in set(in_force) - set(corrections) - {"type"}}
+    result = _append(cur, export_id, record, {**derived, **shown}, in_force, corrections,
+                     "edit", admin, notes=notes)
     return _summary(cur, export_id, result, in_force)
 
 

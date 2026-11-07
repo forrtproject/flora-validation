@@ -458,6 +458,194 @@ def test_a_reproduction_is_corrected_through_its_axes(local_database, offline):
                                        "|| Robustness: Robust to every check.")
 
 
+AXES = {"outcome_computation": "computationally reproducible", "outcome_robustness": "robust"}
+REPRODUCED = "computationally reproducible, robust"
+
+
+def _change_type(connection, new_type, fields, version, record="REPL-000001", notes=None):
+    with connection, connection.cursor(cursor_factory=RealDictCursor) as cur:
+        return flora_service.change_type(cur, record, new_type, fields, version, LUKE, notes)
+
+
+@pytest.fixture
+def seeded_reproduction(local_database, offline):
+    """One published reproduction, with both axes coded and a quote on one."""
+    with local_database, local_database.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            """INSERT INTO source_records (source, sheet_row_id, display_id, type, doi_o, doi_r,
+                   outcome_computation, outcome_robustness, outcome_robustness_quote)
+               VALUES ('reproductions', %s, 'REPR-000001', 'reproduction', %s, %s,
+                       'computationally reproducible', 'robust', 'Robust to every check.')""",
+            (str(uuid.uuid4()), ORIGINAL, REPORT))
+        for doi, title in TITLES.items():
+            cur.execute("INSERT INTO work_metadata (doi, title, authors, year) "
+                        "VALUES (%s, %s, 'Ana Fox', '2020')", (doi, title))
+    _pipeline(local_database)
+    return local_database
+
+
+def test_a_replication_becomes_a_reproduction_everywhere_it_is_read(seeded, tmp_path):
+    connection, _ = seeded
+    with connection, connection.cursor(cursor_factory=RealDictCursor) as cur:
+        before = _source_rows(cur)
+    stored, revision = _published(connection)
+    assert (stored["type"], stored["outcome_quote"]) == ("replication", "It replicated.")
+
+    result = _change_type(connection, "reproduction", AXES, 0,
+                          notes={"type": "the paper reanalyses the original data"})
+    assert result["changed_fields"] == ["outcome_computation", "outcome_robustness", "type"]
+    assert result["published"] is True
+
+    # The tab: the same record under the same ids, shown with a reproduction's editor,
+    # and none of the replication's quote.
+    record, editing = _read(connection)
+    assert (record["flora_id"], record["export_id"], record["source"]) == \
+        ("REPL-000001", "REPL-000001", "entry_sheet_replications")
+    assert (record["type"], record["outcome"]) == ("reproduction", REPRODUCED)
+    assert record["outcome_quote"] is None and record["outcome_quote_source"] is None
+    assert record["edited_fields"] == "outcome_computation outcome_robustness type"
+    fields = {f["field"] for f in editing["fields"]}
+    assert "outcome_computational_quote" in fields and "outcome" not in fields
+    [change] = editing["history"]
+    assert change["changes"]["type"] == ["replication", "reproduction"]
+    assert change["notes"] == {"type": "the paper reanalyses the original data"}
+    assert change["corrections"] == {"type": "reproduction", **AXES}
+
+    # The FLoRA table, and the revision the public API's cache keys on.
+    stored, moved = _published(connection)
+    assert (stored["id"], stored["type"], stored["outcome"], stored["source"]) == \
+        ("REPL-000001", "reproduction", REPRODUCED, "replications")
+    assert stored["outcome_quote"] is None and stored["outcome_quote_source"] is None
+    assert stored["outcome_computation"] == AXES["outcome_computation"]
+    assert stored["_meta"]["record_version"] == 2 and moved > revision
+
+    # The grid's filters and counts.
+    with connection, connection.cursor(cursor_factory=RealDictCursor) as cur:
+        listed = flora_service.list_records(cur, {"type": "reproduction", "edited": True})
+    assert [r["flora_id"] for r in listed["records"]] == ["REPL-000001"]
+    assert (listed["counts"]["replications"], listed["counts"]["reproductions"]) == (0, 1)
+
+    with connection, connection.cursor(cursor_factory=RealDictCursor) as cur:
+        assert _source_rows(cur) == before
+
+    # A rebuild comes to the row already written.
+    stats = _pipeline(connection)
+    assert (stats["updated"], stats["unchanged"]) == (0, 1)
+    assert _published(connection)[0]["type"] == "reproduction"
+
+    # So does the CSV a standalone transform writes.
+    output = tmp_path / "flora.csv"
+    transform_sources.run(output)
+    [row] = list(csv.DictReader(io.StringIO(output.read_text(encoding="utf-8-sig"))))
+    assert (row["type"], row["outcome"], row["outcome_quote"]) == ("reproduction", REPRODUCED, "NA")
+
+
+def test_a_save_adds_the_quotes_a_conversion_went_without(seeded):
+    connection, _ = seeded
+    first = _change_type(connection, "reproduction", AXES, 0)
+    second = _save(connection, {"outcome_computational_quote": "The code ran.",
+                                "out_quote_computational_source": "p. 4"}, first["version"])
+    assert second["published"] is True
+    record, editing = _read(connection)
+    assert record["type"] == "reproduction"
+    assert (record["outcome_quote"], record["outcome_quote_source"]) == \
+        ("Computational: The code ran.", "Computational: p. 4")
+    assert editing["history"][0]["corrections"]["type"] == "reproduction"
+    stored, _ = _published(connection)
+    assert (stored["outcome_quote"], stored["outcome_computational_quote"]) == \
+        ("Computational: The code ran.", "The code ran.")
+    assert _pipeline(connection)["unchanged"] == 1
+    assert _published(connection)[0]["outcome_quote"] == "Computational: The code ran."
+
+
+def test_a_reproduction_becomes_a_replication_without_its_axes(seeded_reproduction):
+    connection = seeded_reproduction
+    record = "REPR-000001"
+    assert _published(connection, record)[0]["outcome_robustness"] == "robust"
+
+    result = _change_type(connection, "replication", {"outcome": "failed"}, 0, record)
+    assert (result["changed_fields"], result["published"]) == (["outcome", "type"], True)
+
+    shown, editing = _read(connection, record)
+    stored, _ = _published(connection, record)
+    for row in (shown, stored):
+        assert (row["type"], row["outcome"]) == ("replication", "failed")
+        assert [row[field] for field in flora_edits.AXIS_FIELDS] == [None] * 6
+    assert (shown["source"], stored["source"]) == ("entry_sheet_reproductions", "reproductions")
+    # Its evidence stays until someone rewrites it: only the outcome was asked for.
+    assert stored["outcome_quote"] == "Robustness: Robust to every check."
+    assert "outcome_robustness" not in {f["field"] for f in editing["fields"]}
+    assert _pipeline(connection)["unchanged"] == 1
+
+
+def test_changing_back_to_the_built_type_needs_no_correction_of_the_type(seeded_reproduction):
+    connection = seeded_reproduction
+    record = "REPR-000001"
+    first = _change_type(connection, "replication", {"outcome": "failed"}, 0, record)
+    back = _change_type(connection, "reproduction", AXES, first["version"], record)
+    assert "type" in back["reverted_fields"]
+    shown, editing = _read(connection, record)
+    assert "type" not in editing["history"][0]["corrections"]
+    assert (shown["type"], shown["outcome"]) == ("reproduction", REPRODUCED)
+    assert shown["outcome_quote"] == "Robustness: Robust to every check."
+    stored, _ = _published(connection, record)
+    assert (stored["type"], stored["outcome_robustness_quote"]) == \
+        ("reproduction", "Robust to every check.")
+    assert _pipeline(connection)["unchanged"] == 1
+
+
+def test_a_conversion_sets_aside_what_a_restore_brings_back(seeded):
+    connection, _ = seeded
+    first = _save(connection, {"outcome": "failed", "outcome_quote": "It failed.",
+                               "title_o": "A corrected title"}, 0)
+    second = _change_type(connection, "reproduction", AXES, first["version"])
+    assert second["reverted_fields"] == ["outcome", "outcome_quote"]
+    record, editing = _read(connection)
+    assert (record["outcome"], record["outcome_quote"], record["title_o"]) == \
+        (REPRODUCED, None, "A corrected title")      # a correction it can hold stays
+    assert editing["history"][0]["changes"]["outcome"] == ["failed", REPRODUCED]
+    assert editing["history"][1]["corrections"]["outcome"] == "failed"
+
+    # Back across the change: the old type and the outcome it could not hold.
+    back = _restore(connection, first["change_id"], second["version"])
+    record, editing = _read(connection)
+    stored, _ = _published(connection)
+    for row in (record, stored):
+        assert (row["type"], row["outcome"], row["outcome_quote"]) == \
+            ("replication", "failed", "It failed.")
+        assert row["outcome_computation"] is None and row["outcome_robustness"] is None
+    assert editing["history"][0]["restored_from"] == first["change_id"]
+
+    # Forward across it again.
+    forward = _restore(connection, second["change_id"], back["version"])
+    assert (_read(connection)[0]["type"], _published(connection)[0]["outcome"]) == \
+        ("reproduction", REPRODUCED)
+
+    # And to how the build leaves it.
+    original = _restore(connection, 0, forward["version"])
+    record, _ = _read(connection)
+    stored, _ = _published(connection)
+    for row in (record, stored):
+        assert (row["type"], row["outcome"], row["outcome_quote"], row["title_o"]) == \
+            ("replication", "successful", "It replicated.", TITLES[ORIGINAL])
+    assert record["edited_fields"] is None and original["published"] is True
+    assert _pipeline(connection)["unchanged"] == 1
+
+
+def test_a_type_change_is_refused_on_a_stale_version_and_never_half_made(seeded):
+    connection, _ = seeded
+    first = _save(connection, {"title_o": "A corrected title"}, 0)
+    with pytest.raises(flora_service.VersionConflict):
+        _change_type(connection, "reproduction", AXES, 0)
+    with pytest.raises(ValueError, match="needs outcome_robustness"):
+        _change_type(connection, "reproduction", {"outcome_computation": "not checked"},
+                     first["version"])
+    with pytest.raises(ValueError, match="Cannot be corrected on a replication: type"):
+        _save(connection, {"type": "reproduction"}, first["version"])
+    record, editing = _read(connection)
+    assert record["type"] == "replication" and len(editing["history"]) == 1
+
+
 def test_the_source_panel_points_at_the_flora_record_to_correct(seeded):
     connection, record_id = seeded
     with connection, connection.cursor(cursor_factory=RealDictCursor) as cur:

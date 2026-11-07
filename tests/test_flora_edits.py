@@ -490,6 +490,343 @@ def test_the_log_is_append_only_and_tied_to_the_published_id():
     assert "flora_record_overrides" not in schema and "flora_record_edits" not in schema
 
 
+# ── changing a record's type ──────────────────────────────────────────────────
+
+AXES = {"outcome_computation": "computationally reproducible", "outcome_robustness": "robust"}
+REPRODUCED = "computationally reproducible, robust"
+REPRODUCTION = {**RECORD, "flora_id": "REPR-1", "type": "reproduction", "outcome": REPRODUCED,
+                **AXES}
+
+
+def _quoted_frame():
+    """A replication with a quote of its own, which a reproduction cannot keep."""
+    frame = _frame()
+    frame["outcome_quote"] = ["It replicated.", "Robustness: Robust.", None]
+    frame["outcome_quote_source"] = ["p. 3", None, None]
+    return frame
+
+
+def test_a_corrected_type_decides_what_the_record_can_hold():
+    out = flora_edits.apply(None, _quoted_frame(), {
+        "FLORA-000001": {"type": "reproduction", **AXES, "outcome": "mixed"}})
+    row = out.set_index("flora_id").loc["REPL-1"]
+    assert (row["type"], row["source"]) == ("reproduction", "replications")
+    assert row["outcome"] == REPRODUCED             # the axes', not a correction it cannot hold
+    assert row["edited_fields"] == "outcome_computation outcome_robustness type"
+    assert out.attrs["flora_edits"] == {"FLORA-000001": {
+        "type": "replication", "outcome_computation": None, "outcome_robustness": None}}
+
+
+def test_a_conversion_without_quotes_leaves_none_of_the_replications():
+    out = flora_edits.apply(None, _quoted_frame(), {"FLORA-000001": {"type": "reproduction", **AXES}})
+    row = out.set_index("flora_id").loc["REPL-1"]
+    assert pd.isna(row["outcome_quote"]) and pd.isna(row["outcome_quote_source"])
+
+
+def test_a_type_the_build_has_caught_up_with_changes_nothing():
+    """The source was fixed after the conversion: the build's own quote stands, which
+    a rewrite from the axes would lose, and the record does not show as edited."""
+    frame = _quoted_frame()
+    export_id = frame.loc[frame["flora_id"] == "REPR-1", "export_id"].iloc[0]
+    out = flora_edits.apply(None, frame, {export_id: {"type": "reproduction"}})
+    row = out.set_index("flora_id").loc["REPR-1"]
+    assert row["outcome_quote"] == "Robustness: Robust."
+    assert pd.isna(row["edited_fields"]) and export_id not in out.attrs["flora_edits"]
+
+
+def test_quotes_added_after_a_conversion_make_the_outcome_quote():
+    out = flora_edits.apply(None, _quoted_frame(), {"FLORA-000001": {
+        "type": "reproduction", **AXES, "outcome_computational_quote": "It ran.",
+        "out_quote_computational_source": "p. 4", "outcome_robustness_quote": "Robust.",
+        "out_quote_robust_source": "p. 5"}})
+    row = out.set_index("flora_id").loc["REPL-1"]
+    assert row["outcome_quote"] == "Computational: It ran. || Robustness: Robust."
+    assert row["outcome_quote_source"] == "Computational: p. 4 || Robustness: p. 5"
+
+
+def test_a_record_corrected_to_a_replication_has_no_axes():
+    frame = _frame()
+    for field in flora_edits.AXIS_FIELDS:
+        frame[field] = [None, "built value", None]
+    out = flora_edits.apply(None, frame, {"FLORA-000002": {
+        "type": "replication", "outcome": "failed", "outcome_robustness": "robust"}})
+    row = out.set_index("flora_id").loc["REPR-1"]
+    assert (row["type"], row["outcome"]) == ("replication", "failed")
+    assert row[list(flora_edits.AXIS_FIELDS)].isna().all()
+    assert row["edited_fields"] == "outcome type"
+    assert out.attrs["flora_edits"] == {"FLORA-000002": {"type": "reproduction",
+                                                         "outcome": "cannot_be_determined"}}
+
+
+def test_a_converted_record_passes_the_outcome_check_of_its_new_type():
+    out = flora_edits.apply(None, _frame(), {
+        "FLORA-000001": {"type": "reproduction", **AXES},
+        "FLORA-000002": {"type": "replication", "outcome": "failed"}})
+    assert validate_flora._check_outcomes(out.iloc[:2]) == []
+
+
+@pytest.mark.parametrize("stored", ["meta-analysis", ["reproduction"], 5])
+def test_a_stored_type_that_is_no_type_is_skipped_and_logged(stored, capsys):
+    """Replayed on every build like any correction: it must not stop one."""
+    out = flora_edits.apply(None, _frame(), {"FLORA-000001": {"type": stored, "title_o": "Fine"}})
+    row = out.set_index("flora_id").loc["REPL-1"]
+    assert (row["type"], row["edited_fields"]) == ("replication", "title_o")
+    assert "correction skipped on FLORA-000001" in capsys.readouterr().out
+
+
+def test_a_conversion_settles_an_outcome_clash():
+    """Its duplicates' outcomes are of the old type, so the clash is over."""
+    frame = _frame()
+    frame["outcome_conflict"] = ["failed | mixed", None, None]
+    out = flora_edits.apply(None, frame, {"FLORA-000001": {"type": "reproduction", **AXES}})
+    assert flora_service._attach_outcome_conflicts(out)["outcome_conflict"].isna().all()
+
+
+def test_a_type_change_is_one_row_of_the_log_with_a_note_on_each_field():
+    cur = _Cur()
+    result = flora_edits.change_type(cur, RECORD, {}, "reproduction", AXES, 0, ADMIN,
+                                     {"type": " coded in the wrong sheet ",
+                                      "outcome_robustness": "per the paper"})
+    assert result == {"export_id": "FLORA-000001", "change_id": 1,
+                      "changed_fields": ["outcome_computation", "outcome_robustness", "type"],
+                      "reverted_fields": [], "version": 1}
+    [row] = cur.appended()
+    assert row[3] == "edit"                         # the table's CHECK has no action for this
+    assert row[5].adapted == {"type": ["replication", "reproduction"],
+                              "outcome_computation": [None, AXES["outcome_computation"]],
+                              "outcome_robustness": [None, "robust"]}
+    assert row[6].adapted == {"type": "reproduction", **AXES}
+    assert row[8].adapted == {"type": "coded in the wrong sheet",
+                              "outcome_robustness": "per the paper"}
+    assert not any("source_records" in sql for sql, _ in cur.executed)
+
+
+def test_a_reproduction_becomes_a_replication_with_its_outcome_cleaned():
+    cur = _Cur()
+    result = flora_edits.change_type(cur, REPRODUCTION, {}, "replication",
+                                     {"outcome": "success", "outcome_quote": "It <i>worked</i>."},
+                                     0, ADMIN)
+    assert result["changed_fields"] == ["outcome", "outcome_quote", "type"]
+    [row] = cur.appended()
+    assert row[5].adapted["outcome"] == [REPRODUCED, "successful"]
+    assert row[6].adapted == {"type": "replication", "outcome": "successful",
+                              "outcome_quote": "It worked ."}
+
+
+@pytest.mark.parametrize("record, new_type, fields, message", [
+    (RECORD, "meta-analysis", AXES, "type must be replication or reproduction"),
+    (RECORD, "", AXES, "type must be replication or reproduction"),
+    (RECORD, "replication", {"outcome": "mixed"}, "already a replication"),
+    (REPRODUCTION, "reproduction", AXES, "already a reproduction"),
+    (RECORD, "reproduction", {}, "needs outcome_computation, outcome_robustness"),
+    (RECORD, "reproduction", {"outcome_robustness": "robust"}, "needs outcome_computation"),
+    (RECORD, "reproduction", {**AXES, "outcome_robustness": " "}, "needs outcome_robustness"),
+    (RECORD, "reproduction", {**AXES, "outcome_robustness": "mostly robust"},
+     "invalid outcome_robustness"),
+    (RECORD, "reproduction", {**AXES, "outcome": "failed"},
+     "Cannot be corrected on a reproduction: outcome"),
+    (RECORD, "reproduction", {**AXES, "flora_id": "REPR-1"}, "Cannot be corrected"),
+    (RECORD, "reproduction", {**AXES, "type": "reproduction"}, "Cannot be corrected"),
+    (REPRODUCTION, "replication", {}, "needs outcome"),
+    (REPRODUCTION, "replication", {"outcome": ""}, "needs outcome"),
+    (REPRODUCTION, "replication", {"outcome": "sort of worked"}, "outcome must be one of"),
+    (REPRODUCTION, "replication", {"outcome": "failed", "outcome_robustness": "robust"},
+     "Cannot be corrected on a replication: outcome_robustness"),
+])
+def test_a_type_change_that_cannot_be_made_is_refused_with_the_reason(record, new_type, fields,
+                                                                      message):
+    cur = _Cur()
+    with pytest.raises(ValueError, match=message):
+        flora_edits.change_type(cur, record, {}, new_type, fields, 0, ADMIN)
+    assert cur.appended() == []
+
+
+@pytest.mark.parametrize("notes, message", [
+    ({"type": "x" * 501}, "longer than 500"),
+    ({"type": 5}, "must be text"),
+])
+def test_a_note_on_a_type_change_that_cannot_be_kept_is_refused(notes, message):
+    cur = _Cur()
+    with pytest.raises(ValueError, match=message):
+        flora_edits.change_type(cur, RECORD, {}, "reproduction", AXES, 0, ADMIN, notes)
+    assert cur.appended() == []
+
+
+def test_a_type_change_from_a_stale_page_reloads_rather_than_being_refused():
+    """Someone else changed the type since it loaded, so the record already is what
+    the page asked for: a version conflict (reload), not a 400 saying so."""
+    cur = _Cur([(6, {}), (7, {"type": "reproduction", **AXES})])
+    with pytest.raises(flora_edits.VersionConflict) as caught:
+        flora_edits.change_type(cur, REPRODUCTION, {"type": "replication"}, "reproduction",
+                                AXES, 6, ADMIN)
+    assert caught.value.current_version == 7 and cur.appended() == []
+
+
+def test_corrections_the_new_type_cannot_hold_leave_the_new_row_and_stay_in_the_log():
+    in_force = {"title_o": "Mine", "outcome": "mixed", "outcome_quote": "Mine too."}
+    shown = {**RECORD, **in_force}
+    derived = {"title_o": "Derived", "outcome": "failed", "outcome_quote": "Theirs."}
+    cur = _Cur([(1, in_force)])
+    result = flora_edits.change_type(cur, shown, derived, "reproduction",
+                                     {**AXES, "outcome_computational_quote": "It ran."}, 1, ADMIN)
+    assert result["reverted_fields"] == ["outcome", "outcome_quote"]
+    [row] = cur.appended()
+    assert row[6].adapted == {"title_o": "Mine", "type": "reproduction", **AXES,
+                              "outcome_computational_quote": "It ran."}
+    # What the record shows now, not the replication's derived values.
+    assert row[5].adapted["outcome"] == ["mixed", REPRODUCED]
+    assert row[5].adapted["outcome_quote"] == ["Mine too.", "Computational: It ran."]
+    assert "title_o" not in row[5].adapted and cur.log[0] == (1, in_force)
+
+
+def test_a_replication_is_logged_without_the_axes_it_cannot_hold():
+    in_force = {"outcome_robustness": "robust", "outcome_robustness_quote": "Robust."}
+    cur = _Cur([(1, in_force)])
+    flora_edits.change_type(cur, REPRODUCTION, {"outcome_robustness": "not checked",
+                                                "outcome_robustness_quote": None},
+                            "replication", {"outcome": "failed"}, 1, ADMIN)
+    [row] = cur.appended()
+    assert row[5].adapted["outcome_robustness"] == ["robust", None]
+    assert row[5].adapted["outcome_robustness_quote"] == ["Robust.", None]
+    assert row[6].adapted == {"type": "replication", "outcome": "failed"}
+
+
+def test_changing_to_the_type_the_build_gives_drops_the_correction():
+    """As a value equal to the derived one does: a later change upstream flows through."""
+    shown = {**REPRODUCTION, "title_o": "Mine"}
+    derived = {"type": "replication", "title_o": "Derived", "outcome_computation": None,
+               "outcome_robustness": None}
+    cur = _Cur([(1, {"type": "reproduction", "title_o": "Mine", **AXES})])
+    result = flora_edits.change_type(cur, shown, derived, "replication", {"outcome": "failed"},
+                                     1, ADMIN)
+    assert result["reverted_fields"] == ["outcome_computation", "outcome_robustness", "type"]
+    [row] = cur.appended()
+    assert row[6].adapted == {"title_o": "Mine", "outcome": "failed"}
+    assert row[5].adapted["type"] == ["reproduction", "replication"]
+
+
+def test_a_type_change_cannot_put_a_record_on_an_excluded_identifier():
+    cur = _Cur(exclusions=[{"doi_o": None, "doi_r": "10.1/out", "url_r": None, "reason": "commentary"}])
+    with pytest.raises(ValueError, match="exclusion list"):
+        flora_edits.change_type(cur, RECORD, {}, "reproduction", {**AXES, "doi_r": "10.1/out"},
+                                0, ADMIN)
+    assert cur.appended() == []
+
+
+@pytest.mark.parametrize("fields, revert", [({"type": "reproduction"}, []), ({}, ["type"])])
+def test_a_save_cannot_change_the_type(fields, revert):
+    """change_type() alone can: it sets the new type's outcome in the same save."""
+    cur = _Cur([(1, {"type": "reproduction", **AXES})])
+    with pytest.raises(ValueError, match="Cannot be corrected on a reproduction: type"):
+        flora_edits.save(cur, REPRODUCTION, {}, fields, revert, 1, ADMIN)
+    assert cur.appended() == []
+
+
+@pytest.mark.parametrize("record, in_force, fields, revert, message", [
+    (REPRODUCTION, {"type": "reproduction", **AXES}, {}, ["outcome_robustness"],
+     "needs outcome_robustness"),
+    (REPRODUCTION, {"type": "reproduction", **AXES}, {"outcome_computation": ""}, [],
+     "needs outcome_computation"),
+    ({**RECORD, "outcome": "failed"}, {"type": "replication", "outcome": "failed"}, {},
+     ["outcome"], "needs outcome"),
+])
+def test_a_save_cannot_undo_half_of_a_conversion(record, in_force, fields, revert, message):
+    """The derived value would be blank, or the old type's outcome."""
+    derived = {"type": "other", "outcome": REPRODUCED,
+               "outcome_computation": None, "outcome_robustness": None}
+    cur = _Cur([(1, in_force)])
+    with pytest.raises(ValueError, match=message):
+        flora_edits.save(cur, record, derived, fields, revert, 1, ADMIN)
+    assert cur.appended() == []
+
+
+def test_a_save_after_a_conversion_adds_the_quotes_and_keeps_the_type():
+    in_force = {"type": "reproduction", **AXES}
+    cur = _Cur([(1, in_force)])
+    result = flora_edits.save(cur, REPRODUCTION, {"type": "replication"},
+                              {"outcome_computational_quote": "It ran."}, [], 1, ADMIN)
+    assert result["changed_fields"] == ["outcome_computational_quote"]
+    [row] = cur.appended()
+    assert row[6].adapted == {**in_force, "outcome_computational_quote": "It ran."}
+    assert list(row[5].adapted) == ["outcome_computational_quote"]
+
+
+def test_a_quote_can_still_be_reverted_after_a_conversion():
+    in_force = {"type": "reproduction", **AXES, "outcome_robustness_quote": "Robust."}
+    cur = _Cur([(1, in_force)])
+    result = flora_edits.save(cur, REPRODUCTION, {"outcome_robustness_quote": None}, {},
+                              ["outcome_robustness_quote"], 1, ADMIN)
+    assert result["reverted_fields"] == ["outcome_robustness_quote"]
+
+
+def test_a_restore_crosses_a_change_of_type_in_both_directions():
+    replication = {"title_o": "Mine", "outcome": "mixed"}
+    reproduction = {"title_o": "Mine", "type": "reproduction", **AXES}
+
+    # Back: the record is a reproduction now, and the outcome is one it cannot hold.
+    shown = {**REPRODUCTION, "title_o": "Mine"}
+    derived = {"type": "replication", "title_o": "Derived", "outcome_computation": None,
+               "outcome_robustness": None}
+    cur = _Cur([(1, replication), (2, reproduction)])
+    result = flora_edits.restore(cur, shown, derived, 1, 2, ADMIN)
+    [row] = cur.appended()
+    assert row[6].adapted == replication
+    assert row[5].adapted["type"] == ["reproduction", "replication"]
+    assert row[5].adapted["outcome"] == [REPRODUCED, "mixed"]
+    assert result["reverted_fields"] == ["outcome_computation", "outcome_robustness", "type"]
+
+    # Forward: the record is a replication again, and the axes are ones it cannot hold.
+    shown = {**RECORD, "title_o": "Mine", "outcome": "mixed"}
+    cur = _Cur([(1, replication), (2, reproduction), (3, replication)])
+    flora_edits.restore(cur, shown, {"title_o": "Derived", "outcome": "failed"}, 2, 3, ADMIN)
+    [row] = cur.appended()
+    assert row[6].adapted == reproduction and row[5].adapted["type"] == ["replication", "reproduction"]
+
+
+def test_restoring_the_original_undoes_a_change_of_type():
+    cur = _Cur([(1, {"type": "reproduction", **AXES})])
+    derived = {"type": "replication", "outcome_computation": None, "outcome_robustness": None}
+    result = flora_edits.restore(cur, REPRODUCTION, derived, 0, 1, ADMIN)
+    assert result["reverted_fields"] == ["outcome_computation", "outcome_robustness", "type"]
+    [row] = cur.appended()
+    assert row[6].adapted == {} and row[5].adapted["type"] == ["reproduction", "replication"]
+
+
+def test_a_restore_still_leaves_out_what_the_record_cannot_hold():
+    """A change logged before the type moved upstream."""
+    cur = _Cur([(1, {"title_o": "Mine", "outcome_robustness": "robust"}), (2, {})])
+    flora_edits.restore(cur, RECORD, {}, 1, 2, ADMIN)
+    assert cur.appended()[0][6].adapted == {"title_o": "Mine"}
+
+
+def test_a_type_change_is_written_through_like_any_other_change(monkeypatch):
+    frames = iter([(RECORD, {}), ({**RECORD, "type": "reproduction"}, {"type": "replication"})])
+    monkeypatch.setattr(flora_service, "_find", lambda cur, flora_id: next(frames))
+    published = []
+    monkeypatch.setattr(flora_edits, "publish",
+                        lambda cur, before, after: published.append((before, after)) or True)
+    monkeypatch.setattr(flora_edits, "change_type", lambda *a, **k: {"change_id": 3})
+    result = flora_service.change_type(None, "REPL-1", "reproduction", AXES, 2, ADMIN, {})
+    assert result == {"change_id": 3, "published": True, "warnings": []}
+    assert [(b["type"], a["type"]) for b, a in published] == [("replication", "reproduction")]
+
+
+def test_a_type_shared_with_another_record_of_those_identifiers_is_flagged(monkeypatch):
+    """The duplicate steps only compare records of one type, so a type change can
+    make two records one study to them, as a corrected DOI can."""
+    frame = _frame().iloc[:2].copy()
+    frame["doi_o"], frame["doi_r"], frame["url_r"] = "10.1/a", "10.1/r", None
+    frame["type"] = "reproduction"
+    monkeypatch.setattr(flora_service, "_find", lambda cur, flora_id: (frame.iloc[0].to_dict(), {}))
+    monkeypatch.setattr(flora_service, "dataset", lambda cur: frame)
+    monkeypatch.setattr(flora_edits, "publish", lambda *a: True)
+    monkeypatch.setattr(flora_edits, "change_type", lambda *a, **k: {
+        "change_id": 3, "changed_fields": ["type"], "reverted_fields": []})
+    result = flora_service.change_type(None, "REPL-1", "reproduction", AXES, 2, ADMIN, {})
+    [warning] = result["warnings"]
+    assert warning.startswith("REPR-1 has the same original and replication identifiers")
+
+
 # ── the FLoRA tab ─────────────────────────────────────────────────────────────
 
 def test_the_edited_filter_and_count_find_corrected_records():
@@ -602,7 +939,8 @@ def test_source_records_can_no_longer_be_edited():
 # ── routes ────────────────────────────────────────────────────────────────────
 
 ROUTES = ("admin_flora_record", "FloraRecordUpdate", "_flora_change",
-          "admin_flora_record_update", "FloraRecordRestore", "admin_flora_record_restore")
+          "admin_flora_record_update", "FloraRecordRestore", "admin_flora_record_restore",
+          "FloraTypeChange", "admin_flora_change_type")
 
 
 class _NotFound(LookupError):
@@ -620,6 +958,7 @@ def flora_api():
     app = FastAPI()
     service = SimpleNamespace(get_record=Mock(), merged_sources=Mock(return_value=[]),
                               editing=Mock(), update_record=Mock(), restore_record=Mock(),
+                              change_type=Mock(),
                               check_findings=Mock(return_value=[]), check_runs=Mock(return_value={}),
                               RecordNotFound=_NotFound, VersionConflict=_Conflict)
 
@@ -650,8 +989,10 @@ def test_changing_requires_an_admin(flora_api):
     flora_api.app.dependency_overrides.clear()
     assert flora_api.client.patch(URL, json={"fields": {}, "version": 0}).status_code == 401
     assert flora_api.client.post(URL + "/restore", json={"change_id": 1, "version": 0}).status_code == 401
+    assert flora_api.client.post(URL + "/type", json={"type": "reproduction", "version": 0}).status_code == 401
     flora_api.service.update_record.assert_not_called()
     flora_api.service.restore_record.assert_not_called()
+    flora_api.service.change_type.assert_not_called()
 
 
 def test_a_change_is_logged_under_the_admin_with_a_note_per_field(flora_api):
@@ -673,6 +1014,37 @@ def test_a_restore_names_the_change_and_the_version(flora_api):
     flora_api.service.restore_record.assert_called_once_with(
         "isolated-cursor", "REPL-000001", 2, 4, {"id": 7, "handle": "test-admin"}, "undo")
     assert flora_api.client.post(URL + "/restore", json={"change_id": -1, "version": 4}).status_code == 422
+
+
+def test_a_type_change_names_the_type_the_fields_and_the_version(flora_api):
+    flora_api.service.change_type.return_value = {"change_id": 5}
+    response = flora_api.client.post(URL + "/type", json={
+        "type": "reproduction", "fields": AXES, "version": 4, "notes": {"type": "wrong sheet"}})
+    assert response.status_code == 200
+    flora_api.service.change_type.assert_called_once_with(
+        "isolated-cursor", "REPL-000001", "reproduction", AXES, 4,
+        {"id": 7, "handle": "test-admin"}, {"type": "wrong sheet"})
+
+
+def test_a_type_change_needs_its_type_and_version_and_text_notes(flora_api):
+    url = URL + "/type"
+    assert flora_api.client.post(url, json={"version": 1}).status_code == 422
+    assert flora_api.client.post(url, json={"type": "reproduction"}).status_code == 422
+    assert flora_api.client.post(url, json={"type": "reproduction", "version": 1,
+                                            "notes": {"type": ["not", "text"]}}).status_code == 422
+    flora_api.service.change_type.assert_not_called()
+
+
+def test_type_change_errors_become_client_errors(flora_api):
+    url, body = URL + "/type", {"type": "reproduction", "fields": AXES, "version": 1}
+    flora_api.service.change_type.side_effect = _NotFound()
+    assert flora_api.client.post(url, json=body).status_code == 404
+    flora_api.service.change_type.side_effect = _Conflict(5)
+    response = flora_api.client.post(url, json=body)
+    assert response.status_code == 409 and response.headers["X-Current-Version"] == "5"
+    flora_api.service.change_type.side_effect = ValueError("A reproduction needs outcome_robustness")
+    response = flora_api.client.post(url, json=body)
+    assert response.status_code == 400 and "needs outcome_robustness" in response.json()["detail"]
 
 
 def test_a_change_without_its_version_is_refused(flora_api):

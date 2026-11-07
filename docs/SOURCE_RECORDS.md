@@ -1238,6 +1238,7 @@ listed under **Earlier edits to its source records**, also closed.
 | `PATCH /api/admin/flora/{flora_id}` | Save a change `{fields, revert, version, notes}`; `notes` maps a field to the note on its change |
 | `POST /api/admin/flora/{flora_id}/restore` | Restore the state after a change `{change_id, version, note}`; `change_id` 0 is the original |
 | `POST /api/admin/flora/{flora_id}/confirm-outcome` | Settle an outcome clash `{version, note, outcome}`: `outcome` is one the duplicates gave (none: the one shown); logged with action `confirm` |
+| `POST /api/admin/flora/{flora_id}/type` | Change a record between replication and reproduction `{type, fields, version, notes}`: `fields` must set `outcome`, or both axes, in the same save; quotes are optional. A logged change (action `edit`) kept as a `type` correction, so it survives rebuilds and a restore undoes it. The permanent id, `flora_id` and `source` stay as they are |
 | `GET /api/admin/flora?edited=true` | The **Corrected** chip: records with at least one correction in force |
 
 A correction on a record that later retires stops applying, and applies again if the
