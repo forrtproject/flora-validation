@@ -5,6 +5,10 @@ sides, for journal versions of preprints. It recognises OSF-hosted servers,
 bioRxiv/medRxiv, SSRN, Research Square, arXiv, Preprints.org, JMIR preprints,
 and generic OSF repository DOIs. OSF projects are not assumed to be preprints.
 
+Validation and ordinary editor replacements also retain outgoing preprint DOIs.
+The [fred-data #162 retention audit](audits/preprint-identifier-retention-2026-11-10.md)
+documents the affected rows, shared publication bridge and logged backfill.
+
 ```sh
 python3 published_versions.py
 ```

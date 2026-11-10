@@ -61,7 +61,8 @@ use_utf8_output()
 SOURCE_KEY = "validated"
 DISPLAY_PREFIX = "VAL"
 
-# Straight column copies: same name on `validated` and on `source_records`.
+# Publication columns, with the same names on source_records. alt_identifier_o
+# is recovered from validation provenance before the copy; validated lacks it.
 DIRECT_COLUMNS = [
     "ref_o", "doi_o", "url_o",
     "ref_r", "doi_r", "url_r",
