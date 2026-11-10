@@ -88,6 +88,36 @@ jobs:
           OPENALEX_MAILTO: ${{ secrets.OPENALEX_MAILTO }}
         run: python prepare_flora.py --output-dir output
 
+      # Recheck weekly, including previous misses; transient failures are never
+      # cached. Scan this run's exact released snapshot, proposing decisions only.
+      - name: Restore published-version lookup cache
+        if: steps.build_dataset.outcome == 'success'
+        uses: actions/cache@v4
+        with:
+          path: cache/published_versions
+          key: published-versions-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: published-versions-${{ runner.os }}-
+
+      - name: Check for published versions of preprints
+        # Discovery outages must not prevent publication of a validated release.
+        # Failures remain visible in logs and the uploaded status JSON.
+        continue-on-error: true
+        if: steps.build_dataset.outcome == 'success'
+        env:
+          OPENALEX_MAILTO: ${{ secrets.OPENALEX_MAILTO }}
+        run: python published_versions.py
+
+      - name: Upload published-version candidates and lookup status
+        if: always() && steps.build_dataset.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: published-version-candidates-${{ github.run_id }}
+          path: |
+            output/published_version_candidates.csv
+            output/published_version_candidates.status.json
+          retention-days: 90
+          if-no-files-found: error
+
       # Only when the build ran: output/ also holds the last release's committed
       # reports. The build writes its report first and clears the old validation
       # reports as it starts, so even a failed build uploads only its own.

@@ -1227,7 +1227,21 @@ def apply_confirmed(frame, confirmed_path: Path = CONFIRMED_PATH,
         remove, keep = derive_remove_keep(row["action"], row["doi_1"], row["doi_2"])
         if _blank(remove) or _blank(keep):
             continue
-        if (row.get("side") or "").startswith("replication"):
+        if row.get("side") == "replication published version":
+            # An externally verified publication may not yet have a FLoRA row.
+            # Preserve the record and its preprint identifier, then merge any
+            # resulting DOI-pair duplicate through the ordinary merge machinery.
+            mask = frame["doi_r"].map(normalize_doi).eq(normalize_doi(remove))
+            frame.loc[mask, "alt_identifier_r"] = [
+                append_alt_identifier(alt, doi)
+                for alt, doi in zip(frame.loc[mask, "alt_identifier_r"],
+                                    frame.loc[mask, "doi_r"])]
+            frame.loc[mask, "doi_r"] = normalize_doi(keep)
+            frame, conflicts = merge_doi_pair_dups(
+                frame, normalise_outcome, verbose=False, hand_fills=hand_fills)
+            if conflicts_out is not None and not conflicts.empty:
+                conflicts_out.extend(conflicts.to_dict("records"))
+        elif (row.get("side") or "").startswith("replication"):
             frame = _drop_replication(frame, remove, keep, annotate=True, hand_fills=hand_fills)
 
     originals = [r for r in confirmed if (r.get("side") or "").startswith("original")]
