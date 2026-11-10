@@ -77,6 +77,29 @@ The manual **Publish FLoRA** workflow offers `preprint_alias_history: audit` or
 `backfill`, using the existing database secret and a public-identifier-only audit
 artifact. The option defaults to `off`; no new Google Sheet is used.
 
+The [successful backfill run](https://github.com/forrtproject/flora-validation/actions/runs/42851237842)
+applied all 25 corrections as **change IDs 357–381** and verified **zero remaining
+omissions** before committing. The [machine-readable result](preprint-identifier-retention-applied-2026-11-10.json)
+lists the evidence and correction ID for every row. The repository release
+`82a461f` changes exactly 25 alternative-identifier fields (23 replication-side,
+2 original-side); every primary DOI, all other cells, record IDs and row count
+remain unchanged. The five generic OSF cases were left untouched.
+
+A [fresh read-only audit](https://github.com/forrtproject/flora-validation/actions/runs/42852565042)
+after commit also found **zero omissions**, using the expanded prior-source-snapshot
+history. Its [result](preprint-identifier-retention-verified-2026-11-10.json)
+checks the current live database and executes the updated publication-bridge query
+against all 498 validated records. No further corrections were proposed.
+Structural validation produced exactly the same findings before and after this
+backfill (46 existing problems and 24 possible problems); the added alternatives
+introduced none. Publication-discovery inputs are also identical, so the existing
+39-pair / 44-proposal census remains applicable.
+
+The resulting `output/flora.csv` SHA-256 is
+`f5a150eed8aa0ff4668a5e676d733ead116efdc5641336244ea0076a4afac000`.
+
 Tests cover both sides, resolver/case deduplication, intermediate versions,
 extractor refreshes, editor restores, atomic two-side backfills, concurrent DOI
 changes, generic OSF exclusions, the source bridge and the daily CSV.
+Cleared DOI endpoints cannot connect otherwise unrelated history chains.
+The complete suite passed: **2,920 tests**, with 412 opt-in/environment skips.

@@ -1,0 +1,61 @@
+{
+  "applied": false,
+  "published_rows": 2867,
+  "validated_rows_checked": 498,
+  "affected_rows": 0,
+  "review_only_osf_rows": 5,
+  "missing_identifiers": 0,
+  "original_rows": 0,
+  "replication_rows": 0,
+  "remaining_rows": 0,
+  "findings": [],
+  "osf_deposit_review": [
+    {
+      "id": "FLORA-002139",
+      "side": "r",
+      "old_identifier": "10.17605/osf.io/82bwv",
+      "current_doi": "10.1126/science.aac4716",
+      "evidence": [
+        "flora-change:141"
+      ]
+    },
+    {
+      "id": "FLORA-002142",
+      "side": "r",
+      "old_identifier": "10.17605/osf.io/ehjdm",
+      "current_doi": "10.1126/science.aac4716",
+      "evidence": [
+        "flora-change:139"
+      ]
+    },
+    {
+      "id": "FLORA-002148",
+      "side": "r",
+      "old_identifier": "10.17605/osf.io/ictp5",
+      "current_doi": "10.1126/science.aac4716",
+      "evidence": [
+        "flora-change:140"
+      ]
+    },
+    {
+      "id": "VAL-000271",
+      "side": "r",
+      "old_identifier": "10.17605/osf.io/gax7j",
+      "current_doi": "10.1037/mot0000308",
+      "evidence": [
+        "validation:extracted-to-final",
+        "validation:source-snapshot"
+      ]
+    },
+    {
+      "id": "VAL-000369",
+      "side": "o",
+      "old_identifier": "10.17605/osf.io/hw3v6",
+      "current_doi": "10.1177/2167696815585685",
+      "evidence": [
+        "flora-change:308"
+      ]
+    }
+  ],
+  "corrections": []
+}
