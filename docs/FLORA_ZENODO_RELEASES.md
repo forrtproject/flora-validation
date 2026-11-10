@@ -6,6 +6,15 @@ No production deposit has been created or published as part of implementation.
 
 ## Release policy
 
+The date scheme below is a **proposal pending team agreement**; the team's prior
+preference was semantic versioning. It follows [Calendar Versioning (CalVer)](https://calver.org/),
+specifically year, zero-padded month and a within-month release counter
+(`YYYY.0M.MICRO` in CalVer terminology). This is an established general versioning
+convention, not a dataset-specific requirement or a Zenodo recommendation.
+[Semantic Versioning](https://semver.org/) instead communicates compatibility through
+major/minor/patch increments. Either requires a project policy; the dated version in
+the prepared bundle does not settle that decision for the team.
+
 Use `YYYY.MM.N`, starting at `2026.11.1`. The date identifies a living dataset's
 release month without implying API/schema compatibility; N increases for another
 release in the same month. Versions must increase relative to the previous bundle.
@@ -46,8 +55,9 @@ preserves the exact correction watermark and database revision of the publicatio
 No admin identities, private notes or personal emails are exported from the log.
 Corrections continue through that log, never through editing outputs.
 
-The codebook copies the existing maintained `docs/FLORA_DATA_TABLE.md`, including
-its published column dictionary. Coding FAQs and citation authors/licence are pinned
+The codebook extracts the published column dictionary from the maintained
+`docs/FLORA_DATA_TABLE.md` and appends the exact categorical labels in the CSV.
+Assembly rejects columns without definitions. Coding FAQs and citation authors/licence are pinned
 from fred-data; provenance is in `release/flora/SOURCES.md`. Review these for each
 release. The metadata proposes the existing CC BY 4.0 licence and author order.
 

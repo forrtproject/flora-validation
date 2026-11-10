@@ -65,3 +65,19 @@ Manual releases and `YYYY.MM.N` versions support deliberate review and more than
 one release per month. The deposited CITATION.cff is frozen for each version;
 future author/version updates cannot change citations in an older deposit.
 See [the release guide](../../docs/FLORA_ZENODO_RELEASES.md) for recovery and subsequent releases.
+
+## Codebook verification and outstanding data review
+
+All 51 CSV columns are documented in order. The bundle codebook now includes every
+observed type, source and outcome/axis label. Author fields with nonmissing values
+all parse as JSON arrays. Definitions clarify that author overlap is a shared-surname
+count with the report author count as the percentage denominator, and that reproduction
+outcomes/quotes combine both axes.
+
+Recomputing author overlap found three exceptions: `FLORA-000662`, `FLORA-000896`,
+`FLORA-001262`. Each stores 0 / 0.0 despite a collective-author-only list with no
+usable family names on one side; the current calculation returns missing. The other
+2,848 records agree with that calculation. Resolve these through the correction log
+and regenerate the publication before approving production; the reviewed CSV has
+not been edited. These checks validate documented structure and the overlap formula,
+not the substantive correctness of every study's coding.

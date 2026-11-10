@@ -9,7 +9,7 @@ import yaml
 import zenodo_flora as release
 
 
-def csv_file(path, rows, columns=('id', 'title')):
+def csv_file(path, rows, columns=('id', 'title_r')):
     with path.open('w', encoding='utf-8-sig', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=columns)
         writer.writeheader()
@@ -21,7 +21,7 @@ def csv_file(path, rows, columns=('id', 'title')):
 def bundle(tmp_path):
     output = tmp_path / 'output'
     output.mkdir()
-    source = csv_file(output / 'flora.csv', [{'id': 'A', 'title': 'Röseler, "test"\nnext line'}])
+    source = csv_file(output / 'flora.csv', [{'id': 'A', 'title_r': 'Röseler, "test"\nnext line'}])
     release.write_json(output / 'flora_release_manifest.json', {
         'sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
         'data_version': {'change_watermark': 346}})
@@ -33,7 +33,7 @@ def bundle(tmp_path):
 def test_assembly(bundle):
     release.verify_bundle(bundle)
     assert (bundle / 'flora.csv').read_bytes().startswith(b'\xef\xbb\xbf')
-    assert release.read_records(bundle / 'flora.csv')[1]['A']['title'] == 'Röseler, "test"\nnext line'
+    assert release.read_records(bundle / 'flora.csv')[1]['A']['title_r'] == 'Röseler, "test"\nnext line'
     assert {'CODEBOOK.md', 'FAQ.md', 'README.md', 'REUSE.md', 'CITATION.cff',
             'CHANGELOG.md', 'changes.json'} <= {p.name for p in bundle.iterdir()}
     cff = yaml.safe_load((bundle / 'CITATION.cff').read_text())
@@ -48,24 +48,24 @@ def test_assembly(bundle):
 
 
 def test_net_history(tmp_path):
-    old = csv_file(tmp_path / 'old.csv', [{'id': 'A', 'title': 'before'}, {'id': 'B', 'title': 'retire'}])
-    new = csv_file(tmp_path / 'new.csv', [{'id': 'A', 'title': 'after'}, {'id': 'C', 'title': 'added'}])
+    old = csv_file(tmp_path / 'old.csv', [{'id': 'A', 'title_r': 'before'}, {'id': 'B', 'title_r': 'retire'}])
+    new = csv_file(tmp_path / 'new.csv', [{'id': 'A', 'title_r': 'after'}, {'id': 'C', 'title_r': 'added'}])
     changes = release.changelog(new, old)
     assert changes['counts'] == {'added': 1, 'changed': 1, 'retired': 1}
-    assert changes['changed'] == {'A': ['title']}
+    assert changes['changed'] == {'A': ['title_r']}
     assert changes['retired'] == ['B']
     assert release.changelog(new, new)['counts'] == dict(added=0, changed=0, retired=0)
 
 
 def test_identity_and_schema(tmp_path):
-    bad = csv_file(tmp_path / 'bad.csv', [{'id': 'A', 'title': 'one'}, {'id': 'A', 'title': 'two'}])
+    bad = csv_file(tmp_path / 'bad.csv', [{'id': 'A', 'title_r': 'one'}, {'id': 'A', 'title_r': 'two'}])
     with pytest.raises(ValueError, match='unique'):
         release.read_records(bad)
-    old = csv_file(tmp_path / 'old.csv', [{'id': 'A', 'title': 'unchanged'}])
+    old = csv_file(tmp_path / 'old.csv', [{'id': 'A', 'title_r': 'unchanged'}])
     new = csv_file(tmp_path / 'new.csv', [{'id': 'A', 'extra': 'value'}], ('id', 'extra'))
     changes = release.changelog(new, old)
-    assert changes['columns_removed'] == ['title']
-    assert changes['changed']['A'] == ['title', 'extra']
+    assert changes['columns_removed'] == ['title_r']
+    assert changes['changed']['A'] == ['title_r', 'extra']
 
 
 def test_guards(bundle, monkeypatch):
@@ -173,3 +173,18 @@ def test_publish_only_after_checksums(bundle, monkeypatch):
     assert release.upload(bundle, 'sandbox', publish=True)['published']
     assert calls[-1] == ('POST', links['publish'])
     assert len([url for _, url in calls if '/bucket/' in url]) == 12
+
+
+def test_codebook_matches_snapshot(bundle):
+    columns, rows = release.read_records(bundle / 'flora.csv')
+    book = (bundle / 'CODEBOOK.md').read_text()
+    assert all(f'| `{column}` |' in book for column in columns)
+    assert '## Relationship to the existing tables' not in book
+    with pytest.raises(ValueError, match='definitions missing'):
+        release.render_codebook(['id', 'undocumented_field'], [])
+    rendered = release.render_codebook(['id', 'outcome', 'outcome_computation'], [
+        {'id': 'A', 'outcome': 'computational issues, robust', 'outcome_computation': 'computational issues'}])
+    assert '`computational issues, robust`' in rendered
+    assert '`computational issues`' in rendered
+    assert 'Number of distinct shared family names' in rendered
+    assert 'number of report authors' in rendered

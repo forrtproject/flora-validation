@@ -51,25 +51,34 @@ with BOM. See the bundled FAQ for outcome definitions and coding decisions.
 | `language_r` | Publication language code. Replication/reproduction report. |
 | `oa_url_o` | Open-access full-text URL, when known. Original study. |
 | `oa_url_r` | Open-access full-text URL, when known. Replication/reproduction report. |
-| `outcome` | Report-level replication outcome; see FAQ. Reproduction results use the two axes below. |
-| `outcome_quote` | Supporting text for the coded replication outcome. |
-| `outcome_quote_source` | Location/source of the supporting text. |
+| `outcome` | For replications, the report-level outcome. For reproductions, a combined outcome derived from the computational and robustness axes. See the release-specific categories below and FAQ. |
+| `outcome_quote` | Supporting text for the outcome; for reproductions this combines the two axis quotes, with axis labels when needed. |
+| `outcome_quote_source` | Location/source of the supporting text; reproduction sources can combine both axes. |
 | `type` | Attempt type: replication (new observations) or reproduction (existing data). |
 | `source` | Contributing source dataset(s). |
 | `oa_work_id_o` | OpenAlex work identifier. Original study. |
 | `oa_work_id_r` | OpenAlex work identifier. Replication/reproduction report. |
-| `author_overlap` | Whether original and report authors overlap. |
-| `author_overlap_pct` | Percentage overlap of original and report authors. |
+| `author_overlap` | Number of distinct shared family names in the original and report author lists, matched case-insensitively; not a yes/no flag or verified person identity. |
+| `author_overlap_pct` | 100 × shared distinct family names / number of report authors with usable family names, rounded to one decimal. Missing if either author list is unusable; matching surnames can conflate different people. |
 | `abstract_r` | Report abstract. |
-| `outcome_computation` | Computational reproducibility outcome (independent of robustness). |
+| `outcome_computation` | Computational reproducibility outcome, coded separately from robustness. Category labels are specific to the released snapshot; see the release-specific vocabulary. |
 | `outcome_computational_quote` | Supporting text for computational reproducibility. |
 | `out_quote_computational_source` | Location/source for the computational quote. |
-| `outcome_robustness` | Robustness outcome (independent of computational reproducibility). |
+| `outcome_robustness` | Robustness outcome, coded separately from computational reproducibility. Category labels are specific to the released snapshot; see the release-specific vocabulary. |
 | `outcome_robustness_quote` | Supporting text for robustness. |
 | `out_quote_robust_source` | Location/source for the robustness quote. |
 | `flora_id` | Pinned source-facing FLoRA identifier; distinct from published id. |
 | `source_display_id` | Primary source record display identifier. |
 | `source_record_id` | Primary source record UUID. |
+
+### Known issue in the prepared 2026.11.1 baseline
+
+`FLORA-000662`, `FLORA-000896` and `FLORA-001262` store zero author overlap and
+zero overlap percentage, although one author list contains only a collective name
+and no usable family names. These zeros cannot establish absence of shared authors;
+the current calculation returns missing. They require correction-log review before
+production publication. Release assembly preserves the input data and does not
+silently replace these values.
 
 ## Relationship to the existing tables
 

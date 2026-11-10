@@ -108,10 +108,33 @@ def assemble(output, version, destination, previous=None):
     write_json(destination / 'zenodo-metadata.json', metadata)
     for filename in ('README.md', 'REUSE.md', 'FAQ.md'):
         shutil.copyfile(SOURCES / filename, destination / filename)
-    # Reuse the repository's maintained column/storage guide rather than a parallel dictionary.
-    shutil.copyfile(ROOT / 'docs/FLORA_DATA_TABLE.md', destination / 'CODEBOOK.md')
+    (destination / 'CODEBOOK.md').write_text(render_codebook(columns, rows.values()), encoding='utf-8')
     write_json(destination / 'bundle-checksums.json', checksums(destination))
     return counts
+
+
+def render_codebook(columns, rows):
+    """Reuse maintained definitions; document the exact snapshot's categorical labels."""
+    guide = (ROOT / 'docs/FLORA_DATA_TABLE.md').read_text(encoding='utf-8')
+    section = guide.split('## Published CSV codebook\n', 1)[1].split('## Relationship to the existing tables', 1)[0]
+    definitions = re.findall(r'^\| `([^`]+)` \|', section, re.MULTILINE)
+    missing = set(columns) - set(definitions)
+    if missing:
+        raise ValueError('Codebook definitions missing: ' + ', '.join(sorted(missing)))
+    lines = ['# FLoRA codebook', '', section.strip(), '', '## Categories present in this release', '',
+             'These are the exact nonmissing labels in the deposited CSV, not a promise',
+             'that every permitted category occurs. `NA` and empty cells mean missing.',
+             'Earlier snapshots can retain legacy labels; release assembly does not recode data.', '']
+    rows = list(rows)
+    for field in ('type', 'outcome', 'outcome_computation', 'outcome_robustness', 'source'):
+        if field in columns:
+            values = sorted({row[field] for row in rows if row[field] not in ('', 'NA')})
+            lines += [f"- `{field}`: " + '; '.join(f'`{v}`' for v in values) + '.']
+    lines += ['', 'The axes are the detailed reproduction codes. Combined `outcome` labels',
+              'preserve the released snapshot’s representation; consult both axes for analysis.',
+              'The bundled FAQ explains coding decisions. Definitions are maintained in',
+              'https://github.com/forrtproject/flora-validation/blob/main/docs/FLORA_DATA_TABLE.md', '']
+    return '\n'.join(lines)
 
 
 def checksums(bundle):

@@ -8,6 +8,6 @@ The template intentionally excludes its old version, DOI and OSF URLs. Review th
 author list and licence before the first production release. Refresh these pinned
 sources deliberately for later releases; assembly never fetches mutable URLs.
 
-`CODEBOOK.md` is copied at assembly time from the maintained
-`docs/FLORA_DATA_TABLE.md` in this repository. Release summaries and byte manifests
+`CODEBOOK.md` extracts the maintained published column dictionary from
+`docs/FLORA_DATA_TABLE.md`, with the exact categorical labels in each release. Release summaries and byte manifests
 reuse `release_helpers.prepare_release`; source publication uses publish_flora.py.
