@@ -102,6 +102,7 @@ jobs:
         # Discovery outages must not prevent publication of a validated release.
         # Failures remain visible in logs and the uploaded status JSON.
         continue-on-error: true
+        timeout-minutes: 45
         if: steps.build_dataset.outcome == 'success'
         env:
           OPENALEX_MAILTO: ${{ secrets.OPENALEX_MAILTO }}

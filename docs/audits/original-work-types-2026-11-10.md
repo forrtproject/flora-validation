@@ -8,19 +8,26 @@ alone. No type validation rule is added in this PR.
 
 ## Coverage and counts
 
-2,823 rows have an original DOI, representing 2,563 distinct DOI strings. OpenAlex
-returned 2,553 works (99.6%); ten unmatched DOIs are unknown, not articles. The
-`doi:` filter was queried in batches of 40 with `select=id,doi,title,type`. No
-OpenAlex type filter was applied before querying.
+2,823 rows have a nonblank original identifier in `doi_o`, representing 2,563
+raw strings and 2,562 normalised identifiers. OpenAlex resolved **2,554** of the
+normalised identifiers (99.7%), covering 2,815 rows and 2,553 distinct OpenAlex
+works. Eight identifiers were unresolved: six non-DOI strings and two malformed
+or unmatched DOIs. Unresolved identifiers are unknown, not articles.
 
-87 unique originals (3.41% of matched works), appearing in **89 FLoRA rows**, have
-a type other than `article`:
+The `doi:` filter was queried in batches of 40 with `select=id,doi,title,type`,
+without prefiltering by type. OpenAlex can return a journal DOI when queried with
+a preprint or older DOI alias. Follow-up singleton lookups resolved every input
+not returned under its requested DOI, avoiding mistaking aliases for misses;
+they also found one additional Learning & Memory article labelled `preprint`.
+
+**88 original identifiers (3.45% of resolved originals), appearing in 90 FLoRA
+rows**, have a type other than `article`:
 
 | OpenAlex type | Unique originals |
 |---|---:|
 | conference-paper | 24 |
 | review | 16 |
-| preprint | 14 |
+| preprint | 15 |
 | book-chapter | 13 |
 | dataset | 9 |
 | book | 5 |
@@ -30,19 +37,20 @@ a type other than `article`:
 | conference-abstract | 1 |
 | paratext | 1 |
 
-Crossref was queried **for all 87 flagged DOIs**, not for the entire corpus. It
-classifies 26 as `journal-article`, 23 as `proceedings-article`, 14 as
+Crossref was queried **for all 88 flagged DOIs**, not for the entire corpus. It
+classifies 27 as `journal-article`, 23 as `proceedings-article`, 14 as
 `book-chapter`, nine as `dataset`, nine as `posted-content`, three as
-`edited-book`, two as `monograph`, and one as `other`. All 87 lookups ultimately
+`edited-book`, two as `monograph`, and one as `other`. All 88 lookups ultimately
 succeeded (initial rate-limit responses were retried). Thus Crossref removes
-26/87 (29.9%) of the OpenAlex alerts, but still leaves 61 alerts in this subset.
+27/88 (30.7%) of the OpenAlex alerts, but still leaves 61 alerts in this subset.
 This is not a corpus-wide Crossref flag count or a sensitivity estimate.
 
 Crossref is cleaner about publication format, but its broad `journal-article`
 category does not distinguish all corrections, letters, editorials or reviews.
 The motivating correction `10.1002/npr2.70058` is absent from this snapshot's
 originals. It is a [published erratum](https://pubmed.ncbi.nlm.nih.gov/40954092/),
-not evidence that the current snapshot contains an erratum target.
+and OpenAlex classifies it as `erratum` when queried separately. It is not
+evidence that the current snapshot contains an erratum target.
 
 ## Hand review
 

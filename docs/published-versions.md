@@ -65,3 +65,6 @@ source evidence, URLs, affected FLoRA IDs, and `proposed_action`.
 Candidates are not automatically confirmed. This retains the existing policy
 that only confirmed equivalences enter alternate identifiers. A review can reject
 an incorrect deposited relation without the next scan undoing that decision.
+
+See the [10 November 2026 census](audits/published-versions-2026-11-10.md) for
+current candidate counts, examples, evidence and the Seda negative check.

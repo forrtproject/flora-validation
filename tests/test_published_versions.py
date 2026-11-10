@@ -33,6 +33,8 @@ class FakeClient:
 
 def test_seda_no_publication():
     assert linked_versions(PREPRINT, FakeClient()) == []
+    version_only = {'is-version-of': [{'id-type': 'doi', 'id': '10.31219/osf.io/x394e_v1'}]}
+    assert linked_versions(PREPRINT, FakeClient(relations=version_only)) == []
     assert osf_id(PREPRINT) == 'x394e'
     assert osf_id('10.31219/osf.io/x394e') == 'x394e'
 
@@ -103,6 +105,11 @@ def test_confirmed_publication_merges_existing_row(tmp_path):
     assert len(result) == 1
     assert result.iloc[0]['doi_r'] == ARTICLE
     assert result.iloc[0]['alt_identifier_r'] == PREPRINT
+    # Existing journal aliases must not hide the newly confirmed preprint.
+    f = f.iloc[::-1].reset_index(drop=True)
+    f['alt_identifier_r'] = ['10.1234/earlier', None]
+    result = preprint_dedup.apply_confirmed(f, path, verbose=False)
+    assert result.iloc[0]['alt_identifier_r'] == '10.1234/earlier, ' + PREPRINT
 
 
 def test_confirmed_targets_enriched_before_transform(monkeypatch):

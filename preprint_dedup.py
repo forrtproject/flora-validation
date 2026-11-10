@@ -1232,10 +1232,12 @@ def apply_confirmed(frame, confirmed_path: Path = CONFIRMED_PATH,
             # Preserve the record and its preprint identifier, then merge any
             # resulting DOI-pair duplicate through the ordinary merge machinery.
             mask = frame["doi_r"].map(normalize_doi).eq(normalize_doi(remove))
-            frame.loc[mask, "alt_identifier_r"] = [
-                append_alt_identifier(alt, doi)
-                for alt, doi in zip(frame.loc[mask, "alt_identifier_r"],
-                                    frame.loc[mask, "doi_r"])]
+            # Annotate existing journal rows too: the pair merge may keep a
+            # journal row whose nonblank alias list would otherwise hide this one.
+            annotate = mask | frame["doi_r"].map(normalize_doi).eq(normalize_doi(keep))
+            frame.loc[annotate, "alt_identifier_r"] = [
+                append_alt_identifier(alt, normalize_doi(remove))
+                for alt in frame.loc[annotate, "alt_identifier_r"]]
             frame.loc[mask, "doi_r"] = normalize_doi(keep)
             frame, conflicts = merge_doi_pair_dups(
                 frame, normalise_outcome, verbose=False, hand_fills=hand_fills)
