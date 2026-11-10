@@ -19,14 +19,14 @@ from preprint_dedup import normalize_doi
 from preprint_identifiers import is_preprint_identifier, preserve_preprint
 
 
-def dropped_identifiers(records, transitions):
+def dropped_identifiers(records, transitions, *, include_osf=False):
     """Find history-backed preprints reaching today's primary DOI but absent as aliases."""
     findings = []
     for record in records:
         for side in ('o', 'r'):
             doi, alt = 'doi_' + side, 'alt_identifier_' + side
             current = normalize_doi(record.get(doi))
-            if not current or is_preprint_identifier(current):
+            if not current or is_preprint_identifier(current) or current.startswith('10.17605/'):
                 continue
             edges = [t for t in transitions if t['id'] == record['id'] and t['side'] == side]
             reachable = {current}
@@ -38,7 +38,8 @@ def dropped_identifiers(records, transitions):
                     break
             aliases = {normalize_doi(part.strip()) for part in (record.get(alt) or '').split(',')}
             missing = sorted(value for value in reachable - aliases - {current}
-                             if is_preprint_identifier(value))
+                             if is_preprint_identifier(value)
+                             or (include_osf and value.startswith('10.17605/')))
             for old in missing:
                 evidence = sorted({t['evidence'] for t in edges if normalize_doi(t['old']) == old
                                    and normalize_doi(t['new']) in reachable})
@@ -180,6 +181,8 @@ def main():
             validated_rows = _fetch_validated(cur)
             records, transitions = load_history(cur)
             findings = dropped_identifiers(records, transitions)
+            osf_review = [f for f in dropped_identifiers(records, transitions, include_osf=True)
+                          if f['old_identifier'].startswith('10.17605/')]
             results = backfill(cur, findings, {'handle': args.admin_handle}) if args.apply else []
             if args.apply:
                 after, history = load_history(cur)
@@ -191,15 +194,12 @@ def main():
         report = {'applied': args.apply, 'published_rows': len(records),
                   'validated_rows_checked': len(validated_rows),
                   'affected_rows': len({f['id'] for f in findings}),
-                  'preprint_server_rows': len({f['id'] for f in findings
-                                              if not f['old_identifier'].startswith('10.17605/')}),
-                  'osf_deposit_rows': len({f['id'] for f in findings
-                                          if f['old_identifier'].startswith('10.17605/')}),
+                  'review_only_osf_rows': len({f['id'] for f in osf_review}),
                   'missing_identifiers': len(findings),
                   'original_rows': len({f['id'] for f in findings if f['side'] == 'o'}),
                   'replication_rows': len({f['id'] for f in findings if f['side'] == 'r'}),
                   'remaining_rows': len({f['id'] for f in remaining}),
-                  'findings': findings, 'corrections': results}
+                  'findings': findings, 'osf_deposit_review': osf_review, 'corrections': results}
         if args.apply:
             conn.commit()
         else:

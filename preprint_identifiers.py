@@ -3,10 +3,10 @@ from preprint_dedup import append_alt_identifier, is_preprint_doi, normalize_doi
 
 
 def is_preprint_identifier(value):
-    """Recognise preprints and OSF deposits whose identifiers must survive edits."""
+    """Recognise preprint identifiers; generic OSF deposits need separate evidence."""
     doi = normalize_doi(value)
     return bool(doi and (is_preprint_doi(doi)
-                        or doi.startswith(('10.17605/', '10.2196/preprints.'))))
+                        or doi.startswith('10.2196/preprints.')))
 
 
 def preserve_preprint(existing, old, new):

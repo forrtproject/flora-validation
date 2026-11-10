@@ -13,7 +13,7 @@ ARTICLE = '10.1234/journal'
 
 
 @pytest.mark.parametrize('old', [PREPRINT, 'https://doi.org/' + PREPRINT.upper(),
-                               '10.2196/preprints.45481', '10.17605/osf.io/abcde'])
+                               '10.2196/preprints.45481'])
 def test_replaced_preprint_is_appended_and_deduplicated(old):
     """Resolver forms and DOI case do not create duplicate alternatives."""
     result = preserve_preprint('https://example.org/paper', old, ARTICLE)
@@ -22,7 +22,8 @@ def test_replaced_preprint_is_appended_and_deduplicated(old):
 
 
 @pytest.mark.parametrize('old,new', [(ARTICLE, '10.1234/other'), (PREPRINT, ''),
-                                    (PREPRINT, PREPRINT), ('10.1101/gr.1', ARTICLE)])
+                                    (PREPRINT, PREPRINT), ('10.1101/gr.1', ARTICLE),
+                                    ('10.17605/osf.io/abcde', ARTICLE)])
 def test_unrelated_article_changes_and_clears_do_not_add_aliases(old, new):
     """Journal DOIs sharing a preprint prefix are not treated as preprints."""
     assert preserve_preprint(None, old, new) is None
@@ -58,6 +59,15 @@ def test_audit_counts_rows_and_distinct_missing_identifiers_from_real_transition
     assert [f['old_identifier'] for f in findings] == [PREPRINT, PREPRINT + '_v2']
     assert all(f['side'] == 'o' for f in findings)
     assert audit.dropped_identifiers(records, []) == []
+
+
+def test_generic_osf_deposits_are_review_only_even_with_a_logged_replacement():
+    """An OSF preregistration corrected to another paper must never become its alias."""
+    records = [{'id': 'REPL-1', 'doi_o': ARTICLE}]
+    history = [{'id': 'REPL-1', 'side': 'o', 'old': '10.17605/osf.io/hw3v6',
+                'new': ARTICLE, 'evidence': 'log:1'}]
+    assert audit.dropped_identifiers(records, history) == []
+    assert len(audit.dropped_identifiers(records, history, include_osf=True)) == 1
 
 
 def test_backfill_groups_both_sides_in_one_logged_save(monkeypatch):
