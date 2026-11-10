@@ -12,6 +12,11 @@ name: Publish FLoRA
 on:
   workflow_dispatch:
     inputs:
+      apply_approved_identifier_corrections:
+        description: "Apply the reviewed cache/approved_publication_corrections.csv through the FLoRA change log"
+        type: boolean
+        required: false
+        default: false
       job_id:
         description: "Website pipeline run whose preparation report to include (optional)"
         required: false
@@ -46,6 +51,14 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Apply approved identifier corrections
+        timeout-minutes: 20
+        if: github.event_name == 'workflow_dispatch' && inputs.apply_approved_identifier_corrections
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENALEX_MAILTO: ${{ secrets.OPENALEX_MAILTO }}
+        run: python correct_publication_identifiers.py cache/approved_publication_corrections.csv --apply --admin-handle "github-actions:$GITHUB_ACTOR"
 
       # The run id reaches the shell through the environment, never through
       # expression substitution into the script.

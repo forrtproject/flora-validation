@@ -143,6 +143,18 @@ def test_the_run_id_never_reaches_the_script_through_an_expression():
     assert "JOB_ID: ${{ inputs.job_id }}" in workflow
     steps = yaml.safe_load(workflow)["jobs"]["publish"]["steps"]
     scripts = [step["run"] for step in steps if "run" in step]
-    assert len(scripts) == 3, "every step's script is checked, `run: |` and `run: >-` alike"
+    assert len(scripts) == 4, "every step's script is checked, `run: |` and `run: >-` alike"
     for script in scripts:
         assert "${{" not in script
+
+
+def test_approved_corrections_are_manual_opt_in_only():
+    import yaml
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    option = workflow[True]['workflow_dispatch']['inputs']['apply_approved_identifier_corrections']
+    assert option['type'] == 'boolean' and option['default'] is False
+    step = next(s for s in workflow['jobs']['publish']['steps'] if s['name'] == 'Apply approved identifier corrections')
+    assert step['if'] == "github.event_name == 'workflow_dispatch' && inputs.apply_approved_identifier_corrections"
+    assert 'cache/approved_publication_corrections.csv' in step['run']
+    assert '--apply' in step['run']
+    assert step['env']['DATABASE_URL'] == '${{ secrets.DATABASE_URL }}'

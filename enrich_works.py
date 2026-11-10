@@ -193,21 +193,6 @@ def shape(work: dict) -> "dict | None":
 
 # ── database ──────────────────────────────────────────────────────────────────
 
-def confirmed_publication_targets(cur):
-    """Fetch metadata for canonical DOIs before confirmed replacements run."""
-    import preprint_dedup
-    from transform_sources import load_dedup_decisions
-    targets = []
-    for row in preprint_dedup.confirmed_decisions(rulings=load_dedup_decisions(cur)):
-        if not ((row.get("side") or "").startswith("original")
-                or row.get("side") == "replication published version"):
-            continue
-        _, keep = preprint_dedup.derive_remove_keep(row["action"], row["doi_1"], row["doi_2"])
-        if keep:
-            targets.append(keep)
-    return targets
-
-
 def dois_in_product(cur) -> list:
     """Every distinct cleaned DOI the FLoRA product references, both sides.
 
@@ -231,7 +216,7 @@ def dois_in_product(cur) -> list:
         """
     )
     seen, out = set(), []
-    for value in [record["doi"] for record in cur.fetchall()] + corrected + confirmed_publication_targets(cur):
+    for value in [record["doi"] for record in cur.fetchall()] + corrected:
         # Cleaned the same way the transform cleans, so the join keys agree.
         from transform_sources import clean_doi
         doi = clean_doi(value)
@@ -563,7 +548,7 @@ def reference_keys_in_product(cur) -> list:
     seen = set()
     values = [row.get(f"{kind}_{side}") for row in cur.fetchall()
               for side in ("o", "r") for kind in ("doi", "url")]
-    for value in values + corrected + confirmed_publication_targets(cur):
+    for value in values + corrected:
         key = references.normalise_key(value)
         if key and key not in seen:
             seen.add(key)

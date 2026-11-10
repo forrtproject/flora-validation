@@ -1,0 +1,302 @@
+[
+  {
+    "flora_id": "REPL-001390",
+    "source": "10.1101/2025.03.13.643168",
+    "target": "10.1177/25152459261443491",
+    "title": "Registered Report: Replication and Extension of Nozaradan, Peretz, Missal and Mouraux (2011)",
+    "author": "[{\"given\": \"Karli M.\", \"family\": \"Nave\", \"sequence\": \"first\", \"ORCID\": \"https://orcid.org/0000-0001-8672-674X\"}]",
+    "source_crossref": {
+      "type": "posted-content",
+      "title": [
+        "Registered Report: Replication and Extension of Nozaradan, Peretz, Missal and Mouraux (2011)"
+      ],
+      "author": [
+        {
+          "family": "Nave",
+          "name": null
+        }
+      ],
+      "relation": {}
+    },
+    "target_crossref": {
+      "type": "journal-article",
+      "title": [
+        "Registered Report: Replication and Extension of Nozaradan et al. (2011)"
+      ],
+      "author": [
+        {
+          "family": "Nave",
+          "name": null
+        }
+      ],
+      "relation": {}
+    },
+    "target_datacite": {}
+  },
+  {
+    "flora_id": "REPL-000658",
+    "source": "10.21203/rs.3.rs-8351701/v1",
+    "target": "10.1016/j.ynirp.2026.100376",
+    "title": "Ambiguity tolerance and resting-state functional connectivity: A preregistered conceptual replication in a Japanese sample",
+    "author": "[{\"given\": \"Jimpei\", \"family\": \"Hitsuwari\", \"sequence\": \"first\", \"ORCID\": \"https://orcid.org/0000-0002-0061-5318\"}]",
+    "source_crossref": {
+      "type": "posted-content",
+      "title": [
+        "Ambiguity tolerance and resting-state functional connectivity: A preregistered conceptual replication in a Japanese sample"
+      ],
+      "author": [
+        {
+          "family": "Hitsuwari",
+          "name": null
+        }
+      ],
+      "relation": {
+        "is-preprint-of": [
+          {
+            "id-type": "doi",
+            "id": "10.1016/j.ynirp.2026.100376",
+            "asserted-by": "subject"
+          }
+        ]
+      }
+    },
+    "target_crossref": {
+      "type": "journal-article",
+      "title": [
+        "Ambiguity tolerance and resting-state functional connectivity: A preregistered conceptual replication in a Japanese sample"
+      ],
+      "author": [
+        {
+          "family": "Hitsuwari",
+          "name": null
+        }
+      ],
+      "relation": {
+        "has-preprint": [
+          {
+            "id-type": "doi",
+            "id": "10.21203/rs.3.rs-8351701/v1",
+            "asserted-by": "object"
+          }
+        ]
+      }
+    },
+    "target_datacite": {}
+  },
+  {
+    "flora_id": "VAL-000456",
+    "source": "10.2196/preprints.45481",
+    "target": "10.2196/45481",
+    "title": "Adoption of a COVID-19 Contact Tracing App by Czech Youth: Cross-Cultural Replication Study (Preprint)",
+    "author": "[{\"given\": \"Michal\", \"family\": \"Dolezel\", \"sequence\": \"first\", \"ORCID\": \"https://orcid.org/0000-0002-5963-5145\"}]",
+    "source_crossref": {
+      "type": "posted-content",
+      "title": [
+        "Adoption of a COVID-19 Contact Tracing App by Czech Youth: Cross-Cultural Replication Study (Preprint)"
+      ],
+      "author": [
+        {
+          "family": "Dolezel",
+          "name": null
+        }
+      ],
+      "relation": {
+        "is-preprint-of": [
+          {
+            "id-type": "doi",
+            "id": "10.2196/45481",
+            "asserted-by": "subject"
+          }
+        ]
+      }
+    },
+    "target_crossref": {
+      "type": "journal-article",
+      "title": [
+        "Adoption of a COVID-19 Contact Tracing App by Czech Youth: Cross-Cultural Replication Study"
+      ],
+      "author": [
+        {
+          "family": "Dolezel",
+          "name": null
+        }
+      ],
+      "relation": {
+        "has-preprint": [
+          {
+            "id-type": "doi",
+            "id": "10.2196/preprints.45481",
+            "asserted-by": "object"
+          }
+        ]
+      }
+    },
+    "target_datacite": {}
+  },
+  {
+    "flora_id": "REPL-001400",
+    "source": "10.31234/osf.io/4uy2c",
+    "target": "10.1016/j.cortex.2024.12.017",
+    "title": "Revisiting the electrophysiological correlates of valence and expectancy in reward processing \u2013 A Multi-lab replication",
+    "author": "[{\"given\": \"Katharina\", \"family\": \"Paul\", \"sequence\": \"first\", \"ORCID\": \"https://orcid.org/0000-0001-9817-740X\"}]",
+    "source_crossref": {
+      "type": "posted-content",
+      "title": [
+        "Revisiting the electrophysiological correlates of valence and expectancy in reward processing \u2013 A Multi-lab replication"
+      ],
+      "author": [
+        {
+          "family": "Paul",
+          "name": null
+        }
+      ],
+      "relation": {}
+    },
+    "target_crossref": {
+      "type": "journal-article",
+      "title": [
+        "Revisiting the electrophysiological correlates of valence and expectancy in reward processing \u2013 A multi-lab replication"
+      ],
+      "author": [
+        {
+          "family": "Paul",
+          "name": null
+        }
+      ],
+      "relation": {}
+    },
+    "target_datacite": {}
+  },
+  {
+    "flora_id": "REPL-000503",
+    "source": "10.31234/osf.io/ydgh9_v2",
+    "target": "10.1016/j.jbct.2026.100641",
+    "title": "Machine Learning to Analyze Single-Case Graphs: A Replication and Extension with Nonsimulated Data",
+    "author": "[{\"given\": \"Marc J\", \"family\": \"Lanovaz\", \"sequence\": \"first\"}]",
+    "source_crossref": {
+      "type": "posted-content",
+      "title": [
+        "Machine Learning to Analyze Single-Case Graphs: A Replication and Extension with Nonsimulated Data"
+      ],
+      "author": [
+        {
+          "family": "Lanovaz",
+          "name": null
+        }
+      ],
+      "relation": {
+        "is-version-of": [
+          {
+            "id-type": "doi",
+            "id": "10.31234/osf.io/ydgh9",
+            "asserted-by": "subject"
+          }
+        ]
+      }
+    },
+    "target_crossref": {
+      "type": "journal-article",
+      "title": [
+        "Machine learning to analyze single-case graphs: a replication and extension with nonsimulated data"
+      ],
+      "author": [
+        {
+          "family": "Lanovaz",
+          "name": null
+        }
+      ],
+      "relation": {}
+    },
+    "target_datacite": {}
+  },
+  {
+    "flora_id": "REPL-001332",
+    "source": "10.31234/osf.io/zeux9",
+    "target": "10.1177/25152459241267902",
+    "title": "Registered Replication Report: A Large Multilab Cross-Cultural Conceptual Replication of Turri, Buckwalter, & Blouw (2015)",
+    "author": "[{\"given\": \"Braeden Forrester\", \"family\": \"Hall\", \"sequence\": \"first\"}]",
+    "source_crossref": {
+      "type": "posted-content",
+      "title": [
+        "Registered Replication Report: A Large Multilab Cross-Cultural Conceptual Replication of Turri, Buckwalter, &amp;amp; Blouw (2015)"
+      ],
+      "author": [
+        {
+          "family": "Hall",
+          "name": null
+        }
+      ],
+      "relation": {}
+    },
+    "target_crossref": {
+      "type": "journal-article",
+      "title": [
+        "Registered Replication Report: A Large Multilab Cross-Cultural Conceptual Replication of Turri et al. (2015)"
+      ],
+      "author": [
+        {
+          "family": "Hall",
+          "name": null
+        }
+      ],
+      "relation": {}
+    },
+    "target_datacite": {}
+  },
+  {
+    "flora_id": "REPRO-000009",
+    "source": "10.48550/arxiv.2208.07395",
+    "target": "10.17879/replicationresearch-2026-9414",
+    "title": "Reproduction and Replication of an Adversarial Stylometry Experiment",
+    "author": "[{\"given\": \"Haining\", \"family\": \"Wang\", \"sequence\": \"first\"}]",
+    "source_crossref": {},
+    "target_crossref": {},
+    "target_datacite": {
+      "data": {
+        "attributes": {
+          "types": {
+            "ris": "JOUR",
+            "bibtex": "article",
+            "citeproc": "article-journal",
+            "schemaOrg": "ScholarlyArticle",
+            "resourceTypeGeneral": "JournalArticle"
+          },
+          "titles": [
+            {
+              "title": "Reproduction and Replication of an Adversarial Stylometry Experiment"
+            }
+          ],
+          "creators": [
+            {
+              "name": "Wang, Haining",
+              "affiliation": [
+                "Indiana University School of Medicine"
+              ],
+              "nameIdentifiers": []
+            },
+            {
+              "name": "Juola, Patrick",
+              "affiliation": [
+                "Duquesne University"
+              ],
+              "nameIdentifiers": []
+            },
+            {
+              "name": "Riddell, Allen",
+              "affiliation": [
+                "Indiana University Bloomington"
+              ],
+              "nameIdentifiers": [
+                {
+                  "schemeUri": "https://orcid.org",
+                  "nameIdentifier": "https://orcid.org/0000-0002-4967-0879",
+                  "nameIdentifierScheme": "ORCID"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  }
+]

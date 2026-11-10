@@ -1,9 +1,9 @@
 """Find relation-backed journal versions of FLoRA preprints; never rewrite data.
 
-Run after preparation: python3 published_versions.py. Copy reviewed candidates to
-cache/confirmed_preprint_duplicates.csv with action=proposed_action to apply them
-on the next build, including alt_identifier_o/r via preprint_dedup.apply_confirmed.
-No title-only inference is used. Missing API records expire after seven days;
+Run after preparation: python3 published_versions.py. Review the companion
+.corrections.csv and approve identifier corrections through
+correct_publication_identifiers.py / flora_edits. No title-only search is used; an
+OpenAlex DOI merge requires relation evidence or title + first-author confirmation. Missing API records expire after seven days;
 transient failures are reported and never cached as absence.
 """
 import argparse
@@ -20,7 +20,7 @@ from urllib.parse import quote
 import pandas as pd
 import requests
 
-from preprint_dedup import is_preprint_doi, normalize_doi
+from preprint_dedup import is_preprint_doi, normalize_doi, title_similarity, extract_first_author
 
 ROOT = Path(__file__).parent
 COLUMNS = ['side', 'doi_1', 'doi_2', 'proposed_action', 'action', 'confidence',
@@ -77,7 +77,7 @@ class Client:
 
 
 def eligible(doi):
-    return is_preprint_doi(doi) or doi.startswith('10.17605/')
+    return is_preprint_doi(doi) or doi.startswith(('10.17605/', '10.2196/preprints.'))
 
 
 def osf_id(doi):
@@ -92,7 +92,18 @@ def valid_target(source, target, work):
             and not eligible(target) and work.get('type') == 'journal-article')
 
 
-def linked_versions(doi, client):
+def datacite_article(response):
+    """Shape only DataCite JournalArticle records for bibliographic confirmation."""
+    attrs = response.get('data', {}).get('attributes', {})
+    if attrs.get('types', {}).get('resourceTypeGeneral') != 'JournalArticle':
+        return {}
+    return {'type': 'journal-article',
+            'title': [t['title'] for t in attrs.get('titles', []) if t.get('title')],
+            'author': [{'family': c.get('familyName') or extract_first_author(c.get('name', ''))}
+                       for c in attrs.get('creators', [])]}
+
+
+def linked_versions(doi, client, title='', author=''):
     """Only explicit DOI relations to verified journal articles prove publication.
 
     Query reverse relations too: publishers need not deposit on the preprint's
@@ -107,6 +118,13 @@ def linked_versions(doi, client):
         if target:
             links.setdefault(target, []).append(('osf:article_doi', url))
     work = client.work(doi)
+    # A DOI lookup can resolve to an OpenAlex work with a different primary DOI.
+    # This is a signal, not equivalence: verify against Crossref bibliography.
+    oa_url = 'https://api.openalex.org/works/https://doi.org/' + doi
+    oa = client.get(oa_url, {'select': 'id,doi,title,type,authorships'})
+    target = normalize_doi(oa.get('doi', ''))
+    if target and target != doi:
+        links.setdefault(target, []).append(('openalex:merged-doi', oa_url))
     for relation in ('is-preprint-of', 'is-version-of'):
         for item in work.get('relation', {}).get(relation, []):
             if item.get('id-type', '').lower() == 'doi':
@@ -132,9 +150,25 @@ def linked_versions(doi, client):
         cursor = next_cursor
     candidates = []
     for target, evidence in sorted(links.items()):
+        if eligible(target) or not re.fullmatch(r'10\.\d{4,9}/\S+', target):
+            continue
         published = client.work(target)
+        verifier = 'crossref'
+        verification_url = 'https://api.crossref.org/works/' + quote(target, safe='')
+        if not published:
+            verifier = 'datacite'
+            verification_url = 'https://api.datacite.org/dois/' + target
+            published = datacite_article(client.get(verification_url))
         if valid_target(doi, target, published):
-            candidates.append({'doi_2': target, 'title_2': '; '.join(published.get('title', [])),
+            relation_backed = any(e[0] != 'openalex:merged-doi' for e in evidence)
+            source_title = '; '.join(work.get('title', [])) or title
+            source_author = extract_first_author(json.dumps(work.get('author', []))) if work.get('author') else extract_first_author(author)
+            target_author = extract_first_author(json.dumps(published.get('author', [])))
+            matched = (bool(source_author) and source_author == target_author
+                       and title_similarity(source_title, '; '.join(published.get('title', []))) >= .90)
+            if matched and not relation_backed:
+                evidence.append((verifier + ':title-first-author-match', verification_url))
+            candidates.append({'doi_2': target, 'confidence': 'high' if relation_backed or matched else 'review', 'title_2': '; '.join(published.get('title', [])),
                                'evidence': '; '.join(sorted({e[0] for e in evidence})),
                                'evidence_url': '; '.join(sorted({e[1] for e in evidence}))})
     return candidates
@@ -144,22 +178,39 @@ def scan(frame, client):
     results = []
     # One network lookup for a DOI even if it occurs on both sides or many rows.
     found = {}
-    for suffix, side in [('o', 'original'), ('r', 'replication published version')]:
+    for suffix, side in [('o', 'original'), ('r', 'replication')]:
         normalized = frame['doi_' + suffix].map(normalize_doi)
         for doi in sorted(set(normalized)):
             if not eligible(doi):
                 continue
             if doi not in found:
-                found[doi] = linked_versions(doi, client)
+                source = frame[normalized == doi].iloc[0]
+                found[doi] = linked_versions(doi, client, str(source.get('title_' + suffix, '')), str(source.get('author_' + suffix, '')))
                 print(f'Checked {doi}: {len(found[doi])} published candidate(s)', flush=True)
             rows = frame[normalized == doi]
             for candidate in found[doi]:
+                candidate = dict(candidate)
+                if len(found[doi]) != 1:
+                    candidate['confidence'] = 'conflicting_relations_review'
                 results.append(dict(candidate, side=side, doi_1=doi,
-                    proposed_action='keep_2' if len(found[doi]) == 1 else '', action='',
-                    confidence='high' if len(found[doi]) == 1 else 'conflicting_relations_review',
+                    proposed_action='identifier_correction' if candidate['confidence'] == 'high' else '', action='',
                     title_1=str(rows.iloc[0].get('title_' + suffix, '')),
                     row_ids='; '.join(rows['id'].astype(str)), row_count=len(rows)))
     return results
+
+
+def correction_rows(frame, candidates):
+    """A reviewable, record-level CSV consumed by correct_publication_identifiers."""
+    records = frame.set_index('id')
+    for candidate in candidates:
+        for record_id in candidate['row_ids'].split('; '):
+            record = records.loc[record_id]
+            yield {'record_id': record_id, 'flora_id': record.get('flora_id', ''),
+                   'side': 'r' if candidate['side'] == 'replication' else 'o',
+                   'old_identifier': candidate['doi_1'], 'new_doi': candidate['doi_2'],
+                   'confidence': candidate['confidence'], 'approved': '',
+                   'evidence': candidate['evidence'], 'evidence_url': candidate['evidence_url'],
+                   'note': ('Published-version check: ' + candidate['evidence'])[:500]}
 
 
 def main():
@@ -173,9 +224,15 @@ def main():
     candidates = scan(frame, client)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open('w', newline='', encoding='utf-8') as handle:
-        writer = csv.DictWriter(handle, fieldnames=COLUMNS)
+        writer = csv.DictWriter(handle, fieldnames=COLUMNS, lineterminator='\n')
         writer.writeheader()
         writer.writerows(candidates)
+    correction_fields = ['record_id', 'flora_id', 'side', 'old_identifier', 'new_doi',
+                         'confidence', 'approved', 'evidence', 'evidence_url', 'note']
+    with args.output.with_suffix('.corrections.csv').open('w', newline='', encoding='utf-8') as handle:
+        writer = csv.DictWriter(handle, fieldnames=correction_fields, lineterminator='\n')
+        writer.writeheader()
+        writer.writerows(correction_rows(frame, candidates))
     status = {'input_sha256': hashlib.sha256(args.input.read_bytes()).hexdigest(),
               'checked_dois': len({normalize_doi(d) for side in ('o', 'r') for d in frame['doi_' + side] if eligible(normalize_doi(d))}),
               'candidate_pairs': len(candidates), 'affected_rows': len({rid for c in candidates for rid in c['row_ids'].split('; ')}),

@@ -116,6 +116,7 @@ jobs:
           path: |
             output/published_version_candidates.csv
             output/published_version_candidates.status.json
+            output/published_version_candidates.corrections.csv
           retention-days: 90
           if-no-files-found: error
 

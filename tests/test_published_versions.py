@@ -21,7 +21,9 @@ class FakeClient:
 
     def get(self, url, params=None):
         self.calls.append((url, params))
-        if 'osf.io' in url:
+        if 'api.openalex.org' in url:
+            return {}
+        if 'api.osf.io' in url:
             return {'data': {'attributes': {'article_doi': self.article_doi}}}
         return {'message': {'items': self.reverse}}
 
@@ -57,9 +59,9 @@ def test_scan_conflicts_and_repeated_rows():
     rows = scan(f, client)
     assert len(rows) == 2
     assert rows[0]['row_count'] == 2
-    assert rows[1]['side'] == 'replication published version'
-    assert all(r['proposed_action'] == 'keep_2' and r['action'] == '' for r in rows)
-    assert len(client.calls) == 2  # OSF and reverse Crossref, once for both sides
+    assert rows[1]['side'] == 'replication'
+    assert all(r['proposed_action'] == 'identifier_correction' and r['action'] == '' for r in rows)
+    assert len(client.calls) == 3  # OSF and reverse Crossref, once for both sides
     client = FakeClient(article_doi=ARTICLE, relations={'is-preprint-of': [{'id-type': 'doi', 'id': '10.1234/other'}]})
     assert all(r['proposed_action'] == '' for r in scan(f, client))
 
@@ -82,52 +84,13 @@ def test_cache_misses_expiry_and_transient_failure(tmp_path, monkeypatch):
     assert client.errors
 
 
-def test_confirmed_standalone_publication_preserves_preprint(tmp_path):
-    f = pd.DataFrame({'doi_o': ['10.1234/original'], 'doi_r': [PREPRINT],
-                      'id': ['a'], 'type': ['replication'], 'outcome': ['successful']})
-    path = tmp_path / 'confirmed.csv'
-    pd.DataFrame([{'side': 'replication published version', 'doi_1': PREPRINT,
-                   'doi_2': ARTICLE, 'action': 'keep_2'}]).to_csv(path, index=False)
-    result = preprint_dedup.apply_confirmed(f, path, verbose=False)
-    assert result.iloc[0]['doi_r'] == ARTICLE
-    assert result.iloc[0]['alt_identifier_r'] == PREPRINT
-    assert result.iloc[0]['id'] == 'a'
-
-
-def test_confirmed_publication_merges_existing_row(tmp_path):
-    f = pd.DataFrame({'doi_o': ['10.1234/original']*2, 'doi_r': [PREPRINT, ARTICLE],
-                      'id': ['a', 'b'], 'type': ['replication']*2,
-                      'outcome': ['successful']*2})
-    path = tmp_path / 'confirmed.csv'
-    pd.DataFrame([{'side': 'replication published version', 'doi_1': PREPRINT,
-                   'doi_2': ARTICLE, 'action': 'keep_2'}]).to_csv(path, index=False)
-    result = preprint_dedup.apply_confirmed(f, path, verbose=False)
-    assert len(result) == 1
-    assert result.iloc[0]['doi_r'] == ARTICLE
-    assert result.iloc[0]['alt_identifier_r'] == PREPRINT
-    # Existing journal aliases must not hide the newly confirmed preprint.
-    f = f.iloc[::-1].reset_index(drop=True)
-    f['alt_identifier_r'] = ['10.1234/earlier', None]
-    result = preprint_dedup.apply_confirmed(f, path, verbose=False)
-    assert result.iloc[0]['alt_identifier_r'] == '10.1234/earlier, ' + PREPRINT
-
-
-def test_confirmed_targets_enriched_before_transform(monkeypatch):
-    import enrich_works
-    import transform_sources
-    from unittest.mock import Mock
-    monkeypatch.setattr(transform_sources, 'load_dedup_decisions', lambda cur: [
-        {'side': 'replication published version', 'doi_1': PREPRINT,
-         'doi_2': ARTICLE, 'action': 'keep_2'}])
-    monkeypatch.setattr(preprint_dedup, 'load_confirmed', lambda path: [])
-    assert enrich_works.confirmed_publication_targets(Mock()) == [ARTICLE]
-
-
 def test_reverse_relation_pagination():
     client = FakeClient()
     calls = []
     def get(url, params=None):
-        if 'osf.io' in url:
+        if 'api.openalex.org' in url:
+            return {}
+        if 'api.osf.io' in url:
             return {}
         calls.append(params['cursor'])
         if len(calls) == 1:
@@ -139,15 +102,6 @@ def test_reverse_relation_pagination():
     assert calls == ['*', 'next']
 
 
-def test_confirmed_original_publication_target_is_enriched(monkeypatch):
-    import enrich_works
-    import transform_sources
-    monkeypatch.setattr(transform_sources, 'load_dedup_decisions', lambda cur: [])
-    monkeypatch.setattr(preprint_dedup, 'load_confirmed', lambda path: [
-        {'side': 'original', 'doi_1': PREPRINT, 'doi_2': ARTICLE, 'action': 'keep_2'}])
-    assert enrich_works.confirmed_publication_targets(Mock()) == [ARTICLE]
-
-
 def test_server_coverage_excludes_cshl_journals():
     from published_versions import eligible
     for doi in ['10.17605/osf.io/abcde', '10.31222/osf.io/abcde',
@@ -157,3 +111,57 @@ def test_server_coverage_excludes_cshl_journals():
         assert eligible(doi)
     assert not eligible('10.1101/gr.126516.111')
     assert not eligible('10.1101/lm.035493.114')
+
+
+def test_openalex_merge_requires_bibliographic_confirmation():
+    client = FakeClient()
+    original_get = client.get
+    def get(url, params=None):
+        if 'api.openalex.org' in url:
+            return {'doi': 'https://doi.org/' + ARTICLE}
+        return original_get(url, params)
+    client.get = get
+    original_work = client.work
+    def work(doi):
+        if doi == PREPRINT:
+            return {'title': ['A replication study'], 'author': [{'family': 'Smith'}]}
+        return {**original_work(doi), 'title': ['A replication study'], 'author': [{'family': 'Smith'}]}
+    client.work = work
+    assert linked_versions(PREPRINT, client)[0]['confidence'] == 'high'
+    client.work = lambda doi: {**work(doi), 'author': [{'family': 'Jones' if doi == ARTICLE else 'Smith'}]}
+    result = linked_versions(PREPRINT, client)[0]
+    assert result['confidence'] == 'review'
+    assert result['evidence'] == 'openalex:merged-doi'
+
+
+def test_arxiv_datacite_journal_verification():
+    from published_versions import datacite_article
+    article = datacite_article({'data': {'attributes': {
+        'types': {'resourceTypeGeneral': 'JournalArticle'},
+        'titles': [{'title': 'Reproduction and Replication of an Adversarial Stylometry Experiment'}],
+        'creators': [{'name': 'Wang, Haining'}, {'name': 'Juola, Patrick'}]}}})
+    assert article['type'] == 'journal-article'
+    assert article['author'][0]['family'] == 'wang'
+    assert datacite_article({'data': {'attributes': {'types': {'resourceTypeGeneral': 'Dissertation'}}}}) == {}
+
+
+def test_all_seven_recent_openalex_merges_are_detected():
+    from pathlib import Path
+    cases = json.loads((Path(__file__).parent / 'fixtures/published_version_merges.json').read_text())
+    assert len(cases) == 7
+    for case in cases:
+        class RecordedClient:
+            def work(self, doi):
+                return case['source_crossref'] if doi == case['source'] else case['target_crossref']
+            def get(self, url, params=None):
+                if 'api.openalex.org' in url:
+                    return {'doi': 'https://doi.org/' + case['target']}
+                if 'api.datacite.org' in url:
+                    return case['target_datacite']
+                return {}
+        result = linked_versions(case['source'], RecordedClient(), case['title'], case['author'])
+        assert len(result) == 1, case['flora_id']
+        assert result[0]['doi_2'] == case['target']
+        # Renamed citation lists remain review-only until a human verifies them.
+        expected = 'review' if case['flora_id'] in {'REPL-001390', 'REPL-001332'} else 'high'
+        assert result[0]['confidence'] == expected, case['flora_id']
