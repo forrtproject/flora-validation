@@ -58,6 +58,20 @@ def test_source_snapshots_keep_preprints_after_an_extractor_refresh():
     assert result['alt_identifier_r'] == PREPRINT + '_v2'
 
 
+@pytest.mark.parametrize('blank', [None, '', '  ', 'doi:'])
+def test_cleared_dois_do_not_connect_unrelated_history(blank):
+    """Clearing a DOI and later assigning another DOI is not a publication link."""
+    other = '10.31234/osf.io/other'
+    history = [{'doi_o': [PREPRINT, blank]}, {'doi_o': [blank, ARTICLE]},
+               {'doi_o': [other, ARTICLE]}]
+    result = validated_identifiers({'doi_o': ARTICLE, '_identifier_history': history})
+    assert result['alt_identifier_o'] == other
+    transitions = [{'id': 'REPL-1', 'side': 'o', 'old': change['doi_o'][0],
+                    'new': change['doi_o'][1], 'evidence': 'log:1'} for change in history]
+    findings = audit.dropped_identifiers([{'id': 'REPL-1', 'doi_o': ARTICLE}], transitions)
+    assert [f['old_identifier'] for f in findings] == [other]
+
+
 def test_audit_counts_rows_and_distinct_missing_identifiers_from_real_transitions():
     """A two-stage correction counts once per missing alias, excluding existing aliases."""
     records = [{'id': 'REPL-1', 'doi_o': ARTICLE, 'doi_r': ARTICLE,

@@ -28,7 +28,8 @@ def dropped_identifiers(records, transitions, *, include_osf=False):
             current = normalize_doi(record.get(doi))
             if not current or is_preprint_identifier(current) or current.startswith('10.17605/'):
                 continue
-            edges = [t for t in transitions if t['id'] == record['id'] and t['side'] == side]
+            edges = [t for t in transitions if t['id'] == record['id'] and t['side'] == side
+                     and normalize_doi(t['old']) and normalize_doi(t['new'])]
             reachable = {current}
             while True:
                 prior = set(reachable)

@@ -46,8 +46,10 @@ def validated_identifiers(row):
                 result[alt] = preserve_preprint(result[alt], old, result[doi])
         # An intermediate preprint version may have replaced the extracted DOI.
         # Only follow transitions that actually lead to the published identifier.
-        edges = [change[doi] for change in history
-                 if isinstance(change.get(doi), list) and len(change[doi]) == 2]
+        edges = [(old, new) for change in history
+                 if isinstance(change.get(doi), list) and len(change[doi]) == 2
+                 for old, new in [change[doi]]
+                 if normalize_doi(old) and normalize_doi(new)]
         targets = {normalize_doi(result[doi])}
         while True:
             previous = set(targets)
