@@ -65,3 +65,21 @@ versions do not count as publication evidence.
 [Record-level correction queue](published-version-corrections-2026-11-10.csv).
 For confirmation and scheduled operation, see the
 [published-version guide](../published-versions.md).
+
+## Applied and verified
+
+[Publish FLoRA run 42805981672](https://github.com/forrtproject/flora-validation/actions/runs/42805981672)
+completed successfully. All nine approved corrections were written through the
+normal log and published live, with change IDs **347–355**. The seven recent
+records now have the journal DOI as doi_r and their previous preprint DOI in
+alt_identifier_r. Neubauer is change 354; One-Night Stands is change 355.
+The exported CSV was read back and all nine DOI/alias pairs and record IDs were
+verified; its bytes match the generated release manifest.
+
+The normal publisher exported the current stored dataset, including other edits
+already present in the live database, and cleared stale preparation/validation
+reports under its existing publication contract. This is not a manual CSV edit.
+
+Two existing duplicate warnings remain for admin review: VAL-000456 now shares
+identifiers with REPL-001126, and REPRO-000009 with REPRO-000019. No duplicate
+ruling was changed and no record was merged or retired by this batch.

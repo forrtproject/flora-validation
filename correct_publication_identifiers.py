@@ -72,7 +72,15 @@ def plan(cur, rows):
         plans.append({'record_id': record['export_id'], 'fields': fields,
                       'version': version,
                       'notes': {field: note for field in fields}})
-    return plans
+    # Both sides of one record share one version guard and one audit entry.
+    combined = {}
+    for item in plans:
+        prior = combined.setdefault(item['record_id'], {**item, 'fields': {}, 'notes': {}})
+        if prior['version'] != item['version']:
+            raise flora_edits.VersionConflict(item['version'])
+        prior['fields'].update(item['fields'])
+        prior['notes'].update(item['notes'])
+    return list(combined.values())
 
 
 def prepare_metadata(cur, plans):

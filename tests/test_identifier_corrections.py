@@ -85,3 +85,11 @@ def test_metadata_is_prepared_before_logging_changes(records, monkeypatch):
     fetch.return_value = {}
     with pytest.raises(ValueError, match='No publication metadata'):
         bulk.prepare_metadata(Mock(), bulk.plan(Mock(), [NEUBAUER]))
+
+
+def test_both_sides_of_one_record_share_one_save(records):
+    records['REPRO-000363'].update(doi_o='10.1234/old-original', alt_identifier_o='')
+    original = {**NEUBAUER, 'side': 'o', 'old_identifier': '10.1234/old-original', 'new_doi': '10.1234/new-original'}
+    plans = bulk.plan(Mock(), [NEUBAUER, original])
+    assert len(plans) == 1
+    assert set(plans[0]['fields']) == {'doi_o', 'doi_r', 'alt_identifier_o', 'alt_identifier_r'}
