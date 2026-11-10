@@ -112,6 +112,7 @@ jobs:
         run: python prepare_flora.py --output-dir output
 
       - name: Upload published-version candidates and lookup status
+        continue-on-error: true
         if: always() && steps.publication_versions.outcome != 'skipped'
         uses: actions/upload-artifact@v7
         with:

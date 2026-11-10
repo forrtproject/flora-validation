@@ -149,6 +149,7 @@ def test_the_run_id_never_reaches_the_script_through_an_expression():
 
 
 def test_approved_corrections_are_manual_opt_in_only():
+    """The approved CSV workflow path stays disabled unless explicitly requested."""
     import yaml
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     option = workflow[True]['workflow_dispatch']['inputs']['apply_approved_identifier_corrections']

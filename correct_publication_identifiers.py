@@ -107,6 +107,7 @@ def apply_plans(cur, plans, admin):
 
 
 def main():
+    """Preview or transactionally apply an approved CSV through the FLoRA editor log."""
     load_dotenv()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('csv', type=Path)

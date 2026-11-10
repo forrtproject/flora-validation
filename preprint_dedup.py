@@ -1228,6 +1228,7 @@ def merge_publication_pair(frame, remove, keep, normalise_outcome=None, hand_fil
     types = frame["type"].map(_s) if "type" in frame else pd.Series("", index=frame.index)
     groups = pd.Series(list(zip(originals, types)), index=frame.index)
     def allowed(idx):
+        """Protect corrected product identifiers before absorbing a source row."""
         fields = (identifier_guards or {}).get(_s(frame.at[idx, "record_id"]) if "record_id" in frame else "", {})
         return all(normalize_doi(value) == normalize_doi(keep if field == column else frame.at[idx, field])
                    for field, value in fields.items() if field == column or field in (other, "url_o", "url_r"))

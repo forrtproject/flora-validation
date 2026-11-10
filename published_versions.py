@@ -15,6 +15,8 @@ import re
 import sys
 import time
 import unicodedata
+from datetime import timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -24,13 +26,29 @@ import requests
 from preprint_dedup import is_preprint_doi, normalize_doi, title_similarity, extract_first_author
 
 ROOT = Path(__file__).parent
+MAX_RETRY_DELAY = 60
 COLUMNS = ['side', 'doi_1', 'doi_2', 'proposed_action', 'action', 'confidence',
            'evidence', 'evidence_url', 'title_1', 'title_2', 'row_ids', 'row_count', 'auto_eligible', 'title_sim', 'first_author_2']
+
+
+def retry_delay(value, attempt):
+    """Read Retry-After seconds/date, falling back to bounded exponential backoff."""
+    value = value.strip()
+    if value.isdigit():
+        return int(value)
+    try:
+        date = parsedate_to_datetime(value)
+        if date.tzinfo is None:
+            date = date.replace(tzinfo=timezone.utc)
+        return max(0, date.timestamp() - time.time())
+    except (ValueError, TypeError, OverflowError):
+        return 5 * 2 ** attempt
 
 
 class Client:
     """Serial, bounded retries; disk cache includes misses but excludes failures."""
     def __init__(self, cache, ttl_days=7):
+        """Create an expiring response cache and a polite generic API session."""
         self.cache = Path(cache)
         self.cache.mkdir(parents=True, exist_ok=True)
         self.ttl = ttl_days * 86400
@@ -40,6 +58,7 @@ class Client:
         self.errors = {}
 
     def get(self, url, params=None):
+        """Return a cached/API response; report bounded lookup failures without caching them."""
         request = requests.Request('GET', url, params=params).prepare()
         key = hashlib.sha256(request.url.encode()).hexdigest()
         path = self.cache / (key + '.json')
@@ -65,23 +84,33 @@ class Client:
                 tmp.replace(path)
                 return data
             except (requests.RequestException, ValueError) as exc:
-                if attempt < 2:
-                    retry = response.headers.get('Retry-After', '') if response is not None else ''
-                    time.sleep(int(retry) if retry.isdigit() else 5 * 2 ** attempt)
-                else:
-                    self.errors[request.url] = str(exc)
-                    print(f'Lookup failed: {request.url}: {exc}', file=sys.stderr, flush=True)
+                error = str(exc)
+                if attempt == 2:
+                    break
+                retry = response.headers.get('Retry-After', '') if response is not None else ''
+                delay = retry_delay(retry, attempt)
+                if delay > MAX_RETRY_DELAY:
+                    # Do not retry before the provider permits it, or wait long
+                    # enough to lose the run's artifacts to the job timeout.
+                    error += f'; Retry-After exceeds {MAX_RETRY_DELAY}s budget'
+                    break
+                time.sleep(delay)
+        self.errors[request.url] = error
+        print(f'Lookup failed: {request.url}: {error}', file=sys.stderr, flush=True)
         return {}
 
     def work(self, doi):
+        """Read the Crossref work record for one normalised DOI."""
         return self.get('https://api.crossref.org/works/' + quote(doi, safe='')).get('message', {})
 
 
 def eligible(doi):
+    """Recognise preprint-server and generic OSF identifiers worth checking."""
     return is_preprint_doi(doi) or doi.startswith(('10.17605/', '10.2196/preprints.'))
 
 
 def osf_id(doi):
+    """Extract the base OSF preprint GUID from unversioned or versioned DOIs."""
     # New OSF identifiers have _vN version suffixes. They name versions of the
     # same preprint; the API detail uses its five-character base GUID.
     match = re.fullmatch(r'10\.(?:31234|31219|31235|31222|31236|35542|17605)/osf\.io/([a-z0-9]{5})(?:_v?\d+)?', doi)
@@ -95,6 +124,7 @@ def author_key(family):
 
 
 def valid_target(source, target, work):
+    """Require a distinct, registered journal DOI outside known preprint repositories."""
     return (bool(re.fullmatch(r'10\.\d{4,9}/\S+', target)) and target != source
             and not eligible(target) and work.get('type') == 'journal-article')
 
@@ -185,6 +215,7 @@ def linked_versions(doi, client, title='', author=''):
 
 
 def scan(frame, client):
+    """Find publication candidates once per DOI and retain affected FLoRA records."""
     results = []
     # One network lookup for a DOI even if it occurs on both sides or many rows.
     found = {}
@@ -251,6 +282,7 @@ def write_candidates(frame, candidates, output):
 
 
 def main():
+    """Write discovery, per-record review and status artifacts without editing FLoRA."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--input', type=Path, default=ROOT / 'output/flora.csv')
     parser.add_argument('--output', type=Path, default=ROOT / 'output/published_version_candidates.csv')

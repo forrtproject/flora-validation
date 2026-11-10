@@ -119,6 +119,7 @@ def live_frame(cur):
 
 
 def main():
+    """Discover live version links and preview or apply the automatic subset."""
     load_dotenv()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true')

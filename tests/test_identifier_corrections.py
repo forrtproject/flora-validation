@@ -15,6 +15,7 @@ ONE_NIGHT = {'record_id': 'REPL-001618', 'side': 'r',
 
 @pytest.fixture
 def records(monkeypatch):
+    """Provide both named publication fixtures without opening a database connection."""
     records = {
         'REPRO-000363': {'export_id': 'FLORA-002771', 'type': 'reproduction',
                          'doi_r': '', 'url_r': NEUBAUER['old_identifier'], 'alt_identifier_r': ''},
@@ -27,6 +28,7 @@ def records(monkeypatch):
 
 
 def test_known_cases_preserve_ids_and_append_identifiers(records, monkeypatch):
+    """Both named fixtures use the editor service and preserve their permanent identities."""
     plans = bulk.plan(Mock(), [NEUBAUER, ONE_NIGHT])
     assert plans[0]['record_id'] == 'FLORA-002771'
     assert plans[0]['fields'] == {'doi_r': NEUBAUER['new_doi'], 'alt_identifier_r': NEUBAUER['old_identifier']}
@@ -42,17 +44,20 @@ def test_known_cases_preserve_ids_and_append_identifiers(records, monkeypatch):
 
 
 def test_rerun_is_noop(records):
+    """Replaying an already-applied approved correction creates no new edit."""
     records['REPRO-000363'].update(doi_r=NEUBAUER['new_doi'], alt_identifier_r=NEUBAUER['old_identifier'])
     assert bulk.plan(Mock(), [NEUBAUER]) == []
 
 
 def test_unapproved_and_weaker_candidates_are_not_bulk_applied(records):
+    """Approval and high confidence are both required by the manual bulk entry point."""
     assert bulk.plan(Mock(), [{**NEUBAUER, 'approved': ''}]) == []
     with pytest.raises(ValueError, match='weaker'):
         bulk.plan(Mock(), [{**NEUBAUER, 'confidence': 'review'}])
 
 
 def test_stale_target_and_conflicting_rows_refused_before_any_save(records):
+    """Stale identifiers and competing replacements are rejected before writes."""
     records['REPRO-000363']['doi_r'] = '10.1234/changed'
     with pytest.raises(ValueError, match='Stale'):
         bulk.plan(Mock(), [NEUBAUER])
@@ -62,17 +67,20 @@ def test_stale_target_and_conflicting_rows_refused_before_any_save(records):
 
 
 def test_change_during_planning_refused(records, monkeypatch):
+    """Concurrent log changes invalidate the planned record snapshot."""
     monkeypatch.setattr(bulk.flora_edits, 'version', Mock(side_effect=[17, 18]))
     with pytest.raises(bulk.flora_edits.VersionConflict):
         bulk.plan(Mock(), [NEUBAUER])
 
 
 def test_existing_doi_alias_is_not_duplicated(records):
+    """Resolver-form and bare DOI aliases identify the same preserved preprint."""
     records['REPL-001618']['alt_identifier_r'] = 'https://doi.org/' + ONE_NIGHT['old_identifier']
     assert bulk.plan(Mock(), [ONE_NIGHT]) == []
 
 
 def test_metadata_is_prepared_before_logging_changes(records, monkeypatch):
+    """Missing target metadata must be resolved before any correction is published."""
     import enrich_works
     import bibliographic_helpers
     monkeypatch.setattr(enrich_works, 'load_metadata', lambda cur: {})
@@ -88,6 +96,7 @@ def test_metadata_is_prepared_before_logging_changes(records, monkeypatch):
 
 
 def test_both_sides_of_one_record_share_one_save(records):
+    """Two DOI-side corrections on one record share one version guard and audit entry."""
     records['REPRO-000363'].update(doi_o='10.1234/old-original', alt_identifier_o='')
     original = {**NEUBAUER, 'side': 'o', 'old_identifier': '10.1234/old-original', 'new_doi': '10.1234/new-original'}
     plans = bulk.plan(Mock(), [NEUBAUER, original])

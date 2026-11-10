@@ -120,7 +120,9 @@ Sync entry sheets runs automatic resolution after enrichment and ID assignment,
 before final preparation and validation. It uploads both candidate CSVs and the
 status JSON as a separate 90-day artifact. Set OPENALEX_MAILTO to
 supply the contact address in the generic client user-agent. Requests run serially
-at least .5 seconds apart, with bounded retries and Retry-After handling. Responses
+at least .5 seconds apart, with bounded retries and Retry-After handling.
+Cooldowns longer than 60 seconds are reported as failed lookups without waiting
+or retrying before the provider permits; both seconds and HTTP dates are supported. Responses
 including 404/410 misses expire after seven days; transient failures are not
 cached as absence. Actions cache preserves successful results between runs.
 Discovery failures remain visible in logs and the status artifact and do not block

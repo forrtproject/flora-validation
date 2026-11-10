@@ -3,6 +3,7 @@ from unittest.mock import Mock
 
 import pandas as pd
 import requests
+import pytest
 
 import preprint_dedup
 from published_versions import Client, linked_versions, osf_id, scan
@@ -13,6 +14,7 @@ ARTICLE = '10.1234/published'
 
 class FakeClient:
     def __init__(self, article_doi='', relations=None, reverse=None, target_type='journal-article'):
+        """Configure the synthetic API responses used by this test."""
         self.article_doi = article_doi
         self.relations = relations or {}
         self.reverse = reverse or []
@@ -20,6 +22,7 @@ class FakeClient:
         self.calls = []
 
     def get(self, url, params=None):
+        """Return the synthetic provider response required by this scenario."""
         self.calls.append((url, params))
         if 'api.openalex.org' in url:
             return {}
@@ -28,12 +31,14 @@ class FakeClient:
         return {'message': {'items': self.reverse}}
 
     def work(self, doi):
+        """Return the synthetic registered bibliography for this DOI."""
         if doi == PREPRINT:
             return {'relation': self.relations, 'title': ['Published paper'], 'author': [{'family': 'Smith'}]}
         return {'type': self.target_type, 'title': ['Published paper'], 'author': [{'family': 'Smith'}]}
 
 
 def test_seda_no_publication():
+    """A missing journal link and preprint-only version relations cannot invent a publication."""
     assert linked_versions(PREPRINT, FakeClient()) == []
     version_only = {'is-version-of': [{'id-type': 'doi', 'id': '10.31219/osf.io/x394e_v1'}]}
     assert linked_versions(PREPRINT, FakeClient(relations=version_only)) == []
@@ -42,6 +47,7 @@ def test_seda_no_publication():
 
 
 def test_osf_article_and_crossref_directions():
+    """Forward and reverse explicit links resolve only to distinct journal targets."""
     relation = lambda doi: [{'id-type': 'doi', 'id': doi}]
     for client in [FakeClient(article_doi='https://doi.org/' + ARTICLE),
                    FakeClient(relations={'is-preprint-of': relation(ARTICLE)}),
@@ -54,6 +60,7 @@ def test_osf_article_and_crossref_directions():
 
 
 def test_scan_conflicts_and_repeated_rows():
+    """Repeated occurrences share lookups while competing journal targets stay in review."""
     f = pd.DataFrame({'id': ['a', 'b'], 'doi_o': [PREPRINT]*2, 'doi_r': [PREPRINT]*2})
     client = FakeClient(article_doi=ARTICLE)
     rows = scan(f, client)
@@ -67,6 +74,7 @@ def test_scan_conflicts_and_repeated_rows():
 
 
 def test_cache_misses_expiry_and_transient_failure(tmp_path, monkeypatch):
+    """Cache real misses until expiry and leave transient failures uncached."""
     monkeypatch.setattr('published_versions.time.sleep', lambda _: None)
     client = Client(tmp_path)
     response = Mock(status_code=404)
@@ -85,9 +93,11 @@ def test_cache_misses_expiry_and_transient_failure(tmp_path, monkeypatch):
 
 
 def test_reverse_relation_pagination():
+    """A journal link on a later Crossref page must not be truncated."""
     client = FakeClient()
     calls = []
     def get(url, params=None):
+        """Return the synthetic provider response required by this scenario."""
         if 'api.openalex.org' in url:
             return {}
         if 'api.osf.io' in url:
@@ -103,6 +113,7 @@ def test_reverse_relation_pagination():
 
 
 def test_server_coverage_excludes_cshl_journals():
+    """Recognised preprint prefixes do not misclassify CSHL journal articles."""
     from published_versions import eligible
     for doi in ['10.17605/osf.io/abcde', '10.31222/osf.io/abcde',
                 '10.31234/osf.io/abcde_v2', '10.31235/osf.io/abcde',
@@ -114,15 +125,18 @@ def test_server_coverage_excludes_cshl_journals():
 
 
 def test_openalex_merge_requires_bibliographic_confirmation():
+    """An OpenAlex merge needs independent bibliography and cannot alone auto-resolve."""
     client = FakeClient()
     original_get = client.get
     def get(url, params=None):
+        """Return the synthetic provider response required by this scenario."""
         if 'api.openalex.org' in url:
             return {'doi': 'https://doi.org/' + ARTICLE}
         return original_get(url, params)
     client.get = get
     original_work = client.work
     def work(doi):
+        """Return the synthetic registered bibliography for this DOI."""
         if doi == PREPRINT:
             return {'title': ['A replication study'], 'author': [{'family': 'Smith'}]}
         return {**original_work(doi), 'title': ['A replication study'], 'author': [{'family': 'Smith'}]}
@@ -137,6 +151,7 @@ def test_openalex_merge_requires_bibliographic_confirmation():
 
 
 def test_arxiv_datacite_journal_verification():
+    """DataCite journal registration verifies the arXiv case while rejecting dissertations."""
     from published_versions import datacite_article
     article = datacite_article({'data': {'attributes': {
         'types': {'resourceTypeGeneral': 'JournalArticle'},
@@ -148,14 +163,17 @@ def test_arxiv_datacite_journal_verification():
 
 
 def test_all_seven_recent_openalex_merges_are_detected():
+    """Recorded metadata finds all seven cases and holds renamed titles for human review."""
     from pathlib import Path
     cases = json.loads((Path(__file__).parent / 'fixtures/published_version_merges.json').read_text())
     assert len(cases) == 7
     for case in cases:
         class RecordedClient:
             def work(self, doi):
+                """Return the synthetic registered bibliography for this DOI."""
                 return case['source_crossref'] if doi == case['source'] else case['target_crossref']
             def get(self, url, params=None):
+                """Return the synthetic provider response required by this scenario."""
                 if 'api.openalex.org' in url:
                     return {'doi': 'https://doi.org/' + case['target']}
                 if 'api.datacite.org' in url:
@@ -170,10 +188,12 @@ def test_all_seven_recent_openalex_merges_are_detected():
 
 
 def test_explicit_relation_alone_does_not_automatically_resolve_renamed_or_missing_authors():
+    """Explicit links still require a matching title and a nonblank consistent first author."""
     for missing_authors in (True, False):
         client = FakeClient(article_doi=ARTICLE)
         original_work = client.work
         def work(doi):
+            """Return the synthetic registered bibliography for this DOI."""
             data = original_work(doi)
             if missing_authors:
                 data['author'] = []
@@ -184,3 +204,37 @@ def test_explicit_relation_alone_does_not_automatically_resolve_renamed_or_missi
         result = linked_versions(PREPRINT, client)[0]
         assert result['auto_eligible'] == ''
         assert result['confidence'] == 'review'
+
+
+@pytest.mark.parametrize('retry', ['86400', ' 86400 ', 'Tue, 14 Nov 2023 22:15:20 GMT'])
+def test_long_retry_after_is_an_uncached_failure_without_an_early_retry(tmp_path, monkeypatch, retry):
+    """Long numeric/date cooldowns return promptly and never become cached misses."""
+    sleeps = []
+    monkeypatch.setattr('published_versions.time.sleep', sleeps.append)
+    monkeypatch.setattr('published_versions.time.time', lambda: 1700000000)
+    client = Client(tmp_path)
+    limited = Mock(status_code=429, headers={'Retry-After': retry})
+    limited.raise_for_status.side_effect = requests.HTTPError('429 rate limited')
+    client.session.get = Mock(return_value=limited)
+    assert client.get('https://example.org/limited') == {}
+    assert client.session.get.call_count == 1
+    assert sleeps == [.5]
+    assert 'Retry-After exceeds 60s budget' in next(iter(client.errors.values()))
+    assert not list(tmp_path.glob('*.json'))
+
+
+@pytest.mark.parametrize('retry, delay', [('7', 7), ('Tue, 14 Nov 2023 22:13:27 GMT', 7), ('invalid', 5)])
+def test_short_retry_after_and_fallback_are_honoured(tmp_path, monkeypatch, retry, delay):
+    """Short cooldowns are respected in full; malformed headers use normal backoff."""
+    sleeps = []
+    monkeypatch.setattr('published_versions.time.sleep', sleeps.append)
+    monkeypatch.setattr('published_versions.time.time', lambda: 1700000000)
+    client = Client(tmp_path)
+    limited = Mock(status_code=429, headers={'Retry-After': retry})
+    limited.raise_for_status.side_effect = requests.HTTPError('429 rate limited')
+    success = Mock(status_code=200)
+    success.json.return_value = {'ok': True}
+    client.session.get = Mock(side_effect=[limited, success])
+    assert client.get('https://example.org/retry') == {'ok': True}
+    assert sleeps == [.5, delay, .5]
+    assert not client.errors and len(list(tmp_path.glob('*.json'))) == 1
