@@ -1,10 +1,12 @@
 # Original work types: evaluation of fred-data #109
 
 Snapshot: `output/flora.csv` at e4a98ee (10 November 2026), 2,851 rows.
-Recommendation: **do not build a blanket non-article check**. A future narrow,
-non-blocking warning for corrections, indexes and other paratext could be useful;
-confirm identity from title/publisher correction metadata rather than work type
-alone. No type validation rule is added in this PR.
+Recommendation after consultation with **Claude Opus 5.5**: **build a broad,
+non-blocking review queue with persistent review decisions**. Start with
+higher-priority suspicious targets, retain other non-article formats at lower
+priority, and leave preprints to the publication-version work. The baseline
+queue is **73 originals across 75 rows** after excluding 15 preprints.
+Implement this in a follow-up PR; PR #22 contains the evaluation and design.
 
 ## Coverage and counts
 
@@ -74,7 +76,9 @@ Observed precision is **15% for actionable identifier cleanup**, or at most 30%
 if all three uncertain cases become problems. It is **10% for clearly wrong
 study targets**. These are sample yields, not unbiased population estimates;
 selection deliberately included suspicious cases. High precision is not
-established, so even a warning should be more selective than `type != article`.
+established. The observed errors nevertheless justify a bounded review queue
+whose confirmed decisions survive later runs. These yields do not justify
+automatic exclusion, identifier changes or publication failures.
 
 Specific checks:
 
@@ -98,3 +102,92 @@ Specific checks:
 
 No FLoRA records were changed for this evaluation. See
 [all flagged originals and sample judgments](original-work-types-2026-11-10.csv).
+
+## Recommended use after Opus consultation
+
+The two clear wrong-paper targets remain in the current published CSV
+(`FLORA-000534` and `FLORA-001286`). Finding those errors has value even when
+most format alerts turn out to be legitimate targets. Persistent review decisions
+make the initial backlog a one-off task, with future reviews for newly flagged
+records or changed originals.
+
+| Priority | OpenAlex signal | Baseline originals / rows | Reviewed sample |
+|---|---|---:|---|
+| Higher | Dataset or paratext; also flag future errata and similar nonstudy types | 10 / 10 | 3 identifier problems, including both wrong papers; 3 uncertain |
+| Lower | Reviews, proceedings, chapters, books, letters, editorials and other non-article formats | 63 / 65 | 11 legitimate targets |
+| Publication-version workflow | Preprint | 15 / 15, excluded from this queue | 3 legitimate targets |
+
+Both priority tiers should use `possible_problem`. Opus suggested `problem`
+for the higher tier; this repo's network validator can fail `--fail-on-issues`
+on that level. A type label alone should not fail publication or change a record.
+Priority can be represented by separate check codes/headings in the existing
+review interface, without introducing a new severity system. Preprints are
+legitimate originals, and six of the 15 are journal articles OpenAlex mislabels.
+
+OpenAlex should trigger the review. Crossref supplies useful corroborating
+evidence and reviewer context, but `journal-article` must not automatically clear
+an alert: it also covers corrections and other material that needs inspection.
+The index in this audit is a Crossref `book-chapter`. A separate full Crossref
+census could assess missed alerts among OpenAlex's articles; the existing
+88-DOI comparison cannot establish that sensitivity. It need not delay the
+OpenAlex warning queue.
+
+### Retain review decisions
+
+Use the existing `flora_check_findings` and `entry_checks.dismiss` machinery.
+A reasoned **Not a problem** decision already records who, when and why, remains
+stored with its finding, and can be withdrawn. `_upsert` preserves
+these fields, including when the finding resolves and later reopens. General
+validation and source-review status must remain unchanged.
+
+Create one finding per record, keyed on **check code + stable FLoRA record ID +
+normalised original DOI**. Do not put the title, provider type string, detail
+text or all records sharing the DOI into that key. Then:
+
+- Metadata wording, title changes and movement within a priority tier retain the
+  decision. Bare and resolver DOI spellings identify the same target.
+- A newly added row sharing the original receives its own review; existing
+  rows keep theirs. This permits checking the target against each replication.
+- A changed `doi_o` resolves the old finding and checks the new target. Restoring
+  the old DOI restores its prior decision.
+- Moving into the higher-risk tier can create a separate finding while retaining
+  the earlier decision in history. New evidence gets attention without erasing
+  the previous review.
+- Missing or failed metadata lookups keep open findings open. A successful lookup
+  that establishes an exempt type can resolve them.
+
+Existing explicit decisions should be carried forward with their attribution and
+reason. The audit's `no_problem` entries can prefill proposed review notes; they
+should not silently become human-approved dismissals. Three of those 14 entries
+are preprints outside the proposed queue, leaving 11 applicable sample judgments.
+The audit CSV uses export IDs in `row_ids`; match those to the current record's
+`flora_id` before storing any decision.
+
+### Smallest implementation
+
+1. Preserve the OpenAlex `type` already requested by `enrich_works.FIELDS` in
+   `work_metadata`, with a type-check timestamp. Fill missing/stale original
+   types with polite cached batch requests and singleton alias fallbacks, keyed
+   on the requested DOI. Refresh periodically so corrected metadata can resolve
+   old alerts. Type-only enrichment must not overwrite bibliographic fields or
+   set a good metadata row's `not_found` flag after a failed type lookup.
+2. Add a network-check selector in `validate_flora_network.py` that reads those
+   cached types, deduplicates lookups by DOI and emits per-record advisory
+   findings. No new Google Sheet or review-state table is needed.
+3. Extend `entry_checks._network_resolved` with explicit coverage for this check.
+   Unknown/deferred types must not resolve earlier findings. Keep this out of
+   the row-local consensus checks and structural check's complete-snapshot
+   resolution logic.
+4. Let reviewers compare original and replication, then confirm the target with
+   a reason, correct its identifier through the logged editor, or use the
+   existing exclusion flow for an extraneous row. A warning performs none of
+   those actions automatically.
+
+Acceptance tests should cover both priority tiers and advisory metadata failures
+remaining non-blocking;
+`10.1002/npr2.70058` being flagged as an erratum despite broad Crossref typing;
+stable decisions through reruns, title/type wording changes, DOI resolver forms
+and added records; genuine original changes and reversions; higher-tier
+escalation; unknown/failed/deferred lookups retaining open findings; retired
+records resolving; alias lookup keys; and preservation of existing metadata,
+review status and decision attribution.
