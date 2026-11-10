@@ -1,0 +1,3 @@
+retire_flora_id,survivor_flora_id,duplicate_source_record_id,survivor_source_record_id,duplicate_display_id,survivor_display_id,note
+FLORA-002181,FLORA-002180,28adb521-9dd3-44f6-a6b0-a796d77d0c2f,fc19791d-231d-4858-a566-f61cd084e72a,FRED-000335,FRED-000302,"fred-data#152: same reference pair and same individual replication report; mark duplicate in Source Records, then rebuild. Check all contributing source rows in the live registry."
+FLORA-002234,FLORA-002233,529109f8-bde0-4295-97dc-b18f0b754a87,ed072bfc-2fe0-4402-ae1c-3372b3c7f322,FRED-000299,FRED-000314,"fred-data#152: same reference pair and same individual replication report; mark duplicate in Source Records, then rebuild. Check all contributing source rows in the live registry."
