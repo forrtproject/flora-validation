@@ -12,6 +12,12 @@ name: Publish FLoRA
 on:
   workflow_dispatch:
     inputs:
+      preprint_alias_history:
+        description: "Audit or backfill history-backed missing preprint aliases through the FLoRA change log"
+        type: choice
+        options: ["off", "audit", "backfill"]
+        required: false
+        default: "off"
       resolve_published_versions:
         description: "Automatically resolve explicit publication links with matching titles and first authors"
         type: boolean
@@ -56,6 +62,25 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Audit replaced preprint identifiers
+        if: github.event_name == 'workflow_dispatch' && inputs.preprint_alias_history != 'off'
+        timeout-minutes: 20
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ALIAS_HISTORY_MODE: ${{ inputs.preprint_alias_history }}
+        run: |
+          args=()
+          if [ "$ALIAS_HISTORY_MODE" = backfill ]; then args+=(--apply); fi
+          python backfill_preprint_identifiers.py "${args[@]}" --admin-handle "github-actions:$GITHUB_ACTOR"
+
+      - name: Upload preprint identifier history audit
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.preprint_alias_history != 'off'
+        uses: actions/upload-artifact@v4
+        with:
+          name: preprint-alias-history
+          path: output/preprint_alias_audit.json
+          if-no-files-found: error
 
       - name: Apply approved identifier corrections
         timeout-minutes: 20
