@@ -29,8 +29,8 @@ class FakeClient:
 
     def work(self, doi):
         if doi == PREPRINT:
-            return {'relation': self.relations}
-        return {'type': self.target_type, 'title': ['Published paper']}
+            return {'relation': self.relations, 'title': ['Published paper'], 'author': [{'family': 'Smith'}]}
+        return {'type': self.target_type, 'title': ['Published paper'], 'author': [{'family': 'Smith'}]}
 
 
 def test_seda_no_publication():
@@ -128,9 +128,11 @@ def test_openalex_merge_requires_bibliographic_confirmation():
         return {**original_work(doi), 'title': ['A replication study'], 'author': [{'family': 'Smith'}]}
     client.work = work
     assert linked_versions(PREPRINT, client)[0]['confidence'] == 'high'
+    assert linked_versions(PREPRINT, client)[0]['auto_eligible'] == ''
     client.work = lambda doi: {**work(doi), 'author': [{'family': 'Jones' if doi == ARTICLE else 'Smith'}]}
     result = linked_versions(PREPRINT, client)[0]
     assert result['confidence'] == 'review'
+    assert result['auto_eligible'] == ''
     assert result['evidence'] == 'openalex:merged-doi'
 
 
@@ -165,3 +167,20 @@ def test_all_seven_recent_openalex_merges_are_detected():
         # Renamed citation lists remain review-only until a human verifies them.
         expected = 'review' if case['flora_id'] in {'REPL-001390', 'REPL-001332'} else 'high'
         assert result[0]['confidence'] == expected, case['flora_id']
+
+
+def test_explicit_relation_alone_does_not_automatically_resolve_renamed_or_missing_authors():
+    for missing_authors in (True, False):
+        client = FakeClient(article_doi=ARTICLE)
+        original_work = client.work
+        def work(doi):
+            data = original_work(doi)
+            if missing_authors:
+                data['author'] = []
+            elif doi == PREPRINT:
+                data['title'] = ['A substantially renamed paper']
+            return data
+        client.work = work
+        result = linked_versions(PREPRINT, client)[0]
+        assert result['auto_eligible'] == ''
+        assert result['confidence'] == 'review'

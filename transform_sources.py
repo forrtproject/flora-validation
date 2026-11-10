@@ -607,7 +607,7 @@ def load_dedup_decisions(cur):
     cur.execute("SELECT to_regclass('preprint_dedup_decisions') IS NOT NULL AS present")
     if not cur.fetchone()["present"]:
         return []
-    cur.execute("SELECT side, doi_1, doi_2, action, decided_at FROM preprint_dedup_decisions")
+    cur.execute("SELECT side, doi_1, doi_2, action, decided_at, decided_by FROM preprint_dedup_decisions")
     return [dict(r) for r in cur.fetchall()]
 
 
@@ -990,9 +990,21 @@ def build(cur, verbose: bool = True,
     # a merge (preprint_dedup.apply_hand_fills).
     hand_fills = []
 
+    # Protect identifier choices made on the product before a publication-pair
+    # merge can absorb its source row. Reuse the same snapshot at step 6c.
+    publication_identifiers = None
+    publication_guards = {}
+    if any(row.get("side", "").endswith("(publication link)") for row in dedup_decisions):
+        import flora_edits
+        publication_identifiers = flora_edits.load_identifiers(cur)
+        for ids, fields in publication_identifiers.get("records", []):
+            for source_id in ids:
+                publication_guards.setdefault(source_id, fields)
+
     df = preprint_dedup.apply_confirmed(
         df, normalise_outcome=_normalise_outcome, verbose=verbose,
-        conflicts_out=conflicts, rulings=dedup_decisions, hand_fills=hand_fills)
+        conflicts_out=conflicts, rulings=dedup_decisions, hand_fills=hand_fills,
+        publication_guards=publication_guards)
 
     # 3 ── exclusions
     # Runs BEFORE url_r is stripped: an operator registering an exclusion copies
@@ -1232,7 +1244,8 @@ def build(cur, verbose: bool = True,
     # journal follow the corrected DOI instead of describing the paper it replaced.
     # Every other correction is applied to the finished frame, once ids are attached.
     import flora_edits                              # local: flora_edits imports this module
-    identifier_edits = flora_edits.apply_identifiers(df, flora_edits.load_identifiers(cur))
+    identifier_edits = flora_edits.apply_identifiers(df, flora_edits.load_identifiers(cur)
+                                                    if publication_identifiers is None else publication_identifiers)
     if identifier_edits:
         say(f"  identifiers corrected on FLoRA records: {len(identifier_edits)} row(s)")
         for side in ("o", "r"):

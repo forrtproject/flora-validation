@@ -343,7 +343,10 @@ def confirmed_decisions(path: Path = CONFIRMED_PATH, rulings=None) -> list:
     merged = {pair_key(r["doi_1"], r["doi_2"]): r for r in load_confirmed(path)}
     for row in rulings or []:
         if _s(row.get("action")) in VALID_ACTIONS:
-            merged[pair_key(row.get("doi_1"), row.get("doi_2"))] = row
+            key = pair_key(row.get("doi_1"), row.get("doi_2"))
+            if key in merged and row.get("decided_by") == "automation:published-versions":
+                continue  # confirmed-file human rulings outrank automatic ones
+            merged[key] = row
     return list(merged.values())
 
 
@@ -609,6 +612,11 @@ def _merge_group(group, doi_o, doi_r, normalise_outcome):
             row[column] = _paste_unique(values, "; ")
         elif column in ("outcome_quote", "outcome_quote_source", "out_quote_source"):
             row[column] = _paste_unique(values, OUTCOME_CLASH_SEP)
+        elif column in ("alt_identifier_o", "alt_identifier_r"):
+            aliases = None
+            for value in values:
+                aliases = append_alt_identifier(aliases, value)
+            row[column] = aliases
         elif column == "source":
             row[column] = _prefer_cos(values)
         elif column == "outcome":
@@ -1206,9 +1214,60 @@ def _ensure_alt_columns(frame):
     return frame
 
 
+def merge_publication_pair(frame, remove, keep, normalise_outcome=None, hand_fills=None, side="r", identifier_guards=None):
+    """Merge linked versions only where both share the other DOI and study type.
+
+    The publisher row leads so its identity survives; the existing pair merger
+    preserves absorbed source IDs, outcomes and evidence. Distinct reviewer
+    rulings and hand-added-row protections remain in force.
+    """
+    frame = _ensure_alt_columns(frame.copy())
+    column, other, alt = "doi_" + side, "doi_" + ("o" if side == "r" else "r"), "alt_identifier_" + side
+    doi = frame[column].map(normalize_doi)
+    originals = frame[other].map(normalize_doi)
+    types = frame["type"].map(_s) if "type" in frame else pd.Series("", index=frame.index)
+    groups = pd.Series(list(zip(originals, types)), index=frame.index)
+    def allowed(idx):
+        fields = (identifier_guards or {}).get(_s(frame.at[idx, "record_id"]) if "record_id" in frame else "", {})
+        return all(normalize_doi(value) == normalize_doi(keep if field == column else frame.at[idx, field])
+                   for field, value in fields.items() if field == column or field in (other, "url_o", "url_r"))
+
+    publishers = frame[doi.eq(normalize_doi(keep)) & pd.Series([allowed(i) for i in frame.index], index=frame.index)]
+    changed = []
+    for idx in frame.index[doi.eq(normalize_doi(remove))]:
+        if not originals.at[idx] or not allowed(idx):
+            continue
+        peers = publishers[groups.loc[publishers.index].map(lambda value: value == groups.at[idx])]
+        # A distinct ruling is a person's decision to keep this record separate.
+        if peers.empty or _s(frame.at[idx, "duplicate_status"] if "duplicate_status" in frame else "") == "distinct":
+            continue
+        peers = peers[~peers.get("duplicate_status", pd.Series('', index=peers.index)).eq("distinct")]
+        if peers.empty:
+            continue
+        if side == "o" and "url_r" in frame:
+            links = {_s(frame.at[i, "url_r"]) for i in [idx, *peers.index] if not _blank(frame.at[i, "url_r"])}
+            if len(links) > 1:
+                continue  # different replication report links retain separate records
+        keeper = peers.index[0]
+        frame.at[idx, alt] = append_alt_identifier(frame.at[idx, alt], remove)
+        if "url_" + side in frame:
+            frame.at[idx, alt] = append_alt_identifier(frame.at[idx, alt], frame.at[idx, "url_" + side])
+            # These URLs identify verified versions of one report, rather than
+            # separate reports: retain the old URL as an alias, use publisher URL.
+            frame.at[idx, "url_" + side] = frame.at[keeper, "url_" + side]
+        frame.at[idx, column] = normalize_doi(keep)
+        changed.append(idx)
+    if not changed:
+        return frame, pd.DataFrame()
+    # Existing publisher identities precede the source versions within each group.
+    order = list(frame.index[doi.eq(normalize_doi(keep))])
+    order += [idx for idx in frame.index if idx not in order]
+    return merge_doi_pair_dups(frame.loc[order], normalise_outcome, verbose=False, hand_fills=hand_fills)
+
+
 def apply_confirmed(frame, confirmed_path: Path = CONFIRMED_PATH,
                     normalise_outcome=None, verbose=True, conflicts_out=None,
-                    rulings=None, hand_fills=None):
+                    rulings=None, hand_fills=None, publication_guards=None):
     """Step 6a — apply only the confirmed keep_1/keep_2 rows, before enrichment.
 
     `rulings` are admin rulings from the FLoRA tab, overlaid on the file.
@@ -1227,10 +1286,16 @@ def apply_confirmed(frame, confirmed_path: Path = CONFIRMED_PATH,
         remove, keep = derive_remove_keep(row["action"], row["doi_1"], row["doi_2"])
         if _blank(remove) or _blank(keep):
             continue
-        if (row.get("side") or "").startswith("replication"):
+        if row.get("side") in ("replication (publication link)", "original (publication link)"):
+            side = "r" if row["side"].startswith("replication") else "o"
+            frame, conflicts = merge_publication_pair(frame, remove, keep, normalise_outcome, hand_fills, side, publication_guards)
+            if conflicts_out is not None and not conflicts.empty:
+                conflicts_out.extend(conflicts.to_dict("records"))
+        elif (row.get("side") or "").startswith("replication"):
             frame = _drop_replication(frame, remove, keep, annotate=True, hand_fills=hand_fills)
 
-    originals = [r for r in confirmed if (r.get("side") or "").startswith("original")]
+    originals = [r for r in confirmed if (r.get("side") or "").startswith("original")
+                 and r.get("side") != "original (publication link)"]
     if originals:
         mapping, removals = {}, set()
         for row in originals:

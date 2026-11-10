@@ -143,7 +143,7 @@ def test_the_run_id_never_reaches_the_script_through_an_expression():
     assert "JOB_ID: ${{ inputs.job_id }}" in workflow
     steps = yaml.safe_load(workflow)["jobs"]["publish"]["steps"]
     scripts = [step["run"] for step in steps if "run" in step]
-    assert len(scripts) == 4, "every step's script is checked, `run: |` and `run: >-` alike"
+    assert len(scripts) == 6, "every step's script is checked, `run: |` and `run: >-` alike"
     for script in scripts:
         assert "${{" not in script
 

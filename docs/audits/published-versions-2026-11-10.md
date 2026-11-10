@@ -83,3 +83,24 @@ reports under its existing publication contract. This is not a manual CSV edit.
 Two existing duplicate warnings remain for admin review: VAL-000456 now shares
 identifiers with REPL-001126, and REPRO-000009 with REPRO-000019. No duplicate
 ruling was changed and no record was merged or retired by this batch.
+
+## Automatic policy and current preview
+
+Explicit OSF/Crossref publication links now resolve automatically when the title
+similarity is at least .90, the nonblank first-author surnames agree (including
+normalised diacritics), and there is one journal target. A standalone record is
+corrected through the FLoRA log; an existing compatible version pair goes through
+native dedup decisions and the pair merger. Human rulings and unrelated identifier
+choices are preserved. OpenAlex-only links, renamed titles, missing/mismatched
+authors and conflicting links remain review-only.
+
+The post-correction exported snapshot (2,867 rows, SHA-256
+6e8c556f4a836e19681bd947f6024af01246af0e6d9df9cfbb6003759ef00d60) yields 39 DOI pairs
+across 44 record proposals. Thirteen satisfy the automatic bibliography rule: an
+export-based preview routes 12 to standalone corrections and one JMIR pair to
+deduplication. This preview includes confirmed-file rulings; execution additionally
+loads live database rulings, locks/rechecks the affected records, and defers any
+protected changes. These are preview counts, not additional live changes.
+
+[Current candidates with automatic eligibility](published-versions-automatic-2026-11-10.csv).
+[Current record-level queue](published-version-automatic-corrections-2026-11-10.csv).

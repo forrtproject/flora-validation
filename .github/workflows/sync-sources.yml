@@ -71,6 +71,29 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python flora_registry.py
 
+      # Scan current database records before preparation. Explicit publication
+      # links with matching titles/authors resolve automatically; other matches
+      # remain in the review artifact. Recheck cached misses after seven days.
+      - name: Restore published-version lookup cache
+        if: success()
+        uses: actions/cache@v4
+        with:
+          path: cache/published_versions
+          key: published-versions-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: published-versions-${{ runner.os }}-
+
+      - name: Resolve verified published versions
+        id: publication_versions
+        # Discovery outages must not prevent publication of a validated release.
+        # Failures remain visible in logs and the uploaded status JSON.
+        continue-on-error: true
+        timeout-minutes: 45
+        if: success()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENALEX_MAILTO: ${{ secrets.OPENALEX_MAILTO }}
+        run: python resolve_publication_versions.py --apply
+
       # Same final command as the website's Run pipeline button. Validation reads
       # the exact CSV snapshot, and the manifest fingerprints its downloaded bytes.
       # Written straight into output/, where the release files are tracked. The
@@ -88,28 +111,8 @@ jobs:
           OPENALEX_MAILTO: ${{ secrets.OPENALEX_MAILTO }}
         run: python prepare_flora.py --output-dir output
 
-      # Recheck weekly, including previous misses; transient failures are never
-      # cached. Scan this run's exact released snapshot, proposing decisions only.
-      - name: Restore published-version lookup cache
-        if: steps.build_dataset.outcome == 'success'
-        uses: actions/cache@v4
-        with:
-          path: cache/published_versions
-          key: published-versions-${{ runner.os }}-${{ github.run_id }}
-          restore-keys: published-versions-${{ runner.os }}-
-
-      - name: Check for published versions of preprints
-        # Discovery outages must not prevent publication of a validated release.
-        # Failures remain visible in logs and the uploaded status JSON.
-        continue-on-error: true
-        timeout-minutes: 45
-        if: steps.build_dataset.outcome == 'success'
-        env:
-          OPENALEX_MAILTO: ${{ secrets.OPENALEX_MAILTO }}
-        run: python published_versions.py
-
       - name: Upload published-version candidates and lookup status
-        if: always() && steps.build_dataset.outcome == 'success'
+        if: always() && steps.publication_versions.outcome != 'skipped'
         uses: actions/upload-artifact@v7
         with:
           name: published-version-candidates-${{ github.run_id }}
@@ -118,7 +121,7 @@ jobs:
             output/published_version_candidates.status.json
             output/published_version_candidates.corrections.csv
           retention-days: 90
-          if-no-files-found: error
+          if-no-files-found: warn
 
       # Only when the build ran: output/ also holds the last release's committed
       # reports. The build writes its report first and clears the old validation

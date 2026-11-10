@@ -14,6 +14,7 @@ import os
 import re
 import sys
 import time
+import unicodedata
 from pathlib import Path
 from urllib.parse import quote
 
@@ -24,7 +25,7 @@ from preprint_dedup import is_preprint_doi, normalize_doi, title_similarity, ext
 
 ROOT = Path(__file__).parent
 COLUMNS = ['side', 'doi_1', 'doi_2', 'proposed_action', 'action', 'confidence',
-           'evidence', 'evidence_url', 'title_1', 'title_2', 'row_ids', 'row_count']
+           'evidence', 'evidence_url', 'title_1', 'title_2', 'row_ids', 'row_count', 'auto_eligible', 'title_sim', 'first_author_2']
 
 
 class Client:
@@ -85,6 +86,12 @@ def osf_id(doi):
     # same preprint; the API detail uses its five-character base GUID.
     match = re.fullmatch(r'10\.(?:31234|31219|31235|31222|31236|35542|17605)/osf\.io/([a-z0-9]{5})(?:_v?\d+)?', doi)
     return match[1] if match else None
+
+
+def author_key(family):
+    """Compare surname spellings with/without metadata diacritics consistently."""
+    return ''.join(c for c in unicodedata.normalize('NFKD', family or '').casefold()
+                   if not unicodedata.combining(c))
 
 
 def valid_target(source, target, work):
@@ -163,12 +170,15 @@ def linked_versions(doi, client, title='', author=''):
             relation_backed = any(e[0] != 'openalex:merged-doi' for e in evidence)
             source_title = '; '.join(work.get('title', [])) or title
             source_author = extract_first_author(json.dumps(work.get('author', []))) if work.get('author') else extract_first_author(author)
-            target_author = extract_first_author(json.dumps(published.get('author', [])))
-            matched = (bool(source_author) and source_author == target_author
-                       and title_similarity(source_title, '; '.join(published.get('title', []))) >= .90)
-            if matched and not relation_backed:
+            source_author = author_key(source_author)
+            target_author = author_key(extract_first_author(json.dumps(published.get('author', []))))
+            similarity = title_similarity(source_title, '; '.join(published.get('title', [])))
+            matched = bool(source_author) and source_author == target_author and similarity >= .90
+            if matched:
                 evidence.append((verifier + ':title-first-author-match', verification_url))
-            candidates.append({'doi_2': target, 'confidence': 'high' if relation_backed or matched else 'review', 'title_2': '; '.join(published.get('title', [])),
+            candidates.append({'doi_2': target, 'confidence': 'high' if matched else 'review',
+                               'auto_eligible': 'yes' if relation_backed and matched else '',
+                               'title_sim': round(similarity, 4), 'first_author_2': target_author or '', 'title_2': '; '.join(published.get('title', [])),
                                'evidence': '; '.join(sorted({e[0] for e in evidence})),
                                'evidence_url': '; '.join(sorted({e[1] for e in evidence}))})
     return candidates
@@ -180,18 +190,29 @@ def scan(frame, client):
     found = {}
     for suffix, side in [('o', 'original'), ('r', 'replication')]:
         normalized = frame['doi_' + suffix].map(normalize_doi)
-        for doi in sorted(set(normalized)):
+        # Include preserved preprint aliases: a previous identifier correction
+        # may have left two current rows for the same published paper.
+        group = pd.DataFrame({'primary': normalized,
+                              'other': frame['doi_' + ('o' if suffix == 'r' else 'r')].map(normalize_doi),
+                              'type': frame.get('type', pd.Series('', index=frame.index))})
+        duplicate = group.duplicated(keep=False) & normalized.ne('') & ~normalized.map(eligible)
+        aliases = frame.get('alt_identifier_' + suffix, pd.Series('', index=frame.index)).fillna('').where(duplicate, '').map(
+            lambda value: {normalize_doi(part.strip()) for part in str(value).split(',')})
+        dois = set(normalized) | {doi for group in aliases for doi in group if eligible(doi)}
+        for doi in sorted(dois):
             if not eligible(doi):
                 continue
+            mask = normalized.eq(doi) | aliases.map(lambda group: doi in group)
             if doi not in found:
-                source = frame[normalized == doi].iloc[0]
+                source = frame[mask].iloc[0]
                 found[doi] = linked_versions(doi, client, str(source.get('title_' + suffix, '')), str(source.get('author_' + suffix, '')))
                 print(f'Checked {doi}: {len(found[doi])} published candidate(s)', flush=True)
-            rows = frame[normalized == doi]
+            rows = frame[mask]
             for candidate in found[doi]:
                 candidate = dict(candidate)
                 if len(found[doi]) != 1:
                     candidate['confidence'] = 'conflicting_relations_review'
+                    candidate['auto_eligible'] = ''
                 results.append(dict(candidate, side=side, doi_1=doi,
                     proposed_action='identifier_correction' if candidate['confidence'] == 'high' else '', action='',
                     title_1=str(rows.iloc[0].get('title_' + suffix, '')),
@@ -209,8 +230,24 @@ def correction_rows(frame, candidates):
                    'side': 'r' if candidate['side'] == 'replication' else 'o',
                    'old_identifier': candidate['doi_1'], 'new_doi': candidate['doi_2'],
                    'confidence': candidate['confidence'], 'approved': '',
+                   'auto_eligible': candidate['auto_eligible'],
                    'evidence': candidate['evidence'], 'evidence_url': candidate['evidence_url'],
                    'note': ('Published-version check: ' + candidate['evidence'])[:500]}
+
+
+def write_candidates(frame, candidates, output):
+    """Write discovery and per-record review artifacts without applying edits."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open('w', newline='', encoding='utf-8') as handle:
+        writer = csv.DictWriter(handle, fieldnames=COLUMNS, lineterminator='\n')
+        writer.writeheader()
+        writer.writerows(candidates)
+    correction_fields = ['record_id', 'flora_id', 'side', 'old_identifier', 'new_doi',
+                         'confidence', 'approved', 'auto_eligible', 'evidence', 'evidence_url', 'note']
+    with output.with_suffix('.corrections.csv').open('w', newline='', encoding='utf-8') as handle:
+        writer = csv.DictWriter(handle, fieldnames=correction_fields, lineterminator='\n')
+        writer.writeheader()
+        writer.writerows(correction_rows(frame, candidates))
 
 
 def main():
@@ -222,17 +259,7 @@ def main():
     client = Client(args.cache)
     frame = pd.read_csv(args.input).fillna('')
     candidates = scan(frame, client)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    with args.output.open('w', newline='', encoding='utf-8') as handle:
-        writer = csv.DictWriter(handle, fieldnames=COLUMNS, lineterminator='\n')
-        writer.writeheader()
-        writer.writerows(candidates)
-    correction_fields = ['record_id', 'flora_id', 'side', 'old_identifier', 'new_doi',
-                         'confidence', 'approved', 'evidence', 'evidence_url', 'note']
-    with args.output.with_suffix('.corrections.csv').open('w', newline='', encoding='utf-8') as handle:
-        writer = csv.DictWriter(handle, fieldnames=correction_fields, lineterminator='\n')
-        writer.writeheader()
-        writer.writerows(correction_rows(frame, candidates))
+    write_candidates(frame, candidates, args.output)
     status = {'input_sha256': hashlib.sha256(args.input.read_bytes()).hexdigest(),
               'checked_dois': len({normalize_doi(d) for side in ('o', 'r') for d in frame['doi_' + side] if eligible(normalize_doi(d))}),
               'candidate_pairs': len(candidates), 'affected_rows': len({rid for c in candidates for rid in c['row_ids'].split('; ')}),

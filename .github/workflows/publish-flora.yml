@@ -12,6 +12,11 @@ name: Publish FLoRA
 on:
   workflow_dispatch:
     inputs:
+      resolve_published_versions:
+        description: "Automatically resolve explicit publication links with matching titles and first authors"
+        type: boolean
+        required: false
+        default: false
       apply_approved_identifier_corrections:
         description: "Apply the reviewed cache/approved_publication_corrections.csv through the FLoRA change log"
         type: boolean
@@ -60,9 +65,34 @@ jobs:
           OPENALEX_MAILTO: ${{ secrets.OPENALEX_MAILTO }}
         run: python correct_publication_identifiers.py cache/approved_publication_corrections.csv --apply --admin-handle "github-actions:$GITHUB_ACTOR"
 
+      - name: Restore published-version lookup cache
+        if: github.event_name == 'workflow_dispatch' && inputs.resolve_published_versions
+        uses: actions/cache@v4
+        with:
+          path: cache/published_versions
+          key: published-versions-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: published-versions-${{ runner.os }}-
+
+      - name: Resolve verified published versions
+        if: github.event_name == 'workflow_dispatch' && inputs.resolve_published_versions
+        timeout-minutes: 45
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENALEX_MAILTO: ${{ secrets.OPENALEX_MAILTO }}
+        run: python resolve_publication_versions.py --apply
+
+      # Use the normal preparation/validation gate to materialize queued merges.
+      - name: Prepare automatically resolved dataset
+        if: github.event_name == 'workflow_dispatch' && inputs.resolve_published_versions
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENALEX_MAILTO: ${{ secrets.OPENALEX_MAILTO }}
+        run: python prepare_flora.py --output-dir output --network-minutes 5
+
       # The run id reaches the shell through the environment, never through
       # expression substitution into the script.
       - name: Write the stored dataset to output/
+        if: github.event_name != 'workflow_dispatch' || !inputs.resolve_published_versions
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           JOB_ID: ${{ inputs.job_id }}
