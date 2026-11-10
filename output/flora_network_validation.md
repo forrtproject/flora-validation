@@ -1,10 +1,10 @@
 ## FLoRA network validation
 
-_Generated: 2026-11-08 03:09:25 UTC | Dataset: 2,847 rows_
+_Generated: 2026-11-10 03:08:28 UTC | Dataset: 2,851 rows_
 
 Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says what is wrong and, after the dash, gives the DOI or link.
 
-### Problems (40)
+### Problems (39)
 
 **Retracted papers** (7 findings):
 
@@ -28,7 +28,7 @@ Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says wha
 - VAL-000215 (`10.2307/249754 | 10.17705/1atrr.00064`): doi_r is not registered at doi.org — `10.17705/1atrr.00064`
 - VAL-000427 (`10.1287/isre.1040.0032 | 10.17705/1atrr.00061`): doi_r is not registered at doi.org — `10.17705/1atrr.00061`
 
-<details><summary><b>Dead links</b> (24 findings)</summary>
+<details><summary><b>Dead links</b> (23 findings)</summary>
 
 - REPL-000068 (`10.1177/0146167205279905 | 10.1080/02619768.2014.882308`): oa_url_r is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `http://hdl.handle.net/1820/9055`
 - REPL-000073 (`10.3102/0002831211419649 | 10.1037/a0036307`): oa_url_r is dead (connection refused; an open-access link from enrichment, not from the source record) — `http://orbilu.uni.lu/handle/10993/18672`
@@ -50,7 +50,6 @@ Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says wha
 - VAL-000031 (`10.1016/0010-0285(89)90003-0 | 10.7916/d8f76r2r`): oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `https://tesol-dev.journals.cdrs.columbia.edu/wp-content/uploads/sites/12/2015/06/3.-Seol-2005.pdf`
 - VAL-000077 (`10.1016/j.cognition.2006.12.015 | 10.1525/collabra.87`): oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `http://www.collabra.org/articles/10.1525/collabra.87/galley/208/download/`
 - VAL-000196 (`10.1371/journal.pone.0197268 | 10.1371/journal.pone.0253023`): oa_url_o is dead (HTTP 400; an open-access link from enrichment, not from the source record) — `https://storage.googleapis.com/plos-corpus-prod/10.1371/journal.pone.0197268/1/pone.0197268.pdf?X-Goog-Algorithm=GOOG4-…`
-- REPL-000373 (`10.1177/0956797613508412 | https://openalex.org/W7110675912`): url_r is dead (HTTP 404) — `https://openalex.org/W7110675912`
 - REPL-001327 (`10.1006/jmla.1996.0032 | https://openalex.org/W7110491536`): url_r is dead (HTTP 404) — `https://openalex.org/W7110491536`
 - FRED-000267 (`10.1037/0278-6133.3.5.431 | https://docs.google.com/document/d/10OKLI0-Kw2D7SDyLU_Ieql88gLtbnYGSyZhCBqsEAyk`): url_r is dead (HTTP 410) — `https://docs.google.com/document/d/10OKLI0-Kw2D7SDyLU_Ieql88gLtbnYGSyZhCBqsEAyk`
 - VAL-000315 (`10.1111/j.1540-4781.1996.tb05468.x | 10.32601/ejal.460588`): url_r is dead (HTTP 404) — `http://dergipark.gov.tr/download/article-file/536686`
@@ -95,6 +94,6 @@ _Not findings: no answer could be had for these 8, and they are checked again on
 
 **Network validation status: needs review**
 
-- DOIs: 4,623 distinct; 4,614 cached, 9 checked, 0 deferred.
-- Links: 3,190 distinct; 3,160 cached, 30 checked (8 could not be checked), 0 deferred.
+- DOIs: 4,630 distinct; 4,621 cached, 9 checked, 0 deferred.
+- Links: 3,196 distinct; 3,167 cached, 29 checked (8 could not be checked), 0 deferred.
 - Originals without a DOI: 27 distinct; 27 cached, 0 checked, 0 deferred.

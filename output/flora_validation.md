@@ -1,6 +1,6 @@
 ## FLoRA structural validation
 
-_Generated: 2026-11-08 03:07:46 UTC | Dataset: 2,847 rows_
+_Generated: 2026-11-10 03:06:41 UTC | Dataset: 2,851 rows_
 
 Each item names the FLoRA record by its FLoRA ID and `doi_o | doi_r` (or `url_r`), says what is wrong and, after the dash, gives the value.
 

@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-08T03:06:40+00:00",
+  "generated_at": "2026-11-10T03:05:26+00:00",
   "mode": "database_pipeline",
   "status": "needs_attention",
-  "rows": 2847,
+  "rows": 2851,
   "stages": [
     {
       "name": "build flora.csv and check IDs",
@@ -25,7 +25,7 @@
     {
       "name": "store dataset",
       "status": "passed",
-      "detail": "2,847 rows in flora_data"
+      "detail": "2,851 rows in flora_data"
     },
     {
       "name": "write output files",
@@ -33,11 +33,11 @@
     }
   ],
   "warnings": [
-    "32 records left out for a missing title; see flora_export_log.csv.",
+    "35 records left out for a missing title; see flora_export_log.csv.",
     "59 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.",
-    "25 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.",
+    "26 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.",
     "Structural validation found 44 problems and 24 possible problems.",
-    "Network validation needs review: 40 problems and 8 possible problems."
+    "Network validation needs review: 39 problems and 8 possible problems."
   ],
   "errors": [],
   "warning_count": 5,
@@ -45,7 +45,7 @@
   "diagnostics": {
     "flora_export_log.csv": {
       "description": "records left out for a missing title",
-      "rows": 32,
+      "rows": 35,
       "records": [
         {
           "reason": "missing title_o",
@@ -366,6 +366,36 @@
           "doi_r": "",
           "url_r": "http://api.osf.io/v2/nodes/9s4w7/",
           "apa_ref_r": "Röseler · 2021 · OSF Preprints (OSF Preprints)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000464",
+          "source": "validated",
+          "doi_o": "10.1080/10402381.2013.841784",
+          "apa_ref_o": "Neher, C. J., Duffield, J. W., & Patterson, D. A. (2013). Modeling the influence of water levels on recreational use at lakes Mead and Powell. Lake and Reservoir Management, 29(4), 233–246. https://doi.org/10.1080/10402381.2013.841784",
+          "doi_r": "",
+          "url_r": "https://repository.arizona.edu/bitstream/10150/634266/1/azu_etd_17467_sip1_m.pdf",
+          "apa_ref_r": "Xiaoting · 2019 · UA Campus Repository (The University of Arizona)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000465",
+          "source": "validated",
+          "doi_o": "10.1037/0022-3514.86.2.345",
+          "apa_ref_o": "Dijksterhuis, A. (2004). I Like Myself but I Don’t Know Why: Enhancing Implicit Self-Esteem by Subliminal Evaluative Conditioning. Journal of Personality and Social Psychology, 86(2), 345–355. https://doi.org/10.1037/0022-3514.86.2.345",
+          "doi_r": "",
+          "url_r": "https://www.ehps.net/ehp/index.php/contents/article/view/1254",
+          "apa_ref_r": "Versluis · 2015 · European Health Psychologist"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000466",
+          "source": "validated",
+          "doi_o": "10.1111/j.1467-9280.2008.02064.x",
+          "apa_ref_o": "Nairne, J. S., Pandeirada, J. N. S., & Thompson, S. R. (2008). Adaptive Memory. Psychological Science, 19(2), 176–180. https://doi.org/10.1111/j.1467-9280.2008.02064.x",
+          "doi_r": "",
+          "url_r": "https://koara.lib.keio.ac.jp/xoonips/modules/xoonips/detail.php?koara_id=2018000005-20180166",
+          "apa_ref_r": "ヒライシ · 2018 · KeiO Associated Repository of Academic Resources (Keio University)"
         }
       ]
     },
@@ -967,7 +997,7 @@
     },
     "preprint_dedup_candidates.csv": {
       "description": "preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates)",
-      "rows": 25,
+      "rows": 26,
       "records": [
         {
           "side": "replication",
@@ -1530,6 +1560,34 @@
           "doi_keep": "10.3389/fnbeh.2020.00128"
         },
         {
+          "side": "replication",
+          "doi_1": "10.14279/depositonce-21697",
+          "doi_2": "10.1007/s40881-022-00118-y",
+          "applied_action": "needs_review",
+          "resolution": "review: neither is a preprint or repository record",
+          "title_1": "Intertemporal consumption and debt aversion: a replication and extension",
+          "title_2": "Intertemporal consumption and debt aversion: a replication and extension",
+          "title_sim": "1.0",
+          "first_author_1": "ahrens",
+          "first_author_2": "ahrens",
+          "year_1": "2022",
+          "year_2": "2022",
+          "is_preprint_1": "False",
+          "is_preprint_2": "False",
+          "group_key": "doi_o: 10.1007/s10683-015-9437-0",
+          "doi_o_group": "10.1007/s10683-015-9437-0",
+          "source_display_id_1": "VAL-000463",
+          "type_1": "replication",
+          "outcome_1": "successful",
+          "url_1": "https://depositonce.tu-berlin.de/handle/11303/22885",
+          "source_display_id_2": "REPL-000933",
+          "type_2": "replication",
+          "outcome_2": "successful",
+          "url_2": "",
+          "doi_remove": "",
+          "doi_keep": ""
+        },
+        {
           "side": "original",
           "doi_1": "10.1080/07350015.1995.10524601",
           "doi_2": "10.2307/1392187",
@@ -1674,8 +1732,8 @@
   },
   "identity": {
     "status": "passed",
-    "rows": 2847,
-    "unique_ids": 2847
+    "rows": 2851,
+    "unique_ids": 2851
   },
   "columns": [
     "id",
@@ -2713,7 +2771,7 @@
     "possible_problems": 24,
     "has_problems": true,
     "has_issues": true,
-    "rows": 2847
+    "rows": 2851
   },
   "network": {
     "status": "needs_attention",
@@ -3176,18 +3234,6 @@
           {
             "check": "dead_link",
             "flora_ids": [
-              "REPL-000373"
-            ],
-            "column": "url_r",
-            "value": "https://openalex.org/W7110675912",
-            "detail": "url_r is dead (HTTP 404)",
-            "label": "10.1177/0956797613508412 | https://openalex.org/W7110675912",
-            "key": "dead_link|REPL-000373|url_r|https://openalex.org/w7110675912",
-            "level": "problem"
-          },
-          {
-            "check": "dead_link",
-            "flora_ids": [
               "REPL-001327"
             ],
             "column": "url_r",
@@ -3429,16 +3475,16 @@
         "status": "checked"
       },
       "dois": {
-        "targets": 4623,
-        "cached": 4614,
+        "targets": 4630,
+        "cached": 4621,
         "checked": 9,
         "deferred": 0,
         "unchecked": 0
       },
       "urls": {
-        "targets": 3190,
-        "cached": 3160,
-        "checked": 30,
+        "targets": 3196,
+        "cached": 3167,
+        "checked": 29,
         "deferred": 0,
         "unchecked": 8
       },
@@ -3451,21 +3497,21 @@
       }
     },
     "suppressed": 0,
-    "problems": 40,
+    "problems": 39,
     "possible_problems": 8,
-    "issue_count": 48,
-    "rows": 2847
+    "issue_count": 47,
+    "rows": 2851
   },
   "release": {
     "schema_version": 1,
     "status": "prepared_locally",
     "published": false,
-    "generated_at": "2026-11-08T03:09:25+00:00",
+    "generated_at": "2026-11-10T03:08:28+00:00",
     "filename": "flora.csv",
-    "bytes": 13493684,
-    "sha256": "67628301ab44caeba7e0ce6f132de8f182c532190603bced113a939caa464ea4",
-    "md5": "4cf904c40806595955feb750e44486af",
-    "rows": 2847,
+    "bytes": 13530665,
+    "sha256": "053a2a92536d694f42d78947a5f7d3d081fb041b2f144387179295d105c51e99",
+    "md5": "5c34514573b922bd3232c9d35610dcbe",
+    "rows": 2851,
     "columns": [
       "id",
       "id_md5",
@@ -3522,22 +3568,22 @@
     "version": null,
     "release_notes": "",
     "data_version": {
-      "stored_at": "2026-11-08T03:09:25.979045+00:00",
+      "stored_at": "2026-11-10T03:08:29.970082+00:00",
       "change_watermark": 346
     }
   },
   "storage": {
-    "rows": 2847,
+    "rows": 2851,
     "inserted": 0,
-    "updated": 46,
-    "unchanged": 2801,
-    "retired": 3,
+    "updated": 0,
+    "unchanged": 2851,
+    "retired": 0,
     "reactivated": 0,
     "preserved": 0,
     "table": "flora_data",
-    "snapshot_sha256": "67628301ab44caeba7e0ce6f132de8f182c532190603bced113a939caa464ea4",
-    "stored_at": "2026-11-08T03:09:25.979045+00:00",
+    "snapshot_sha256": "053a2a92536d694f42d78947a5f7d3d081fb041b2f144387179295d105c51e99",
+    "stored_at": "2026-11-10T03:08:29.970082+00:00",
     "status": "committed"
   },
-  "finished_at": "2026-11-08T03:09:29+00:00"
+  "finished_at": "2026-11-10T03:08:33+00:00"
 }
