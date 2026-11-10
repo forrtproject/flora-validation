@@ -34,10 +34,16 @@ def validated_identifiers(row):
         result['doi_r'] = published
     extracted = row.get('_extracted_identifiers') or {}
     history = row.get('_identifier_history') or []
+    published = row.get('_published_identifiers') or []
     for side in ('o', 'r'):
         doi, alt = 'doi_' + side, 'alt_identifier_' + side
         for prior in [row.get(doi), extracted.get(doi)]:
             result[alt] = preserve_preprint(result[alt], prior, result[doi])
+        # Extractor refreshes may have overwritten the raw DOI since a previous
+        # validation. Its source snapshots still retain the published history.
+        for prior in published:
+            for old in [prior.get(doi), *(prior.get(alt) or '').split(',')]:
+                result[alt] = preserve_preprint(result[alt], old, result[doi])
         # An intermediate preprint version may have replaced the extracted DOI.
         # Only follow transitions that actually lead to the published identifier.
         edges = [change[doi] for change in history
@@ -65,9 +71,18 @@ VALIDATED_PROVENANCE_JOIN = """
             ORDER BY d.decision_id) AS changes
         FROM admin_decisions d WHERE d.record_id = v.record_id
     ) identifier_history ON true
+    LEFT JOIN LATERAL (
+        SELECT jsonb_agg(jsonb_build_object(
+            'doi_o', s.raw->>'doi_o', 'doi_r', s.raw->>'doi_r',
+            'alt_identifier_o', s.alt_identifier_o,
+            'alt_identifier_r', s.alt_identifier_r) ORDER BY s.sheet_row_id) AS identifiers
+        FROM source_records s
+        WHERE s.source = 'validated' AND s.raw->>'record_id' = v.record_id::text
+    ) published_history ON true
 """
 VALIDATED_PROVENANCE_COLUMNS = """
     jsonb_build_object('doi_o', u.doi_o, 'doi_r', u.doi_r)
         AS _extracted_identifiers,
-    identifier_history.changes AS _identifier_history
+    identifier_history.changes AS _identifier_history,
+    published_history.identifiers AS _published_identifiers
 """

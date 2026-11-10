@@ -120,7 +120,8 @@ def retain_preprint_identifiers(frame):
     records = [{**row, **validated_identifiers(row)} for row in frame.to_dict('records')]
     columns = list(dict.fromkeys([*frame.columns, 'alt_identifier_o', 'alt_identifier_r']))
     result = pd.DataFrame(records, columns=columns)
-    return result.drop(columns=['_extracted_identifiers', '_identifier_history'], errors='ignore')
+    return result.drop(columns=['_extracted_identifiers', '_identifier_history',
+                                '_published_identifiers'], errors='ignore')
 
 
 QUERY = """

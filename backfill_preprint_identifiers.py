@@ -94,6 +94,8 @@ def load_history(cur):
             if source['validation_id']:
                 add(identifier, side, source['extracted_' + side], source['source_raw_' + side],
                     'validation:source-snapshot')
+                add(identifier, side, source['source_raw_' + side], source['final_' + side],
+                    'validation:prior-published-snapshot')
         add(identifier, 'r', source['source_raw_r'], source['source_published_r'],
             'validation:source-published-doi')
     cur.execute("SELECT change_id, export_id, changes->'doi_o' AS doi_o, "

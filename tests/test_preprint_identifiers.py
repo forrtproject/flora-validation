@@ -47,6 +47,17 @@ def test_intermediate_versions_are_followed_but_unrelated_decisions_are_ignored(
     assert result['alt_identifier_o'] == PREPRINT + ', ' + version
 
 
+def test_source_snapshots_keep_preprints_after_an_extractor_refresh():
+    """A raw DOI overwritten upstream cannot erase prior published preprint aliases."""
+    result = validated_identifiers({'doi_o': ARTICLE, 'doi_r': ARTICLE,
+                                    '_extracted_identifiers': {'doi_o': ARTICLE, 'doi_r': ARTICLE},
+                                    '_published_identifiers': [
+                                        {'doi_o': PREPRINT, 'doi_r': ARTICLE,
+                                         'alt_identifier_r': PREPRINT + '_v2'}]})
+    assert result['alt_identifier_o'] == PREPRINT
+    assert result['alt_identifier_r'] == PREPRINT + '_v2'
+
+
 def test_audit_counts_rows_and_distinct_missing_identifiers_from_real_transitions():
     """A two-stage correction counts once per missing alias, excluding existing aliases."""
     records = [{'id': 'REPL-1', 'doi_o': ARTICLE, 'doi_r': ARTICLE,
