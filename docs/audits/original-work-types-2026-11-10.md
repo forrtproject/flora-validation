@@ -111,6 +111,11 @@ most format alerts turn out to be legitimate targets. Persistent review decision
 make the initial backlog a one-off task, with future reviews for newly flagged
 records or changed originals.
 
+Each affected replication already has a row for its appropriate original:
+`FLORA-002357` targets Mazar, Amir and Ariely, and `FLORA-001243` targets the
+Davidsson et al. study. These two cleanup reviews concern extraneous original
+rows; changing their DOIs to the correct originals would create duplicates.
+
 | Priority | OpenAlex signal | Baseline originals / rows | Reviewed sample |
 |---|---|---:|---|
 | Higher | Dataset or paratext; also flag future errata and similar nonstudy types | 10 / 10 | 3 identifier problems, including both wrong papers; 3 uncertain |
