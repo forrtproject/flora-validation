@@ -51,6 +51,9 @@ from psycopg2.extras import Json, RealDictCursor
 
 from console_encoding import use_utf8_output
 from pipeline_logging import start as start_logging
+from preprint_identifiers import (
+    VALIDATED_PROVENANCE_COLUMNS, VALIDATED_PROVENANCE_JOIN, validated_identifiers,
+)
 
 load_dotenv()
 use_utf8_output()
@@ -68,7 +71,7 @@ DIRECT_COLUMNS = [
     "outcome", "outcome_quote", "out_quote_source",
     "outcome_computation", "outcome_computational_quote", "out_quote_computational_source",
     "outcome_robustness", "outcome_robustness_quote", "out_quote_robust_source",
-    "alt_identifier_r",
+    "alt_identifier_r", "alt_identifier_o",
 ]
 
 # Written on insert and kept in step on refresh. validation_status is deliberately
@@ -94,10 +97,11 @@ def _raw_payload(row: dict) -> dict:
     admin_approved, original_key, record_id, validated_at — so a reviewer can see
     them and a later backfill can promote one without re-deriving anything.
     """
-    return {k: ("" if v is None else str(v)) for k, v in row.items()}
+    return {k: ("" if v is None else str(v)) for k, v in row.items() if not k.startswith('_')}
 
 
 def _build_row(v: dict) -> dict:
+    v = {**v, **validated_identifiers(v)}
     row = {col: _s(v.get(col)) for col in DIRECT_COLUMNS}
     row["source"] = SOURCE_KEY
     row["sheet_row_id"] = str(v["validated_record_id"])
@@ -132,7 +136,8 @@ def _next_display_id(cur, prefix: str) -> str:
 
 
 def _fetch_validated(cur) -> list:
-    cur.execute("SELECT * FROM validated ORDER BY validated_at, validated_record_id")
+    cur.execute(f"SELECT v.*, {VALIDATED_PROVENANCE_COLUMNS} FROM validated v "
+                f"{VALIDATED_PROVENANCE_JOIN} ORDER BY v.validated_at, v.validated_record_id")
     return [dict(r) for r in cur.fetchall()]
 
 

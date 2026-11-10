@@ -136,7 +136,7 @@ def test_every_direct_column_is_also_refreshed():
 def test_synced_columns_all_exist_on_the_grid_or_are_structural():
     grid = {c.split(" AS ")[-1].strip() for c in LIST_COLUMNS}
     structural = {"raw", "type", "abstract_r", "url_o", "outcome_quote",
-                  "out_quote_source", "study_o", "alt_identifier_r",
+                  "out_quote_source", "study_o", "alt_identifier_r", "alt_identifier_o",
                   "outcome_computational_quote", "out_quote_computational_source",
                   "outcome_robustness_quote", "out_quote_robust_source"}
     unknown = [c for c in sv.SYNCED_COLUMNS if c not in grid and c not in structural]

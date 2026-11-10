@@ -14,7 +14,8 @@ def preserve_preprint(existing, old, new):
     old, new = normalize_doi(old), normalize_doi(new)
     if not old or not new or old == new or not is_preprint_identifier(old):
         return existing
-    if any(normalize_doi(part.strip()) == old for part in (existing or '').split(',')):
+    aliases = append_alt_identifier(existing, None)
+    if any(normalize_doi(part.strip()) == old for part in (aliases or '').split(',')):
         return existing
     return append_alt_identifier(existing, old)
 
@@ -22,7 +23,7 @@ def preserve_preprint(existing, old, new):
 def validated_identifiers(row):
     """Publish validator DOI decisions with aliases, including original-side edits.
 
-    All validation routes converge on validated -> source_records. The immutable
+    All validation routes converge on validated -> source_records. The retained
     extracted DOI and logged admin transitions recover earlier preprint versions;
     no inference from bibliographic similarity is made here.
     """

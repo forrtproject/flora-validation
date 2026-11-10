@@ -109,6 +109,18 @@ def load_history(cur):
         for identifier in sorted(by_source.get(str(change['record_id']), [])):
             add(identifier, change['field'][-1], change['old_value'], change['new_value'],
                 'source-edit:' + str(change['edit_id']))
+    cur.execute("""
+        SELECT e.event_id, m.source_record_id, e.changes->'doi_o' AS doi_o,
+               e.changes->'doi_r' AS doi_r
+          FROM manual_record_events e JOIN manual_records m USING (manual_id)
+         WHERE e.changes ?| ARRAY['doi_o', 'doi_r'] ORDER BY e.event_id
+    """)
+    for change in cur.fetchall():
+        for identifier in sorted(by_source.get(str(change['source_record_id']), [])):
+            for side in ('o', 'r'):
+                pair = change.get('doi_' + side)
+                if isinstance(pair, list) and len(pair) == 2:
+                    add(identifier, side, *pair, 'manual-event:' + str(change['event_id']))
     cur.execute("SELECT decision_id, record_id, changes->'doi_o' AS doi_o, "
                 "changes->'doi_r' AS doi_r FROM admin_decisions "
                 "WHERE changes ?| ARRAY['doi_o', 'doi_r'] ORDER BY decision_id")
@@ -162,6 +174,10 @@ def main():
     conn = psycopg2.connect(os.environ['DATABASE_URL'], connect_timeout=15)
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Exercise the actual publication-boundary query against this schema
+            # as part of the audit, without refreshing or changing source rows.
+            from sync_validated import _fetch_validated
+            validated_rows = _fetch_validated(cur)
             records, transitions = load_history(cur)
             findings = dropped_identifiers(records, transitions)
             results = backfill(cur, findings, {'handle': args.admin_handle}) if args.apply else []
@@ -173,7 +189,12 @@ def main():
             else:
                 remaining = findings
         report = {'applied': args.apply, 'published_rows': len(records),
+                  'validated_rows_checked': len(validated_rows),
                   'affected_rows': len({f['id'] for f in findings}),
+                  'preprint_server_rows': len({f['id'] for f in findings
+                                              if not f['old_identifier'].startswith('10.17605/')}),
+                  'osf_deposit_rows': len({f['id'] for f in findings
+                                          if f['old_identifier'].startswith('10.17605/')}),
                   'missing_identifiers': len(findings),
                   'original_rows': len({f['id'] for f in findings if f['side'] == 'o'}),
                   'replication_rows': len({f['id'] for f in findings if f['side'] == 'r'}),

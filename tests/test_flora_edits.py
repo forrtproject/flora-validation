@@ -307,6 +307,28 @@ def test_a_change_may_go_without_a_note():
     assert cur.appended()[0][8].adapted == {}
 
 
+@pytest.mark.parametrize('side', ['o', 'r'])
+def test_preprint_replacement_and_alias_are_one_logged_edit(side):
+    """An ordinary UI save keeps the outgoing preprint with existing alternatives."""
+    cur = _Cur()
+    doi, alt = 'doi_' + side, 'alt_identifier_' + side
+    record = {**RECORD, doi: '10.31234/osf.io/abcde', alt: 'https://example.org/paper'}
+    flora_edits.save(cur, record, {}, {doi: '10.1234/article'}, [], 0, ADMIN)
+    [row] = cur.appended()
+    assert row[5].adapted == {
+        doi: ['10.31234/osf.io/abcde', '10.1234/article'],
+        alt: ['https://example.org/paper', 'https://example.org/paper, 10.31234/osf.io/abcde']}
+
+
+def test_restore_that_replaces_a_preprint_also_retains_it():
+    """All log actions use the safeguard, including restoring a published version."""
+    cur = _Cur(log=[(1, {'doi_r': '10.1234/article'}), (2, {'doi_r': '10.31234/osf.io/abcde'})])
+    record = {**RECORD, 'doi_r': '10.31234/osf.io/abcde'}
+    flora_edits.restore(cur, record, {'doi_r': '10.1234/original'}, 1, 2, ADMIN)
+    assert cur.appended()[0][6].adapted == {
+        'doi_r': '10.1234/article', 'alt_identifier_r': '10.31234/osf.io/abcde'}
+
+
 @pytest.mark.parametrize("notes, message", [
     ({"title_o": "x" * 501}, "longer than 500"),
     ({"title_o": 5}, "must be text"),

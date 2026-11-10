@@ -577,6 +577,19 @@ def _append(cur, export_id, record, derived, in_force, corrections, action, admi
     def derived_value(field):
         return derived[field] if field in derived else _text(record.get(field))
 
+    # Every editor action (save, type change, revert or restore) uses this log.
+    # Keep an outgoing preprint in the same atomic correction as its replacement.
+    from preprint_identifiers import preserve_preprint
+    corrections = dict(corrections)
+    for side in ('o', 'r'):
+        doi, alt = 'doi_' + side, 'alt_identifier_' + side
+        before = in_force.get(doi, derived_value(doi))
+        after = corrections.get(doi, derived_value(doi))
+        existing = corrections.get(alt, derived_value(alt))
+        retained = preserve_preprint(existing, before, after)
+        if retained != existing:
+            corrections[alt] = retained
+
     if corrections == in_force:
         return {"change_id": None, "changes": {}, "corrections": in_force}
     changes = {}
