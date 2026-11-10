@@ -2544,3 +2544,9 @@ merely absent from the CSV: most such records are validated work the extractor
 withholds on purpose. `find_orphans.py` summarises them read-only. Avoid
 `db_reset.py` unless the entire validation dataset and validator accounts are
 intended to be truncated and a verified backup exists.
+
+## Versioned FLoRA Zenodo releases
+
+See [FLoRA Zenodo releases](FLORA_ZENODO_RELEASES.md) for offline bundle assembly,
+record changelogs, citation/DOI consistency, sandbox testing and the manually approved
+production command. This is separate from the daily repository publication.

@@ -10,6 +10,67 @@ Storage, Python lookup helpers, and public HTTP routes are implemented. See the
 The production migration and initial data import have not been applied in this
 session.
 
+## Published CSV codebook
+
+Fields are text; `NA` is missing. Suffix `_o` refers to the original study and
+`_r` to its replication/reproduction report. Author arrays and citations may
+contain quotes or newlines: read the file with a CSV parser. Encoding is UTF-8
+with BOM. See the bundled FAQ for outcome definitions and coding decisions.
+
+| Field | Definition |
+| --- | --- |
+| `id` | Permanent published record ID; stable through corrections and retirement. |
+| `id_md5` | Full MD5 of the permanent id, for lookup; not a DOI hash. |
+| `doi_o` | DOI of the publication, when available. Original study. |
+| `alt_identifier_o` | Alternative publication identifiers, including preprints. Original study. |
+| `doi_o_hash` | Short original-DOI hash; distinct from id_md5. |
+| `title_o` | Publication title. Original study. |
+| `author_o` | Author metadata as a JSON array. Original study. |
+| `journal_o` | Publication journal or venue. Original study. |
+| `year_o` | Publication year. Original study. |
+| `volume_o` | Journal volume. Original study. |
+| `issue_o` | Journal issue. Original study. |
+| `pages_o` | Publication page range or article number. Original study. |
+| `apa_ref_o` | Formatted APA reference. Original study. |
+| `bibtex_ref_o` | BibTeX citation. Original study. |
+| `url_o` | Publication URL. Original study. |
+| `language_o` | Publication language code. Original study. |
+| `doi_r` | DOI of the publication, when available. Replication/reproduction report. |
+| `alt_identifier_r` | Alternative publication identifiers, including preprints. Replication/reproduction report. |
+| `doi_r_hash` | Short report-DOI hash; distinct from id_md5. |
+| `title_r` | Publication title. Replication/reproduction report. |
+| `author_r` | Author metadata as a JSON array. Replication/reproduction report. |
+| `journal_r` | Publication journal or venue. Replication/reproduction report. |
+| `year_r` | Publication year. Replication/reproduction report. |
+| `volume_r` | Journal volume. Replication/reproduction report. |
+| `issue_r` | Journal issue. Replication/reproduction report. |
+| `pages_r` | Publication page range or article number. Replication/reproduction report. |
+| `apa_ref_r` | Formatted APA reference. Replication/reproduction report. |
+| `bibtex_ref_r` | BibTeX citation. Replication/reproduction report. |
+| `url_r` | Publication URL. Replication/reproduction report. |
+| `language_r` | Publication language code. Replication/reproduction report. |
+| `oa_url_o` | Open-access full-text URL, when known. Original study. |
+| `oa_url_r` | Open-access full-text URL, when known. Replication/reproduction report. |
+| `outcome` | Report-level replication outcome; see FAQ. Reproduction results use the two axes below. |
+| `outcome_quote` | Supporting text for the coded replication outcome. |
+| `outcome_quote_source` | Location/source of the supporting text. |
+| `type` | Attempt type: replication (new observations) or reproduction (existing data). |
+| `source` | Contributing source dataset(s). |
+| `oa_work_id_o` | OpenAlex work identifier. Original study. |
+| `oa_work_id_r` | OpenAlex work identifier. Replication/reproduction report. |
+| `author_overlap` | Whether original and report authors overlap. |
+| `author_overlap_pct` | Percentage overlap of original and report authors. |
+| `abstract_r` | Report abstract. |
+| `outcome_computation` | Computational reproducibility outcome (independent of robustness). |
+| `outcome_computational_quote` | Supporting text for computational reproducibility. |
+| `out_quote_computational_source` | Location/source for the computational quote. |
+| `outcome_robustness` | Robustness outcome (independent of computational reproducibility). |
+| `outcome_robustness_quote` | Supporting text for robustness. |
+| `out_quote_robust_source` | Location/source for the robustness quote. |
+| `flora_id` | Pinned source-facing FLoRA identifier; distinct from published id. |
+| `source_display_id` | Primary source record display identifier. |
+| `source_record_id` | Primary source record UUID. |
+
 ## Relationship to the existing tables
 
 | Table | Purpose |
