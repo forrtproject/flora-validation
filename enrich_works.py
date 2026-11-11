@@ -514,11 +514,17 @@ def openalex_doi(key: str) -> "str | None":
 
 
 def keys_missing_work_id(cur) -> dict:
-    """Product keys whose cache row has no work id -> whether that row is a miss."""
+    """Product keys whose cache row has no work id -> whether it needs the full row.
+
+    A miss, or a row with no title (such as a type-only row from
+    original_work_types), gains the whole OpenAlex row. Filling only the id there
+    would mark the key known, and its bibliography would never be fetched.
+    """
     wanted = set(reference_keys_in_product(cur))
-    cur.execute("SELECT doi, not_found FROM work_metadata "
+    cur.execute("SELECT doi, not_found, title FROM work_metadata "
                 "WHERE NULLIF(btrim(oa_work_id), '') IS NULL")
-    return {r["doi"]: bool(r["not_found"]) for r in cur.fetchall()
+    return {r["doi"]: bool(r["not_found"]) or not (r.get("title") or "").strip()
+            for r in cur.fetchall()
             if r["doi"] in wanted and openalex_doi(r["doi"])}
 
 

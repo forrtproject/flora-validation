@@ -41,7 +41,7 @@ def _run(monkeypatch, cached, product, works):
 
 
 def test_a_row_with_metadata_gains_only_its_work_id(monkeypatch):
-    cached = [{"doi": "10.1234/new", "not_found": False}]
+    cached = [{"doi": "10.1234/new", "not_found": False, "title": "Crossref title"}]
     stats, asked, stored, updated = _run(
         monkeypatch, cached, ["10.1234/new"], {"10.1234/new": "W7160704995"})
     assert asked == ["10.1234/new"]
@@ -58,7 +58,7 @@ def test_a_cached_miss_gains_the_whole_openalex_row(monkeypatch):
 
 def test_an_osf_node_url_is_asked_about_by_its_datacite_doi(monkeypatch):
     """The id lands on the URL key, which the transform's url join reads."""
-    cached = [{"doi": "osf.io/4kbna", "not_found": False}]
+    cached = [{"doi": "osf.io/4kbna", "not_found": False, "title": "OSF report"}]
     _, asked, _, updated = _run(monkeypatch, cached, ["osf.io/4kbna"],
                                 {"10.17605/osf.io/4kbna": "W7128643197"})
     assert asked == ["10.17605/osf.io/4kbna"]
@@ -88,7 +88,7 @@ def test_the_update_never_overwrites_an_existing_work_id(monkeypatch):
     monkeypatch.setattr(ew.psycopg2.extras, "execute_batch",
                         lambda cur, s, rows: sql.append(s))
     monkeypatch.setattr(ew, "DELAY", 0)
-    ew.refresh_work_ids(_Cur([{"doi": "10.1234/a", "not_found": False}]), verbose=False)
+    ew.refresh_work_ids(_Cur([{"doi": "10.1234/a", "not_found": False, "title": "T"}]), verbose=False)
     assert "IS NULL" in sql[0]
 
 
@@ -111,3 +111,12 @@ def test_a_batch_page_holds_more_works_than_dois(monkeypatch):
     monkeypatch.setattr(ew.urllib.request, "urlopen", fake_urlopen)
     ew._fetch_batch(["10.1234/a"])
     assert "per-page=200" in seen[0]
+
+
+def test_a_row_without_a_title_gains_the_whole_openalex_row(monkeypatch):
+    """A type-only row would otherwise gain an id, count as known, and never get
+    its bibliography."""
+    cached = [{"doi": "10.1234/typed", "not_found": False, "title": None}]
+    _, _, stored, updated = _run(monkeypatch, cached, ["10.1234/typed"], {"10.1234/typed": "W5"})
+    assert updated == []
+    assert stored[0]["doi"] == "10.1234/typed" and stored[0]["oa_work_id"] == "W5"
