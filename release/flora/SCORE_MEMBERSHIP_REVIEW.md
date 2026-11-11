@@ -28,16 +28,18 @@ were reused; each report component was then checked against live OSF metadata.
 
 The intake routes were 63 `replications`, one `COS` (FLORA-002670), and one
 `reproductions` (REPRO-000101). All receive the project label, consistent with
-project precedence over intake. SCORE has 153 records in this release preview:
-the original 88 intake records plus these 65; no further records were added by
-shared-link expansion. There are no remaining unmatched project-name mentions.
+project precedence over intake. This review establishes 65 memberships in addition
+to the original 88 intake records. The published-dataset linkage
+identifies 301 SCORE records; see the
+[paper-identifier corrections](../../data/corrections/SCORE_PAPER_IDENTIFIERS.md).
+There are no remaining unmatched project-name mentions.
 
 ## Separate outstanding corrections
 
 Project membership does not establish inclusion in a particular published SCORE
-paper. No Nature DOI has been assigned by this review. Per-record publication and
-identifier linkage remains subject to the correction-log review in
-[SCORE_LINKAGE.md](SCORE_LINKAGE.md).
+paper. The separate published-dataset check now supplies the appropriate Nature
+paper DOI through `alt_identifier_r`, with evidence and correction-log receipts
+in the paper-identifier batch. This membership review itself changes classification.
 
 PR #26 proposes report-byline corrections for 62 of these 65 records. The other
 three have unresolved report authorship: FLORA-002648, FLORA-002655 and

@@ -36,7 +36,7 @@ with BOM. See the bundled FAQ for outcome definitions and coding decisions.
 | `url_o` | Publication URL. Original study. |
 | `language_o` | Publication language code. Original study. |
 | `doi_r` | DOI of the publication, when available. Replication/reproduction report. |
-| `alt_identifier_r` | Alternative publication identifiers, including preprints. Replication/reproduction report. |
+| `alt_identifier_r` | Alternative report identifiers, including preprints and the DOI of an associated aggregate project paper. Multiple values are separated by semicolons; a project-paper DOI supplements the individual report identifier/link. |
 | `doi_r_hash` | Short report-DOI hash; distinct from id_md5. |
 | `title_r` | Publication title. Replication/reproduction report. |
 | `author_r` | Author metadata as a JSON array. Replication/reproduction report. |

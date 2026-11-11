@@ -23,7 +23,7 @@
   },
   "limits": [
     "Project membership does not prove inclusion in any specific published SCORE paper.",
-    "No author, citation or identifier correction has been applied to the database or tracked outputs.",
+    "This membership review itself applies no author, citation or identifier correction. Subsequent paper-identifier additions are documented separately in data/corrections/SCORE_PAPER_IDENTIFIERS.md; tracked outputs remain unedited.",
     "OSF contributors and preregistration team names are not substituted for report bylines."
   ],
   "records": [

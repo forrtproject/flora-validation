@@ -194,3 +194,10 @@ mentions. The manifest preserves the registry and review status. Changing the
 registry requires reassembly before upload. No additional CSV column is introduced;
 source means an identifiable project, otherwise intake route. It does not retain
 simultaneous route and project membership in one value.
+
+The [SCORE paper-identifier batch](../data/corrections/SCORE_PAPER_IDENTIFIERS.md)
+adds the replication-paper DOI to replication records and the reproduction-paper
+DOI to reproduction records, after checking the published outcome datasets.
+It appends to `alt_identifier_r` through the correction log, preserving individual
+report identifiers and existing alternatives. The associated aggregate paper is
+an additional publication link, not a replacement report citation.

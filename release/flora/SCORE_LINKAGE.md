@@ -1,12 +1,15 @@
 # SCORE publication linkage: pre-release finding
 
 The [65-record membership review](SCORE_MEMBERSHIP_REVIEW.md) confirms additional
-SCORE records across intake routes. Membership is resolved for those candidates;
-the per-paper identifier and report-byline corrections described below remain
-separate work. None has been silently applied to tracked outputs.
+SCORE records across intake routes. The separate
+[published-paper identifier batch](../../data/corrections/SCORE_PAPER_IDENTIFIERS.md)
+now links 166 replications and 135 reproductions to their respective papers through
+`alt_identifier_r`, applied as correction-log changes 446–746. Individual report
+identifiers are retained. Report-byline corrections remain separate; no tracked
+outputs were edited.
 
 Checked 11 November 2026 against the live SCORE entry sheet and public OSF/COS
-metadata. The snapshot's SCORE rows have individual-report URLs but no doi_r or
+metadata. The repository snapshot used for that audit has individual-report URLs but no doi_r or
 alt_identifier_r. The live sheet also has no nonmissing doi_r or link_r values:
 ignoring link_r is not the cause of this snapshot's missing DOIs.
 
@@ -52,7 +55,7 @@ The project classifier now recognizes these verified publication identifiers
 across all intake routes; the SCORE intake is an additional seed, not proof that
 those records have no DOI or cannot be linked to a published paper.
 
-## Required data correction review before production
+## Individual report identifiers and remaining metadata work
 
 `score-link-audit.json` records read-only OSF lookups for the snapshot's SCORE
 records, with evidence URLs and registered report DOI candidates. It is a review
@@ -62,10 +65,13 @@ lookups were rate-limited (HTTP 429); they remain unverified, not missing or bro
 by inference. The audit also records explicit 410 responses and one unsupported
 URL shape separately. Do not treat these different outcomes as the same failure.
 
-Match each record to its relevant published SCORE paper using the paper's study/
-claim identifiers or supporting dataset. Retain the individual-report link and its
-verified identifier, and apply confirmed identifier/citation corrections through
-flora-validation's append-only correction log. Do not blanket-assign a single
-published DOI to all source=SCORE rows, edit outputs, or infer a paper's membership
-from a title keyword alone. Then regenerate the authoritative publication and the
-release bundle. This linkage review remains outstanding before production approval.
+The published-paper linkage is complete for the 301 records in the batch: each
+matched attempt occurs in the relevant paper's outcome table. The batch includes
+all 153 previously labelled SCORE records and additional verified records across
+intake routes. It does not change primary report DOIs, citations or authors.
+
+Verified individual-report DOI candidates in the earlier OSF audit can be reviewed
+separately; inaccessible lookups remain unverified. Apply further identifier and
+citation corrections through the append-only log. Report-byline corrections in
+PR #26 and the authoritative pipeline rebuild remain outstanding before production
+approval. The first release is still an offline preview; nothing was sent to Zenodo.

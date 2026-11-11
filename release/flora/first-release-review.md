@@ -8,15 +8,19 @@ internal export remains in the repository.
 
 ## Prepared offline preview (11 November 2026)
 
-- Source: the repository publication with 2,884 records, SHA-256
-  `5826464541891f83c594ccc295a0512cf20329373c3b90a2fafc56e0a97e807c`.
+- Source: the stored authoritative publication after correction-log changes 446–746,
+  with 2,884 records, SHA-256
+  `a4a65a57c12327dfbde6769fe2bb181c7827ed5bfe0b34b6049bc28901441b6c`.
+  The tracked repository output is unchanged;
+  the local publication uses the normal `publish_flora.publish` path.
 - First changelog: 2,884 added; 0 changed; 0 retired (initial release baseline).
 - Release CSV: 31 selected columns, quoted UTF-8 with BOM.
 - The preview regenerates the derived percentage through `author_overlap.augment`
   and the existing `final_export.csv_text` serializer. Release projection also applies
   the agreed source labels and clears inapplicable outcome/evidence fields to NA.
-  Applicable evidence and identifiers are preserved; no tracked output or database
-  record was edited.
+  Applicable evidence and identifiers are preserved. Preview assembly writes
+  neither tracked outputs nor the database; identifier additions above are logged
+  corrections applied separately through the normal correction service.
 - The codebook lists exactly the 31 release columns, in release order, and observed
   categorical values. Source/full-export and release hashes are recorded separately.
 
@@ -92,8 +96,9 @@ in the full internal export but are not repeated in the release.
 Source is now project-first, without search-pipeline protection. RP:P matches
 normalized report identifiers in doi_r/alt_identifier_r (99 current records); the
 Boyce student-replication collection matches its report identifier (140); SCORE is
-seeded from its known intake (88) plus 65 explicitly reviewed report memberships
-(153 total). Shared report identifiers extend matching across
+matched through verified, type-specific published-paper alternative identifiers
+(301 total: 166 replications and 135 reproductions), its known intake, and the
+65 earlier explicit memberships. Shared report identifiers extend matching across
 routes. All qualify at strictly >50 distinct active released record IDs. Existing
 labels persist after retirements; the registry records qualification evidence.
 
@@ -107,12 +112,17 @@ All 65 earlier unassigned SCORE mentions are confirmed; no unmatched project-nam
 mentions remain. See the [membership review](SCORE_MEMBERSHIP_REVIEW.md).
 Three of these records still lack a verified report byline, a separate limitation.
 
-## Outstanding SCORE publication linkage
+## SCORE publication links and remaining metadata work
 
-The SCORE intake's missing DOI fields are stale metadata, not evidence that the
-reports have no registered identifiers. A short-file GUID resolver defect is fixed;
-the first live report check returns a registered OSF report DOI. Verified Nature
-SCORE paper identifiers are registered for project matching. Per-record linkage to
-the published papers and identifier/citation corrections still require review via
-the correction log. See [SCORE_LINKAGE.md](SCORE_LINKAGE.md) and the read-only
-[OSF audit](score-link-audit.json). Do not approve production until this is resolved.
+The [paper-identifier batch](../../data/corrections/SCORE_PAPER_IDENTIFIERS.md)
+adds the replication-paper DOI to 166 replications and the reproduction-paper DOI
+to 135 reproductions. Every attempt is matched to the relevant published outcome
+dataset. These are logged corrections, not output edits. Existing alternatives
+and the individual report identifiers/URLs are preserved. The refreshed preview
+changes only 301 alternative-identifier cells and 148 project source labels from
+the preceding preview; all other release data cells are unchanged.
+
+The short-file GUID resolver defect is fixed. Primary report DOI enrichment can
+continue separately; report-byline corrections in PR #26 and the authoritative
+pipeline rebuild remain outstanding before production. See
+[SCORE_LINKAGE.md](SCORE_LINKAGE.md). Nothing has been sent to Zenodo.
