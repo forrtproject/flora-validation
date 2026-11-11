@@ -181,7 +181,8 @@ _EVIDENCE = ("outcome_quote", "outcome_quote_source", "out_quote_source",
              "outcome_computational_quote", "out_quote_computational_source",
              "outcome_robustness_quote", "out_quote_robust_source")
 
-_TAG_RE = re.compile(r"<[^>]+>")
+# transform_sources._TAG_RE, which cannot be imported here: transform_sources imports this.
+_TAG_RE = re.compile(r"</?(?![\w:.-]*-\d)[A-Za-z!?][^<>]*>")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9 ]")
 _WS_RE = re.compile(r"\s+")
 

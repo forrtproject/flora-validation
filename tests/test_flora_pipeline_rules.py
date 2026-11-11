@@ -10,6 +10,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+import csv_to_db
 import sync_exclusions
 import transform_sources as ts
 
@@ -190,6 +191,111 @@ def test_a_capitalised_entity_that_IS_one_keeps_its_case(raw, expected):
     them: a German surname loses its umlaut's case and a statistics title turns
     Δ into δ. Only a spelling that is not an entity under any casing is repaired."""
     assert ts.clean_text(raw) == expected
+
+
+# As flora-extractor shipped them for 10.1136/bjsports-2014-094114.83, with a U+2005.
+TIMP2_TITLE = ("84\u2005<i>TIMP2</i>AND<i>GDF-5</i>GENE VARIANTS AND ACHILLES TENDON "
+               "PATHOLOGY: REPLICATION STUDY IN A BRITISH CASE-CONTROL POPULATION")
+TIMP2_ABSTRACT = ("<h3>Introduction</h3> Achilles tendon pathology (ATP) encompasses a "
+                  "range of tendon overuse injuries")
+
+
+def test_a_tag_between_two_words_leaves_a_space_and_a_unicode_space_collapses():
+    assert ts.clean_text(TIMP2_TITLE) == (
+        "84 TIMP2 AND GDF-5 GENE VARIANTS AND ACHILLES TENDON PATHOLOGY: REPLICATION "
+        "STUDY IN A BRITISH CASE-CONTROL POPULATION")
+
+
+def test_a_heading_is_a_paragraph_of_its_own():
+    assert ts.clean_text(TIMP2_ABSTRACT) == (
+        "Introduction\n\nAchilles tendon pathology (ATP) encompasses a range of tendon "
+        "overuse injuries")
+
+
+@pytest.mark.parametrize(("raw", "expected"), [
+    ("Study by Slovic <i>et al</i>.", "Study by Slovic et al."),
+    ("Orangutan (<i>Pongo</i> spp.)", "Orangutan (Pongo spp.)"),
+    ("(<i>n</i> = 5)", "(n = 5)"),
+    ("Urinary<i>p</i>-cresol", "Urinary p-cresol"),
+    ("small vessel disease<b>—</b>a replication", "small vessel disease—a replication"),
+])
+def test_a_tag_beside_punctuation_leaves_no_space(raw, expected):
+    """Every tag became a space, which published "et al ." and "( Pongo spp.)"."""
+    assert ts.clean_text(raw) == expected
+
+
+@pytest.mark.parametrize(("raw", "expected"), [
+    ("CO<sub>2</sub> levels", "CO2 levels"),
+    ("10<sup>-3</sup> M", "10-3 M"),
+    ("High &Delta;<sup>9</sup>-Tetrahydrocannabinol", "High Δ9-Tetrahydrocannabinol"),
+])
+def test_a_sub_or_superscript_joins_the_word_it_belongs_to(raw, expected):
+    assert ts.clean_text(raw) == expected
+
+
+@pytest.mark.parametrize("raw", [
+    "<jats:title>Abstract</jats:title><jats:p>First part.</jats:p><jats:p>Second part.</jats:p>",
+    "<ns3:sec> <ns3:title>Abstract</ns3:title> First part. </ns3:sec>\n<ns3:sec><ns3:p>Second part.",
+    "<sec><title>Abstract</title><P>First part.<br/>Second part.</P></sec>",
+])
+def test_a_namespaced_block_tag_is_a_paragraph_break_too(raw):
+    """One blank line between paragraphs, however many tags ended and began there,
+    and none before the first or after the last."""
+    assert ts.clean_text(raw) == "Abstract\n\nFirst part.\n\nSecond part."
+
+
+def test_blank_lines_in_a_row_are_one_paragraph_break():
+    assert ts.clean_text("para one\n\n\n\n \n\npara two") == "para one\n\npara two"
+
+
+@pytest.mark.parametrize("space", ["\u2002", "\u2003", "\u2005", "\u2009", "\u200a",
+                                   "\u202f", "\u205f", "\u3000"])
+def test_unicode_spaces_collapse_like_ordinary_ones(space):
+    assert ts.clean_text(f"8{space}×{space} 7") == "8 × 7"
+
+
+def test_a_carriage_return_is_a_line_break():
+    """&#13; decoded to a carriage return the soft-break repair did not see, and a
+    page that shows an abstract's breaks would show each one."""
+    assert ts.clean_text("first line\r\nsecond line&#13;\n&#13;\nnew paragraph") \
+        == "first line second line\n\nnew paragraph"
+
+
+@pytest.mark.parametrize("raw", [TIMP2_TITLE, "a <jats:title>Subtitle</jats:title> b",
+                                 "Title<br>Subtitle", "Part one</p>\n\n<p>Part two"])
+def test_a_title_comes_out_on_one_line(raw):
+    """The validation page shows a title in a heading, and validated's key compares it."""
+    once = ts.clean_text(raw, one_line=True)
+    assert "\n" not in once and "  " not in once
+    assert ts.clean_text(once, one_line=True) == once
+
+
+def test_an_identifier_in_angle_brackets_is_not_a_tag():
+    assert ts.clean_text("Teenage Employment <halshs-01945777>") \
+        == "Teenage Employment <halshs-01945777>"
+
+
+@pytest.mark.parametrize("raw", [TIMP2_TITLE, TIMP2_ABSTRACT, "Slovic <i>et al</i>.",
+                                 "CO<sub>2</sub>", "(<i>n</i> = 5)", "a\u2005b",
+                                 "<jats:p>One.</jats:p><jats:p>Two.</jats:p>",
+                                 "Employment <halshs-01945777>", "a\r\n\r\nb"])
+def test_the_new_rules_clean_their_own_output_to_itself(raw):
+    once = ts.clean_text(raw)
+    assert ts.clean_text(once) == once
+
+
+def test_the_import_cleans_titles_and_abstracts():
+    """csv_to_db stored flora-extractor's markup as it came, and the validation page
+    showed it as text."""
+    row = pd.Series({"doi_r": "10.1136/bjsports-2014-094114.83", "title_r": TIMP2_TITLE,
+                     "abstract_r": TIMP2_ABSTRACT, "title_o": "The <i>COL5A1</i> gene<br>",
+                     "type": "replication", "outcome": "successful"})
+    built = csv_to_db._build_unvalidated_row("record", "pair", row)
+    assert built["title_r"] == ts.clean_text(TIMP2_TITLE)
+    assert built["abstract_r"].startswith("Introduction\n\nAchilles")
+    assert built["title_o"] == "The COL5A1 gene"
+    empty = csv_to_db._build_unvalidated_row("record", "pair", pd.Series({"type": "replication"}))
+    assert (empty["title_r"], empty["title_o"], empty["abstract_r"]) == ("", "", "")
 
 
 # ── the sheet's own year_r ────────────────────────────────────────────────────

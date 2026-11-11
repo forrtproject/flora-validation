@@ -983,6 +983,7 @@ body.sidebar-collapsed .game-area { border-right: none; }
   position: relative;
   transition: max-height 0.35s ease;
   width: 100%;
+  white-space: pre-line;      /* an abstract's paragraph breaks */
 }
 .abstract.expanded {
   max-height: 20vh;

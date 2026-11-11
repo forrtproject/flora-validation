@@ -557,8 +557,12 @@ NOT_THE_PAPER = {"dataset", "database", "component", "peer-review", "posted-cont
 TEST_PREFIX = "10.5555/"
 _NAME_PARTICLES = {"jr", "sr", "ii", "iii", "van", "von", "de", "der", "den", "la", "le",
                    "da", "di", "del"}
-# JATS markup in a title (<i>In Utero</i>) is no part of what to search for.
-_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _plain_title(value) -> str:
+    """A title on one line without its markup: JATS markup in a title (<i>In Utero</i>)
+    is no part of what to search for."""
+    return " ".join((transform_sources.clean_text(_text(value)) or "").split())
 
 
 def _name_tokens(name) -> set:
@@ -570,7 +574,7 @@ def lookup_query(row) -> "tuple | None":
     """(title, first author's surname, year) for a row without a doi_o, or None."""
     if not _blank(row.get("doi_o")) or _blank(row.get("title_o")):
         return None
-    title = " ".join(_TAG_RE.sub("", _text(row.get("title_o"))).split())
+    title = _plain_title(row.get("title_o"))
     surname = preprint_dedup.extract_first_author(row.get("author_o")) or ""
     year = _text(row.get("year_o"))
     year = str(int(float(year))) if re.fullmatch(r"\d{4}(\.0+)?", year) else ""
@@ -650,7 +654,7 @@ def lookup_original_doi(query):
 
 
 def _suggestion_detail(match):
-    title = " ".join(_TAG_RE.sub("", _text(match.get("title"))).split())
+    title = _plain_title(match.get("title"))
     title = title if len(title) <= 80 else title[:79] + "…"
     about = ", ".join(part for part in (_text(match.get("year")), _text(match.get("author"))) if part)
     return f"doi_o is blank; Crossref lists this paper with a DOI: '{title}'" + \

@@ -47,6 +47,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from console_encoding import use_utf8_output
 import extra_originals
+import transform_sources
 
 from extractor_vocab import (
     check_csv_vocabulary,
@@ -152,11 +153,17 @@ def _s(val) -> str:
     return str(val).strip()
 
 
+def _title(val) -> str:
+    """A title as it is stored: markup stripped and on one line, as the page shows
+    it in a heading and validated's key compares it. See transform_sources.clean_text."""
+    return transform_sources.clean_text(val, one_line=True) or ""
+
+
 def _normalize_title(t) -> str:
     """Casefold + collapse whitespace, for loose duplicate-title comparison
     (catches near-dupes like trailing periods or double spaces, not just
-    byte-identical strings)."""
-    return re.sub(r'\s+', ' ', _s(t)).casefold()
+    byte-identical strings). Compared as stored, without markup."""
+    return re.sub(r'\s+', ' ', _title(t)).casefold()
 
 
 def _flag_ambiguous_doi_o_titles(rows: list) -> dict:
@@ -232,14 +239,16 @@ def _build_unvalidated_row(record_id: str, pair_id: str, row: pd.Series) -> dict
         # Stage 3 writes within-paper study number(s) separately from titles.
         # Keeping both is essential when one paper contributes several pairs.
         "study_r":           _s(row.get("study_r")),
-        "title_r":           _s(row.get("title_r")),
+        # flora-extractor ships titles and abstracts with their JATS/HTML markup,
+        # which the validation page would show as text.
+        "title_r":           _title(row.get("title_r")),
         "year_r":            _s(row.get("year_r")),
         "url_r":             _s(row.get("url_r")),
         "ref_r":             _s(row.get("ref_r")),
-        "abstract_r":        _s(row.get("abstract_r")),
+        "abstract_r":        transform_sources.clean_text(row.get("abstract_r")) or "",
         "doi_o":             _s(row.get("doi_o")),
         "study_o":           _s(row.get("study_o")),
-        "title_o":           _s(row.get("title_o")),
+        "title_o":           _title(row.get("title_o")),
         "year_o":            _s(row.get("year_o")),
         "url_o":             _url_o(row),
         "ref_o":             _s(row.get("ref_o")),

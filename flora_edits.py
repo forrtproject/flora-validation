@@ -193,7 +193,8 @@ def clean_value(field: str, value, record_type) -> "str | None":
     if text is None:
         return None
     if field in CLEANED_FIELDS:
-        text = transform_sources.clean_text(text)
+        text = transform_sources.clean_text(
+            text, one_line=field not in transform_sources.PARAGRAPH_COLUMNS)
     if field in ("doi_o", "doi_r"):
         doi = transform_sources.clean_doi(text)
         if not doi or not doi.startswith("10."):
