@@ -172,6 +172,9 @@ def render_codebook(columns, rows):
               'preserve the released snapshot’s representation; consult both axes for analysis.',
               'The bundled FAQ explains coding decisions. Definitions are maintained in',
               'https://github.com/forrtproject/flora-validation/blob/main/docs/FLORA_DATA_TABLE.md', '']
+    if 'source' in columns and '### Source labels' in section:
+        labels = section.split('### Source labels', 1)[1].split('### Author-overlap release validation', 1)[0]
+        lines += ['## Source labels', '', labels.strip(), '']
     return '\n'.join(lines)
 
 

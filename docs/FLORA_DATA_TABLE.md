@@ -51,11 +51,11 @@ with BOM. See the bundled FAQ for outcome definitions and coding decisions.
 | `language_r` | Publication language code. Replication/reproduction report. |
 | `oa_url_o` | Open-access full-text URL, when known. Original study. |
 | `oa_url_r` | Open-access full-text URL, when known. Replication/reproduction report. |
-| `outcome` | For replications, the report-level outcome. For reproductions, a combined outcome derived from the computational and robustness axes. See the release-specific categories below and FAQ. |
+| `outcome` | Replication outcome. Legacy export rows for reproductions also contain a combined rendering of the two reproduction axes here; analyse reproduction outcomes using outcome_computation and outcome_robustness instead. See release-specific categories and FAQ. |
 | `outcome_quote` | Supporting text for the outcome; for reproductions this combines the two axis quotes, with axis labels when needed. |
 | `outcome_quote_source` | Location/source of the supporting text; reproduction sources can combine both axes. |
 | `type` | Attempt type: replication (new observations) or reproduction (existing data). |
-| `source` | Contributing source dataset(s). |
+| `source` | Retained primary input route after deduplication, not a complete list of contributing sources or a validation-status field. Legacy label COS maps to the FReD Replication Success input; see source labels below. |
 | `oa_work_id_o` | OpenAlex work identifier. Original study. |
 | `oa_work_id_r` | OpenAlex work identifier. Replication/reproduction report. |
 | `author_overlap` | Number of distinct shared family names in the original and report author lists, matched case-insensitively; not a yes/no flag or verified person identity. |
@@ -70,6 +70,22 @@ with BOM. See the bundled FAQ for outcome definitions and coding decisions.
 | `flora_id` | Pinned source-facing FLoRA identifier; distinct from published id. |
 | `source_display_id` | Primary source record display identifier. |
 | `source_record_id` | Primary source record UUID. |
+
+### Source labels
+
+| Export value | Input route |
+| --- | --- |
+| replications | Replication entry sheet |
+| reproductions | Reproduction entry sheet |
+| COS | Legacy alias for the FReD Replication Success input |
+| SCORE | SCORE 2025 Validation input |
+| validated | Website validation workflow |
+| manual | Records added manually in the FLoRA editor |
+
+A deduplicated record retains one route label even when merged records contribute
+other values. These labels do not establish all project memberships or whether a
+record is validated: the entry sheets also contain accepted validation decisions.
+The `type` column identifies replication versus reproduction independently of route.
 
 ### Author-overlap release validation
 

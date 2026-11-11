@@ -3,7 +3,7 @@
 CalVer `YYYY.MM.N` is agreed. The release now uses the 30 columns selected by Lukas,
 plus the tested `author_overlap_pct` field, in the order in [columns.json](columns.json).
 Only the percentage is released; neither author lists nor the overlap count are
-included in the deposit. Each outcome sits next to its quote and source. The full
+included in the deposit. The replication outcome and each reproduction outcome sit next to their quote and source. The full
 internal export remains in the repository.
 
 ## Prepared offline preview (11 November 2026)
@@ -80,3 +80,15 @@ python3 zenodo_flora.py --bundle release-bundles/2026.11.1 --upload production -
 ```
 
 Sandbox uses `ZENODO_SANDBOX_TOKEN`; credentials are never stored in the bundle.
+
+## Outcome and source interpretation
+
+The outcome groups are replication outcome, reproduction computational outcome and
+reproduction robustness outcome. The existing export also repeats combined
+reproduction axis text in `outcome`; it has not been blanked or recoded by this PR.
+
+`source` is a retained primary input route, not complete provenance or validation
+status. Its current six-value distribution is shown in
+[source-distribution.html](source-distribution.html). In particular, `COS` is a
+legacy alias for the FReD Replication Success input. Labels are documented but their
+stored values have not been renamed without agreement.

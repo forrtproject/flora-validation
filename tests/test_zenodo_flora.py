@@ -49,6 +49,7 @@ def test_assembly(bundle):
     assert all('email' not in c for c in metadata['creators'])
     manifest = json.loads((bundle / 'flora_release_manifest.json').read_text())
     assert manifest['source_manifest']['data_version']['change_watermark'] == 346
+    assert '| COS | Legacy alias for the FReD Replication Success input |' in (bundle / 'CODEBOOK.md').read_text()
     with pytest.raises(ValueError, match='exists'):
         release.assemble(bundle, '2026.11.1', bundle)
 
