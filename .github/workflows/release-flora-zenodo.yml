@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install requests pyyaml pandas pytest
-      - run: python -m pytest -q tests/test_zenodo_flora.py
+      - run: python -m pytest -q tests/test_zenodo_flora.py tests/test_flora_release_projects.py
       - name: Retrieve previous published bundle
         if: inputs.previous_record != ''
         env:

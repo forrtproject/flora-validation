@@ -1,0 +1,1404 @@
+{
+  "threshold": 50,
+  "unit": "distinct active released record IDs",
+  "precedence": "established project, then intake route; no search-pipeline protection",
+  "projects": [
+    {
+      "key": "rpp",
+      "label": "RP:P",
+      "seed_count": 99,
+      "record_count": 99,
+      "eligible": true,
+      "established": true,
+      "record_ids": [
+        "FLORA-001861",
+        "FLORA-001863",
+        "FLORA-001864",
+        "FLORA-001866",
+        "FLORA-001868",
+        "FLORA-001869",
+        "FLORA-001870",
+        "FLORA-001871",
+        "FLORA-001872",
+        "FLORA-001875",
+        "FLORA-001876",
+        "FLORA-001878",
+        "FLORA-001879",
+        "FLORA-001880",
+        "FLORA-001882",
+        "FLORA-001883",
+        "FLORA-001884",
+        "FLORA-001886",
+        "FLORA-001889",
+        "FLORA-001890",
+        "FLORA-001891",
+        "FLORA-001892",
+        "FLORA-001893",
+        "FLORA-001894",
+        "FLORA-001895",
+        "FLORA-001897",
+        "FLORA-001898",
+        "FLORA-001901",
+        "FLORA-001903",
+        "FLORA-001911",
+        "FLORA-001912",
+        "FLORA-001914",
+        "FLORA-001915",
+        "FLORA-001916",
+        "FLORA-001917",
+        "FLORA-001918",
+        "FLORA-001919",
+        "FLORA-001920",
+        "FLORA-001921",
+        "FLORA-001922",
+        "FLORA-001923",
+        "FLORA-001924",
+        "FLORA-001925",
+        "FLORA-001926",
+        "FLORA-001927",
+        "FLORA-001928",
+        "FLORA-001929",
+        "FLORA-001930",
+        "FLORA-001931",
+        "FLORA-001932",
+        "FLORA-001933",
+        "FLORA-001934",
+        "FLORA-001935",
+        "FLORA-001936",
+        "FLORA-001937",
+        "FLORA-001938",
+        "FLORA-001939",
+        "FLORA-001941",
+        "FLORA-001942",
+        "FLORA-002124",
+        "FLORA-002125",
+        "FLORA-002127",
+        "FLORA-002128",
+        "FLORA-002129",
+        "FLORA-002130",
+        "FLORA-002132",
+        "FLORA-002134",
+        "FLORA-002135",
+        "FLORA-002136",
+        "FLORA-002137",
+        "FLORA-002138",
+        "FLORA-002139",
+        "FLORA-002140",
+        "FLORA-002141",
+        "FLORA-002142",
+        "FLORA-002143",
+        "FLORA-002145",
+        "FLORA-002146",
+        "FLORA-002147",
+        "FLORA-002148",
+        "FLORA-002149",
+        "FLORA-002151",
+        "FLORA-002152",
+        "FLORA-002153",
+        "FLORA-002154",
+        "FLORA-002155",
+        "FLORA-002157",
+        "FLORA-002158",
+        "FLORA-002159",
+        "FLORA-002160",
+        "FLORA-002161",
+        "FLORA-002162",
+        "FLORA-002163",
+        "FLORA-002164",
+        "FLORA-002165",
+        "FLORA-002166",
+        "FLORA-002167",
+        "FLORA-002813",
+        "REPL-001692"
+      ],
+      "seed_ids": [
+        "FLORA-001861",
+        "FLORA-001863",
+        "FLORA-001864",
+        "FLORA-001866",
+        "FLORA-001868",
+        "FLORA-001869",
+        "FLORA-001870",
+        "FLORA-001871",
+        "FLORA-001872",
+        "FLORA-001875",
+        "FLORA-001876",
+        "FLORA-001878",
+        "FLORA-001879",
+        "FLORA-001880",
+        "FLORA-001882",
+        "FLORA-001883",
+        "FLORA-001884",
+        "FLORA-001886",
+        "FLORA-001889",
+        "FLORA-001890",
+        "FLORA-001891",
+        "FLORA-001892",
+        "FLORA-001893",
+        "FLORA-001894",
+        "FLORA-001895",
+        "FLORA-001897",
+        "FLORA-001898",
+        "FLORA-001901",
+        "FLORA-001903",
+        "FLORA-001911",
+        "FLORA-001912",
+        "FLORA-001914",
+        "FLORA-001915",
+        "FLORA-001916",
+        "FLORA-001917",
+        "FLORA-001918",
+        "FLORA-001919",
+        "FLORA-001920",
+        "FLORA-001921",
+        "FLORA-001922",
+        "FLORA-001923",
+        "FLORA-001924",
+        "FLORA-001925",
+        "FLORA-001926",
+        "FLORA-001927",
+        "FLORA-001928",
+        "FLORA-001929",
+        "FLORA-001930",
+        "FLORA-001931",
+        "FLORA-001932",
+        "FLORA-001933",
+        "FLORA-001934",
+        "FLORA-001935",
+        "FLORA-001936",
+        "FLORA-001937",
+        "FLORA-001938",
+        "FLORA-001939",
+        "FLORA-001941",
+        "FLORA-001942",
+        "FLORA-002124",
+        "FLORA-002125",
+        "FLORA-002127",
+        "FLORA-002128",
+        "FLORA-002129",
+        "FLORA-002130",
+        "FLORA-002132",
+        "FLORA-002134",
+        "FLORA-002135",
+        "FLORA-002136",
+        "FLORA-002137",
+        "FLORA-002138",
+        "FLORA-002139",
+        "FLORA-002140",
+        "FLORA-002141",
+        "FLORA-002142",
+        "FLORA-002143",
+        "FLORA-002145",
+        "FLORA-002146",
+        "FLORA-002147",
+        "FLORA-002148",
+        "FLORA-002149",
+        "FLORA-002151",
+        "FLORA-002152",
+        "FLORA-002153",
+        "FLORA-002154",
+        "FLORA-002155",
+        "FLORA-002157",
+        "FLORA-002158",
+        "FLORA-002159",
+        "FLORA-002160",
+        "FLORA-002161",
+        "FLORA-002162",
+        "FLORA-002163",
+        "FLORA-002164",
+        "FLORA-002165",
+        "FLORA-002166",
+        "FLORA-002167",
+        "FLORA-002813",
+        "REPL-001692"
+      ],
+      "identifiers": [
+        "doi:10.1126/science.aac4716",
+        "doi:10.3389/fpsyg.2014.00786",
+        "osf:24d7b",
+        "osf:2fu9t",
+        "osf:2kjgz",
+        "osf:2kryw",
+        "osf:2uh78",
+        "osf:36dr5",
+        "osf:397fh",
+        "osf:3amj4",
+        "osf:3fjvt",
+        "osf:3m7qw",
+        "osf:3rtvz",
+        "osf:3rxvs",
+        "osf:3ubv9",
+        "osf:3uw96",
+        "osf:3va2j",
+        "osf:45vwm",
+        "osf:49xea",
+        "osf:4hqd6",
+        "osf:4zuh6",
+        "osf:5u4km",
+        "osf:63aw5",
+        "osf:689xc",
+        "osf:6c5kp",
+        "osf:6vsc4",
+        "osf:6xjqm",
+        "osf:73pnd",
+        "osf:76j48",
+        "osf:7bnfp",
+        "osf:7czwd",
+        "osf:7mgwh",
+        "osf:7ufyv",
+        "osf:83n4z",
+        "osf:853ue",
+        "osf:8dzpj",
+        "osf:8qrtd",
+        "osf:8ybk5",
+        "osf:94j6h",
+        "osf:9mkae",
+        "osf:9p2qr",
+        "osf:9x765",
+        "osf:a9vrq",
+        "osf:aaudl",
+        "osf:aczvt",
+        "osf:ak3rj",
+        "osf:apidb",
+        "osf:avy86",
+        "osf:bfzn9",
+        "osf:bhnkq",
+        "osf:bk79y",
+        "osf:bvu64",
+        "osf:bx64z",
+        "osf:ca8t3",
+        "osf:cbwgj",
+        "osf:cehgp",
+        "osf:chf7m",
+        "osf:csm3d",
+        "osf:ctvej",
+        "osf:cy9v4",
+        "osf:d2yqj",
+        "osf:dqybc",
+        "osf:dwr2m",
+        "osf:e35y2",
+        "osf:e4vqu",
+        "osf:e89gh",
+        "osf:ep2an",
+        "osf:ertbg",
+        "osf:etg7c",
+        "osf:f59hn",
+        "osf:fj6e8",
+        "osf:fs3ut",
+        "osf:fsut4",
+        "osf:fymue",
+        "osf:gknau",
+        "osf:h5bp9",
+        "osf:hb7kj",
+        "osf:ht9du",
+        "osf:ivfu6",
+        "osf:j3cfm",
+        "osf:janu3",
+        "osf:jf6ck",
+        "osf:jhn4g",
+        "osf:jym7h",
+        "osf:k5cwt",
+        "osf:k82yb",
+        "osf:kg2x5",
+        "osf:mghvs",
+        "osf:ngxye",
+        "osf:nra37",
+        "osf:nrjs5",
+        "osf:nx6dr",
+        "osf:p5en6",
+        "osf:p6jxm",
+        "osf:p87cn",
+        "osf:pktma",
+        "osf:pua6s",
+        "osf:px56h",
+        "osf:pxr93",
+        "osf:pyt4e",
+        "osf:q7hm4",
+        "osf:qmpky",
+        "osf:qzrt2",
+        "osf:r57hu",
+        "osf:rc2kz",
+        "osf:rkqw2",
+        "osf:rne5u",
+        "osf:rqtgz",
+        "osf:rt3zs",
+        "osf:s2d6t",
+        "osf:suyfc",
+        "osf:t75e3",
+        "osf:tk9pm",
+        "osf:tpzk9",
+        "osf:tr7fp",
+        "osf:ty9xh",
+        "osf:tys7b",
+        "osf:u3x7s",
+        "osf:u8g3x",
+        "osf:v8w2c",
+        "osf:vdc5m",
+        "osf:wbs96",
+        "osf:wm2a8",
+        "osf:wzxq9",
+        "osf:x2gmb",
+        "osf:x5b6d",
+        "osf:x5szy",
+        "osf:x75fq",
+        "osf:xy9mv",
+        "osf:y8njt",
+        "osf:z57ud",
+        "osf:z6qw2",
+        "osf:zc468",
+        "osf:zdw87",
+        "osf:zhxuy"
+      ]
+    },
+    {
+      "key": "boyce_student_replications",
+      "label": "Student replication projects (Boyce et al.)",
+      "seed_count": 140,
+      "record_count": 140,
+      "eligible": true,
+      "established": true,
+      "record_ids": [
+        "FLORA-000429",
+        "FLORA-001750",
+        "FLORA-001778",
+        "FLORA-001779",
+        "FLORA-001787",
+        "FLORA-001802",
+        "FLORA-001803",
+        "FLORA-001804",
+        "FLORA-001805",
+        "FLORA-001811",
+        "FLORA-001812",
+        "FLORA-001815",
+        "FLORA-001825",
+        "FLORA-001853",
+        "FLORA-001873",
+        "FLORA-001874",
+        "FLORA-001877",
+        "FLORA-001881",
+        "FLORA-001896",
+        "FLORA-001902",
+        "FLORA-001913",
+        "FLORA-001943",
+        "FLORA-001946",
+        "FLORA-001953",
+        "FLORA-001958",
+        "FLORA-001961",
+        "FLORA-001962",
+        "FLORA-001963",
+        "FLORA-001966",
+        "FLORA-001977",
+        "FLORA-001980",
+        "FLORA-001981",
+        "FLORA-001982",
+        "FLORA-001983",
+        "FLORA-001994",
+        "FLORA-001998",
+        "FLORA-002000",
+        "FLORA-002003",
+        "FLORA-002005",
+        "FLORA-002006",
+        "FLORA-002007",
+        "FLORA-002017",
+        "FLORA-002036",
+        "FLORA-002037",
+        "FLORA-002059",
+        "FLORA-002064",
+        "FLORA-002072",
+        "FLORA-002076",
+        "FLORA-002092",
+        "FLORA-002101",
+        "FLORA-002103",
+        "FLORA-002104",
+        "FLORA-002118",
+        "FLORA-002119",
+        "FLORA-002123",
+        "FLORA-002126",
+        "FLORA-002168",
+        "FLORA-002170",
+        "FLORA-002184",
+        "FLORA-002185",
+        "FLORA-002187",
+        "FLORA-002198",
+        "FLORA-002216",
+        "FLORA-002219",
+        "FLORA-002226",
+        "FLORA-002227",
+        "FLORA-002230",
+        "FLORA-002236",
+        "FLORA-002237",
+        "FLORA-002239",
+        "FLORA-002241",
+        "FLORA-002242",
+        "FLORA-002249",
+        "FLORA-002255",
+        "FLORA-002260",
+        "FLORA-002261",
+        "FLORA-002264",
+        "FLORA-002266",
+        "FLORA-002267",
+        "FLORA-002268",
+        "FLORA-002269",
+        "FLORA-002270",
+        "FLORA-002271",
+        "FLORA-002272",
+        "FLORA-002273",
+        "FLORA-002274",
+        "FLORA-002275",
+        "FLORA-002276",
+        "FLORA-002277",
+        "FLORA-002278",
+        "FLORA-002279",
+        "FLORA-002280",
+        "FLORA-002283",
+        "FLORA-002284",
+        "FLORA-002285",
+        "FLORA-002286",
+        "FLORA-002287",
+        "FLORA-002288",
+        "FLORA-002289",
+        "FLORA-002290",
+        "FLORA-002291",
+        "FLORA-002292",
+        "FLORA-002294",
+        "FLORA-002295",
+        "FLORA-002296",
+        "FLORA-002297",
+        "FLORA-002298",
+        "FLORA-002299",
+        "FLORA-002300",
+        "FLORA-002301",
+        "FLORA-002302",
+        "FLORA-002303",
+        "FLORA-002304",
+        "FLORA-002307",
+        "FLORA-002308",
+        "FLORA-002309",
+        "FLORA-002310",
+        "FLORA-002311",
+        "FLORA-002312",
+        "FLORA-002313",
+        "FLORA-002314",
+        "FLORA-002315",
+        "FLORA-002316",
+        "FLORA-002317",
+        "FLORA-002318",
+        "FLORA-002319",
+        "FLORA-002322",
+        "FLORA-002326",
+        "FLORA-002331",
+        "FLORA-002353",
+        "FLORA-002354",
+        "FLORA-002355",
+        "FLORA-002356",
+        "FLORA-002361",
+        "FLORA-002382",
+        "FLORA-002389",
+        "FLORA-002390",
+        "FLORA-002605",
+        "FLORA-002606",
+        "FLORA-002608"
+      ],
+      "seed_ids": [
+        "FLORA-000429",
+        "FLORA-001750",
+        "FLORA-001778",
+        "FLORA-001779",
+        "FLORA-001787",
+        "FLORA-001802",
+        "FLORA-001803",
+        "FLORA-001804",
+        "FLORA-001805",
+        "FLORA-001811",
+        "FLORA-001812",
+        "FLORA-001815",
+        "FLORA-001825",
+        "FLORA-001853",
+        "FLORA-001873",
+        "FLORA-001874",
+        "FLORA-001877",
+        "FLORA-001881",
+        "FLORA-001896",
+        "FLORA-001902",
+        "FLORA-001913",
+        "FLORA-001943",
+        "FLORA-001946",
+        "FLORA-001953",
+        "FLORA-001958",
+        "FLORA-001961",
+        "FLORA-001962",
+        "FLORA-001963",
+        "FLORA-001966",
+        "FLORA-001977",
+        "FLORA-001980",
+        "FLORA-001981",
+        "FLORA-001982",
+        "FLORA-001983",
+        "FLORA-001994",
+        "FLORA-001998",
+        "FLORA-002000",
+        "FLORA-002003",
+        "FLORA-002005",
+        "FLORA-002006",
+        "FLORA-002007",
+        "FLORA-002017",
+        "FLORA-002036",
+        "FLORA-002037",
+        "FLORA-002059",
+        "FLORA-002064",
+        "FLORA-002072",
+        "FLORA-002076",
+        "FLORA-002092",
+        "FLORA-002101",
+        "FLORA-002103",
+        "FLORA-002104",
+        "FLORA-002118",
+        "FLORA-002119",
+        "FLORA-002123",
+        "FLORA-002126",
+        "FLORA-002168",
+        "FLORA-002170",
+        "FLORA-002184",
+        "FLORA-002185",
+        "FLORA-002187",
+        "FLORA-002198",
+        "FLORA-002216",
+        "FLORA-002219",
+        "FLORA-002226",
+        "FLORA-002227",
+        "FLORA-002230",
+        "FLORA-002236",
+        "FLORA-002237",
+        "FLORA-002239",
+        "FLORA-002241",
+        "FLORA-002242",
+        "FLORA-002249",
+        "FLORA-002255",
+        "FLORA-002260",
+        "FLORA-002261",
+        "FLORA-002264",
+        "FLORA-002266",
+        "FLORA-002267",
+        "FLORA-002268",
+        "FLORA-002269",
+        "FLORA-002270",
+        "FLORA-002271",
+        "FLORA-002272",
+        "FLORA-002273",
+        "FLORA-002274",
+        "FLORA-002275",
+        "FLORA-002276",
+        "FLORA-002277",
+        "FLORA-002278",
+        "FLORA-002279",
+        "FLORA-002280",
+        "FLORA-002283",
+        "FLORA-002284",
+        "FLORA-002285",
+        "FLORA-002286",
+        "FLORA-002287",
+        "FLORA-002288",
+        "FLORA-002289",
+        "FLORA-002290",
+        "FLORA-002291",
+        "FLORA-002292",
+        "FLORA-002294",
+        "FLORA-002295",
+        "FLORA-002296",
+        "FLORA-002297",
+        "FLORA-002298",
+        "FLORA-002299",
+        "FLORA-002300",
+        "FLORA-002301",
+        "FLORA-002302",
+        "FLORA-002303",
+        "FLORA-002304",
+        "FLORA-002307",
+        "FLORA-002308",
+        "FLORA-002309",
+        "FLORA-002310",
+        "FLORA-002311",
+        "FLORA-002312",
+        "FLORA-002313",
+        "FLORA-002314",
+        "FLORA-002315",
+        "FLORA-002316",
+        "FLORA-002317",
+        "FLORA-002318",
+        "FLORA-002319",
+        "FLORA-002322",
+        "FLORA-002326",
+        "FLORA-002331",
+        "FLORA-002353",
+        "FLORA-002354",
+        "FLORA-002355",
+        "FLORA-002356",
+        "FLORA-002361",
+        "FLORA-002382",
+        "FLORA-002389",
+        "FLORA-002390",
+        "FLORA-002605",
+        "FLORA-002606",
+        "FLORA-002608"
+      ],
+      "identifiers": [
+        "doi:10.1098/rsos.231240",
+        "osf:9fcjx",
+        "osf:ab9q3",
+        "osf:agxwv",
+        "osf:d5e7b",
+        "osf:jpwd3",
+        "osf:p5hvr",
+        "osf:v3e2z",
+        "osf:v6zk8",
+        "osf:vewk7",
+        "osf:w5vz8",
+        "osf:wdp9b",
+        "osf:yt5q8",
+        "osf:z6rfa"
+      ]
+    },
+    {
+      "key": "score",
+      "label": "SCORE",
+      "seed_count": 88,
+      "record_count": 88,
+      "eligible": true,
+      "established": true,
+      "record_ids": [
+        "FLORA-002827",
+        "FLORA-002828",
+        "FLORA-002829",
+        "FLORA-002830",
+        "FLORA-002831",
+        "FLORA-002832",
+        "FLORA-002833",
+        "FLORA-002834",
+        "FLORA-002835",
+        "FLORA-002836",
+        "FLORA-002837",
+        "FLORA-002838",
+        "FLORA-002839",
+        "FLORA-002840",
+        "FLORA-002841",
+        "FLORA-002842",
+        "FLORA-002843",
+        "FLORA-002844",
+        "FLORA-002845",
+        "FLORA-002846",
+        "FLORA-002847",
+        "FLORA-002848",
+        "FLORA-002849",
+        "FLORA-002850",
+        "FLORA-002851",
+        "FLORA-002852",
+        "FLORA-002853",
+        "FLORA-002854",
+        "FLORA-002855",
+        "FLORA-002856",
+        "FLORA-002857",
+        "FLORA-002858",
+        "FLORA-002859",
+        "FLORA-002860",
+        "FLORA-002861",
+        "FLORA-002862",
+        "FLORA-002863",
+        "FLORA-002864",
+        "FLORA-002865",
+        "FLORA-002866",
+        "FLORA-002867",
+        "FLORA-002868",
+        "FLORA-002869",
+        "FLORA-002870",
+        "FLORA-002871",
+        "FLORA-002872",
+        "FLORA-002873",
+        "FLORA-002874",
+        "FLORA-002875",
+        "FLORA-002876",
+        "FLORA-002877",
+        "FLORA-002878",
+        "FLORA-002879",
+        "FLORA-002880",
+        "FLORA-002881",
+        "FLORA-002882",
+        "FLORA-002883",
+        "FLORA-002884",
+        "FLORA-002885",
+        "FLORA-002886",
+        "FLORA-002887",
+        "FLORA-002888",
+        "FLORA-002889",
+        "FLORA-002890",
+        "FLORA-002891",
+        "FLORA-002892",
+        "FLORA-002893",
+        "FLORA-002894",
+        "FLORA-002895",
+        "FLORA-002896",
+        "FLORA-002897",
+        "FLORA-002898",
+        "FLORA-002899",
+        "FLORA-002900",
+        "FLORA-002901",
+        "FLORA-002902",
+        "FLORA-002903",
+        "FLORA-002904",
+        "FLORA-002905",
+        "FLORA-002906",
+        "FLORA-002907",
+        "FLORA-002908",
+        "FLORA-002909",
+        "FLORA-002910",
+        "FLORA-002911",
+        "FLORA-002912",
+        "FLORA-002913",
+        "FLORA-002914"
+      ],
+      "seed_ids": [
+        "FLORA-002827",
+        "FLORA-002828",
+        "FLORA-002829",
+        "FLORA-002830",
+        "FLORA-002831",
+        "FLORA-002832",
+        "FLORA-002833",
+        "FLORA-002834",
+        "FLORA-002835",
+        "FLORA-002836",
+        "FLORA-002837",
+        "FLORA-002838",
+        "FLORA-002839",
+        "FLORA-002840",
+        "FLORA-002841",
+        "FLORA-002842",
+        "FLORA-002843",
+        "FLORA-002844",
+        "FLORA-002845",
+        "FLORA-002846",
+        "FLORA-002847",
+        "FLORA-002848",
+        "FLORA-002849",
+        "FLORA-002850",
+        "FLORA-002851",
+        "FLORA-002852",
+        "FLORA-002853",
+        "FLORA-002854",
+        "FLORA-002855",
+        "FLORA-002856",
+        "FLORA-002857",
+        "FLORA-002858",
+        "FLORA-002859",
+        "FLORA-002860",
+        "FLORA-002861",
+        "FLORA-002862",
+        "FLORA-002863",
+        "FLORA-002864",
+        "FLORA-002865",
+        "FLORA-002866",
+        "FLORA-002867",
+        "FLORA-002868",
+        "FLORA-002869",
+        "FLORA-002870",
+        "FLORA-002871",
+        "FLORA-002872",
+        "FLORA-002873",
+        "FLORA-002874",
+        "FLORA-002875",
+        "FLORA-002876",
+        "FLORA-002877",
+        "FLORA-002878",
+        "FLORA-002879",
+        "FLORA-002880",
+        "FLORA-002881",
+        "FLORA-002882",
+        "FLORA-002883",
+        "FLORA-002884",
+        "FLORA-002885",
+        "FLORA-002886",
+        "FLORA-002887",
+        "FLORA-002888",
+        "FLORA-002889",
+        "FLORA-002890",
+        "FLORA-002891",
+        "FLORA-002892",
+        "FLORA-002893",
+        "FLORA-002894",
+        "FLORA-002895",
+        "FLORA-002896",
+        "FLORA-002897",
+        "FLORA-002898",
+        "FLORA-002899",
+        "FLORA-002900",
+        "FLORA-002901",
+        "FLORA-002902",
+        "FLORA-002903",
+        "FLORA-002904",
+        "FLORA-002905",
+        "FLORA-002906",
+        "FLORA-002907",
+        "FLORA-002908",
+        "FLORA-002909",
+        "FLORA-002910",
+        "FLORA-002911",
+        "FLORA-002912",
+        "FLORA-002913",
+        "FLORA-002914"
+      ],
+      "identifiers": [
+        "osf:28mjt",
+        "osf:2f35a",
+        "osf:2vmgw",
+        "osf:2wfgv",
+        "osf:36w4c",
+        "osf:39upt",
+        "osf:3cp2d",
+        "osf:3d97y",
+        "osf:3u8x9",
+        "osf:4usmq",
+        "osf:5869t",
+        "osf:5r28d",
+        "osf:6rpxu",
+        "osf:7efsw",
+        "osf:7qjzp",
+        "osf:8hnxg",
+        "osf:8mqzu",
+        "osf:8npm5",
+        "osf:8rwkn",
+        "osf:8uc5z",
+        "osf:9bkuf",
+        "osf:9hjxc",
+        "osf:9s4e6",
+        "osf:9t4nh",
+        "osf:a6nsp",
+        "osf:ab762",
+        "osf:ahgfx",
+        "osf:b2xma",
+        "osf:b9rcg",
+        "osf:c2hry",
+        "osf:c6a8e",
+        "osf:cdrmk",
+        "osf:ceaq3",
+        "osf:ck8aq",
+        "osf:cnbt5",
+        "osf:dkcu6",
+        "osf:dnqrv",
+        "osf:dscfg",
+        "osf:dyn6j",
+        "osf:e9j6y",
+        "osf:esw45",
+        "osf:fgdxs",
+        "osf:fqdh4",
+        "osf:fr6g8",
+        "osf:ftv7q",
+        "osf:fzut6",
+        "osf:gn3vj",
+        "osf:gvayj",
+        "osf:gyse6",
+        "osf:h7jfv",
+        "osf:hmune",
+        "osf:hzg3j",
+        "osf:jx64p",
+        "osf:k79vj",
+        "osf:kpn34",
+        "osf:kw5tv",
+        "osf:n6jca",
+        "osf:nbc6v",
+        "osf:nuzh2",
+        "osf:pex6u",
+        "osf:phz9x",
+        "osf:q4e35",
+        "osf:qev3x",
+        "osf:qfh2r",
+        "osf:qk34m",
+        "osf:qmbxr",
+        "osf:qu793",
+        "osf:r58ch",
+        "osf:r6ynf",
+        "osf:rzny2",
+        "osf:skwev",
+        "osf:srk8q",
+        "osf:syq4e",
+        "osf:tywer",
+        "osf:u58za",
+        "osf:udbnf",
+        "osf:vekdm",
+        "osf:x46bu",
+        "osf:x9j47",
+        "osf:xe3d2",
+        "osf:xg6q5",
+        "osf:xkwj9",
+        "osf:xr32n",
+        "osf:xyrv6",
+        "osf:ybzev",
+        "osf:yd9bg",
+        "osf:yva89",
+        "osf:zybuc"
+      ]
+    }
+  ],
+  "unmapped_large_groups": [],
+  "review_required": false,
+  "unmatched_project_mentions": [
+    {
+      "id": "FLORA-002635",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002636",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002637",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002638",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002639",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002640",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002641",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002642",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002643",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002644",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002645",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002647",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002648",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002650",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002651",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002652",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002653",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002654",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002655",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002656",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002657",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002658",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002659",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002660",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002661",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002662",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002663",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002664",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002665",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002666",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002667",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002668",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002669",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002670",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "COS"
+    },
+    {
+      "id": "FLORA-002672",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002673",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002674",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002675",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002676",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002677",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002678",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002679",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002680",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002681",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002682",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002683",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002686",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002687",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002688",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002689",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002690",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002691",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002692",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002694",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002695",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002696",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002697",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002698",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002699",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002700",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002701",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002702",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002703",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "FLORA-002704",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "replications"
+    },
+    {
+      "id": "REPRO-000101",
+      "possible_projects": [
+        "score"
+      ],
+      "current_intake": "reproductions"
+    }
+  ],
+  "assigned_counts": {
+    "RP:P": 99,
+    "Student replication projects (Boyce et al.)": 140,
+    "SCORE": 88
+  }
+}

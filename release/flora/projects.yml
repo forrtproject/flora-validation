@@ -1,0 +1,26 @@
+threshold: 50
+projects:
+- key: rpp
+  label: RP:P
+  identifiers:
+  - 10.1126/science.aac4716
+  qualification:
+    record_count: 99
+    snapshot_sha256: 5826464541891f83c594ccc295a0512cf20329373c3b90a2fafc56e0a97e807c
+    recorded_on: '2026-11-11'
+- key: boyce_student_replications
+  label: Student replication projects (Boyce et al.)
+  identifiers:
+  - 10.1098/rsos.231240
+  qualification:
+    record_count: 140
+    snapshot_sha256: 5826464541891f83c594ccc295a0512cf20329373c3b90a2fafc56e0a97e807c
+    recorded_on: '2026-11-11'
+- key: score
+  label: SCORE
+  intake_sources:
+  - SCORE
+  qualification:
+    record_count: 88
+    snapshot_sha256: 5826464541891f83c594ccc295a0512cf20329373c3b90a2fafc56e0a97e807c
+    recorded_on: '2026-11-11'

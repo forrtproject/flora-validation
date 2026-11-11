@@ -179,7 +179,7 @@ def test_publish_only_after_checksums(bundle, monkeypatch):
     monkeypatch.setattr(release, 'Zenodo', lambda env: api)
     assert release.upload(bundle, 'sandbox', publish=True)['published']
     assert calls[-1] == ('POST', links['publish'])
-    assert len([url for _, url in calls if '/bucket/' in url]) == 12
+    assert len([url for _, url in calls if '/bucket/' in url]) == 13
 
 
 def test_codebook_matches_snapshot(bundle):
@@ -286,3 +286,26 @@ def test_unregistered_source_is_not_silently_published():
     row.update(id='TEST', type='replication', source='new intake')
     with pytest.raises(ValueError, match='Unmapped source'):
         release.project_record(row, columns)
+
+
+def test_project_label_overrides_search_pipeline_in_public_projection():
+    columns = json.loads((release.SOURCES / 'columns.json').read_text())
+    row = dict.fromkeys(columns, 'NA')
+    row.update(id='A', type='replication', source='validated')
+    assert release.project_record(row, columns, 'RP:P')['source'] == 'RP:P'
+    assert row['source'] == 'validated'
+
+
+def test_unmapped_large_groups_and_changed_registry_block_production(bundle):
+    path = bundle / 'flora_release_manifest.json'
+    manifest = json.loads(path.read_text())
+    manifest['projection']['project_review_required'] = True
+    release.write_json(path, manifest)
+    release.write_json(bundle / 'bundle-checksums.json', release.checksums(bundle))
+    with pytest.raises(ValueError, match='unmapped report groups'):
+        release.upload(bundle, 'production', publish=True, approve_production=True)
+    manifest['projection']['project_registry']['threshold'] = 99
+    release.write_json(path, manifest)
+    release.write_json(bundle / 'bundle-checksums.json', release.checksums(bundle))
+    with pytest.raises(ValueError, match='agreed release columns'):
+        release.upload(bundle, 'production', publish=True, approve_production=True)

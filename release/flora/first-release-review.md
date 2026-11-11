@@ -65,7 +65,7 @@ interpretation. It is not a verified percentage of shared people.
 
 `flora.csv`, `CODEBOOK.md`, `FAQ.md`, `README.md`, `CHANGELOG.md`, `changes.json`,
 `REUSE.md`, `CITATION.cff`, `flora_release_manifest.json`, `flora_release_notes.md`,
-`zenodo-metadata.json`, `bundle-checksums.json`.
+`zenodo-metadata.json`, `project_classification.json`, `bundle-checksums.json`.
 
 The local preview is archived at `release-bundles/2026.11.1`. It supersedes the
 previous 51-column candidate. Superseded bundles without the agreed projection are
@@ -89,12 +89,15 @@ Replication outcome/quote/source are NA on reproduction rows; reproduction axes 
 associated evidence are NA on replication rows. Legacy combined outcome strings stay
 in the full internal export but are not repeated in the release.
 
-Release source labels: `manual entry` (replications/reproductions sheets), `FReD`
-(legacy COS), `SCORE`, `search pipeline` (website-validated and manual entries).
-Search pipeline is a broad discovery/curation category, not necessarily automated
-search. Raw input-route values remain in the internal snapshot. The previous
-[source distribution](source-distribution.html) describes those raw snapshot values.
+Source is now project-first, without search-pipeline protection. RP:P matches
+normalized report identifiers in doi_r/alt_identifier_r (99 current records); the
+Boyce student-replication collection matches its report identifier (140); SCORE is
+seeded from its known intake (88). Shared report identifiers extend matching across
+routes. All qualify at strictly >50 distinct active released record IDs. Existing
+labels persist after retirements; the registry records qualification evidence.
 
-SCORE remains an import category for this release. A proposed >50-entry project
-classification is separate and requires explicit project membership; no automatic
-project assignment or extra column is implemented.
+Unmapped large identifier groups require naming/review and block production;
+conflicting project matches stop assembly. Title mentions alone remain unassigned
+review candidates. No additional CSV column is added. For unmatched records the
+fallbacks remain manual entry, FReD, SCORE and search pipeline. Raw internal routes
+are unchanged. The previous source-distribution page documents the raw snapshot.

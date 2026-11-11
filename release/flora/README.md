@@ -13,6 +13,7 @@ Each row represents a reference pair; a report may contribute multiple rows.
 - `flora_release_manifest.json`: exact data hashes, source build and correction watermark.
 - `flora_release_notes.md`: release summary from the existing preparation helper.
 - `zenodo-metadata.json`: proposed descriptive metadata.
+- `project_classification.json`: project matching, counts, IDs and review candidates.
 - `bundle-checksums.json`: SHA-256 hashes of the deposited files.
 
 The bundle projects the authoritative publication onto the 31 agreed columns in
@@ -39,8 +40,10 @@ release assembly blocks stale percentages.
 
 Source and maintenance: https://github.com/forrtproject/flora-validation
 
-Source labels are `manual entry` (both entry sheets), `FReD` (the legacy COS input),
-`SCORE`, and `search pipeline` (website-validated and manually entered records).
-Search pipeline includes the broader discovery/curation workflow, not necessarily
-automated searching. These are coarse import categories, not a project registry or
-a validation-quality scale. Project-size rules are not inferred automatically.
+Source names an established project first (RP:P, Student replication projects
+(Boyce et al.), SCORE), including matches from the search pipeline. Otherwise it
+uses `manual entry`, `FReD`, `SCORE` or `search pipeline` as intake fallbacks.
+`project_classification.json` records identifiers, seed/member IDs, the strict >50
+record threshold and uncertain candidates. Text mentions alone do not assign a
+project. A shared project is not inferred from an original-study DOI. Internal
+source keys remain unchanged; one source value does not retain both route and project.

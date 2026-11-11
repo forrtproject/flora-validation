@@ -89,19 +89,40 @@ The `type` column identifies replication versus reproduction independently of ro
 
 ### Release source labels
 
-The Zenodo release applies these labels without changing the internal source keys:
+Established projects take priority over intake route, including records from the
+search pipeline. `release/flora/projects.yml` names projects using existing report
+identifiers or a known project-specific intake. Normalized `doi_r`, the multiple
+identifiers in `alt_identifier_r`, and direct report links in `url_r` match records
+across intake routes. Original-study identifiers are never used for this purpose.
+
+A project qualifies at strictly more than 50 distinct active released record IDs,
+after deduplication/exclusions. Qualification is recorded against a snapshot; its
+label persists if later retirements reduce the count. Matching records also seed
+one-hop report aliases; matches do not recursively join unrelated identifier chains.
+Conflicting project matches require review. New shared-identifier groups above the
+threshold appear in `project_classification.json` for naming/review and block
+production until mapped. Text mentions are review hints only, not memberships.
+
+| Registered project label | Established report anchor or intake |
+| --- | --- |
+| RP:P | 10.1126/science.aac4716 in report or alternative report identifiers |
+| Student replication projects (Boyce et al.) | 10.1098/rsos.231240 in report or alternative report identifiers |
+| SCORE | Dedicated SCORE intake and shared identifiers of its reports |
+
+For records without an established project match, the intake labels are:
 
 | Release value | Internal export values | Meaning |
 | --- | --- | --- |
 | manual entry | replications, reproductions | Entries from the manual entry sheets |
 | FReD | COS | FReD Replication Success input |
-| SCORE | SCORE | SCORE 2025 Validation input |
+| SCORE | SCORE | Dedicated SCORE project intake |
 | search pipeline | validated, manual | Website validation and manual-entry workflow; not necessarily automated discovery |
 
-The source field is a coarse input category. It does not record complete project
-membership, all contributing sources after merging, or a validation-quality level.
-SCORE remains a historical import category, not the result of a systematic project
-classification rule. No project membership is inferred from having many records.
+The field records a project where identifiable, otherwise an intake category. It
+is not a validation-quality level and does not retain all contributing routes in
+one value. No prefix-based discovery-origin inference is used. Raw route keys stay
+in the internal snapshot; the manifest records the project registry and the
+classification report records matched IDs, counts and identifiers.
 
 ### Author-overlap release validation
 

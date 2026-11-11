@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 import requests
 import yaml
 import release_helpers
+import flora_release_projects
 
 ROOT = Path(__file__).resolve().parent
 SOURCES = ROOT / 'release/flora'
@@ -31,14 +32,14 @@ REPRODUCTION_OUTCOME_FIELDS = (
 )
 
 
-def project_record(row, columns):
+def project_record(row, columns, project_label=None):
     """Apply the agreed release labels and outcome applicability, without editing inputs."""
     if row['type'] not in {'replication', 'reproduction'}:
         raise ValueError(f"Unknown attempt type for {row['id']}: {row['type']}")
-    if row['source'] not in SOURCE_LABELS:
+    if not project_label and row['source'] not in SOURCE_LABELS:
         raise ValueError(f"Unmapped source label: {row['source']}; review the release mapping")
     result = {c: row[c] for c in columns}
-    result['source'] = SOURCE_LABELS[row['source']]
+    result['source'] = project_label or SOURCE_LABELS[row['source']]
     inapplicable = (REPLICATION_OUTCOME_FIELDS if row['type'] == 'reproduction'
                     else REPRODUCTION_OUTCOME_FIELDS)
     for field in inapplicable:
@@ -105,7 +106,10 @@ def assemble(output, version, destination, previous=None):
     if missing:
         raise ValueError('Release columns missing from source: ' + ', '.join(sorted(missing)))
     validate_overlap(source_columns, source_rows)
-    rows = {identifier: project_record(row, columns) for identifier, row in source_rows.items()}
+    registry = yaml.safe_load((SOURCES / 'projects.yml').read_text())
+    project_labels, project_report = flora_release_projects.classify_projects(source_rows, registry)
+    rows = {identifier: project_record(row, columns, project_labels.get(identifier))
+            for identifier, row in source_rows.items()}
     # Validate the dictionary before creating a partial bundle.
     codebook = render_codebook(columns, rows.values())
     destination.mkdir(parents=True)
@@ -125,6 +129,7 @@ def assemble(output, version, destination, previous=None):
     notes += '\nRecord IDs and changed field names are in changes.json. Retired means absent from this snapshot, not deleted from the registry.\n'
     (destination / 'CHANGELOG.md').write_text(notes, encoding='utf-8')
     write_json(destination / 'changes.json', changes)
+    write_json(destination / 'project_classification.json', project_report)
     # Existing manifest helper remains the authority for exact published CSV checksums.
     manifest = release_helpers.prepare_release(destination / 'flora.csv', destination, len(rows), columns,
                                              release_notes=summary)
@@ -133,6 +138,8 @@ def assemble(output, version, destination, previous=None):
     manifest['projection'] = {'columns': columns, 'source_columns': source_columns,
                               'omitted_columns': [c for c in source_columns if c not in columns],
                               'source_labels': SOURCE_LABELS,
+                              'project_registry': registry,
+                              'project_review_required': project_report['review_required'],
                               'outcome_applicability': 'replication and reproduction fields are type-specific'}
     manifest['previous_release'] = prior
     write_json(destination / 'flora_release_manifest.json', manifest)
@@ -186,7 +193,7 @@ def render_codebook(columns, rows):
         raise ValueError('Codebook definitions missing: ' + ', '.join(sorted(missing)))
     intro = section.split('| Field |', 1)[0].strip().replace('Author arrays and citations', 'References and quoted evidence')
     definitions.update({
-        'source': 'Coarse input route: manual entry, FReD, SCORE or search pipeline. Search pipeline combines website-validated and manually entered records; it does not imply automated discovery. Not comprehensive project membership or validation status.',
+        'source': 'Established project first (matched by report DOI, alternative report identifiers or linked report URLs), otherwise intake route. Named projects take precedence even for search-pipeline records. Projects qualify at more than 50 distinct released IDs; existing labels persist after retirements. Not a validation-status field; see project_classification.json.',
         'outcome': 'Replication outcome; NA for reproduction rows, which use the two dedicated reproduction axes.',
         'outcome_quote': 'Evidence for the replication outcome; NA for reproduction rows.',
         'outcome_quote_source': 'Source/location of the replication evidence; NA for reproduction rows.',
@@ -284,8 +291,11 @@ def upload(bundle, environment, publish=False, approve_production=False):
     manifest = json.loads((bundle / 'flora_release_manifest.json').read_text())
     approved = json.loads((SOURCES / 'columns.json').read_text())
     if (manifest.get('projection', {}).get('columns') != approved
-            or manifest['projection'].get('source_labels') != SOURCE_LABELS):
+            or manifest['projection'].get('source_labels') != SOURCE_LABELS
+            or manifest['projection'].get('project_registry') != yaml.safe_load((SOURCES / 'projects.yml').read_text())):
         raise ValueError('Reassemble the bundle with the agreed release columns')
+    if environment == 'production' and manifest['projection'].get('project_review_required'):
+        raise ValueError('Review unmapped report groups above the project threshold before production')
     if environment == 'production' and manifest['source_manifest'].get('source_kind') == 'offline_pipeline_preview':
         raise ValueError('Preview bundle: regenerate the authoritative publication with the fixed pipeline before production')
     previous = manifest.get('previous_release')

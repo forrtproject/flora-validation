@@ -33,7 +33,8 @@ against its existing `flora_release_manifest.json` and reuses
 columns, including only `author_overlap_pct` for overlap). IDs and applicable
 outcome/evidence values are preserved. Release source labels map replications and
 reproductions to `manual entry`, COS to `FReD`, and validated/manual to `search pipeline`;
-SCORE stays `SCORE`. The search-pipeline label means the website discovery/curation
+Established projects take precedence over these fallbacks, including search-pipeline
+records. SCORE is seeded by its known intake. The search-pipeline label means the website discovery/curation
 workflow, including manual entries, not necessarily automated search. Replication
 outcome and evidence fields are NA on reproduction rows; reproduction axes and their
 evidence are NA on replication rows. These explicit representation rules are stored
@@ -162,27 +163,30 @@ this agreed selection. Browser changes remain proposals; they do not modify the
 contract or the pipeline. The deposit codebook contains only the agreed columns,
 in their release order.
 
-## Project classification consultation
+## Project-first classification
 
-The proposed policy is to retain one source column, with confirmed named-project
-membership taking precedence over broad entry routes, while preserving known
-search-pipeline origin if requested. A curated membership registry is needed;
-counts and labels can then be applied programmatically. More than 50 means strictly
-more than 50 distinct active released record IDs after deduplication and exclusions,
-counted over all confirmed project members, including protected search-pipeline rows.
+`flora_release_projects.py` uses `release/flora/projects.yml` to match project
+anchors in `doi_r`, `alt_identifier_r` and report URLs. DOI prefixes, case,
+comma/semicolon/pipe-separated alternatives and OSF project URL/DOI forms are
+normalized. Original-study IDs and title keywords never establish membership.
+Project-specific intake rows (currently SCORE) can also seed report identifiers.
+Matches seed one-hop aliases; there is no recursive transitive merge of projects.
 
-Counts qualify a project for a label; they do not establish membership. A label
-should remain stable once granted, even if later retirements reduce the project
-below the threshold. Report DOI and title-keyword counts identify candidates for
-review, not automatic assignments. Multi-report projects need explicit membership.
-The existing aggregate-report list/candidate detection can help seed that review.
+Projects take priority over every intake route, including search pipeline. The
+strict >50 threshold counts distinct active released record IDs after deduplication
+and exclusions, once each regardless of the number of matching identifiers. A
+registry may link multiple reports to the same project. Established qualification
+records the count and source-snapshot hash so labels persist after retirements.
 
-Search origin must not be inferred solely from source_display_id prefixes: the
-primary source can change during merging. The selected public release omits this
-field, so the loss of simultaneous route and project information in a single source
-column must be documented. Protecting search-pipeline source labels also means
-source cannot retrieve every member of a named project.
+The current registered projects are RP:P, the student replication collection in
+Boyce et al., and SCORE. Shared report identifier groups over 50 that are not yet
+mapped are reported for naming/review; production refuses unresolved large groups.
+Conflicting matches stop assembly rather than arbitrarily choosing a project.
+Text mentions without identifier evidence are included as review hints only.
 
-The manual-entry rename is implemented. General project assignment and precedence
-remain pending the consultation decision and curated membership; the current code
-still uses the explicit intake mappings, including the SCORE import.
+`project_classification.json` in the bundle documents project counts, member IDs,
+seed IDs, normalized identifiers, unmatched large groups and unmatched project-name
+mentions. The manifest preserves the registry and review status. Changing the
+registry requires reassembly before upload. No additional CSV column is introduced;
+source means an identifiable project, otherwise intake route. It does not retain
+simultaneous route and project membership in one value.
