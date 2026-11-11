@@ -106,6 +106,19 @@ jobs:
           OPENALEX_MAILTO: ${{ secrets.OPENALEX_MAILTO }}
         run: python resolve_publication_versions.py --apply
 
+      - name: Upload published-version candidates and lookup status
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.resolve_published_versions
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: published-version-candidates-${{ github.run_id }}
+          path: |
+            output/published_version_candidates.csv
+            output/published_version_candidates.status.json
+            output/published_version_candidates.corrections.csv
+          retention-days: 90
+          if-no-files-found: warn
+
       # Use the normal preparation/validation gate to materialize queued merges.
       - name: Prepare automatically resolved dataset
         if: github.event_name == 'workflow_dispatch' && inputs.resolve_published_versions
