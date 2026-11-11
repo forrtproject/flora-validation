@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-10T03:05:26+00:00",
+  "generated_at": "2026-11-11T03:08:04+00:00",
   "mode": "database_pipeline",
   "status": "needs_attention",
-  "rows": 2851,
+  "rows": 2884,
   "stages": [
     {
       "name": "build flora.csv and check IDs",
@@ -12,7 +12,7 @@
     {
       "name": "structural validation",
       "status": "needs_attention",
-      "detail": "44 problems and 24 possible problems"
+      "detail": "46 problems and 24 possible problems"
     },
     {
       "name": "network validation",
@@ -25,7 +25,7 @@
     {
       "name": "store dataset",
       "status": "passed",
-      "detail": "2,851 rows in flora_data"
+      "detail": "2,884 rows in flora_data"
     },
     {
       "name": "write output files",
@@ -33,10 +33,10 @@
     }
   ],
   "warnings": [
-    "35 records left out for a missing title; see flora_export_log.csv.",
-    "59 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.",
+    "38 records left out for a missing title; see flora_export_log.csv.",
+    "62 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.",
     "26 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.",
-    "Structural validation found 44 problems and 24 possible problems.",
+    "Structural validation found 46 problems and 24 possible problems.",
     "Network validation needs review: 39 problems and 8 possible problems."
   ],
   "errors": [],
@@ -45,7 +45,7 @@
   "diagnostics": {
     "flora_export_log.csv": {
       "description": "records left out for a missing title",
-      "rows": 35,
+      "rows": 38,
       "records": [
         {
           "reason": "missing title_o",
@@ -396,12 +396,42 @@
           "doi_r": "",
           "url_r": "https://koara.lib.keio.ac.jp/xoonips/modules/xoonips/detail.php?koara_id=2018000005-20180166",
           "apa_ref_r": "ヒライシ · 2018 · KeiO Associated Repository of Academic Resources (Keio University)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000477",
+          "source": "validated",
+          "doi_o": "10.1093/jos/ffs014",
+          "apa_ref_o": "Hunter, T., & Lidz, J. (2012). Conservativity and Learnability of Determiners. Journal of Semantics, 30(3), 315–334. https://doi.org/10.1093/jos/ffs014",
+          "doi_r": "",
+          "url_r": "https://pure.rug.nl/ws/files/120751173/Spenader_and_de_Villiers_Are_conservative_quantifie.pdf",
+          "apa_ref_r": "Spenader · 2019 · University of Groningen research database (University of Groningen / Centre for Information Technology)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000481",
+          "source": "validated",
+          "doi_o": "10.1007/bf02291738",
+          "apa_ref_o": "Hodges, K., & Wotring, J. (2000). Client typology based on functioning across domains using the CAFAS: Implications for service planning. The Journal of Behavioral Health Services & Research, 27(3), 257–270. https://doi.org/10.1007/bf02291738",
+          "doi_r": "",
+          "url_r": "http://rave.ohiolink.edu/etdc/view?acc_num=ohiou1107794034",
+          "apa_ref_r": "Chun · 2004 · OhioLink ETD Center (Ohio Library and Information Network)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000493",
+          "source": "validated",
+          "doi_o": "10.1111/j.1471-6402.2007.00348.x",
+          "apa_ref_o": "Roy, R. E., Weibust, K. S., & Miller, C. T. (2007). Effects of Stereotypes About Feminists on Feminist Self-Identification. Psychology of Women Quarterly, 31(2), 146–156. https://doi.org/10.1111/j.1471-6402.2007.00348.x",
+          "doi_r": "",
+          "url_r": "https://ir.lib.uwo.ca/etd/7854",
+          "apa_ref_r": "Hillier · 2021 · Scholarship@Western (Western University)"
         }
       ]
     },
     "dup_outcome_conflicts.csv": {
       "description": "merged records whose duplicates gave different outcomes",
-      "rows": 59,
+      "rows": 62,
       "records": [
         {
           "doi_o": "10.1037/0022-3514.86.5.680",
@@ -914,6 +944,16 @@
           "sources": "replications"
         },
         {
+          "doi_o": "10.1016/j.jbusvent.2003.12.007",
+          "doi_r": "10.1177/10422587251347060",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "website record",
+          "url_r": "https://doi.org/10.1177/10422587251347060",
+          "sources": "replications | validated"
+        },
+        {
           "doi_o": "10.1007/bf01371820",
           "doi_r": "10.1007/s00426-026-02299-1",
           "type": "replication",
@@ -954,6 +994,16 @@
           "sources": "reproductions | validated"
         },
         {
+          "doi_o": "10.1177/1368430219845462",
+          "doi_r": "10.1037/pac0000609",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "website record",
+          "url_r": "https://doi.org/10.1037/pac0000609",
+          "sources": "validated"
+        },
+        {
           "doi_o": "10.1037/0096-3445.136.2.289",
           "doi_r": "",
           "type": "replication",
@@ -982,6 +1032,16 @@
           "resolved_by": "merge rules: the kept record's outcome; needs a decision",
           "url_r": "",
           "sources": "replications"
+        },
+        {
+          "doi_o": "10.1177/0956797618756862",
+          "doi_r": "",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "successful",
+          "resolved_by": "merge rules: the kept record's outcome; needs a decision",
+          "url_r": "https://osf.io/tybxg/",
+          "sources": "fred_replication_success | replications"
         },
         {
           "doi_o": "10.1016/j.jfbs.2016.08.001",
@@ -1732,8 +1792,8 @@
   },
   "identity": {
     "status": "passed",
-    "rows": 2851,
-    "unique_ids": 2851
+    "rows": 2884,
+    "unique_ids": 2884
   },
   "columns": [
     "id",
@@ -1948,8 +2008,35 @@
         "name": "No duplicate records",
         "heading": "Duplicate records",
         "description": "Rows the build would have made one record: the same type, doi_o, doi_r and url_r, or the same DOIs with one url_r between them.",
-        "items": [],
-        "passed": true
+        "items": [
+          {
+            "check": "duplicate_record",
+            "flora_ids": [
+              "REPL-001126",
+              "VAL-000456"
+            ],
+            "column": "",
+            "value": "replication|10.2196/20572|10.2196/45481|",
+            "detail": "2 rows the build would make one record",
+            "label": "10.2196/20572 | 10.2196/45481",
+            "key": "duplicate_record|REPL-001126,VAL-000456||replication|10.2196/20572|10.2196/45481|",
+            "level": "problem"
+          },
+          {
+            "check": "duplicate_record",
+            "flora_ids": [
+              "REPRO-000009",
+              "REPRO-000019"
+            ],
+            "column": "",
+            "value": "reproduction|10.1145/2382448.2382450|10.17879/replicationresearch-2026-9414|",
+            "detail": "2 rows the build would make one record",
+            "label": "10.1145/2382448.2382450 | 10.17879/replicationresearch-2026-9414",
+            "key": "duplicate_record|REPRO-000009,REPRO-000019||reproduction|10.1145/2382448.2382450|10.17879/replicationresearch-2026-9414|",
+            "level": "problem"
+          }
+        ],
+        "passed": false
       },
       {
         "code": "missing_required",
@@ -2105,6 +2192,18 @@
           {
             "check": "missing_required",
             "flora_ids": [
+              "FRED-000330"
+            ],
+            "column": "doi_o",
+            "value": null,
+            "detail": "the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o",
+            "label": " | 10.1007/s13164-018-0400-9",
+            "key": "missing_required|FRED-000330|doi_o|",
+            "level": "problem"
+          },
+          {
+            "check": "missing_required",
+            "flora_ids": [
               "REPL-000167"
             ],
             "column": "doi_o",
@@ -2242,18 +2341,6 @@
             "detail": "alt_identifier_r lists a DOI that carries query or tracking text (?…)",
             "label": "10.1111/j.1468-0297.2009.02267.x | 10.1108/s0193-230620150000018002",
             "key": "invalid_doi|REPL-001062|alt_identifier_r|10.1108/s0193-230620150000018002?utm_campaign=repec&wt.mc_id=repec",
-            "level": "problem"
-          },
-          {
-            "check": "invalid_doi",
-            "flora_ids": [
-              "FRED-000330"
-            ],
-            "column": "doi_o",
-            "value": "art00005",
-            "detail": "doi_o is not a DOI",
-            "label": "art00005 | 10.1007/s13164-018-0400-9",
-            "key": "invalid_doi|FRED-000330|doi_o|art00005",
             "level": "problem"
           },
           {
@@ -2767,11 +2854,11 @@
       }
     ],
     "suppressed": 0,
-    "problems": 44,
+    "problems": 46,
     "possible_problems": 24,
     "has_problems": true,
     "has_issues": true,
-    "rows": 2851
+    "rows": 2884
   },
   "network": {
     "status": "needs_attention",
@@ -3465,6 +3552,17 @@
           "flora_ids": [
             "FRED-000798"
           ]
+        },
+        {
+          "target": "http://www.euroslajournal.org/articles/10.22599/jesla.39/galley/29/download/",
+          "columns": [
+            "url_r",
+            "oa_url_r"
+          ],
+          "reason": "timed out",
+          "flora_ids": [
+            "VAL-000496"
+          ]
         }
       ],
       "originals": []
@@ -3475,23 +3573,23 @@
         "status": "checked"
       },
       "dois": {
-        "targets": 4630,
+        "targets": 4669,
         "cached": 4621,
-        "checked": 9,
+        "checked": 48,
         "deferred": 0,
         "unchecked": 0
       },
       "urls": {
-        "targets": 3196,
-        "cached": 3167,
-        "checked": 29,
+        "targets": 3229,
+        "cached": 3169,
+        "checked": 60,
         "deferred": 0,
-        "unchecked": 8
+        "unchecked": 9
       },
       "originals": {
-        "targets": 27,
+        "targets": 28,
         "cached": 27,
-        "checked": 0,
+        "checked": 1,
         "deferred": 0,
         "unchecked": 0
       }
@@ -3500,18 +3598,18 @@
     "problems": 39,
     "possible_problems": 8,
     "issue_count": 47,
-    "rows": 2851
+    "rows": 2884
   },
   "release": {
     "schema_version": 1,
     "status": "prepared_locally",
     "published": false,
-    "generated_at": "2026-11-10T03:08:28+00:00",
+    "generated_at": "2026-11-11T03:11:50+00:00",
     "filename": "flora.csv",
-    "bytes": 13530665,
-    "sha256": "053a2a92536d694f42d78947a5f7d3d081fb041b2f144387179295d105c51e99",
-    "md5": "5c34514573b922bd3232c9d35610dcbe",
-    "rows": 2851,
+    "bytes": 13659125,
+    "sha256": "5826464541891f83c594ccc295a0512cf20329373c3b90a2fafc56e0a97e807c",
+    "md5": "118cbbf4fe4c3a6727dad451b8ff35b1",
+    "rows": 2884,
     "columns": [
       "id",
       "id_md5",
@@ -3568,22 +3666,22 @@
     "version": null,
     "release_notes": "",
     "data_version": {
-      "stored_at": "2026-11-10T03:08:29.970082+00:00",
-      "change_watermark": 346
+      "stored_at": "2026-11-11T03:11:51.408280+00:00",
+      "change_watermark": 445
     }
   },
   "storage": {
-    "rows": 2851,
-    "inserted": 0,
-    "updated": 0,
-    "unchanged": 2851,
-    "retired": 0,
+    "rows": 2884,
+    "inserted": 23,
+    "updated": 1,
+    "unchanged": 2860,
+    "retired": 2,
     "reactivated": 0,
     "preserved": 0,
     "table": "flora_data",
-    "snapshot_sha256": "053a2a92536d694f42d78947a5f7d3d081fb041b2f144387179295d105c51e99",
-    "stored_at": "2026-11-10T03:08:29.970082+00:00",
+    "snapshot_sha256": "5826464541891f83c594ccc295a0512cf20329373c3b90a2fafc56e0a97e807c",
+    "stored_at": "2026-11-11T03:11:51.408280+00:00",
     "status": "committed"
   },
-  "finished_at": "2026-11-10T03:08:33+00:00"
+  "finished_at": "2026-11-11T03:11:55+00:00"
 }

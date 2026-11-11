@@ -50,11 +50,14 @@ doi_o,doi_r,type,outcomes,resolved_to,resolved_by,url_r,sources
 10.1038/nm.4246,10.1016/j.nicl.2019.101796,replication,failed | mixed,mixed,website record,,replications | validated
 10.1016/j.neuron.2008.07.005,10.1016/j.cortex.2022.12.003,replication,failed | mixed,mixed,website record,https://doi.org/10.1016/j.cortex.2022.12.003,replications | validated
 10.1287/orsc.2017.1146,10.1057/s41267-022-00532-8,replication,mixed | successful,mixed,merge rules,https://doi.org/10.1057/s41267-022-00532-8,replications
+10.1016/j.jbusvent.2003.12.007,10.1177/10422587251347060,replication,mixed | successful,mixed,website record,https://doi.org/10.1177/10422587251347060,replications | validated
 10.1007/bf01371820,10.1007/s00426-026-02299-1,replication,failed | mixed,mixed,website record,https://doi.org/10.1007/s00426-026-02299-1,replications | validated
 10.22004/ag.econ.139020,10.1002/aepp.13306,replication,failed | successful,successful,website record,https://doi.org/10.1002/aepp.13306,replications | validated
 10.1016/j.jcorpfin.2007.03.004,10.1016/j.jfbs.2021.100451,replication,mixed | successful,mixed,merge rules,https://doi.org/10.1016/j.jfbs.2021.100451,replications
 10.3982/ecta6248,10.1002/jae.2861,reproduction,"computationally reproducible, not checked | computationally reproducible, robust","computationally reproducible, not checked",website record,https://doi.org/10.1002/jae.2861,reproductions | validated
+10.1177/1368430219845462,10.1037/pac0000609,replication,failed | mixed,mixed,website record,https://doi.org/10.1037/pac0000609,validated
 10.1037/0096-3445.136.2.289,,replication,mixed | successful,mixed,merge rules: the kept record's outcome; needs a decision,https://osf.io/ns26x,fred_replication_success
 10.1111/jsbm.12023,10.1108/neje-04-2020-0005,replication,failed | mixed,mixed,merge rules: the kept record's outcome; needs a decision,,replications
 10.1177/0267658315589656,10.1017/s0261444818000368,replication,mixed | successful,successful,merge rules: the kept record's outcome; needs a decision,,replications
+10.1177/0956797618756862,,replication,mixed | successful,successful,merge rules: the kept record's outcome; needs a decision,https://osf.io/tybxg/,fred_replication_success | replications
 10.1016/j.jfbs.2016.08.001,10.1016/j.jfbs.2022.100497,replication,mixed | successful,mixed,website record,https://www.sciencedirect.com/science/article/pii/S1877858522000158?via%3Dihub#sec0050,replications | validated

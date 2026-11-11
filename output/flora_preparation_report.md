@@ -1,49 +1,49 @@
 # FLoRA preparation report
 
-Generated: 2026-11-10T03:05:26+00:00
+Generated: 2026-11-11T03:08:04+00:00
 
 Status: **needs review**
 
 Mode: built from the database
 
-Rows: 2,851
+Rows: 2,884
 
 ## Stages
 
 - build flora.csv and check IDs: passed
-- structural validation: needs review — 44 problems and 24 possible problems
+- structural validation: needs review — 46 problems and 24 possible problems
 - network validation: needs review
 - release files and history: passed
-- store dataset: passed — 2,851 rows in flora_data
+- store dataset: passed — 2,884 rows in flora_data
 - write output files: passed
 
 ## Warnings
 
-- 35 records left out for a missing title; see flora_export_log.csv.
-- 59 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.
+- 38 records left out for a missing title; see flora_export_log.csv.
+- 62 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.
 - 26 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.
-- Structural validation found 44 problems and 24 possible problems.
+- Structural validation found 46 problems and 24 possible problems.
 - Network validation needs review: 39 problems and 8 possible problems.
 
 ## Stored dataset
 
-- 2,851 rows stored in `flora_data`, which Download full CSV and the public API serve.
+- 2,884 rows stored in `flora_data`, which Download full CSV and the public API serve.
 
 ## Diagnostic files
 
-- flora_export_log.csv: 35 records left out for a missing title.
-- dup_outcome_conflicts.csv: 59 merged records whose duplicates gave different outcomes.
+- flora_export_log.csv: 38 records left out for a missing title.
+- dup_outcome_conflicts.csv: 62 merged records whose duplicates gave different outcomes.
 - preprint_dedup_candidates.csv: 26 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates).
 
 The JSON report lists the affected records.
 
 ## FLoRA structural validation
 
-_Generated: 2026-11-10 03:08:33 UTC | Dataset: 2,851 rows_
+_Generated: 2026-11-11 03:11:55 UTC | Dataset: 2,884 rows_
 
 Each item names the FLoRA record by its FLoRA ID and `doi_o | doi_r` (or `url_r`), says what is wrong and, after the dash, gives the value.
 
-### Problems (44)
+### Problems (46)
 
 **Invalid URLs** (7 findings):
 
@@ -63,7 +63,14 @@ _An outcome outside the allowed set for the row's type, not_a_replication, or mi
 
 - REPL-000419 (`10.1002/j.2164-585x.1979.tb00097.x | 10.1353/csd.2014.0018`): outcome is blank
 
-<details><summary><b>Missing required fields</b> (22 findings)</summary>
+**Duplicate records** (2 findings):
+
+_Rows the build would have made one record: the same type, doi_o, doi_r and url_r, or the same DOIs with one url_r between them._
+
+- REPL-001126, VAL-000456 (`10.2196/20572 | 10.2196/45481`): 2 rows the build would make one record — `replication|10.2196/20572|10.2196/45481|`
+- REPRO-000009, REPRO-000019 (`10.1145/2382448.2382450 | 10.17879/replicationresearch-2026-9414`): 2 rows the build would make one record — `reproduction|10.1145/2382448.2382450|10.17879/replicationresearch-2026-9414|`
+
+<details><summary><b>Missing required fields</b> (23 findings)</summary>
 
 _title_o, title_r, doi_r or url_r, and an identifier for the original: doi_o, a url_o that is a link or DOI (not a title), alt_identifier_o or oa_work_id_o._
 
@@ -79,6 +86,7 @@ _title_o, title_r, doi_r or url_r, and an identifier for the original: doi_o, a 
 - REPL-000448 (`| 10.1371/journal.pone.0120644`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-000621 (`| 10.5539/ibr.v5n4p71`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-001248 (`| 10.3390/jintelligence7010006`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
+- FRED-000330 (`| 10.1007/s13164-018-0400-9`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-000167 (`| 10.1177/0098628311421328`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-000172 (`| 10.1177/0022466912449652`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-000338 (`| 10.18653/v1/w19-8649`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
@@ -92,12 +100,11 @@ _title_o, title_r, doi_r or url_r, and an identifier for the original: doi_o, a 
 
 </details>
 
-**Invalid DOI format** (8 findings):
+**Invalid DOI format** (7 findings):
 
 _doi_o or doi_r is not a bare DOI (10.NNNN/…), or a DOI listed in alt_identifier_o or alt_identifier_r is malformed._
 
 - REPL-001062 (`10.1111/j.1468-0297.2009.02267.x | 10.1108/s0193-230620150000018002`): alt_identifier_r lists a DOI that carries query or tracking text (?…) — `10.1108/s0193-230620150000018002?utm_campaign=repec&wt.mc_id=repec`
-- FRED-000330 (`art00005 | 10.1007/s13164-018-0400-9`): doi_o is not a DOI — `art00005`
 - FRED-000059 (`djaerv_2018 | 10.1098/rsos.231240`): doi_o is not a DOI — `djaerv_2018`
 - FRED-000052 (`escholarship.orgucitem39d347bk | 10.1098/rsos.231240`): doi_o is not a DOI — `escholarship.orgucitem39d347bk`
 - VAL-000005 (`10.1016/j.im.2015.06.009 | https://aisel.aisnet.org/trr/vol7/iss1/3`): doi_r is a link, not a DOI — `https://aisel.aisnet.org/trr/vol7/iss1/3`
@@ -174,14 +181,13 @@ _title_r is a file or project name, or a generic name such as 'Analysis'._
 - Type values valid
 - Source values valid
 - Year ranges reasonable
-- No duplicate records
 - DOI mapped to conflicting references
 - No 'NA'/'N/A' strings
 
 
 ## FLoRA network validation
 
-_Generated: 2026-11-10 03:08:33 UTC | Dataset: 2,851 rows_
+_Generated: 2026-11-11 03:11:55 UTC | Dataset: 2,884 rows_
 
 Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says what is wrong and, after the dash, gives the DOI or link.
 
@@ -255,11 +261,11 @@ _Heuristics: a person decides whether each one is a problem._
 - REPL-001425 (`| 10.1142/s1084946721500084`): doi_o is blank; Crossref lists this paper with a DOI: 'Poverty and Entrepreneurship in Developing Countries' (2011, Ernesto Amorós) — `10.1093/acprof:oso/9780199580866.003.0010`
 - REPL-001445 (`| 10.1525/collabra.163080`): doi_o is blank; Crossref lists this paper with a DOI: 'The dark side of self- and social perception: Black uniforms and aggression in …' (1988, Frank) — `10.1037/0022-3514.54.1.74`
 
-<details><summary><b>Could not check</b> (8 links)</summary>
+<details><summary><b>Could not check</b> (9 links)</summary>
 
-_Not findings: no answer could be had for these 8, and they are checked again on the next run._
+_Not findings: no answer could be had for these 9, and they are checked again on the next run._
 
-**Links** (8):
+**Links** (9):
 
 - REPL-000009, oa_url_r: HTTP 418 — `https://hrcak.srce.hr/file/334421`
 - REPL-001176, oa_url_r: timed out — `https://cdr.lib.unc.edu/downloads/7w62fg56x`
@@ -269,19 +275,20 @@ _Not findings: no answer could be had for these 8, and they are checked again on
 - REPL-001417, url_r: redirect loop — `https://www.proquest.com/docview/221001969?pq-origsite=gscholar&fromopenview=true&sourcetype=Scholarly%20Journals`
 - REPL-001618, url_o: redirect loop — `https://www.proquest.com/docview/1470800730`
 - FRED-000798, oa_url_o: ConnectionResetError: \[Errno 104\] Connection reset by peer — `http://ira.lib.polyu.edu.hk/bitstream/10397/97105/1/Huang_Influence_Product_Anthropomorphism.pdf`
+- VAL-000496, url_r/oa_url_r: timed out — `http://www.euroslajournal.org/articles/10.22599/jesla.39/galley/29/download/`
 
 </details>
 
 
 **Network validation status: needs review**
 
-- DOIs: 4,630 distinct; 4,621 cached, 9 checked, 0 deferred.
-- Links: 3,196 distinct; 3,167 cached, 29 checked (8 could not be checked), 0 deferred.
-- Originals without a DOI: 27 distinct; 27 cached, 0 checked, 0 deferred.
+- DOIs: 4,669 distinct; 4,621 cached, 48 checked, 0 deferred.
+- Links: 3,229 distinct; 3,169 cached, 60 checked (9 could not be checked), 0 deferred.
+- Originals without a DOI: 28 distinct; 27 cached, 1 checked, 0 deferred.
 
 
 ## Release files
 
-- flora.csv: 2,851 rows, SHA-256 `053a2a92536d694f42d78947a5f7d3d081fb041b2f144387179295d105c51e99`.
+- flora.csv: 2,884 rows, SHA-256 `5826464541891f83c594ccc295a0512cf20329373c3b90a2fafc56e0a97e807c`.
 - Also written: the release manifest and notes, and today's counts in flora_history.csv and flora_dataset_summary.md.
 - Publication: The repository copy (`output/` on GitHub) is committed by two workflows, each when flora.csv changed: the nightly job, with its own run's files, and Publish FLoRA, with the stored dataset. Website and local command-line runs commit nothing. Nothing is uploaded to OSF.
