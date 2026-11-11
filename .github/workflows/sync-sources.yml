@@ -53,8 +53,9 @@ jobs:
         run: python sync_validated.py
 
       # Bibliographic metadata (title/author/journal/year/volume/issue/pages/
-      # language/oa_url) for any DOI not already cached in work_metadata. Only new
-      # DOIs are fetched, so this is a no-op on most nights.
+      # language/oa_url) for any DOI not already cached in work_metadata, then the
+      # OpenAlex work id for cached keys (DOIs, OSF node URLs) that still lack one.
+      # A few requests on most nights.
       - name: Enrich DOI metadata
         if: always()
         env:
