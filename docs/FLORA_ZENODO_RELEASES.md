@@ -136,3 +136,13 @@ The upload's only planned local mutation is the reserved DOI in CITATION.cff and
 its checksum. Metadata and data remain the reviewed inputs. Production approval
 must cover this DOI reservation and the first upload. Never run the production
 command until approved: published records/DOIs cannot simply be deleted.
+
+## Choosing the public columns
+
+[The interactive column selector](../release/flora/column-selector.html) covers
+all 51 current columns. It proposes a 20-field main CSV (12 essentials, two years
+and six evidence fields), with a 12-field minimal preset and individual toggles.
+Choices can be copied or exported as JSON; browser selections do not change the
+pipeline. The public column selection remains to be agreed and implemented.
+The page also explains the proposed conservative treatment of collective or
+unresolved authors for overlap enrichment; it does not perform data corrections.
