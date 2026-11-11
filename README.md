@@ -12,6 +12,7 @@ The [FLoRA database](https://forrt.org/replication-hub/flora/) is part of [FORRT
 - **Develop or operate the application:** start with the [implementation guide](docs/README.md), which covers setup, configuration, startup, workflows, and testing.
 - **Understand preparation and publication:** read the [pipeline integration report](docs/PIPELINE_INTEGRATION_REPORT.md) and [prepared FLoRA database table guide](docs/FLORA_DATA_TABLE.md).
 - **Explore the pipeline visually:** open the [clickable field guide](docs/pipeline-guide/index.html) for the system, input, processing and output diagrams, all admin tabs and buttons, save locations, update timing and exact source links. [Text guide and slide-ready pictures](docs/pipeline-guide/README.md).
+- **Check preprints for journal versions:** see the [published-version enrichment guide](docs/published-versions.md) for evidence, caching, and confirmation.
 - **Use the public API:** read the [API guide](docs/FLORA_API.md).
 
 ## Repository boundaries

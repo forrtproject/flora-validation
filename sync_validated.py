@@ -51,6 +51,9 @@ from psycopg2.extras import Json, RealDictCursor
 
 from console_encoding import use_utf8_output
 from pipeline_logging import start as start_logging
+from preprint_identifiers import (
+    VALIDATED_PROVENANCE_COLUMNS, VALIDATED_PROVENANCE_JOIN, validated_identifiers,
+)
 
 load_dotenv()
 use_utf8_output()
@@ -58,7 +61,8 @@ use_utf8_output()
 SOURCE_KEY = "validated"
 DISPLAY_PREFIX = "VAL"
 
-# Straight column copies: same name on `validated` and on `source_records`.
+# Publication columns, with the same names on source_records. alt_identifier_o
+# is recovered from validation provenance before the copy; validated lacks it.
 DIRECT_COLUMNS = [
     "ref_o", "doi_o", "url_o",
     "ref_r", "doi_r", "url_r",
@@ -68,7 +72,7 @@ DIRECT_COLUMNS = [
     "outcome", "outcome_quote", "out_quote_source",
     "outcome_computation", "outcome_computational_quote", "out_quote_computational_source",
     "outcome_robustness", "outcome_robustness_quote", "out_quote_robust_source",
-    "alt_identifier_r",
+    "alt_identifier_r", "alt_identifier_o",
 ]
 
 # Written on insert and kept in step on refresh. validation_status is deliberately
@@ -94,10 +98,11 @@ def _raw_payload(row: dict) -> dict:
     admin_approved, original_key, record_id, validated_at — so a reviewer can see
     them and a later backfill can promote one without re-deriving anything.
     """
-    return {k: ("" if v is None else str(v)) for k, v in row.items()}
+    return {k: ("" if v is None else str(v)) for k, v in row.items() if not k.startswith('_')}
 
 
 def _build_row(v: dict) -> dict:
+    v = {**v, **validated_identifiers(v)}
     row = {col: _s(v.get(col)) for col in DIRECT_COLUMNS}
     row["source"] = SOURCE_KEY
     row["sheet_row_id"] = str(v["validated_record_id"])
@@ -132,7 +137,8 @@ def _next_display_id(cur, prefix: str) -> str:
 
 
 def _fetch_validated(cur) -> list:
-    cur.execute("SELECT * FROM validated ORDER BY validated_at, validated_record_id")
+    cur.execute(f"SELECT v.*, {VALIDATED_PROVENANCE_COLUMNS} FROM validated v "
+                f"{VALIDATED_PROVENANCE_JOIN} ORDER BY v.validated_at, v.validated_record_id")
     return [dict(r) for r in cur.fetchall()]
 
 
