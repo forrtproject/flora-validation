@@ -1482,6 +1482,9 @@ ALTER TABLE work_metadata ADD COLUMN IF NOT EXISTS apa_ref TEXT;
 ALTER TABLE work_metadata ADD COLUMN IF NOT EXISTS abstract TEXT;
 ALTER TABLE work_metadata ADD COLUMN IF NOT EXISTS authors_json TEXT;
 ALTER TABLE work_metadata ADD COLUMN IF NOT EXISTS reference_checked_at TIMESTAMPTZ;
+-- Advisory original-target screening. Refreshes never invalidate bibliography.
+ALTER TABLE work_metadata ADD COLUMN IF NOT EXISTS work_type TEXT;
+ALTER TABLE work_metadata ADD COLUMN IF NOT EXISTS work_type_checked_at TIMESTAMPTZ;
 
 -- Size of the FLoRA product over time, one row per day.
 --

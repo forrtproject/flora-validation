@@ -1,0 +1,91 @@
+record_id,doi_o_before,doi_o_after,action,alt_identifier_added,kept_record_id,reason,evidence_url
+FLORA-000014,10.1037/bar0000276,10.1037/bar0000276,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1002/bin.70067
+FLORA-000017,10.1016/b978-0-12-108840-8.50014-7,10.1086/443913,correct,10.1016/b978-0-12-108840-8.50014-7,,Prefer the study publication; retain the previous identifier,https://doi.org/10.3102/0013189x20940304
+FLORA-000018,10.1145/3328778.3366948,10.1145/3328778.3366948,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1080/08993408.2022.2071543
+FLORA-000044,10.1002/ana.22403,10.1002/ana.22403,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1161/strokeaha.111.623090
+FLORA-000058,10.1017/cbo9781139524575.009,10.1017/cbo9781139524575.009,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1111/j.1540-4781.2011.01236.x
+FLORA-000097,10.18653/v1/p16-2067,10.18653/v1/p16-2067,keep,,,Target study confirmed in the one-off review,https://doi.org/10.18653/v1/d17-1076
+FLORA-000105,10.1073/pnas.0905267106,10.1073/pnas.0905267106,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1038/s41598-018-35209-6
+FLORA-000150,10.1101/lm.053470.121,10.1101/lm.053470.121,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1101/lm.053631.122
+FLORA-000151,10.1093/acprof:oso/9780190205782.001.0001,10.1093/acprof:oso/9780190205782.001.0001,keep,,,Full text borrows Tang items and compares results with his study,https://doi.org/10.1017/s0003055422000946
+FLORA-000152,10.1037/t71797-000,10.1177/1073191116685401,correct,10.1037/t71797-000,,Prefer the study publication; retain the previous identifier,https://doi.org/10.1037/pas0001164
+FLORA-000215,10.1038/ng.3598,10.1038/ng.3598,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1371/journal.pone.0261477
+FLORA-000223,10.1145/1368088.1368161,10.1145/1368088.1368161,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1109/esem.2011.30
+FLORA-000231,10.1109/icse.2007.32,10.1109/icse.2007.32,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1145/2652524.2652556
+FLORA-000272,10.1145/3517745.3561436,10.1145/3517745.3561436,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1145/3618257.3624820
+FLORA-000296,10.7551/mitpress/4117.003.0010,10.7551/mitpress/4117.003.0010,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1515/gcla-2014-0004
+FLORA-000309,10.1016/b978-0-12-205050-3.50008-7,10.1016/b978-0-12-205050-3.50008-7,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1007/s11205-005-5074-x
+FLORA-000406,10.1037/t05147-000,10.1207/s15374424jccp3003_9,correct,10.1037/t05147-000,,Prefer the study publication; retain the previous identifier,https://doi.org/10.1037/a0033324
+FLORA-000421,10.1093/med/9780195390841.003.0021,10.1038/ng.859,correct,,,Replace a reference to a different work; do not add it as an alias,https://doi.org/10.1186/s13024-018-0267-3
+FLORA-000454,10.1145/3180155.3180192,10.1145/3180155.3180192,keep,,,Target study confirmed in the one-off review,https://doi.org/10.48550/arxiv.2603.15935
+FLORA-000462,10.18574/nyu/9780814788912.003.0009,10.1007/978-3-031-76332-8_21,correct,,,Full text names Weintraub 2024 as the original; Simpson is a different work,https://doi.org/10.57229/2834-2267.1072
+FLORA-000466,10.1101/gr.126516.111,10.1101/gr.126516.111,keep,,,Target study confirmed in the one-off review,https://doi.org/10.7554/elife.25801
+FLORA-000504,10.3886/icpsr01218.v1,10.2307/2586378,correct,10.3886/icpsr01218.v1,,Prefer the study publication; retain the previous identifier,https://doi.org/10.1017/s0003055404001200
+FLORA-000523,10.1093/oxfordhb/9780195309799.013.0022,10.1093/acprof:osobl/9780199927418.003.0013,correct,,,Replace a reference to a different work; do not add it as an alias,https://doi.org/10.1080/09515089.2014.893288
+FLORA-000534,10.1037/e722852011-095,,exclude,,FLORA-002357,Wrong original; the replication already has the correct original row,https://doi.org/10.1177/2515245918781032
+FLORA-000540,10.3998/mpub.9946611,10.3998/mpub.9946611,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1017/xps.2020.18
+FLORA-000545,10.31235/osf.io/xatcn,10.1093/jopart/muz044,correct,10.31235/osf.io/xatcn,,Prefer the study publication; retain the previous identifier,https://doi.org/10.1111/padm.12913
+FLORA-000556,10.1037/e524912015-308,,merge,10.1037/e524912015-308,FLORA-000379,Conference and journal abstracts describe the same experiment; retain journal row,https://doi.org/10.1101/2025.11.02.686051
+FLORA-000576,10.1145/2025113.2025141,10.1145/2025113.2025141,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1109/esem.2015.7321191
+FLORA-000581,10.1145/1449715.1449724,10.1145/1449715.1449724,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1109/tvcg.2021.3101854
+FLORA-000590,10.1037/e520602012-521,10.1126/science.1199327,correct,,,Replace a reference to a different work; do not add it as an alias,https://doi.org/10.1016/j.learninstruc.2015.08.002
+FLORA-000596,10.1075/sibil.9.05bre,10.1075/sibil.9.05bre,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1111/j.1944-9720.2010.01057.x
+FLORA-000628,10.1177/0022219421997103,10.1177/0022219421997103,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1177/00222194231215031
+FLORA-000717,10.1038/ng.2802,10.1038/ng.2802,keep,,,Target study confirmed in the one-off review,https://doi.org/10.18632/oncotarget.7945
+FLORA-000746,10.1145/2380718.2380739,10.1145/2380718.2380739,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1017/s1930297500002941
+FLORA-000755,10.1037/e522512014-027,10.1001/archpediatrics.2010.124,correct,,,Use the cited 2010 pilot trial; conference equivalence is unverified,https://doi.org/10.1002/ajcp.12385
+FLORA-000763,10.1017/s0140525x07001185,10.1017/s0140525x07001185,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1093/cercor/bhaa282
+FLORA-000780,10.1145/985692.985709,10.1145/985692.985709,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1093/hcr/hqab019
+FLORA-000785,10.1145/3379597.3387482,10.1145/3379597.3387482,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1109/icpc52881.2021.00052
+FLORA-000828,10.4324/9780203865972-24,10.4324/9780203865972-24,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1098/rsos.250290
+FLORA-000839,10.1109/vis54172.2023.00016,10.1109/vis54172.2023.00016,keep,,,Target study confirmed in the one-off review,https://doi.org/10.31219/osf.io/v6sfg_v1
+FLORA-000880,10.18653/v1/2020.findings-emnlp.139,10.18653/v1/2020.findings-emnlp.139,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1109/iwsc55060.2022.00015
+FLORA-000898,10.2307/3512141,10.2307/3512141,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1111/j.1468-5906.2009.01499.x
+FLORA-000930,10.4159/9780674369542,10.4159/9780674369542,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1017/ssh.2017.27
+FLORA-000931,10.2139/ssrn.2152623,10.1287/mnsc.2015.2177,correct,10.2139/ssrn.2152623,,Prefer the study publication; retain the previous identifier,https://doi.org/10.1007/s40881-017-0041-2
+FLORA-000947,10.5040/9781472594150.ch-005,10.1080/09515089.2012.727135,correct,,,Replace a reference to a different work; do not add it as an alias,https://doi.org/10.1080/09515089.2019.1587912
+FLORA-000974,10.1145/1404520.1404531,10.1145/1404520.1404531,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1080/08993408.2022.2079866
+FLORA-000980,10.1093/nc/niab025,10.7554/elife.53900,correct,,,Replace a reference to a different work; do not add it as an alias,https://doi.org/10.1098/rsos.221091
+FLORA-000997,10.1016/b978-0-12-823519-5.00003-8,10.48550/arxiv.2103.01209,correct,,,Replace a reference to a different work; do not add it as an alias,https://doi.org/10.48550/arxiv.2303.08577
+FLORA-001036,10.1093/acprof:osobl/9780199927418.003.0013,10.1093/acprof:osobl/9780199927418.003.0013,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1080/09515089.2013.878834
+FLORA-001116,10.1017/cbo9780511667268.005,10.1017/cbo9780511667268.005,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1017/s0261444813000049
+FLORA-001119,10.1038/ng.2390,10.1038/ng.2390,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1155/2013/641596
+FLORA-001121,10.1038/ng.2520,10.1038/ng.2520,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1371/journal.pone.0102100
+FLORA-001124,10.1007/978-3-642-20677-1_13,10.1007/978-3-642-20677-1_13,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1145/2593868.2593874
+FLORA-001137,10.1038/ng.2802,10.1038/ng.2802,keep,,,Target study confirmed in the one-off review,https://doi.org/10.18632/oncotarget.12648
+FLORA-001138,10.1038/ng.2802,10.1038/ng.2802,keep,,,Target study confirmed in the one-off review,https://doi.org/10.18632/oncotarget.9819
+FLORA-001167,10.2139/ssrn.3649814,,exclude,,FLORA-000278,Wrong original; the replication already has the correct original row,https://doi.org/10.1177/25152459241267902
+FLORA-001195,10.1101/lm.035493.114,10.1101/lm.035493.114,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1038/s41598-022-06119-5
+FLORA-001223,10.1145/2702123.2702593,10.1145/2702123.2702593,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1007/s10664-025-10739-6
+FLORA-001286,10.4337/9781848442764.00018,,exclude,,FLORA-001243,Wrong original; the replication already has the correct original row,https://doi.org/10.1177/10422587211059991
+FLORA-001421,10.1145/3545945.3569766,10.1145/3545945.3569766,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1145/3770762.3772568
+FLORA-001422,10.1038/s41467-022-28252-5,10.1038/s41467-022-28252-5,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1016/j.xjidi.2026.100490
+FLORA-001529,10.31234/osf.io/k23cv,10.31234/osf.io/k23cv,keep,,,Target study confirmed in the one-off review,https://doi.org/10.17605/osf.io/pkwgx
+FLORA-001530,10.31234/osf.io/5gskw,10.1111/aphw.12237,correct,10.31234/osf.io/5gskw,,Prefer the study publication; retain the previous identifier,https://doi.org/10.17605/osf.io/da26y
+FLORA-001534,10.31234/osf.io/jrpfd,10.31234/osf.io/jrpfd,keep,,,Target study confirmed in the one-off review,https://doi.org/10.17605/osf.io/xrymd
+FLORA-001539,10.31234/osf.io/m3vth,10.1080/13546783.2020.1813806,correct,10.31234/osf.io/m3vth,,Prefer the study publication; retain the previous identifier,https://doi.org/10.17605/osf.io/8sae9
+FLORA-001550,10.31234/osf.io/m7f8a,10.31234/osf.io/m7f8a,keep,,,Target study confirmed in the one-off review,https://doi.org/10.17605/osf.io/jvwer
+FLORA-002193,10.1126/science.1091721,10.1126/science.1091721,keep,,,Target study confirmed in the one-off review,https://doi.org/10.15626/mp.2022.3108
+FLORA-002225,10.1145/3105726.3106182,10.1145/3105726.3106182,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1145/3649217.3653545
+FLORA-002226,10.1145/3173574.3174188,10.1145/3173574.3174188,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1098/rsos.231240
+FLORA-002227,10.1145/3290605.3300469,10.1145/3290605.3300469,keep,,,Collection source data confirms the 2019 CHI replication,https://files.osf.io/v1/resources/xwn9m/providers/github/data/raw_data.csv
+FLORA-002385,10.4324/9781032633275-7,10.4324/9781032633275-7,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1177/2515245918810225
+FLORA-002445,10.1037/1082-989x.6.2.161,10.1037/1082-989x.6.2.161,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1037/a0014697
+FLORA-002495,10.36019/9781978817111,10.36019/9781978817111,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1111/j.1747-4469.2011.01256.x
+FLORA-002520,10.1145/3196398.3196421,10.1145/3196398.3196421,keep,,,Target study confirmed in the one-off review,https://doi.org/10.7717/peerj-cs.245
+FLORA-002622,10.1037/t79666-000,10.1300/j019v13n01_01,correct,10.1037/t79666-000,,Prefer the study publication; retain the previous identifier,https://doi.org/NA
+FLORA-002650,10.1016/j.jenvp.2013.09.003,10.1016/j.jenvp.2013.09.003,keep,,,Target study confirmed in the one-off review,https://doi.org/NA
+FLORA-002742,10.1101/2020.03.30.20048090,10.1101/2020.03.30.20048090,keep,,,Target study confirmed in the one-off review,https://doi.org/NA
+FLORA-002756,10.1038/s41562-023-01712-8,10.1038/s41562-023-01712-8,keep,,,Target study confirmed in the one-off review,https://doi.org/NA
+REPL-000728,10.1037/e513702014-054,10.1037/a0030655,correct,10.1037/e513702014-054,,Prefer the study publication; retain the previous identifier,https://doi.org/10.1002/ijop.12519
+VAL-000272,10.2139/ssrn.1099464,10.2139/ssrn.1099464,keep,,,Target study confirmed in the one-off review,https://doi.org/10.17605/osf.io/3bz2g
+VAL-000282,10.1145/3173574.3174066,10.1145/3173574.3174066,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1145/3334480.3381435
+REPL-001674,10.1111/jsbm.12240,10.1111/jsbm.12240,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1016/j.jbvi.2022.e00342
+REPL-001675,10.1016/j.jbusvent.2011.09.002,10.1016/j.jbusvent.2011.09.002,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1016/j.jbvi.2020.e00158
+REPRO-000375,10.5465/ambpp.1987.17533767,10.5465/ambpp.1987.17533767,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1177/104225879301700303
+REPL-001679,10.1101/lm.042978.116,10.1101/lm.042978.116,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1038/s41598-023-48874-z
+VAL-000417,10.1109/icse.2017.24,10.1109/icse.2017.24,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1109/icpc.2019.00050
+VAL-000435,10.1101/lm.038513.115,10.1101/lm.038513.115,keep,,,Target study confirmed in the one-off review,https://doi.org/10.31234/osf.io/akz6b
+VAL-000450,10.21437/interspeech.2005-275,10.21437/interspeech.2005-275,keep,,,Target study confirmed in the one-off review,https://doi.org/10.31274/psllt.17573
+VAL-000455,10.1161/circresaha.117.310628,10.1161/circresaha.117.310628,keep,,,Target study confirmed in the one-off review,https://doi.org/10.7554/elife.91498
+VAL-000459,10.1038/ng.2397,10.1038/ng.2397,keep,,,Target study confirmed in the one-off review,https://doi.org/10.1038/s41598-017-07404-4
