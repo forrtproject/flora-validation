@@ -20,7 +20,7 @@ HOSTS = {'sandbox': 'https://sandbox.zenodo.org', 'production': 'https://zenodo.
 
 # Public release labels. Internal routes stay intact for syncing and audit.
 SOURCE_LABELS = {
-    'replications': 'bulk entry', 'reproductions': 'bulk entry',
+    'replications': 'manual entry', 'reproductions': 'manual entry',
     'COS': 'FReD', 'SCORE': 'SCORE',
     'validated': 'search pipeline', 'manual': 'search pipeline',
 }
@@ -186,7 +186,7 @@ def render_codebook(columns, rows):
         raise ValueError('Codebook definitions missing: ' + ', '.join(sorted(missing)))
     intro = section.split('| Field |', 1)[0].strip().replace('Author arrays and citations', 'References and quoted evidence')
     definitions.update({
-        'source': 'Coarse input route: bulk entry, FReD, SCORE or search pipeline. Search pipeline combines website-validated and manually entered records; it does not imply automated discovery. Not comprehensive project membership or validation status.',
+        'source': 'Coarse input route: manual entry, FReD, SCORE or search pipeline. Search pipeline combines website-validated and manually entered records; it does not imply automated discovery. Not comprehensive project membership or validation status.',
         'outcome': 'Replication outcome; NA for reproduction rows, which use the two dedicated reproduction axes.',
         'outcome_quote': 'Evidence for the replication outcome; NA for reproduction rows.',
         'outcome_quote_source': 'Source/location of the replication evidence; NA for reproduction rows.',

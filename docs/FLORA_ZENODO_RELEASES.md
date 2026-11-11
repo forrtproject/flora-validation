@@ -32,7 +32,7 @@ against its existing `flora_release_manifest.json` and reuses
 `release_helpers.prepare_release` for byte manifests and notes. Release CSV fields are selected and ordered by `release/flora/columns.json` (31
 columns, including only `author_overlap_pct` for overlap). IDs and applicable
 outcome/evidence values are preserved. Release source labels map replications and
-reproductions to `bulk entry`, COS to `FReD`, and validated/manual to `search pipeline`;
+reproductions to `manual entry`, COS to `FReD`, and validated/manual to `search pipeline`;
 SCORE stays `SCORE`. The search-pipeline label means the website discovery/curation
 workflow, including manual entries, not necessarily automated search. Replication
 outcome and evidence fields are NA on reproduction rows; reproduction axes and their
@@ -162,13 +162,27 @@ this agreed selection. Browser changes remain proposals; they do not modify the
 contract or the pipeline. The deposit codebook contains only the agreed columns,
 in their release order.
 
-## Project membership is separate from source
+## Project classification consultation
 
-SCORE is retained as a historical import category for this release. A proposed
-large-project classification must be distinct from source: one report can cover
-many record pairs and one project can span multiple reports and input routes.
-More than 50 entries can flag candidates for review. Programmatic counts require a
-stable project-membership registry first; grouping only by report DOI or author name
-cannot establish project membership. Crossing a size threshold should not rewrite
-an entry's acquisition source. No project field or automatic assignment is added
-without agreement on these membership rules.
+The proposed policy is to retain one source column, with confirmed named-project
+membership taking precedence over broad entry routes, while preserving known
+search-pipeline origin if requested. A curated membership registry is needed;
+counts and labels can then be applied programmatically. More than 50 means strictly
+more than 50 distinct active released record IDs after deduplication and exclusions,
+counted over all confirmed project members, including protected search-pipeline rows.
+
+Counts qualify a project for a label; they do not establish membership. A label
+should remain stable once granted, even if later retirements reduce the project
+below the threshold. Report DOI and title-keyword counts identify candidates for
+review, not automatic assignments. Multi-report projects need explicit membership.
+The existing aggregate-report list/candidate detection can help seed that review.
+
+Search origin must not be inferred solely from source_display_id prefixes: the
+primary source can change during merging. The selected public release omits this
+field, so the loss of simultaneous route and project information in a single source
+column must be documented. Protecting search-pipeline source labels also means
+source cannot retrieve every member of a named project.
+
+The manual-entry rename is implemented. General project assignment and precedence
+remain pending the consultation decision and curated membership; the current code
+still uses the explicit intake mappings, including the SCORE import.

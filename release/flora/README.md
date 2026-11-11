@@ -39,7 +39,7 @@ release assembly blocks stale percentages.
 
 Source and maintenance: https://github.com/forrtproject/flora-validation
 
-Source labels are `bulk entry` (both entry sheets), `FReD` (the legacy COS input),
+Source labels are `manual entry` (both entry sheets), `FReD` (the legacy COS input),
 `SCORE`, and `search pipeline` (website-validated and manually entered records).
 Search pipeline includes the broader discovery/curation workflow, not necessarily
 automated searching. These are coarse import categories, not a project registry or

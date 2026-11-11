@@ -93,7 +93,7 @@ The Zenodo release applies these labels without changing the internal source key
 
 | Release value | Internal export values | Meaning |
 | --- | --- | --- |
-| bulk entry | replications, reproductions | Entries from the bulk entry sheets |
+| manual entry | replications, reproductions | Entries from the manual entry sheets |
 | FReD | COS | FReD Replication Success input |
 | SCORE | SCORE | SCORE 2025 Validation input |
 | search pipeline | validated, manual | Website validation and manual-entry workflow; not necessarily automated discovery |

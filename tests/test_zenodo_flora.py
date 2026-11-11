@@ -204,7 +204,7 @@ def test_release_projection_order_and_cells(bundle):
     assert 'author_overlap_pct' in columns and 'author_overlap' not in columns
     assert not {'author_o', 'author_r', 'id_md5', 'flora_id'} & set(columns)
     _, original = release.read_records(bundle.parent / 'output' / 'flora.csv')
-    assert rows['A']['source'] == 'bulk entry'
+    assert rows['A']['source'] == 'manual entry'
     assert all(rows[key][column] == row[column]
                for key, row in original.items() for column in columns if column != 'source')
     import re
@@ -255,7 +255,7 @@ def test_preview_and_superseded_bundle_cannot_publish_production(bundle):
 
 
 @pytest.mark.parametrize('internal,label', [
-    ('replications', 'bulk entry'), ('reproductions', 'bulk entry'), ('COS', 'FReD'),
+    ('replications', 'manual entry'), ('reproductions', 'manual entry'), ('COS', 'FReD'),
     ('SCORE', 'SCORE'), ('manual', 'search pipeline'), ('validated', 'search pipeline'),
 ])
 def test_public_source_labels_do_not_change_internal_record(internal, label):

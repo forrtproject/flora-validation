@@ -89,7 +89,7 @@ Replication outcome/quote/source are NA on reproduction rows; reproduction axes 
 associated evidence are NA on replication rows. Legacy combined outcome strings stay
 in the full internal export but are not repeated in the release.
 
-Release source labels: `bulk entry` (replications/reproductions sheets), `FReD`
+Release source labels: `manual entry` (replications/reproductions sheets), `FReD`
 (legacy COS), `SCORE`, `search pipeline` (website-validated and manual entries).
 Search pipeline is a broad discovery/curation category, not necessarily automated
 search. Raw input-route values remain in the internal snapshot. The previous
