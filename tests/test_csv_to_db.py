@@ -145,3 +145,29 @@ def test_mixed_group_flags_only_the_doi_less_pair():
         _row("p2", "10.1/rep", "Rep", "Shared Title"),
     ])
     assert flagged == {}
+
+
+class _FakeCursor:
+    def __init__(self, row):
+        self.row = row
+
+    def execute(self, sql, params=None):
+        pass
+
+    def fetchone(self):
+        return self.row
+
+
+def test_removed_original_is_not_replaced_by_the_stored_markup(monkeypatch):
+    """A re-keyed record whose stored title_o still carries tags is the same original
+    as the cleaned title the extractor ships: it must not be reopened."""
+    import consensus_engine
+    from csv_to_db import _removed_original_was_replaced
+    monkeypatch.setattr(consensus_engine, "removal_proposed", lambda *_: True)
+    existing = {"record_id": "r1"}
+    # removed by an admin, doi_o differs: False, both doi_o blank: True
+    row = (True, False, True, "Effects of <i>TIMP2</i>  on bone", None, None)
+    same = {"doi_o": "", "title_o": "Effects of TIMP2 on bone"}
+    other = {"doi_o": "", "title_o": "A different paper"}
+    assert _removed_original_was_replaced(_FakeCursor(row), existing, same) is False
+    assert _removed_original_was_replaced(_FakeCursor(row), existing, other) is True

@@ -706,24 +706,27 @@ def _removed_original_was_replaced(cur, existing: dict, incoming: dict) -> bool:
         """
         SELECT (SELECT d.action FROM admin_decisions d
                 WHERE d.record_id = u.record_id AND d.status_after = 'rejected'
-                ORDER BY d.decided_at DESC, d.decision_id DESC LIMIT 1) = 'original_removed'
-               AND (lower(btrim(COALESCE(u.doi_o, ''))) <> lower(btrim(COALESCE(%(doi_o)s, '')))
-                    OR (COALESCE(u.doi_o, '') = '' AND COALESCE(%(doi_o)s, '') = ''
-                        AND lower(btrim(COALESCE(u.title_o, ''))) <> lower(btrim(COALESCE(%(title_o)s, ''))))),
-               u.validator_1, u.validator_2
+                ORDER BY d.decided_at DESC, d.decision_id DESC LIMIT 1) = 'original_removed',
+               lower(btrim(COALESCE(u.doi_o, ''))) <> lower(btrim(COALESCE(%(doi_o)s, ''))),
+               COALESCE(u.doi_o, '') = '' AND COALESCE(%(doi_o)s, '') = '',
+               u.title_o, u.validator_1, u.validator_2
         FROM unvalidated u WHERE u.record_id = %(record_id)s
         """,
-        {"doi_o": incoming["doi_o"], "title_o": incoming["title_o"], "record_id": existing["record_id"]},
+        {"doi_o": incoming["doi_o"], "record_id": existing["record_id"]},
     )
     row = cur.fetchone()
     if not (row and row[0]):
+        return False
+    # The stored title may still carry markup the import now strips, so both sides are
+    # cleaned here: a row this import has not refreshed yet is not a replaced original.
+    if not (row[1] or (row[2] and _title(row[3]).casefold() != incoming["title_o"].casefold())):
         return False
     # The decision log does not hear of every rejection: a senior's reject, or two
     # validators and the LLM agreeing it is not a replication, are never logged, so a
     # reopened record they rejected again would still show the old removal as its
     # newest. Its judgements say what rejected it now.
     from consensus_engine import removal_proposed
-    return removal_proposed(row[1], row[2])
+    return removal_proposed(row[4], row[5])
 
 
 def _archive_removed_original(cur, existing: dict, incoming: dict) -> None:
