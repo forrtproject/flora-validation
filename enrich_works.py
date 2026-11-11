@@ -14,10 +14,12 @@ Usage:
 
 Required environment variables:
     DATABASE_URL    — PostgreSQL connection string
+Optional environment variables:
     OPENALEX_MAILTO — contact address for OpenAlex's polite pool
 """
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -38,7 +40,7 @@ load_dotenv()
 use_utf8_output()
 
 API = "https://api.openalex.org/works"
-MAILTO = os.environ.get("OPENALEX_MAILTO", "lukas.wallrich@gmail.com")
+MAILTO = os.environ.get("OPENALEX_MAILTO", "").strip()
 
 # OpenAlex accepts up to 50 values in an OR filter.
 BATCH = 50
@@ -186,6 +188,7 @@ def shape(work: dict) -> "dict | None":
         "language": work.get("language") or None,
         "oa_url": _oa_url(work),
         "abstract": reconstruct_abstract(work.get("abstract_inverted_index")),
+        "work_type": work.get("type") or None,
     }
     row["bibtex_ref"] = _bibtex(work, doi, row)
     return row
@@ -227,15 +230,17 @@ def dois_in_product(cur) -> list:
 
 
 def known_dois(cur, retry_missing: bool = False) -> set:
-    sql = "SELECT doi FROM work_metadata"
+    # A type-only cache row has no bibliography yet. Do not let it suppress the
+    # normal enrichment that will supply the title and references.
+    sql = "SELECT doi FROM work_metadata WHERE (title IS NOT NULL OR oa_work_id IS NOT NULL OR not_found)"
     if retry_missing:
-        sql += " WHERE NOT not_found"
+        sql += " AND NOT not_found"
     cur.execute(sql)
     return {r["doi"] for r in cur.fetchall()}
 
 
 def _store(cur, rows: list) -> None:
-    rows = [{"apa_ref": None, "abstract": None, "authors_json": None,
+    rows = [{"apa_ref": None, "abstract": None, "authors_json": None, "work_type": None,
              "metadata_source": "openalex", **row} for row in rows]
     psycopg2.extras.execute_batch(
         cur,
@@ -243,11 +248,12 @@ def _store(cur, rows: list) -> None:
         INSERT INTO work_metadata
             (doi, oa_work_id, title, authors, journal, year, volume, issue, pages,
              language, oa_url, bibtex_ref, apa_ref, abstract, authors_json,
-             metadata_source, not_found, fetched_at)
+             metadata_source, not_found, fetched_at, work_type, work_type_checked_at)
         VALUES (%(doi)s, %(oa_work_id)s, %(title)s, %(authors)s, %(journal)s, %(year)s,
                 %(volume)s, %(issue)s, %(pages)s, %(language)s, %(oa_url)s,
                 %(bibtex_ref)s, %(apa_ref)s, %(abstract)s, %(authors_json)s,
-                %(metadata_source)s, FALSE, NOW())
+                %(metadata_source)s, FALSE, NOW(), %(work_type)s,
+                CASE WHEN %(work_type)s IS NOT NULL THEN NOW() END)
         ON CONFLICT (doi) DO UPDATE SET
             oa_work_id = EXCLUDED.oa_work_id, title = EXCLUDED.title,
             authors = EXCLUDED.authors, journal = EXCLUDED.journal,
@@ -257,6 +263,9 @@ def _store(cur, rows: list) -> None:
             apa_ref = COALESCE(EXCLUDED.apa_ref, work_metadata.apa_ref),
             abstract = COALESCE(EXCLUDED.abstract, work_metadata.abstract),
             authors_json = COALESCE(EXCLUDED.authors_json, work_metadata.authors_json),
+            work_type = COALESCE(EXCLUDED.work_type, work_metadata.work_type),
+            work_type_checked_at = CASE WHEN EXCLUDED.work_type IS NOT NULL THEN NOW()
+                                       ELSE work_metadata.work_type_checked_at END,
             metadata_source = EXCLUDED.metadata_source,
             not_found = FALSE, fetched_at = NOW()
         """,
@@ -445,6 +454,7 @@ def shape_by_work_id(work: dict, work_id: str) -> "dict | None":
     if not row.get("title"):
         return None
     row["metadata_source"] = WORK_ID_SOURCE
+    row["work_type"] = work.get("type") or None
     return row
 
 
@@ -638,7 +648,11 @@ def main() -> int:
                         help="also re-request DOIs previously recorded as not found")
     parser.add_argument("--limit", type=int, default=0,
                         help="fetch at most this many DOIs (for a first look)")
+    parser.add_argument("--type-minutes", type=float, default=3,
+                        help="optional original-work-type refresh budget (default: 3 minutes)")
     args = parser.parse_args()
+    if not math.isfinite(args.type_minutes) or args.type_minutes < 0:
+        parser.error('--type-minutes must be finite and nonnegative')
 
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
@@ -649,6 +663,11 @@ def main() -> int:
     conn = psycopg2.connect(database_url)
     conn.autocommit = False
     try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            import original_work_types
+            original_work_types.ensure_cache(cur)
+        if not args.dry_run:
+            conn.commit()  # release additive schema locks before network work
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             stats = enrich(cur, dry_run=args.dry_run,
                            retry_missing=args.retry_missing, limit=args.limit)
@@ -664,6 +683,21 @@ def main() -> int:
             stats["references"] = ref_stats
         if not args.dry_run:
             conn.commit()
+        # Advisory type discovery cannot roll back successful bibliography or
+        # prevent publication. The daily network check reads this shared cache.
+        if args.type_minutes:
+            try:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    type_stats = original_work_types.refresh(
+                        cur, minutes=args.type_minutes, limit=args.limit, dry_run=args.dry_run)
+                if not args.dry_run:
+                    conn.commit()
+                print(f"  original types: {type_stats['updated']} refreshed, "
+                      f"{type_stats['deferred']} deferred, {len(type_stats['errors'])} lookup failures")
+            except Exception as exc:
+                conn.rollback()
+                print(f"  original type refresh unavailable ({type(exc).__name__}); "
+                      "bibliographic enrichment retained")
     except (EnrichmentError, references.ReferenceLookupError) as exc:
         conn.rollback()
         print(f"  FAILED - {exc}")

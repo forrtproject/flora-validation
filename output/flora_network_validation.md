@@ -1,6 +1,6 @@
 ## FLoRA network validation
 
-_Generated: 2026-11-10 03:08:28 UTC | Dataset: 2,851 rows_
+_Generated: 2026-11-11 03:11:50 UTC | Dataset: 2,884 rows_
 
 Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says what is wrong and, after the dash, gives the DOI or link.
 
@@ -74,11 +74,11 @@ _Heuristics: a person decides whether each one is a problem._
 - REPL-001425 (`| 10.1142/s1084946721500084`): doi_o is blank; Crossref lists this paper with a DOI: 'Poverty and Entrepreneurship in Developing Countries' (2011, Ernesto Amorós) — `10.1093/acprof:oso/9780199580866.003.0010`
 - REPL-001445 (`| 10.1525/collabra.163080`): doi_o is blank; Crossref lists this paper with a DOI: 'The dark side of self- and social perception: Black uniforms and aggression in …' (1988, Frank) — `10.1037/0022-3514.54.1.74`
 
-<details><summary><b>Could not check</b> (8 links)</summary>
+<details><summary><b>Could not check</b> (9 links)</summary>
 
-_Not findings: no answer could be had for these 8, and they are checked again on the next run._
+_Not findings: no answer could be had for these 9, and they are checked again on the next run._
 
-**Links** (8):
+**Links** (9):
 
 - REPL-000009, oa_url_r: HTTP 418 — `https://hrcak.srce.hr/file/334421`
 - REPL-001176, oa_url_r: timed out — `https://cdr.lib.unc.edu/downloads/7w62fg56x`
@@ -88,12 +88,13 @@ _Not findings: no answer could be had for these 8, and they are checked again on
 - REPL-001417, url_r: redirect loop — `https://www.proquest.com/docview/221001969?pq-origsite=gscholar&fromopenview=true&sourcetype=Scholarly%20Journals`
 - REPL-001618, url_o: redirect loop — `https://www.proquest.com/docview/1470800730`
 - FRED-000798, oa_url_o: ConnectionResetError: \[Errno 104\] Connection reset by peer — `http://ira.lib.polyu.edu.hk/bitstream/10397/97105/1/Huang_Influence_Product_Anthropomorphism.pdf`
+- VAL-000496, url_r/oa_url_r: timed out — `http://www.euroslajournal.org/articles/10.22599/jesla.39/galley/29/download/`
 
 </details>
 
 
 **Network validation status: needs review**
 
-- DOIs: 4,630 distinct; 4,621 cached, 9 checked, 0 deferred.
-- Links: 3,196 distinct; 3,167 cached, 29 checked (8 could not be checked), 0 deferred.
-- Originals without a DOI: 27 distinct; 27 cached, 0 checked, 0 deferred.
+- DOIs: 4,669 distinct; 4,621 cached, 48 checked, 0 deferred.
+- Links: 3,229 distinct; 3,169 cached, 60 checked (9 could not be checked), 0 deferred.
+- Originals without a DOI: 28 distinct; 27 cached, 1 checked, 0 deferred.

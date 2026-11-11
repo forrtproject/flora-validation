@@ -1,10 +1,10 @@
 ## FLoRA structural validation
 
-_Generated: 2026-11-10 03:06:41 UTC | Dataset: 2,851 rows_
+_Generated: 2026-11-11 03:09:03 UTC | Dataset: 2,884 rows_
 
 Each item names the FLoRA record by its FLoRA ID and `doi_o | doi_r` (or `url_r`), says what is wrong and, after the dash, gives the value.
 
-### Problems (44)
+### Problems (46)
 
 **Invalid URLs** (7 findings):
 
@@ -24,7 +24,14 @@ _An outcome outside the allowed set for the row's type, not_a_replication, or mi
 
 - REPL-000419 (`10.1002/j.2164-585x.1979.tb00097.x | 10.1353/csd.2014.0018`): outcome is blank
 
-<details><summary><b>Missing required fields</b> (22 findings)</summary>
+**Duplicate records** (2 findings):
+
+_Rows the build would have made one record: the same type, doi_o, doi_r and url_r, or the same DOIs with one url_r between them._
+
+- REPL-001126, VAL-000456 (`10.2196/20572 | 10.2196/45481`): 2 rows the build would make one record — `replication|10.2196/20572|10.2196/45481|`
+- REPRO-000009, REPRO-000019 (`10.1145/2382448.2382450 | 10.17879/replicationresearch-2026-9414`): 2 rows the build would make one record — `reproduction|10.1145/2382448.2382450|10.17879/replicationresearch-2026-9414|`
+
+<details><summary><b>Missing required fields</b> (23 findings)</summary>
 
 _title_o, title_r, doi_r or url_r, and an identifier for the original: doi_o, a url_o that is a link or DOI (not a title), alt_identifier_o or oa_work_id_o._
 
@@ -40,6 +47,7 @@ _title_o, title_r, doi_r or url_r, and an identifier for the original: doi_o, a 
 - REPL-000448 (`| 10.1371/journal.pone.0120644`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-000621 (`| 10.5539/ibr.v5n4p71`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-001248 (`| 10.3390/jintelligence7010006`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
+- FRED-000330 (`| 10.1007/s13164-018-0400-9`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-000167 (`| 10.1177/0098628311421328`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-000172 (`| 10.1177/0022466912449652`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-000338 (`| 10.18653/v1/w19-8649`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
@@ -53,12 +61,11 @@ _title_o, title_r, doi_r or url_r, and an identifier for the original: doi_o, a 
 
 </details>
 
-**Invalid DOI format** (8 findings):
+**Invalid DOI format** (7 findings):
 
 _doi_o or doi_r is not a bare DOI (10.NNNN/…), or a DOI listed in alt_identifier_o or alt_identifier_r is malformed._
 
 - REPL-001062 (`10.1111/j.1468-0297.2009.02267.x | 10.1108/s0193-230620150000018002`): alt_identifier_r lists a DOI that carries query or tracking text (?…) — `10.1108/s0193-230620150000018002?utm_campaign=repec&wt.mc_id=repec`
-- FRED-000330 (`art00005 | 10.1007/s13164-018-0400-9`): doi_o is not a DOI — `art00005`
 - FRED-000059 (`djaerv_2018 | 10.1098/rsos.231240`): doi_o is not a DOI — `djaerv_2018`
 - FRED-000052 (`escholarship.orgucitem39d347bk | 10.1098/rsos.231240`): doi_o is not a DOI — `escholarship.orgucitem39d347bk`
 - VAL-000005 (`10.1016/j.im.2015.06.009 | https://aisel.aisnet.org/trr/vol7/iss1/3`): doi_r is a link, not a DOI — `https://aisel.aisnet.org/trr/vol7/iss1/3`
@@ -135,6 +142,5 @@ _title_r is a file or project name, or a generic name such as 'Analysis'._
 - Type values valid
 - Source values valid
 - Year ranges reasonable
-- No duplicate records
 - DOI mapped to conflicting references
 - No 'NA'/'N/A' strings

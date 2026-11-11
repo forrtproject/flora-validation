@@ -187,12 +187,30 @@ META_PAPER_CANDIDATE_URLS = 5
 # and whole <mml:math> blocks from publisher XML. A tag by its shape: a name, "?" or
 # "!" straight after "<" or "</", and no "<" inside: "<i>", "<?Pub Caret?>",
 # "<!-- -->", but not "< .05" or "<1.0E-6". Those are comparisons, and anything looser
-# takes the text up to the next ">" with them, however far off it is.
-_TAG_RE = re.compile(r"</?[A-Za-z!?][^<>]*>")
+# takes the text up to the next ">" with them, however far off it is. Nor is a name with
+# a hyphen before a digit: "<halshs-01945777>" is a HAL archive's identifier.
+_TAG_RE = re.compile(r"</?(?![\w:.-]*-\d)[A-Za-z!?][^<>]*>")
+# Tags side by side are replaced as one, by what the text either side of them all needs.
+_TAG_RUN_RE = re.compile(f"(?:{_TAG_RE.pattern})+")
+# A tag's name without its namespace: "p" in <jats:p>, "br" in <br/>.
+_TAG_NAME_RE = re.compile(r"</?(?:[\w.-]+:)?([\w.-]*)")
+# Tags that end a paragraph, namespaced or not (<jats:title>, <ns3:sec>): the heading in
+# "<h3>Introduction</h3> Achilles…" is not the first word of the sentence after it.
+_BLOCK_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6", "p", "div", "sec", "title",
+                         "li", "br"})
+# Tags around a part of the word before them: CO<sub>2</sub>, 10<sup>-3</sup>.
+_ATTACHED_TAGS = frozenset({"sub", "sup"})
 # A single newline inside a paragraph is a PDF copy artefact — the sentence simply
 # continued. Two or more are a real paragraph break and are preserved.
 _SOFT_BREAK_RE = re.compile(r"(?<!\n)\n(?!\n)")
-_WS_RE = re.compile(r"[ \t]+")
+# However many newlines, and whatever spaces between them: one paragraph break.
+_PARAGRAPH_BREAK_RE = re.compile(r"\n\s*\n")
+# The Unicode spaces too: a four-per-em space (U+2005) published "84  TIMP2".
+_WS_RE = re.compile(r"[ \t\xa0\u2000-\u200a\u202f\u205f\u3000]+")
+# Text whose paragraphs are kept. Every other cleaned column is shown on one line, and
+# a title is part of validated's key, so a <jats:title> inside one must not break it.
+PARAGRAPH_COLUMNS = ("abstract_r", "outcome_quote", "outcome_computational_quote",
+                     "outcome_robustness_quote")
 
 
 def _s(value) -> str:
@@ -256,18 +274,37 @@ def unescape_entities(text):
     return text
 
 
-def clean_text(value):
+def _replace_tags(match):
+    """What a run of tags leaves: a paragraph break for a block, nothing beside a sub-
+    or superscript, and a space only between two words, so "TIMP2</i>AND" reads
+    "TIMP2 AND" and "<i>et al</i>." reads "et al."."""
+    names = {_TAG_NAME_RE.match(tag).group(1).lower()
+             for tag in _TAG_RE.findall(match.group(0))}
+    if names & _BLOCK_TAGS:
+        return "\n\n"
+    if names & _ATTACHED_TAGS:
+        return ""
+    text, start, end = match.string, match.start(), match.end()
+    between_words = (0 < start and end < len(text)
+                     and text[start - 1].isalnum() and text[end].isalnum())
+    return " " if between_words else ""
+
+
+def clean_text(value, one_line=False):
     """Strip markup, decode entities, and repair PDF-copied line breaks.
 
     Step 7c of the R notebook. Runs before anything compares strings, so a title
     differing only by an `<i>` is not mistaken for a different paper.
+
+    Paragraphs come out separated by one blank line, or by a space with `one_line`,
+    for a column outside PARAGRAPH_COLUMNS.
     """
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
     text = str(value)
     if not text.strip():
         return None
-    text = _TAG_RE.sub(" ", text)
+    text = _TAG_RUN_RE.sub(_replace_tags, text)
     # Unrecognised capitalised entities are lowercased before unescaping: CrossRef
     # returns forms ("&Amp;", "&Rsquo;") that html.unescape does not recognise, and
     # which then reach the published reference verbatim. Only an entity that is not
@@ -276,12 +313,14 @@ def clean_text(value):
     # Tags stripped again: publisher XML double-encodes, so &amp;lt;i&amp;gt; only
     # becomes a literal tag once unescaped.
     if "<" in text and ">" in text:
-        text = _TAG_RE.sub(" ", text)
-    text = text.replace("\xa0", " ")
+        text = _TAG_RUN_RE.sub(_replace_tags, text)
+    # A carriage return, written out or as the &#13; decoded above, is a line break
+    # like any other: left in, a page that keeps an abstract's breaks shows each one.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = _SOFT_BREAK_RE.sub(" ", text)
     text = _WS_RE.sub(" ", text)
-    text = "\n\n".join(part.strip() for part in text.split("\n\n"))
-    return text.strip() or None
+    paragraphs = (part.strip() for part in _PARAGRAPH_BREAK_RE.split(text))
+    return (" " if one_line else "\n\n").join(part for part in paragraphs if part) or None
 
 
 def drop_untitled(frame):
@@ -1285,7 +1324,7 @@ def build(cur, verbose: bool = True,
         if column not in df.columns:
             continue
         before = df[column].copy()
-        df[column] = df[column].apply(clean_text)
+        df[column] = df[column].apply(clean_text, one_line=column not in PARAGRAPH_COLUMNS)
         # Reported per column, as the R side does: a sudden jump in one column is
         # how a new markup dialect upstream announces itself.
         changed = int((before.fillna("") != df[column].fillna("")).sum())
