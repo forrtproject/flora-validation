@@ -57,7 +57,8 @@ case and diacritic differences). It rechecks
 the current record against that bibliography before applying anything. Any API
 lookup failure prevents all automatic writes for that run. Human preprint rulings
 and confirmed-file decisions take priority; reviewer-confirmed distinct rows are
-never merged automatically.
+never merged automatically. Pairs whose absorbed record has editor corrections
+to content or outcomes also require review, so those corrections cannot be lost.
 
 A standalone version uses the existing FLoRA correction log to update doi_o/r
 and append its previous identifier to alt_identifier_o/r. Both versions under
@@ -73,10 +74,11 @@ identify a pair that needs merging.
 standalone discovery command itself remains read-only; the resolver recomputes
 candidates from the live database and applies the eligible subset. OpenAlex-only
 matches and renamed/conflicting records stay in the review artifact. The existing
-FLoRA editor can undo corrections; the Preprint duplicates tab can revise or
-withdraw an automatic duplicate ruling. To keep a standalone preprint after
-reverting its correction, add an explicit keep_both ruling for the DOI pair to
-cache/confirmed_preprint_duplicates.csv; that prevents automatic reapplication.
+FLoRA editor can undo corrections. To reverse an automatic merge, or keep a
+standalone preprint after reverting its correction, add an explicit `keep_both`
+ruling for the DOI pair to `cache/confirmed_preprint_duplicates.csv` and rerun
+preparation. This prevents automatic reapplication. Withdrawing a ruling in the
+Preprint duplicates tab alone does not preserve that override.
 
 ## Apply changes through the FLoRA correction log
 

@@ -238,3 +238,21 @@ def test_discovery_artifact_failure_cannot_block_validated_release():
     assert upload['with']['if-no-files-found'] == 'warn'
     resolver = next(s for s in steps if s.get('id') == 'publication_versions')
     assert resolver['continue-on-error'] is True
+
+
+@pytest.mark.parametrize('field', ['outcome', 'outcome_quote', 'title_r', 'type'])
+def test_absorbed_editor_corrections_require_review(field):
+    """Automatic absorption cannot retire the identity holding a human correction."""
+    f = frame(publisher=True)
+    f['edited_fields'] = [field, '']
+    edits, pairs, review = automatic_actions(f, candidate(f))
+    assert not edits and not pairs
+    assert review[0]['reason'] == 'absorbed record has editor corrections'
+
+
+def test_identifier_only_edits_allow_a_compatible_publication_merge():
+    """Prior publication identifier changes alone do not block version deduplication."""
+    f = frame(publisher=True)
+    f['edited_fields'] = ['doi_r alt_identifier_r', '']
+    edits, pairs, review = automatic_actions(f, candidate(f))
+    assert not edits and len(pairs) == 1 and not review

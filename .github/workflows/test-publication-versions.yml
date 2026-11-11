@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - '*publication*.py'
+      - published_versions.py
       - '*preprint*.py'
       - flora_edits.py
       - manual_records.py

@@ -63,6 +63,11 @@ def automatic_actions(frame, candidates, rulings=()):
                 row = next(discovery.correction_rows(frame, [{**candidate, 'row_ids': identifier}]))
                 edits.append({**row, 'approved': 'yes', 'note': 'Automatic explicit publication link with matching title and first author: ' + candidate['evidence']})
             else:
+                identifiers = {'doi_o', 'doi_r', 'alt_identifier_o', 'alt_identifier_r', 'url_o', 'url_r'}
+                if set(str(record.get('edited_fields') or '').split()) - identifiers:
+                    review.append({**candidate, 'row_ids': identifier,
+                                   'reason': 'absorbed record has editor corrections'})
+                    continue
                 distinct = record.get('duplicate_status') == 'distinct' or peers.get(
                     'duplicate_status', pd.Series('', index=peers.index)).eq('distinct').any()
                 if distinct:

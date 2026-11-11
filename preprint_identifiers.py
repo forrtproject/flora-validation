@@ -42,8 +42,11 @@ def validated_identifiers(row):
         # Extractor refreshes may have overwritten the raw DOI since a previous
         # validation. Its source snapshots still retain the published history.
         for prior in published:
-            for old in [prior.get(doi), *(prior.get(alt) or '').split(',')]:
-                result[alt] = preserve_preprint(result[alt], old, result[doi])
+            result[alt] = preserve_preprint(result[alt], prior.get(doi), result[doi])
+            # Aliases of a different paper must not follow an identity correction.
+            if normalize_doi(prior.get(doi)) == normalize_doi(result[doi]):
+                for old in (prior.get(alt) or '').split(','):
+                    result[alt] = preserve_preprint(result[alt], old, result[doi])
         # An intermediate preprint version may have replaced the extracted DOI.
         # Only follow transitions that actually lead to the published identifier.
         edges = [(old, new) for change in history

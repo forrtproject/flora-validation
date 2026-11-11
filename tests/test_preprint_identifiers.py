@@ -163,3 +163,12 @@ def test_unpublished_manual_entry_logs_the_alias_with_its_doi_change(monkeypatch
     monkeypatch.setattr(manual_records, '_log', log)
     manual_records.update(Mock(), 'manual-1', values, 'Published version identified', 1, {'handle': 'test'})
     assert log.call_args.args[4][alt] == [None, PREPRINT]
+
+
+@pytest.mark.parametrize('side', ['o', 'r'])
+def test_alias_of_a_replaced_wrong_paper_is_not_reintroduced(side):
+    """Removing a wrong paper's alias survives the next validation sync."""
+    doi, alt = 'doi_' + side, 'alt_identifier_' + side
+    row = {doi: ARTICLE, alt: '', '_published_identifiers': [
+        {doi: '10.9999/different-paper', alt: PREPRINT}]}
+    assert validated_identifiers(row)[alt] == ''
