@@ -26,13 +26,13 @@ every build.
 
 MATCHING IS BY FAMILY NAME, LOWERCASED
 --------------------------------------
-Our author columns hold display names ("Eyal Peer; Laura Brandimarte"), so the
-family name is taken as the last whitespace-separated token. That mis-splits a
-particle surname — "Janet G. van Hell" yields "hell" — but identically on both
-sides, so a genuine self-replication still matches. It can overcount two unrelated
-people who share a surname; the figure is a signal for a reader, not an identity
-claim, and the alternative (initials too) would miss "J. Smith" against
-"John Smith".
+Structured family names preserve surname particles. Plain bylines use the same
+normalisation as the final export, so recognised organisations remain literal
+names rather than accidentally becoming surnames such as "group". A family name
+without a given name is usable. Any collective/literal, incomplete or malformed
+entry makes BOTH measures unknown, including mixed person/collective bylines.
+We do not infer the membership or size of a collective author. Surname matching
+can conflate unrelated people and is only a proxy, not verified person identity.
 """
 import json
 import re
@@ -45,54 +45,38 @@ use_utf8_output()
 
 # Sheets and OpenAlex both use "; " between names; a few rows use "," or " and ".
 _SPLIT = re.compile(r"\s*(?:;|\band\b|&)\s*")
-_PUNCT = re.compile(r"[^\w\s'\-]", re.UNICODE)
 
 
 def _family_names(value) -> list:
     """Family names from structured authors or the older display-name format."""
     if value is None:
         return []
-    text = str(value).strip()
-    if not text or text.lower() in ("nan", "none"):
-        return []
-
-    if isinstance(value, list) or text.startswith("["):
+    if isinstance(value, list):
+        authors = value
+    else:
+        text = str(value).strip()
+        if not text or text.lower() in ("na", "n/a", "nan", "none", "null", "<na>"):
+            return []
         try:
-            authors = value if isinstance(value, list) else json.loads(text)
-        except ValueError:
+            if text.startswith(("[", "{")):
+                authors = json.loads(text)
+            else:
+                # Reuse export normalisation, including its organisation rules;
+                # retain the legacy "and" / "&" separators for plain individuals.
+                from bibliographic_helpers import normalise_author_json
+                authors = json.loads(normalise_author_json("; ".join(_SPLIT.split(text))))
+        except (ValueError, TypeError):
             return []
-        if not isinstance(authors, list):
+    if not isinstance(authors, list) or not authors:
+        return []
+    names = []
+    for author in authors:
+        family = author.get("family") if isinstance(author, dict) else None
+        if not isinstance(family, str) or not family.strip():
+            # Never silently discard an unresolved entry and score a partial list.
             return []
-        # Structured family names preserve particles (e.g. "van Hell").
-        # Keep duplicates here: two authors named Smith are two team members,
-        # even though intersection counts their shared surname only once in R.
-        return [re.sub(r"\s+", " ", str(author["family"]).strip().lower())
-                for author in authors if isinstance(author, dict)
-                and author.get("family") and str(author["family"]).strip()]
-
-    out = []
-    for name in _SPLIT.split(text):
-        if "," in name:
-            family = _PUNCT.sub(" ", name.split(",", 1)[0]).strip().lower()
-            if family:
-                out.append(re.sub(r"\s+", " ", family))
-            continue
-        name = _PUNCT.sub(" ", name).strip()
-        if not name:
-            continue
-        tokens = [t for t in name.split() if t]
-        if not tokens:
-            continue
-        # An "Ackerman, Jeff" entry puts the family name first; a display name puts
-        # it last. The comma is the only signal, and it is gone by now, so the last
-        # token is used throughout — consistently, which is what matters.
-        family = tokens[-1].lower()
-        # A trailing initial ("Smith J") is not a surname.
-        if len(family) < 2 and len(tokens) > 1:
-            family = tokens[-2].lower()
-        if len(family) >= 2:
-            out.append(family)
-    return out
+        names.append(re.sub(r"\s+", " ", family.strip().lower()))
+    return names
 
 
 def families(value) -> set:
@@ -103,7 +87,7 @@ def families(value) -> set:
 def count(author_o, author_r) -> "tuple":
     """(overlap, percentage of the replication team) for one pair.
 
-    Returns (None, None) when either side has no usable author list: zero would
+    Returns (None, None) when either list contains any unassessable entry: zero would
     read as "no shared authors", which is a finding, and we do not have one.
     """
     left, right = families(author_o), _family_names(author_r)

@@ -1,93 +1,82 @@
 # First FLoRA Zenodo release: 2026.11.1
 
-Prepared offline on 10 November 2026 from the existing repository publication.
-No production draft, DOI reservation, upload or publication was performed. No
-explicit sandbox token was available, so no sandbox upload was attempted.
+CalVer `YYYY.MM.N` is agreed. The release now uses the 30 columns selected by Lukas,
+plus the tested `author_overlap_pct` field, in the order in [columns.json](columns.json).
+Only the percentage is released; neither author lists nor the overlap count are
+included in the deposit. Each outcome sits next to its quote and source. The full
+internal export remains in the repository.
 
-Source CSV SHA-256: `053a2a92536d694f42d78947a5f7d3d081fb041b2f144387179295d105c51e99`.
-The CSV remains byte-identical, including its UTF-8 BOM. Source correction watermark:
-346. Reassemble from this exact source publication to reproduce the reviewed data.
+## Prepared offline preview (11 November 2026)
 
-## First changelog
+- Source: the repository publication with 2,884 records, SHA-256
+  `5826464541891f83c594ccc295a0512cf20329373c3b90a2fafc56e0a97e807c`.
+- First changelog: 2,884 added; 0 changed; 0 retired (initial release baseline).
+- Release CSV: 31 selected columns, quoted UTF-8 with BOM.
+- All selected source cells remain unchanged except the derived overlap percentage,
+  regenerated for the preview through `author_overlap.augment` and the existing
+  `final_export.csv_text` serializer. No tracked output or database record was edited.
+- The codebook lists exactly the 31 release columns, in release order, and observed
+  categorical values. Source/full-export and release hashes are recorded separately.
 
-Added: **2,851**; changed: **0**; retired: **0**. Current records: **2,851**.
+This bundle is an **offline pipeline preview**, not a production-ready publication.
+Its source manifest is marked `offline_pipeline_preview`; production upload refuses
+it. Merge/deploy the fix, run the normal authoritative pipeline/publication, then
+assemble and review a fresh release. Assembly refuses stale overlap percentages;
+it does not patch source outputs. Other data corrections still use the correction log.
 
-First Zenodo release: all current records are additions to this release baseline.
-These counts do not reconstruct additions or retirements before this baseline.
-`changes.json` enumerates all 2,851 IDs.
+## Author-overlap verification
+
+The earlier pipeline could interpret a plain group name as a surname before final
+normalization converted it to a literal collective author. Scoring now uses the
+same normalization as export, and final export recalculates the derived fields
+before normalization can discard an incomplete byline entry.
+
+Both overlap measures are missing when either byline is absent, malformed, or has
+any collective/unresolved entry, including mixed person/group lists. A family name
+without a given name remains usable. Group membership is not inferred.
+
+On the current published author metadata, 71 previously numeric percentages become
+missing; no numeric percentage changes to another numeric value. This includes
+`FLORA-000662`, `FLORA-000896`, `FLORA-001262`. Detailed affected IDs are in
+[author-overlap-audit.json](author-overlap-audit.json). These are deterministic
+changes to a derived field, not manual changes to study coding.
+
+The percentage remains a surname proxy: distinct shared family names / report
+author count × 100, rounded to one decimal. Homonyms and repeated surnames limit
+interpretation. It is not a verified percentage of shared people.
 
 ## Proposed metadata for Lukas's approval
 
 - Title: **FORRT Library of Reproduction and Replication Attempts (FLoRA)**.
-- Creators: **the 220 authors, in their existing order**, from fred-data's
-  CITATION.cff at commit `42a22b635efd6ee4cc33d64f322742d0545d796a`.
-  Full names and existing ORCIDs are in [citation-template.cff](citation-template.cff)
-  and the assembled `zenodo-metadata.json`. No emails are included.
-- Licence: **Creative Commons Attribution 4.0 International (CC BY 4.0)**,
-  inherited from that citation file; API identifier `cc-by-4.0`.
-- Type/access: dataset, open access.
-- Version: `2026.11.1`.
-- Description: A comprehensive database of reproduction and replication studies
-  in the social and behavioural sciences. Each row links an original study to a
-  replication or reproduction attempt. Added: 2,851; changed: 0; retired: 0.
-  Current records: 2,851. Includes coding guidance, record-level changelog and
-  reuse guidance.
-- DOI: none assigned. Upload will use only a DOI actually reserved by Zenodo.
+- Creators: the existing 220 authors, in order, from fred-data at commit
+  `42a22b635efd6ee4cc33d64f322742d0545d796a`; see
+  [citation-template.cff](citation-template.cff). No emails are included.
+- Licence: **CC BY 4.0**, inherited from that citation file.
+- Version/access/type: `2026.11.1`, open access, dataset.
+- Description: a comprehensive database of reproduction and replication studies
+  in the social and behavioural sciences, linking original studies to reports,
+  with coding guidance, record-level changes and reuse guidance. The generated
+  metadata includes the actual record/change counts.
+- DOI: none assigned. CITATION.cff receives only a DOI actually reserved by Zenodo.
 
 ## Bundle file list
 
-1. `flora.csv`
-2. `CODEBOOK.md`
-3. `FAQ.md`
-4. `README.md`
-5. `CHANGELOG.md`
-6. `changes.json`
-7. `REUSE.md`
-8. `CITATION.cff`
-9. `flora_release_manifest.json`
-10. `flora_release_notes.md`
-11. `zenodo-metadata.json`
-12. `bundle-checksums.json`
+`flora.csv`, `CODEBOOK.md`, `FAQ.md`, `README.md`, `CHANGELOG.md`, `changes.json`,
+`REUSE.md`, `CITATION.cff`, `flora_release_manifest.json`, `flora_release_notes.md`,
+`zenodo-metadata.json`, `bundle-checksums.json`.
 
-The completed local bundle is `release-bundles/2026.11.1` (gitignored archive).
-No token is in the bundle. `ZENODO_TOKEN` must be exported in the invoking process;
-`ZENODO_SANDBOX_TOKEN` is needed for the separately assembled sandbox bundle.
+The local preview is archived at `release-bundles/2026.11.1`. It supersedes the
+previous 51-column candidate. Superseded bundles without the agreed projection are
+also rejected for upload. No production draft, DOI reservation, upload or publication
+has been performed. No explicitly identified sandbox token is available.
 
-## Exact production command, only after approval
+## Production command after the authoritative rebuild and approval
 
-From the repository root, using the reviewed bundle:
+First archive the preview and assemble a fresh bundle from the regenerated,
+authoritative `output/`. Then, with `ZENODO_TOKEN` exported in the invoking process:
 
 ```bash
 python3 zenodo_flora.py --bundle release-bundles/2026.11.1 --upload production --publish --approve-production
 ```
 
-Manual releases and `YYYY.MM.N` versions support deliberate review and more than
-one release per month. The deposited CITATION.cff is frozen for each version;
-future author/version updates cannot change citations in an older deposit.
-See [the release guide](../../docs/FLORA_ZENODO_RELEASES.md) for recovery and subsequent releases.
-
-## Codebook verification and outstanding data review
-
-All 51 CSV columns are documented in order. The bundle codebook now includes every
-observed type, source and outcome/axis label. Author fields with nonmissing values
-all parse as JSON arrays. Definitions clarify that author overlap is a shared-surname
-count with the report author count as the percentage denominator, and that reproduction
-outcomes/quotes combine both axes.
-
-Recomputing author overlap found three exceptions: `FLORA-000662`, `FLORA-000896`,
-`FLORA-001262`. Each stores 0 / 0.0 despite a collective-author-only list with no
-usable family names on one side; the current calculation returns missing. The other
-2,848 records agree with that calculation. Resolve these through the correction log
-and regenerate the publication before approving production; the reviewed CSV has
-not been edited. These checks validate documented structure and the overlap formula,
-not the substantive correctness of every study's coding.
-
-## Pre-release status (11 November 2026)
-
-CalVer `YYYY.MM.N` is agreed. The prepared 2,851-record bundle remains a review
-candidate, not the final release: the latest publication on main has changed.
-Before production, settle the public column selection (the candidate still contains
-all 51 fields), review the overlap handling if retained, assemble a fresh candidate,
-verify its codebook and changelog, and approve creators/licence/description. A sandbox
-smoke test remains recommended; no explicit sandbox token is available. Approval of
-CalVer does not authorize production publication.
+Sandbox uses `ZENODO_SANDBOX_TOKEN`; credentials are never stored in the bundle.

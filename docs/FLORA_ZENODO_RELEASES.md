@@ -29,8 +29,14 @@ and receipts because Actions artifacts expire after 90 days.
 `publish_flora.py` already exports the authoritative stored dataset and corrections.
 Use the committed `output/` produced by that pipeline. Assembly validates the CSV
 against its existing `flora_release_manifest.json` and reuses
-`release_helpers.prepare_release` for byte manifests and notes. CSV cells and IDs
-are unchanged; a UTF-8 BOM is added only when missing.
+`release_helpers.prepare_release` for byte manifests and notes. Release CSV fields are selected and ordered by `release/flora/columns.json` (31
+columns, including only `author_overlap_pct` for overlap). Selected cells and IDs
+are unchanged; the release serializer writes quoted UTF-8 CSV with a BOM. The source
+and release hashes therefore differ and are both preserved in the manifest.
+Before projection, assembly checks the percentage against both source author lists;
+stale derived values stop assembly. Regenerate via the fixed normal pipeline rather
+than patching exports. A preview of the deterministic overlap fix can be assembled
+locally, but a source manifest marked `offline_pipeline_preview` blocks production.
 
 The existing `flora_history.csv`, `flora_dataset_history`, and
 `backfill_flora_history.py` hold **daily aggregate counts**, not historical record
@@ -59,10 +65,10 @@ release. The metadata proposes the existing CC BY 4.0 licence and author order.
 
 ## Commands from the project root
 
-Python 3.12 with `requests` and `pyyaml` is sufficient for release assembly/upload:
+Python 3.12 with `requests`, `pyyaml` and `pandas` is sufficient for release assembly/upload:
 
 ```bash
-python3 -m pip install requests pyyaml
+python3 -m pip install requests pyyaml pandas
 python3 zenodo_flora.py --version 2026.11.1 --bundle release-bundles/2026.11.1
 ```
 
@@ -137,12 +143,15 @@ its checksum. Metadata and data remain the reviewed inputs. Production approval
 must cover this DOI reservation and the first upload. Never run the production
 command until approved: published records/DOIs cannot simply be deleted.
 
-## Choosing the public columns
+## Agreed public columns
 
-[The interactive column selector](../release/flora/column-selector.html) covers
-all 51 current columns. It proposes a 20-field main CSV (12 essentials, two years
-and six evidence fields), with a 12-field minimal preset and individual toggles.
-Choices can be copied or exported as JSON; browser selections do not change the
-pipeline. The public column selection remains to be agreed and implemented.
-The page also explains the proposed conservative treatment of collective or
-unresolved authors for overlap enrichment; it does not perform data corrections.
+`release/flora/columns.json` is the ordered release contract: the 30 fields selected
+by Lukas plus `author_overlap_pct`. The original-study and report bibliographies
+are grouped separately. Each outcome is followed by its quote and source, and
+provenance `source` ends the CSV. The full pipeline export remains available in the
+repository; it is not a second dataset file in the deposit.
+
+[The interactive selector](../release/flora/column-selector.html) now defaults to
+this agreed selection. Browser changes remain proposals; they do not modify the
+contract or the pipeline. The deposit codebook contains only the agreed columns,
+in their release order.

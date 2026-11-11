@@ -21,7 +21,13 @@ def csv_file(path, rows, columns=('id', 'title_r')):
 def bundle(tmp_path):
     output = tmp_path / 'output'
     output.mkdir()
-    source = csv_file(output / 'flora.csv', [{'id': 'A', 'title_r': 'Röseler, "test"\nnext line'}])
+    columns = json.loads((release.SOURCES / 'columns.json').read_text())
+    columns += ['author_o', 'author_r', 'author_overlap', 'id_md5']
+    row = dict.fromkeys(columns, 'NA')
+    row.update(id='A', title_r='Röseler, "test"\nnext line',
+               author_o='[{"family":"Smith"}]', author_r='[{"family":"Jones"}]',
+               author_overlap='0', author_overlap_pct='0.0')
+    source = csv_file(output / 'flora.csv', [row], columns)
     release.write_json(output / 'flora_release_manifest.json', {
         'sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
         'data_version': {'change_watermark': 346}})
@@ -118,7 +124,7 @@ def test_new_version(bundle, tmp_path, monkeypatch):
     receipt = dict(environment='sandbox', id=11, conceptrecid=10, version='2026.10.1', published=True)
     release.write_json(prior / 'zenodo-state.json', receipt)
     target = tmp_path / 'next'
-    release.assemble(bundle, '2026.11.2', target, prior)
+    release.assemble(bundle.parent / 'output', '2026.11.2', target, prior)
     base = release.HOSTS['sandbox']
     draft = {'id': 12, 'conceptrecid': 10, 'submitted': False, 'files': [],
              'metadata': {'version': '2026.10.1', 'prereserve_doi': {'doi': 'api-reserved-next'}},
@@ -151,7 +157,7 @@ def test_client_rejects_foreign_host_and_hides_errors(monkeypatch):
 
 def test_no_network_for_dry_run(bundle, tmp_path, monkeypatch):
     monkeypatch.setattr(release.requests, 'Session', Mock(side_effect=AssertionError('Network access')))
-    release.assemble(bundle, '2026.11.2', tmp_path / 'offline')
+    release.assemble(bundle.parent / 'output', '2026.11.2', tmp_path / 'offline')
 
 
 def test_publish_only_after_checksums(bundle, monkeypatch):
@@ -186,5 +192,60 @@ def test_codebook_matches_snapshot(bundle):
         {'id': 'A', 'outcome': 'computational issues, robust', 'outcome_computation': 'computational issues'}])
     assert '`computational issues, robust`' in rendered
     assert '`computational issues`' in rendered
-    assert 'Number of distinct shared family names' in rendered
-    assert 'number of report authors' in rendered
+    assert '| `author_overlap` |' not in rendered
+    assert '| `author_overlap_pct` |' not in rendered
+
+
+def test_release_projection_order_and_cells(bundle):
+    columns, rows = release.read_records(bundle / 'flora.csv')
+    assert columns == json.loads((release.SOURCES / 'columns.json').read_text())
+    assert len(columns) == 31
+    assert 'author_overlap_pct' in columns and 'author_overlap' not in columns
+    assert not {'author_o', 'author_r', 'id_md5', 'flora_id'} & set(columns)
+    _, original = release.read_records(bundle.parent / 'output' / 'flora.csv')
+    assert rows == {key: {column: row[column] for column in columns} for key, row in original.items()}
+    import re
+    book = (bundle / 'CODEBOOK.md').read_text()
+    assert re.findall(r'^\| `([^`]+)` \|', book, re.MULTILINE) == columns
+    assert hashlib.sha256((bundle / 'flora.csv').read_bytes()).hexdigest() != hashlib.sha256((bundle.parent / 'output' / 'flora.csv').read_bytes()).hexdigest()
+
+
+def test_stale_overlap_blocks_release_before_files_are_written(bundle, tmp_path):
+    source = bundle.parent / 'output'
+    columns, rows = release.read_records(source / 'flora.csv')
+    rows['A']['author_o'] = '[{"family":"Smith"},{"name":"The TwiLex Group"}]'
+    rows['A']['author_overlap_pct'] = '100.0'
+    csv_file(source / 'flora.csv', rows.values(), columns)
+    release.write_json(source / 'flora_release_manifest.json', {
+        'sha256': hashlib.sha256((source / 'flora.csv').read_bytes()).hexdigest()})
+    with pytest.raises(ValueError, match='Stale author_overlap_pct.*A'):
+        release.assemble(source, '2026.11.1', tmp_path / 'stale')
+    assert not (tmp_path / 'stale').exists()
+
+
+def test_missing_selected_column_blocks_release(bundle, tmp_path):
+    source = bundle.parent / 'output'
+    columns, rows = release.read_records(source / 'flora.csv')
+    columns.remove('bibtex_ref_o')
+    for row in rows.values():
+        del row['bibtex_ref_o']
+    csv_file(source / 'flora.csv', rows.values(), columns)
+    release.write_json(source / 'flora_release_manifest.json', {
+        'sha256': hashlib.sha256((source / 'flora.csv').read_bytes()).hexdigest()})
+    with pytest.raises(ValueError, match='bibtex_ref_o'):
+        release.assemble(source, '2026.11.1', tmp_path / 'missing')
+
+
+def test_preview_and_superseded_bundle_cannot_publish_production(bundle):
+    manifest_path = bundle / 'flora_release_manifest.json'
+    manifest = json.loads(manifest_path.read_text())
+    manifest['source_manifest']['source_kind'] = 'offline_pipeline_preview'
+    release.write_json(manifest_path, manifest)
+    release.write_json(bundle / 'bundle-checksums.json', release.checksums(bundle))
+    with pytest.raises(ValueError, match='Preview bundle'):
+        release.upload(bundle, 'production', publish=True, approve_production=True)
+    del manifest['projection']
+    release.write_json(manifest_path, manifest)
+    release.write_json(bundle / 'bundle-checksums.json', release.checksums(bundle))
+    with pytest.raises(ValueError, match='agreed release columns'):
+        release.upload(bundle, 'production', publish=True, approve_production=True)

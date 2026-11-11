@@ -59,7 +59,7 @@ with BOM. See the bundled FAQ for outcome definitions and coding decisions.
 | `oa_work_id_o` | OpenAlex work identifier. Original study. |
 | `oa_work_id_r` | OpenAlex work identifier. Replication/reproduction report. |
 | `author_overlap` | Number of distinct shared family names in the original and report author lists, matched case-insensitively; not a yes/no flag or verified person identity. |
-| `author_overlap_pct` | 100 × shared distinct family names / number of report authors with usable family names, rounded to one decimal. Missing if either author list is unusable; matching surnames can conflate different people. |
+| `author_overlap_pct` | 100 × shared distinct family names / number of report authors with usable family names, rounded to one decimal. Missing if either list is absent, malformed, or contains any entry without a usable family name (including a collective author). Given names are optional. Plain bylines use the same normalization as export. Matching surnames can conflate different people. |
 | `abstract_r` | Report abstract. |
 | `outcome_computation` | Computational reproducibility outcome, coded separately from robustness. Category labels are specific to the released snapshot; see the release-specific vocabulary. |
 | `outcome_computational_quote` | Supporting text for computational reproducibility. |
@@ -71,14 +71,14 @@ with BOM. See the bundled FAQ for outcome definitions and coding decisions.
 | `source_display_id` | Primary source record display identifier. |
 | `source_record_id` | Primary source record UUID. |
 
-### Known issue in the prepared 2026.11.1 baseline
+### Author-overlap release validation
 
-`FLORA-000662`, `FLORA-000896` and `FLORA-001262` store zero author overlap and
-zero overlap percentage, although one author list contains only a collective name
-and no usable family names. These zeros cannot establish absence of shared authors;
-the current calculation returns missing. They require correction-log review before
-production publication. Release assembly preserves the input data and does not
-silently replace these values.
+The overlap calculation rejects partial individual/collective lists as well as
+collective-only lists. Final export recalculates against the normalized bylines,
+so a plain organisation name cannot be treated as a surname before it becomes a
+literal collective author in the CSV. Existing stored snapshots require a normal
+pipeline rebuild to incorporate this derivation fix; release assembly verifies the
+stored percentage and refuses stale values rather than editing them.
 
 ## Relationship to the existing tables
 

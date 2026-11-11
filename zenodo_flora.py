@@ -2,6 +2,7 @@
 import argparse
 import csv
 import hashlib
+import io
 import json
 import os
 import re
@@ -71,12 +72,22 @@ def assemble(output, version, destination, previous=None):
     source_manifest = json.loads((output / 'flora_release_manifest.json').read_text())
     if hashlib.sha256(source.read_bytes()).hexdigest() != source_manifest['sha256']:
         raise ValueError('flora.csv does not match its existing release manifest')
-    columns, rows = read_records(source)
-    changes = changelog(source, previous / 'flora.csv' if previous else None)
+    columns = json.loads((SOURCES / 'columns.json').read_text())
+    source_columns, source_rows = read_records(source)
+    missing = set(columns) - set(source_columns)
+    if missing:
+        raise ValueError('Release columns missing from source: ' + ', '.join(sorted(missing)))
+    validate_overlap(source_columns, source_rows)
+    rows = {identifier: {c: row[c] for c in columns} for identifier, row in source_rows.items()}
+    # Validate the dictionary before creating a partial bundle.
+    codebook = render_codebook(columns, rows.values())
     destination.mkdir(parents=True)
-    # Preserve every cell and byte when already BOM encoded; add only the Excel BOM otherwise.
-    payload = source.read_bytes()
-    (destination / 'flora.csv').write_bytes(payload if payload.startswith(b'\xef\xbb\xbf') else b'\xef\xbb\xbf' + payload)
+    buffer = io.StringIO(newline='')
+    writer = csv.DictWriter(buffer, fieldnames=columns, quoting=csv.QUOTE_ALL, lineterminator='\n')
+    writer.writeheader()
+    writer.writerows(rows.values())
+    (destination / 'flora.csv').write_text(buffer.getvalue(), encoding='utf-8-sig', newline='')
+    changes = changelog(destination / 'flora.csv', previous / 'flora.csv' if previous else None)
     counts = changes['counts']
     summary = (f"Added: {counts['added']:,}; changed: {counts['changed']:,}; retired: {counts['retired']:,}. "
                f"Current records: {len(rows):,}.")
@@ -92,6 +103,8 @@ def assemble(output, version, destination, previous=None):
                                              release_notes=summary)
     manifest['dataset_version'] = version
     manifest['source_manifest'] = source_manifest
+    manifest['projection'] = {'columns': columns, 'source_columns': source_columns,
+                              'omitted_columns': [c for c in source_columns if c not in columns]}
     manifest['previous_release'] = prior
     write_json(destination / 'flora_release_manifest.json', manifest)
     cff = yaml.safe_load((SOURCES / 'citation-template.cff').read_text())
@@ -108,20 +121,45 @@ def assemble(output, version, destination, previous=None):
     write_json(destination / 'zenodo-metadata.json', metadata)
     for filename in ('README.md', 'REUSE.md', 'FAQ.md'):
         shutil.copyfile(SOURCES / filename, destination / filename)
-    (destination / 'CODEBOOK.md').write_text(render_codebook(columns, rows.values()), encoding='utf-8')
+    (destination / 'CODEBOOK.md').write_text(codebook, encoding='utf-8')
     write_json(destination / 'bundle-checksums.json', checksums(destination))
     return counts
+
+
+def validate_overlap(columns, rows):
+    """Never ship stale derived percentages or silently correct an existing export."""
+    if not {'author_o', 'author_r'} <= set(columns):
+        raise ValueError('Author metadata is needed to verify author_overlap_pct before projection')
+    from author_overlap import count
+    mismatches = []
+    for identifier, row in rows.items():
+        _, expected = count(row['author_o'], row['author_r'])
+        raw = row['author_overlap_pct']
+        try:
+            actual = None if raw in ('', 'NA') else float(raw)
+        except ValueError:
+            actual = float('nan')
+        if actual != expected:
+            mismatches.append(identifier)
+    if mismatches:
+        raise ValueError(f"Stale author_overlap_pct in {len(mismatches)} records: "
+                         + ', '.join(mismatches[:10])
+                         + '. Regenerate the authoritative publication through the fixed pipeline; do not edit outputs.')
 
 
 def render_codebook(columns, rows):
     """Reuse maintained definitions; document the exact snapshot's categorical labels."""
     guide = (ROOT / 'docs/FLORA_DATA_TABLE.md').read_text(encoding='utf-8')
     section = guide.split('## Published CSV codebook\n', 1)[1].split('## Relationship to the existing tables', 1)[0]
-    definitions = re.findall(r'^\| `([^`]+)` \|', section, re.MULTILINE)
+    definitions = dict(re.findall(r'^\| `([^`]+)` \| (.+?) \|$', section, re.MULTILINE))
     missing = set(columns) - set(definitions)
     if missing:
         raise ValueError('Codebook definitions missing: ' + ', '.join(sorted(missing)))
-    lines = ['# FLoRA codebook', '', section.strip(), '', '## Categories present in this release', '',
+    intro = section.split('| Field |', 1)[0].strip().replace('Author arrays and citations', 'References and quoted evidence')
+    table = ['| Field | Definition |', '| --- | --- |']
+    table += [f'| `{column}` | {definitions[column]} |' for column in columns]
+    lines = ['# FLoRA codebook', '', intro, '', *table, '',
+             '## Categories present in this release', '',
              'These are the exact nonmissing labels in the deposited CSV, not a promise',
              'that every permitted category occurs. `NA` and empty cells mean missing.',
              'Earlier snapshots can retain legacy labels; release assembly does not recode data.', '']
@@ -205,6 +243,11 @@ def upload(bundle, environment, publish=False, approve_production=False):
     verify_bundle(bundle)
     metadata = json.loads((bundle / 'zenodo-metadata.json').read_text())
     manifest = json.loads((bundle / 'flora_release_manifest.json').read_text())
+    approved = json.loads((SOURCES / 'columns.json').read_text())
+    if manifest.get('projection', {}).get('columns') != approved:
+        raise ValueError('Reassemble the bundle with the agreed release columns')
+    if environment == 'production' and manifest['source_manifest'].get('source_kind') == 'offline_pipeline_preview':
+        raise ValueError('Preview bundle: regenerate the authoritative publication with the fixed pipeline before production')
     previous = manifest.get('previous_release')
     if previous and previous['environment'] != environment:
         raise ValueError('Previous release belongs to another Zenodo environment')

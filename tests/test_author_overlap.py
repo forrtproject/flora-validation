@@ -164,3 +164,86 @@ def test_overlap_is_computed_after_titles_are_recovered():
     source = (ROOT / "transform_sources.py").read_text(encoding="utf-8")
     body = source[source.index("def build("):]
     assert body.index("apa_references.augment(") < body.index("author_overlap.augment(")
+
+
+@pytest.mark.parametrize('group', [
+    'The International Multiple Sclerosis Genetics Consortium', 'The TwiLex Group',
+])
+def test_collective_plain_and_structured_byline_is_unknown(group):
+    import json
+    person = '[{"family":"Smith","given":"A"}]'
+    collective = json.dumps([{'name': group}])
+    for authors in (group, collective):
+        assert ao.count(authors, person) == (None, None)
+        assert ao.count(person, authors) == (None, None)
+
+
+@pytest.mark.parametrize('unresolved', [
+    {'name': 'The TwiLex Group'}, {'name': 'Unparsed Person'}, {'given': 'Alex'},
+    {}, None, 'malformed author', {'family': '  '}, {'family': 42},
+])
+def test_partial_lists_are_never_scored(unresolved):
+    import json
+    mixed = json.dumps([{'given': 'A', 'family': 'Smith'}, unresolved])
+    person = '[{"family":"Smith"}]'
+    assert ao.count(mixed, person) == (None, None)
+    assert ao.count(person, mixed) == (None, None)
+
+
+def test_given_names_not_required_and_particles_preserved():
+    assert ao.count('[{"family":"van Hell"}]', '[{"family":"van Hell","given":"J"}]') == (1, 100.0)
+    assert ao.count('Janet van Hell', '[{"family":"van Hell"}]') == (1, 100.0)
+
+
+@pytest.mark.parametrize('bad', ['NA', 'N/A', '<NA>', '[invalid JSON]', '{}', '[]'])
+def test_missing_and_malformed_bylines_are_unknown(bad):
+    assert ao.count(bad, 'Alice Smith') == (None, None)
+
+
+def test_export_scores_published_byline_and_clears_old_zero():
+    frame = pd.DataFrame([{'id': 'TEST-1', 'type': 'replication',
+        'doi_o': '10.1234/original', 'doi_r': '10.1234/report',
+        'author_o': 'The TwiLex Group', 'author_r': 'Alice Smith',
+        'author_overlap': 0, 'author_overlap_pct': 0.0}])
+    shaped = transform_sources.to_output_shape(frame)
+    assert pd.isna(shaped.loc[0, 'author_overlap_pct'])
+    import json
+    assert json.loads(shaped.loc[0, 'author_o'])[0]['name'] == 'The TwiLex Group'
+    from final_export import csv_text
+    import csv, io
+    row = next(csv.DictReader(io.StringIO(csv_text(shaped).lstrip('\ufeff'))))
+    assert row['author_overlap_pct'] == 'NA'
+
+
+def test_known_collective_records_through_pipeline_export():
+    import csv, json
+    from bibliographic_helpers import author_fields
+    with (ROOT / 'output/flora.csv').open(encoding='utf-8-sig', newline='') as f:
+        records = {r['id']: r for r in csv.DictReader(f)}
+    for identifier in ('FLORA-000662', 'FLORA-000896', 'FLORA-001262'):
+        record = records[identifier]
+        # Reproduce the earlier pipeline form: display names before final JSON.
+        working = dict(record)
+        for side in ('o', 'r'):
+            working[f'author_{side}'] = author_fields(json.loads(record[f'author_{side}']))['authors']
+        frame = pd.DataFrame([working])
+        ao.augment(frame, verbose=False)
+        assert pd.isna(frame.loc[0, 'author_overlap_pct'])
+        exported = transform_sources.to_output_shape(frame)
+        assert pd.isna(exported.iloc[0]['author_overlap_pct'])
+        assert exported.iloc[0]['id'] == identifier
+
+
+@pytest.mark.parametrize('unresolved', [{}, {'given': 'Alex'}, {'name': 'The TwiLex Group'}])
+def test_export_never_loses_unresolved_author_status(unresolved):
+    import json
+    frame = pd.DataFrame([{'id': 'TEST-1', 'doi_o': '10.1234/o', 'doi_r': '10.1234/r',
+        'author_o': json.dumps([{'family': 'Smith'}, unresolved]),
+        'author_r': '[{"family":"Smith"}]', 'author_overlap_pct': 100.0}])
+    shaped = transform_sources.to_output_shape(frame)
+    assert pd.isna(shaped.iloc[0]['author_overlap_pct'])
+
+
+def test_na_is_a_valid_surname_inside_an_author_entry():
+    # A whole-cell NA is missing; an individual's surname Na need not be.
+    assert ao.count('[{"family":"Na","given":"Jun"}]', '[{"family":"Na","given":"Jun"}]') == (1, 100.0)

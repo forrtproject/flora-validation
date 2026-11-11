@@ -395,6 +395,11 @@ def to_output_shape(frame, keep_extras: bool = True):
     """
     from bibliographic_helpers import normalise_author_json
     out = frame.rename(columns=OUTPUT_RENAMES).copy()
+    # Use the same normalisation for scoring plain bylines and publishing them.
+    # Classify first: JSON normalisation can drop empty entries, which must not
+    # turn an unresolved/partial list into an apparently complete scored list.
+    if {"author_o", "author_r"} <= set(out.columns):
+        author_overlap.augment(out, verbose=False)
     # Every author cell as fred-data's compact JSON list, whatever its source wrote.
     # (Workbook escapes such as "_x000D_" are decoded where a workbook is read, not
     # here: text of our own can contain the pattern, e.g. a BibTeX key "…_x394e_v3".)
