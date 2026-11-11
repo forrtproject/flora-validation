@@ -81,3 +81,13 @@ usable family names on one side; the current calculation returns missing. The ot
 and regenerate the publication before approving production; the reviewed CSV has
 not been edited. These checks validate documented structure and the overlap formula,
 not the substantive correctness of every study's coding.
+
+## Pre-release status (11 November 2026)
+
+CalVer `YYYY.MM.N` is agreed. The prepared 2,851-record bundle remains a review
+candidate, not the final release: the latest publication on main has changed.
+Before production, settle the public column selection (the candidate still contains
+all 51 fields), review the overlap handling if retained, assemble a fresh candidate,
+verify its codebook and changelog, and approve creators/licence/description. A sandbox
+smoke test remains recommended; no explicit sandbox token is available. Approval of
+CalVer does not authorize production publication.

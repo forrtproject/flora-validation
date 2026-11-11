@@ -6,14 +6,10 @@ No production deposit has been created or published as part of implementation.
 
 ## Release policy
 
-The date scheme below is a **proposal pending team agreement**; the team's prior
-preference was semantic versioning. It follows [Calendar Versioning (CalVer)](https://calver.org/),
-specifically year, zero-padded month and a within-month release counter
-(`YYYY.0M.MICRO` in CalVer terminology). This is an established general versioning
-convention, not a dataset-specific requirement or a Zenodo recommendation.
-[Semantic Versioning](https://semver.org/) instead communicates compatibility through
-major/minor/patch increments. Either requires a project policy; the dated version in
-the prepared bundle does not settle that decision for the team.
+Use [Calendar Versioning (CalVer)](https://calver.org/): year, zero-padded month
+and a within-month release counter (`YYYY.0M.MICRO` in CalVer terminology).
+This labels the data snapshot; changes to data and documentation are described in
+the changelog rather than classified as semantic minor/patch releases.
 
 Use `YYYY.MM.N`, starting at `2026.11.1`. The date identifies a living dataset's
 release month without implying API/schema compatibility; N increases for another
