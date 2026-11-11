@@ -18,6 +18,33 @@ ROOT = Path(__file__).resolve().parent
 SOURCES = ROOT / 'release/flora'
 HOSTS = {'sandbox': 'https://sandbox.zenodo.org', 'production': 'https://zenodo.org'}
 
+# Public release labels. Internal routes stay intact for syncing and audit.
+SOURCE_LABELS = {
+    'replications': 'bulk entry', 'reproductions': 'bulk entry',
+    'COS': 'FReD', 'SCORE': 'SCORE',
+    'validated': 'search pipeline', 'manual': 'search pipeline',
+}
+REPLICATION_OUTCOME_FIELDS = ('outcome', 'outcome_quote', 'outcome_quote_source')
+REPRODUCTION_OUTCOME_FIELDS = (
+    'outcome_computation', 'outcome_computational_quote', 'out_quote_computational_source',
+    'outcome_robustness', 'outcome_robustness_quote', 'out_quote_robust_source',
+)
+
+
+def project_record(row, columns):
+    """Apply the agreed release labels and outcome applicability, without editing inputs."""
+    if row['type'] not in {'replication', 'reproduction'}:
+        raise ValueError(f"Unknown attempt type for {row['id']}: {row['type']}")
+    if row['source'] not in SOURCE_LABELS:
+        raise ValueError(f"Unmapped source label: {row['source']}; review the release mapping")
+    result = {c: row[c] for c in columns}
+    result['source'] = SOURCE_LABELS[row['source']]
+    inapplicable = (REPLICATION_OUTCOME_FIELDS if row['type'] == 'reproduction'
+                    else REPRODUCTION_OUTCOME_FIELDS)
+    for field in inapplicable:
+        result[field] = 'NA'
+    return result
+
 
 def read_records(path):
     with Path(path).open(encoding='utf-8-sig', newline='') as f:
@@ -78,7 +105,7 @@ def assemble(output, version, destination, previous=None):
     if missing:
         raise ValueError('Release columns missing from source: ' + ', '.join(sorted(missing)))
     validate_overlap(source_columns, source_rows)
-    rows = {identifier: {c: row[c] for c in columns} for identifier, row in source_rows.items()}
+    rows = {identifier: project_record(row, columns) for identifier, row in source_rows.items()}
     # Validate the dictionary before creating a partial bundle.
     codebook = render_codebook(columns, rows.values())
     destination.mkdir(parents=True)
@@ -104,7 +131,9 @@ def assemble(output, version, destination, previous=None):
     manifest['dataset_version'] = version
     manifest['source_manifest'] = source_manifest
     manifest['projection'] = {'columns': columns, 'source_columns': source_columns,
-                              'omitted_columns': [c for c in source_columns if c not in columns]}
+                              'omitted_columns': [c for c in source_columns if c not in columns],
+                              'source_labels': SOURCE_LABELS,
+                              'outcome_applicability': 'replication and reproduction fields are type-specific'}
     manifest['previous_release'] = prior
     write_json(destination / 'flora_release_manifest.json', manifest)
     cff = yaml.safe_load((SOURCES / 'citation-template.cff').read_text())
@@ -156,24 +185,31 @@ def render_codebook(columns, rows):
     if missing:
         raise ValueError('Codebook definitions missing: ' + ', '.join(sorted(missing)))
     intro = section.split('| Field |', 1)[0].strip().replace('Author arrays and citations', 'References and quoted evidence')
+    definitions.update({
+        'source': 'Coarse input route: bulk entry, FReD, SCORE or search pipeline. Search pipeline combines website-validated and manually entered records; it does not imply automated discovery. Not comprehensive project membership or validation status.',
+        'outcome': 'Replication outcome; NA for reproduction rows, which use the two dedicated reproduction axes.',
+        'outcome_quote': 'Evidence for the replication outcome; NA for reproduction rows.',
+        'outcome_quote_source': 'Source/location of the replication evidence; NA for reproduction rows.',
+    })
     table = ['| Field | Definition |', '| --- | --- |']
     table += [f'| `{column}` | {definitions[column]} |' for column in columns]
     lines = ['# FLoRA codebook', '', intro, '', *table, '',
              '## Categories present in this release', '',
              'These are the exact nonmissing labels in the deposited CSV, not a promise',
              'that every permitted category occurs. `NA` and empty cells mean missing.',
-             'Earlier snapshots can retain legacy labels; release assembly does not recode data.', '']
+             'Outcome categories are preserved; source routes are relabelled and inapplicable outcome fields use NA.', '']
     rows = list(rows)
     for field in ('type', 'outcome', 'outcome_computation', 'outcome_robustness', 'source'):
         if field in columns:
             values = sorted({row[field] for row in rows if row[field] not in ('', 'NA')})
             lines += [f"- `{field}`: " + '; '.join(f'`{v}`' for v in values) + '.']
-    lines += ['', 'The axes are the detailed reproduction codes. Combined `outcome` labels',
-              'preserve the released snapshot’s representation; consult both axes for analysis.',
+    lines += ['', 'Replication outcomes and evidence appear only on replication rows. Reproduction',
+              'outcomes and their evidence appear only on reproduction rows. NA can mean',
+              'inapplicable as well as unknown; use type to distinguish these cases.',
               'The bundled FAQ explains coding decisions. Definitions are maintained in',
               'https://github.com/forrtproject/flora-validation/blob/main/docs/FLORA_DATA_TABLE.md', '']
-    if 'source' in columns and '### Source labels' in section:
-        labels = section.split('### Source labels', 1)[1].split('### Author-overlap release validation', 1)[0]
+    if 'source' in columns and '### Release source labels' in section:
+        labels = section.split('### Release source labels', 1)[1].split('### Author-overlap release validation', 1)[0]
         lines += ['## Source labels', '', labels.strip(), '']
     return '\n'.join(lines)
 
@@ -247,7 +283,8 @@ def upload(bundle, environment, publish=False, approve_production=False):
     metadata = json.loads((bundle / 'zenodo-metadata.json').read_text())
     manifest = json.loads((bundle / 'flora_release_manifest.json').read_text())
     approved = json.loads((SOURCES / 'columns.json').read_text())
-    if manifest.get('projection', {}).get('columns') != approved:
+    if (manifest.get('projection', {}).get('columns') != approved
+            or manifest['projection'].get('source_labels') != SOURCE_LABELS):
         raise ValueError('Reassemble the bundle with the agreed release columns')
     if environment == 'production' and manifest['source_manifest'].get('source_kind') == 'offline_pipeline_preview':
         raise ValueError('Preview bundle: regenerate the authoritative publication with the fixed pipeline before production')

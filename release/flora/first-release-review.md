@@ -12,9 +12,11 @@ internal export remains in the repository.
   `5826464541891f83c594ccc295a0512cf20329373c3b90a2fafc56e0a97e807c`.
 - First changelog: 2,884 added; 0 changed; 0 retired (initial release baseline).
 - Release CSV: 31 selected columns, quoted UTF-8 with BOM.
-- All selected source cells remain unchanged except the derived overlap percentage,
-  regenerated for the preview through `author_overlap.augment` and the existing
-  `final_export.csv_text` serializer. No tracked output or database record was edited.
+- The preview regenerates the derived percentage through `author_overlap.augment`
+  and the existing `final_export.csv_text` serializer. Release projection also applies
+  the agreed source labels and clears inapplicable outcome/evidence fields to NA.
+  Applicable evidence and identifiers are preserved; no tracked output or database
+  record was edited.
 - The codebook lists exactly the 31 release columns, in release order, and observed
   categorical values. Source/full-export and release hashes are recorded separately.
 
@@ -83,12 +85,16 @@ Sandbox uses `ZENODO_SANDBOX_TOKEN`; credentials are never stored in the bundle.
 
 ## Outcome and source interpretation
 
-The outcome groups are replication outcome, reproduction computational outcome and
-reproduction robustness outcome. The existing export also repeats combined
-reproduction axis text in `outcome`; it has not been blanked or recoded by this PR.
+Replication outcome/quote/source are NA on reproduction rows; reproduction axes and
+associated evidence are NA on replication rows. Legacy combined outcome strings stay
+in the full internal export but are not repeated in the release.
 
-`source` is a retained primary input route, not complete provenance or validation
-status. Its current six-value distribution is shown in
-[source-distribution.html](source-distribution.html). In particular, `COS` is a
-legacy alias for the FReD Replication Success input. Labels are documented but their
-stored values have not been renamed without agreement.
+Release source labels: `bulk entry` (replications/reproductions sheets), `FReD`
+(legacy COS), `SCORE`, `search pipeline` (website-validated and manual entries).
+Search pipeline is a broad discovery/curation category, not necessarily automated
+search. Raw input-route values remain in the internal snapshot. The previous
+[source distribution](source-distribution.html) describes those raw snapshot values.
+
+SCORE remains an import category for this release. A proposed >50-entry project
+classification is separate and requires explicit project membership; no automatic
+project assignment or extra column is implemented.

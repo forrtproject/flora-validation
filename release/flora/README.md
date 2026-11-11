@@ -16,7 +16,10 @@ Each row represents a reference pair; a report may contribute multiple rows.
 - `bundle-checksums.json`: SHA-256 hashes of the deposited files.
 
 The bundle projects the authoritative publication onto the 31 agreed columns in
-`release/flora/columns.json`, preserving selected cell values and permanent `id`s.
+`release/flora/columns.json`, preserving permanent IDs and applicable outcome/evidence
+values. Source values use the four documented release labels. Inapplicable outcome
+and evidence fields are NA: replication outcomes on replication rows; the two
+reproduction axes on reproduction rows.
 Columns are ordered by record identity, original study, replication/reproduction
 report, author overlap percentage, outcomes and evidence, then source. The full
 internal export is not deposited. Output CSV is quoted UTF-8 with a BOM.
@@ -35,3 +38,9 @@ collective author. The final pipeline export recalculates from normalized byline
 release assembly blocks stale percentages.
 
 Source and maintenance: https://github.com/forrtproject/flora-validation
+
+Source labels are `bulk entry` (both entry sheets), `FReD` (the legacy COS input),
+`SCORE`, and `search pipeline` (website-validated and manually entered records).
+Search pipeline includes the broader discovery/curation workflow, not necessarily
+automated searching. These are coarse import categories, not a project registry or
+a validation-quality scale. Project-size rules are not inferred automatically.

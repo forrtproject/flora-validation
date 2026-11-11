@@ -30,8 +30,14 @@ and receipts because Actions artifacts expire after 90 days.
 Use the committed `output/` produced by that pipeline. Assembly validates the CSV
 against its existing `flora_release_manifest.json` and reuses
 `release_helpers.prepare_release` for byte manifests and notes. Release CSV fields are selected and ordered by `release/flora/columns.json` (31
-columns, including only `author_overlap_pct` for overlap). Selected cells and IDs
-are unchanged; the release serializer writes quoted UTF-8 CSV with a BOM. The source
+columns, including only `author_overlap_pct` for overlap). IDs and applicable
+outcome/evidence values are preserved. Release source labels map replications and
+reproductions to `bulk entry`, COS to `FReD`, and validated/manual to `search pipeline`;
+SCORE stays `SCORE`. The search-pipeline label means the website discovery/curation
+workflow, including manual entries, not necessarily automated search. Replication
+outcome and evidence fields are NA on reproduction rows; reproduction axes and their
+evidence are NA on replication rows. These explicit representation rules are stored
+in the release manifest, without editing the internal data or correction log; the release serializer writes quoted UTF-8 CSV with a BOM. The source
 and release hashes therefore differ and are both preserved in the manifest.
 Before projection, assembly checks the percentage against both source author lists;
 stale derived values stop assembly. Regenerate via the fixed normal pipeline rather
@@ -155,3 +161,14 @@ repository; it is not a second dataset file in the deposit.
 this agreed selection. Browser changes remain proposals; they do not modify the
 contract or the pipeline. The deposit codebook contains only the agreed columns,
 in their release order.
+
+## Project membership is separate from source
+
+SCORE is retained as a historical import category for this release. A proposed
+large-project classification must be distinct from source: one report can cover
+many record pairs and one project can span multiple reports and input routes.
+More than 50 entries can flag candidates for review. Programmatic counts require a
+stable project-membership registry first; grouping only by report DOI or author name
+cannot establish project membership. Crossing a size threshold should not rewrite
+an entry's acquisition source. No project field or automatic assignment is added
+without agreement on these membership rules.

@@ -24,7 +24,7 @@ def bundle(tmp_path):
     columns = json.loads((release.SOURCES / 'columns.json').read_text())
     columns += ['author_o', 'author_r', 'author_overlap', 'id_md5']
     row = dict.fromkeys(columns, 'NA')
-    row.update(id='A', title_r='Röseler, "test"\nnext line',
+    row.update(id='A', type='replication', source='replications', title_r='Röseler, "test"\nnext line',
                author_o='[{"family":"Smith"}]', author_r='[{"family":"Jones"}]',
                author_overlap='0', author_overlap_pct='0.0')
     source = csv_file(output / 'flora.csv', [row], columns)
@@ -49,7 +49,7 @@ def test_assembly(bundle):
     assert all('email' not in c for c in metadata['creators'])
     manifest = json.loads((bundle / 'flora_release_manifest.json').read_text())
     assert manifest['source_manifest']['data_version']['change_watermark'] == 346
-    assert '| COS | Legacy alias for the FReD Replication Success input |' in (bundle / 'CODEBOOK.md').read_text()
+    assert '| FReD | COS | FReD Replication Success input |' in (bundle / 'CODEBOOK.md').read_text()
     with pytest.raises(ValueError, match='exists'):
         release.assemble(bundle, '2026.11.1', bundle)
 
@@ -204,7 +204,9 @@ def test_release_projection_order_and_cells(bundle):
     assert 'author_overlap_pct' in columns and 'author_overlap' not in columns
     assert not {'author_o', 'author_r', 'id_md5', 'flora_id'} & set(columns)
     _, original = release.read_records(bundle.parent / 'output' / 'flora.csv')
-    assert rows == {key: {column: row[column] for column in columns} for key, row in original.items()}
+    assert rows['A']['source'] == 'bulk entry'
+    assert all(rows[key][column] == row[column]
+               for key, row in original.items() for column in columns if column != 'source')
     import re
     book = (bundle / 'CODEBOOK.md').read_text()
     assert re.findall(r'^\| `([^`]+)` \|', book, re.MULTILINE) == columns
@@ -250,3 +252,37 @@ def test_preview_and_superseded_bundle_cannot_publish_production(bundle):
     release.write_json(bundle / 'bundle-checksums.json', release.checksums(bundle))
     with pytest.raises(ValueError, match='agreed release columns'):
         release.upload(bundle, 'production', publish=True, approve_production=True)
+
+
+@pytest.mark.parametrize('internal,label', [
+    ('replications', 'bulk entry'), ('reproductions', 'bulk entry'), ('COS', 'FReD'),
+    ('SCORE', 'SCORE'), ('manual', 'search pipeline'), ('validated', 'search pipeline'),
+])
+def test_public_source_labels_do_not_change_internal_record(internal, label):
+    columns = json.loads((release.SOURCES / 'columns.json').read_text())
+    row = dict.fromkeys(columns, 'NA')
+    row.update(id='TEST', type='replication', source=internal)
+    assert release.project_record(row, columns)['source'] == label
+    assert row['source'] == internal
+
+
+@pytest.mark.parametrize('kind', ['replication', 'reproduction'])
+def test_release_only_contains_applicable_outcomes(kind):
+    columns = json.loads((release.SOURCES / 'columns.json').read_text())
+    row = dict.fromkeys(columns, 'NA')
+    row.update(id='TEST', type=kind, source='validated')
+    for field in (*release.REPLICATION_OUTCOME_FIELDS, *release.REPRODUCTION_OUTCOME_FIELDS):
+        row[field] = 'specific evidence or outcome'
+    result = release.project_record(row, columns)
+    applicable, inapplicable = (release.REPLICATION_OUTCOME_FIELDS, release.REPRODUCTION_OUTCOME_FIELDS) if kind == 'replication' else (release.REPRODUCTION_OUTCOME_FIELDS, release.REPLICATION_OUTCOME_FIELDS)
+    assert all(result[field] == row[field] for field in applicable)
+    assert all(result[field] == 'NA' for field in inapplicable)
+    assert all(row[field] != 'NA' for field in inapplicable)
+
+
+def test_unregistered_source_is_not_silently_published():
+    columns = json.loads((release.SOURCES / 'columns.json').read_text())
+    row = dict.fromkeys(columns, 'NA')
+    row.update(id='TEST', type='replication', source='new intake')
+    with pytest.raises(ValueError, match='Unmapped source'):
+        release.project_record(row, columns)

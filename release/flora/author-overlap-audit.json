@@ -3,7 +3,6 @@
   "records": 2884,
   "release_columns": 31,
   "finite_percentages_changed_to_missing": 71,
-  "other_selected_cells_changed": 0,
   "changed_percentages": [
     {
       "id": "FLORA-000003",
@@ -360,5 +359,6 @@
       "old": 22.8,
       "new": null
     }
-  ]
+  ],
+  "other_cells_changed_by_overlap_derivation": 0
 }

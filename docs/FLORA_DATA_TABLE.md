@@ -87,6 +87,22 @@ other values. These labels do not establish all project memberships or whether a
 record is validated: the entry sheets also contain accepted validation decisions.
 The `type` column identifies replication versus reproduction independently of route.
 
+### Release source labels
+
+The Zenodo release applies these labels without changing the internal source keys:
+
+| Release value | Internal export values | Meaning |
+| --- | --- | --- |
+| bulk entry | replications, reproductions | Entries from the bulk entry sheets |
+| FReD | COS | FReD Replication Success input |
+| SCORE | SCORE | SCORE 2025 Validation input |
+| search pipeline | validated, manual | Website validation and manual-entry workflow; not necessarily automated discovery |
+
+The source field is a coarse input category. It does not record complete project
+membership, all contributing sources after merging, or a validation-quality level.
+SCORE remains a historical import category, not the result of a systematic project
+classification rule. No project membership is inferred from having many records.
+
 ### Author-overlap release validation
 
 The overlap calculation rejects partial individual/collective lists as well as
