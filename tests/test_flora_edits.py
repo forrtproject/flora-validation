@@ -632,7 +632,7 @@ def test_a_reproduction_becomes_a_replication_with_its_outcome_cleaned():
     [row] = cur.appended()
     assert row[5].adapted["outcome"] == [REPRODUCED, "successful"]
     assert row[6].adapted == {"type": "replication", "outcome": "successful",
-                              "outcome_quote": "It worked ."}
+                              "outcome_quote": "It worked."}
 
 
 @pytest.mark.parametrize("record, new_type, fields, message", [

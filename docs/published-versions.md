@@ -6,7 +6,7 @@ bioRxiv/medRxiv, SSRN, Research Square, arXiv, Preprints.org, JMIR preprints,
 and generic OSF repository DOIs. OSF projects are not assumed to be preprints.
 
 Validation and ordinary editor replacements also retain outgoing preprint DOIs.
-The [fred-data #162 retention audit](audits/preprint-identifier-retention-2026-11-10.md)
+The [fred-data #162 retention audit](https://gist.github.com/LukasWallrich/70e82459b7bf7fe3cf8ee9d98ae058d8/1e83cda029ec0c7574dbd23b179901f519a7d9a2)
 documents the affected rows, shared publication bridge and logged backfill.
 
 ```sh
@@ -133,6 +133,6 @@ Discovery failures remain visible in logs and the status artifact and do not blo
 a validated release. Failed automatic batches roll back; review-only candidates
 never enter the automatic write path.
 
-See the [10 November census and seven-case list](audits/published-versions-2026-11-10.md)
+See the [10 November census and seven-case list](https://gist.github.com/LukasWallrich/70e82459b7bf7fe3cf8ee9d98ae058d8/1e83cda029ec0c7574dbd23b179901f519a7d9a2)
 and its evidence CSVs. Seda et al. remains a negative control with no journal
 candidate. No Google Sheet is involved.

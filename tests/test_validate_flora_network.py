@@ -24,6 +24,14 @@ from validate_flora import POSSIBLE_PROBLEM, PROBLEM
 OK, FAILED, UNCHECKED = network.OK, network.FAILED, network.UNCHECKED
 
 
+@pytest.fixture(autouse=True)
+def known_original_type(monkeypatch):
+    """The existing link/DOI tests use a known article; type cases live separately."""
+    monkeypatch.setattr(network.original_work_types, 'load_cache', lambda cur: {
+        '10.1000/o': {'work_type': 'article',
+                      'work_type_checked_at': datetime.now(timezone.utc)}})
+
+
 class Response:
     def __init__(self, status=200, body=b""):
         self.status, self.body, self.read_sizes = status, body, []
@@ -657,7 +665,8 @@ def test_findings_carry_their_levels(monkeypatch):
     levels = {r["code"]: {i["level"] for i in r["items"]} for r in report["results"]}
     assert levels == {"retracted": {PROBLEM}, "doi_not_registered": {PROBLEM}, "dead_link": {PROBLEM},
                       "expression_of_concern": {POSSIBLE_PROBLEM},
-                      "original_doi_found": {POSSIBLE_PROBLEM}}
+                      "original_doi_found": {POSSIBLE_PROBLEM},
+                      'original_target_nonstudy': set(), 'original_target_format': set()}
     assert report["status"] == "needs_attention"
 
 
@@ -888,6 +897,7 @@ def test_validate_fills_answered_per_check_and_reports_the_same(monkeypatch):
     answered = {}
     with_answers = network.validate(None, frame, answered=answered)
     assert with_answers == network.validate(None, frame)
-    assert answered == {"dois": {"10.1000/r": FAILED, "10.1000/o": FAILED},
+    assert answered == {'work_types': {'10.1000/o': OK},
+                        "dois": {"10.1000/r": FAILED, "10.1000/o": FAILED},
                         "urls": {"https://osf.io/abcde": None},
                         "originals": {"original||": OK}}
