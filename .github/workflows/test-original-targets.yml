@@ -1,0 +1,63 @@
+name: Test original target screening
+
+on:
+  pull_request:
+    paths:
+      - original_work_types.py
+      - enrich_works.py
+      - entry_checks.py
+      - validate_flora_network.py
+      - db_schema.sql
+      - tests/test_original_work_types*.py
+      - tests/test_entry_checks.py
+      - tests/test_enrich_works.py
+      - tests/test_enrich_work_ids.py
+      - tests/test_validate_flora_network.py
+      - tests/test_preparation_runner.py
+      - tests/test_consumer_regressions.py
+      - .github/workflows/test-original-targets.yml
+      - .dockerignore
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: flora_test
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U flora_test -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt pytest
+      - name: Test metadata cache, network checks and retained review decisions
+        env:
+          # Disposable service; the dynamic port is available in step context.
+          FLORA_TEST_DATABASE_URL: postgresql://flora_test@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/postgres
+        run: >-
+          python -m pytest -q
+          tests/test_original_work_types.py
+          tests/test_original_work_types_database.py
+          tests/test_entry_checks.py
+          tests/test_enrich_works.py
+          tests/test_enrich_work_ids.py
+          tests/test_validate_flora_network.py
+          tests/test_preparation_runner.py
+          tests/test_consumer_regressions.py

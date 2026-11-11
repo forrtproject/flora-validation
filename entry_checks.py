@@ -51,6 +51,7 @@ import flora_store
 import prepare_flora
 import validate_flora
 import validate_flora_network as network
+import original_work_types
 from pipeline_logging import start as start_logging
 from validate_flora import POSSIBLE_PROBLEM, PROBLEM, _text
 
@@ -361,6 +362,16 @@ def _network_resolved(open_findings, records, report, answered) -> set:
         elif check == ORIGINAL_CHECK:
             settled = all(_original_settled(records.get(flora_id), answered.get("originals"))
                           for flora_id in finding["flora_ids"])
+        elif check in original_work_types.CHECK_CODES:
+            # A stale/failed/unknown type cannot clear an earlier alert. Compare
+            # normalized DOI identity, so a resolver spelling preserves review.
+            from preprint_dedup import normalize_doi
+            targets = answered.get('work_types', {})
+            settled = all(
+                records.get(flora_id) is None
+                or normalize_doi(records[flora_id].get('doi_o')) != normalize_doi(finding['value'])
+                or targets.get(normalize_doi(finding['value'])) == network.OK
+                for flora_id in finding['flora_ids'])
         else:
             # A check validate_flora_network no longer makes: nothing will find it again.
             settled = check not in codes

@@ -8,6 +8,7 @@ that decides whether a value is wrong:
     N2  DOIs registered at doi.org, asked of its handle API
     N3  Links reachable: HEAD, then GET (url_r, oa_url_o, oa_url_r and url_o)
     N4  Originals without a doi_o that probably have one, looked up in Crossref
+    N5  Original-work types (advisory)
 
 Findings are records shaped as validate_flora's are (validate_flora.finding), each
 naming the rows that carry the DOI or link, at one of the two levels. An answer
@@ -66,6 +67,7 @@ from dotenv import load_dotenv
 import enrich_works
 import preprint_dedup
 import transform_sources
+import original_work_types
 from console_encoding import use_utf8_output
 from pipeline_logging import start as start_logging
 from validate_flora import (ENRICHED_COLUMNS, ENRICHED_NOTE, LEVEL_NOTES, LEVEL_TITLES,
@@ -107,11 +109,16 @@ CHECKS = [
     ("dead_link", PROBLEM, "Dead links", "urls"),
     ("expression_of_concern", POSSIBLE_PROBLEM, "Expressions of concern", "retractions"),
     ("original_doi_found", POSSIBLE_PROBLEM, "Original probably has a DOI", "originals"),
+    (original_work_types.HIGH_CHECK, POSSIBLE_PROBLEM,
+     "Original target needs review (higher priority)", "work_types"),
+    (original_work_types.FORMAT_CHECK, POSSIBLE_PROBLEM,
+     "Original publication format needs review", "work_types"),
 ]
-SELECTORS = ("retractions", "dois", "urls", "originals")
+SELECTORS = ("retractions", "dois", "urls", "originals", "work_types")
 # What each check's targets are called: one, several.
 TARGET_NAMES = {"dois": ("DOI", "DOIs"), "urls": ("link", "links"),
-                "originals": ("original without a DOI", "originals without a DOI")}
+                "originals": ("original without a DOI", "originals without a DOI"),
+                "work_types": ("original work type", "original work types")}
 
 
 def _targets(count: int, kind: str) -> str:
@@ -261,6 +268,7 @@ def doi_registration(doi: str):
 def ensure_cache(cur) -> None:
     """Both cache tables, created if missing. Additive: link_checks keeps the shape
     production already has."""
+    original_work_types.ensure_cache(cur)
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS link_checks (
@@ -735,7 +743,7 @@ def validate(cur, df, checks="all", limit=0, suppressions=None, minutes=0,
 
     `answered`, when given a dict, gets an entry for each of the "dois", "urls" and
     "originals" checks that ran: {target or query key: OK, FAILED or None}
-    (check_resolution, check_original_dois). Whether the Retraction Watch check ran
+    (check_resolution, check_original_dois). Work types separately fill `work_types` coverage. Whether the Retraction Watch check ran
     is in the report's coverage. The stored findings (entry_checks) close only what
     a run answered, and a budget can leave much unanswered. The report is the same
     either way.
@@ -750,7 +758,20 @@ def validate(cur, df, checks="all", limit=0, suppressions=None, minutes=0,
     suppressions = suppressions or set()
     ran = [selector for selector in SELECTORS if checks in ("all", selector)]
     found, unchecked, notices, coverage = [], {}, [], {}
-    incomplete = checks != "all"
+    incomplete = checks not in ("all", "work_types")
+    advisory_unknown = False
+
+    if 'work_types' in ran:
+        stats = {}
+        type_answers = {} if answered is None else answered.setdefault('work_types', {})
+        items, unchecked['work_types'] = original_work_types.check(
+            cur, df, answered=type_answers, statistics=stats)
+        found += items
+        coverage['work_types'] = stats
+        advisory_unknown = bool(stats['unchecked'])
+        if advisory_unknown:
+            notices.append(f"Original work types unavailable for {stats['unchecked']:,} DOI(s); "
+                           "previous review decisions retained. This screening is advisory.")
 
     if "retractions" in ran:
         items, problem = check_retractions(df)
@@ -801,7 +822,7 @@ def validate(cur, df, checks="all", limit=0, suppressions=None, minutes=0,
     problems = sum(len(r["items"]) for r in results if r["level"] == PROBLEM)
     possible = sum(len(r["items"]) for r in results if r["level"] == POSSIBLE_PROBLEM)
     return {"status": "skipped" if checks == "none" else
-            "incomplete" if incomplete else "needs_attention" if problems or possible else "passed",
+            "incomplete" if incomplete else "needs_attention" if problems or possible or advisory_unknown else "passed",
             "checks": checks, "results": results, "unchecked": unchecked, "notices": notices,
             "coverage": coverage, "suppressed": suppressed, "problems": problems,
             "possible_problems": possible, "issue_count": problems + possible, "rows": len(df)}
@@ -820,7 +841,8 @@ def _upgrade(report: dict) -> dict:
 
 # Status values as the website's run cards word them. The JSON keeps the values.
 STATUS_LABELS = {"needs_attention": "needs review"}
-COVERAGE_LABELS = {"dois": "DOIs", "urls": "Links", "originals": "Originals without a DOI"}
+COVERAGE_LABELS = {"dois": "DOIs", "urls": "Links", "originals": "Originals without a DOI",
+                   "work_types": "Original work types (advisory)"}
 CSV_COLUMNS = ["check", "level", "flora_ids", "column", "value", "detail", "key"]
 
 
