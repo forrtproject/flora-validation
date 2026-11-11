@@ -170,6 +170,10 @@ anchors in `doi_r`, `alt_identifier_r` and report URLs. DOI prefixes, case,
 comma/semicolon/pipe-separated alternatives and OSF project URL/DOI forms are
 normalized. Original-study IDs and title keywords never establish membership.
 Project-specific intake rows (currently SCORE) can also seed report identifiers.
+Reviewed permanent record IDs can establish membership where report identifiers
+are missing. Each such registry entry must link to its membership evidence;
+the [65-record SCORE review](../release/flora/SCORE_MEMBERSHIP_REVIEW.md) documents
+the current explicit assignments independently of the report-byline corrections.
 Matches seed one-hop aliases; there is no recursive transitive merge of projects.
 
 Projects take priority over every intake route, including search pipeline. The

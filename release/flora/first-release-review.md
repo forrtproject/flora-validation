@@ -92,7 +92,8 @@ in the full internal export but are not repeated in the release.
 Source is now project-first, without search-pipeline protection. RP:P matches
 normalized report identifiers in doi_r/alt_identifier_r (99 current records); the
 Boyce student-replication collection matches its report identifier (140); SCORE is
-seeded from its known intake (88). Shared report identifiers extend matching across
+seeded from its known intake (88) plus 65 explicitly reviewed report memberships
+(153 total). Shared report identifiers extend matching across
 routes. All qualify at strictly >50 distinct active released record IDs. Existing
 labels persist after retirements; the registry records qualification evidence.
 
@@ -101,6 +102,10 @@ conflicting project matches stop assembly. Title mentions alone remain unassigne
 review candidates. No additional CSV column is added. For unmatched records the
 fallbacks remain manual entry, FReD, SCORE and search pipeline. Raw internal routes
 are unchanged. The previous source-distribution page documents the raw snapshot.
+
+All 65 earlier unassigned SCORE mentions are confirmed; no unmatched project-name
+mentions remain. See the [membership review](SCORE_MEMBERSHIP_REVIEW.md).
+Three of these records still lack a verified report byline, a separate limitation.
 
 ## Outstanding SCORE publication linkage
 

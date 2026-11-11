@@ -18,3 +18,10 @@ the report titles/citations in that snapshot. SCORE is anchored by its dedicated
 intake; no DOI is invented. Qualification records the matching count, snapshot
 SHA-256 and date. Additional aliases or project groups require an explicit registry
 update; count-based candidates alone do not invent names or memberships.
+
+The 65 explicit SCORE record IDs have report/component evidence in
+`score-project-membership-review.json`, summarized in `SCORE_MEMBERSHIP_REVIEW.md`.
+File-to-component mappings reuse the report-byline audit in flora-validation PR
+#26 at commit `17b84324ae024c6e840361173c19b335c05190da`; live parent-project checks
+and one same-component preregistration independently confirm SCORE membership.
+Authorship corrections and membership decisions remain separate.

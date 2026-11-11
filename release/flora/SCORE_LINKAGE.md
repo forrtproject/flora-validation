@@ -1,5 +1,10 @@
 # SCORE publication linkage: pre-release finding
 
+The [65-record membership review](SCORE_MEMBERSHIP_REVIEW.md) confirms additional
+SCORE records across intake routes. Membership is resolved for those candidates;
+the per-paper identifier and report-byline corrections described below remain
+separate work. None has been silently applied to tracked outputs.
+
 Checked 11 November 2026 against the live SCORE entry sheet and public OSF/COS
 metadata. The snapshot's SCORE rows have individual-report URLs but no doi_r or
 alt_identifier_r. The live sheet also has no nonmissing doi_r or link_r values:
