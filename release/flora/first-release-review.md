@@ -101,3 +101,13 @@ conflicting project matches stop assembly. Title mentions alone remain unassigne
 review candidates. No additional CSV column is added. For unmatched records the
 fallbacks remain manual entry, FReD, SCORE and search pipeline. Raw internal routes
 are unchanged. The previous source-distribution page documents the raw snapshot.
+
+## Outstanding SCORE publication linkage
+
+The SCORE intake's missing DOI fields are stale metadata, not evidence that the
+reports have no registered identifiers. A short-file GUID resolver defect is fixed;
+the first live report check returns a registered OSF report DOI. Verified Nature
+SCORE paper identifiers are registered for project matching. Per-record linkage to
+the published papers and identifier/citation corrections still require review via
+the correction log. See [SCORE_LINKAGE.md](SCORE_LINKAGE.md) and the read-only
+[OSF audit](score-link-audit.json). Do not approve production until this is resolved.

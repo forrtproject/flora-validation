@@ -104,7 +104,7 @@ def test_osf_file_citation_resolves_the_target_node(monkeypatch):
         urls.append(url)
         if "/nodes/abcde/" in url:
             return None
-        if "/files/abcde/" in url:
+        if "/guids/abcde/" in url:
             return {"data": {"relationships": {"target": {"data": {"id": "vwxyz"}}}}}
         citation = ('@misc{osf,title={Registered study},author={Smith, Jane},year={2020}}'
                     if "/bibtex/" in url else "Smith, J. (2020). Registered study.")
@@ -246,3 +246,39 @@ def test_supplied_seed_and_manual_workbook_are_readable():
     assert len(manual) >= 200
     assert all(key == bh.normalise_key(key) for key in seed["records"])
     assert any(row.get("authors_json") and row.get("apa_ref") for row in seed["records"].values())
+
+
+def test_osf_short_file_guid_uses_guid_resolver(monkeypatch):
+    """OSF five-character file links resolve via /guids/, not /files/<guid>/."""
+    calls = []
+    def request(url, accept='application/json'):
+        calls.append(url)
+        if url.endswith('/guids/9hjxc/'):
+            return {'data': {'type': 'files', 'relationships': {
+                'target': {'data': {'type': 'nodes', 'id': 'cwmb5'}}}}}
+        if '/nodes/cwmb5/citation/apa/' in url:
+            return {'data': {'attributes': {'citation': 'Baskin et al. (2025). Verified report. https://doi.org/10.17605/OSF.IO/CWMB5'}}}
+        if '/nodes/cwmb5/citation/bibtex/' in url:
+            return {'data': {'attributes': {'citation': '@misc{report,title={Verified report},author={Baskin, Ernest},year={2025},doi={10.17605/OSF.IO/CWMB5}}'}}}
+        return None
+    monkeypatch.setattr(bh, 'request', request)
+    result = bh.fetch_osf_reference('https://osf.io/9hjxc')
+    assert result.get('title') == 'Verified report'
+    assert '10.17605/OSF.IO/CWMB5' in result['bibtex_ref']
+    assert not any('/files/9hjxc/' in u for u in calls)
+
+
+def test_osf_full_file_id_keeps_file_endpoint(monkeypatch):
+    identifier = '6148f5488adbd300226ebd47'
+    calls = []
+    def request(url, accept='application/json'):
+        calls.append(url)
+        if '/nodes/' + identifier in url:
+            return None
+        if '/files/' + identifier in url:
+            return {'data': {'relationships': {'target': {'data': {'id': 'cwmb5'}}}}}
+        return {'data': {'attributes': {'citation': 'Baskin (2026). Report.'}}}
+    monkeypatch.setattr(bh, 'request', request)
+    assert bh.fetch_osf_reference('https://osf.io/' + identifier).get('apa_ref')
+    assert any('/files/' + identifier in url for url in calls)
+    assert not any('/guids/' in url for url in calls)

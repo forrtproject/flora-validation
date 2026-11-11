@@ -24,3 +24,8 @@ projects:
     record_count: 88
     snapshot_sha256: 5826464541891f83c594ccc295a0512cf20329373c3b90a2fafc56e0a97e807c
     recorded_on: '2026-11-11'
+  identifiers:
+  - 10.1038/s41586-025-10078-y
+  - 10.1038/s41586-026-10203-5
+  - 10.1038/s41586-025-09844-9
+  publication_evidence: https://www.cos.io/score-evidence
