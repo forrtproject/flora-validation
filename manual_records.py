@@ -1131,6 +1131,10 @@ def update(cur, ref, values: dict, note, version, admin: dict, keep_distinct: bo
     v = clean(cur, values)
     text = clean_note(note)
     _refuse_excluded(cur, v)
+    from preprint_identifiers import preserve_preprint
+    for side in ('o', 'r'):
+        doi, alt = 'doi_' + side, 'alt_identifier_' + side
+        v[alt] = preserve_preprint(v.get(alt), rec.get(doi), v.get(doi))
     changes = {f: [rec.get(f), v[f]] for f in FIELDS if not _same(rec.get(f), v[f])}
     if not _same(rec.get("note"), text):
         changes["note"] = [rec.get("note"), text]

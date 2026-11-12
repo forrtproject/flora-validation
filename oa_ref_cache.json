@@ -420,6 +420,9 @@
   "10.1016/j.jesp.2013.07.002": {
     "ref": "Adam Waytz, James Dungan, Liane Young (2013) The whistleblower's dilemma and the fairness\u2013loyalty tradeoff. Journal of Experimental Social Psychology."
   },
+  "10.1016/j.jesp.2018.10.001": {
+    "ref": "Devin Burns, Elizabeth L. Fox, Michael Greenstein, Gayla Olbright, DeMaris A. Montgomery (2019) An old task in new clothes: A preregistered direct replication attempt of enclothed cognition effects on Stroop performance. Journal of Experimental Social Psychology."
+  },
   "10.1016/j.jesp.2019.103843": {
     "ref": "Hanne M Watkins, Mark J. Brandt (2019) The moral landscape of war: A registered report testing how the war context shapes morality's constraints on default representations of possibility. Journal of Experimental Social Psychology."
   },
@@ -500,6 +503,9 @@
   },
   "10.1016/j.nicl.2020.102441": {
     "ref": "Vivien G\u00fcnther, Anja Hu\u00dflack, Anna-Sophie Weil, Anna Bujanow, Jeanette Henkelmann, Anette Kersting, Markus Quirin, Karl\u2010Titus Hoffmann, Boris Egloff, Donald Lobsien, Thomas Suslow (2020) Individual differences in anxiety and automatic amygdala response to fearful faces: A replication and extension of Etkin et al. (2004). NeuroImage Clinical."
+  },
+  "10.1016/j.nlm.2019.107105": {
+    "ref": "Natalie Schroyens, Joaqu\u00edn Matias Alfei, Anna Elisabeth Schnell, Laura Luyten, Tom Beckers (2019) Limited replicability of drug-induced amnesia after contextual fear memory retrieval in rats. Neurobiology of Learning and Memory."
   },
   "10.1016/j.obhdp.2014.07.004": {
     "ref": "Karen Page Winterich, Vikas Mittal, Andrea C. Morales (2014) Protect thyself: How affective self-protection increases self-interested, unethical behavior. Organizational Behavior and Human Decision Processes."
@@ -2096,17 +2102,29 @@
   "10.1371/journal.pone.0197268": {
     "ref": "Zhi Nie, Srinivasan Vairavan, Vaibhav A. Narayan, Jieping Ye, Qingqin S. Li (2018) Predictive modeling of treatment resistant depression using data from STAR*D and an independent clinical study. PLoS ONE."
   },
+  "10.1371/journal.pone.0220419": {
+    "ref": "Carrie A. Bailes, Mary Caldwell, Erin J. Wamsley, Matthew A. Tucker (2020) Does sleep protect memories against interference? A failure to replicate. PLoS ONE."
+  },
   "10.1371/journal.pone.0236287": {
     "ref": "Benjamin Johannes Stauch, Verena Braun, Simon Hanslmayr (2020) Probing the causal involvement of dlPFC in directed forgetting using rTMS\u2014A replication study. PLoS ONE."
   },
   "10.1371/journal.pone.0236825": {
     "ref": "Shu Imaizumi, Ubuka Tagami, Yi Yang (2020) Fluid movements enhance creative fluency: A replication of Slepian and Ambady (2012). PLoS ONE."
   },
+  "10.1371/journal.pone.0238554": {
+    "ref": "Alexis D. J. Makin, Afzal Rahman, Marco Bertamini (2020) No effect of multi-axis dot pattern symmetry on subjective duration. PLoS ONE."
+  },
+  "10.1371/journal.pone.0242262": {
+    "ref": "Victor Kenji Medeiros Shiramizu, Ciaran Docherty, Lisa Marie DeBruine, Benedict Christopher Jones (2020) Sexual orientation predicts men\u2019s preferences for sexually dimorphic face-shape characteristics: A replication study. PLoS ONE."
+  },
   "10.1371/journal.pone.0246058": {
     "ref": "Samantha K. Stanley, Anna Klas, Edward John Roy Clarke, Iain A. Walker (2021) The effects of a temporal framing manipulation on environmentalism: A replication and extension. PLoS ONE."
   },
   "10.1371/journal.pone.0253023": {
     "ref": "John-Jose Nu\u00f1ez, Teyden T. Nguyen, Yihan Zhou, Bo Cao, Raymond T. Ng, Jun Chen, Ben\u00edcio N. Frey, Roumen Milev, Daniel J. M\u00fcller, Susan Rotzinger, Cl\u00e1udio N. Soares, Rudolf Uher, Sidney H. Kennedy, Raymond W. Lam (2021) Replication of machine learning methods to predict treatment outcome with antidepressant medications in patients with major depressive disorder from STAR*D and CAN-BIND-1. PLoS ONE."
+  },
+  "10.1371/journal.pone.0255531": {
+    "ref": "Amanda Rotella, Adam Maxwell Sparks, Sandeep Mishra, Pat Barclay (2021) No effect of \u2018watching eyes\u2019: An attempted replication and extension investigating individual differences. PLoS ONE."
   },
   "10.1371/journal.pone.0258110": {
     "ref": "Jennifer E. Ashton, Scott A. Cairney (2021) Future-relevant memories are not selectively strengthened during sleep. PLoS ONE."
@@ -2282,6 +2300,9 @@
   "10.17705/1cais.02729": {
     "ref": "Shalini Chandra, Shirish C. Srivastava, Yin\u2010Leng Theng (2010) Evaluating the Role of Trust in Consumer Adoption of Mobile Payment Systems: An Empirical Analysis. Communications of the Association for Information Systems."
   },
+  "10.17743/jaes.2022.0142": {
+    "ref": "Michael A. Nees, Claire Yang Liu, Krista Bogan (2024) Speech, Nonspeech Audio, and Visual Interruptions of a Tracking Task: A Replication and Extension of Nees and Sampsell (2021). Journal of the Audio Engineering Society."
+  },
   "10.18148/srm/2013.v7i3.5458": {
     "ref": "Aigul Mavletova, Mick P. Couper (2012) Sensitive Topics in PC Web and Mobile Web Surveys: Is There a Difference?. DOAJ (DOAJ: Directory of Open Access Journals)."
   },
@@ -2353,6 +2374,9 @@
   },
   "10.2196/20572": {
     "ref": "Michel Walrave, Cato Waeterloos, Koen S. Ponnet (2020) Adoption of a Contact Tracing App for Containing COVID-19: A Health Belief Model Approach. JMIR Public Health and Surveillance."
+  },
+  "10.2196/45481": {
+    "ref": "Michal Dole\u017eel, Zden\u011bk Smutn\u00fd (2023) Adoption of a COVID-19 Contact Tracing App by Czech Youth: Cross-Cultural Replication Study. JMIR Human Factors."
   },
   "10.2196/preprints.45481": {
     "ref": "Michal Dole\u017eel, Zden\u011bk Smutn\u00fd (2023) Adoption of a COVID-19 Contact Tracing App by Czech Youth: Cross-Cultural Replication Study. JMIR Human Factors."
@@ -2819,6 +2843,9 @@
   "10.5964/ejop.8375": {
     "ref": "Holger Busch (2023) The association between parental generativity and parent-child attitude-similarity through parent- and child-reported authoritative parenting: A replication. Europe\u2019s Journal of Psychology."
   },
+  "10.5964/jnc.6057": {
+    "ref": "Julia Bahnmueller, Krzysztof Cipora, Silke M. G\u00f6bel, Hans\u2010Christoph Nuerk, Mojtaba Soltanlou (2021) Pick the smaller number: No influence of linguistic markedness on three-digit number processing. Journal of Numerical Cognition."
+  },
   "10.5964/jnc.6063": {
     "ref": "Christina Artemenko, Nicolas Masson, Carrie Georges, Hans\u2010Christoph Nuerk, Krzysztof Cipora (2021) Not all elementary school teachers are scared of math. Journal of Numerical Cognition."
   },
@@ -2854,6 +2881,9 @@
   },
   "10.7717/peerj.4217": {
     "ref": "Alexander C. Wilson, Dorothy Bishop (2018) Resounding failure to replicate links between developmental language disorder and cerebral lateralisation. PeerJ."
+  },
+  "10.7717/peerj.5790": {
+    "ref": "Gina Griffioen, Granville James Matheson, Simon \u010cervenka, Lars Farde, Jacqueline Borg (2018) Serotonin 5-HT 1A receptor binding and self-transcendence in healthy control subjects\u2014a replication study using Bayesian hypothesis testing. PeerJ."
   },
   "10.7916/d8f76r2r": {
     "ref": "Heekyung Seol (2005) The Critical Period in the Acquisition of L2 Syntax: A Partial Replication of Johnson and Newport (1989)."

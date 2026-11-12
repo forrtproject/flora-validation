@@ -21,3 +21,6 @@ snapshots/
 
 # Versioned Zenodo bundles and local upload receipts
 /release-bundles
+# Expiring API responses; persisted by the scheduled workflow cache
+/cache/published_versions/
+/output/published_version_candidates*
