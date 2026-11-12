@@ -200,14 +200,18 @@ def _plain_author(name):
 _MISSING = {"na", "n/a", "nan", "none", "null"}
 
 
-def normalise_author_json(value):
+def normalise_author_json(value, *, preserve_unresolved=False):
     """An author cell as a structured JSON list, whatever form it arrived in.
 
     A JSON list is rewritten in the compact form without empty keys. A plain
     "A; B; C" string (a sheet value, or display names) becomes a list too: a search
     index that splits on commas would otherwise read the whole string as one name.
     Anything else (no value, a missing-value marker) is returned unchanged.
+    preserve_unresolved keeps incomplete entries and uses the overlap scorer's
+    and/ampersand separators for plain people, preserving named organisations.
     """
+    if preserve_unresolved and isinstance(value, list):
+        value = json.dumps(value, ensure_ascii=False)
     if not isinstance(value, str):
         return value
     raw = value.strip()
@@ -219,9 +223,25 @@ def normalise_author_json(value):
         except ValueError:
             return value
         if isinstance(items, list) and all(isinstance(item, dict) for item in items):
+            if preserve_unresolved:
+                retained = []
+                for item in items:
+                    if item.get('family') is not None and not isinstance(item['family'], str):
+                        retained.append(item)
+                        continue
+                    normalized = json.loads(author_fields([item])["authors_json"] or '[{}]')[0]
+                    if normalized:
+                        normalized['sequence'] = 'first' if not retained else 'additional'
+                    retained.append(normalized)
+                return author_json(retained)
             return author_fields(items)["authors_json"] or value
         return value
-    items = [_plain_author(part) for part in raw.split(";") if part.strip()]
+    parts = raw.split(';')
+    if preserve_unresolved:
+        parts = [name for part in parts for name in
+                 ([part] if _ORGANISATION.search(part) or part.strip().lower().startswith('the ')
+                  else re.split(r'\s*(?:\band\b|&)\s*', part))]
+    items = [_plain_author(part) for part in parts if part.strip()]
     return author_fields(items)["authors_json"] or value
 
 
