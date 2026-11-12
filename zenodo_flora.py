@@ -78,6 +78,7 @@ def changelog(current, previous=None):
 
 
 def write_json(path, value):
+    """Write release metadata as UTF-8 JSON."""
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
 
@@ -90,23 +91,23 @@ def assemble(output, version, destination, previous=None):
     previous = Path(previous) if previous else None
     prior = None
     if previous:
-        prior = json.loads((previous / 'zenodo-state.json').read_text())
+        prior = json.loads((previous / 'zenodo-state.json').read_text(encoding='utf-8'))
         if not prior.get('published'):
             raise ValueError('Previous bundle must have a published Zenodo receipt')
         if tuple(map(int, version.split('.'))) <= tuple(map(int, prior['version'].split('.'))):
             raise ValueError('Version must increase')
         verify_bundle(previous)
     source = output / 'flora.csv'
-    source_manifest = json.loads((output / 'flora_release_manifest.json').read_text())
+    source_manifest = json.loads((output / 'flora_release_manifest.json').read_text(encoding='utf-8'))
     if hashlib.sha256(source.read_bytes()).hexdigest() != source_manifest['sha256']:
         raise ValueError('flora.csv does not match its existing release manifest')
-    columns = json.loads((SOURCES / 'columns.json').read_text())
+    columns = json.loads((SOURCES / 'columns.json').read_text(encoding='utf-8'))
     source_columns, source_rows = read_records(source)
     missing = set(columns) - set(source_columns)
     if missing:
         raise ValueError('Release columns missing from source: ' + ', '.join(sorted(missing)))
     validate_overlap(source_columns, source_rows)
-    registry = yaml.safe_load((SOURCES / 'projects.yml').read_text())
+    registry = yaml.safe_load((SOURCES / 'projects.yml').read_text(encoding='utf-8'))
     project_labels, project_report = flora_release_projects.classify_projects(source_rows, registry)
     rows = {identifier: project_record(row, columns, project_labels.get(identifier))
             for identifier, row in source_rows.items()}
@@ -143,7 +144,7 @@ def assemble(output, version, destination, previous=None):
                               'outcome_applicability': 'replication and reproduction fields are type-specific'}
     manifest['previous_release'] = prior
     write_json(destination / 'flora_release_manifest.json', manifest)
-    cff = yaml.safe_load((SOURCES / 'citation-template.cff').read_text())
+    cff = yaml.safe_load((SOURCES / 'citation-template.cff').read_text(encoding='utf-8'))
     cff['version'] = version
     (destination / 'CITATION.cff').write_text(yaml.safe_dump(cff, allow_unicode=True, sort_keys=False), encoding='utf-8')
     creators = [{'name': f"{a['family-names']}, {a['given-names']}",
@@ -222,12 +223,14 @@ def render_codebook(columns, rows):
 
 
 def checksums(bundle):
+    """Hash deposited files, excluding local receipts and the checksum manifest."""
     return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(bundle.iterdir())
             if p.is_file() and p.name not in {'bundle-checksums.json', 'zenodo-state.json'}}
 
 
 def verify_bundle(bundle):
-    if checksums(bundle) != json.loads((bundle / 'bundle-checksums.json').read_text()):
+    """Reject any bundle whose contents changed after assembly."""
+    if checksums(bundle) != json.loads((bundle / 'bundle-checksums.json').read_text(encoding='utf-8')):
         raise ValueError('Bundle changed after assembly; review and assemble again')
 
 
@@ -259,7 +262,9 @@ def fetch_previous(record_id, environment, destination):
 
 
 class Zenodo:
+    """Environment-scoped REST client that keeps credentials out of logs."""
     def __init__(self, environment):
+        """Read the environment-specific token without logging its value."""
         self.base = HOSTS[environment]
         variable = 'ZENODO_SANDBOX_TOKEN' if environment == 'sandbox' else 'ZENODO_TOKEN'
         token = os.environ.get(variable)
@@ -270,6 +275,7 @@ class Zenodo:
                                      'User-Agent': 'FLoRA-release/1.0 (+https://github.com/forrtproject/flora-validation)'})
 
     def request(self, method, url, **kwargs):
+        """Send an authenticated request only to the selected Zenodo host."""
         if urlparse(url).netloc != urlparse(self.base).netloc or urlparse(url).scheme != 'https':
             raise ValueError('Refusing credentials to an unexpected host')
         try:
@@ -283,31 +289,47 @@ class Zenodo:
 
 
 def upload(bundle, environment, publish=False, approve_production=False):
+    """Upload a reviewed bundle, resuming only the verified intended draft."""
     bundle = Path(bundle)
     if environment == 'production' and not approve_production:
         raise ValueError('Production requires --approve-production after Lukas approves the release')
     verify_bundle(bundle)
-    metadata = json.loads((bundle / 'zenodo-metadata.json').read_text())
-    manifest = json.loads((bundle / 'flora_release_manifest.json').read_text())
-    approved = json.loads((SOURCES / 'columns.json').read_text())
+    metadata = json.loads((bundle / 'zenodo-metadata.json').read_text(encoding='utf-8'))
+    manifest = json.loads((bundle / 'flora_release_manifest.json').read_text(encoding='utf-8'))
+    approved = json.loads((SOURCES / 'columns.json').read_text(encoding='utf-8'))
     if (manifest.get('projection', {}).get('columns') != approved
             or manifest['projection'].get('source_labels') != SOURCE_LABELS
-            or manifest['projection'].get('project_registry') != yaml.safe_load((SOURCES / 'projects.yml').read_text())):
+            or manifest['projection'].get('project_registry') != yaml.safe_load((SOURCES / 'projects.yml').read_text(encoding='utf-8'))):
         raise ValueError('Reassemble the bundle with the agreed release columns')
     if environment == 'production' and manifest['projection'].get('project_review_required'):
         raise ValueError('Review unmapped report groups above the project threshold before production')
-    if environment == 'production' and manifest['source_manifest'].get('source_kind') == 'offline_pipeline_preview':
-        raise ValueError('Preview bundle: regenerate the authoritative publication with the fixed pipeline before production')
+    if environment == 'production':
+        source = manifest['source_manifest']
+        revision = source.get('data_version') or {}
+        if (source.get('source_kind') != 'authoritative_publication'
+                or not revision.get('stored_at')
+                or not isinstance(revision.get('change_watermark'), int)
+                or revision['change_watermark'] < 0):
+            raise ValueError('Unverified or preview source: regenerate an authoritative publication before production')
     previous = manifest.get('previous_release')
     if previous and previous['environment'] != environment:
         raise ValueError('Previous release belongs to another Zenodo environment')
     api = Zenodo(environment)
     state_path = bundle / 'zenodo-state.json'
     if state_path.exists():
-        state = json.loads(state_path.read_text())
+        state = json.loads(state_path.read_text(encoding='utf-8'))
         if state['environment'] != environment:
             raise ValueError('Use a separate bundle for each environment')
         deposit = api.request('GET', f"{api.base}/api/deposit/depositions/{state['id']}")
+        expected_versions = {metadata['version'], previous['version'] if previous else None}
+        if (str(deposit['id']) != str(state['id'])
+                or str(deposit['conceptrecid']) != str(state.get('conceptrecid'))
+                or state.get('version') != metadata['version']
+                or (previous and str(deposit['conceptrecid']) != str(previous['conceptrecid']))
+                or deposit.get('metadata', {}).get('version') not in expected_versions
+                or deposit.get('metadata', {}).get('title', metadata['title']) != metadata['title']
+                or (state.get('published') and not deposit.get('submitted'))):
+            raise ValueError('Resumed draft identity, concept or version mismatch; inspect the deposit')
     else:
         if previous:
             latest = api.request('GET', f"{api.base}/api/deposit/depositions/{previous['id']}")
@@ -340,7 +362,7 @@ def upload(bundle, environment, publish=False, approve_production=False):
     deposit = api.request('PUT', deposit['links']['self'], json={'metadata': metadata})
     doi = deposit['metadata']['prereserve_doi']['doi']
     cff_path = bundle / 'CITATION.cff'
-    cff = yaml.safe_load(cff_path.read_text())
+    cff = yaml.safe_load(cff_path.read_text(encoding='utf-8'))
     cff['doi'] = doi  # Only Zenodo's reserved version DOI, never the concept/OSF DOI.
     cff_path.write_text(yaml.safe_dump(cff, allow_unicode=True, sort_keys=False), encoding='utf-8')
     write_json(bundle / 'bundle-checksums.json', checksums(bundle))
@@ -363,6 +385,7 @@ def upload(bundle, environment, publish=False, approve_production=False):
 
 
 def main():
+    """Parse release assembly, recovery and explicitly approved upload commands."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output-dir', type=Path, default=Path('output'))
     parser.add_argument('--bundle', type=Path, required=True)

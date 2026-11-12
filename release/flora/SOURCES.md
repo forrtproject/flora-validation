@@ -25,3 +25,7 @@ File-to-component mappings reuse the report-byline audit in flora-validation PR
 #26 at commit `17b84324ae024c6e840361173c19b335c05190da`; live parent-project checks
 and one same-component preregistration independently confirm SCORE membership.
 Authorship corrections and membership decisions remain separate.
+
+The pinned FAQ has local release errata: alternative-identifier names match the
+public schema, and the individual-report example distinguishes primary and
+alternative identifiers. Its underlying coding guidance is unchanged.

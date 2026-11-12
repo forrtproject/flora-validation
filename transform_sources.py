@@ -396,8 +396,8 @@ def to_output_shape(frame, keep_extras: bool = True):
     from bibliographic_helpers import normalise_author_json
     out = frame.rename(columns=OUTPUT_RENAMES).copy()
     # Use the same normalisation for scoring plain bylines and publishing them.
-    # Classify first: JSON normalisation can drop empty entries, which must not
-    # turn an unresolved/partial list into an apparently complete scored list.
+    # Export preserves unresolved entries and uses the scorer's plain-name rules,
+    # so recomputing overlap from the published author lists gives the same result.
     if {"author_o", "author_r"} <= set(out.columns):
         author_overlap.augment(out, verbose=False)
     # Every author cell as fred-data's compact JSON list, whatever its source wrote.
@@ -405,7 +405,7 @@ def to_output_shape(frame, keep_extras: bool = True):
     # here: text of our own can contain the pattern, e.g. a BibTeX key "…_x394e_v3".)
     for column in ("author_o", "author_r"):
         if column in out.columns:
-            out[column] = out[column].map(normalise_author_json)
+            out[column] = out[column].map(lambda value: normalise_author_json(value, preserve_unresolved=True))
     out["doi_o_hash"] = out["doi_o"].apply(doi_hash)
     out["doi_r_hash"] = out["doi_r"].apply(doi_hash)
     if "source" in out:

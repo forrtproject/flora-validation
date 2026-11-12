@@ -43,9 +43,6 @@ from console_encoding import use_utf8_output
 
 use_utf8_output()
 
-# Sheets and OpenAlex both use "; " between names; a few rows use "," or " and ".
-_SPLIT = re.compile(r"\s*(?:;|\band\b|&)\s*")
-
 
 def _family_names(value) -> list:
     """Family names from structured authors or the older display-name format."""
@@ -64,7 +61,7 @@ def _family_names(value) -> list:
                 # Reuse export normalisation, including its organisation rules;
                 # retain the legacy "and" / "&" separators for plain individuals.
                 from bibliographic_helpers import normalise_author_json
-                authors = json.loads(normalise_author_json("; ".join(_SPLIT.split(text))))
+                authors = json.loads(normalise_author_json(text, preserve_unresolved=True))
         except (ValueError, TypeError):
             return []
     if not isinstance(authors, list) or not authors:

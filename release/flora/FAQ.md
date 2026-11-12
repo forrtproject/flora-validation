@@ -49,18 +49,18 @@ We rely on what replication authors say in the abstract or the report, subject t
 
 ### How are you dealing with Preprints?
 
-We focus on the version of the record (e.g., version published in a journal), but code alternative identifiers (e.g. preprints) in alt\_id\_o and alt\_id\_r columns so that these can still be discovered in the database. For original studies, we always choose the reference from the article. If that is not available, we choose the most recent version.
+We focus on the version of the record (e.g., version published in a journal), but code alternative identifiers (e.g. preprints) in alt\_identifier\_o and alt\_identifier\_r columns so that these can still be discovered in the database. For original studies, we always choose the reference from the article. If that is not available, we choose the most recent version.
 
 ### What if a study is published individually and as part of a meta-paper?
 
-We have multiple identifiers for original and replication studies and our main reference will be to \#1 the published version and \#2 to the more specific version. Studies that have been published individually and in a meta-paper will have the specific published version in doi\_r and the other alt\_id\_r. For example, [https://doi.org/10.1017/xps.2022.35](https://doi.org/10.1017/xps.2022.35) is published individually but also as part of the SCORE meta-paper and as a single SCORE report. It is entered as the published version into the database with the SCORE DOI and the report URL as alternative identifiers.
+We have multiple identifiers for original and replication studies and our main reference will be to \#1 the published version and \#2 to the more specific version. Studies that have been published individually and in a meta-paper will have the specific published version in doi\_r and the other alt\_identifier\_r. For example, [https://doi.org/10.1017/xps.2022.35](https://doi.org/10.1017/xps.2022.35) is published individually but also as part of the SCORE meta-paper and as a single SCORE report. It is entered as the published version into the database with the SCORE DOI and the report URL as alternative identifiers.
 
 ### How are meta-papers treated?
 
 If multiple entries (e.g., studies) are part of a meta paper
 
 * We still have 1 row per original \- replication combination
-* For that, we prefer published versions for doi\_r; if individual studies have been published, then we add these as doi\_r and the meta-paper into alt\_id\_r. Otherwise, the main publication is added as doi\_r, and the individual reports or preprints as doi\_r.
+* For that, we prefer published versions for doi\_r; if individual studies have been published, then we add these as doi\_r and the meta-paper into alt\_identifier\_r. Otherwise, the main publication is added as doi\_r, and the individual reports or preprints as alt\_identifier\_r.
 
 ### How is the peer review status determined?
 

@@ -43,7 +43,10 @@ and release hashes therefore differ and are both preserved in the manifest.
 Before projection, assembly checks the percentage against both source author lists;
 stale derived values stop assembly. Regenerate via the fixed normal pipeline rather
 than patching exports. A preview of the deterministic overlap fix can be assembled
-locally, but a source manifest marked `offline_pipeline_preview` blocks production.
+locally, but production accepts only `source_kind=authoritative_publication` with
+a stored dataset revision/correction watermark. The normal stored-publication paths
+write this marker through `release_helpers.add_data_version`; unmarked manifests,
+unknown source kinds and offline previews are rejected.
 
 The existing `flora_history.csv`, `flora_dataset_history`, and
 `backfill_flora_history.py` hold **daily aggregate counts**, not historical record
@@ -92,10 +95,20 @@ python3 zenodo_flora.py --bundle release-bundles/sandbox-2026.11.1 --upload sand
 python3 zenodo_flora.py --bundle release-bundles/sandbox-2026.11.1 --upload sandbox --publish
 ```
 
-**After Lukas approves**, the exact first production publication command is:
+No approved production candidate exists yet. The existing `release-bundles/2026.11.1`
+is an offline preview. After deploying the fixes and rebuilding the authoritative
+publication, assemble a fresh candidate into the dedicated, currently unused path:
 
 ```bash
-python3 zenodo_flora.py --bundle release-bundles/2026.11.1 --upload production --publish --approve-production
+python3 zenodo_flora.py --version 2026.11.1 --bundle release-bundles/production/2026.11.1
+```
+
+Review that candidate and its checksum manifest. Lukas's approval must identify
+this exact directory and its checksum; do not copy or rename the old preview here.
+**Only after that approval**, the first production publication command is:
+
+```bash
+python3 zenodo_flora.py --bundle release-bundles/production/2026.11.1 --upload production --publish --approve-production
 ```
 
 Set `ZENODO_TOKEN` in the invoking process's environment. This name was already

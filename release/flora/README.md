@@ -18,9 +18,9 @@ Each row represents a reference pair; a report may contribute multiple rows.
 
 The bundle projects the authoritative publication onto the 31 agreed columns in
 `release/flora/columns.json`, preserving permanent IDs and applicable outcome/evidence
-values. Source values use the four documented release labels. Inapplicable outcome
-and evidence fields are NA: replication outcomes on replication rows; the two
-reproduction axes on reproduction rows.
+values. Source values use registered project labels or the four documented intake fallbacks. Inapplicable outcome
+and evidence fields are NA: replication outcomes on reproduction rows; the two
+reproduction axes on replication rows.
 Columns are ordered by record identity, original study, replication/reproduction
 report, author overlap percentage, outcomes and evidence, then source. The full
 internal export is not deposited. Output CSV is quoted UTF-8 with a BOM.

@@ -4,7 +4,7 @@ import re
 from urllib.parse import unquote
 
 DOI = re.compile(r'10\.\d{4,9}/[^\s,;|<>"\]]+', re.I)
-OSF_URL = re.compile(r'(?:https?://)?(?:www\.)?osf\.io/([a-z0-9]{5})(?=[/?#\s,;|<>"\]]|$)', re.I)
+OSF_URL = re.compile(r'(?:https?://)?(?:www\.)?osf\.io/([a-z0-9]{5})(?=[/?#\s,;|<>"\]]|$)(?:/files/([a-z0-9]{5})(?=[/?#\s,;|<>"\]]|$))?', re.I)
 OSF_DOI = re.compile(r'10\.17605/osf\.io/([a-z0-9]{5})$', re.I)
 
 
@@ -22,7 +22,7 @@ def report_identifiers(row):
         # A DOI's embedded osf.io path must not create a second OSF identifier;
         # OSF preprint DOIs remain separate identifiers unless explicitly linked.
         without_dois = DOI.sub(' ', text)
-        identifiers.update('osf:' + m[1].lower() for m in OSF_URL.finditer(without_dois))
+        identifiers.update('osf:' + (m[2] or m[1]).lower() for m in OSF_URL.finditer(without_dois))
     return identifiers
 
 

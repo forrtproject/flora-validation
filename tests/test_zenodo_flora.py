@@ -245,7 +245,7 @@ def test_preview_and_superseded_bundle_cannot_publish_production(bundle):
     manifest['source_manifest']['source_kind'] = 'offline_pipeline_preview'
     release.write_json(manifest_path, manifest)
     release.write_json(bundle / 'bundle-checksums.json', release.checksums(bundle))
-    with pytest.raises(ValueError, match='Preview bundle'):
+    with pytest.raises(ValueError, match='Unverified or preview source'):
         release.upload(bundle, 'production', publish=True, approve_production=True)
     del manifest['projection']
     release.write_json(manifest_path, manifest)
@@ -309,3 +309,57 @@ def test_unmapped_large_groups_and_changed_registry_block_production(bundle):
     release.write_json(bundle / 'bundle-checksums.json', release.checksums(bundle))
     with pytest.raises(ValueError, match='agreed release columns'):
         release.upload(bundle, 'production', publish=True, approve_production=True)
+
+
+@pytest.mark.parametrize('kind', [None, 'offline_pipeline_preview', 'unknown'])
+def test_production_requires_positive_publication_provenance(bundle, monkeypatch, kind):
+    path = bundle / 'flora_release_manifest.json'
+    manifest = json.loads(path.read_text())
+    if kind:
+        manifest['source_manifest']['source_kind'] = kind
+    release.write_json(path, manifest)
+    release.write_json(bundle / 'bundle-checksums.json', release.checksums(bundle))
+    client = Mock(side_effect=AssertionError('No network before provenance validation'))
+    monkeypatch.setattr(release, 'Zenodo', client)
+    with pytest.raises(ValueError, match='Unverified or preview'):
+        release.upload(bundle, 'production', approve_production=True)
+    client.assert_not_called()
+
+
+@pytest.mark.parametrize('remote_change', [dict(id=99), dict(conceptrecid=999),
+                                         dict(metadata={'version': 'wrong'}),
+                                         dict(metadata={'title': 'Another dataset'})])
+def test_resumed_draft_identity_is_checked_before_any_writes(bundle, monkeypatch, remote_change):
+    base = release.HOSTS['sandbox']
+    release.write_json(bundle / 'zenodo-state.json',
+                       dict(environment='sandbox', id=12, conceptrecid=10, version='2026.11.1', published=False))
+    deposit = dict(id=12, conceptrecid=10, submitted=False, metadata={'version': '2026.11.1'})
+    deposit.update(remote_change)
+    api = Mock(base=base)
+    api.request.return_value = deposit
+    monkeypatch.setattr(release, 'Zenodo', lambda env: api)
+    with pytest.raises(ValueError, match='identity, concept or version mismatch'):
+        release.upload(bundle, 'sandbox')
+    assert api.request.call_count == 1
+    assert api.request.call_args.args[0] == 'GET'
+
+
+def test_stored_publication_marks_its_revision(tmp_path):
+    from release_helpers import add_data_version
+    manifest = add_data_version(tmp_path, {}, '2026-11-12T00:00:00+00:00', 912)
+    assert manifest['source_kind'] == 'authoritative_publication'
+    assert manifest['data_version']['change_watermark'] == 912
+
+
+def test_verified_publication_reaches_client_boundary_without_network(bundle, monkeypatch):
+    path = bundle / 'flora_release_manifest.json'
+    manifest = json.loads(path.read_text())
+    manifest['source_manifest'].update(source_kind='authoritative_publication',
+        data_version={'stored_at': '2026-11-12T00:00:00+00:00', 'change_watermark': 912})
+    release.write_json(path, manifest)
+    release.write_json(bundle / 'bundle-checksums.json', release.checksums(bundle))
+    client = Mock(side_effect=ValueError('verified client boundary'))
+    monkeypatch.setattr(release, 'Zenodo', client)
+    with pytest.raises(ValueError, match='verified client boundary'):
+        release.upload(bundle, 'production', approve_production=True)
+    client.assert_called_once_with('production')

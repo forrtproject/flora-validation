@@ -130,3 +130,11 @@ def test_score_review_preserves_private_parent_and_unresolved_byline_limits():
     assert 'Ma-Kellams_PsychologSci_2011_lkBL_618' in special['evidence_excerpt']
     assert all(r['score_project_title'].startswith('SCORE - ')
                for r in decisions.values() if r['id'] != special['id'])
+
+
+def test_nested_osf_file_matches_direct_file_without_joining_sibling_files():
+    nested = report_identifiers(record('A', url='https://osf.io/8uc5z/files/jmk9d?view_only=x'))
+    assert nested == {'osf:jmk9d'}
+    assert nested == report_identifiers(record('B', url='https://osf.io/jmk9d/'))
+    assert nested != report_identifiers(record('C', url='https://osf.io/8uc5z/files/abcde'))
+    assert report_identifiers(record('D', url='https://osf.io/8uc5z/')) == {'osf:8uc5z'}

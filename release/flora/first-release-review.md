@@ -78,11 +78,14 @@ has been performed. No explicitly identified sandbox token is available.
 
 ## Production command after the authoritative rebuild and approval
 
-First archive the preview and assemble a fresh bundle from the regenerated,
-authoritative `output/`. Then, with `ZENODO_TOKEN` exported in the invoking process:
+No approved production candidate exists. Keep the offline preview separate.
+After the authoritative rebuild, assemble a fresh candidate at
+`release-bundles/production/2026.11.1` using the command in
+[the release guide](../../docs/FLORA_ZENODO_RELEASES.md). Approval must identify that
+exact candidate and its checksum manifest. Only then, with `ZENODO_TOKEN` exported:
 
 ```bash
-python3 zenodo_flora.py --bundle release-bundles/2026.11.1 --upload production --publish --approve-production
+python3 zenodo_flora.py --bundle release-bundles/production/2026.11.1 --upload production --publish --approve-production
 ```
 
 Sandbox uses `ZENODO_SANDBOX_TOKEN`; credentials are never stored in the bundle.
