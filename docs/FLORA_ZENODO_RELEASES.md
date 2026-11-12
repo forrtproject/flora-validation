@@ -171,11 +171,6 @@ are grouped separately. Each outcome is followed by its quote and source, and
 provenance `source` ends the CSV. The full pipeline export remains available in the
 repository; it is not a second dataset file in the deposit.
 
-[The interactive selector](../release/flora/column-selector.html) now defaults to
-this agreed selection. Browser changes remain proposals; they do not modify the
-contract or the pipeline. The deposit codebook contains only the agreed columns,
-in their release order.
-
 ## Project-first classification
 
 `flora_release_projects.py` uses `release/flora/projects.yml` to match project
@@ -183,10 +178,9 @@ anchors in `doi_r`, `alt_identifier_r` and report URLs. DOI prefixes, case,
 comma/semicolon/pipe-separated alternatives and OSF project URL/DOI forms are
 normalized. Original-study IDs and title keywords never establish membership.
 Project-specific intake rows (currently SCORE) can also seed report identifiers.
-Reviewed permanent record IDs can establish membership where report identifiers
-are missing. Each such registry entry must link to its membership evidence;
-the [65-record SCORE review](../release/flora/SCORE_MEMBERSHIP_REVIEW.md) documents
-the current explicit assignments independently of the report-byline corrections.
+Explicit registry record IDs are supported for reviewed exceptions, but current
+SCORE matching relies on the verified report-side identifiers in the authoritative
+publication and its known intake. Historical review snapshots are not runtime inputs.
 Matches seed one-hop aliases; there is no recursive transitive merge of projects.
 
 Projects take priority over every intake route, including search pipeline. The
@@ -208,15 +202,23 @@ registry requires reassembly before upload. No additional CSV column is introduc
 source means an identifiable project, otherwise intake route. It does not retain
 simultaneous route and project membership in one value.
 
-The [SCORE paper-identifier batch](../data/corrections/SCORE_PAPER_IDENTIFIERS.md)
-adds the replication-paper DOI to replication records and the reproduction-paper
-DOI to reproduction records, after checking the published outcome datasets.
-It appends to `alt_identifier_r` through the correction log, preserving individual
-report identifiers and existing alternatives. The associated aggregate paper is
-an additional publication link, not a replacement report citation.
+## Related work and first release
 
-The [individual-report DOI batch](../data/corrections/SCORE_REPORT_DOIS.md)
-fills verified missing `doi_r` values while retaining those paper alternatives.
-Reports without a registered DOI keep a blank primary field and their report URL;
-the aggregate paper is not substituted as their primary DOI. A rebuild is checked
-to preserve the report's byline, citation text and outcomes.
+Merge the author/export correctness fix in [PR #29](https://github.com/forrtproject/flora-validation/pull/29)
+and rebuild the authoritative dataset before assembling a production candidate.
+The already-applied SCORE paper links and report DOIs are preserved separately in
+[PR #30](https://github.com/forrtproject/flora-validation/pull/30). Report-author
+corrections and explicit unknown-author handling belong to
+[PR #26](https://github.com/forrtproject/flora-validation/pull/26).
+
+For the first release, finish/apply the report-author corrections, run the normal
+pipeline and Publish FLoRA, and assemble a fresh candidate. Review its initial
+changelog, 31-column codebook, creators, licence and description. The proposed
+metadata comes from `release/flora/citation-template.cff` (220 creators, CC BY 4.0);
+it must be reviewed with the actual candidate. Lukas's approval identifies the
+exact bundle path and checksum before the production command above is run.
+
+The pre-split exploratory previews and superseded audits are not release inputs.
+They remain recoverable at
+[commit 479b12d](https://github.com/forrtproject/flora-validation/tree/479b12dc05a04f765f5ad1460dd0cad522f96331)
+and in the maintainer's private archive. No old preview is an approved candidate.

@@ -1,31 +1,25 @@
-# Release guidance provenance
+# Release input provenance
 
 `FAQ.md` and the authors/licence in `citation-template.cff` were copied from
 forrtproject/fred-data at commit `42a22b635efd6ee4cc33d64f322742d0545d796a`:
 `output/flora_faq.md` (the website's coding guidance) and `CITATION.cff`.
-FAQ line endings and trailing whitespace were normalized.
-The template intentionally excludes its old version, DOI and OSF URLs. Review the
-author list and licence before the first production release. Refresh these pinned
-sources deliberately for later releases; assembly never fetches mutable URLs.
+The template excludes the old version and DOI. Local FAQ errata use the published
+alternative-identifier column names and distinguish primary/alternative reports.
+Review the author list and licence before the first production release.
 
-`CODEBOOK.md` extracts the maintained published column dictionary from
-`docs/FLORA_DATA_TABLE.md`, with the exact categorical labels in each release. Release summaries and byte manifests
-reuse `release_helpers.prepare_release`; source publication uses publish_flora.py.
+The codebook extracts maintained definitions from `docs/FLORA_DATA_TABLE.md` and
+records categorical values from the actual release. Byte manifests and notes reuse
+`release_helpers`; normal publication comes from `publish_flora.py`.
 
-`projects.yml` anchors RP:P and the Boyce student-replication collection to report
-DOIs already in the snapshot and the existing META_PAPER_DOIS list. Labels reflect
-the report titles/citations in that snapshot. SCORE is anchored by its dedicated
-intake; no DOI is invented. Qualification records the matching count, snapshot
-SHA-256 and date. Additional aliases or project groups require an explicit registry
-update; count-based candidates alone do not invent names or memberships.
+`projects.yml` contains report DOI anchors and historical qualification counts/hashes
+for RP:P, the Boyce student collection and SCORE. Current SCORE records carry verified
+paper alternative identifiers; the known SCORE intake also seeds report matching.
+No exploratory membership dump or static preview is needed at runtime.
 
-The 65 explicit SCORE record IDs have report/component evidence in
-`score-project-membership-review.json`, summarized in `SCORE_MEMBERSHIP_REVIEW.md`.
-File-to-component mappings reuse the report-byline audit in flora-validation PR
-#26 at commit `17b84324ae024c6e840361173c19b335c05190da`; live parent-project checks
-and one same-component preregistration independently confirm SCORE membership.
-Authorship corrections and membership decisions remain separate.
-
-The pinned FAQ has local release errata: alternative-identifier names match the
-public schema, and the individual-report example distinguishes primary and
-alternative identifiers. Its underlying coding guidance is unchanged.
+The already-applied identifier evidence is maintained separately in
+[PR #30](https://github.com/forrtproject/flora-validation/pull/30).
+Pre-split exploratory material is recoverable from
+[479b12d](https://github.com/forrtproject/flora-validation/tree/479b12dc05a04f765f5ad1460dd0cad522f96331).
+A private archive with SHA-256
+`d9bfae927b94712ed214520529092b2070fbe0a46100fae74f518a49d076ab44`
+is retained by the maintainer. These snapshots are not dataset release inputs.

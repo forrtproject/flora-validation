@@ -474,11 +474,7 @@ def fetch_osf_reference(url):
     prefix = "https://api.osf.io/v2"
     apa = request(f"{prefix}/nodes/{identifier}/citation/apa/")
     if not apa:
-        # Five-character OSF links are GUIDs, not v2 file object IDs. The GUID
-        # resolver redirects to the file resource, whose target is the report node.
-        # Full 24-character file IDs use the files endpoint directly.
-        resource = "guids" if len(identifier) == 5 else "files"
-        file_data = request(f"{prefix}/{resource}/{identifier}/") or {}
+        file_data = request(f"{prefix}/files/{identifier}/") or {}
         identifier = (((file_data.get("data") or {}).get("relationships") or {})
                       .get("target") or {}).get("data", {}).get("id")
         if not identifier or not re.fullmatch(r"[a-zA-Z0-9]+", str(identifier)):

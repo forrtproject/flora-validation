@@ -86,50 +86,8 @@ def test_title_mentions_do_not_establish_membership():
     assert classify_projects(rows, registry(intake_sources=['SCORE']))[0] == {}
 
 
-def test_reviewed_score_membership_across_intake_routes():
-    import json
-    from pathlib import Path
-    import yaml
-
-    base = Path(__file__).resolve().parents[1] / 'release/flora'
-    review = json.loads((base / 'score-project-membership-review.json').read_text())
-    config = yaml.safe_load((base / 'projects.yml').read_text())
-    score = next(p for p in config['projects'] if p['key'] == 'score')
-    decisions = review['records']
-    assert len(decisions) == 65
-    assert set(score['record_ids']) == {r['id'] for r in decisions}
-    rows = {r['id']: {**record(r['id'], source=r['intake_source']), **r['source_identifiers']}
-            for r in decisions}
-    rows['unreviewed'] = {**record('unreviewed'), 'title_r': 'A critique of SCORE'}
-    # A reviewed report can subsequently arrive through another intake route.
-    rows['same-report'] = record('same-report', source='validated',
-                                 url=decisions[0]['report_url'])
-    assigned, report = classify_projects(rows, config)
-    assert set(assigned) == set(score['record_ids']) | {'same-report'}
-    assert set(assigned.values()) == {'SCORE'}
-    assert report['unmatched_project_mentions'][0]['id'] == 'unreviewed'
-    assert rows['FLORA-002670']['source'] == 'COS'
-    assert rows['REPRO-000101']['source'] == 'reproductions'
 
 
-def test_score_review_preserves_private_parent_and_unresolved_byline_limits():
-    import json
-    from pathlib import Path
-
-    base = Path(__file__).resolve().parents[1] / 'release/flora'
-    review = json.loads((base / 'score-project-membership-review.json').read_text())
-    decisions = {r['id']: r for r in review['records']}
-    assert all(r['membership'] == 'confirmed' for r in decisions.values())
-    assert {r['id'] for r in decisions.values() if r['byline_review'] == 'unresolved'} == {
-        'FLORA-002648', 'FLORA-002655', 'FLORA-002692'}
-    special = decisions['FLORA-002692']
-    assert special['parent_access_status'] == 401
-    assert special['score_project_title'] is None
-    assert special['evidence_method'] == 'preregistration_in_same_report_component'
-    assert special['preregistration_url'] == 'https://osf.io/e2fsq/'
-    assert 'Ma-Kellams_PsychologSci_2011_lkBL_618' in special['evidence_excerpt']
-    assert all(r['score_project_title'].startswith('SCORE - ')
-               for r in decisions.values() if r['id'] != special['id'])
 
 
 def test_nested_osf_file_matches_direct_file_without_joining_sibling_files():
@@ -138,3 +96,12 @@ def test_nested_osf_file_matches_direct_file_without_joining_sibling_files():
     assert nested == report_identifiers(record('B', url='https://osf.io/jmk9d/'))
     assert nested != report_identifiers(record('C', url='https://osf.io/8uc5z/files/abcde'))
     assert report_identifiers(record('D', url='https://osf.io/8uc5z/')) == {'osf:8uc5z'}
+
+
+def test_both_score_paper_dois_match_across_intake_routes():
+    from pathlib import Path
+    import yaml
+    registry = yaml.safe_load((Path(__file__).resolve().parents[1] / 'release/flora/projects.yml').read_text())
+    rows = {'rep': record('rep', alt='10.1038/s41586-025-10078-y', source='validated'),
+            'repro': record('repro', alt='10.17605/osf.io/w3kuz; 10.1038/s41586-026-10203-5', source='reproductions')}
+    assert classify_projects(rows, registry)[0] == {'rep': 'SCORE', 'repro': 'SCORE'}

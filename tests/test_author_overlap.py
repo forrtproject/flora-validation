@@ -253,8 +253,7 @@ def test_na_is_a_valid_surname_inside_an_author_entry():
                                     '[{"family":"Smith"},{}]',
                                     '[{"family":"Smith"},{"given":"Alex"}]',
                                     '[{"family":123}]', [{'family': 'Smith'}]])
-def test_exported_authors_round_trip_through_release_validation(authors):
-    from zenodo_flora import validate_overlap
+def test_exported_authors_preserve_overlap_on_round_trip(authors):
     from final_export import csv_text
     import csv, io
     frame = pd.DataFrame([{'id': 'TEST-1', 'doi_o': '10.1234/o', 'doi_r': '10.1234/r',
@@ -262,5 +261,7 @@ def test_exported_authors_round_trip_through_release_validation(authors):
     shaped = transform_sources.to_output_shape(frame)
     reader = csv.DictReader(io.StringIO(csv_text(shaped).lstrip('\ufeff')))
     row = next(reader)
-    validate_overlap(reader.fieldnames, {'TEST-1': row})
+    expected = ao.count(row['author_o'], row['author_r'])[1]
+    actual = None if row['author_overlap_pct'] == 'NA' else float(row['author_overlap_pct'])
+    assert actual == expected
     assert ao.count(row['author_o'], row['author_r']) == ao.count(frame.iloc[0]['author_o'], authors)
