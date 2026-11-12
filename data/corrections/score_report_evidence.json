@@ -251,14 +251,14 @@
     "checked": "2026-11-10"
   },
   "7qjzp": {
-    "report_url": "https://osf.io/7qjzp/",
+    "report_url": "https://osf.io/7qjzp",
     "api_url": "https://api.osf.io/v2/files/621286944903de032a847e9c/",
     "project_url": "https://osf.io/en9md/",
     "report_header": "Research Claim from Andrew (2014) from Social\nForces\nProject ID:\nAndrew_SocialForces_2014_x0pA\nOSF project:\nhttps://osf.io/en9md/\nPreregistration: https://osf.io/d2peu/",
     "authors": [],
     "status": "unresolved",
     "reason": "No named authors in report byline (or placeholder only); project contributors do not distinguish report writers from SCORE staff.",
-    "checked": "2026-11-10",
+    "checked": "2026-11-12",
     "contributors": [
       "Abiola OYEBANJO",
       "Adeniyi Festus Adeyemi",
@@ -278,7 +278,13 @@
       "Anna Szabelska",
       "Macie Daley",
       "Shakhlo Nematova"
-    ]
+    ],
+    "author_status": "unknown",
+    "metadata_api": "https://api.osf.io/v2/files/621286944903de032a847e9c/",
+    "metadata_http_status": 200,
+    "year": "2022",
+    "year_basis": "OSF report file deposit date",
+    "deposit_date": "2022-02-20T18:21:08.215297Z"
   },
   "cdrmk": {
     "report_url": "https://osf.io/cdrmk/",
@@ -990,14 +996,14 @@
     "checked": "2026-11-10"
   },
   "fzut6": {
-    "report_url": "https://osf.io/fzut6/",
+    "report_url": "https://osf.io/fzut6",
     "api_url": "https://api.osf.io/v2/files/5f071e53a42091002dc191d4/",
     "project_url": "https://osf.io/e52qx/",
     "report_header": "Final Report  –",
     "authors": [],
     "status": "unresolved",
     "reason": "No named authors in report byline (or placeholder only); project contributors do not distinguish report writers from SCORE staff.",
-    "checked": "2026-11-10",
+    "checked": "2026-11-12",
     "contributors": [
       "Ernest Baskin",
       "Melissa Kline Struhl",
@@ -1022,7 +1028,13 @@
       "Laetitia Mulder",
       "Macie Daley",
       "Shakhlo Nematova"
-    ]
+    ],
+    "author_status": "unknown",
+    "metadata_api": "https://api.osf.io/v2/files/5f071e53a42091002dc191d4/",
+    "metadata_http_status": 200,
+    "year": "2020",
+    "year_basis": "OSF report file deposit date",
+    "deposit_date": "2020-07-09T13:40:35.724276Z"
   },
   "q4e35": {
     "report_url": "https://osf.io/q4e35/",
@@ -1133,14 +1145,14 @@
     "checked": "2026-11-10"
   },
   "fqdh4": {
-    "report_url": "https://osf.io/fqdh4/",
+    "report_url": "https://osf.io/fqdh4",
     "api_url": "https://api.osf.io/v2/files/5f7e514da5e94701161ba754/",
     "project_url": "https://osf.io/2ug8x/",
     "report_header": "",
     "authors": [],
     "status": "unresolved",
     "reason": "No named authors in report byline (or placeholder only); project contributors do not distinguish report writers from SCORE staff.",
-    "checked": "2026-11-10",
+    "checked": "2026-11-12",
     "contributors": [
       "Nicholas Weller",
       "Andrew H. Tyner",
@@ -1168,7 +1180,13 @@
       "Nax",
       "Marin Dujmović",
       "Shakhlo Nematova"
-    ]
+    ],
+    "author_status": "unknown",
+    "metadata_api": "https://api.osf.io/v2/files/5f7e514da5e94701161ba754/",
+    "metadata_http_status": 200,
+    "year": "2020",
+    "year_basis": "OSF report file deposit date",
+    "deposit_date": "2020-10-07T23:37:49.863155Z"
   },
   "tywer": {
     "report_url": "https://osf.io/tywer/",
@@ -1207,14 +1225,14 @@
     "checked": "2026-11-10"
   },
   "7efsw": {
-    "report_url": "https://osf.io/7efsw/",
+    "report_url": "https://osf.io/7efsw",
     "api_url": "https://api.osf.io/v2/files/60a59eaee2a9800145a6481a/",
     "project_url": "https://osf.io/zt5y2/",
     "report_header": "Replication of a Research Claim Teney (2016) from European Sociological Review\nProject ID:\nTeney_EurSocioRev_2016_qXX2_gz51\nOSF project:\nhttps://osf.io/zt5y2/\nPreregistration: https://osf.io/5bz8y",
     "authors": [],
     "status": "unresolved",
     "reason": "No named authors in report byline (or placeholder only); project contributors do not distinguish report writers from SCORE staff.",
-    "checked": "2026-11-10",
+    "checked": "2026-11-12",
     "contributors": [
       "Abiola OYEBANJO",
       "Marco Ramljak",
@@ -1236,7 +1254,13 @@
       "Nathaniel D. Porter",
       "Macie Daley",
       "Shakhlo Nematova"
-    ]
+    ],
+    "author_status": "unknown",
+    "metadata_api": "https://api.osf.io/v2/files/60a59eaee2a9800145a6481a/",
+    "metadata_http_status": 200,
+    "year": "2021",
+    "year_basis": "OSF report file deposit date",
+    "deposit_date": "2021-05-19T23:26:38.376129Z"
   },
   "fr6g8": {
     "report_url": "https://osf.io/fr6g8/",
@@ -3713,14 +3737,14 @@
     "checked": "2026-11-10"
   },
   "dh3ae": {
-    "report_url": "https://osf.io/dh3ae/",
+    "report_url": "https://osf.io/dh3ae",
     "api_url": "https://api.osf.io/v2/files/619ba5240eabf8001aad2ee1/",
     "project_url": "https://osf.io/mztkr/",
     "report_header": "Direct replication attempt to evaluate a claim from Goeree_Econometrica_2011_1574\nReplication team: [Add your name(s) here]\nSCORE RR ID: 2w9k2\nOSF Project: https://osf.io/mztkr",
     "authors": [],
     "status": "unresolved",
     "reason": "No named authors in report byline (or placeholder only); project contributors do not distinguish report writers from SCORE staff.",
-    "checked": "2026-11-10",
+    "checked": "2026-11-12",
     "contributors": [
       "Elan Simon Parsons",
       "Olivia Miske",
@@ -3745,7 +3769,13 @@
       "Macie Daley",
       "Eirik André Strømland",
       "Shakhlo Nematova"
-    ]
+    ],
+    "author_status": "unknown",
+    "metadata_api": "https://api.osf.io/v2/files/619ba5240eabf8001aad2ee1/",
+    "metadata_http_status": 200,
+    "year": "2021",
+    "year_basis": "OSF report file deposit date",
+    "deposit_date": "2021-11-22T14:11:48.303169Z"
   },
   "5qet4": {
     "report_url": "https://osf.io/5qet4/",
@@ -3840,14 +3870,14 @@
     "checked": "2026-11-10"
   },
   "y4tra": {
-    "report_url": "https://osf.io/y4tra/",
+    "report_url": "https://osf.io/y4tra",
     "api_url": "https://api.osf.io/v2/files/5fabd72a1b9cb2005b6d24ba/",
     "project_url": "https://osf.io/qczeu/",
     "report_header": "Replication of a Research Claim from Montez & Hayward (2014), from\nDemography\nProject ID:\nMontez_Demography_2014_3aPw_05g8\nOSF project:\nhttps://osf.io/qczeu/\nPreregistration​:\nhttps://osf.io/w48cu",
     "authors": [],
     "status": "unresolved",
     "reason": "No named authors in report byline (or placeholder only); project contributors do not distinguish report writers from SCORE staff.",
-    "checked": "2026-11-10",
+    "checked": "2026-11-12",
     "contributors": [
       "Abiola OYEBANJO",
       "Kent Jason Go Cheng",
@@ -3873,7 +3903,13 @@
       "Lara Warmelink",
       "Macie Daley",
       "Shakhlo Nematova"
-    ]
+    ],
+    "author_status": "unknown",
+    "metadata_api": "https://api.osf.io/v2/files/5fabd72a1b9cb2005b6d24ba/",
+    "metadata_http_status": 200,
+    "year": "2020",
+    "year_basis": "OSF report file deposit date",
+    "deposit_date": "2020-11-11T12:20:58.406033Z"
   },
   "rg5vt": {
     "report_url": "https://osf.io/rg5vt/",
@@ -4485,14 +4521,14 @@
     "checked": "2026-11-10"
   },
   "yfd5b": {
-    "report_url": "https://osf.io/yfd5b/",
+    "report_url": "https://osf.io/yfd5b",
     "api_url": "https://api.osf.io/v2/files/62daae54c79a4c484f9e5e42/",
     "project_url": "https://osf.io/cr6zm/",
     "report_header": "",
     "authors": [],
     "status": "unresolved",
     "reason": "No named authors in report byline (or placeholder only); project contributors do not distinguish report writers from SCORE staff.",
-    "checked": "2026-11-10",
+    "checked": "2026-11-12",
     "contributors": [
       "Thomas Talhelm",
       "Melissa Kline Struhl",
@@ -4511,7 +4547,13 @@
       "Timothy M. Errington",
       "Macie Daley",
       "Shakhlo Nematova"
-    ]
+    ],
+    "author_status": "unknown",
+    "metadata_api": "https://api.osf.io/v2/files/62daae54c79a4c484f9e5e42/",
+    "metadata_http_status": 200,
+    "year": "2022",
+    "year_basis": "OSF report file deposit date",
+    "deposit_date": "2022-07-22T14:04:04.239644Z"
   },
   "snrcv": {
     "report_url": "https://osf.io/snrcv/",
@@ -4977,14 +5019,14 @@
     "checked": "2026-11-10"
   },
   "8uc5z": {
-    "report_url": "https://osf.io/jmk9d/",
+    "report_url": "https://osf.io/8uc5z/files/jmk9d",
     "api_url": "https://api.osf.io/v2/files/682b55d1697ab98f08eac67c/",
     "project_url": "https://osf.io/8uc5z/",
     "report_header": "Short statement of results\n-   Claim Summary​. The claim selected for replication from Nyhan and Reifler (2015) was\nthat providing an alternative causal explanation helps prevent new misperceptions from\ntaking root (e.g., Johnson & Seifert, 1994). This claim was reflected by the statement\nfrom the abstract that, \"[We] find that a causal explanation for an unexplained event is\nsignificantly more effective than a denial even when the denial is backed by unusually\nstrong evidence.\" The original claim was tested by regressing respondents' beliefs that a\nfictional politician is resigning from office because he is under investigation for bribery on\nan indicator variable for the respondent being randomly assigned to read an article\nwhere the politician's resignation is suggested to be because of a bribery investigation\nalong with a denial from the politician (denial condition) and an indicator variable for the\nrespondent being assigned to an article that is the same as the article in the denial\ncondition but with additional information that provides an alternative causal explanation\nfor the resignation (causal correction condition), with the excluded category being the\nrespondent only read the suggestion about bribery without a denial or alternative causal\nexplanation (innuendo condition) -- using inverse probability weights. The results of the\ntest were a coefficient on the denial indicator of -0.25 (SE = 0.07) and a coefficient on\nthe causal correction indicator of -0.58 (SE = 0.07). The difference in coefficients was\n-0.34 with a p-value less than 0.01.\n-   Replication Criteria​. Criteria for a successful replication is a statistically significant\neffect (alpha = .05) in the same direction as the original finding -- namely, the casual\ncorrection effect being stronger than the denial effect.",
     "authors": [],
     "status": "unresolved",
     "reason": "No named authors in report byline (or placeholder only); project contributors do not distinguish report writers from SCORE staff.",
-    "checked": "2026-11-10",
+    "checked": "2026-11-12",
     "contributors": [
       "Michael Andreychik",
       "Andrew H. Tyner",
@@ -5005,7 +5047,13 @@
       "Macie Daley",
       "Nax",
       "Shakhlo Nematova"
-    ]
+    ],
+    "author_status": "unknown",
+    "metadata_api": "https://api.osf.io/v2/files/682b55d1697ab98f08eac67c/",
+    "metadata_http_status": 200,
+    "year": "2025",
+    "year_basis": "OSF report file deposit date",
+    "deposit_date": "2025-05-19T16:01:22.036205Z"
   },
   "f28kj": {
     "report_url": "https://osf.io/f28kj/",
@@ -5176,5 +5224,57 @@
     "title": "[Reproduction report for “When the Money Stops: Fluctuations in Financial Remittances and Incumbent Approval in Central Eastern Europe, the Caucasus and Central Asia”]",
     "title_basis": "Supplied descriptive title in brackets; original title/code preserved in report_header.",
     "checked": "2026-11-10"
+  },
+  "zybuc": {
+    "report_url": "https://osf.io/zybuc",
+    "authors": [],
+    "status": "unresolved",
+    "reason": "OSF report GUID returns HTTP 410 (deleted file); cited project storage has no identifiable replacement report.",
+    "checked": "2026-11-12",
+    "author_status": "unknown",
+    "metadata_api": "https://api.osf.io/v2/guids/zybuc/",
+    "metadata_http_status": 410,
+    "year": null,
+    "year_basis": "not established",
+    "deposit_date": null
+  },
+  "2vmgw": {
+    "report_url": "https://osf.io/2vmgw",
+    "authors": [],
+    "status": "unresolved",
+    "reason": "OSF report GUID returns HTTP 410 (deleted file); cited project storage has no identifiable replacement report.",
+    "checked": "2026-11-12",
+    "author_status": "unknown",
+    "metadata_api": "https://api.osf.io/v2/guids/2vmgw/",
+    "metadata_http_status": 410,
+    "year": null,
+    "year_basis": "not established",
+    "deposit_date": null
+  },
+  "9bkuf": {
+    "report_url": "https://osf.io/9bkuf",
+    "authors": [],
+    "status": "unresolved",
+    "reason": "OSF report GUID returns HTTP 410 (deleted file); cited project storage has no identifiable replacement report.",
+    "checked": "2026-11-12",
+    "author_status": "unknown",
+    "metadata_api": "https://api.osf.io/v2/guids/9bkuf/",
+    "metadata_http_status": 410,
+    "year": null,
+    "year_basis": "not established",
+    "deposit_date": null
+  },
+  "esw45": {
+    "report_url": "https://osf.io/esw45",
+    "authors": [],
+    "status": "unresolved",
+    "reason": "OSF report GUID returns HTTP 410 (deleted file); cited project storage has no identifiable replacement report.",
+    "checked": "2026-11-12",
+    "author_status": "unknown",
+    "metadata_api": "https://api.osf.io/v2/guids/esw45/",
+    "metadata_http_status": 410,
+    "year": null,
+    "year_basis": "not established",
+    "deposit_date": null
   }
 }
