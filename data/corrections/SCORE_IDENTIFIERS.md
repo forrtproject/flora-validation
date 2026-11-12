@@ -31,8 +31,9 @@ python3 scripts/apply_score_paper_identifiers.py
 python3 scripts/apply_score_report_dois.py
 ```
 
-Explicit application requires `--apply --admin-id 3` and DATABASE_URL in the
-configured environment/ignored .env. The scripts preflight current identities,
+Explicit application requires `--apply --admin-id "$FLORA_ADMIN_ID"` and DATABASE_URL in the
+configured environment/ignored .env. Export `FLORA_ADMIN_ID` in the calling shell
+with the intended operator's verified administrator ID. The scripts preflight current identities,
 refuse conflicting changes, save through flora_edits, and commit atomically.
 Already-applied corrections are no-ops, including paper links whose report DOI
 was subsequently filled. No token or database credential is stored here.
