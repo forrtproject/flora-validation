@@ -195,7 +195,8 @@ def test_given_names_not_required_and_particles_preserved():
     assert ao.count('Janet van Hell', '[{"family":"van Hell"}]') == (1, 100.0)
 
 
-@pytest.mark.parametrize('bad', ['NA', 'N/A', '<NA>', '[invalid JSON]', '{}', '[]'])
+@pytest.mark.parametrize('bad', ['NA', 'N/A', '<NA>', '[invalid JSON]', '{}', '[]',
+                                  'Alice Smith; ,'])
 def test_missing_and_malformed_bylines_are_unknown(bad):
     assert ao.count(bad, 'Alice Smith') == (None, None)
 
@@ -252,13 +253,17 @@ def test_na_is_a_valid_surname_inside_an_author_entry():
 @pytest.mark.parametrize('authors', ['Alice Smith and Bob Jones', 'Alice Smith & Bob Jones',
                                     '[{"family":"Smith"},{}]',
                                     '[{"family":"Smith"},{"given":"Alex"}]',
-                                    '[{"family":123}]', [{'family': 'Smith'}]])
+                                    '[{"family":123}]', [{'family': 'Smith'}],
+                                    '{}', '{"family":"Smith"}', '{invalid JSON}',
+                                    'Alice Smith; ,'])
 def test_exported_authors_preserve_overlap_on_round_trip(authors):
     from final_export import csv_text
     import csv, io
     frame = pd.DataFrame([{'id': 'TEST-1', 'doi_o': '10.1234/o', 'doi_r': '10.1234/r',
                           'author_o': '[{"family":"Smith"}]', 'author_r': authors}])
     shaped = transform_sources.to_output_shape(frame)
+    reshaped = transform_sources.to_output_shape(shaped)
+    pd.testing.assert_series_equal(shaped['author_overlap_pct'], reshaped['author_overlap_pct'])
     reader = csv.DictReader(io.StringIO(csv_text(shaped).lstrip('\ufeff')))
     row = next(reader)
     expected = ao.count(row['author_o'], row['author_r'])[1]
