@@ -207,6 +207,7 @@ def test_export_scores_published_byline_and_clears_old_zero():
         'author_o': 'The TwiLex Group', 'author_r': 'Alice Smith',
         'author_overlap': 0, 'author_overlap_pct': 0.0}])
     shaped = transform_sources.to_output_shape(frame)
+    assert pd.isna(shaped.loc[0, 'author_overlap'])
     assert pd.isna(shaped.loc[0, 'author_overlap_pct'])
     import json
     assert json.loads(shaped.loc[0, 'author_o'])[0]['name'] == 'The TwiLex Group'
@@ -255,7 +256,10 @@ def test_na_is_a_valid_surname_inside_an_author_entry():
                                     '[{"family":"Smith"},{"given":"Alex"}]',
                                     '[{"family":123}]', [{'family': 'Smith'}],
                                     '{}', '{"family":"Smith"}', '{invalid JSON}',
-                                    'Alice Smith; ,'])
+                                    'Alice Smith; ,', 'Alice Smith and', '& Alice Smith',
+                                    '[{"family":"Smith","given":42}]',
+                                    '[{"family":"Smith","name":"The Group"}]',
+                                    '[{"family":"Smith","literal":"The Group"}]'])
 def test_exported_authors_preserve_overlap_on_round_trip(authors):
     from final_export import csv_text
     import csv, io
@@ -270,3 +274,20 @@ def test_exported_authors_preserve_overlap_on_round_trip(authors):
     actual = None if row['author_overlap_pct'] == 'NA' else float(row['author_overlap_pct'])
     assert actual == expected
     assert ao.count(row['author_o'], row['author_r']) == ao.count(frame.iloc[0]['author_o'], authors)
+
+
+@pytest.mark.parametrize('side', ['author_o', 'author_r'])
+def test_export_clears_both_stale_measures_if_an_author_column_is_absent(side):
+    frame = pd.DataFrame([{'id': 'TEST-1', 'doi_o': '10.1234/o', 'doi_r': '10.1234/r',
+                          side: 'Alice Smith', 'author_overlap': 1, 'author_overlap_pct': 100.0}])
+    shaped = transform_sources.to_output_shape(frame)
+    assert pd.isna(shaped.iloc[0]['author_overlap'])
+    assert pd.isna(shaped.iloc[0]['author_overlap_pct'])
+
+
+@pytest.mark.parametrize('byline', ['Alice Smith and', '& Alice Smith',
+                                  '[{"family":"Smith","given":42}]',
+                                  '[{"family":"Smith","name":"The Group"}]',
+                                  '[{"family":"Smith","literal":"The Group"}]'])
+def test_incomplete_or_conflicting_byline_is_unknown(byline):
+    assert ao.count('Alice Smith', byline) == (None, None)

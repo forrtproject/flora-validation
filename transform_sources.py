@@ -398,8 +398,7 @@ def to_output_shape(frame, keep_extras: bool = True):
     # Use the same normalisation for scoring plain bylines and publishing them.
     # Export preserves unresolved entries and uses the scorer's plain-name rules,
     # so recomputing overlap from the published author lists gives the same result.
-    if {"author_o", "author_r"} <= set(out.columns):
-        author_overlap.augment(out, verbose=False)
+    author_overlap.augment(out, verbose=False)
     # Every author cell as fred-data's compact JSON list, whatever its source wrote.
     # (Workbook escapes such as "_x000D_" are decoded where a workbook is read, not
     # here: text of our own can contain the pattern, e.g. a BibTeX key "…_x394e_v3".)
