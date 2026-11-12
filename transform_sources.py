@@ -153,6 +153,7 @@ OUTPUT_EXTRAS = [
     "abstract_r",
     "outcome_computation", "outcome_computational_quote", "out_quote_computational_source",
     "outcome_robustness", "outcome_robustness_quote", "out_quote_robust_source",
+    *final_export.REPLICATION_COLUMNS,
 ]
 
 
@@ -410,7 +411,7 @@ def to_output_shape(frame, keep_extras: bool = True):
     if "source" in out:
         out["source"] = out["source"].replace(OUTPUT_SOURCES)
 
-    out = final_export.with_identity(out)
+    out = final_export.with_replication_columns(final_export.with_identity(out))
     columns = final_export.IDENTITY_COLUMNS + list(FLORA_OUTPUT_COLUMNS)
     if keep_extras:
         columns += [c for c in OUTPUT_EXTRAS if c in out.columns]
@@ -978,9 +979,17 @@ def build(cur, verbose: bool = True,
     # so a real quote is never touched.
     before_quotes = df["outcome_quote"].copy()
     df["outcome_quote"] = cos_quote_rewrite.rewrite(df["outcome_quote"])
-    rewritten = int((before_quotes.fillna("") != df["outcome_quote"].fillna("")).sum())
+    changed_quotes = before_quotes.fillna("") != df["outcome_quote"].fillna("")
+    rewritten = int(changed_quotes.sum())
     if rewritten:
         say(f"  rewrote {rewritten} shorthand outcome quote(s) into readable form")
+    # A rewritten quote is the coder's note, not a quotation from the report, so its
+    # source says so (FReD-data#173). Before any merge joins rows with " || ", so the
+    # mark stays on this row's part. Replications only: a reproduction's combined
+    # source is rebuilt from its axes.
+    noted = changed_quotes & df["type"].ne("reproduction")
+    df.loc[noted, "outcome_quote_source"] = (
+        df.loc[noted, "outcome_quote_source"].map(cos_quote_rewrite.mark_coding_note))
     n_repro = int((df["type"] == "reproduction").sum())
     say(f"  outcome normalized/derived; {df['outcome'].notna().sum()} row(s) have one")
     # Which spellings were recoded, and how often. A value appearing here for the

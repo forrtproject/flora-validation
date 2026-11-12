@@ -1590,7 +1590,14 @@ combinations and prevent self-reference.
 
 Reproduction quote text and quote sources are joined with ` || ` for the legacy
 flat fields so neither axis is silently discarded, while each original axis,
-quote, and source is also exported independently. Unknown replication aliases,
+quote, and source is also exported independently. A replication's outcome, quote and
+source are exported on their own in the same way, as `outcome_replication`,
+`outcome_replication_quote` and `out_quote_replication_source`: copies of the flat
+fields for replications, blank for reproductions, derived at every export. The flat
+fields stay for older readers. Where the COS rewrite turns coder shorthand into a
+sentence, that quote is the coder's note, not report text, so its source is marked
+`coding note: <basis>` (or `coding note` when none was recorded); a source already
+marked in the sheet is left as it is. Unknown replication aliases,
 bad canonical aliases, or invalid axis values are all reported and abort the
 write rather than producing a partial file. `DUMMY_...` identifiers are stripped
 before output.
@@ -1607,7 +1614,9 @@ alt_identifier_o, alt_identifier_r,
 outcome_computation, outcome_computational_quote,
 out_quote_computational_source,
 outcome_robustness, outcome_robustness_quote,
-out_quote_robust_source
+out_quote_robust_source,
+outcome_replication, outcome_replication_quote,
+out_quote_replication_source
 ```
 
 ## Database reference

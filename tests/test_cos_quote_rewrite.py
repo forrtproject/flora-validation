@@ -162,3 +162,17 @@ def test_count_rewritten_counts_only_rewrites():
         None,
     ])
     assert cq.count_rewritten(series) == 1
+
+
+# ── coding-note sources (FReD-data#173) ────────────────────────────────────────
+
+@pytest.mark.parametrize("source, expected", [
+    ("data file at https://osf.io/fgjvw", "coding note: data file at https://osf.io/fgjvw"),
+    ("  Supplementary Table 5 ", "coding note: Supplementary Table 5"),
+    (None, "coding note"),
+    ("NA", "coding note"),
+    ("coding note: Supplemental Information", "coding note: Supplemental Information"),
+    ("Coding note: project rule", "Coding note: project rule"),
+])
+def test_mark_coding_note(source, expected):
+    assert cq.mark_coding_note(source) == expected
