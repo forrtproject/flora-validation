@@ -25,7 +25,7 @@ def load_batch(path=BATCH):
         evidence.update({k: r[k] for k in ('node','identifier_api','evidence_date','method')})
         if r['http_status']:
             evidence['http_status'] = int(r['http_status'])
-        evidence.update(id=r['id'], report_url=r['url_r'], status='verified', dois=[r['doi_r']])
+        evidence.update(id=r['id'], report_url=r['url_r'], status='verified')
         rows.append({'id': r['id'], 'doi_r': r['doi_r'],
                      'baseline': {k: r[k] for k in ('type','doi_o','url_r','alt_identifier_r')}, 'evidence': evidence})
     seen = set()
@@ -33,7 +33,9 @@ def load_batch(path=BATCH):
         if row['id'] in seen:
             raise ValueError('Duplicate correction')
         seen.add(row['id'])
-        if row['doi_r'] not in row['evidence']['dois']:
+        captured = row['evidence'].get('dois')
+        if (not isinstance(captured, list) or not all(isinstance(v, str) and v.strip() for v in captured)
+                or row['doi_r'].lower() not in {v.lower() for v in captured}):
             raise ValueError('DOI was not returned by the identifier endpoint')
         if not row['doi_r'].lower().startswith('10.17605/osf.io/'):
             raise ValueError('Expected a registered OSF report DOI')
@@ -55,14 +57,15 @@ def apply_batch(cur, rows, admin):
     import flora_service
     from scripts.apply_score_paper_identifiers import _baseline
 
-    frame = flora_service.dataset(cur)
-    before = _records(frame)
     ids = [r['id'] for r in rows]
-    cur.execute('SELECT id FROM flora_data WHERE id = ANY(%s) AND retired_at IS NULL', (ids,))
-    live = {r['id'] for r in cur.fetchall()}
+    # A correction committed during/after the snapshot must fail save's version guard.
     cur.execute('SELECT export_id, MAX(change_id) AS version FROM flora_record_changes '
                 'WHERE export_id = ANY(%s) GROUP BY export_id', (ids,))
     versions = {r['export_id']: int(r['version']) for r in cur.fetchall()}
+    frame = flora_service.dataset(cur)
+    before = _records(frame)
+    cur.execute('SELECT id FROM flora_data WHERE id = ANY(%s) AND retired_at IS NULL', (ids,))
+    live = {r['id'] for r in cur.fetchall()}
     pending = []
     for row in rows:
         record = before.get(row['id'])

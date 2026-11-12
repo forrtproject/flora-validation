@@ -12,7 +12,7 @@ from scripts.apply_score_paper_identifiers import (
 
 def test_identifiers_are_appended_without_erasing_existing_values():
     doi = PAPERS['replication'][1]
-    assert append_identifier('10.17605/osf.io/w3kuz', doi) == '10.17605/osf.io/w3kuz; ' + doi
+    assert append_identifier('10.17605/osf.io/w3kuz', doi) == '10.17605/osf.io/w3kuz, ' + doi
     existing = 'https://doi.org/' + doi.upper() + '; local:42'
     assert append_identifier(existing, doi) == existing
     assert append_identifier('NA', doi) == doi
@@ -65,8 +65,8 @@ def current(monkeypatch):
     monkeypatch.setattr(flora_edits, 'save', save)
     monkeypatch.setattr(flora_edits, 'publish', publish)
     cur = Mock()
-    cur.fetchall.side_effect = [[{'id': r['id']} for r in rows],
-                               [{'export_id': r['id'], 'version': 42} for r in rows]]
+    cur.fetchall.side_effect = [[{'export_id': r['id'], 'version': 42} for r in rows],
+                               [{'id': r['id']} for r in rows]]
     return rows, records, cur, save, publish
 
 
@@ -76,7 +76,7 @@ def test_current_values_are_preserved_and_only_alt_is_logged(current):
     assert len(receipt) == 2
     for call in save.call_args_list:
         assert set(call.args[3]) == {'alt_identifier_r'}
-        assert call.args[3]['alt_identifier_r'].startswith('local:keep; ')
+        assert call.args[3]['alt_identifier_r'].startswith('local:keep, ')
         assert call.args[5] == 42
     for call in publish.call_args_list:
         before, after = call.args[1:]
@@ -99,4 +99,50 @@ def test_reapplying_existing_dois_is_a_noop(current):
         record['doi_r'] = '10.17605/osf.io/cwmb5'  # filled by the later report-DOI batch
     assert apply_batch(cur, rows, {'id': 3, 'handle': 'Lukas'}) == []
     save.assert_not_called()
+    publish.assert_not_called()
+
+
+@pytest.mark.parametrize('report_ids', ['not-a-list', {'guid': 'abcde'}, [42], [' ']])
+def test_report_evidence_requires_nonblank_identifier_list(tmp_path, report_ids):
+    import csv
+    from scripts.apply_score_paper_identifiers import BATCH
+    with BATCH.open(encoding='utf-8-sig', newline='') as f:
+        rows = list(csv.DictReader(f))
+    rows[0]['report_ids'] = json.dumps(report_ids)
+    path = tmp_path / 'batch.csv'
+    with path.open('w', encoding='utf-8', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    with pytest.raises(ValueError, match='list of nonblank report identifiers'):
+        load_batch(path)
+
+
+def test_truncated_batch_is_rejected_against_reviewed_counts(tmp_path):
+    from scripts.apply_score_paper_identifiers import BATCH
+    path = tmp_path / 'batch.csv'
+    path.write_text('\n'.join(BATCH.read_text(encoding='utf-8').splitlines()[:-1]) + '\n', encoding='utf-8')
+    with pytest.raises(ValueError, match='counts differ from reviewed provenance'):
+        load_batch(path)
+
+
+def test_concurrent_correction_during_snapshot_cannot_be_overwritten(current, monkeypatch):
+    import flora_edits
+    import flora_service
+    rows, records, cur, save, publish = current
+    latest = {'version': 42}
+    def snapshot(_):
+        latest['version'] = 43  # another editor commits after our version read
+        return pd.DataFrame(records)
+    monkeypatch.setattr(flora_service, 'dataset', snapshot)
+    cur.fetchall.side_effect = lambda: ([{'export_id': r['id'], 'version': latest['version']} for r in rows]
+                                      if 'MAX(change_id)' in cur.execute.call_args.args[0]
+                                      else [{'id': r['id']} for r in rows])
+    def guarded_save(*args):
+        if args[5] != latest['version']:
+            raise flora_edits.VersionConflict(latest['version'])
+        return {'change_id': 900}
+    save.side_effect = guarded_save
+    with pytest.raises(flora_edits.VersionConflict):
+        apply_batch(cur, rows, {'id': 3})
     publish.assert_not_called()

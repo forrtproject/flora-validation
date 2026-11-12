@@ -24,7 +24,7 @@ def batch(monkeypatch):
     monkeypatch.setattr(flora_edits, 'save', save)
     monkeypatch.setattr(flora_edits, 'publish', publish)
     cur = Mock()
-    cur.fetchall.side_effect = [[{'id': 'A'}], [{'export_id': 'A', 'version': 746}]]
+    cur.fetchall.side_effect = [[{'export_id': 'A', 'version': 746}], [{'id': 'A'}]]
     return rows, old, new, cur, save, publish
 
 
@@ -67,15 +67,42 @@ def test_report_doi_must_match_verified_component(tmp_path):
            'doi_o': '', 'url_r': 'https://osf.io/9hjxc', 'alt_identifier_r': '',
            'node': 'cwmb5', 'identifier_api': 'https://api.osf.io/v2/nodes/cwmb5/identifiers/',
            'evidence_date': '2026-11-12', 'method': 'OSF_identifiers_API',
-           'http_status': '200', 'evidence_extra': '{}'}
+           'http_status': '200', 'evidence_extra': json.dumps({'dois': ['10.17605/OSF.IO/CWMB5']})}
     path = tmp_path / 'batch.csv'
     def write():
         with path.open('w', encoding='utf-8', newline='') as f:
             w = csv.DictWriter(f, fieldnames=list(row)); w.writeheader(); w.writerow(row)
     write()
     assert load_batch(path)[0]['doi_r'] == row['doi_r']
+    row['evidence_extra'] = json.dumps({'dois': ['10.17605/osf.io/23ghe']})
+    write()
+    with pytest.raises(ValueError, match='not returned by the identifier endpoint'):
+        load_batch(path)
+    row['evidence_extra'] = json.dumps({'dois': [row['doi_r']]})
     row['node'] = '23ghe'
     write()
     with pytest.raises(ValueError, match='verified report component'):
         load_batch(path)
 
+
+
+def test_concurrent_correction_during_snapshot_cannot_be_overwritten(batch, monkeypatch):
+    import flora_edits
+    import flora_service
+    rows, old, new, cur, save, publish = batch
+    latest = {'version': 746}
+    def snapshot(_):
+        latest['version'] = 747
+        return pd.DataFrame([old])
+    monkeypatch.setattr(flora_service, 'dataset', snapshot)
+    cur.fetchall.side_effect = lambda: ([{'export_id': 'A', 'version': latest['version']}]
+                                      if 'MAX(change_id)' in cur.execute.call_args.args[0]
+                                      else [{'id': 'A'}])
+    def guarded_save(*args):
+        if args[5] != latest['version']:
+            raise flora_edits.VersionConflict(latest['version'])
+        return {'change_id': 999}
+    save.side_effect = guarded_save
+    with pytest.raises(flora_edits.VersionConflict):
+        apply_batch(cur, rows, {'id': 3})
+    publish.assert_not_called()

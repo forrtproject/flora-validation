@@ -6,6 +6,7 @@ batch commits together. Existing alternative identifiers are retained.
 """
 import argparse
 import csv
+from collections import Counter
 import re
 import json
 import os
@@ -34,7 +35,7 @@ def append_identifier(existing, doi):
     other_papers = {paper_doi for _, paper_doi in PAPERS.values()} - {doi}
     if any('doi:' + other in identifiers for other in other_papers):
         raise ValueError('Conflicting SCORE paper DOI already present; review the record')
-    return value + '; ' + doi
+    return value + ', ' + doi
 
 
 def load_batch(path=BATCH):
@@ -64,8 +65,13 @@ def load_batch(path=BATCH):
         if not all(row['evidence'].get(k) for k in
                    ('report_project', 'rr_id', 'paper_id', 'report_ids', 'matched_by')):
             raise ValueError('Every correction requires report and published-outcome evidence')
+        report_ids = row['evidence']['report_ids']
+        if not isinstance(report_ids, list) or not all(isinstance(v, str) and v.strip() for v in report_ids):
+            raise ValueError('Every correction requires a list of nonblank report identifiers')
         if not row['note'] or len(row['note']) > 500:
             raise ValueError('Every correction requires a note of at most 500 characters')
+    if dict(Counter(r['type'] for r in rows)) != batch['counts']:
+        raise ValueError('Correction batch counts differ from reviewed provenance')
     return rows
 
 
@@ -81,18 +87,19 @@ def apply_batch(cur, rows, admin, progress=None):
     # Build once, with existing corrections applied. An alternative-identifier
     # addition changes no metadata-derived field: save/publish are the ordinary
     # correction-log operations, without a full rebuild for every row.
+    ids = [r['id'] for r in rows]
+    # A correction committed during/after the snapshot must fail save's version guard.
+    cur.execute('SELECT export_id, MAX(change_id) AS version FROM flora_record_changes '
+                'WHERE export_id = ANY(%s) GROUP BY export_id', (ids,))
+    versions = {r['export_id']: int(r['version']) for r in cur.fetchall()}
     frame = flora_service.dataset(cur)
     selected = frame[frame['export_id'].isin([r['id'] for r in rows])]
     if selected['export_id'].duplicated().any():
         raise ValueError('Ambiguous published identity in current dataset')
     records = {r['export_id']: {k: flora_service._cell(v) for k, v in r.items()}
                for r in selected.to_dict(orient='records')}
-    ids = [r['id'] for r in rows]
     cur.execute('SELECT id FROM flora_data WHERE id = ANY(%s) AND retired_at IS NULL', (ids,))
     live = {r['id'] for r in cur.fetchall()}
-    cur.execute('SELECT export_id, MAX(change_id) AS version FROM flora_record_changes '
-                'WHERE export_id = ANY(%s) GROUP BY export_id', (ids,))
-    versions = {r['export_id']: int(r['version']) for r in cur.fetchall()}
     pending = []
     for row in rows:
         record = records.get(row['id'])
