@@ -1,6 +1,6 @@
 ## FLoRA structural validation
 
-_Generated: 2026-11-11 03:09:03 UTC | Dataset: 2,884 rows_
+_Generated: 2026-11-12 03:16:47 UTC | Dataset: 2,881 rows_
 
 Each item names the FLoRA record by its FLoRA ID and `doi_o | doi_r` (or `url_r`), says what is wrong and, after the dash, gives the value.
 
@@ -24,11 +24,10 @@ _An outcome outside the allowed set for the row's type, not_a_replication, or mi
 
 - REPL-000419 (`10.1002/j.2164-585x.1979.tb00097.x | 10.1353/csd.2014.0018`): outcome is blank
 
-**Duplicate records** (2 findings):
+**Duplicate records** (1 finding):
 
 _Rows the build would have made one record: the same type, doi_o, doi_r and url_r, or the same DOIs with one url_r between them._
 
-- REPL-001126, VAL-000456 (`10.2196/20572 | 10.2196/45481`): 2 rows the build would make one record — `replication|10.2196/20572|10.2196/45481|`
 - REPRO-000009, REPRO-000019 (`10.1145/2382448.2382450 | 10.17879/replicationresearch-2026-9414`): 2 rows the build would make one record — `reproduction|10.1145/2382448.2382450|10.17879/replicationresearch-2026-9414|`
 
 <details><summary><b>Missing required fields</b> (23 findings)</summary>
@@ -61,7 +60,7 @@ _title_o, title_r, doi_r or url_r, and an identifier for the original: doi_o, a 
 
 </details>
 
-**Invalid DOI format** (7 findings):
+**Invalid DOI format** (8 findings):
 
 _doi_o or doi_r is not a bare DOI (10.NNNN/…), or a DOI listed in alt_identifier_o or alt_identifier_r is malformed._
 
@@ -72,6 +71,7 @@ _doi_o or doi_r is not a bare DOI (10.NNNN/…), or a DOI listed in alt_identifi
 - VAL-000210 (`https://www.jstor.org/stable/41387554 | 10.1037/0022-0663.83.4.444`): doi_o is a link, not a DOI — `https://www.jstor.org/stable/41387554`
 - FRED-000886 (`scholars.indianastate.edu/etds/2136 | https://digitalcommons.memphis.edu/etd/3538/`): doi_o is a link, not a DOI — `scholars.indianastate.edu/etds/2136`
 - FRED-000520 (`thekeep.eiu.edu/theses/4783 | https://thekeep.eiu.edu/theses/5025`): doi_o is a link, not a DOI — `thekeep.eiu.edu/theses/4783`
+- FRED-000997 (`10.1007/s10683-011-9295-3 | https://osf.io/34qhg/`): alt_identifier_r lists a DOI that is malformed — `10.17605/osf.io/w3kuz; 10.1038/s41586-025-10078-y`
 
 **Title says retracted** (6 findings):
 
