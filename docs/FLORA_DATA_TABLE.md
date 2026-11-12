@@ -10,6 +10,129 @@ Storage, Python lookup helpers, and public HTTP routes are implemented. See the
 The production migration and initial data import have not been applied in this
 session.
 
+## Published CSV codebook
+
+Fields are text; `NA` is missing. Suffix `_o` refers to the original study and
+`_r` to its replication/reproduction report. Author arrays and citations may
+contain quotes or newlines: read the file with a CSV parser. Encoding is UTF-8
+with BOM. See the bundled FAQ for outcome definitions and coding decisions.
+
+| Field | Definition |
+| --- | --- |
+| `id` | Permanent published record ID; stable through corrections and retirement. |
+| `id_md5` | Full MD5 of the permanent id, for lookup; not a DOI hash. |
+| `doi_o` | DOI of the publication, when available. Original study. |
+| `alt_identifier_o` | Alternative publication identifiers, including preprints. Original study. |
+| `doi_o_hash` | Short original-DOI hash; distinct from id_md5. |
+| `title_o` | Publication title. Original study. |
+| `author_o` | Author metadata as a JSON array. Original study. |
+| `journal_o` | Publication journal or venue. Original study. |
+| `year_o` | Publication year. Original study. |
+| `volume_o` | Journal volume. Original study. |
+| `issue_o` | Journal issue. Original study. |
+| `pages_o` | Publication page range or article number. Original study. |
+| `apa_ref_o` | Formatted APA reference. Original study. |
+| `bibtex_ref_o` | BibTeX citation. Original study. |
+| `url_o` | Publication URL. Original study. |
+| `language_o` | Publication language code. Original study. |
+| `doi_r` | DOI of the publication, when available. Replication/reproduction report. |
+| `alt_identifier_r` | Alternative report identifiers, including preprints and the DOI of an associated aggregate project paper. Multiple values may be separated by commas or semicolons; a project-paper DOI supplements the individual report identifier/link. |
+| `doi_r_hash` | Short report-DOI hash; distinct from id_md5. |
+| `title_r` | Publication title. Replication/reproduction report. |
+| `author_r` | Author metadata as a JSON array. Replication/reproduction report. |
+| `journal_r` | Publication journal or venue. Replication/reproduction report. |
+| `year_r` | Publication year. Replication/reproduction report. |
+| `volume_r` | Journal volume. Replication/reproduction report. |
+| `issue_r` | Journal issue. Replication/reproduction report. |
+| `pages_r` | Publication page range or article number. Replication/reproduction report. |
+| `apa_ref_r` | Formatted APA reference. Replication/reproduction report. |
+| `bibtex_ref_r` | BibTeX citation. Replication/reproduction report. |
+| `url_r` | Publication URL. Replication/reproduction report. |
+| `language_r` | Publication language code. Replication/reproduction report. |
+| `oa_url_o` | Open-access full-text URL, when known. Original study. |
+| `oa_url_r` | Open-access full-text URL, when known. Replication/reproduction report. |
+| `outcome` | Replication outcome. Legacy export rows for reproductions also contain a combined rendering of the two reproduction axes here; analyse reproduction outcomes using outcome_computation and outcome_robustness instead. See release-specific categories and FAQ. |
+| `outcome_quote` | Supporting text for the outcome; for reproductions this combines the two axis quotes, with axis labels when needed. |
+| `outcome_quote_source` | Location/source of the supporting text; reproduction sources can combine both axes. |
+| `type` | Attempt type: replication (new observations) or reproduction (existing data). |
+| `source` | Retained primary input route after deduplication, not a complete list of contributing sources or a validation-status field. Legacy label COS maps to the FReD Replication Success input; see source labels below. |
+| `oa_work_id_o` | OpenAlex work identifier. Original study. |
+| `oa_work_id_r` | OpenAlex work identifier. Replication/reproduction report. |
+| `author_overlap` | Number of distinct shared family names in the original and report author lists, matched case-insensitively; not a yes/no flag or verified person identity. |
+| `author_overlap_pct` | 100 × shared distinct family names / number of report authors with usable family names, rounded to one decimal. Missing if either list is absent, malformed, or contains any entry without a usable family name (including a collective author). Given names are optional. Plain bylines use the same normalization as export. Matching surnames can conflate different people. |
+| `abstract_r` | Report abstract. |
+| `outcome_computation` | Computational reproducibility outcome, coded separately from robustness. Category labels are specific to the released snapshot; see the release-specific vocabulary. |
+| `outcome_computational_quote` | Supporting text for computational reproducibility. |
+| `out_quote_computational_source` | Location/source for the computational quote. |
+| `outcome_robustness` | Robustness outcome, coded separately from computational reproducibility. Category labels are specific to the released snapshot; see the release-specific vocabulary. |
+| `outcome_robustness_quote` | Supporting text for robustness. |
+| `out_quote_robust_source` | Location/source for the robustness quote. |
+| `flora_id` | Pinned source-facing FLoRA identifier; distinct from published id. |
+| `source_display_id` | Primary source record display identifier. |
+| `source_record_id` | Primary source record UUID. |
+
+### Source labels
+
+| Export value | Input route |
+| --- | --- |
+| replications | Replication entry sheet |
+| reproductions | Reproduction entry sheet |
+| COS | Legacy alias for the FReD Replication Success input |
+| SCORE | SCORE 2025 Validation input |
+| validated | Website validation workflow |
+| manual | Records added manually in the FLoRA editor |
+
+A deduplicated record retains one route label even when merged records contribute
+other values. These labels do not establish all project memberships or whether a
+record is validated: the entry sheets also contain accepted validation decisions.
+The `type` column identifies replication versus reproduction independently of route.
+
+### Release source labels
+
+Established projects take priority over intake route, including records from the
+search pipeline. `release/flora/projects.yml` names projects using existing report
+identifiers or a known project-specific intake. Normalized `doi_r`, the multiple
+identifiers in `alt_identifier_r`, and DOI/OSF links in `url_r` match records
+across intake routes. Original-study identifiers are never used for this purpose.
+
+A project qualifies at strictly more than 50 distinct active released record IDs,
+after deduplication/exclusions. Qualification is recorded against a snapshot; its
+label persists if later retirements reduce the count. Matching records also seed
+one-hop report aliases; matches do not recursively join unrelated identifier chains.
+Conflicting project matches require review. New shared-identifier groups above the
+threshold appear in `project_classification.json` for naming/review and block
+production until mapped. Titles alone cannot establish project membership.
+
+| Registered project label | Established report anchor or intake |
+| --- | --- |
+| RP:P | 10.1126/science.aac4716 in report or alternative report identifiers |
+| Student replication projects (Boyce et al.) | 10.1098/rsos.231240 in report or alternative report identifiers |
+| SCORE | Dedicated SCORE intake and shared identifiers of its reports |
+
+For records without an established project match, the intake labels are:
+
+| Release value | Internal export values | Meaning |
+| --- | --- | --- |
+| manual entry | replications, reproductions | Entries from the manual entry sheets |
+| FReD | COS | FReD Replication Success input |
+| SCORE | SCORE | Dedicated SCORE project intake |
+| search pipeline | validated, manual | Website validation and manual-entry workflow; not necessarily automated discovery |
+
+The field records a project where identifiable, otherwise an intake category. It
+is not a validation-quality level and does not retain all contributing routes in
+one value. No prefix-based discovery-origin inference is used. Raw route keys stay
+in the internal snapshot; the manifest records the project registry and the
+classification report records matched IDs, counts and identifiers.
+
+### Author-overlap release validation
+
+The overlap calculation rejects partial individual/collective lists as well as
+collective-only lists. Final export recalculates against the normalized bylines,
+so a plain organisation name cannot be treated as a surname before it becomes a
+literal collective author in the CSV. Existing stored snapshots require a normal
+pipeline rebuild to incorporate this derivation fix; release assembly verifies the
+stored percentage and refuses stale values rather than editing them.
+
 ## Relationship to the existing tables
 
 | Table | Purpose |

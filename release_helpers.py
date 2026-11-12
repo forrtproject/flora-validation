@@ -47,6 +47,7 @@ def add_data_version(output_dir: Path, manifest: dict, stored_at, change_waterma
     snapshot and every saved FLoRA correction moves; `change_watermark` is the newest
     correction included. Two jobs racing to commit a release compare these, so an
     older dataset never replaces a newer one (.github/scripts/commit_and_push.sh)."""
+    manifest["source_kind"] = "authoritative_publication"
     manifest["data_version"] = {
         "stored_at": stored_at if isinstance(stored_at, str) else stored_at.isoformat(),
         "change_watermark": int(change_watermark or 0),
