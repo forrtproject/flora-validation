@@ -162,24 +162,39 @@ def test_no_network_for_dry_run(bundle, tmp_path, monkeypatch):
     release.assemble(bundle.parent / 'output', '2026.11.2', tmp_path / 'offline')
 
 
-def test_publish_only_after_checksums(bundle, monkeypatch):
+@pytest.mark.parametrize('remote_difference', [None, 'extra', 'missing'])
+def test_publish_only_after_checksums(bundle, monkeypatch, remote_difference):
     base = release.HOSTS['sandbox']
     links = {k: f'{base}/{k}' for k in ('self', 'bucket', 'publish', 'html')}
     deposit = {'id': 12, 'conceptrecid': 10, 'submitted': False, 'files': [],
                'metadata': {'version': '2026.11.1', 'prereserve_doi': {'doi': 'api-reserved'}}, 'links': links}
-    calls = []
+    calls, uploaded = [], {}
     def request(method, url, **kw):
         calls.append((method, url))
         if '/bucket/' in url:
-            return {'checksum': hashlib.md5(kw['data'].read()).hexdigest()}
+            uploaded[url.rsplit('/', 1)[1]] = hashlib.md5(kw['data'].read()).hexdigest()
+            return {'checksum': uploaded[url.rsplit('/', 1)[1]]}
+        if method == 'GET':
+            files = [{'filename': n, 'checksum': v} for n, v in uploaded.items()]
+            if remote_difference == 'extra':
+                files.append({'filename': 'retired.csv', 'checksum': 'stale'})
+            elif remote_difference == 'missing':
+                files.pop()
+            return {**deposit, 'files': files}
         if url == links['publish']:
             return {**deposit, 'submitted': True}
         return deposit
     api = Mock(base=base)
     api.request.side_effect = request
     monkeypatch.setattr(release, 'Zenodo', lambda env: api)
-    assert release.upload(bundle, 'sandbox', publish=True)['published']
-    assert calls[-1] == ('POST', links['publish'])
+    if remote_difference:
+        with pytest.raises(ValueError, match='Remote files differ'):
+            release.upload(bundle, 'sandbox', publish=True)
+        assert ('POST', links['publish']) not in calls
+    else:
+        assert release.upload(bundle, 'sandbox', publish=True)['published']
+        assert calls[-1] == ('POST', links['publish'])
+        assert calls[-2] == ('GET', base + '/api/deposit/depositions/12')
     assert len([url for _, url in calls if '/bucket/' in url]) == 13
 
 
@@ -434,3 +449,31 @@ def test_public_baseline_recovery_requires_https_and_checks_deposited_bytes(bund
         release.fetch_previous(12, 'sandbox', target)
         release.verify_bundle(target)
         assert json.loads((target / 'zenodo-state.json').read_text(encoding='utf-8'))['published']
+
+
+def test_recovery_rejects_previous_published_version_without_poisoning_receipt(bundle, monkeypatch):
+    path = bundle / 'flora_release_manifest.json'
+    manifest = json.loads(path.read_text(encoding='utf-8'))
+    manifest['previous_release'] = dict(environment='sandbox', id=11, conceptrecid=10, version='2026.10.1')
+    release.write_json(path, manifest)
+    release.write_json(bundle / 'bundle-checksums.json', release.checksums(bundle))
+    metadata = json.loads((bundle / 'zenodo-metadata.json').read_text(encoding='utf-8'))
+    api = Mock(base=release.HOSTS['sandbox'])
+    api.request.return_value = dict(id=11, conceptrecid=10, submitted=True,
+                                   metadata={'version': '2026.10.1', 'title': metadata['title']})
+    monkeypatch.setattr(release, 'Zenodo', lambda _: api)
+    with pytest.raises(ValueError, match='identity, concept or version mismatch'):
+        release.upload(bundle, 'sandbox', resume_deposit=11)
+    assert not (bundle / 'zenodo-state.json').exists()
+    assert api.request.call_count == 1
+
+
+def test_first_recovery_rejects_unidentified_draft_with_existing_files(bundle, monkeypatch):
+    api = Mock(base=release.HOSTS['sandbox'])
+    api.request.return_value = dict(id=12, conceptrecid=10, submitted=False, metadata={},
+                                   files=[{'filename': 'unrelated.csv'}])
+    monkeypatch.setattr(release, 'Zenodo', lambda _: api)
+    with pytest.raises(ValueError, match='identity, concept or version mismatch'):
+        release.upload(bundle, 'sandbox', resume_deposit=12)
+    assert not (bundle / 'zenodo-state.json').exists()
+    assert api.request.call_count == 1

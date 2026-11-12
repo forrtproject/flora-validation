@@ -236,6 +236,15 @@ def verify_bundle(bundle):
         raise ValueError('Bundle changed after assembly; review and assemble again')
 
 
+def verify_remote_files(bundle, deposit):
+    """Require the complete remote file set and MD5s to match the reviewed bundle."""
+    remote = {f['filename']: f['checksum'].removeprefix('md5:') for f in deposit.get('files', [])}
+    expected = {name: hashlib.md5((bundle / name).read_bytes()).hexdigest()
+                for name in [*checksums(bundle), 'bundle-checksums.json']}
+    if remote != expected:
+        raise ValueError('Remote files differ from the local bundle; inspect the deposit')
+
+
 def fetch_previous(record_id, environment, destination):
     """Recover the public release baseline and receipt without a token."""
     if not str(record_id).isdigit():
@@ -340,6 +349,10 @@ def upload(bundle, environment, publish=False, approve_production=False, resume_
                 or (previous and str(deposit['conceptrecid']) != str(previous['conceptrecid']))
                 or deposit.get('metadata', {}).get('version') not in expected_versions
                 or deposit.get('metadata', {}).get('title', metadata['title']) != metadata['title']
+                or (deposit.get('submitted') and deposit.get('metadata', {}).get('version') != metadata['version'])
+                or (not has_receipt and not previous and deposit.get('files')
+                    and not deposit.get('metadata', {}).get('title')
+                    and not deposit.get('metadata', {}).get('version'))
                 or (state.get('published') and not deposit.get('submitted'))):
             raise ValueError('Resumed draft identity, concept or version mismatch; inspect the deposit')
         if not has_receipt:
@@ -365,11 +378,7 @@ def upload(bundle, environment, publish=False, approve_production=False, resume_
     if deposit.get('submitted'):
         if deposit['metadata'].get('version') != metadata['version']:
             raise ValueError('Published deposit version mismatch')
-        remote = {f['filename']: f['checksum'].removeprefix('md5:') for f in deposit.get('files', [])}
-        expected = {name: hashlib.md5((bundle / name).read_bytes()).hexdigest()
-                    for name in [*checksums(bundle), 'bundle-checksums.json']}
-        if remote != expected:
-            raise ValueError('Published files differ from the local bundle; inspect the deposit')
+        verify_remote_files(bundle, deposit)
         state.update(published=True, doi=deposit.get('doi'), url=deposit['links']['html'])
         write_json(state_path, state)
         return state
@@ -391,6 +400,7 @@ def upload(bundle, environment, publish=False, approve_production=False, resume_
         if result['checksum'].removeprefix('md5:') != expected:
             raise ValueError(f'Upload checksum mismatch: {name}')
     if publish:
+        verify_remote_files(bundle, api.request('GET', f"{api.base}/api/deposit/depositions/{deposit['id']}"))
         deposit = api.request('POST', deposit['links']['publish'])
         if not deposit.get('submitted'):
             raise ValueError('Zenodo did not confirm publication; inspect the deposit before retrying')
