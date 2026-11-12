@@ -200,6 +200,13 @@ def _plain_author(name):
 _MISSING = {"na", "n/a", "nan", "none", "null"}
 
 
+def malformed_author_names(item):
+    """Reject invalid name types and a surname combined with a literal byline."""
+    return (any(item.get(k) is not None and not isinstance(item[k], str)
+                for k in ('family', 'given', 'name', 'literal'))
+            or bool(item.get('family') and (item.get('name') or item.get('literal'))))
+
+
 def normalise_author_json(value, *, preserve_unresolved=False):
     """An author cell as a structured JSON list, whatever form it arrived in.
 
@@ -225,17 +232,19 @@ def normalise_author_json(value, *, preserve_unresolved=False):
         if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
             return value
     else:
-        parts = raw.split(';')
-        if preserve_unresolved:
-            parts = [name for part in parts for name in
-                     ([part] if _ORGANISATION.search(part) or part.strip().lower().startswith('the ')
-                      else re.split(r'\s*(?:\band\b|&)\s*', part))]
-        items = [_plain_author(part) for part in parts if part.strip()]
+        items = []
+        for part in raw.split(';'):
+            if not part.strip():
+                continue
+            names = ([part] if not preserve_unresolved or _ORGANISATION.search(part)
+                     or part.strip().lower().startswith('the ')
+                     else re.split(r'\s*(?:\band\b|&)\s*', part))
+            items.extend(_plain_author(name) if name.strip() else {} for name in names)
     if not preserve_unresolved:
         return author_fields(items)["authors_json"] or value
     retained = []
     for item in items:
-        if item.get('family') is not None and not isinstance(item['family'], str):
+        if malformed_author_names(item):
             retained.append(item)
             continue
         normalized = json.loads(author_fields([item])["authors_json"] or '[{}]')[0]

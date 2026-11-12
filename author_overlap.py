@@ -39,6 +39,7 @@ import re
 
 import pandas as pd
 
+from bibliographic_helpers import malformed_author_names
 from console_encoding import use_utf8_output
 
 use_utf8_output()
@@ -68,7 +69,9 @@ def _family_names(value) -> list:
         return []
     names = []
     for author in authors:
-        family = author.get("family") if isinstance(author, dict) else None
+        if not isinstance(author, dict) or malformed_author_names(author):
+            return []
+        family = author.get("family")
         if not isinstance(family, str) or not family.strip():
             # Never silently discard an unresolved entry and score a partial list.
             return []
