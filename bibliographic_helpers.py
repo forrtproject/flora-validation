@@ -217,32 +217,32 @@ def normalise_author_json(value, *, preserve_unresolved=False):
     raw = value.strip()
     if not raw or raw.lower() in _MISSING:
         return value
-    if raw.startswith("["):
+    if raw.startswith(("[", "{")):
         try:
             items = json.loads(raw)
         except ValueError:
             return value
-        if isinstance(items, list) and all(isinstance(item, dict) for item in items):
-            if preserve_unresolved:
-                retained = []
-                for item in items:
-                    if item.get('family') is not None and not isinstance(item['family'], str):
-                        retained.append(item)
-                        continue
-                    normalized = json.loads(author_fields([item])["authors_json"] or '[{}]')[0]
-                    if normalized:
-                        normalized['sequence'] = 'first' if not retained else 'additional'
-                    retained.append(normalized)
-                return author_json(retained)
-            return author_fields(items)["authors_json"] or value
-        return value
-    parts = raw.split(';')
-    if preserve_unresolved:
-        parts = [name for part in parts for name in
-                 ([part] if _ORGANISATION.search(part) or part.strip().lower().startswith('the ')
-                  else re.split(r'\s*(?:\band\b|&)\s*', part))]
-    items = [_plain_author(part) for part in parts if part.strip()]
-    return author_fields(items)["authors_json"] or value
+        if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
+            return value
+    else:
+        parts = raw.split(';')
+        if preserve_unresolved:
+            parts = [name for part in parts for name in
+                     ([part] if _ORGANISATION.search(part) or part.strip().lower().startswith('the ')
+                      else re.split(r'\s*(?:\band\b|&)\s*', part))]
+        items = [_plain_author(part) for part in parts if part.strip()]
+    if not preserve_unresolved:
+        return author_fields(items)["authors_json"] or value
+    retained = []
+    for item in items:
+        if item.get('family') is not None and not isinstance(item['family'], str):
+            retained.append(item)
+            continue
+        normalized = json.loads(author_fields([item])["authors_json"] or '[{}]')[0]
+        if normalized:
+            normalized['sequence'] = 'first' if not retained else 'additional'
+        retained.append(normalized)
+    return author_json(retained) or value
 
 
 def crossref_fields(data):
