@@ -200,29 +200,60 @@ def _plain_author(name):
 _MISSING = {"na", "n/a", "nan", "none", "null"}
 
 
-def normalise_author_json(value):
+def malformed_author_names(item):
+    """Reject invalid name types and a surname combined with a literal byline."""
+    return (any(item.get(k) is not None and not isinstance(item[k], str)
+                for k in ('family', 'given', 'name', 'literal'))
+            or bool(item.get('family') and (item.get('name') or item.get('literal')))
+            or not any(isinstance(item.get(k), str) and item[k].strip()
+                       for k in ('family', 'given', 'name', 'literal')))
+
+
+def normalise_author_json(value, *, preserve_unresolved=False):
     """An author cell as a structured JSON list, whatever form it arrived in.
 
     A JSON list is rewritten in the compact form without empty keys. A plain
     "A; B; C" string (a sheet value, or display names) becomes a list too: a search
     index that splits on commas would otherwise read the whole string as one name.
     Anything else (no value, a missing-value marker) is returned unchanged.
+    preserve_unresolved keeps incomplete entries and uses the overlap scorer's
+    and/ampersand separators for plain people, preserving named organisations.
     """
+    if preserve_unresolved and isinstance(value, list):
+        value = json.dumps(value, ensure_ascii=False)
     if not isinstance(value, str):
         return value
     raw = value.strip()
     if not raw or raw.lower() in _MISSING:
         return value
-    if raw.startswith("["):
+    if raw.startswith(("[", "{")):
         try:
             items = json.loads(raw)
         except ValueError:
             return value
-        if isinstance(items, list) and all(isinstance(item, dict) for item in items):
-            return author_fields(items)["authors_json"] or value
-        return value
-    items = [_plain_author(part) for part in raw.split(";") if part.strip()]
-    return author_fields(items)["authors_json"] or value
+        if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
+            return value
+    else:
+        items = []
+        for part in raw.split(';'):
+            if not part.strip():
+                continue
+            names = ([part] if not preserve_unresolved or _ORGANISATION.search(part)
+                     or part.strip().lower().startswith('the ')
+                     else re.split(r'\s*(?:\band\b|&)\s*', part))
+            items.extend(_plain_author(name) if name.strip() else {} for name in names)
+    if not preserve_unresolved:
+        return author_fields(items)["authors_json"] or value
+    retained = []
+    for item in items:
+        if malformed_author_names(item):
+            retained.append(item)
+            continue
+        normalized = json.loads(author_fields([item])["authors_json"] or '[{}]')[0]
+        if normalized:
+            normalized['sequence'] = 'first' if not retained else 'additional'
+        retained.append(normalized)
+    return author_json(retained) or value
 
 
 def crossref_fields(data):
