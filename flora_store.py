@@ -255,8 +255,10 @@ def export_csv(cur, *, include_retired=False):
     columns = list(metadata["columns"]) if metadata else CSV_COLUMNS
     where = "" if include_retired else " WHERE retired_at IS NULL"
     cur.execute("SELECT * FROM flora_data" + where + " ORDER BY export_position")
-    frame = pd.DataFrame([_record(row) for row in cur.fetchall()]).reindex(columns=columns)
-    return final_export.csv_text(frame)
+    frame = pd.DataFrame([_record(row) for row in cur.fetchall()])
+    if not frame.empty:
+        frame = final_export.with_replication_columns(frame)
+    return final_export.csv_text(frame.reindex(columns=columns))
 
 
 def main():

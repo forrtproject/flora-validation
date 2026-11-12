@@ -57,6 +57,33 @@ def key(row) -> tuple:
     return text(row.get("type")).lower(), original, replication, report
 
 
+# A replication's outcome, quote and quote source on their own, as the reproduction
+# axes are (outcome_computation, outcome_robustness and their quotes and sources).
+# Copies of the combined outcome/outcome_quote/outcome_quote_source for replications,
+# blank for reproductions, whose combined fields join the two axes. The combined
+# fields stay for readers of the older file.
+REPLICATION_COLUMNS = {
+    "outcome_replication": "outcome",
+    "outcome_replication_quote": "outcome_quote",
+    "out_quote_replication_source": "outcome_quote_source",
+}
+
+
+def with_replication_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    """Fill the REPLICATION_COLUMNS from the combined fields, per row type.
+
+    Derived at every export rather than stored, so a correction to a combined field
+    can never leave its replication copy behind.
+    """
+    out = frame.copy()
+    replication = (out["type"].map(text).str.lower().eq("replication")
+                   if "type" in out.columns else pd.Series(False, index=out.index))
+    for column, combined in REPLICATION_COLUMNS.items():
+        values = out[combined] if combined in out.columns else pd.Series(None, index=out.index)
+        out[column] = values.astype(object).where(replication, None)
+    return out
+
+
 def removed_positions() -> frozenset[int]:
     """The original positions of the reference rows removed from the snapshot."""
     positions = []
