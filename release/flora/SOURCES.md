@@ -4,7 +4,7 @@
 forrtproject/fred-data at commit `42a22b635efd6ee4cc33d64f322742d0545d796a`:
 `output/flora_faq.md` (the website's coding guidance) and `CITATION.cff`.
 The template excludes the old version and DOI. Local FAQ errata use the published
-alternative-identifier column names and distinguish primary/alternative reports.
+alternative-identifier names, report precedence and the two reproduction axes.
 Review the author list and licence before the first production release.
 
 The codebook extracts maintained definitions from `docs/FLORA_DATA_TABLE.md` and

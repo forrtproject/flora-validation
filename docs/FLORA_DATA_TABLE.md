@@ -101,7 +101,7 @@ label persists if later retirements reduce the count. Matching records also seed
 one-hop report aliases; matches do not recursively join unrelated identifier chains.
 Conflicting project matches require review. New shared-identifier groups above the
 threshold appear in `project_classification.json` for naming/review and block
-production until mapped. Text mentions are review hints only, not memberships.
+production until mapped. Titles alone cannot establish project membership.
 
 | Registered project label | Established report anchor or intake |
 | --- | --- |

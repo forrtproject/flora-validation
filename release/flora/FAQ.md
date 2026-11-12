@@ -33,7 +33,7 @@ This would be coded as computational reproducible but not robust.
 
 ### Are reanalyses included if they do not test for numerical reproduction? What about multiverse analysis?
 
-Yes, as long as they test the same claim as the original study. This could also mean that a reproduction is a multiverse analysis. Outcomes of reproductions are noted in the outcome variable and include information about computational reproducibility and robustness.
+Yes, as long as they test the same claim as the original study. This could also mean that a reproduction is a multiverse analysis. Reproduction outcomes are recorded separately in `outcome_computation` and `outcome_robustness`. The `outcome` field records replication outcomes and is `NA` for reproduction rows.
 
 ### What if a paper includes reproduction *and* replication?
 
