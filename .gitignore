@@ -19,6 +19,11 @@ snapshots/
 /docs/TABS.md
 /docs/pipeline-guide/topic-map.json
 
+# Versioned Zenodo bundles and local upload receipts
+/release-bundles
 # Expiring API responses; persisted by the scheduled workflow cache
 /cache/published_versions/
 /output/published_version_candidates*
+
+# Archived exploratory release review material
+/review-artifacts

@@ -1,0 +1,46 @@
+name: Prepare FLoRA Zenodo release
+
+# Manual assembly only. Publication is a separate reviewed local command.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Dataset version (YYYY.MM.N)'
+        required: true
+      previous_record:
+        description: 'Previous published Zenodo version record ID (blank for first release)'
+        required: false
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: flora-zenodo-release
+  cancel-in-progress: false
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pip install requests pyyaml pandas pytest
+      - run: python -m pytest -q tests/test_zenodo_flora.py tests/test_flora_release_projects.py
+      - name: Retrieve previous published bundle
+        if: inputs.previous_record != ''
+        env:
+          PREVIOUS_RECORD: ${{ inputs.previous_record }}
+        run: python zenodo_flora.py --fetch-previous "$PREVIOUS_RECORD" --bundle previous
+      - name: Assemble offline
+        env:
+          VERSION: ${{ inputs.version }}
+          PREVIOUS_RECORD: ${{ inputs.previous_record }}
+        run: |
+          args=()
+          if [ -n "$PREVIOUS_RECORD" ]; then args+=(--previous previous); fi
+          python zenodo_flora.py --version "$VERSION" --bundle bundle "${args[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flora-zenodo
+          path: bundle/
+          retention-days: 90

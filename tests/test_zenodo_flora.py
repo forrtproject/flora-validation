@@ -1,0 +1,479 @@
+import csv
+import hashlib
+import json
+from pathlib import Path
+from unittest.mock import Mock
+
+import pytest
+import yaml
+import zenodo_flora as release
+
+
+def csv_file(path, rows, columns=('id', 'title_r')):
+    with path.open('w', encoding='utf-8-sig', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=columns)
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
+
+
+@pytest.fixture
+def bundle(tmp_path):
+    output = tmp_path / 'output'
+    output.mkdir()
+    columns = json.loads((release.SOURCES / 'columns.json').read_text())
+    columns += ['author_o', 'author_r', 'author_overlap', 'id_md5']
+    row = dict.fromkeys(columns, 'NA')
+    row.update(id='A', type='replication', source='replications', title_r='Röseler, "test"\nnext line',
+               author_o='[{"family":"Smith"}]', author_r='[{"family":"Jones"}]',
+               author_overlap='0', author_overlap_pct='0.0')
+    source = csv_file(output / 'flora.csv', [row], columns)
+    release.write_json(output / 'flora_release_manifest.json', {
+        'sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
+        'data_version': {'change_watermark': 346}})
+    target = tmp_path / 'bundle'
+    assert release.assemble(output, '2026.11.1', target) == {'added': 1, 'changed': 0, 'retired': 0}
+    return target
+
+
+def test_assembly(bundle):
+    release.verify_bundle(bundle)
+    assert (bundle / 'flora.csv').read_bytes().startswith(b'\xef\xbb\xbf')
+    assert release.read_records(bundle / 'flora.csv')[1]['A']['title_r'] == 'Röseler, "test"\nnext line'
+    assert {'CODEBOOK.md', 'FAQ.md', 'README.md', 'REUSE.md', 'CITATION.cff',
+            'CHANGELOG.md', 'changes.json'} <= {p.name for p in bundle.iterdir()}
+    cff = yaml.safe_load((bundle / 'CITATION.cff').read_text())
+    assert cff['version'] == '2026.11.1' and 'doi' not in cff
+    metadata = json.loads((bundle / 'zenodo-metadata.json').read_text())
+    assert len(metadata['creators']) == len(cff['authors'])
+    assert all('email' not in c for c in metadata['creators'])
+    manifest = json.loads((bundle / 'flora_release_manifest.json').read_text())
+    assert manifest['source_manifest']['data_version']['change_watermark'] == 346
+    assert '| FReD | COS | FReD Replication Success input |' in (bundle / 'CODEBOOK.md').read_text()
+    with pytest.raises(ValueError, match='exists'):
+        release.assemble(bundle, '2026.11.1', bundle)
+
+
+def test_net_history(tmp_path):
+    old = csv_file(tmp_path / 'old.csv', [{'id': 'A', 'title_r': 'before'}, {'id': 'B', 'title_r': 'retire'}])
+    new = csv_file(tmp_path / 'new.csv', [{'id': 'A', 'title_r': 'after'}, {'id': 'C', 'title_r': 'added'}])
+    changes = release.changelog(new, old)
+    assert changes['counts'] == {'added': 1, 'changed': 1, 'retired': 1}
+    assert changes['changed'] == {'A': ['title_r']}
+    assert changes['retired'] == ['B']
+    assert release.changelog(new, new)['counts'] == dict(added=0, changed=0, retired=0)
+
+
+def test_identity_and_schema(tmp_path):
+    bad = csv_file(tmp_path / 'bad.csv', [{'id': 'A', 'title_r': 'one'}, {'id': 'A', 'title_r': 'two'}])
+    with pytest.raises(ValueError, match='unique'):
+        release.read_records(bad)
+    old = csv_file(tmp_path / 'old.csv', [{'id': 'A', 'title_r': 'unchanged'}])
+    new = csv_file(tmp_path / 'new.csv', [{'id': 'A', 'extra': 'value'}], ('id', 'extra'))
+    changes = release.changelog(new, old)
+    assert changes['columns_removed'] == ['title_r']
+    assert changes['changed']['A'] == ['title_r', 'extra']
+
+
+def test_guards(bundle, monkeypatch):
+    with pytest.raises(ValueError, match='approve-production'):
+        release.upload(bundle, 'production', True)
+    monkeypatch.delenv('ZENODO_SANDBOX_TOKEN', raising=False)
+    with pytest.raises(ValueError, match='ZENODO_SANDBOX_TOKEN'):
+        release.upload(bundle, 'sandbox')
+    (bundle / 'flora.csv').write_text('changed')
+    with pytest.raises(ValueError, match='changed'):
+        release.verify_bundle(bundle)
+
+
+def test_manifest_mismatch(bundle, tmp_path):
+    (bundle / 'flora.csv').write_text('bad')
+    with pytest.raises(ValueError, match='manifest'):
+        release.assemble(bundle, '2026.11.2', tmp_path / 'new')
+
+
+def test_upload_and_retry(bundle, monkeypatch):
+    base = release.HOSTS['sandbox']
+    deposit = {'id': 12, 'conceptrecid': 10, 'submitted': False, 'files': [{'id': 'inherited'}],
+               'metadata': {'prereserve_doi': {'doi': 'reserved-by-api'}},
+               'links': {k: f'{base}/{k}' for k in ('self', 'bucket', 'publish', 'html')}}
+    calls = []
+    def request(method, url, **kw):
+        calls.append((method, url))
+        if '/bucket/' in url:
+            return {'checksum': 'md5:' + hashlib.md5(kw['data'].read()).hexdigest()}
+        return deposit
+    api = Mock(base=base)
+    api.request.side_effect = request
+    monkeypatch.setattr(release, 'Zenodo', lambda env: api)
+    state = release.upload(bundle, 'sandbox')
+    assert not state['published']
+    assert ('DELETE', f'{base}/api/deposit/depositions/12/files/inherited') in calls
+    assert not any(url.endswith('/publish') for _, url in calls)
+    assert yaml.safe_load((bundle / 'CITATION.cff').read_text())['doi'] == 'reserved-by-api'
+    release.verify_bundle(bundle)
+    calls.clear()
+    release.upload(bundle, 'sandbox')
+    assert calls[0] == ('GET', f'{base}/api/deposit/depositions/12')
+    assert not any(m == 'POST' for m, _ in calls)
+
+
+def test_new_version(bundle, tmp_path, monkeypatch):
+    prior = tmp_path / 'prior'
+    import shutil
+    shutil.copytree(bundle, prior)
+    receipt = dict(environment='sandbox', id=11, conceptrecid=10, version='2026.10.1', published=True)
+    release.write_json(prior / 'zenodo-state.json', receipt)
+    target = tmp_path / 'next'
+    release.assemble(bundle.parent / 'output', '2026.11.2', target, prior)
+    base = release.HOSTS['sandbox']
+    draft = {'id': 12, 'conceptrecid': 10, 'submitted': False, 'files': [],
+             'metadata': {'version': '2026.10.1', 'prereserve_doi': {'doi': 'api-reserved-next'}},
+             'links': {k: f'{base}/{k}' for k in ('self', 'bucket', 'publish', 'html')}}
+    api = Mock(base=base)
+    api.request.side_effect = [dict(conceptrecid=10, metadata={'version': '2026.10.1',
+        'title': json.loads((target / 'zenodo-metadata.json').read_text(encoding='utf-8'))['title']}), {'links': {'latest_draft': f'{base}/draft'}}, draft, draft]
+    monkeypatch.setattr(release, 'Zenodo', lambda env: api)
+    # Interrupt at first file upload; state must already be recoverable.
+    with pytest.raises(StopIteration):
+        release.upload(target, 'sandbox')
+    assert api.request.call_args_list[1].args == ('POST', f'{base}/api/deposit/depositions/11/actions/newversion')
+    assert json.loads((target / 'zenodo-state.json').read_text())['id'] == 12
+
+
+def test_client_rejects_foreign_host_and_hides_errors(monkeypatch):
+    monkeypatch.setenv('ZENODO_SANDBOX_TOKEN', 'test-secret-value')
+    api = release.Zenodo('sandbox')
+    api.session.request = Mock()
+    with pytest.raises(ValueError, match='unexpected host'):
+        api.request('PUT', 'https://example.com/upload')
+    api.session.request.assert_not_called()
+    response = Mock(status_code=401, content=b'test-secret-value')
+    api.session.request.return_value = response
+    with pytest.raises(ValueError) as exc:
+        api.request('POST', api.base + '/api/deposit/depositions')
+    assert 'test-secret-value' not in str(exc.value)
+    assert 'HTTP 401' in str(exc.value)
+    assert api.session.request.call_args.kwargs['allow_redirects'] is False
+
+
+def test_no_network_for_dry_run(bundle, tmp_path, monkeypatch):
+    monkeypatch.setattr(release.requests.sessions.Session, 'request', Mock(side_effect=AssertionError('Network access')))
+    release.assemble(bundle.parent / 'output', '2026.11.2', tmp_path / 'offline')
+
+
+@pytest.mark.parametrize('remote_difference', [None, 'extra', 'missing'])
+def test_publish_only_after_checksums(bundle, monkeypatch, remote_difference):
+    base = release.HOSTS['sandbox']
+    links = {k: f'{base}/{k}' for k in ('self', 'bucket', 'publish', 'html')}
+    deposit = {'id': 12, 'conceptrecid': 10, 'submitted': False, 'files': [],
+               'metadata': {'version': '2026.11.1', 'prereserve_doi': {'doi': 'api-reserved'}}, 'links': links}
+    calls, uploaded = [], {}
+    def request(method, url, **kw):
+        calls.append((method, url))
+        if '/bucket/' in url:
+            uploaded[url.rsplit('/', 1)[1]] = hashlib.md5(kw['data'].read()).hexdigest()
+            return {'checksum': uploaded[url.rsplit('/', 1)[1]]}
+        if method == 'GET':
+            files = [{'filename': n, 'checksum': v} for n, v in uploaded.items()]
+            if remote_difference == 'extra':
+                files.append({'filename': 'retired.csv', 'checksum': 'stale'})
+            elif remote_difference == 'missing':
+                files.pop()
+            return {**deposit, 'files': files}
+        if url == links['publish']:
+            return {**deposit, 'submitted': True}
+        return deposit
+    api = Mock(base=base)
+    api.request.side_effect = request
+    monkeypatch.setattr(release, 'Zenodo', lambda env: api)
+    if remote_difference:
+        with pytest.raises(ValueError, match='Remote files differ'):
+            release.upload(bundle, 'sandbox', publish=True)
+        assert ('POST', links['publish']) not in calls
+    else:
+        assert release.upload(bundle, 'sandbox', publish=True)['published']
+        assert calls[-1] == ('POST', links['publish'])
+        assert calls[-2] == ('GET', base + '/api/deposit/depositions/12')
+    assert len([url for _, url in calls if '/bucket/' in url]) == 13
+
+
+def test_codebook_matches_snapshot(bundle):
+    columns, rows = release.read_records(bundle / 'flora.csv')
+    book = (bundle / 'CODEBOOK.md').read_text()
+    assert all(f'| `{column}` |' in book for column in columns)
+    assert '## Relationship to the existing tables' not in book
+    with pytest.raises(ValueError, match='definitions missing'):
+        release.render_codebook(['id', 'undocumented_field'], [])
+    rendered = release.render_codebook(['id', 'outcome', 'outcome_computation'], [
+        {'id': 'A', 'outcome': 'computational issues, robust', 'outcome_computation': 'computational issues'}])
+    assert '`computational issues, robust`' in rendered
+    assert '`computational issues`' in rendered
+    assert '| `author_overlap` |' not in rendered
+    assert '| `author_overlap_pct` |' not in rendered
+
+
+def test_release_projection_order_and_cells(bundle):
+    columns, rows = release.read_records(bundle / 'flora.csv')
+    assert columns == json.loads((release.SOURCES / 'columns.json').read_text())
+    assert len(columns) == 31
+    assert 'author_overlap_pct' in columns and 'author_overlap' not in columns
+    assert not {'author_o', 'author_r', 'id_md5', 'flora_id'} & set(columns)
+    _, original = release.read_records(bundle.parent / 'output' / 'flora.csv')
+    assert rows['A']['source'] == 'manual entry'
+    assert all(rows[key][column] == row[column]
+               for key, row in original.items() for column in columns if column != 'source')
+    import re
+    book = (bundle / 'CODEBOOK.md').read_text()
+    assert re.findall(r'^\| `([^`]+)` \|', book, re.MULTILINE) == columns
+    assert hashlib.sha256((bundle / 'flora.csv').read_bytes()).hexdigest() != hashlib.sha256((bundle.parent / 'output' / 'flora.csv').read_bytes()).hexdigest()
+
+
+def test_stale_overlap_blocks_release_before_files_are_written(bundle, tmp_path):
+    source = bundle.parent / 'output'
+    columns, rows = release.read_records(source / 'flora.csv')
+    rows['A']['author_o'] = '[{"family":"Smith"},{"name":"The TwiLex Group"}]'
+    rows['A']['author_overlap_pct'] = '100.0'
+    csv_file(source / 'flora.csv', rows.values(), columns)
+    release.write_json(source / 'flora_release_manifest.json', {
+        'sha256': hashlib.sha256((source / 'flora.csv').read_bytes()).hexdigest()})
+    with pytest.raises(ValueError, match='Stale author_overlap_pct.*A'):
+        release.assemble(source, '2026.11.1', tmp_path / 'stale')
+    assert not (tmp_path / 'stale').exists()
+
+
+def test_missing_selected_column_blocks_release(bundle, tmp_path):
+    source = bundle.parent / 'output'
+    columns, rows = release.read_records(source / 'flora.csv')
+    columns.remove('bibtex_ref_o')
+    for row in rows.values():
+        del row['bibtex_ref_o']
+    csv_file(source / 'flora.csv', rows.values(), columns)
+    release.write_json(source / 'flora_release_manifest.json', {
+        'sha256': hashlib.sha256((source / 'flora.csv').read_bytes()).hexdigest()})
+    with pytest.raises(ValueError, match='bibtex_ref_o'):
+        release.assemble(source, '2026.11.1', tmp_path / 'missing')
+
+
+def test_preview_and_superseded_bundle_cannot_publish_production(bundle):
+    manifest_path = bundle / 'flora_release_manifest.json'
+    manifest = json.loads(manifest_path.read_text())
+    manifest['source_manifest']['source_kind'] = 'offline_pipeline_preview'
+    release.write_json(manifest_path, manifest)
+    release.write_json(bundle / 'bundle-checksums.json', release.checksums(bundle))
+    with pytest.raises(ValueError, match='Unverified or preview source'):
+        release.upload(bundle, 'production', publish=True, approve_production=True)
+    del manifest['projection']
+    release.write_json(manifest_path, manifest)
+    release.write_json(bundle / 'bundle-checksums.json', release.checksums(bundle))
+    with pytest.raises(ValueError, match='agreed release columns'):
+        release.upload(bundle, 'production', publish=True, approve_production=True)
+
+
+@pytest.mark.parametrize('internal,label', [
+    ('replications', 'manual entry'), ('reproductions', 'manual entry'), ('COS', 'FReD'),
+    ('SCORE', 'SCORE'), ('manual', 'search pipeline'), ('validated', 'search pipeline'),
+])
+def test_public_source_labels_do_not_change_internal_record(internal, label):
+    columns = json.loads((release.SOURCES / 'columns.json').read_text())
+    row = dict.fromkeys(columns, 'NA')
+    row.update(id='TEST', type='replication', source=internal)
+    assert release.project_record(row, columns)['source'] == label
+    assert row['source'] == internal
+
+
+@pytest.mark.parametrize('kind', ['replication', 'reproduction'])
+def test_release_only_contains_applicable_outcomes(kind):
+    columns = json.loads((release.SOURCES / 'columns.json').read_text())
+    row = dict.fromkeys(columns, 'NA')
+    row.update(id='TEST', type=kind, source='validated')
+    for field in (*release.REPLICATION_OUTCOME_FIELDS, *release.REPRODUCTION_OUTCOME_FIELDS):
+        row[field] = 'specific evidence or outcome'
+    result = release.project_record(row, columns)
+    applicable, inapplicable = (release.REPLICATION_OUTCOME_FIELDS, release.REPRODUCTION_OUTCOME_FIELDS) if kind == 'replication' else (release.REPRODUCTION_OUTCOME_FIELDS, release.REPLICATION_OUTCOME_FIELDS)
+    assert all(result[field] == row[field] for field in applicable)
+    assert all(result[field] == 'NA' for field in inapplicable)
+    assert all(row[field] != 'NA' for field in inapplicable)
+
+
+def test_unregistered_source_is_not_silently_published():
+    columns = json.loads((release.SOURCES / 'columns.json').read_text())
+    row = dict.fromkeys(columns, 'NA')
+    row.update(id='TEST', type='replication', source='new intake')
+    with pytest.raises(ValueError, match='Unmapped source'):
+        release.project_record(row, columns)
+
+
+def test_project_label_overrides_search_pipeline_in_public_projection():
+    columns = json.loads((release.SOURCES / 'columns.json').read_text())
+    row = dict.fromkeys(columns, 'NA')
+    row.update(id='A', type='replication', source='validated')
+    assert release.project_record(row, columns, 'RP:P')['source'] == 'RP:P'
+    assert row['source'] == 'validated'
+
+
+def test_unmapped_large_groups_and_changed_registry_block_production(bundle):
+    path = bundle / 'flora_release_manifest.json'
+    manifest = json.loads(path.read_text())
+    manifest['projection']['project_review_required'] = True
+    release.write_json(path, manifest)
+    release.write_json(bundle / 'bundle-checksums.json', release.checksums(bundle))
+    with pytest.raises(ValueError, match='unmapped report groups'):
+        release.upload(bundle, 'production', publish=True, approve_production=True)
+    manifest['projection']['project_registry']['threshold'] = 99
+    release.write_json(path, manifest)
+    release.write_json(bundle / 'bundle-checksums.json', release.checksums(bundle))
+    with pytest.raises(ValueError, match='agreed release columns'):
+        release.upload(bundle, 'production', publish=True, approve_production=True)
+
+
+@pytest.mark.parametrize('kind', [None, 'offline_pipeline_preview', 'unknown'])
+def test_production_requires_positive_publication_provenance(bundle, monkeypatch, kind):
+    path = bundle / 'flora_release_manifest.json'
+    manifest = json.loads(path.read_text())
+    if kind:
+        manifest['source_manifest']['source_kind'] = kind
+    release.write_json(path, manifest)
+    release.write_json(bundle / 'bundle-checksums.json', release.checksums(bundle))
+    client = Mock(side_effect=AssertionError('No network before provenance validation'))
+    monkeypatch.setattr(release, 'Zenodo', client)
+    with pytest.raises(ValueError, match='Unverified or preview'):
+        release.upload(bundle, 'production', approve_production=True)
+    client.assert_not_called()
+
+
+@pytest.mark.parametrize('remote_change', [dict(id=99), dict(conceptrecid=999),
+                                         dict(metadata={'version': 'wrong'}),
+                                         dict(metadata={'title': 'Another dataset'})])
+def test_resumed_draft_identity_is_checked_before_any_writes(bundle, monkeypatch, remote_change):
+    base = release.HOSTS['sandbox']
+    release.write_json(bundle / 'zenodo-state.json',
+                       dict(environment='sandbox', id=12, conceptrecid=10, version='2026.11.1', published=False))
+    deposit = dict(id=12, conceptrecid=10, submitted=False, metadata={'version': '2026.11.1'})
+    deposit.update(remote_change)
+    api = Mock(base=base)
+    api.request.return_value = deposit
+    monkeypatch.setattr(release, 'Zenodo', lambda env: api)
+    with pytest.raises(ValueError, match='identity, concept or version mismatch'):
+        release.upload(bundle, 'sandbox')
+    assert api.request.call_count == 1
+    assert api.request.call_args.args[0] == 'GET'
+
+
+def test_stored_publication_marks_its_revision(tmp_path):
+    from release_helpers import add_data_version
+    manifest = add_data_version(tmp_path, {}, '2026-11-12T00:00:00+00:00', 912)
+    assert manifest['source_kind'] == 'authoritative_publication'
+    assert manifest['data_version']['change_watermark'] == 912
+    assert json.loads((tmp_path / 'flora_release_manifest.json').read_text(encoding='utf-8')) == manifest
+
+
+def test_verified_publication_reaches_client_boundary_without_network(bundle, monkeypatch):
+    path = bundle / 'flora_release_manifest.json'
+    manifest = json.loads(path.read_text())
+    manifest['source_manifest'].update(source_kind='authoritative_publication',
+        data_version={'stored_at': '2026-11-12T00:00:00+00:00', 'change_watermark': 912})
+    release.write_json(path, manifest)
+    release.write_json(bundle / 'bundle-checksums.json', release.checksums(bundle))
+    client = Mock(side_effect=ValueError('verified client boundary'))
+    monkeypatch.setattr(release, 'Zenodo', client)
+    with pytest.raises(ValueError, match='verified client boundary'):
+        release.upload(bundle, 'production', approve_production=True)
+    client.assert_called_once_with('production')
+
+
+@pytest.mark.parametrize('remote_metadata', [{}, {'version': '2026.11.1'}])
+def test_receipt_recovery_reuses_inspected_draft_and_saves_before_mutation(bundle, monkeypatch, remote_metadata):
+    base = release.HOSTS['sandbox']
+    deposit = dict(id=12, conceptrecid=10, submitted=False, files=[], metadata=remote_metadata,
+                   links={'self': base + '/draft'})
+    api = Mock(base=base)
+    def request(method, url, **kwargs):
+        if method == 'GET':
+            return deposit
+        assert json.loads((bundle / 'zenodo-state.json').read_text(encoding='utf-8'))['id'] == 12
+        raise ValueError('recovery reached metadata write')
+    api.request.side_effect = request
+    monkeypatch.setattr(release, 'Zenodo', lambda _: api)
+    with pytest.raises(ValueError, match='recovery reached metadata write'):
+        release.upload(bundle, 'sandbox', resume_deposit=12)
+    assert [c.args[0] for c in api.request.call_args_list] == ['GET', 'PUT']
+
+
+@pytest.mark.parametrize('remote_metadata', [{'title': 'Another dataset'}, {'version': 'another version'}])
+def test_receipt_recovery_rejects_unrelated_draft_before_writes(bundle, monkeypatch, remote_metadata):
+    base = release.HOSTS['sandbox']
+    api = Mock(base=base)
+    api.request.return_value = dict(id=12, conceptrecid=10, submitted=False, metadata=remote_metadata)
+    monkeypatch.setattr(release, 'Zenodo', lambda _: api)
+    with pytest.raises(ValueError, match='identity, concept or version mismatch'):
+        release.upload(bundle, 'sandbox', resume_deposit=12)
+    assert api.request.call_count == 1
+    assert not (bundle / 'zenodo-state.json').exists()
+
+
+def test_new_version_rejects_unrelated_dataset_title_before_forking(bundle, monkeypatch):
+    path = bundle / 'flora_release_manifest.json'
+    manifest = json.loads(path.read_text(encoding='utf-8'))
+    manifest['previous_release'] = dict(environment='sandbox', id=11, conceptrecid=10, version='2026.10.1')
+    release.write_json(path, manifest)
+    release.write_json(bundle / 'bundle-checksums.json', release.checksums(bundle))
+    api = Mock(base=release.HOSTS['sandbox'])
+    api.request.return_value = dict(conceptrecid=10, metadata={'version': '2026.10.1', 'title': 'Another dataset'})
+    monkeypatch.setattr(release, 'Zenodo', lambda _: api)
+    with pytest.raises(ValueError, match='Previous concept record, title or version mismatch'):
+        release.upload(bundle, 'sandbox')
+    assert api.request.call_count == 1
+    assert api.request.call_args.args[0] == 'GET'
+
+
+@pytest.mark.parametrize('scheme', ['https', 'http'])
+def test_public_baseline_recovery_requires_https_and_checks_deposited_bytes(bundle, tmp_path, monkeypatch, scheme):
+    host = 'sandbox.zenodo.org'
+    names = [*release.checksums(bundle), 'bundle-checksums.json']
+    record = dict(id=12, conceptrecid=10, doi='api-reported-doi', metadata={'version': '2026.11.1'},
+                  links={'html': 'https://' + host + '/records/12'},
+                  files=[{'key': n, 'links': {'self': f'{scheme}://{host}/files/{n}'}} for n in names])
+    def get(url, **kwargs):
+        if '/api/records/' in url:
+            return Mock(json=lambda: record)
+        return Mock(content=(bundle / url.rsplit('/', 1)[1]).read_bytes())
+    fetch = Mock(side_effect=get)
+    monkeypatch.setattr(release.requests, 'get', fetch)
+    target = tmp_path / 'recovered'
+    if scheme == 'http':
+        with pytest.raises(ValueError, match='Unexpected file name or host'):
+            release.fetch_previous(12, 'sandbox', target)
+        assert fetch.call_count == 1
+    else:
+        release.fetch_previous(12, 'sandbox', target)
+        release.verify_bundle(target)
+        assert json.loads((target / 'zenodo-state.json').read_text(encoding='utf-8'))['published']
+
+
+def test_recovery_rejects_previous_published_version_without_poisoning_receipt(bundle, monkeypatch):
+    path = bundle / 'flora_release_manifest.json'
+    manifest = json.loads(path.read_text(encoding='utf-8'))
+    manifest['previous_release'] = dict(environment='sandbox', id=11, conceptrecid=10, version='2026.10.1')
+    release.write_json(path, manifest)
+    release.write_json(bundle / 'bundle-checksums.json', release.checksums(bundle))
+    metadata = json.loads((bundle / 'zenodo-metadata.json').read_text(encoding='utf-8'))
+    api = Mock(base=release.HOSTS['sandbox'])
+    api.request.return_value = dict(id=11, conceptrecid=10, submitted=True,
+                                   metadata={'version': '2026.10.1', 'title': metadata['title']})
+    monkeypatch.setattr(release, 'Zenodo', lambda _: api)
+    with pytest.raises(ValueError, match='identity, concept or version mismatch'):
+        release.upload(bundle, 'sandbox', resume_deposit=11)
+    assert not (bundle / 'zenodo-state.json').exists()
+    assert api.request.call_count == 1
+
+
+def test_first_recovery_rejects_unidentified_draft_with_existing_files(bundle, monkeypatch):
+    api = Mock(base=release.HOSTS['sandbox'])
+    api.request.return_value = dict(id=12, conceptrecid=10, submitted=False, metadata={},
+                                   files=[{'filename': 'unrelated.csv'}])
+    monkeypatch.setattr(release, 'Zenodo', lambda _: api)
+    with pytest.raises(ValueError, match='identity, concept or version mismatch'):
+        release.upload(bundle, 'sandbox', resume_deposit=12)
+    assert not (bundle / 'zenodo-state.json').exists()
+    assert api.request.call_count == 1

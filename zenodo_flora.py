@@ -1,0 +1,441 @@
+"""Assemble a FLoRA release offline, then explicitly upload/publish the reviewed bundle."""
+import argparse
+import csv
+import hashlib
+import io
+import json
+import os
+import re
+import shutil
+from pathlib import Path
+from urllib.parse import urlparse
+
+import requests
+import yaml
+import release_helpers
+import flora_release_projects
+
+ROOT = Path(__file__).resolve().parent
+SOURCES = ROOT / 'release/flora'
+HOSTS = {'sandbox': 'https://sandbox.zenodo.org', 'production': 'https://zenodo.org'}
+
+# Public release labels. Internal routes stay intact for syncing and audit.
+SOURCE_LABELS = {
+    'replications': 'manual entry', 'reproductions': 'manual entry',
+    'COS': 'FReD', 'SCORE': 'SCORE',
+    'validated': 'search pipeline', 'manual': 'search pipeline',
+}
+REPLICATION_OUTCOME_FIELDS = ('outcome', 'outcome_quote', 'outcome_quote_source')
+REPRODUCTION_OUTCOME_FIELDS = (
+    'outcome_computation', 'outcome_computational_quote', 'out_quote_computational_source',
+    'outcome_robustness', 'outcome_robustness_quote', 'out_quote_robust_source',
+)
+
+
+def project_record(row, columns, project_label=None):
+    """Apply the agreed release labels and outcome applicability, without editing inputs."""
+    if row['type'] not in {'replication', 'reproduction'}:
+        raise ValueError(f"Unknown attempt type for {row['id']}: {row['type']}")
+    if not project_label and row['source'] not in SOURCE_LABELS:
+        raise ValueError(f"Unmapped source label: {row['source']}; review the release mapping")
+    result = {c: row[c] for c in columns}
+    result['source'] = project_label or SOURCE_LABELS[row['source']]
+    inapplicable = (REPLICATION_OUTCOME_FIELDS if row['type'] == 'reproduction'
+                    else REPRODUCTION_OUTCOME_FIELDS)
+    for field in inapplicable:
+        result[field] = 'NA'
+    return result
+
+
+def read_records(path):
+    """Read a BOM-compatible CSV keyed by validated permanent record IDs."""
+    with Path(path).open(encoding='utf-8-sig', newline='') as f:
+        reader = csv.DictReader(f)
+        columns = reader.fieldnames
+        if not columns or 'id' not in columns or len(columns) != len(set(columns)):
+            raise ValueError('CSV needs unique headers and a permanent id column')
+        rows = list(reader)
+    ids = [r['id'] for r in rows]
+    if any(not i or i != i.strip() for i in ids) or len(set(ids)) != len(ids):
+        raise ValueError('CSV needs unique nonblank permanent IDs')
+    if any(None in r or None in r.values() for r in rows):
+        raise ValueError('Malformed CSV row')
+    return columns, {r['id']: r for r in rows}
+
+
+def changelog(current, previous=None):
+    """Net published record history, keyed on permanent IDs, never DOI/content keys."""
+    columns, new = read_records(current)
+    old_columns, old = read_records(previous) if previous else ([], {})
+    added = sorted(new.keys() - old.keys())
+    retired = sorted(old.keys() - new.keys())
+    changed = {i: [c for c in dict.fromkeys(old_columns + columns)
+                   if old[i].get(c) != new[i].get(c)]
+               for i in sorted(new.keys() & old.keys()) if old[i] != new[i]}
+    return {'added': added, 'changed': changed, 'retired': retired,
+            'counts': {'added': len(added), 'changed': len(changed), 'retired': len(retired)},
+            'columns_added': [c for c in columns if c not in old_columns],
+            'columns_removed': [c for c in old_columns if c not in columns]}
+
+
+def write_json(path, value):
+    """Write release metadata as UTF-8 JSON."""
+    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+
+def assemble(output, version, destination, previous=None):
+    """Build and checksum an offline release from the authoritative CSV export."""
+    if not re.fullmatch(r'\d{4}\.(?:0[1-9]|1[0-2])\.[1-9]\d*', version):
+        raise ValueError('Version must be YYYY.MM.N (N starts at 1)')
+    output, destination = Path(output), Path(destination)
+    if destination.exists():
+        raise ValueError('Bundle directory already exists; use it with --upload or choose a new directory')
+    previous = Path(previous) if previous else None
+    prior = None
+    if previous:
+        prior = json.loads((previous / 'zenodo-state.json').read_text(encoding='utf-8'))
+        if not prior.get('published'):
+            raise ValueError('Previous bundle must have a published Zenodo receipt')
+        if tuple(map(int, version.split('.'))) <= tuple(map(int, prior['version'].split('.'))):
+            raise ValueError('Version must increase')
+        verify_bundle(previous)
+    source = output / 'flora.csv'
+    source_manifest = json.loads((output / 'flora_release_manifest.json').read_text(encoding='utf-8'))
+    if hashlib.sha256(source.read_bytes()).hexdigest() != source_manifest['sha256']:
+        raise ValueError('flora.csv does not match its existing release manifest')
+    columns = json.loads((SOURCES / 'columns.json').read_text(encoding='utf-8'))
+    source_columns, source_rows = read_records(source)
+    missing = set(columns) - set(source_columns)
+    if missing:
+        raise ValueError('Release columns missing from source: ' + ', '.join(sorted(missing)))
+    validate_overlap(source_columns, source_rows)
+    registry = yaml.safe_load((SOURCES / 'projects.yml').read_text(encoding='utf-8'))
+    project_labels, project_report = flora_release_projects.classify_projects(source_rows, registry)
+    rows = {identifier: project_record(row, columns, project_labels.get(identifier))
+            for identifier, row in source_rows.items()}
+    # Validate the dictionary before creating a partial bundle.
+    codebook = render_codebook(columns, rows.values())
+    destination.mkdir(parents=True)
+    buffer = io.StringIO(newline='')
+    writer = csv.DictWriter(buffer, fieldnames=columns, quoting=csv.QUOTE_ALL, lineterminator='\n')
+    writer.writeheader()
+    writer.writerows(rows.values())
+    (destination / 'flora.csv').write_text(buffer.getvalue(), encoding='utf-8-sig', newline='')
+    changes = changelog(destination / 'flora.csv', previous / 'flora.csv' if previous else None)
+    counts = changes['counts']
+    summary = (f"Added: {counts['added']:,}; changed: {counts['changed']:,}; retired: {counts['retired']:,}. "
+               f"Current records: {len(rows):,}.")
+    notes = f'# FLoRA {version}\n\n{summary}\n\n'
+    notes += ('First Zenodo release: all current records are additions to this release baseline.\n'
+              'These counts do not reconstruct additions or retirements before this baseline.\n' if not previous else
+              f"Net changes since published version {prior['version']}; intermediate edits that cancel out are excluded.\n")
+    notes += '\nRecord IDs and changed field names are in changes.json. Retired means absent from this snapshot, not deleted from the registry.\n'
+    (destination / 'CHANGELOG.md').write_text(notes, encoding='utf-8')
+    write_json(destination / 'changes.json', changes)
+    write_json(destination / 'project_classification.json', project_report)
+    # Existing manifest helper remains the authority for exact published CSV checksums.
+    manifest = release_helpers.prepare_release(destination / 'flora.csv', destination, len(rows), columns,
+                                             release_notes=summary)
+    manifest['dataset_version'] = version
+    manifest['source_manifest'] = source_manifest
+    manifest['projection'] = {'columns': columns, 'source_columns': source_columns,
+                              'omitted_columns': [c for c in source_columns if c not in columns],
+                              'source_labels': SOURCE_LABELS,
+                              'project_registry': registry,
+                              'project_review_required': project_report['review_required'],
+                              'outcome_applicability': 'replication and reproduction fields are type-specific'}
+    manifest['previous_release'] = prior
+    write_json(destination / 'flora_release_manifest.json', manifest)
+    cff = yaml.safe_load((SOURCES / 'citation-template.cff').read_text(encoding='utf-8'))
+    cff['version'] = version
+    (destination / 'CITATION.cff').write_text(yaml.safe_dump(cff, allow_unicode=True, sort_keys=False), encoding='utf-8')
+    creators = [{'name': f"{a['family-names']}, {a['given-names']}",
+                 **({'orcid': a['orcid']} if a.get('orcid') else {})} for a in cff['authors']]
+    metadata = {'title': cff['title'], 'upload_type': 'dataset', 'creators': creators,
+                'license': 'cc-by-4.0', 'access_right': 'open', 'version': version,
+                'description': cff['abstract'] + ' Each row links an original study to a replication or reproduction attempt. '
+                + summary + ' Includes coding guidance, record-level changelog and reuse guidance.',
+                'keywords': cff['keywords'], 'related_identifiers': [
+                    {'identifier': cff['repository-code'], 'relation': 'isSupplementTo'}]}
+    write_json(destination / 'zenodo-metadata.json', metadata)
+    for filename in ('README.md', 'REUSE.md', 'FAQ.md'):
+        shutil.copyfile(SOURCES / filename, destination / filename)
+    (destination / 'CODEBOOK.md').write_text(codebook, encoding='utf-8')
+    write_json(destination / 'bundle-checksums.json', checksums(destination))
+    return counts
+
+
+def validate_overlap(columns, rows):
+    """Never ship stale derived percentages or silently correct an existing export."""
+    if not {'author_o', 'author_r'} <= set(columns):
+        raise ValueError('Author metadata is needed to verify author_overlap_pct before projection')
+    from author_overlap import count
+    mismatches = []
+    for identifier, row in rows.items():
+        _, expected = count(row['author_o'], row['author_r'])
+        raw = row['author_overlap_pct']
+        try:
+            actual = None if raw in ('', 'NA') else float(raw)
+        except ValueError:
+            actual = float('nan')
+        if actual != expected:
+            mismatches.append(identifier)
+    if mismatches:
+        raise ValueError(f"Stale author_overlap_pct in {len(mismatches)} records: "
+                         + ', '.join(mismatches[:10])
+                         + '. Regenerate the authoritative publication through the fixed pipeline; do not edit outputs.')
+
+
+def render_codebook(columns, rows):
+    """Reuse maintained definitions; document the exact snapshot's categorical labels."""
+    guide = (ROOT / 'docs/FLORA_DATA_TABLE.md').read_text(encoding='utf-8')
+    section = guide.split('## Published CSV codebook\n', 1)[1].split('## Relationship to the existing tables', 1)[0]
+    definitions = dict(re.findall(r'^\| `([^`]+)` \| (.+?) \|$', section, re.MULTILINE))
+    missing = set(columns) - set(definitions)
+    if missing:
+        raise ValueError('Codebook definitions missing: ' + ', '.join(sorted(missing)))
+    intro = section.split('| Field |', 1)[0].strip().replace('Author arrays and citations', 'References and quoted evidence')
+    definitions.update({
+        'source': 'Established project first (matched by report DOI, alternative report identifiers or linked report URLs), otherwise intake route. Named projects take precedence even for search-pipeline records. Projects qualify at more than 50 distinct released IDs; existing labels persist after retirements. Not a validation-status field; see project_classification.json.',
+        'outcome': 'Replication outcome; NA for reproduction rows, which use the two dedicated reproduction axes.',
+        'outcome_quote': 'Evidence for the replication outcome; NA for reproduction rows.',
+        'outcome_quote_source': 'Source/location of the replication evidence; NA for reproduction rows.',
+    })
+    table = ['| Field | Definition |', '| --- | --- |']
+    table += [f'| `{column}` | {definitions[column]} |' for column in columns]
+    lines = ['# FLoRA codebook', '', intro, '', *table, '',
+             '## Categories present in this release', '',
+             'These are the exact nonmissing labels in the deposited CSV, not a promise',
+             'that every permitted category occurs. `NA` and empty cells mean missing.',
+             'Outcome categories are preserved; source routes are relabelled and inapplicable outcome fields use NA.', '']
+    rows = list(rows)
+    for field in ('type', 'outcome', 'outcome_computation', 'outcome_robustness', 'source'):
+        if field in columns:
+            values = sorted({row[field] for row in rows if row[field] not in ('', 'NA')})
+            lines += [f"- `{field}`: " + '; '.join(f'`{v}`' for v in values) + '.']
+    lines += ['', 'Replication outcomes and evidence appear only on replication rows. Reproduction',
+              'outcomes and their evidence appear only on reproduction rows. NA can mean',
+              'inapplicable as well as unknown; use type to distinguish these cases.',
+              'The bundled FAQ explains coding decisions. Definitions are maintained in',
+              'https://github.com/forrtproject/flora-validation/blob/main/docs/FLORA_DATA_TABLE.md', '']
+    if 'source' in columns and '### Release source labels' in section:
+        labels = section.split('### Release source labels', 1)[1].split('### Author-overlap release validation', 1)[0]
+        lines += ['## Source labels', '', labels.strip(), '']
+    return '\n'.join(lines)
+
+
+def checksums(bundle):
+    """Hash deposited files, excluding local receipts and the checksum manifest."""
+    return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(bundle.iterdir())
+            if p.is_file() and p.name not in {'bundle-checksums.json', 'zenodo-state.json'}}
+
+
+def verify_bundle(bundle):
+    """Reject any bundle whose contents changed after assembly."""
+    if checksums(bundle) != json.loads((bundle / 'bundle-checksums.json').read_text(encoding='utf-8')):
+        raise ValueError('Bundle changed after assembly; review and assemble again')
+
+
+def verify_remote_files(bundle, deposit):
+    """Require the complete remote file set and MD5s to match the reviewed bundle."""
+    remote = {f['filename']: f['checksum'].removeprefix('md5:') for f in deposit.get('files', [])}
+    expected = {name: hashlib.md5((bundle / name).read_bytes()).hexdigest()
+                for name in [*checksums(bundle), 'bundle-checksums.json']}
+    if remote != expected:
+        raise ValueError('Remote files differ from the local bundle; inspect the deposit')
+
+
+def fetch_previous(record_id, environment, destination):
+    """Recover the public release baseline and receipt without a token."""
+    if not str(record_id).isdigit():
+        raise ValueError('Previous record must be a numeric version record ID')
+    destination = Path(destination)
+    if destination.exists():
+        raise ValueError('Previous directory already exists')
+    base = HOSTS[environment]
+    response = requests.get(f'{base}/api/records/{record_id}', timeout=60)
+    response.raise_for_status()
+    record = response.json()
+    destination.mkdir(parents=True)
+    for file in record['files']:
+        name = file['key']
+        url = file['links']['self']
+        if (Path(name).name != name or urlparse(url).scheme != 'https'
+                or urlparse(url).netloc != urlparse(base).netloc):
+            raise ValueError('Unexpected file name or host in public record')
+        data = requests.get(url, timeout=180)
+        data.raise_for_status()
+        (destination / name).write_bytes(data.content)
+    verify_bundle(destination)
+    write_json(destination / 'zenodo-state.json', {
+        'environment': environment, 'id': record['id'], 'conceptrecid': record['conceptrecid'],
+        'version': record['metadata']['version'], 'published': True,
+        'doi': record['doi'], 'url': record['links']['html']})
+
+
+class Zenodo:
+    """Environment-scoped REST client that keeps credentials out of logs."""
+    def __init__(self, environment):
+        """Read the environment-specific token without logging its value."""
+        self.base = HOSTS[environment]
+        variable = 'ZENODO_SANDBOX_TOKEN' if environment == 'sandbox' else 'ZENODO_TOKEN'
+        token = os.environ.get(variable)
+        if not token:
+            raise ValueError(f'Set {variable} in the environment')
+        self.session = requests.Session()
+        self.session.headers.update({'Authorization': f'Bearer {token}',
+                                     'User-Agent': 'FLoRA-release/1.0 (+https://github.com/forrtproject/flora-validation)'})
+
+    def request(self, method, url, **kwargs):
+        """Send an authenticated request only to the selected Zenodo host."""
+        if urlparse(url).netloc != urlparse(self.base).netloc or urlparse(url).scheme != 'https':
+            raise ValueError('Refusing credentials to an unexpected host')
+        try:
+            response = self.session.request(method, url, timeout=180, allow_redirects=False, **kwargs)
+        except requests.RequestException:
+            raise ValueError('Zenodo request failed; retry using the same bundle and saved state') from None
+        if not 200 <= response.status_code < 300:
+            # Never expose request headers, response bodies or exception URLs.
+            raise ValueError(f'Zenodo {method} failed (HTTP {response.status_code}); inspect the deposit before retrying')
+        return response.json() if response.content else None
+
+
+def upload(bundle, environment, publish=False, approve_production=False, resume_deposit=None):
+    """Upload a reviewed bundle, resuming only the verified intended draft."""
+    bundle = Path(bundle)
+    if environment == 'production' and not approve_production:
+        raise ValueError('Production requires --approve-production after Lukas approves the release')
+    verify_bundle(bundle)
+    metadata = json.loads((bundle / 'zenodo-metadata.json').read_text(encoding='utf-8'))
+    manifest = json.loads((bundle / 'flora_release_manifest.json').read_text(encoding='utf-8'))
+    approved = json.loads((SOURCES / 'columns.json').read_text(encoding='utf-8'))
+    if (manifest.get('projection', {}).get('columns') != approved
+            or manifest['projection'].get('source_labels') != SOURCE_LABELS
+            or manifest['projection'].get('project_registry') != yaml.safe_load((SOURCES / 'projects.yml').read_text(encoding='utf-8'))):
+        raise ValueError('Reassemble the bundle with the agreed release columns')
+    if environment == 'production' and manifest['projection'].get('project_review_required'):
+        raise ValueError('Review unmapped report groups above the project threshold before production')
+    if environment == 'production':
+        source = manifest['source_manifest']
+        revision = source.get('data_version') or {}
+        if (source.get('source_kind') != 'authoritative_publication'
+                or not revision.get('stored_at')
+                or not isinstance(revision.get('change_watermark'), int)
+                or revision['change_watermark'] < 0):
+            raise ValueError('Unverified or preview source: regenerate an authoritative publication before production')
+    previous = manifest.get('previous_release')
+    if previous and previous['environment'] != environment:
+        raise ValueError('Previous release belongs to another Zenodo environment')
+    if resume_deposit is not None and not str(resume_deposit).isdigit():
+        raise ValueError('Resume deposit must be a numeric draft ID')
+    api = Zenodo(environment)
+    state_path = bundle / 'zenodo-state.json'
+    has_receipt = state_path.exists()
+    if has_receipt or resume_deposit is not None:
+        state = (json.loads(state_path.read_text(encoding='utf-8')) if has_receipt else
+                 {'environment': environment, 'id': resume_deposit,
+                  'version': metadata['version'], 'published': False})
+        if state['environment'] != environment:
+            raise ValueError('Use a separate bundle for each environment')
+        if resume_deposit is not None and str(state['id']) != str(resume_deposit):
+            raise ValueError('Resume deposit differs from saved receipt')
+        deposit = api.request('GET', f"{api.base}/api/deposit/depositions/{state['id']}")
+        if not has_receipt:
+            state['conceptrecid'] = deposit['conceptrecid']
+        expected_versions = {metadata['version'], previous['version'] if previous else None}
+        if (str(deposit['id']) != str(state['id'])
+                or str(deposit['conceptrecid']) != str(state.get('conceptrecid'))
+                or state.get('version') != metadata['version']
+                or (previous and str(deposit['conceptrecid']) != str(previous['conceptrecid']))
+                or deposit.get('metadata', {}).get('version') not in expected_versions
+                or deposit.get('metadata', {}).get('title', metadata['title']) != metadata['title']
+                or (deposit.get('submitted') and deposit.get('metadata', {}).get('version') != metadata['version'])
+                or (not has_receipt and not previous and deposit.get('files')
+                    and not deposit.get('metadata', {}).get('title')
+                    and not deposit.get('metadata', {}).get('version'))
+                or (state.get('published') and not deposit.get('submitted'))):
+            raise ValueError('Resumed draft identity, concept or version mismatch; inspect the deposit')
+        if not has_receipt:
+            write_json(state_path, state)  # recovery must persist before any remote mutation
+    else:
+        if previous:
+            latest = api.request('GET', f"{api.base}/api/deposit/depositions/{previous['id']}")
+            if (str(latest['conceptrecid']) != str(previous['conceptrecid'])
+                    or latest.get('metadata', {}).get('version') != previous['version']
+                    or latest.get('metadata', {}).get('title') != metadata['title']):
+                raise ValueError('Previous concept record, title or version mismatch')
+            record = api.request('POST', f"{api.base}/api/deposit/depositions/{previous['id']}/actions/newversion")
+            deposit = api.request('GET', record['links']['latest_draft'])
+            if str(deposit['conceptrecid']) != str(previous['conceptrecid']):
+                raise ValueError('New draft belongs to another concept')
+            if deposit.get('metadata', {}).get('version') not in {previous['version'], metadata['version']}:
+                raise ValueError('An existing draft has another release version; inspect it before continuing')
+        else:
+            deposit = api.request('POST', f'{api.base}/api/deposit/depositions', json={})
+        state = {'environment': environment, 'id': deposit['id'], 'conceptrecid': deposit['conceptrecid'],
+                 'version': metadata['version'], 'published': False}
+        write_json(state_path, state)  # persist immediately, before metadata/files
+    if deposit.get('submitted'):
+        if deposit['metadata'].get('version') != metadata['version']:
+            raise ValueError('Published deposit version mismatch')
+        verify_remote_files(bundle, deposit)
+        state.update(published=True, doi=deposit.get('doi'), url=deposit['links']['html'])
+        write_json(state_path, state)
+        return state
+    metadata['prereserve_doi'] = True
+    deposit = api.request('PUT', deposit['links']['self'], json={'metadata': metadata})
+    doi = deposit['metadata']['prereserve_doi']['doi']
+    cff_path = bundle / 'CITATION.cff'
+    cff = yaml.safe_load(cff_path.read_text(encoding='utf-8'))
+    cff['doi'] = doi  # Only Zenodo's reserved version DOI, never the concept/OSF DOI.
+    cff_path.write_text(yaml.safe_dump(cff, allow_unicode=True, sort_keys=False), encoding='utf-8')
+    write_json(bundle / 'bundle-checksums.json', checksums(bundle))
+    # A new version inherits files. Remove them all, so retired/stale files cannot leak.
+    for file in deposit.get('files', []):
+        api.request('DELETE', f"{api.base}/api/deposit/depositions/{deposit['id']}/files/{file['id']}")
+    for name in [*checksums(bundle), 'bundle-checksums.json']:
+        with (bundle / name).open('rb') as f:
+            result = api.request('PUT', deposit['links']['bucket'] + '/' + name, data=f)
+        expected = hashlib.md5((bundle / name).read_bytes()).hexdigest()
+        if result['checksum'].removeprefix('md5:') != expected:
+            raise ValueError(f'Upload checksum mismatch: {name}')
+    if publish:
+        verify_remote_files(bundle, api.request('GET', f"{api.base}/api/deposit/depositions/{deposit['id']}"))
+        deposit = api.request('POST', deposit['links']['publish'])
+        if not deposit.get('submitted'):
+            raise ValueError('Zenodo did not confirm publication; inspect the deposit before retrying')
+    state.update(published=bool(deposit.get('submitted')), doi=doi, url=deposit['links']['html'])
+    write_json(state_path, state)
+    return state
+
+
+def main():
+    """Parse release assembly, recovery and explicitly approved upload commands."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output-dir', type=Path, default=Path('output'))
+    parser.add_argument('--bundle', type=Path, required=True)
+    parser.add_argument('--version')
+    parser.add_argument('--previous', type=Path, help='Previous published bundle, including zenodo-state.json')
+    parser.add_argument('--fetch-previous', help='Download a published version record as --bundle')
+    parser.add_argument('--environment', choices=HOSTS, default='production')
+    parser.add_argument('--upload', choices=HOSTS)
+    parser.add_argument('--resume-deposit', help='Recover an inspected draft ID after losing its local receipt')
+    parser.add_argument('--publish', action='store_true')
+    parser.add_argument('--approve-production', action='store_true')
+    args = parser.parse_args()
+    try:
+        if args.fetch_previous:
+            fetch_previous(args.fetch_previous, args.environment, args.bundle)
+        elif args.upload:
+            print(json.dumps(upload(args.bundle, args.upload, args.publish, args.approve_production,
+                                    args.resume_deposit)))
+        else:
+            if args.publish or args.approve_production or args.resume_deposit or not args.version:
+                parser.error('Offline assembly needs --version; publishing needs --upload')
+            print(json.dumps(assemble(args.output_dir, args.version, args.bundle, args.previous)))
+    except (ValueError, KeyError, OSError) as exc:
+        parser.exit(1, f'{exc}\n')
+
+
+if __name__ == '__main__':
+    main()
