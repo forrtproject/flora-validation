@@ -5,11 +5,12 @@ from unittest.mock import Mock
 import pandas as pd
 import pytest
 import flora_service
+import flora_edits
 from scripts.apply_score_report_authors import apply_batch, load_batch, preflight
 
 
 def current(row):
-    return {'ref_r': row['before_ref_r'], 'url_r': row['before_url_r'],
+    return {'export_id': row['id'], 'ref_r': row['before_ref_r'], 'url_r': row['before_url_r'],
             'doi_o': row['before_doi_o'], 'type': row['type'],
             'doi_r': '10.17605/osf.io/cwmb5',
             'alt_identifier_r': '10.1038/s41586-025-10078-y'}
@@ -34,13 +35,14 @@ def test_preflight_rejects_changed_reference_before_any_save(monkeypatch):
     monkeypatch.setattr(flora_service, 'get_record', Mock(side_effect=[current(rows[0]), changed]))
     update = Mock()
     monkeypatch.setattr(flora_service, 'update_record', update)
-    monkeypatch.setattr(flora_service, 'editing', Mock(return_value={'version': 7}))
+    monkeypatch.setattr(flora_edits, 'version', Mock(return_value=7))
     with pytest.raises(ValueError, match='changed since audit'):
         apply_batch(None, rows, {'id': 1})
     update.assert_not_called()
 
 
 def test_identity_guard_is_not_weakened_for_cosmetic_reference_refresh(monkeypatch):
+    monkeypatch.setattr(flora_edits, 'version', Mock(return_value=7))
     row = next(r for r in load_batch() if r['id'] == 'REPRO-000101')
     wrong = current(row); wrong['url_r'] = 'https://osf.io/cwmb5'
     monkeypatch.setattr(flora_service, 'get_record', Mock(return_value=wrong))
@@ -54,7 +56,7 @@ def test_apply_uses_version_and_is_idempotent_for_nullable_fields(monkeypatch, s
     get = Mock(return_value=current(row))
     update = Mock()
     monkeypatch.setattr(flora_service, 'get_record', get)
-    monkeypatch.setattr(flora_service, 'editing', Mock(return_value={'version': 7}))
+    monkeypatch.setattr(flora_edits, 'version', Mock(return_value=7))
     monkeypatch.setattr(flora_service, 'update_record', update)
     assert apply_batch(None, [row], {'id': 1}) == 1
     assert update.call_args.args[4] == 7
@@ -124,3 +126,41 @@ def test_unknown_requires_reason_and_explicit_audit_disposition(tmp_path, monkey
     monkeypatch.setattr(script, 'AUDIT', path)
     with pytest.raises(ValueError, match='held audit record'):
         load_batch()
+
+
+@pytest.mark.parametrize('authors', ['[]', '[{}]', '[{"literal":"SCORE team"}]'])
+def test_named_batch_entry_needs_at_least_one_usable_family(tmp_path, authors):
+    row = next(r for r in load_batch() if r['author_status'] == 'named')
+    row['fields']['author_r'] = authors
+    path = tmp_path / 'batch.json'
+    path.write_text(json.dumps([row]), encoding='utf-8')
+    with pytest.raises(ValueError, match='at least one author family name'):
+        load_batch(path)
+
+
+def test_concurrent_edit_after_version_read_is_not_overwritten(monkeypatch):
+    row = load_batch()[0]
+    latest = {'version': 7}
+    monkeypatch.setattr(flora_edits, 'version', lambda *args: latest['version'])
+    def snapshot(*args):
+        latest['version'] = 8
+        return current(row)
+    monkeypatch.setattr(flora_service, 'get_record', snapshot)
+    def update(cur, identifier, fields, revert, expected_version, *args):
+        if expected_version != latest['version']:
+            raise flora_edits.VersionConflict(latest['version'])
+    monkeypatch.setattr(flora_service, 'update_record', update)
+    with pytest.raises(flora_edits.VersionConflict):
+        apply_batch(None, [row], {'id': 1})
+
+
+def test_source_identity_drift_aborts_batch_before_commit(monkeypatch):
+    row = load_batch()[0]
+    changed = {**current(row), 'doi_o': '10.1234/changed'}
+    monkeypatch.setattr(flora_edits, 'version', Mock(return_value=7))
+    monkeypatch.setattr(flora_service, 'get_record', Mock(side_effect=[current(row), changed]))
+    update = Mock()
+    monkeypatch.setattr(flora_service, 'update_record', update)
+    with pytest.raises(ValueError, match='identity changed since audit'):
+        apply_batch(None, [row], {'id': 1})
+    update.assert_called_once()

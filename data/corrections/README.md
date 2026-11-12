@@ -21,9 +21,14 @@ python3 scripts/apply_score_report_authors.py --check-live
 python3 scripts/apply_score_report_authors.py --apply --admin-id 3
 ```
 
+The apply command uses Lukas's verified administrator record (ID 3). Another
+operator must use their own administrator ID. Apply outside the sync window: the
+289 corrections rebuild the dataset while holding a single transaction.
+
 The default opens no database. --check-live runs with a read-only connection.
 Application checks every identity and reference baseline before any save, uses
-versioned flora_service.update_record / flora_edits.save, and commits atomically.
+versioned flora_service.update_record / flora_edits.save, rechecks identity after
+the updates, and commits atomically.
 Reapplication is a no-op, including null author/date fields. Identifier, report
 URL and outcome fields are excluded from the batch. Any baseline drift aborts.
 

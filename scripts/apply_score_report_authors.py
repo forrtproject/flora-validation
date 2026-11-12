@@ -51,8 +51,10 @@ def load_batch(path=BATCH):
             if re.search(r'\bauthor\s*=', row['fields']['bibtex_ref_r'], re.I):
                 raise ValueError('Unknown authors must not credit contributors in BibTeX')
         elif row.get('author_status') == 'named':
-            if not row['fields']['author_r'] or not json.loads(row['fields']['author_r']):
-                raise ValueError('Named corrections need report authors')
+            authors = json.loads(row['fields']['author_r'] or '[]')
+            if not any(isinstance(a, dict) and isinstance(a.get('family'), str)
+                       and a['family'].strip() for a in authors):
+                raise ValueError('Named corrections need at least one author family name')
         else:
             raise ValueError('Every correction must state named or unknown authorship')
     return rows
@@ -63,25 +65,31 @@ def _same(actual, expected):
     return ('' if actual is None else str(actual)) == ('' if expected is None else str(expected))
 
 
+def check_identity(record, row):
+    """Require the report URL, original DOI and attempt type reviewed in the audit."""
+    if record is None:
+        raise ValueError(f"Record unavailable: {row['id']}")
+    for field, baseline in [('url_r', 'before_url_r'), ('doi_o', 'before_doi_o'), ('type', 'type')]:
+        if not _same(record.get(field), row[baseline]):
+            raise ValueError(f"Report identity changed since audit: {row['id']} ({field})")
+
+
 def preflight(cur, rows):
     """Check the entire batch before saving any row; retain strict reference guards."""
     import flora_service
+    import flora_edits
     pending = []
     for row in rows:
+        version = flora_edits.version(cur, row['id'])
         record = flora_service.get_record(cur, row['id'])
-        if record is None:
-            raise ValueError(f"Record unavailable: {row['id']}")
-        for field, baseline in [('url_r', 'before_url_r'), ('doi_o', 'before_doi_o'), ('type', 'type')]:
-            if not _same(record.get(field), row[baseline]):
-                raise ValueError(f"Report identity changed since audit: {row['id']} ({field})")
+        check_identity(record, row)
         if all(_same(record.get(k), v) for k, v in row['fields'].items()):
             continue
         if record.get('ref_r') != row['before_ref_r']:
             raise ValueError(f"Reference changed since audit: {row['id']}")
-        info = flora_service.editing(cur, record)
-        if info is None:
+        if not record.get('export_id'):
             raise ValueError(f"Record has no published identity: {row['id']}")
-        pending.append((row, info['version']))
+        pending.append((row, version))
     return pending
 
 
@@ -92,6 +100,8 @@ def apply_batch(cur, rows, admin):
     for row, version in pending:
         flora_service.update_record(cur, row['id'], row['fields'], [], version,
                                     admin, {k: row['note'] for k in row['fields']})
+    for row, _ in pending:
+        check_identity(flora_service.get_record(cur, row['id']), row)
     return len(pending)
 
 
