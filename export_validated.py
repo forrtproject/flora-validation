@@ -110,6 +110,20 @@ def openalex_reference(doi, cache: dict) -> str:
     time.sleep(0.05)   # be polite to the API
     return ref
 
+from preprint_identifiers import (
+    VALIDATED_PROVENANCE_COLUMNS, VALIDATED_PROVENANCE_JOIN, validated_identifiers,
+)
+
+
+def retain_preprint_identifiers(frame):
+    """Apply the bridge's identifier policy without leaking internal history columns."""
+    records = [{**row, **validated_identifiers(row)} for row in frame.to_dict('records')]
+    columns = list(dict.fromkeys([*frame.columns, 'alt_identifier_o', 'alt_identifier_r']))
+    result = pd.DataFrame(records, columns=columns)
+    return result.drop(columns=['_extracted_identifiers', '_identifier_history',
+                                '_published_identifiers'], errors='ignore')
+
+
 QUERY = """
     SELECT
         v.doi_r,
@@ -157,8 +171,10 @@ QUERY = """
         m.outcome_reasoning,
         m.outcome_llm_model,
         m.bibtex_ref_o,
-        m.bibtex_ref_r
+        m.bibtex_ref_r,
+        {identifier_columns}
     FROM  validated v
+    {identifier_join}
     LEFT JOIN LATERAL (
         SELECT source, work_id, release_id, screen_categories, pdf_source,
                parse_method, outcome_reasoning, outcome_llm_model,
@@ -168,7 +184,8 @@ QUERY = """
         LIMIT 1
     ) m ON true
     ORDER BY v.validated_at;
-"""
+""".format(identifier_columns=VALIDATED_PROVENANCE_COLUMNS,
+           identifier_join=VALIDATED_PROVENANCE_JOIN)
 
 # Guarded so that IMPORTING this module does not run a live export. Without it,
 # `import export_validated` connects to the database and rewrites the CSVs — which
@@ -179,6 +196,7 @@ if __name__ == "__main__":
     try:
         conn = psycopg2.connect(DATABASE_URL)
         df   = pd.read_sql(QUERY, conn)
+        df   = retain_preprint_identifiers(df)
         conn.close()
     except Exception as e:
         sys.exit(f"ERROR: Could not connect or query: {e}")

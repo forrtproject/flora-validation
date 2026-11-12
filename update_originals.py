@@ -45,6 +45,7 @@ from csv_to_db import (
     _flag_ambiguous_doi_o_titles,
     _note_ambiguous_original,
     _s,
+    _title,
     _url_o,
     _validate_csv_schema,
     _validate_pair_ids,
@@ -64,7 +65,9 @@ _UNVAL_FIELDS = {
     "study_r": lambda r: _s(r.get("study_r")),
     "doi_o":   lambda r: _s(r.get("doi_o")),
     "study_o": lambda r: _s(r.get("study_o")),
-    "title_o": lambda r: _s(r.get("title_o")),
+    # Markup stripped as the import strips it (csv_to_db._title), or this would
+    # put the tags back.
+    "title_o": lambda r: _title(r.get("title_o")),
     "year_o":  lambda r: _s(r.get("year_o")),
     # CSV url_o preferred (DOI-less originals carry an OpenAlex link there),
     # else derived from doi_o — same rule as the import (csv_to_db._url_o).

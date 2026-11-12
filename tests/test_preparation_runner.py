@@ -1,6 +1,7 @@
 """Final artifact correctness, failure isolation, and honest validation coverage."""
 import hashlib
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -219,6 +220,9 @@ def test_history_replaces_same_utc_day_instead_of_adding_duplicate(tmp_path):
 
 
 def fake_network(monkeypatch, retractions=None, problem=None):
+    monkeypatch.setattr(network.original_work_types, 'load_cache', lambda cur: {
+        '10.1234/original': {'work_type': 'article',
+                            'work_type_checked_at': datetime.now(timezone.utc)}})
     monkeypatch.setattr(network, "check_retractions", lambda data: (retractions or [], problem))
     monkeypatch.setattr(network, "fresh_targets", lambda cur, kind: set())
     monkeypatch.setattr(network, "doi_registration", lambda doi: (network.OK, "registered"))

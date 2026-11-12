@@ -983,6 +983,7 @@ body.sidebar-collapsed .game-area { border-right: none; }
   position: relative;
   transition: max-height 0.35s ease;
   width: 100%;
+  white-space: pre-line;      /* an abstract's paragraph breaks */
 }
 .abstract.expanded {
   max-height: 20vh;
@@ -3266,7 +3267,7 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
 .fp-quote { font-style: italic; color: var(--ink-soft); }
 .fp-quote-row { align-items: flex-start; }
 .fp-abstract { margin-top: 0.6rem; font-size: 0.82rem; color: var(--muted); }
-.fp-abstract-text { margin: 0.4rem 0 0; line-height: 1.5; color: var(--ink-soft); }
+.fp-abstract-text { margin: 0.4rem 0 0; line-height: 1.5; color: var(--ink-soft); white-space: pre-line; }
 .fp-no-changes { margin: 0.5rem 0 0; font-size: 0.8rem; color: var(--muted); font-style: italic; }
 .fp-changes { margin-top: 0.6rem; }
 .fp-changes-summary { font-size: 0.8rem; color: var(--accent); cursor: pointer; }
@@ -5909,6 +5910,7 @@ body.has-maint-banner #admin-screen {
   margin: 0;
   max-height: 240px;
   overflow-y: auto;
+  white-space: pre-line;
 }
 
 .hd-field {

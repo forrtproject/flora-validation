@@ -4,6 +4,8 @@ Records in flora.csv on each day it was written, newest first.
 
 | Date | Records | Replications | Reproductions |
 | --- | ---: | ---: | ---: |
+| 2026-11-12 | 2881 | 2655 | 226 |
+| 2026-11-11 | 2884 | 2658 | 226 |
 | 2026-11-10 | 2851 | 2625 | 226 |
 | 2026-11-08 | 2847 | 2621 | 226 |
 | 2026-11-07 | 2850 | 2628 | 222 |

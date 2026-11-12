@@ -12,12 +12,17 @@ Usage:
     python enrich_works.py --retry-missing
     python enrich_works.py --limit 200
 
+Each run also asks OpenAlex again for the work id of cached keys that have none
+(refresh_work_ids), so a paper OpenAlex indexes after its first lookup gains one.
+
 Required environment variables:
     DATABASE_URL    — PostgreSQL connection string
+Optional environment variables:
     OPENALEX_MAILTO — contact address for OpenAlex's polite pool
 """
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -38,7 +43,7 @@ load_dotenv()
 use_utf8_output()
 
 API = "https://api.openalex.org/works"
-MAILTO = os.environ.get("OPENALEX_MAILTO", "lukas.wallrich@gmail.com")
+MAILTO = os.environ.get("OPENALEX_MAILTO", "").strip()
 
 # OpenAlex accepts up to 50 values in an OR filter.
 BATCH = 50
@@ -65,8 +70,11 @@ def _norm_doi(value) -> str:
 def _fetch_batch(dois: list) -> list:
     """One OpenAlex request for up to 50 DOIs."""
     filt = "doi:" + "|".join(dois)
+    # per-page above BATCH: one DOI can match several OpenAlex works (versions,
+    # duplicates), so 50 DOIs can return more than 50 works. A page of 50 would drop
+    # the overflow, and a DOI whose only match fell off would be cached as a miss.
     url = (f"{API}?filter={urllib.parse.quote(filt, safe='|:/().-_')}"
-           f"&per-page={BATCH}&select={FIELDS}&mailto={MAILTO}")
+           f"&per-page=200&select={FIELDS}&mailto={MAILTO}")
     last = None
     for attempt in range(RETRIES):
         try:
@@ -186,6 +194,7 @@ def shape(work: dict) -> "dict | None":
         "language": work.get("language") or None,
         "oa_url": _oa_url(work),
         "abstract": reconstruct_abstract(work.get("abstract_inverted_index")),
+        "work_type": work.get("type") or None,
     }
     row["bibtex_ref"] = _bibtex(work, doi, row)
     return row
@@ -227,15 +236,17 @@ def dois_in_product(cur) -> list:
 
 
 def known_dois(cur, retry_missing: bool = False) -> set:
-    sql = "SELECT doi FROM work_metadata"
+    # A type-only cache row has no bibliography yet. Do not let it suppress the
+    # normal enrichment that will supply the title and references.
+    sql = "SELECT doi FROM work_metadata WHERE (title IS NOT NULL OR oa_work_id IS NOT NULL OR not_found)"
     if retry_missing:
-        sql += " WHERE NOT not_found"
+        sql += " AND NOT not_found"
     cur.execute(sql)
     return {r["doi"] for r in cur.fetchall()}
 
 
 def _store(cur, rows: list) -> None:
-    rows = [{"apa_ref": None, "abstract": None, "authors_json": None,
+    rows = [{"apa_ref": None, "abstract": None, "authors_json": None, "work_type": None,
              "metadata_source": "openalex", **row} for row in rows]
     psycopg2.extras.execute_batch(
         cur,
@@ -243,11 +254,12 @@ def _store(cur, rows: list) -> None:
         INSERT INTO work_metadata
             (doi, oa_work_id, title, authors, journal, year, volume, issue, pages,
              language, oa_url, bibtex_ref, apa_ref, abstract, authors_json,
-             metadata_source, not_found, fetched_at)
+             metadata_source, not_found, fetched_at, work_type, work_type_checked_at)
         VALUES (%(doi)s, %(oa_work_id)s, %(title)s, %(authors)s, %(journal)s, %(year)s,
                 %(volume)s, %(issue)s, %(pages)s, %(language)s, %(oa_url)s,
                 %(bibtex_ref)s, %(apa_ref)s, %(abstract)s, %(authors_json)s,
-                %(metadata_source)s, FALSE, NOW())
+                %(metadata_source)s, FALSE, NOW(), %(work_type)s,
+                CASE WHEN %(work_type)s IS NOT NULL THEN NOW() END)
         ON CONFLICT (doi) DO UPDATE SET
             oa_work_id = EXCLUDED.oa_work_id, title = EXCLUDED.title,
             authors = EXCLUDED.authors, journal = EXCLUDED.journal,
@@ -257,6 +269,9 @@ def _store(cur, rows: list) -> None:
             apa_ref = COALESCE(EXCLUDED.apa_ref, work_metadata.apa_ref),
             abstract = COALESCE(EXCLUDED.abstract, work_metadata.abstract),
             authors_json = COALESCE(EXCLUDED.authors_json, work_metadata.authors_json),
+            work_type = COALESCE(EXCLUDED.work_type, work_metadata.work_type),
+            work_type_checked_at = CASE WHEN EXCLUDED.work_type IS NOT NULL THEN NOW()
+                                       ELSE work_metadata.work_type_checked_at END,
             metadata_source = EXCLUDED.metadata_source,
             not_found = FALSE, fetched_at = NOW()
         """,
@@ -445,6 +460,7 @@ def shape_by_work_id(work: dict, work_id: str) -> "dict | None":
     if not row.get("title"):
         return None
     row["metadata_source"] = WORK_ID_SOURCE
+    row["work_type"] = work.get("type") or None
     return row
 
 
@@ -482,6 +498,89 @@ def enrich_work_ids(cur, dry_run: bool = False, retry_missing: bool = False,
         _store_misses(cur, absent)
     say(f"    +{len(rows)} found, {len(absent)} not in OpenAlex")
     return {"wanted": len(wanted), "fetched": len(rows), "missing": len(absent)}
+
+
+# ── work ids for cached keys that have none ───────────────────────────────────
+#
+# enrich() asks OpenAlex only about DOIs with no work_metadata row at all. A row
+# can exist without a work id: the DOI was recorded as a miss before OpenAlex
+# indexed it (most new papers), and enrich_references() then stored the Crossref or
+# OSF reference under the same key, which marks it found. Neither is ever asked
+# about again, so the product carried no oa_work_id for those papers.
+#
+# An OSF node URL is looked up by the DataCite DOI OSF mints for that node
+# (10.17605/osf.io/<guid>). OpenAlex indexes that DOI for reports posted on OSF,
+# and a match is the record for the same node, so the id is as safe as a DOI match.
+
+OSF_DOI_PREFIX = "10.17605/osf.io/"
+
+
+def openalex_doi(key: str) -> "str | None":
+    """The DOI to ask OpenAlex about for a work_metadata key, or None."""
+    if references.is_doi(key):
+        return key
+    match = re.fullmatch(r"osf\.io/([a-z0-9]{5})", key or "")
+    return OSF_DOI_PREFIX + match.group(1) if match else None
+
+
+def keys_missing_work_id(cur) -> dict:
+    """Product keys whose cache row has no work id -> whether it needs the full row.
+
+    A miss, or a row with no title (such as a type-only row from
+    original_work_types), gains the whole OpenAlex row. Filling only the id there
+    would mark the key known, and its bibliography would never be fetched.
+    """
+    wanted = set(reference_keys_in_product(cur))
+    cur.execute("SELECT doi, not_found, title FROM work_metadata "
+                "WHERE NULLIF(btrim(oa_work_id), '') IS NULL")
+    return {r["doi"]: bool(r["not_found"]) or not (r.get("title") or "").strip()
+            for r in cur.fetchall()
+            if r["doi"] in wanted and openalex_doi(r["doi"])}
+
+
+def refresh_work_ids(cur, dry_run: bool = False, verbose: bool = True) -> dict:
+    """Ask OpenAlex again about every product key cached without a work id.
+
+    A row with metadata gains only its work id; the reference fields keep their
+    provider precedence. A cached miss gains the whole OpenAlex row, as enrich()
+    would have stored had OpenAlex answered the first time. Keys still unknown
+    are left as they are and asked about again next run (a few requests a night).
+    """
+    pending = keys_missing_work_id(cur)
+    by_doi: dict = {}
+    for key in pending:
+        by_doi.setdefault(openalex_doi(key), []).append(key)
+    if verbose:
+        print(f"  cached without a work id: {len(pending)} key(s)")
+    if dry_run or not by_doi:
+        return {"pending": len(pending), "filled": 0}
+
+    dois = list(by_doi)
+    id_only, full_rows = [], []
+    for start in range(0, len(dois), BATCH):
+        for work in _fetch_batch(dois[start:start + BATCH]):
+            row = shape(work)
+            if not row or not row["oa_work_id"]:
+                continue
+            for key in by_doi.pop(row["doi"], []):
+                if pending[key]:
+                    full_rows.append(dict(row, doi=key))
+                else:
+                    id_only.append((row["oa_work_id"], key))
+        time.sleep(DELAY)
+
+    if full_rows:
+        _store(cur, full_rows)
+    if id_only:
+        psycopg2.extras.execute_batch(
+            cur,
+            "UPDATE work_metadata SET oa_work_id = %s "
+            "WHERE doi = %s AND NULLIF(btrim(oa_work_id), '') IS NULL",
+            id_only)
+    filled = len(full_rows) + len(id_only)
+    if verbose:
+        print(f"    +{filled} work id(s) filled; {len(pending) - filled} still unknown")
+    return {"pending": len(pending), "filled": filled}
 
 
 def load_metadata(cur, include_seed: bool = True) -> dict:
@@ -638,7 +737,11 @@ def main() -> int:
                         help="also re-request DOIs previously recorded as not found")
     parser.add_argument("--limit", type=int, default=0,
                         help="fetch at most this many DOIs (for a first look)")
+    parser.add_argument("--type-minutes", type=float, default=3,
+                        help="optional original-work-type refresh budget (default: 3 minutes)")
     args = parser.parse_args()
+    if not math.isfinite(args.type_minutes) or args.type_minutes < 0:
+        parser.error('--type-minutes must be finite and nonnegative')
 
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
@@ -649,6 +752,11 @@ def main() -> int:
     conn = psycopg2.connect(database_url)
     conn.autocommit = False
     try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            import original_work_types
+            original_work_types.ensure_cache(cur)
+        if not args.dry_run:
+            conn.commit()  # release additive schema locks before network work
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             stats = enrich(cur, dry_run=args.dry_run,
                            retry_missing=args.retry_missing, limit=args.limit)
@@ -662,8 +770,25 @@ def main() -> int:
             ref_stats = enrich_references(cur, dry_run=args.dry_run,
                                          retry_missing=args.retry_missing, limit=args.limit)
             stats["references"] = ref_stats
+            # Last, so the keys enrich_references() stored tonight are included.
+            stats["work_id_refresh"] = refresh_work_ids(cur, dry_run=args.dry_run)
         if not args.dry_run:
             conn.commit()
+        # Advisory type discovery cannot roll back successful bibliography or
+        # prevent publication. The daily network check reads this shared cache.
+        if args.type_minutes:
+            try:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    type_stats = original_work_types.refresh(
+                        cur, minutes=args.type_minutes, limit=args.limit, dry_run=args.dry_run)
+                if not args.dry_run:
+                    conn.commit()
+                print(f"  original types: {type_stats['updated']} refreshed, "
+                      f"{type_stats['deferred']} deferred, {len(type_stats['errors'])} lookup failures")
+            except Exception as exc:
+                conn.rollback()
+                print(f"  original type refresh unavailable ({type(exc).__name__}); "
+                      "bibliographic enrichment retained")
     except (EnrichmentError, references.ReferenceLookupError) as exc:
         conn.rollback()
         print(f"  FAILED - {exc}")

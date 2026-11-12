@@ -1,0 +1,12 @@
+{
+  "snapshot_sha256": "053a2a92536d694f42d78947a5f7d3d081fb041b2f144387179295d105c51e99",
+  "existing_rows": 39,
+  "unique_existing_pairs": 37,
+  "field_edits": 75,
+  "records_edited": 37,
+  "outcome_labels_changed": 0,
+  "additions": 3,
+  "duplicate_retirements": 2,
+  "report_files": 40,
+  "needs_human": 0
+}
