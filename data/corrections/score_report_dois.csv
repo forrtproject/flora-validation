@@ -1,4 +1,4 @@
-id,type,doi_o,url_r,alt_identifier_r,doi_r,node,identifier_api,evidence_date,method,http_status,evidence_extra
+﻿id,type,doi_o,url_r,alt_identifier_r,doi_r,node,identifier_api,evidence_date,method,http_status,evidence_extra
 FLORA-002635,replication,10.1037/pspp0000113,https://osf.io/bfs6p,10.1038/s41586-025-10078-y,10.17605/OSF.IO/2BE7N,2be7n,https://api.osf.io/v2/nodes/2be7n/identifiers/,2026-11-12,OSF_identifiers_API,200,"{""dois"":[""10.17605/OSF.IO/2BE7N""]}"
 FLORA-002636,replication,10.1017/xps.2018.6,https://osf.io/zr7dw,10.1038/s41586-025-10078-y,10.17605/OSF.IO/3G74A,3g74a,https://api.osf.io/v2/nodes/3g74a/identifiers/,2026-11-12,OSF_identifiers_API,200,"{""dois"":[""10.17605/OSF.IO/3G74A""]}"
 FLORA-002637,replication,10.3982/ecta14370,https://osf.io/7qnxh,10.1038/s41586-025-10078-y,10.17605/OSF.IO/5FJD4,5fjd4,https://api.osf.io/v2/nodes/5fjd4/identifiers/,2026-11-12,OSF_identifiers_API,200,"{""dois"":[""10.17605/OSF.IO/5FJD4""]}"
