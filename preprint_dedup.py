@@ -480,22 +480,40 @@ def _evidence_pairs(quote, source):
     return [(quote, source)]
 
 
+def _locations(quotes, sources):
+    """Each distinct quote part (compared ignoring whitespace), in order of first
+    appearance, with its distinct sources (compared ignoring case)."""
+    order, located = [], {}
+    for quote, source in zip(quotes, sources):
+        for part, where in _evidence_pairs(quote, source):
+            key = " ".join(part.split())
+            if key not in located:
+                order.append((key, part))
+                located[key] = []
+            if where and where.casefold() not in {w.casefold() for w in located[key]}:
+                located[key].append(where)
+    return order, located
+
+
+def _sources_for(parts, located):
+    """The source of each quote part, joined so part i is the source of quote part i."""
+    if not any(located.get(key) for key in parts):
+        return None
+    return OUTCOME_CLASH_SEP.join("; ".join(located.get(key) or []) or NO_SOURCE
+                                  for key in parts)
+
+
 def _paste_aligned(quotes, sources):
     """Merged rows' quotes and sources, joined so that part i of the source is the
-    source of part i of the quote (FReD-data#173). A repeated quote with the same
-    source is kept once; a repeated source is kept for each quote it supports.
-    Without any quote, the sources are joined as before."""
-    pairs = []
-    for quote, source in zip(quotes, sources):
-        for pair in _evidence_pairs(quote, source):
-            if pair not in pairs:
-                pairs.append(pair)
-    if not pairs:
+    source of part i of the quote (FReD-data#173). A quote repeated by several rows
+    (compared ignoring whitespace) is kept once, with its distinct sources (compared
+    ignoring case) joined by "; ". Without any quote, the sources are joined as
+    before."""
+    order, located = _locations(quotes, sources)
+    if not order:
         return None, _paste_unique(sources, OUTCOME_CLASH_SEP)
-    quote = OUTCOME_CLASH_SEP.join(q for q, _ in pairs)
-    if all(s is None for _, s in pairs):
-        return quote, None
-    return quote, OUTCOME_CLASH_SEP.join(s or NO_SOURCE for _, s in pairs)
+    return (OUTCOME_CLASH_SEP.join(part for _, part in order),
+            _sources_for([key for key, _ in order], located))
 
 
 def _first_non_null(values):

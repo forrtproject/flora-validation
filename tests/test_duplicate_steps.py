@@ -526,6 +526,14 @@ def test_a_repeated_quote_and_source_are_kept_once_and_a_missing_source_is_said(
     assert source == "abstract || not recorded"
 
 
+def test_a_quote_given_by_several_rows_is_kept_once_with_each_of_its_sources():
+    quote, source = preprint_dedup._paste_aligned(
+        ["It replicated.", "It  replicated.", "It replicated.", "No effect."],
+        ["Abstract", "abstract", "full_text", "p. 3"])
+    assert quote == "It replicated. || No effect."
+    assert source == "Abstract; full_text || p. 3"
+
+
 def test_without_any_quote_the_sources_are_joined_as_before():
     assert preprint_dedup._paste_aligned([None, None], ["abstract", "abstract"]) == (None, "abstract")
 
