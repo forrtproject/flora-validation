@@ -291,3 +291,12 @@ def test_export_clears_both_stale_measures_if_an_author_column_is_absent(side):
                                   '[{"family":"Smith","literal":"The Group"}]'])
 def test_incomplete_or_conflicting_byline_is_unknown(byline):
     assert ao.count('Alice Smith', byline) == (None, None)
+
+
+def test_export_retains_metadata_of_entries_without_usable_names():
+    import json
+    from bibliographic_helpers import normalise_author_json
+    entry = {'name': None, 'sequence': 'additional'}
+    normalized = normalise_author_json(json.dumps([entry]), preserve_unresolved=True)
+    assert json.loads(normalized) == [entry]
+    assert ao.count('Alice Smith', normalized) == (None, None)

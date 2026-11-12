@@ -204,7 +204,9 @@ def malformed_author_names(item):
     """Reject invalid name types and a surname combined with a literal byline."""
     return (any(item.get(k) is not None and not isinstance(item[k], str)
                 for k in ('family', 'given', 'name', 'literal'))
-            or bool(item.get('family') and (item.get('name') or item.get('literal'))))
+            or bool(item.get('family') and (item.get('name') or item.get('literal')))
+            or not any(isinstance(item.get(k), str) and item[k].strip()
+                       for k in ('family', 'given', 'name', 'literal')))
 
 
 def normalise_author_json(value, *, preserve_unresolved=False):
