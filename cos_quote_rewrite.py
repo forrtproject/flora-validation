@@ -21,6 +21,8 @@ into the nearest rule.
 """
 import re
 
+import pandas as pd
+
 from console_encoding import use_utf8_output
 
 use_utf8_output()
@@ -164,6 +166,23 @@ def rewrite_one(quote):
         return f'Outcome classified as "{m.group(1)}" (the project\'s own label).'
 
     return quote
+
+
+CODING_NOTE = "coding note"
+
+
+def mark_coding_note(source):
+    """The quote source of a rewritten quote, marked as a coder's note.
+
+    "coding note: <basis>", or "coding note" alone where no basis was recorded.
+    A source already marked (in the sheet, say) is returned unchanged.
+    """
+    basis = "" if source is None or pd.isna(source) else str(source).strip()
+    if basis.upper() in {"", "NA", "N/A"}:
+        return CODING_NOTE
+    if basis.lower().startswith(CODING_NOTE):
+        return source
+    return f"{CODING_NOTE}: {basis}"
 
 
 def rewrite(series):

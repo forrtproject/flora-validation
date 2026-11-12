@@ -453,3 +453,97 @@ def test_the_build_warns_about_a_correction_as_the_save_does(monkeypatch, capsys
         source("REPL-000002", doi_r="10.9999/another.report")]))
     assert ("1 corrected row(s) now match another record's identifiers: REPL-000002 "
             in capsys.readouterr().out)
+
+
+# ── coding notes and the replication columns (FReD-data#173) ──────────────────
+
+def test_a_rewritten_quote_marks_its_source_as_a_coding_note_and_keeps_it_through_a_merge():
+    """The rewrite turns coder shorthand into a note, so the note's source says so.
+    It is marked before step 5b joins the rows, so the mark stays on its own part."""
+    built = build(source("REPL-000001", outcome="failed", outcome_quote="It did not replicate.",
+                         out_quote_source="abstract"),
+                  source("REPL-000002", url_r="https://osf.io/report", outcome="failed",
+                         outcome_quote="no marked in Replicate column",
+                         out_quote_source="data file at https://osf.io/fgjvw"))
+    [row] = built.to_dict("records")
+    assert row["outcome_quote"].startswith("It did not replicate. || Coded as not replicated")
+    assert row["outcome_quote_source"] == "abstract || coding note: data file at https://osf.io/fgjvw"
+
+
+def test_a_real_quote_and_an_already_marked_source_are_left_alone():
+    built = build(source("REPL-000001", url_r="https://osf.io/a", outcome="failed",
+                         outcome_quote="It did not replicate.", out_quote_source="abstract"),
+                  source("REPL-000002", url_r="https://osf.io/b", outcome="mixed",
+                         outcome_quote="sub_rep .5 in dataset",
+                         out_quote_source="coding note: Supplemental Information"))
+    rows = by_id(built)
+    assert rows.loc["REPL-000001", "outcome_quote_source"] == "abstract"
+    assert rows.loc["REPL-000002", "outcome_quote_source"] == "coding note: Supplemental Information"
+
+
+def test_the_output_carries_the_replication_columns_for_replications_only():
+    built = build(source("REPL-000001", outcome="failed", outcome_quote="It did not replicate.",
+                         out_quote_source="abstract"),
+                  source("REPRO-000001", source="reproductions", type="reproduction",
+                         doi_r="10.9999/reproduction.1",
+                         outcome_computation="computationally reproducible",
+                         outcome_computational_quote="The numbers matched.",
+                         out_quote_computational_source="p. 2",
+                         outcome_robustness="not checked"))
+    out = by_id(transform_sources.to_output_shape(built))
+    replication, reproduction = out.loc["REPL-000001"], out.loc["REPRO-000001"]
+    assert (replication["outcome_replication"], replication["outcome_replication_quote"],
+            replication["out_quote_replication_source"]) == (
+        "failed", "It did not replicate.", "abstract")
+    assert [value(reproduction[c]) for c in ("outcome_replication", "outcome_replication_quote",
+                                             "out_quote_replication_source")] == [None] * 3
+    # The combined fields stay for older readers.
+    assert reproduction["outcome"] == "computationally reproducible, not checked"
+    assert reproduction["outcome_quote_source"] == "Computational: p. 2"
+    columns = list(out.reset_index().columns)
+    assert columns.index("out_quote_robust_source") < columns.index("outcome_replication") \
+        < columns.index("flora_id")
+
+
+# ── merged quotes keep their sources aligned (FReD-data#173) ──────────────────
+
+def test_a_merge_keeps_one_source_part_per_quote_part():
+    """Two quotes from the abstract used to publish one "abstract"."""
+    built = build(source("REPL-000001", outcome="failed", outcome_quote="It did not replicate.",
+                         out_quote_source="abstract"),
+                  source("REPL-000002", url_r="https://osf.io/report", outcome="failed",
+                         outcome_quote="No effect was found.", out_quote_source="abstract"))
+    [row] = built.to_dict("records")
+    assert row["outcome_quote"] == "It did not replicate. || No effect was found."
+    assert row["outcome_quote_source"] == "abstract || abstract"
+
+
+def test_a_repeated_quote_and_source_are_kept_once_and_a_missing_source_is_said():
+    quote, source = preprint_dedup._paste_aligned(
+        ["It did not replicate.", "It did not replicate.", "No effect was found."],
+        ["abstract", "abstract", None])
+    assert quote == "It did not replicate. || No effect was found."
+    assert source == "abstract || not recorded"
+
+
+def test_a_quote_given_by_several_rows_is_kept_once_with_each_of_its_sources():
+    quote, source = preprint_dedup._paste_aligned(
+        ["It replicated.", "It  replicated.", "It replicated.", "No effect."],
+        ["Abstract", "abstract", "full_text", "p. 3"])
+    assert quote == "It replicated. || No effect."
+    assert source == "Abstract; full_text || p. 3"
+
+
+def test_without_any_quote_the_sources_are_joined_as_before():
+    assert preprint_dedup._paste_aligned([None, None], ["abstract", "abstract"]) == (None, "abstract")
+
+
+@pytest.mark.parametrize("quote, source, expected", [
+    ("A || B", "p. 1 || p. 2", [("A", "p. 1"), ("B", "p. 2")]),
+    ("A || B", "abstract", [("A", "abstract"), ("B", "abstract")]),
+    ("A || B", None, [("A", None), ("B", None)]),
+    ("A", "p. 1 || p. 2", [("A", "p. 1 || p. 2")]),
+    (None, "abstract", []),
+])
+def test_evidence_pairs(quote, source, expected):
+    assert preprint_dedup._evidence_pairs(quote, source) == expected
