@@ -19,6 +19,6 @@ release outputs to correct records. Retired IDs remain reserved in the registry.
 `author_overlap_pct` is 100 times the number of distinct shared family names divided
 by the number of report authors, rounded to one decimal. Given names are not used;
 matching surnames can belong to different people, and repeated surnames within a
-team make this a conservative surname proxy rather than a verified person count.
+team can make this surname proxy over- or understate person-level overlap.
 Missing values include collective/unresolved authors anywhere in either byline;
 they do not mean zero overlap. Consortium membership is not inferred.

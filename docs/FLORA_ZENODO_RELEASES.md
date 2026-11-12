@@ -88,8 +88,7 @@ python3 zenodo_flora.py --bundle release-bundles/sandbox-2026.11.1 --upload sand
 An upload without `--publish` leaves a draft. Tokens are read only from environment
 variables: `ZENODO_SANDBOX_TOKEN` or `ZENODO_TOKEN` for production. The script does
 not load `.env`; use deposit write/action scopes. No token values or server error
-bodies are logged. `ZENODO_TOKEN` was present in the implementation environment;
-no sandbox token was available. The assembly workflow needs no secret. A future
+bodies are logged. The assembly workflow needs no secret. A future
 upload job would need that name in a protected GitHub environment secret.
 
 Before the first production candidate, merge the author/export fix in
@@ -143,7 +142,11 @@ Checksum verification protects the reviewed files. Upload saves the draft ID in
 `zenodo-state.json` immediately, checks identity/concept/version on retry, removes
 inherited files and checks each uploaded MD5. Re-run the same upload command to
 resume after an HTTP failure. If draft creation times out **before a receipt is
-saved**, inspect Zenodo and recover that draft ID before retrying. The receipt
-stays local. Production always requires the approval flag, including draft uploads.
-The planned local mutation is the reserved DOI and its checksum. Published records
+saved**, inspect your Zenodo drafts and copy the intended draft ID from its URL.
+Add `--resume-deposit` followed by that numeric ID to the same upload command.
+Recovery validates the remote title/version/concept and saves a receipt before
+any mutation; it does not create another draft. The receipt stays local. Production always requires the approval flag, including draft uploads.
+Approval is an operator attestation, not authenticated authorization. It covers
+the reviewed payload and the sole planned mutation: the returned version DOI in
+CITATION.cff and its refreshed checksum. Data and other files remain unchanged. Published records
 and DOIs cannot simply be deleted.

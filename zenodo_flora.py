@@ -251,7 +251,8 @@ def fetch_previous(record_id, environment, destination):
     for file in record['files']:
         name = file['key']
         url = file['links']['self']
-        if Path(name).name != name or urlparse(url).netloc != urlparse(base).netloc:
+        if (Path(name).name != name or urlparse(url).scheme != 'https'
+                or urlparse(url).netloc != urlparse(base).netloc):
             raise ValueError('Unexpected file name or host in public record')
         data = requests.get(url, timeout=180)
         data.raise_for_status()
@@ -290,7 +291,7 @@ class Zenodo:
         return response.json() if response.content else None
 
 
-def upload(bundle, environment, publish=False, approve_production=False):
+def upload(bundle, environment, publish=False, approve_production=False, resume_deposit=None):
     """Upload a reviewed bundle, resuming only the verified intended draft."""
     bundle = Path(bundle)
     if environment == 'production' and not approve_production:
@@ -316,13 +317,22 @@ def upload(bundle, environment, publish=False, approve_production=False):
     previous = manifest.get('previous_release')
     if previous and previous['environment'] != environment:
         raise ValueError('Previous release belongs to another Zenodo environment')
+    if resume_deposit is not None and not str(resume_deposit).isdigit():
+        raise ValueError('Resume deposit must be a numeric draft ID')
     api = Zenodo(environment)
     state_path = bundle / 'zenodo-state.json'
-    if state_path.exists():
-        state = json.loads(state_path.read_text(encoding='utf-8'))
+    has_receipt = state_path.exists()
+    if has_receipt or resume_deposit is not None:
+        state = (json.loads(state_path.read_text(encoding='utf-8')) if has_receipt else
+                 {'environment': environment, 'id': resume_deposit,
+                  'version': metadata['version'], 'published': False})
         if state['environment'] != environment:
             raise ValueError('Use a separate bundle for each environment')
+        if resume_deposit is not None and str(state['id']) != str(resume_deposit):
+            raise ValueError('Resume deposit differs from saved receipt')
         deposit = api.request('GET', f"{api.base}/api/deposit/depositions/{state['id']}")
+        if not has_receipt:
+            state['conceptrecid'] = deposit['conceptrecid']
         expected_versions = {metadata['version'], previous['version'] if previous else None}
         if (str(deposit['id']) != str(state['id'])
                 or str(deposit['conceptrecid']) != str(state.get('conceptrecid'))
@@ -332,12 +342,15 @@ def upload(bundle, environment, publish=False, approve_production=False):
                 or deposit.get('metadata', {}).get('title', metadata['title']) != metadata['title']
                 or (state.get('published') and not deposit.get('submitted'))):
             raise ValueError('Resumed draft identity, concept or version mismatch; inspect the deposit')
+        if not has_receipt:
+            write_json(state_path, state)  # recovery must persist before any remote mutation
     else:
         if previous:
             latest = api.request('GET', f"{api.base}/api/deposit/depositions/{previous['id']}")
             if (str(latest['conceptrecid']) != str(previous['conceptrecid'])
-                    or latest.get('metadata', {}).get('version') != previous['version']):
-                raise ValueError('Previous concept record or version mismatch')
+                    or latest.get('metadata', {}).get('version') != previous['version']
+                    or latest.get('metadata', {}).get('title') != metadata['title']):
+                raise ValueError('Previous concept record, title or version mismatch')
             record = api.request('POST', f"{api.base}/api/deposit/depositions/{previous['id']}/actions/newversion")
             deposit = api.request('GET', record['links']['latest_draft'])
             if str(deposit['conceptrecid']) != str(previous['conceptrecid']):
@@ -396,6 +409,7 @@ def main():
     parser.add_argument('--fetch-previous', help='Download a published version record as --bundle')
     parser.add_argument('--environment', choices=HOSTS, default='production')
     parser.add_argument('--upload', choices=HOSTS)
+    parser.add_argument('--resume-deposit', help='Recover an inspected draft ID after losing its local receipt')
     parser.add_argument('--publish', action='store_true')
     parser.add_argument('--approve-production', action='store_true')
     args = parser.parse_args()
@@ -403,9 +417,10 @@ def main():
         if args.fetch_previous:
             fetch_previous(args.fetch_previous, args.environment, args.bundle)
         elif args.upload:
-            print(json.dumps(upload(args.bundle, args.upload, args.publish, args.approve_production)))
+            print(json.dumps(upload(args.bundle, args.upload, args.publish, args.approve_production,
+                                    args.resume_deposit)))
         else:
-            if args.publish or args.approve_production or not args.version:
+            if args.publish or args.approve_production or args.resume_deposit or not args.version:
                 parser.error('Offline assembly needs --version; publishing needs --upload')
             print(json.dumps(assemble(args.output_dir, args.version, args.bundle, args.previous)))
     except (ValueError, KeyError, OSError) as exc:

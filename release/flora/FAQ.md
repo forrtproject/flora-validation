@@ -89,4 +89,4 @@ Additional studies are included in FLoRA that are not in the FORRT Replication D
 
 ### What are inclusion criteria?
 - Self-identify as a replication (e.g., “replication of Author (Year)”) before reporting results — replication must be an aim, not just a result. Identify specific target study/studies that it replicates. Replicate a study or experiment, not just a single association or finding.
-- Replications can range from close/direct (same methods, same population) to conceptual (testing the same hypothesis with different methods), as long as the above criteria are met. The plugin tags replication outcomes as Successful, Failed, or Mixed, based on how the replication authors characterise their results, usually in the abstract.
+- Replications can range from close/direct (same methods, same population) to conceptual (testing the same hypothesis with different methods), as long as the above criteria are met. Examples of replication outcome tags are Successful, Failed, and Mixed, based on how the replication authors characterise their results, usually in the abstract. The release codebook lists the complete vocabulary present in the snapshot.

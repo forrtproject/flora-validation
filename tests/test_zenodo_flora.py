@@ -131,7 +131,8 @@ def test_new_version(bundle, tmp_path, monkeypatch):
              'metadata': {'version': '2026.10.1', 'prereserve_doi': {'doi': 'api-reserved-next'}},
              'links': {k: f'{base}/{k}' for k in ('self', 'bucket', 'publish', 'html')}}
     api = Mock(base=base)
-    api.request.side_effect = [dict(conceptrecid=10, metadata={'version': '2026.10.1'}), {'links': {'latest_draft': f'{base}/draft'}}, draft, draft]
+    api.request.side_effect = [dict(conceptrecid=10, metadata={'version': '2026.10.1',
+        'title': json.loads((target / 'zenodo-metadata.json').read_text(encoding='utf-8'))['title']}), {'links': {'latest_draft': f'{base}/draft'}}, draft, draft]
     monkeypatch.setattr(release, 'Zenodo', lambda env: api)
     # Interrupt at first file upload; state must already be recoverable.
     with pytest.raises(StopIteration):
@@ -157,7 +158,7 @@ def test_client_rejects_foreign_host_and_hides_errors(monkeypatch):
 
 
 def test_no_network_for_dry_run(bundle, tmp_path, monkeypatch):
-    monkeypatch.setattr(release.requests, 'Session', Mock(side_effect=AssertionError('Network access')))
+    monkeypatch.setattr(release.requests.sessions.Session, 'request', Mock(side_effect=AssertionError('Network access')))
     release.assemble(bundle.parent / 'output', '2026.11.2', tmp_path / 'offline')
 
 
@@ -349,6 +350,7 @@ def test_stored_publication_marks_its_revision(tmp_path):
     manifest = add_data_version(tmp_path, {}, '2026-11-12T00:00:00+00:00', 912)
     assert manifest['source_kind'] == 'authoritative_publication'
     assert manifest['data_version']['change_watermark'] == 912
+    assert json.loads((tmp_path / 'flora_release_manifest.json').read_text(encoding='utf-8')) == manifest
 
 
 def test_verified_publication_reaches_client_boundary_without_network(bundle, monkeypatch):
@@ -363,3 +365,72 @@ def test_verified_publication_reaches_client_boundary_without_network(bundle, mo
     with pytest.raises(ValueError, match='verified client boundary'):
         release.upload(bundle, 'production', approve_production=True)
     client.assert_called_once_with('production')
+
+
+@pytest.mark.parametrize('remote_metadata', [{}, {'version': '2026.11.1'}])
+def test_receipt_recovery_reuses_inspected_draft_and_saves_before_mutation(bundle, monkeypatch, remote_metadata):
+    base = release.HOSTS['sandbox']
+    deposit = dict(id=12, conceptrecid=10, submitted=False, files=[], metadata=remote_metadata,
+                   links={'self': base + '/draft'})
+    api = Mock(base=base)
+    def request(method, url, **kwargs):
+        if method == 'GET':
+            return deposit
+        assert json.loads((bundle / 'zenodo-state.json').read_text(encoding='utf-8'))['id'] == 12
+        raise ValueError('recovery reached metadata write')
+    api.request.side_effect = request
+    monkeypatch.setattr(release, 'Zenodo', lambda _: api)
+    with pytest.raises(ValueError, match='recovery reached metadata write'):
+        release.upload(bundle, 'sandbox', resume_deposit=12)
+    assert [c.args[0] for c in api.request.call_args_list] == ['GET', 'PUT']
+
+
+@pytest.mark.parametrize('remote_metadata', [{'title': 'Another dataset'}, {'version': 'another version'}])
+def test_receipt_recovery_rejects_unrelated_draft_before_writes(bundle, monkeypatch, remote_metadata):
+    base = release.HOSTS['sandbox']
+    api = Mock(base=base)
+    api.request.return_value = dict(id=12, conceptrecid=10, submitted=False, metadata=remote_metadata)
+    monkeypatch.setattr(release, 'Zenodo', lambda _: api)
+    with pytest.raises(ValueError, match='identity, concept or version mismatch'):
+        release.upload(bundle, 'sandbox', resume_deposit=12)
+    assert api.request.call_count == 1
+    assert not (bundle / 'zenodo-state.json').exists()
+
+
+def test_new_version_rejects_unrelated_dataset_title_before_forking(bundle, monkeypatch):
+    path = bundle / 'flora_release_manifest.json'
+    manifest = json.loads(path.read_text(encoding='utf-8'))
+    manifest['previous_release'] = dict(environment='sandbox', id=11, conceptrecid=10, version='2026.10.1')
+    release.write_json(path, manifest)
+    release.write_json(bundle / 'bundle-checksums.json', release.checksums(bundle))
+    api = Mock(base=release.HOSTS['sandbox'])
+    api.request.return_value = dict(conceptrecid=10, metadata={'version': '2026.10.1', 'title': 'Another dataset'})
+    monkeypatch.setattr(release, 'Zenodo', lambda _: api)
+    with pytest.raises(ValueError, match='Previous concept record, title or version mismatch'):
+        release.upload(bundle, 'sandbox')
+    assert api.request.call_count == 1
+    assert api.request.call_args.args[0] == 'GET'
+
+
+@pytest.mark.parametrize('scheme', ['https', 'http'])
+def test_public_baseline_recovery_requires_https_and_checks_deposited_bytes(bundle, tmp_path, monkeypatch, scheme):
+    host = 'sandbox.zenodo.org'
+    names = [*release.checksums(bundle), 'bundle-checksums.json']
+    record = dict(id=12, conceptrecid=10, doi='api-reported-doi', metadata={'version': '2026.11.1'},
+                  links={'html': 'https://' + host + '/records/12'},
+                  files=[{'key': n, 'links': {'self': f'{scheme}://{host}/files/{n}'}} for n in names])
+    def get(url, **kwargs):
+        if '/api/records/' in url:
+            return Mock(json=lambda: record)
+        return Mock(content=(bundle / url.rsplit('/', 1)[1]).read_bytes())
+    fetch = Mock(side_effect=get)
+    monkeypatch.setattr(release.requests, 'get', fetch)
+    target = tmp_path / 'recovered'
+    if scheme == 'http':
+        with pytest.raises(ValueError, match='Unexpected file name or host'):
+            release.fetch_previous(12, 'sandbox', target)
+        assert fetch.call_count == 1
+    else:
+        release.fetch_previous(12, 'sandbox', target)
+        release.verify_bundle(target)
+        assert json.loads((target / 'zenodo-state.json').read_text(encoding='utf-8'))['published']

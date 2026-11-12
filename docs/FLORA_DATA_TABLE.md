@@ -36,7 +36,7 @@ with BOM. See the bundled FAQ for outcome definitions and coding decisions.
 | `url_o` | Publication URL. Original study. |
 | `language_o` | Publication language code. Original study. |
 | `doi_r` | DOI of the publication, when available. Replication/reproduction report. |
-| `alt_identifier_r` | Alternative report identifiers, including preprints and the DOI of an associated aggregate project paper. Multiple values are separated by semicolons; a project-paper DOI supplements the individual report identifier/link. |
+| `alt_identifier_r` | Alternative report identifiers, including preprints and the DOI of an associated aggregate project paper. Multiple values may be separated by commas or semicolons; a project-paper DOI supplements the individual report identifier/link. |
 | `doi_r_hash` | Short report-DOI hash; distinct from id_md5. |
 | `title_r` | Publication title. Replication/reproduction report. |
 | `author_r` | Author metadata as a JSON array. Replication/reproduction report. |
@@ -92,7 +92,7 @@ The `type` column identifies replication versus reproduction independently of ro
 Established projects take priority over intake route, including records from the
 search pipeline. `release/flora/projects.yml` names projects using existing report
 identifiers or a known project-specific intake. Normalized `doi_r`, the multiple
-identifiers in `alt_identifier_r`, and direct report links in `url_r` match records
+identifiers in `alt_identifier_r`, and DOI/OSF links in `url_r` match records
 across intake routes. Original-study identifiers are never used for this purpose.
 
 A project qualifies at strictly more than 50 distinct active released record IDs,
