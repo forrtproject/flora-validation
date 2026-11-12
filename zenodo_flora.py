@@ -48,6 +48,7 @@ def project_record(row, columns, project_label=None):
 
 
 def read_records(path):
+    """Read a BOM-compatible CSV keyed by validated permanent record IDs."""
     with Path(path).open(encoding='utf-8-sig', newline='') as f:
         reader = csv.DictReader(f)
         columns = reader.fieldnames
@@ -83,6 +84,7 @@ def write_json(path, value):
 
 
 def assemble(output, version, destination, previous=None):
+    """Build and checksum an offline release from the authoritative CSV export."""
     if not re.fullmatch(r'\d{4}\.(?:0[1-9]|1[0-2])\.[1-9]\d*', version):
         raise ValueError('Version must be YYYY.MM.N (N starts at 1)')
     output, destination = Path(output), Path(destination)
