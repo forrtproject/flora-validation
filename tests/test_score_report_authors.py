@@ -164,3 +164,15 @@ def test_source_identity_drift_aborts_batch_before_commit(monkeypatch):
     with pytest.raises(ValueError, match='identity changed since audit'):
         apply_batch(None, [row], {'id': 1})
     update.assert_called_once()
+
+
+def test_batch_identity_is_the_export_key_not_a_source_alias(monkeypatch):
+    row = load_batch()[0]
+    alias_match = {**current(row), 'export_id': 'another-published-id'}
+    monkeypatch.setattr(flora_edits, 'version', Mock(return_value=7))
+    monkeypatch.setattr(flora_service, 'get_record', Mock(return_value=alias_match))
+    update = Mock()
+    monkeypatch.setattr(flora_service, 'update_record', update)
+    with pytest.raises(ValueError, match='published identity mismatch'):
+        apply_batch(None, [row], {'id': 1})
+    update.assert_not_called()

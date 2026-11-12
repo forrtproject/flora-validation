@@ -18,12 +18,12 @@ python3 scripts/apply_score_report_authors.py
 # DATABASE_URL from the configured environment or ignored .env:
 python3 scripts/apply_score_report_authors.py --check-live
 # Only when applying the reviewed batch:
-python3 scripts/apply_score_report_authors.py --apply --admin-id 3
+python3 scripts/apply_score_report_authors.py --apply --admin-id "$FLORA_ADMIN_ID"
 ```
 
-The apply command uses Lukas's verified administrator record (ID 3). Another
-operator must use their own administrator ID. Apply outside the sync window: the
-289 corrections rebuild the dataset while holding a single transaction.
+Before application, export `FLORA_ADMIN_ID` in the calling shell with the verified
+administrator ID of the operator. Apply outside the sync window: the 289
+corrections rebuild the dataset while holding a single transaction.
 
 The default opens no database. --check-live runs with a read-only connection.
 Application checks every identity and reference baseline before any save, uses

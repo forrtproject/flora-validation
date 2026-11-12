@@ -83,12 +83,12 @@ def preflight(cur, rows):
         version = flora_edits.version(cur, row['id'])
         record = flora_service.get_record(cur, row['id'])
         check_identity(record, row)
+        if record.get('export_id') != row['id']:
+            raise ValueError(f"Reviewed published identity mismatch: {row['id']}")
         if all(_same(record.get(k), v) for k, v in row['fields'].items()):
             continue
         if record.get('ref_r') != row['before_ref_r']:
             raise ValueError(f"Reference changed since audit: {row['id']}")
-        if not record.get('export_id'):
-            raise ValueError(f"Record has no published identity: {row['id']}")
         pending.append((row, version))
     return pending
 
