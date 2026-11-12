@@ -86,3 +86,41 @@ def test_unknown_without_review_evidence_is_rejected(tmp_path):
     p = tmp_path/'batch.json'; p.write_text(json.dumps([row]),encoding='utf-8')
     with pytest.raises(ValueError, match='held audit record'):
         load_batch(p)
+
+
+@pytest.mark.parametrize('field', ['before_ref_r', 'before_url_r', 'before_doi_o', 'ref_r'])
+def test_unknown_correction_must_match_retained_audit(tmp_path, field):
+    row = next(r for r in load_batch() if r['author_status'] == 'unknown')
+    (row['fields'] if field == 'ref_r' else row)[field] = 'changed after audit'
+    path = tmp_path / 'batch.json'
+    path.write_text(json.dumps([row]), encoding='utf-8')
+    with pytest.raises(ValueError, match='differs from retained audit'):
+        load_batch(path)
+
+
+@pytest.mark.parametrize('assignment', ['author={Project staff}', 'AUTHOR = {Project staff}'])
+def test_unknown_bibtex_cannot_credit_authors_with_alternative_spacing(tmp_path, assignment):
+    row = next(r for r in load_batch() if r['author_status'] == 'unknown')
+    row['fields']['bibtex_ref_r'] = '@misc{report, ' + assignment + '}'
+    path = tmp_path / 'batch.json'
+    path.write_text(json.dumps([row]), encoding='utf-8')
+    with pytest.raises(ValueError, match='must not credit contributors'):
+        load_batch(path)
+
+
+@pytest.mark.parametrize('field,value', [('reason', ''), ('disposition', 'named_report_byline')])
+def test_unknown_requires_reason_and_explicit_audit_disposition(tmp_path, monkeypatch, field, value):
+    import csv
+    import scripts.apply_score_report_authors as script
+    row = next(r for r in load_batch() if r['author_status'] == 'unknown')
+    with script.AUDIT.open(encoding='utf-8-sig', newline='') as f:
+        records = list(csv.DictReader(f))
+    next(r for r in records if r['row_id'] == row['id'])[field] = value
+    path = tmp_path / 'audit.csv'
+    with path.open('w', encoding='utf-8', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=list(records[0]))
+        writer.writeheader()
+        writer.writerows(records)
+    monkeypatch.setattr(script, 'AUDIT', path)
+    with pytest.raises(ValueError, match='held audit record'):
+        load_batch()

@@ -9,6 +9,7 @@ import csv
 import json
 import os
 from pathlib import Path
+import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,7 +24,7 @@ def load_batch(path=BATCH):
     import flora_edits
     rows = json.loads(Path(path).read_text(encoding='utf-8'))
     with AUDIT.open(encoding='utf-8-sig', newline='') as f:
-        unresolved = {r['row_id'] for r in csv.DictReader(f) if r['status'] == 'unresolved'}
+        audit = {r['row_id']: r for r in csv.DictReader(f)}
     ids = set()
     for row in rows:
         if row['id'] in ids or set(row['fields']) != FIELDS:
@@ -38,9 +39,16 @@ def load_batch(path=BATCH):
             flora_edits.clean_value(field, value, row['type'])
         flora_edits._checked_notes({field: row['note'] for field in FIELDS})
         if row.get('author_status') == 'unknown':
-            if row['id'] not in unresolved or row['fields']['author_r'] is not None:
+            evidence = audit.get(row['id'], {})
+            if (evidence.get('status') != 'unresolved' or not evidence.get('reason')
+                    or evidence.get('disposition') != 'explicit_unknown_author'
+                    or row['fields']['author_r'] is not None):
                 raise ValueError('Unknown authors require a held audit record and a null author field')
-            if 'author =' in row['fields']['bibtex_ref_r'].lower():
+            if (any(row[k] != evidence[v] for k, v in
+                    [('before_ref_r', 'before'), ('before_url_r', 'url_r'), ('before_doi_o', 'doi_o')])
+                    or row['fields']['ref_r'] != evidence['after']):
+                raise ValueError('Unknown-author correction differs from retained audit evidence')
+            if re.search(r'\bauthor\s*=', row['fields']['bibtex_ref_r'], re.I):
                 raise ValueError('Unknown authors must not credit contributors in BibTeX')
         elif row.get('author_status') == 'named':
             if not row['fields']['author_r'] or not json.loads(row['fields']['author_r']):
