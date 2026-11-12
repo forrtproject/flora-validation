@@ -86,10 +86,6 @@ def test_title_mentions_do_not_establish_membership():
     assert classify_projects(rows, registry(intake_sources=['SCORE']))[0] == {}
 
 
-
-
-
-
 def test_nested_osf_file_matches_direct_file_without_joining_sibling_files():
     nested = report_identifiers(record('A', url='https://osf.io/8uc5z/files/jmk9d?view_only=x'))
     assert nested == {'osf:jmk9d'}

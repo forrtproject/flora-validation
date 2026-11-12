@@ -45,7 +45,7 @@ def classify_projects(records, registry):
     for identifier, values in ids.items():
         for value in values:
             index[value].add(identifier)
-    matches, summaries = {}, []
+    by_record, summaries = defaultdict(list), []
     for project in projects:
         anchors = set()
         for value in project.get('identifiers', []):
@@ -53,10 +53,9 @@ def classify_projects(records, registry):
             if len(normal) != 1:
                 raise ValueError(f"Invalid project identifier: {value}")
             anchors.update(normal)
-        explicit = set(project.get('record_ids', [])) & records.keys()
         routes = set(project.get('intake_sources', []))
         seeds = {identifier for identifier, row in records.items()
-                 if identifier in explicit or ids[identifier] & anchors or row['source'] in routes}
+                 if ids[identifier] & anchors or row['source'] in routes}
         # Only explicitly anchored/intake rows seed aliases. A new match cannot
         # propagate another identifier and silently join a chain of projects.
         aliases = anchors | set().union(*(ids[i] for i in seeds)) if seeds else anchors
@@ -64,41 +63,27 @@ def classify_projects(records, registry):
         qualification = project.get('qualification') or {}
         established = qualification.get('record_count', 0) > threshold
         eligible = len(members) > threshold or established
-        matches[project['key']] = members if eligible else set()
+        if eligible:
+            for identifier in members:
+                by_record[identifier].append(project['label'])
         summaries.append({'key': project['key'], 'label': project['label'],
                           'seed_count': len(seeds), 'record_count': len(members),
                           'eligible': eligible, 'established': established,
                           'record_ids': sorted(members), 'seed_ids': sorted(seeds),
                           'identifiers': sorted(aliases)})
-    by_record = defaultdict(list)
-    for key, members in matches.items():
-        for identifier in members:
-            by_record[identifier].append(key)
     conflicts = {identifier: keys for identifier, keys in by_record.items() if len(keys) > 1}
     if conflicts:
         raise ValueError('Ambiguous project membership; review mapping: ' +
                          '; '.join(f'{i}: {", ".join(keys)}' for i, keys in sorted(conflicts.items())))
-    labels = {p['key']: p['label'] for p in projects}
-    assigned = {identifier: labels[keys[0]] for identifier, keys in by_record.items()}
+    assigned = {identifier: labels[0] for identifier, labels in by_record.items()}
     candidates = []
     for value, members in sorted(index.items()):
         if len(members) > threshold and any(identifier not in assigned for identifier in members):
             candidates.append({'identifier': value, 'record_count': len(members),
                                'record_ids': sorted(members),
                                'example_title': records[min(members)].get('title_r')})
-    mentions = []
-    for identifier, row in records.items():
-        if identifier in assigned:
-            continue
-        text = str(row.get('title_r', '')) + ' ' + str(row.get('apa_ref_r', ''))
-        possible = [p['key'] for p in projects
-                    if re.search(r'(?<!\w)' + re.escape(p['label']) + r'(?!\w)', text)]
-        if possible:
-            mentions.append({'id': identifier, 'possible_projects': possible,
-                             'current_intake': row['source']})
     return assigned, {'threshold': threshold, 'unit': 'distinct active released record IDs',
                       'precedence': 'established project, then intake route; no search-pipeline protection',
                       'projects': summaries, 'unmapped_large_groups': candidates,
                       'review_required': bool(candidates),
-                      'unmatched_project_mentions': mentions,
                       'assigned_counts': dict(Counter(assigned.values()))}

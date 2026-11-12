@@ -1,224 +1,149 @@
 # Versioned FLoRA deposits on Zenodo
 
-FLoRA and FReD have separate concept records. This pipeline covers FLoRA only;
-it does not upload FReD. The first production release requires Lukas's approval.
-No production deposit has been created or published as part of implementation.
+FLoRA has its own concept record; this pipeline covers FLoRA only. The first
+production release requires Lukas's approval. No production deposit has been
+created or published during implementation.
 
-## Release policy
+## Policy and inputs
 
-Use [Calendar Versioning (CalVer)](https://calver.org/): year, zero-padded month
-and a within-month release counter (`YYYY.0M.MICRO` in CalVer terminology).
-This labels the data snapshot; changes to data and documentation are described in
-the changelog rather than classified as semantic minor/patch releases.
+Use [CalVer](https://calver.org/) `YYYY.MM.N`, starting at `2026.11.1`: year,
+zero-padded month and a counter starting at 1 each month. Versions must increase.
+This identifies a living dataset's snapshot date; the changelog describes data
+and schema changes. Releases use **manual dispatch** so each immutable deposit
+receives a review. Daily repository publication continues separately.
 
-Use `YYYY.MM.N`, starting at `2026.11.1`. The date identifies a living dataset's
-release month without implying API/schema compatibility; N increases for another
-release in the same month. Versions must increase relative to the previous bundle.
-Use **manual dispatch**, after reviewing the changelog, authors and licence. Daily
-repository publication continues unchanged; scheduling immutable DOI releases would
-create unnecessary versions and bypass this review.
+`publish_flora.py` produces the authoritative `output/`. Assembly checks its CSV
+against the existing manifest and reuses `release_helpers.prepare_release` for
+hashes and notes. `release/flora/columns.json` selects and orders the 31 deposited
+columns. The release applies the source labels and outcome applicability rules in
+the [codebook](FLORA_DATA_TABLE.md), writing quoted UTF-8 CSV with a BOM. Both
+source and release hashes are retained. Corrections go through the correction log
+and a fresh publication; never edit outputs.
 
-The `Prepare FLoRA Zenodo release` Actions workflow assembles and retains an offline
-artifact. Its optional previous record input is the numeric **version record ID**
-from the preceding published FLoRA release, never the concept ID. It downloads that
-release as the comparison baseline. Keep an independent archive of published bundles
-and receipts because Actions artifacts expire after 90 days.
+Assembly recalculates overlap from the source bylines to detect stale percentages.
+Production requires `source_kind=authoritative_publication` and a stored dataset
+revision/correction watermark, written by `release_helpers.add_data_version`.
+Unmarked manifests and offline previews are rejected.
 
-## Inputs and history
+The codebook reuses `docs/FLORA_DATA_TABLE.md` and lists the exact categories in
+this snapshot. Missing definitions stop assembly. FAQ, citation authors and
+licence are pinned from fred-data; [SOURCES.md](../release/flora/SOURCES.md)
+records their provenance. Review them for each release.
 
-`publish_flora.py` already exports the authoritative stored dataset and corrections.
-Use the committed `output/` produced by that pipeline. Assembly validates the CSV
-against its existing `flora_release_manifest.json` and reuses
-`release_helpers.prepare_release` for byte manifests and notes. Release CSV fields are selected and ordered by `release/flora/columns.json` (31
-columns, including only `author_overlap_pct` for overlap). IDs and applicable
-outcome/evidence values are preserved. Release source labels map replications and
-reproductions to `manual entry`, COS to `FReD`, and validated/manual to `search pipeline`;
-Established projects take precedence over these fallbacks, including search-pipeline
-records. SCORE is seeded by its known intake. The search-pipeline label means the website discovery/curation
-workflow, including manual entries, not necessarily automated search. Replication
-outcome and evidence fields are NA on reproduction rows; reproduction axes and their
-evidence are NA on replication rows. These explicit representation rules are stored
-in the release manifest, without editing the internal data or correction log; the release serializer writes quoted UTF-8 CSV with a BOM. The source
-and release hashes therefore differ and are both preserved in the manifest.
-Before projection, assembly checks the percentage against both source author lists;
-stale derived values stop assembly. Regenerate via the fixed normal pipeline rather
-than patching exports. A preview of the deterministic overlap fix can be assembled
-locally, but production accepts only `source_kind=authoritative_publication` with
-a stored dataset revision/correction watermark. The normal stored-publication paths
-write this marker through `release_helpers.add_data_version`; unmarked manifests,
-unknown source kinds and offline previews are rejected.
+## Changelog and project classification
 
-The existing `flora_history.csv`, `flora_dataset_history`, and
-`backfill_flora_history.py` hold **daily aggregate counts**, not historical record
-values. `flora_store` retains permanent IDs, current/retired records and version
-counters, but not every past value. `flora_record_changes` is the append-only
-correction log; source refreshes can also change records without a correction entry.
-It is therefore insufficient by itself to describe a whole release.
+Existing `flora_history.csv`, `flora_dataset_history` and
+`backfill_flora_history.py` retain daily aggregate counts. `flora_store` retains
+permanent IDs and current/retired records. The append-only `flora_record_changes`
+logs corrections, but source refreshes can change records without a log entry.
+These sources cannot reconstruct every historical record value.
 
-The release changelog uses the **published record history**: the previous Zenodo
-CSV compared with the current authoritative snapshot, matched on permanent `id`.
-It enumerates additions, retirements and changed field names in `changes.json`,
-with unique-record counts in `CHANGELOG.md`. Row ordering alone is ignored; schema
-changes are explicit. Returning retired IDs count as additions to this release.
-Intermediate edits which cancel out, including a retire/reactivate between releases,
-are not counted. The first release establishes a baseline, with all current records
-added and no claim to reconstruct pre-release changes. The embedded source manifest
-preserves the exact correction watermark and database revision of the publication.
-No admin identities, private notes or personal emails are exported from the log.
-Corrections continue through that log, never through editing outputs.
+The changelog therefore compares the current release CSV with the previous
+published Zenodo CSV by permanent `id`. `changes.json` lists added/retired IDs and
+changed field names; `CHANGELOG.md` counts unique records. Row order is ignored;
+schema changes are explicit. Returning IDs count as additions. Intermediate edits
+that cancel out, including retire/reactivate cycles, are excluded. The first
+release establishes a baseline: all current IDs are additions. The embedded source
+manifest retains the publication's database revision and correction watermark;
+private correction-log details are excluded.
 
-The codebook extracts the published column dictionary from the maintained
-`docs/FLORA_DATA_TABLE.md` and appends the exact categorical labels in the CSV.
-Assembly rejects columns without definitions. Coding FAQs and citation authors/licence are pinned
-from fred-data; provenance is in `release/flora/SOURCES.md`. Review these for each
-release. The metadata proposes the existing CC BY 4.0 licence and author order.
+`flora_release_projects.py` matches the anchors in `release/flora/projects.yml`
+against report-side DOIs, alternative identifiers and OSF URLs. Project intake
+rows can seed aliases too. Matching expands one hop; it never recursively merges
+projects. Original-study identifiers and titles cannot establish membership.
+Projects qualify above **50 distinct released record IDs** and override every
+intake route, including search pipeline. Recorded qualification keeps labels
+stable after retirements. Registered projects are RP:P, the Boyce et al. student
+replication collection, and SCORE.
 
-## Commands from the project root
+`project_classification.json` records counts, seed/member IDs, identifiers and
+unmapped groups above the threshold. Conflicting memberships stop assembly;
+unmapped large groups block production pending review. The manifest preserves the
+registry, and changing it requires reassembly. The single `source` column names
+an established project, otherwise an intake route; it cannot retain both.
 
-Python 3.12 with `requests`, `pyyaml` and `pandas` is sufficient for release assembly/upload:
+## Assemble and upload
+
+From the project root, with Python 3.12 and the listed dependencies:
 
 ```bash
 python3 -m pip install requests pyyaml pandas
 python3 zenodo_flora.py --version 2026.11.1 --bundle release-bundles/2026.11.1
 ```
 
-The default is an offline dry run: no API calls and no token read. It refuses to
-overwrite an existing bundle. Review every file and `zenodo-metadata.json`.
+Default assembly is an offline dry run: no API calls or token reads. Existing
+bundle directories are refused. Review every file, especially the initial
+changelog, codebook and `zenodo-metadata.json` (220 proposed creators, CC BY 4.0).
+The bundle file list and interpretation guidance are in its README.
 
-An upload without `--publish` leaves a draft. Use a separate assembled bundle for
-sandbox, with `ZENODO_SANDBOX_TOKEN` exported in your local environment:
+Use a separate sandbox bundle with `ZENODO_SANDBOX_TOKEN` in the environment:
 
 ```bash
 python3 zenodo_flora.py --version 2026.11.1 --bundle release-bundles/sandbox-2026.11.1
 python3 zenodo_flora.py --bundle release-bundles/sandbox-2026.11.1 --upload sandbox
-# Optional sandbox publication to exercise versioning end to end:
+# Optional: publish in sandbox to exercise versioning.
 python3 zenodo_flora.py --bundle release-bundles/sandbox-2026.11.1 --upload sandbox --publish
 ```
 
-No approved production candidate exists yet. The existing `release-bundles/2026.11.1`
-is an offline preview. After deploying the fixes and rebuilding the authoritative
-publication, assemble a fresh candidate into the dedicated, currently unused path:
+An upload without `--publish` leaves a draft. Tokens are read only from environment
+variables: `ZENODO_SANDBOX_TOKEN` or `ZENODO_TOKEN` for production. The script does
+not load `.env`; use deposit write/action scopes. No token values or server error
+bodies are logged. `ZENODO_TOKEN` was present in the implementation environment;
+no sandbox token was available. The assembly workflow needs no secret. A future
+upload job would need that name in a protected GitHub environment secret.
+
+Before the first production candidate, merge the author/export fix in
+[PR #29](https://github.com/forrtproject/flora-validation/pull/29), finish/apply the
+report-author corrections in [PR #26](https://github.com/forrtproject/flora-validation/pull/26),
+and run the normal pipeline and Publish FLoRA. Already-applied identifier patches
+are preserved in [PR #30](https://github.com/forrtproject/flora-validation/pull/30).
+Then assemble a fresh candidate into this dedicated path:
 
 ```bash
 python3 zenodo_flora.py --version 2026.11.1 --bundle release-bundles/production/2026.11.1
 ```
 
-Review that candidate and its checksum manifest. Lukas's approval must identify
-this exact directory and its checksum; do not copy or rename the old preview here.
-**Only after that approval**, the first production publication command is:
+Lukas must approve this exact directory and checksum manifest, including DOI
+reservation and upload. **Only after that approval**, with `ZENODO_TOKEN` set:
 
 ```bash
 python3 zenodo_flora.py --bundle release-bundles/production/2026.11.1 --upload production --publish --approve-production
 ```
 
-Set `ZENODO_TOKEN` in the invoking process's environment. This name was already
-present in the implementation environment, but was not documented in this repo.
-No sandbox token was available. Tokens are read only from environment variables;
-this script does not load `.env`. Use deposit write/action scopes. Never put tokens
-in arguments, source files or artifacts. The assembly workflow needs no Zenodo secret;
-if a future upload job is added, store its token in a protected GitHub environment
-secret of the same name. No token values or server error bodies are logged.
+No approved production candidate exists yet. Old previews, including the existing
+`release-bundles/2026.11.1`, must not be copied or renamed into the candidate path.
+Superseded audits remain at [commit 479b12d](https://github.com/forrtproject/flora-validation/tree/479b12dc05a04f765f5ad1460dd0cad522f96331).
 
-For the next release, recover the preceding published bundle using its version
-record ID (the command accepts either host through `--environment`), or use your
-archived bundle including `zenodo-state.json`:
+## Subsequent versions and recovery
+
+Keep each published bundle and its local `zenodo-state.json` receipt. For the next
+release, supply that directory through `--previous`:
 
 ```bash
-# After the first publication, keep its release-bundles/2026.11.1 directory.
-python3 zenodo_flora.py --version 2026.11.2 --bundle release-bundles/2026.11.2 --previous release-bundles/2026.11.1
+python3 zenodo_flora.py --version 2026.11.2 --bundle release-bundles/production/2026.11.2 --previous release-bundles/production/2026.11.1
 ```
 
-`--fetch-previous RECORD_ID --bundle DIRECTORY` downloads a public baseline without
-a token; replace RECORD_ID with the **actual** preceding version record ID. This
-validates the deposited checksums and creates a local published receipt. Assembly
-requires that receipt for subsequent releases. Upload calls `newversion` on that
-preceding version ID, follows `links.latest_draft`, and checks the concept ID.
-Zenodo requires the latest version ID rather than the concept ID; see its
-[REST API documentation](https://developers.zenodo.org/#new-version).
+Alternatively, `--fetch-previous RECORD_ID --bundle DIRECTORY` recovers a public
+baseline, verifies checksums and creates its published receipt. Use the actual
+preceding **version record ID**, never the concept ID; `--environment sandbox`
+selects sandbox. Upload calls `newversion` on that record and checks the concept;
+see the [Zenodo REST API](https://developers.zenodo.org/#new-version).
 
-## Citation consistency and recovery
+The manual Actions workflow assembles offline, optionally recovering the previous
+record. Archive bundles independently: its artifacts expire after 90 days.
 
-The repository template has no version DOI or old OSF DOI. Offline assembly fills
-in the version but omits DOI. Upload asks Zenodo to reserve a DOI and writes **only
-that returned version DOI** into the bundle's CITATION.cff before uploading files
-and refreshed checksums. The API's `prereserve_doi` reservation is not DOI
-registration; that happens on publication. Later releases receive their own citation
-file; previous deposits are never rewritten. Cite the downloaded version's file,
-not a citation template from a moving branch. A concept DOI can be used to refer to
-the collection in prose once one exists, but must not replace the version DOI in
-a version-specific citation file.
+Offline `CITATION.cff` contains the version and no DOI. Upload reserves a version
+DOI through Zenodo's `prereserve_doi`, writes only the returned DOI into the file,
+and refreshes checksums before uploading. Reservation becomes registration only
+on publication. Cite the published version's citation file. Subsequent releases
+get their own files and DOIs; earlier deposits remain unchanged. A concept DOI
+may refer to the collection in prose once it exists.
 
-`bundle-checksums.json` protects the reviewed bundle against accidental changes.
-Upload records `zenodo-state.json` immediately after creating/finding a draft and
-resumes that ID on retry. The state receipt is local, not deposited. Inherited files
-are removed from new drafts; every uploaded file's returned MD5 is checked before
-publication. HTTP failures stop the run. Re-run the upload command with the same
-bundle to resume. If a draft creation request times out **before a receipt is
-written**, inspect the account on Zenodo and recover its draft ID into a receipt
-before retrying; do not blindly create another concept record. Keep the receipt with
-the bundle. Production always requires the explicit approval flag, including drafts.
-
-The upload's only planned local mutation is the reserved DOI in CITATION.cff and
-its checksum. Metadata and data remain the reviewed inputs. Production approval
-must cover this DOI reservation and the first upload. Never run the production
-command until approved: published records/DOIs cannot simply be deleted.
-
-## Agreed public columns
-
-`release/flora/columns.json` is the ordered release contract: the 30 fields selected
-by Lukas plus `author_overlap_pct`. The original-study and report bibliographies
-are grouped separately. Each outcome is followed by its quote and source, and
-provenance `source` ends the CSV. The full pipeline export remains available in the
-repository; it is not a second dataset file in the deposit.
-
-## Project-first classification
-
-`flora_release_projects.py` uses `release/flora/projects.yml` to match project
-anchors in `doi_r`, `alt_identifier_r` and report URLs. DOI prefixes, case,
-comma/semicolon/pipe-separated alternatives and OSF project URL/DOI forms are
-normalized. Original-study IDs and title keywords never establish membership.
-Project-specific intake rows (currently SCORE) can also seed report identifiers.
-Explicit registry record IDs are supported for reviewed exceptions, but current
-SCORE matching relies on the verified report-side identifiers in the authoritative
-publication and its known intake. Historical review snapshots are not runtime inputs.
-Matches seed one-hop aliases; there is no recursive transitive merge of projects.
-
-Projects take priority over every intake route, including search pipeline. The
-strict >50 threshold counts distinct active released record IDs after deduplication
-and exclusions, once each regardless of the number of matching identifiers. A
-registry may link multiple reports to the same project. Established qualification
-records the count and source-snapshot hash so labels persist after retirements.
-
-The current registered projects are RP:P, the student replication collection in
-Boyce et al., and SCORE. Shared report identifier groups over 50 that are not yet
-mapped are reported for naming/review; production refuses unresolved large groups.
-Conflicting matches stop assembly rather than arbitrarily choosing a project.
-Text mentions without identifier evidence are included as review hints only.
-
-`project_classification.json` in the bundle documents project counts, member IDs,
-seed IDs, normalized identifiers, unmatched large groups and unmatched project-name
-mentions. The manifest preserves the registry and review status. Changing the
-registry requires reassembly before upload. No additional CSV column is introduced;
-source means an identifiable project, otherwise intake route. It does not retain
-simultaneous route and project membership in one value.
-
-## Related work and first release
-
-Merge the author/export correctness fix in [PR #29](https://github.com/forrtproject/flora-validation/pull/29)
-and rebuild the authoritative dataset before assembling a production candidate.
-The already-applied SCORE paper links and report DOIs are preserved separately in
-[PR #30](https://github.com/forrtproject/flora-validation/pull/30). Report-author
-corrections and explicit unknown-author handling belong to
-[PR #26](https://github.com/forrtproject/flora-validation/pull/26).
-
-For the first release, finish/apply the report-author corrections, run the normal
-pipeline and Publish FLoRA, and assemble a fresh candidate. Review its initial
-changelog, 31-column codebook, creators, licence and description. The proposed
-metadata comes from `release/flora/citation-template.cff` (220 creators, CC BY 4.0);
-it must be reviewed with the actual candidate. Lukas's approval identifies the
-exact bundle path and checksum before the production command above is run.
-
-The pre-split exploratory previews and superseded audits are not release inputs.
-They remain recoverable at
-[commit 479b12d](https://github.com/forrtproject/flora-validation/tree/479b12dc05a04f765f5ad1460dd0cad522f96331)
-and in the maintainer's private archive. No old preview is an approved candidate.
+Checksum verification protects the reviewed files. Upload saves the draft ID in
+`zenodo-state.json` immediately, checks identity/concept/version on retry, removes
+inherited files and checks each uploaded MD5. Re-run the same upload command to
+resume after an HTTP failure. If draft creation times out **before a receipt is
+saved**, inspect Zenodo and recover that draft ID before retrying. The receipt
+stays local. Production always requires the approval flag, including draft uploads.
+The planned local mutation is the reserved DOI and its checksum. Published records
+and DOIs cannot simply be deleted.
