@@ -122,7 +122,12 @@ and the individual report identifiers/URLs are preserved. The refreshed preview
 changes only 301 alternative-identifier cells and 148 project source labels from
 the preceding preview; all other release data cells are unchanged.
 
-The short-file GUID resolver defect is fixed. Primary report DOI enrichment can
-continue separately; report-byline corrections in PR #26 and the authoritative
-pipeline rebuild remain outstanding before production. See
+On 12 November, the [report DOI batch](../../data/corrections/SCORE_REPORT_DOIS.md)
+filled 166 verified missing `doi_r` values through log entries 747–912, preserving
+SCORE paper alternatives and existing report metadata. Fourteen reports have no
+registered DOI and retain blank primary fields. This dated preview predates those
+primary-DOI corrections and must be reassembled from a fresh publication.
+
+The short-file GUID resolver defect is fixed. Report-byline corrections in PR #26
+and the authoritative pipeline rebuild remain outstanding before production. See
 [SCORE_LINKAGE.md](SCORE_LINKAGE.md). Nothing has been sent to Zenodo.

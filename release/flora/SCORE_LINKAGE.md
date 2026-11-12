@@ -70,8 +70,13 @@ matched attempt occurs in the relevant paper's outcome table. The batch includes
 all 153 previously labelled SCORE records and additional verified records across
 intake routes. It does not change primary report DOIs, citations or authors.
 
-Verified individual-report DOI candidates in the earlier OSF audit can be reviewed
-separately; inaccessible lookups remain unverified. Apply further identifier and
-citation corrections through the append-only log. Report-byline corrections in
-PR #26 and the authoritative pipeline rebuild remain outstanding before production
-approval. The first release is still an offline preview; nothing was sent to Zenodo.
+The [individual-report DOI batch](../../data/corrections/SCORE_REPORT_DOIS.md)
+checked all 180 missing primary DOI fields on 12 November. It fills 166 registered
+report DOIs through correction-log entries 747–912. The remaining 14 report-level
+identifier endpoints have no registered DOI; those primary fields stay blank.
+SCORE paper DOIs remain alternatives throughout. A normal rebuild verified that
+bylines, citations, outcomes and report URLs do not change.
+
+Report-byline corrections in PR #26 and the authoritative pipeline rebuild remain
+outstanding before production approval. Reassemble the dated preview after the
+DOI corrections and rebuild; nothing was sent to Zenodo.

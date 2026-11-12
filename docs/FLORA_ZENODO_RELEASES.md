@@ -201,3 +201,9 @@ DOI to reproduction records, after checking the published outcome datasets.
 It appends to `alt_identifier_r` through the correction log, preserving individual
 report identifiers and existing alternatives. The associated aggregate paper is
 an additional publication link, not a replacement report citation.
+
+The [individual-report DOI batch](../data/corrections/SCORE_REPORT_DOIS.md)
+fills verified missing `doi_r` values while retaining those paper alternatives.
+Reports without a registered DOI keep a blank primary field and their report URL;
+the aggregate paper is not substituted as their primary DOI. A rebuild is checked
+to preserve the report's byline, citation text and outcomes.

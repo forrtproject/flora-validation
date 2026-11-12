@@ -1,0 +1,4150 @@
+{
+  "recorded_on": "2026-11-12",
+  "scope": "Missing doi_r fields among the 301 verified SCORE records. Preserve SCORE paper DOIs in alt_identifier_r; no aggregate-paper fallback in doi_r.",
+  "audited_missing_fields": 180,
+  "counts": {
+    "verified": 166,
+    "no_registered_doi": 14
+  },
+  "corrections": [
+    {
+      "id": "FLORA-002635",
+      "doi_r": "10.17605/OSF.IO/2BE7N",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1037/pspp0000113",
+        "url_r": "https://osf.io/bfs6p",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002635",
+        "report_url": "https://osf.io/bfs6p",
+        "node": "2be7n",
+        "identifier_api": "https://api.osf.io/v2/nodes/2be7n/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/2BE7N"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002636",
+      "doi_r": "10.17605/OSF.IO/3G74A",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1017/xps.2018.6",
+        "url_r": "https://osf.io/zr7dw",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002636",
+        "report_url": "https://osf.io/zr7dw",
+        "node": "3g74a",
+        "identifier_api": "https://api.osf.io/v2/nodes/3g74a/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/3G74A"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002637",
+      "doi_r": "10.17605/OSF.IO/5FJD4",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.3982/ecta14370",
+        "url_r": "https://osf.io/7qnxh",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002637",
+        "report_url": "https://osf.io/7qnxh",
+        "node": "5fjd4",
+        "identifier_api": "https://api.osf.io/v2/nodes/5fjd4/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/5FJD4"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002638",
+      "doi_r": "10.17605/OSF.IO/FTBMK",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1093/jcr/ucw044",
+        "url_r": "https://osf.io/nftez",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002638",
+        "report_url": "https://osf.io/nftez",
+        "node": "ftbmk",
+        "identifier_api": "https://api.osf.io/v2/nodes/ftbmk/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/FTBMK"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002639",
+      "doi_r": "10.17605/OSF.IO/H2CQ7",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1007/s10683-016-9484-1",
+        "url_r": "https://osf.io/fxwt7",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002639",
+        "report_url": "https://osf.io/fxwt7",
+        "node": "h2cq7",
+        "identifier_api": "https://api.osf.io/v2/nodes/h2cq7/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/H2CQ7"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002640",
+      "doi_r": "10.17605/OSF.IO/NPJU2",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1037/a0033009",
+        "url_r": "https://osf.io/dp4xv",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002640",
+        "report_url": "https://osf.io/dp4xv",
+        "node": "npju2",
+        "identifier_api": "https://api.osf.io/v2/nodes/npju2/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/NPJU2"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002641",
+      "doi_r": "10.17605/OSF.IO/MP3AK",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1002/per.2157",
+        "url_r": "https://osf.io/n4kby",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002641",
+        "report_url": "https://osf.io/n4kby",
+        "node": "mp3ak",
+        "identifier_api": "https://api.osf.io/v2/nodes/mp3ak/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/MP3AK"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002642",
+      "doi_r": "10.17605/OSF.IO/C9N5X",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.socscimed.2017.03.035",
+        "url_r": "https://osf.io/4rch2",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002642",
+        "report_url": "https://osf.io/4rch2",
+        "node": "c9n5x",
+        "identifier_api": "https://api.osf.io/v2/nodes/c9n5x/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/C9N5X"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002643",
+      "doi_r": "10.17605/OSF.IO/VNGZ9",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1086/678035",
+        "url_r": "https://osf.io/kms49",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002643",
+        "report_url": "https://osf.io/kms49",
+        "node": "vngz9",
+        "identifier_api": "https://api.osf.io/v2/nodes/vngz9/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/VNGZ9"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002644",
+      "doi_r": "10.17605/OSF.IO/C6PKB",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.worlddev.2015.10.037",
+        "url_r": "https://osf.io/2zv6n",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002644",
+        "report_url": "https://osf.io/2zv6n",
+        "node": "c6pkb",
+        "identifier_api": "https://api.osf.io/v2/nodes/c6pkb/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/C6PKB"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002645",
+      "doi_r": "10.17605/OSF.IO/M4YSE",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1093/sf/soy014",
+        "url_r": "https://osf.io/dw4mf",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002645",
+        "report_url": "https://osf.io/dw4mf",
+        "node": "m4yse",
+        "identifier_api": "https://api.osf.io/v2/nodes/m4yse/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/M4YSE"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002647",
+      "doi_r": "10.17605/OSF.IO/HUAVW",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1093/rfs/hhr027",
+        "url_r": "https://osf.io/jqrde",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002647",
+        "report_url": "https://osf.io/jqrde",
+        "node": "huavw",
+        "identifier_api": "https://api.osf.io/v2/nodes/huavw/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/HUAVW"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002648",
+      "doi_r": "10.17605/OSF.IO/MZTKR",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.3982/ecta8852",
+        "url_r": "https://osf.io/dh3ae",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002648",
+        "report_url": "https://osf.io/dh3ae",
+        "node": "mztkr",
+        "identifier_api": "https://api.osf.io/v2/nodes/mztkr/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/MZTKR"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002650",
+      "doi_r": "10.17605/OSF.IO/HZ97D",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.jenvp.2013.09.003",
+        "url_r": "https://osf.io/5qet4",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002650",
+        "report_url": "https://osf.io/5qet4",
+        "node": "hz97d",
+        "identifier_api": "https://api.osf.io/v2/nodes/hz97d/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/HZ97D"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002651",
+      "doi_r": "10.17605/OSF.IO/M36Y2",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1002/per.1942",
+        "url_r": "https://osf.io/n8tds",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002651",
+        "report_url": "https://osf.io/n8tds",
+        "node": "m36y2",
+        "identifier_api": "https://api.osf.io/v2/nodes/m36y2/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/M36Y2"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002652",
+      "doi_r": "10.17605/OSF.IO/G9V87",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.obhdp.2016.08.001",
+        "url_r": "https://osf.io/eq96h",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002652",
+        "report_url": "https://osf.io/eq96h",
+        "node": "g9v87",
+        "identifier_api": "https://api.osf.io/v2/nodes/g9v87/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/G9V87"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002653",
+      "doi_r": "10.17605/OSF.IO/K6XM9",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.learninstruc.2014.12.001",
+        "url_r": "https://osf.io/5fvdy",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002653",
+        "report_url": "https://osf.io/5fvdy",
+        "node": "k6xm9",
+        "identifier_api": "https://api.osf.io/v2/nodes/k6xm9/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/K6XM9"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002654",
+      "doi_r": "10.17605/OSF.IO/4V7AX",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1086/676333",
+        "url_r": "https://osf.io/zhdtn",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002654",
+        "report_url": "https://osf.io/zhdtn",
+        "node": "4v7ax",
+        "identifier_api": "https://api.osf.io/v2/nodes/4v7ax/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/4V7AX"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002655",
+      "doi_r": "10.17605/OSF.IO/QCZEU",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1007/s13524-013-0261-x",
+        "url_r": "https://osf.io/y4tra",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002655",
+        "report_url": "https://osf.io/y4tra",
+        "node": "qczeu",
+        "identifier_api": "https://api.osf.io/v2/nodes/qczeu/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/QCZEU"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002656",
+      "doi_r": "10.17605/OSF.IO/RS7E9",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1017/s0043887117000107",
+        "url_r": "https://osf.io/rg5vt",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002656",
+        "report_url": "https://osf.io/rg5vt",
+        "node": "rs7e9",
+        "identifier_api": "https://api.osf.io/v2/nodes/rs7e9/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/RS7E9"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002657",
+      "doi_r": "10.17605/OSF.IO/KR7WF",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.3102/0002831214531323",
+        "url_r": "https://osf.io/f5esc",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002657",
+        "report_url": "https://osf.io/f5esc",
+        "node": "kr7wf",
+        "identifier_api": "https://api.osf.io/v2/nodes/kr7wf/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/KR7WF"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002658",
+      "doi_r": "10.17605/OSF.IO/XTMY9",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1007/s11747-014-0373-x",
+        "url_r": "https://osf.io/rak92",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002658",
+        "report_url": "https://osf.io/rak92",
+        "node": "xtmy9",
+        "identifier_api": "https://api.osf.io/v2/nodes/xtmy9/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/XTMY9"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002659",
+      "doi_r": "10.17605/OSF.IO/WTM3E",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.cognition.2017.04.004",
+        "url_r": "https://osf.io/axph8",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002659",
+        "report_url": "https://osf.io/axph8",
+        "node": "wtm3e",
+        "identifier_api": "https://api.osf.io/v2/nodes/wtm3e/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/WTM3E"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002660",
+      "doi_r": "10.17605/OSF.IO/EFUHG",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1111/j.1540-6210.2011.02414.x",
+        "url_r": "https://osf.io/7q5d4",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002660",
+        "report_url": "https://osf.io/7q5d4",
+        "node": "efuhg",
+        "identifier_api": "https://api.osf.io/v2/nodes/efuhg/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/EFUHG"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002661",
+      "doi_r": "10.17605/OSF.IO/2JN6D",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1037/apl0000281",
+        "url_r": "https://osf.io/69zjt",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002661",
+        "report_url": "https://osf.io/69zjt",
+        "node": "2jn6d",
+        "identifier_api": "https://api.osf.io/v2/nodes/2jn6d/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/2JN6D"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002662",
+      "doi_r": "10.17605/OSF.IO/9VXWZ",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.3102/0013189x11422112",
+        "url_r": "https://osf.io/jtd7n",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002662",
+        "report_url": "https://osf.io/jtd7n",
+        "node": "9vxwz",
+        "identifier_api": "https://api.osf.io/v2/nodes/9vxwz/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/9VXWZ"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002663",
+      "doi_r": "10.17605/OSF.IO/ER4GY",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1037/pspp0000031",
+        "url_r": "https://osf.io/6gpkx",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002663",
+        "report_url": "https://osf.io/6gpkx",
+        "node": "er4gy",
+        "identifier_api": "https://api.osf.io/v2/nodes/er4gy/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/ER4GY"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002664",
+      "doi_r": "10.17605/OSF.IO/XNH2R",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1037/a0037037",
+        "url_r": "https://osf.io/d923e",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002664",
+        "report_url": "https://osf.io/d923e",
+        "node": "xnh2r",
+        "identifier_api": "https://api.osf.io/v2/nodes/xnh2r/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/XNH2R"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002665",
+      "doi_r": "10.17605/OSF.IO/QRU6T",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1007/s13524-012-0091-2",
+        "url_r": "https://osf.io/3ykw5",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002665",
+        "report_url": "https://osf.io/3ykw5",
+        "node": "qru6t",
+        "identifier_api": "https://api.osf.io/v2/nodes/qru6t/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/QRU6T"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002666",
+      "doi_r": "10.17605/OSF.IO/87QS6",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1177/0014402918771337",
+        "url_r": "https://osf.io/jr239",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002666",
+        "report_url": "https://osf.io/jr239",
+        "node": "87qs6",
+        "identifier_api": "https://api.osf.io/v2/nodes/87qs6/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/87QS6"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002667",
+      "doi_r": "10.17605/OSF.IO/56JQU",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1002/job.598",
+        "url_r": "https://osf.io/82z6a",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002667",
+        "report_url": "https://osf.io/82z6a",
+        "node": "56jqu",
+        "identifier_api": "https://api.osf.io/v2/nodes/56jqu/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/56JQU"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002668",
+      "doi_r": "10.17605/OSF.IO/9R2JW",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1037/a0037294",
+        "url_r": "https://osf.io/f93t6",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002668",
+        "report_url": "https://osf.io/f93t6",
+        "node": "9r2jw",
+        "identifier_api": "https://api.osf.io/v2/nodes/9r2jw/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/9R2JW"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002669",
+      "doi_r": "10.17605/OSF.IO/A4SWD",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.cedpsych.2014.03.004",
+        "url_r": "https://osf.io/w9acu",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002669",
+        "report_url": "https://osf.io/w9acu",
+        "node": "a4swd",
+        "identifier_api": "https://api.osf.io/v2/nodes/a4swd/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/A4SWD"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002670",
+      "doi_r": "10.17605/OSF.IO/BX4HY",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1177/0956797618756862",
+        "url_r": "https://osf.io/tybxg/",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002670",
+        "report_url": "https://osf.io/tybxg/",
+        "node": "bx4hy",
+        "identifier_api": "https://api.osf.io/v2/nodes/bx4hy/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/BX4HY"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002672",
+      "doi_r": "10.17605/OSF.IO/USV5K",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1007/s13524-012-0173-1",
+        "url_r": "https://osf.io/5xr92",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002672",
+        "report_url": "https://osf.io/5xr92",
+        "node": "usv5k",
+        "identifier_api": "https://api.osf.io/v2/nodes/usv5k/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/USV5K"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002673",
+      "doi_r": "10.17605/OSF.IO/Q7JK4",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1086/662130",
+        "url_r": "https://osf.io/m8bpk",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002673",
+        "report_url": "https://osf.io/m8bpk",
+        "node": "q7jk4",
+        "identifier_api": "https://api.osf.io/v2/nodes/q7jk4/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/Q7JK4"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002674",
+      "doi_r": "10.17605/OSF.IO/T95K2",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1257/app.3.1.239",
+        "url_r": "https://osf.io/kcegt",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002674",
+        "report_url": "https://osf.io/kcegt",
+        "node": "t95k2",
+        "identifier_api": "https://api.osf.io/v2/nodes/t95k2/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/T95K2"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002676",
+      "doi_r": "10.17605/OSF.IO/NA3MH",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1086/680670",
+        "url_r": "https://osf.io/gu26j",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002676",
+        "report_url": "https://osf.io/gu26j",
+        "node": "na3mh",
+        "identifier_api": "https://api.osf.io/v2/nodes/na3mh/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/NA3MH"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002677",
+      "doi_r": "10.17605/OSF.IO/FGX67",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1257/aer.100.4.1913",
+        "url_r": "https://osf.io/pdurj",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002677",
+        "report_url": "https://osf.io/pdurj",
+        "node": "fgx67",
+        "identifier_api": "https://api.osf.io/v2/nodes/fgx67/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/FGX67"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002678",
+      "doi_r": "10.17605/OSF.IO/GUEN5",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1017/s0043887114000100",
+        "url_r": "https://osf.io/675hz",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002678",
+        "report_url": "https://osf.io/675hz",
+        "node": "guen5",
+        "identifier_api": "https://api.osf.io/v2/nodes/guen5/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/GUEN5"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002679",
+      "doi_r": "10.17605/OSF.IO/F49UQ",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1111/1745-9125.12151",
+        "url_r": "https://osf.io/nr64y",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002679",
+        "report_url": "https://osf.io/nr64y",
+        "node": "f49uq",
+        "identifier_api": "https://api.osf.io/v2/nodes/f49uq/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/F49UQ"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002680",
+      "doi_r": "10.17605/OSF.IO/68X45",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.3102/0002831209340043",
+        "url_r": "https://osf.io/d5ezq",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002680",
+        "report_url": "https://osf.io/d5ezq",
+        "node": "68x45",
+        "identifier_api": "https://api.osf.io/v2/nodes/68x45/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/68X45"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002681",
+      "doi_r": "10.17605/OSF.IO/7VTY6",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.obhdp.2008.06.001",
+        "url_r": "https://osf.io/dtkjc",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002681",
+        "report_url": "https://osf.io/dtkjc",
+        "node": "7vty6",
+        "identifier_api": "https://api.osf.io/v2/nodes/7vty6/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/7VTY6"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002682",
+      "doi_r": "10.17605/OSF.IO/ND87T",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.jfineco.2008.12.008",
+        "url_r": "https://osf.io/q7yc5",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002682",
+        "report_url": "https://osf.io/q7yc5",
+        "node": "nd87t",
+        "identifier_api": "https://api.osf.io/v2/nodes/nd87t/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/ND87T"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002683",
+      "doi_r": "10.17605/OSF.IO/VCJF6",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1002/per.853",
+        "url_r": "https://osf.io/wygup",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002683",
+        "report_url": "https://osf.io/wygup",
+        "node": "vcjf6",
+        "identifier_api": "https://api.osf.io/v2/nodes/vcjf6/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/VCJF6"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002686",
+      "doi_r": "10.17605/OSF.IO/RQWJU",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.jesp.2012.02.002",
+        "url_r": "https://osf.io/gsw9a",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002686",
+        "report_url": "https://osf.io/gsw9a",
+        "node": "rqwju",
+        "identifier_api": "https://api.osf.io/v2/nodes/rqwju/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/RQWJU"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002687",
+      "doi_r": "10.17605/OSF.IO/U8X9S",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1007/s13524-016-0483-9",
+        "url_r": "https://osf.io/s2hez",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002687",
+        "report_url": "https://osf.io/s2hez",
+        "node": "u8x9s",
+        "identifier_api": "https://api.osf.io/v2/nodes/u8x9s/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/U8X9S"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002688",
+      "doi_r": "10.17605/OSF.IO/P7MEX",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.obhdp.2018.08.002",
+        "url_r": "https://osf.io/957xr",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002688",
+        "report_url": "https://osf.io/957xr",
+        "node": "p7mex",
+        "identifier_api": "https://api.osf.io/v2/nodes/p7mex/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/P7MEX"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002691",
+      "doi_r": "10.17605/OSF.IO/DK3XZ",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1509/jmr.14.0300",
+        "url_r": "https://osf.io/fngwe",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002691",
+        "report_url": "https://osf.io/fngwe",
+        "node": "dk3xz",
+        "identifier_api": "https://api.osf.io/v2/nodes/dk3xz/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/DK3XZ"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002692",
+      "doi_r": "10.17605/OSF.IO/CR6ZM",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1177/0956797611413935",
+        "url_r": "https://osf.io/yfd5b",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002692",
+        "report_url": "https://osf.io/yfd5b",
+        "node": "cr6zm",
+        "identifier_api": "https://api.osf.io/v2/nodes/cr6zm/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/CR6ZM"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002693",
+      "doi_r": "10.17605/OSF.IO/Q4FKD",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1002/job.697",
+        "url_r": "https://osf.io/snrcv",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002693",
+        "report_url": "https://osf.io/snrcv",
+        "node": "q4fkd",
+        "identifier_api": "https://api.osf.io/v2/nodes/q4fkd/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/Q4FKD"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "registered_report_root_with_verified_component_relationship",
+        "report_root_check": {
+          "node": "q4fkd",
+          "identifier_api": "https://api.osf.io/v2/nodes/q4fkd/identifiers/",
+          "http_status": 200,
+          "dois": [
+            "10.17605/OSF.IO/Q4FKD"
+          ]
+        },
+        "file_component": {
+          "node": "kg7ae",
+          "identifier_api": "https://api.osf.io/v2/nodes/kg7ae/identifiers/",
+          "status": "no_registered_doi",
+          "dois": []
+        },
+        "relationship_api": "https://api.osf.io/v2/nodes/kg7ae/",
+        "report_title": "Analysis"
+      }
+    },
+    {
+      "id": "FLORA-002694",
+      "doi_r": "10.17605/OSF.IO/TUY3F",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.jbusres.2016.07.021",
+        "url_r": "https://osf.io/vu8nb",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002694",
+        "report_url": "https://osf.io/vu8nb",
+        "node": "tuy3f",
+        "identifier_api": "https://api.osf.io/v2/nodes/tuy3f/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/TUY3F"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002695",
+      "doi_r": "10.17605/OSF.IO/5DU7F",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.cognition.2016.03.003",
+        "url_r": "https://osf.io/6aefs",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002695",
+        "report_url": "https://osf.io/6aefs",
+        "node": "5du7f",
+        "identifier_api": "https://api.osf.io/v2/nodes/5du7f/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/5DU7F"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002696",
+      "doi_r": "10.17605/OSF.IO/VCFSG",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1037/a0027678",
+        "url_r": "https://osf.io/mb5fp",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002696",
+        "report_url": "https://osf.io/mb5fp",
+        "node": "vcfsg",
+        "identifier_api": "https://api.osf.io/v2/nodes/vcfsg/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/VCFSG"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002697",
+      "doi_r": "10.17605/OSF.IO/82G9J",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1287/mnsc.1120.1650",
+        "url_r": "https://osf.io/uvgp5",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002697",
+        "report_url": "https://osf.io/uvgp5",
+        "node": "82g9j",
+        "identifier_api": "https://api.osf.io/v2/nodes/82g9j/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/82G9J"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002698",
+      "doi_r": "10.17605/OSF.IO/RVS4Q",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1017/s0003055409090066",
+        "url_r": "https://osf.io/4bckg",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002698",
+        "report_url": "https://osf.io/4bckg",
+        "node": "rvs4q",
+        "identifier_api": "https://api.osf.io/v2/nodes/rvs4q/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/RVS4Q"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002699",
+      "doi_r": "10.17605/OSF.IO/8QUJB",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1037/a0019973",
+        "url_r": "https://osf.io/4gd23",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002699",
+        "report_url": "https://osf.io/4gd23",
+        "node": "8qujb",
+        "identifier_api": "https://api.osf.io/v2/nodes/8qujb/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/8QUJB"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002700",
+      "doi_r": "10.17605/OSF.IO/SKJ4C",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1509/jm.16.0125",
+        "url_r": "https://osf.io/wgznk",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002700",
+        "report_url": "https://osf.io/wgznk",
+        "node": "skj4c",
+        "identifier_api": "https://api.osf.io/v2/nodes/skj4c/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/SKJ4C"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002701",
+      "doi_r": "10.17605/OSF.IO/5QWDH",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.cognition.2009.08.005",
+        "url_r": "https://osf.io/bnauj",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002701",
+        "report_url": "https://osf.io/bnauj",
+        "node": "5qwdh",
+        "identifier_api": "https://api.osf.io/v2/nodes/5qwdh/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/5QWDH"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002702",
+      "doi_r": "10.17605/OSF.IO/EBAF2",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1086/670394",
+        "url_r": "https://osf.io/4w3dy",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002702",
+        "report_url": "https://osf.io/4w3dy",
+        "node": "ebaf2",
+        "identifier_api": "https://api.osf.io/v2/nodes/ebaf2/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/EBAF2"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002703",
+      "doi_r": "10.17605/OSF.IO/2DX54",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1007/s11747-009-0140-6",
+        "url_r": "https://osf.io/jmdsy",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002703",
+        "report_url": "https://osf.io/jmdsy",
+        "node": "2dx54",
+        "identifier_api": "https://api.osf.io/v2/nodes/2dx54/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/2DX54"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002704",
+      "doi_r": "10.17605/OSF.IO/3TCZS",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1007/s10683-008-9210-8",
+        "url_r": "https://osf.io/zcjx7",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002704",
+        "report_url": "https://osf.io/zcjx7",
+        "node": "3tczs",
+        "identifier_api": "https://api.osf.io/v2/nodes/3tczs/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/3TCZS"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002731",
+      "doi_r": "10.17605/OSF.IO/WPK3G",
+      "baseline": {
+        "type": "reproduction",
+        "doi_o": "10.1037/xge0000157",
+        "url_r": "https://osf.io/d3s25",
+        "alt_identifier_r": "10.1038/s41586-026-10203-5"
+      },
+      "evidence": {
+        "id": "FLORA-002731",
+        "report_url": "https://osf.io/d3s25",
+        "node": "wpk3g",
+        "identifier_api": "https://api.osf.io/v2/nodes/wpk3g/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/WPK3G"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "registered_report_root_with_verified_component_relationship",
+        "report_root_check": {
+          "node": "wpk3g",
+          "identifier_api": "https://api.osf.io/v2/nodes/wpk3g/identifiers/",
+          "http_status": 200,
+          "dois": [
+            "10.17605/OSF.IO/WPK3G"
+          ]
+        },
+        "file_component": {
+          "node": "45bu2",
+          "identifier_api": "https://api.osf.io/v2/nodes/45bu2/identifiers/",
+          "status": "no_registered_doi",
+          "dois": []
+        },
+        "relationship_api": "https://api.osf.io/v2/nodes/45bu2/",
+        "report_title": "Analysis"
+      }
+    },
+    {
+      "id": "FLORA-002732",
+      "doi_r": "10.17605/OSF.IO/C5ADW",
+      "baseline": {
+        "type": "reproduction",
+        "doi_o": "10.1007/s10683-012-9342-8",
+        "url_r": "https://osf.io/6xce3",
+        "alt_identifier_r": "10.1038/s41586-026-10203-5"
+      },
+      "evidence": {
+        "id": "FLORA-002732",
+        "report_url": "https://osf.io/6xce3",
+        "node": "c5adw",
+        "identifier_api": "https://api.osf.io/v2/nodes/c5adw/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/C5ADW"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "registered_report_root_with_verified_component_relationship",
+        "report_root_check": {
+          "node": "c5adw",
+          "identifier_api": "https://api.osf.io/v2/nodes/c5adw/identifiers/",
+          "http_status": 200,
+          "dois": [
+            "10.17605/OSF.IO/C5ADW"
+          ]
+        },
+        "file_component": {
+          "node": "45uqr",
+          "identifier_api": "https://api.osf.io/v2/nodes/45uqr/identifiers/",
+          "status": "no_registered_doi",
+          "dois": []
+        },
+        "relationship_api": "https://api.osf.io/v2/nodes/45uqr/",
+        "report_title": "Analysis"
+      }
+    },
+    {
+      "id": "FLORA-002735",
+      "doi_r": "10.17605/OSF.IO/A7MYS",
+      "baseline": {
+        "type": "reproduction",
+        "doi_o": "10.1509/jmkr.47.2.348",
+        "url_r": "https://osf.io/za8vm",
+        "alt_identifier_r": "10.1038/s41586-026-10203-5"
+      },
+      "evidence": {
+        "id": "FLORA-002735",
+        "report_url": "https://osf.io/za8vm",
+        "node": "a7mys",
+        "identifier_api": "https://api.osf.io/v2/nodes/a7mys/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/A7MYS"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "registered_report_root_with_verified_component_relationship",
+        "report_root_check": {
+          "node": "a7mys",
+          "identifier_api": "https://api.osf.io/v2/nodes/a7mys/identifiers/",
+          "http_status": 200,
+          "dois": [
+            "10.17605/OSF.IO/A7MYS"
+          ]
+        },
+        "file_component": {
+          "node": "ghva2",
+          "identifier_api": "https://api.osf.io/v2/nodes/ghva2/identifiers/",
+          "status": "no_registered_doi",
+          "dois": []
+        },
+        "relationship_api": "https://api.osf.io/v2/nodes/ghva2/",
+        "report_title": "LeBoeuf_JournMarketRes_2010_EKBZ_Somo_191z"
+      }
+    },
+    {
+      "id": "FLORA-002736",
+      "doi_r": "10.17605/OSF.IO/HBRWF",
+      "baseline": {
+        "type": "reproduction",
+        "doi_o": "10.1509/jmr.12.0430",
+        "url_r": "https://osf.io/ptjqy",
+        "alt_identifier_r": "10.1038/s41586-026-10203-5"
+      },
+      "evidence": {
+        "id": "FLORA-002736",
+        "report_url": "https://osf.io/ptjqy",
+        "node": "hbrwf",
+        "identifier_api": "https://api.osf.io/v2/nodes/hbrwf/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/HBRWF"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "registered_report_root_with_verified_component_relationship",
+        "report_root_check": {
+          "node": "hbrwf",
+          "identifier_api": "https://api.osf.io/v2/nodes/hbrwf/identifiers/",
+          "http_status": 200,
+          "dois": [
+            "10.17605/OSF.IO/HBRWF"
+          ]
+        },
+        "file_component": {
+          "node": "nbm7w",
+          "identifier_api": "https://api.osf.io/v2/nodes/nbm7w/identifiers/",
+          "status": "no_registered_doi",
+          "dois": []
+        },
+        "relationship_api": "https://api.osf.io/v2/nodes/nbm7w/",
+        "report_title": "Yang_JournMarketRes_2013_G1Lr_Somo_2zg7"
+      }
+    },
+    {
+      "id": "FLORA-002737",
+      "doi_r": "10.17605/OSF.IO/F5M4B",
+      "baseline": {
+        "type": "reproduction",
+        "doi_o": "10.1016/j.jesp.2010.11.006",
+        "url_r": "https://osf.io/4mtgf",
+        "alt_identifier_r": "10.1038/s41586-026-10203-5"
+      },
+      "evidence": {
+        "id": "FLORA-002737",
+        "report_url": "https://osf.io/4mtgf",
+        "node": "f5m4b",
+        "identifier_api": "https://api.osf.io/v2/nodes/f5m4b/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/F5M4B"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "registered_report_root_with_verified_component_relationship",
+        "report_root_check": {
+          "node": "f5m4b",
+          "identifier_api": "https://api.osf.io/v2/nodes/f5m4b/identifiers/",
+          "http_status": 200,
+          "dois": [
+            "10.17605/OSF.IO/F5M4B"
+          ]
+        },
+        "file_component": {
+          "node": "hg86e",
+          "identifier_api": "https://api.osf.io/v2/nodes/hg86e/identifiers/",
+          "status": "no_registered_doi",
+          "dois": []
+        },
+        "relationship_api": "https://api.osf.io/v2/nodes/hg86e/",
+        "report_title": "Woltin_JournExpSocPsych_2011_Wre_Somo_316k"
+      }
+    },
+    {
+      "id": "FLORA-002738",
+      "doi_r": "10.17605/OSF.IO/4X3B9",
+      "baseline": {
+        "type": "reproduction",
+        "doi_o": "10.1002/per.2062",
+        "url_r": "https://osf.io/ye5mq",
+        "alt_identifier_r": "10.1038/s41586-026-10203-5"
+      },
+      "evidence": {
+        "id": "FLORA-002738",
+        "report_url": "https://osf.io/ye5mq",
+        "node": "4x3b9",
+        "identifier_api": "https://api.osf.io/v2/nodes/4x3b9/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/4X3B9"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "registered_report_root_with_verified_component_relationship",
+        "report_root_check": {
+          "node": "4x3b9",
+          "identifier_api": "https://api.osf.io/v2/nodes/4x3b9/identifiers/",
+          "http_status": 200,
+          "dois": [
+            "10.17605/OSF.IO/4X3B9"
+          ]
+        },
+        "file_component": {
+          "node": "edta3",
+          "identifier_api": "https://api.osf.io/v2/nodes/edta3/identifiers/",
+          "status": "no_registered_doi",
+          "dois": []
+        },
+        "relationship_api": "https://api.osf.io/v2/nodes/edta3/",
+        "report_title": "Wetzel_EurJournPersonality_2016_Ovkm_Somo_78gg"
+      }
+    },
+    {
+      "id": "FLORA-002739",
+      "doi_r": "10.17605/OSF.IO/8TKWE",
+      "baseline": {
+        "type": "reproduction",
+        "doi_o": "10.1037/pspi0000065",
+        "url_r": "https://osf.io/ayvzd",
+        "alt_identifier_r": "10.1038/s41586-026-10203-5"
+      },
+      "evidence": {
+        "id": "FLORA-002739",
+        "report_url": "https://osf.io/ayvzd",
+        "node": "8tkwe",
+        "identifier_api": "https://api.osf.io/v2/nodes/8tkwe/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/8TKWE"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "registered_report_root_with_verified_component_relationship",
+        "report_root_check": {
+          "node": "8tkwe",
+          "identifier_api": "https://api.osf.io/v2/nodes/8tkwe/identifiers/",
+          "http_status": 200,
+          "dois": [
+            "10.17605/OSF.IO/8TKWE"
+          ]
+        },
+        "file_component": {
+          "node": "du46v",
+          "identifier_api": "https://api.osf.io/v2/nodes/du46v/identifiers/",
+          "status": "no_registered_doi",
+          "dois": []
+        },
+        "relationship_api": "https://api.osf.io/v2/nodes/du46v/",
+        "report_title": "Steinmetz_JournPerSocPsy_2016_E4Am_Somo_93mg"
+      }
+    },
+    {
+      "id": "FLORA-002740",
+      "doi_r": "10.17605/OSF.IO/YUJTC",
+      "baseline": {
+        "type": "reproduction",
+        "doi_o": "10.1016/j.jesp.2016.11.014",
+        "url_r": "https://osf.io/ptzma",
+        "alt_identifier_r": "10.1038/s41586-026-10203-5"
+      },
+      "evidence": {
+        "id": "FLORA-002740",
+        "report_url": "https://osf.io/ptzma",
+        "node": "yujtc",
+        "identifier_api": "https://api.osf.io/v2/nodes/yujtc/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/YUJTC"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "registered_report_root_with_verified_component_relationship",
+        "report_root_check": {
+          "node": "yujtc",
+          "identifier_api": "https://api.osf.io/v2/nodes/yujtc/identifiers/",
+          "http_status": 200,
+          "dois": [
+            "10.17605/OSF.IO/YUJTC"
+          ]
+        },
+        "file_component": {
+          "node": "jcgwf",
+          "identifier_api": "https://api.osf.io/v2/nodes/jcgwf/identifiers/",
+          "status": "no_registered_doi",
+          "dois": []
+        },
+        "relationship_api": "https://api.osf.io/v2/nodes/jcgwf/",
+        "report_title": "Zunick_JournExpSocPsych_2017_zlw_Somo_zg66"
+      }
+    },
+    {
+      "id": "FLORA-002741",
+      "doi_r": "10.17605/OSF.IO/TD3KH",
+      "baseline": {
+        "type": "reproduction",
+        "doi_o": "10.5465/amj.2016.0086",
+        "url_r": "https://osf.io/bjfvk",
+        "alt_identifier_r": "10.1038/s41586-026-10203-5"
+      },
+      "evidence": {
+        "id": "FLORA-002741",
+        "report_url": "https://osf.io/bjfvk",
+        "node": "td3kh",
+        "identifier_api": "https://api.osf.io/v2/nodes/td3kh/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/TD3KH"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "registered_report_root_with_verified_component_relationship",
+        "report_root_check": {
+          "node": "td3kh",
+          "identifier_api": "https://api.osf.io/v2/nodes/td3kh/identifiers/",
+          "http_status": 200,
+          "dois": [
+            "10.17605/OSF.IO/TD3KH"
+          ]
+        },
+        "file_component": {
+          "node": "cpe5r",
+          "identifier_api": "https://api.osf.io/v2/nodes/cpe5r/identifiers/",
+          "status": "no_registered_doi",
+          "dois": []
+        },
+        "relationship_api": "https://api.osf.io/v2/nodes/cpe5r/",
+        "report_title": "Dumas_AcaManageJourn_2018_5KrD_Somo_82y7"
+      }
+    },
+    {
+      "id": "FLORA-002744",
+      "doi_r": "10.17605/OSF.IO/MKR6P",
+      "baseline": {
+        "type": "reproduction",
+        "doi_o": "10.1086/700235",
+        "url_r": "https://osf.io/63bzr",
+        "alt_identifier_r": "10.1038/s41586-026-10203-5"
+      },
+      "evidence": {
+        "id": "FLORA-002744",
+        "report_url": "https://osf.io/63bzr",
+        "node": "mkr6p",
+        "identifier_api": "https://api.osf.io/v2/nodes/mkr6p/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/MKR6P"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "registered_report_root_with_verified_component_relationship",
+        "report_root_check": {
+          "node": "mkr6p",
+          "identifier_api": "https://api.osf.io/v2/nodes/mkr6p/identifiers/",
+          "http_status": 200,
+          "dois": [
+            "10.17605/OSF.IO/MKR6P"
+          ]
+        },
+        "file_component": {
+          "node": "mpjxa",
+          "identifier_api": "https://api.osf.io/v2/nodes/mpjxa/identifiers/",
+          "status": "no_registered_doi",
+          "dois": []
+        },
+        "relationship_api": "https://api.osf.io/v2/nodes/mpjxa/",
+        "report_title": "Usmani_AmJournSocio_2018_GJe4_Somo_y4m6"
+      }
+    },
+    {
+      "id": "FLORA-002827",
+      "doi_r": "10.17605/OSF.IO/CWMB5",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.obhdp.2014.04.002",
+        "url_r": "https://osf.io/9hjxc",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002827",
+        "report_url": "https://osf.io/9hjxc",
+        "node": "cwmb5",
+        "identifier_api": "https://api.osf.io/v2/nodes/cwmb5/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/CWMB5"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002828",
+      "doi_r": "10.17605/OSF.IO/23GHE",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1037/pspi0000121",
+        "url_r": "https://osf.io/36w4c",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002828",
+        "report_url": "https://osf.io/36w4c",
+        "node": "23ghe",
+        "identifier_api": "https://api.osf.io/v2/nodes/23ghe/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/23GHE"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002829",
+      "doi_r": "10.17605/OSF.IO/N35C2",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.obhdp.2015.07.006",
+        "url_r": "https://osf.io/r58ch",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002829",
+        "report_url": "https://osf.io/r58ch",
+        "node": "n35c2",
+        "identifier_api": "https://api.osf.io/v2/nodes/n35c2/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/N35C2"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002830",
+      "doi_r": "10.17605/OSF.IO/UJG2C",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.obhdp.2017.01.005",
+        "url_r": "https://osf.io/ahgfx",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002830",
+        "report_url": "https://osf.io/ahgfx",
+        "node": "ujg2c",
+        "identifier_api": "https://api.osf.io/v2/nodes/ujg2c/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/UJG2C"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002831",
+      "doi_r": "10.17605/OSF.IO/VHU2X",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.3102/0002831210374874",
+        "url_r": "https://osf.io/gyse6",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002831",
+        "report_url": "https://osf.io/gyse6",
+        "node": "vhu2x",
+        "identifier_api": "https://api.osf.io/v2/nodes/vhu2x/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/VHU2X"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002832",
+      "doi_r": "10.17605/OSF.IO/5K6JG",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1509/jmkr.46.2.247",
+        "url_r": "https://osf.io/kpn34",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002832",
+        "report_url": "https://osf.io/kpn34",
+        "node": "5k6jg",
+        "identifier_api": "https://api.osf.io/v2/nodes/5k6jg/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/5K6JG"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002833",
+      "doi_r": "10.17605/OSF.IO/WJH3C",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1509/jmr.14.0130",
+        "url_r": "https://osf.io/28mjt",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002833",
+        "report_url": "https://osf.io/28mjt",
+        "node": "wjh3c",
+        "identifier_api": "https://api.osf.io/v2/nodes/wjh3c/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/WJH3C"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002834",
+      "doi_r": "10.17605/OSF.IO/E9Y6B",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1509/jmkr.47.2.348",
+        "url_r": "https://osf.io/x9j47",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002834",
+        "report_url": "https://osf.io/x9j47",
+        "node": "e9y6b",
+        "identifier_api": "https://api.osf.io/v2/nodes/e9y6b/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/E9Y6B"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002835",
+      "doi_r": "10.17605/OSF.IO/TY5BE",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1037/xge0000466",
+        "url_r": "https://osf.io/dnqrv",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002835",
+        "report_url": "https://osf.io/dnqrv",
+        "node": "ty5be",
+        "identifier_api": "https://api.osf.io/v2/nodes/ty5be/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/TY5BE"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002836",
+      "doi_r": "10.17605/OSF.IO/ER54T",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1093/esr/jcs057",
+        "url_r": "https://osf.io/3u8x9",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002836",
+        "report_url": "https://osf.io/3u8x9",
+        "node": "er54t",
+        "identifier_api": "https://api.osf.io/v2/nodes/er54t/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/ER54T"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002837",
+      "doi_r": "10.17605/OSF.IO/9MX5W",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1093/esr/jcx078",
+        "url_r": "https://osf.io/4usmq",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002837",
+        "report_url": "https://osf.io/4usmq",
+        "node": "9mx5w",
+        "identifier_api": "https://api.osf.io/v2/nodes/9mx5w/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/9MX5W"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002838",
+      "doi_r": "10.17605/OSF.IO/RYWGH",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.socscimed.2017.03.014",
+        "url_r": "https://osf.io/3d97y",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002838",
+        "report_url": "https://osf.io/3d97y",
+        "node": "rywgh",
+        "identifier_api": "https://api.osf.io/v2/nodes/rywgh/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/RYWGH"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002839",
+      "doi_r": "10.17605/OSF.IO/BAWH3",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1093/rfs/hhp008",
+        "url_r": "https://osf.io/x46bu",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002839",
+        "report_url": "https://osf.io/x46bu",
+        "node": "bawh3",
+        "identifier_api": "https://api.osf.io/v2/nodes/bawh3/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/BAWH3"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002840",
+      "doi_r": "10.17605/OSF.IO/VG6ZY",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1257/aer.20170029",
+        "url_r": "https://osf.io/n6jca",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002840",
+        "report_url": "https://osf.io/n6jca",
+        "node": "vg6zy",
+        "identifier_api": "https://api.osf.io/v2/nodes/vg6zy/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/VG6ZY"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002841",
+      "doi_r": "10.17605/OSF.IO/EN9MD",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1093/sf/sou074",
+        "url_r": "https://osf.io/7qjzp",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002841",
+        "report_url": "https://osf.io/7qjzp",
+        "node": "en9md",
+        "identifier_api": "https://api.osf.io/v2/nodes/en9md/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/EN9MD"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002842",
+      "doi_r": "10.17605/OSF.IO/H7AV9",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.3102/0002831208323278",
+        "url_r": "https://osf.io/cdrmk",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002842",
+        "report_url": "https://osf.io/cdrmk",
+        "node": "h7av9",
+        "identifier_api": "https://api.osf.io/v2/nodes/h7av9/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/H7AV9"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002843",
+      "doi_r": "10.17605/OSF.IO/BMZUF",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.3102/0002831211419490",
+        "url_r": "https://osf.io/39upt",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002843",
+        "report_url": "https://osf.io/39upt",
+        "node": "bmzuf",
+        "identifier_api": "https://api.osf.io/v2/nodes/bmzuf/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/BMZUF"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002844",
+      "doi_r": "10.17605/OSF.IO/TMN3Q",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1037/pspa0000093",
+        "url_r": "https://osf.io/nbc6v",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002844",
+        "report_url": "https://osf.io/nbc6v",
+        "node": "tmn3q",
+        "identifier_api": "https://api.osf.io/v2/nodes/tmn3q/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/TMN3Q"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002845",
+      "doi_r": "10.17605/OSF.IO/UWNYA",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1177/0956797615581491",
+        "url_r": "https://osf.io/gn3vj",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002845",
+        "report_url": "https://osf.io/gn3vj",
+        "node": "uwnya",
+        "identifier_api": "https://api.osf.io/v2/nodes/uwnya/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/UWNYA"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002846",
+      "doi_r": "10.17605/OSF.IO/E48GD",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1017/s0043887112000032",
+        "url_r": "https://osf.io/qev3x",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002846",
+        "report_url": "https://osf.io/qev3x",
+        "node": "e48gd",
+        "identifier_api": "https://api.osf.io/v2/nodes/e48gd/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/E48GD"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002847",
+      "doi_r": "10.17605/OSF.IO/QGM2C",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1111/j.1741-3737.2012.00990.x",
+        "url_r": "https://osf.io/e9j6y",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002847",
+        "report_url": "https://osf.io/e9j6y",
+        "node": "qgm2c",
+        "identifier_api": "https://api.osf.io/v2/nodes/qgm2c/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/QGM2C"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002848",
+      "doi_r": "10.17605/OSF.IO/XWTHK",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1017/s0007123411000421",
+        "url_r": "https://osf.io/srk8q",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002848",
+        "report_url": "https://osf.io/srk8q",
+        "node": "xwthk",
+        "identifier_api": "https://api.osf.io/v2/nodes/xwthk/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/XWTHK"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002849",
+      "doi_r": "10.17605/OSF.IO/N7M39",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1177/0010414017740603",
+        "url_r": "https://osf.io/qfh2r",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002849",
+        "report_url": "https://osf.io/qfh2r",
+        "node": "n7m39",
+        "identifier_api": "https://api.osf.io/v2/nodes/n7m39/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/N7M39"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002851",
+      "doi_r": "10.17605/OSF.IO/GK92W",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1086/597176",
+        "url_r": "https://osf.io/syq4e",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002851",
+        "report_url": "https://osf.io/syq4e",
+        "node": "gk92w",
+        "identifier_api": "https://api.osf.io/v2/nodes/gk92w/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/GK92W"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002852",
+      "doi_r": "10.17605/OSF.IO/TZ9EF",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1111/j.1741-3737.2012.01034.x",
+        "url_r": "https://osf.io/6rpxu",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002852",
+        "report_url": "https://osf.io/6rpxu",
+        "node": "tz9ef",
+        "identifier_api": "https://api.osf.io/v2/nodes/tz9ef/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/TZ9EF"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002853",
+      "doi_r": "10.17605/OSF.IO/QXK38",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1177/0010414013516928",
+        "url_r": "https://osf.io/u58za",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002853",
+        "report_url": "https://osf.io/u58za",
+        "node": "qxk38",
+        "identifier_api": "https://api.osf.io/v2/nodes/qxk38/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/QXK38"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002854",
+      "doi_r": "10.17605/OSF.IO/SHVDK",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.worlddev.2016.03.006",
+        "url_r": "https://osf.io/b2xma",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002854",
+        "report_url": "https://osf.io/b2xma",
+        "node": "shvdk",
+        "identifier_api": "https://api.osf.io/v2/nodes/shvdk/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/SHVDK"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002855",
+      "doi_r": "10.17605/OSF.IO/UB4C6",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1086/698750",
+        "url_r": "https://osf.io/gvayj",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002855",
+        "report_url": "https://osf.io/gvayj",
+        "node": "ub4c6",
+        "identifier_api": "https://api.osf.io/v2/nodes/ub4c6/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/UB4C6"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002856",
+      "doi_r": "10.17605/OSF.IO/DF36M",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1017/s0003055412000299",
+        "url_r": "https://osf.io/ck8aq",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002856",
+        "report_url": "https://osf.io/ck8aq",
+        "node": "df36m",
+        "identifier_api": "https://api.osf.io/v2/nodes/df36m/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/DF36M"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002857",
+      "doi_r": "10.17605/OSF.IO/AS7TE",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1017/s0003055410000262",
+        "url_r": "https://osf.io/c6a8e",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002857",
+        "report_url": "https://osf.io/c6a8e",
+        "node": "as7te",
+        "identifier_api": "https://api.osf.io/v2/nodes/as7te/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/AS7TE"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002858",
+      "doi_r": "10.17605/OSF.IO/YV2AM",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1037/a0018983",
+        "url_r": "https://osf.io/skwev",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002858",
+        "report_url": "https://osf.io/skwev",
+        "node": "yv2am",
+        "identifier_api": "https://api.osf.io/v2/nodes/yv2am/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/YV2AM"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002859",
+      "doi_r": "10.17605/OSF.IO/697DV",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1017/s0033291713000202",
+        "url_r": "https://osf.io/yd9bg",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002859",
+        "report_url": "https://osf.io/yd9bg",
+        "node": "697dv",
+        "identifier_api": "https://api.osf.io/v2/nodes/697dv/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/697DV"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002860",
+      "doi_r": "10.17605/OSF.IO/AGV64",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1093/jcr/ucx067",
+        "url_r": "https://osf.io/2f35a",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002860",
+        "report_url": "https://osf.io/2f35a",
+        "node": "agv64",
+        "identifier_api": "https://api.osf.io/v2/nodes/agv64/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/AGV64"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002861",
+      "doi_r": "10.17605/OSF.IO/EM34F",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.3102/0002831209350493",
+        "url_r": "https://osf.io/cnbt5",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002861",
+        "report_url": "https://osf.io/cnbt5",
+        "node": "em34f",
+        "identifier_api": "https://api.osf.io/v2/nodes/em34f/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/EM34F"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002863",
+      "doi_r": "10.17605/OSF.IO/8NDCX",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1111/1745-9125.12008",
+        "url_r": "https://osf.io/5869t",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002863",
+        "report_url": "https://osf.io/5869t",
+        "node": "8ndcx",
+        "identifier_api": "https://api.osf.io/v2/nodes/8ndcx/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/8NDCX"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002864",
+      "doi_r": "10.17605/OSF.IO/W8XUN",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.cognition.2017.12.004",
+        "url_r": "https://osf.io/xkwj9",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002864",
+        "report_url": "https://osf.io/xkwj9",
+        "node": "w8xun",
+        "identifier_api": "https://api.osf.io/v2/nodes/w8xun/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/W8XUN"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002865",
+      "doi_r": "10.17605/OSF.IO/7K8SY",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.leaqua.2009.06.005",
+        "url_r": "https://osf.io/xyrv6",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002865",
+        "report_url": "https://osf.io/xyrv6",
+        "node": "7k8sy",
+        "identifier_api": "https://api.osf.io/v2/nodes/7k8sy/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/7K8SY"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002866",
+      "doi_r": "10.17605/OSF.IO/Q7HPX",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1002/per.758",
+        "url_r": "https://osf.io/phz9x",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002866",
+        "report_url": "https://osf.io/phz9x",
+        "node": "q7hpx",
+        "identifier_api": "https://api.osf.io/v2/nodes/q7hpx/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/Q7HPX"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002868",
+      "doi_r": "10.17605/OSF.IO/H8ECM",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1257/app.20150517",
+        "url_r": "https://osf.io/dkcu6",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002868",
+        "report_url": "https://osf.io/dkcu6",
+        "node": "h8ecm",
+        "identifier_api": "https://api.osf.io/v2/nodes/h8ecm/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/H8ECM"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002869",
+      "doi_r": "10.17605/OSF.IO/P2ST5",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1177/2167702614545216",
+        "url_r": "https://osf.io/qmbxr",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002869",
+        "report_url": "https://osf.io/qmbxr",
+        "node": "p2st5",
+        "identifier_api": "https://api.osf.io/v2/nodes/p2st5/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/P2ST5"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002870",
+      "doi_r": "10.17605/OSF.IO/F5B6C",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1002/per.2062",
+        "url_r": "https://osf.io/udbnf",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002870",
+        "report_url": "https://osf.io/udbnf",
+        "node": "f5b6c",
+        "identifier_api": "https://api.osf.io/v2/nodes/f5b6c/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/F5B6C"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002871",
+      "doi_r": "10.17605/OSF.IO/8QKRX",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1037/apl0000082",
+        "url_r": "https://osf.io/qu793",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002871",
+        "report_url": "https://osf.io/qu793",
+        "node": "8qkrx",
+        "identifier_api": "https://api.osf.io/v2/nodes/8qkrx/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/8QKRX"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002872",
+      "doi_r": "10.17605/OSF.IO/H37ZX",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1037/xge0000157",
+        "url_r": "https://osf.io/5r28d",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002872",
+        "report_url": "https://osf.io/5r28d",
+        "node": "h37zx",
+        "identifier_api": "https://api.osf.io/v2/nodes/h37zx/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/H37ZX"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002873",
+      "doi_r": "10.17605/OSF.IO/9QJHF",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.evolhumbehav.2010.05.002",
+        "url_r": "https://osf.io/dyn6j",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002873",
+        "report_url": "https://osf.io/dyn6j",
+        "node": "9qjhf",
+        "identifier_api": "https://api.osf.io/v2/nodes/9qjhf/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/9QJHF"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002874",
+      "doi_r": "10.17605/OSF.IO/NSE8T",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.worlddev.2010.05.011",
+        "url_r": "https://osf.io/8hnxg",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002874",
+        "report_url": "https://osf.io/8hnxg",
+        "node": "nse8t",
+        "identifier_api": "https://api.osf.io/v2/nodes/nse8t/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/NSE8T"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002875",
+      "doi_r": "10.17605/OSF.IO/Q4FPR",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1257/aer.20130267",
+        "url_r": "https://osf.io/9t4nh",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002875",
+        "report_url": "https://osf.io/9t4nh",
+        "node": "q4fpr",
+        "identifier_api": "https://api.osf.io/v2/nodes/q4fpr/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/Q4FPR"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002876",
+      "doi_r": "10.17605/OSF.IO/SV4E8",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.5465/amj.2016.0086",
+        "url_r": "https://osf.io/jx64p",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002876",
+        "report_url": "https://osf.io/jx64p",
+        "node": "sv4e8",
+        "identifier_api": "https://api.osf.io/v2/nodes/sv4e8/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/SV4E8"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002877",
+      "doi_r": "10.17605/OSF.IO/7QNRS",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1177/0003122414558919",
+        "url_r": "https://osf.io/h7jfv",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002877",
+        "report_url": "https://osf.io/h7jfv",
+        "node": "7qnrs",
+        "identifier_api": "https://api.osf.io/v2/nodes/7qnrs/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/7QNRS"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002878",
+      "doi_r": "10.17605/OSF.IO/AFZNV",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1177/0956797609359908",
+        "url_r": "https://osf.io/ab762",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002878",
+        "report_url": "https://osf.io/ab762",
+        "node": "afznv",
+        "identifier_api": "https://api.osf.io/v2/nodes/afznv/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/AFZNV"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002879",
+      "doi_r": "10.17605/OSF.IO/SW67C",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1509/jmkr.46.1.37",
+        "url_r": "https://osf.io/b9rcg",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002879",
+        "report_url": "https://osf.io/b9rcg",
+        "node": "sw67c",
+        "identifier_api": "https://api.osf.io/v2/nodes/sw67c/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/SW67C"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002880",
+      "doi_r": "10.17605/OSF.IO/TACVB",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.socscimed.2015.11.051",
+        "url_r": "https://osf.io/k79vj",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002880",
+        "report_url": "https://osf.io/k79vj",
+        "node": "tacvb",
+        "identifier_api": "https://api.osf.io/v2/nodes/tacvb/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/TACVB"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002881",
+      "doi_r": "10.17605/OSF.IO/8UC5Z",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1017/xps.2014.22",
+        "url_r": "https://osf.io/8uc5z/files/jmk9d",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002881",
+        "report_url": "https://osf.io/8uc5z/files/jmk9d",
+        "node": "8uc5z",
+        "identifier_api": "https://api.osf.io/v2/nodes/8uc5z/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/8UC5Z"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002882",
+      "doi_r": "10.17605/OSF.IO/8HP5J",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1086/597030",
+        "url_r": "https://osf.io/vekdm",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002882",
+        "report_url": "https://osf.io/vekdm",
+        "node": "8hp5j",
+        "identifier_api": "https://api.osf.io/v2/nodes/8hp5j/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/8HP5J"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002883",
+      "doi_r": "10.17605/OSF.IO/E52QX",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1086/658469",
+        "url_r": "https://osf.io/fzut6",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002883",
+        "report_url": "https://osf.io/fzut6",
+        "node": "e52qx",
+        "identifier_api": "https://api.osf.io/v2/nodes/e52qx/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/E52QX"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002884",
+      "doi_r": "10.17605/OSF.IO/2CJUW",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1037/a0025035",
+        "url_r": "https://osf.io/q4e35",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002884",
+        "report_url": "https://osf.io/q4e35",
+        "node": "2cjuw",
+        "identifier_api": "https://api.osf.io/v2/nodes/2cjuw/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/2CJUW"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002885",
+      "doi_r": "10.17605/OSF.IO/QTV6J",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.obhdp.2013.10.003",
+        "url_r": "https://osf.io/xe3d2",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002885",
+        "report_url": "https://osf.io/xe3d2",
+        "node": "qtv6j",
+        "identifier_api": "https://api.osf.io/v2/nodes/qtv6j/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/QTV6J"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002887",
+      "doi_r": "10.17605/OSF.IO/TVHMA",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1037/a0028964",
+        "url_r": "https://osf.io/3cp2d",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002887",
+        "report_url": "https://osf.io/3cp2d",
+        "node": "tvhma",
+        "identifier_api": "https://api.osf.io/v2/nodes/tvhma/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/TVHMA"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002888",
+      "doi_r": "10.17605/OSF.IO/834DE",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.cognition.2010.05.005",
+        "url_r": "https://osf.io/8npm5",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002888",
+        "report_url": "https://osf.io/8npm5",
+        "node": "834de",
+        "identifier_api": "https://api.osf.io/v2/nodes/834de/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/834DE"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002889",
+      "doi_r": "10.17605/OSF.IO/SU48V",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.evolhumbehav.2009.01.004",
+        "url_r": "https://osf.io/hmune",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002889",
+        "report_url": "https://osf.io/hmune",
+        "node": "su48v",
+        "identifier_api": "https://api.osf.io/v2/nodes/su48v/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/SU48V"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002891",
+      "doi_r": "10.17605/OSF.IO/2UG8X",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1111/ajps.12252",
+        "url_r": "https://osf.io/fqdh4",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002891",
+        "report_url": "https://osf.io/fqdh4",
+        "node": "2ug8x",
+        "identifier_api": "https://api.osf.io/v2/nodes/2ug8x/identifiers/",
+        "status": "verified",
+        "dois": [
+          "10.17605/OSF.IO/2UG8X"
+        ],
+        "evidence_date": "2026-11-11",
+        "method": "reused_registered_identifier_evidence"
+      }
+    },
+    {
+      "id": "FLORA-002892",
+      "doi_r": "10.17605/OSF.IO/Q8BDV",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1093/jcr/ucx109",
+        "url_r": "https://osf.io/tywer",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002892",
+        "report_url": "https://osf.io/tywer",
+        "node": "q8bdv",
+        "identifier_api": "https://api.osf.io/v2/nodes/q8bdv/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/Q8BDV"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "registered_report_root_with_verified_component_relationship",
+        "report_root_check": {
+          "node": "q8bdv",
+          "identifier_api": "https://api.osf.io/v2/nodes/q8bdv/identifiers/",
+          "http_status": 200,
+          "dois": [
+            "10.17605/OSF.IO/Q8BDV"
+          ]
+        },
+        "file_component": {
+          "node": "4hau3",
+          "identifier_api": "https://api.osf.io/v2/nodes/4hau3/identifiers/",
+          "status": "no_registered_doi",
+          "dois": []
+        },
+        "relationship_api": "https://api.osf.io/v2/nodes/4hau3/",
+        "report_title": "Final Report"
+      }
+    },
+    {
+      "id": "FLORA-002894",
+      "doi_r": "10.17605/OSF.IO/JDB7Q",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1086/698750",
+        "url_r": "https://osf.io/rzny2",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002894",
+        "report_url": "https://osf.io/rzny2",
+        "node": "jdb7q",
+        "identifier_api": "https://api.osf.io/v2/nodes/jdb7q/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/JDB7Q"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "registered_report_root_with_verified_component_relationship",
+        "report_root_check": {
+          "node": "jdb7q",
+          "identifier_api": "https://api.osf.io/v2/nodes/jdb7q/identifiers/",
+          "http_status": 200,
+          "dois": [
+            "10.17605/OSF.IO/JDB7Q"
+          ]
+        },
+        "file_component": {
+          "node": "9v6er",
+          "identifier_api": "https://api.osf.io/v2/nodes/9v6er/identifiers/",
+          "status": "no_registered_doi",
+          "dois": []
+        },
+        "relationship_api": "https://api.osf.io/v2/nodes/9v6er/",
+        "report_title": "Analysis"
+      }
+    },
+    {
+      "id": "FLORA-002895",
+      "doi_r": "10.17605/OSF.IO/ZT5Y2",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1093/esr/jcw008",
+        "url_r": "https://osf.io/7efsw",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002895",
+        "report_url": "https://osf.io/7efsw",
+        "node": "zt5y2",
+        "identifier_api": "https://api.osf.io/v2/nodes/zt5y2/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/ZT5Y2"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002896",
+      "doi_r": "10.17605/OSF.IO/KVSA6",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1509/jmkr.48.2.403",
+        "url_r": "https://osf.io/fr6g8",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002896",
+        "report_url": "https://osf.io/fr6g8",
+        "node": "kvsa6",
+        "identifier_api": "https://api.osf.io/v2/nodes/kvsa6/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/KVSA6"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002897",
+      "doi_r": "10.17605/OSF.IO/Z4NYV",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.socscimed.2010.08.007",
+        "url_r": "https://osf.io/yva89",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002897",
+        "report_url": "https://osf.io/yva89",
+        "node": "z4nyv",
+        "identifier_api": "https://api.osf.io/v2/nodes/z4nyv/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/Z4NYV"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "registered_report_root_with_verified_component_relationship",
+        "report_root_check": {
+          "node": "z4nyv",
+          "identifier_api": "https://api.osf.io/v2/nodes/z4nyv/identifiers/",
+          "http_status": 200,
+          "dois": [
+            "10.17605/OSF.IO/Z4NYV"
+          ]
+        },
+        "file_component": {
+          "node": "b6kfm",
+          "identifier_api": "https://api.osf.io/v2/nodes/b6kfm/identifiers/",
+          "status": "no_registered_doi",
+          "dois": []
+        },
+        "relationship_api": "https://api.osf.io/v2/nodes/b6kfm/",
+        "report_title": "Analysis"
+      }
+    },
+    {
+      "id": "FLORA-002898",
+      "doi_r": "10.17605/OSF.IO/HD3VF",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.jesp.2009.07.002",
+        "url_r": "https://osf.io/ftv7q",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002898",
+        "report_url": "https://osf.io/ftv7q",
+        "node": "hd3vf",
+        "identifier_api": "https://api.osf.io/v2/nodes/hd3vf/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/HD3VF"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002899",
+      "doi_r": "10.17605/OSF.IO/TA5VH",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1017/s0003055412000299",
+        "url_r": "https://osf.io/ceaq3",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002899",
+        "report_url": "https://osf.io/ceaq3",
+        "node": "ta5vh",
+        "identifier_api": "https://api.osf.io/v2/nodes/ta5vh/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/TA5VH"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002900",
+      "doi_r": "10.17605/OSF.IO/T9H6P",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1086/653487",
+        "url_r": "https://osf.io/fgdxs",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002900",
+        "report_url": "https://osf.io/fgdxs",
+        "node": "t9h6p",
+        "identifier_api": "https://api.osf.io/v2/nodes/t9h6p/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/T9H6P"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002901",
+      "doi_r": "10.17605/OSF.IO/H24Z8",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.jesp.2010.11.006",
+        "url_r": "https://osf.io/xr32n",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002901",
+        "report_url": "https://osf.io/xr32n",
+        "node": "h24z8",
+        "identifier_api": "https://api.osf.io/v2/nodes/h24z8/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/H24Z8"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002902",
+      "doi_r": "10.17605/OSF.IO/RPUMQ",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1017/s0043887112000032",
+        "url_r": "https://osf.io/kw5tv",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002902",
+        "report_url": "https://osf.io/kw5tv",
+        "node": "rpumq",
+        "identifier_api": "https://api.osf.io/v2/nodes/rpumq/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/RPUMQ"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002903",
+      "doi_r": "10.17605/OSF.IO/A8EG9",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1002/per.803",
+        "url_r": "https://osf.io/c2hry",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002903",
+        "report_url": "https://osf.io/c2hry",
+        "node": "a8eg9",
+        "identifier_api": "https://api.osf.io/v2/nodes/a8eg9/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/A8EG9"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002904",
+      "doi_r": "10.17605/OSF.IO/8FEKU",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1017/xps.2017.21",
+        "url_r": "https://osf.io/ybzev",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002904",
+        "report_url": "https://osf.io/ybzev",
+        "node": "8feku",
+        "identifier_api": "https://api.osf.io/v2/nodes/8feku/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/8FEKU"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002905",
+      "doi_r": "10.17605/OSF.IO/J8EN2",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1007/s13524-018-0725-0",
+        "url_r": "https://osf.io/8rwkn",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002905",
+        "report_url": "https://osf.io/8rwkn",
+        "node": "j8en2",
+        "identifier_api": "https://api.osf.io/v2/nodes/j8en2/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/J8EN2"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002907",
+      "doi_r": "10.17605/OSF.IO/U52Y3",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.compedu.2014.04.009",
+        "url_r": "https://osf.io/2wfgv",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002907",
+        "report_url": "https://osf.io/2wfgv",
+        "node": "u52y3",
+        "identifier_api": "https://api.osf.io/v2/nodes/u52y3/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/U52Y3"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002908",
+      "doi_r": "10.17605/OSF.IO/APV5T",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.evolhumbehav.2016.06.001",
+        "url_r": "https://osf.io/hzg3j",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002908",
+        "report_url": "https://osf.io/hzg3j",
+        "node": "apv5t",
+        "identifier_api": "https://api.osf.io/v2/nodes/apv5t/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/APV5T"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002909",
+      "doi_r": "10.17605/OSF.IO/ETFQZ",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.jesp.2018.08.007",
+        "url_r": "https://osf.io/r6ynf",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002909",
+        "report_url": "https://osf.io/r6ynf",
+        "node": "etfqz",
+        "identifier_api": "https://api.osf.io/v2/nodes/etfqz/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/ETFQZ"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002910",
+      "doi_r": "10.17605/OSF.IO/78FVN",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.cognition.2010.11.011",
+        "url_r": "https://osf.io/dscfg",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002910",
+        "report_url": "https://osf.io/dscfg",
+        "node": "78fvn",
+        "identifier_api": "https://api.osf.io/v2/nodes/78fvn/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/78FVN"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002911",
+      "doi_r": "10.17605/OSF.IO/62XH4",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1007/s13524-011-0026-3",
+        "url_r": "https://osf.io/nuzh2",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002911",
+        "report_url": "https://osf.io/nuzh2",
+        "node": "62xh4",
+        "identifier_api": "https://api.osf.io/v2/nodes/62xh4/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/62XH4"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002912",
+      "doi_r": "10.17605/OSF.IO/925NZ",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1287/orsc.1080.0377",
+        "url_r": "https://osf.io/pex6u",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002912",
+        "report_url": "https://osf.io/pex6u",
+        "node": "925nz",
+        "identifier_api": "https://api.osf.io/v2/nodes/925nz/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/925NZ"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002913",
+      "doi_r": "10.17605/OSF.IO/DEVN8",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.jfineco.2014.05.008",
+        "url_r": "https://osf.io/xg6q5",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002913",
+        "report_url": "https://osf.io/xg6q5",
+        "node": "devn8",
+        "identifier_api": "https://api.osf.io/v2/nodes/devn8/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/DEVN8"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FLORA-002914",
+      "doi_r": "10.17605/OSF.IO/DHG3Q",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.jesp.2012.08.013",
+        "url_r": "https://osf.io/qk34m",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FLORA-002914",
+        "report_url": "https://osf.io/qk34m",
+        "node": "dhg3q",
+        "identifier_api": "https://api.osf.io/v2/nodes/dhg3q/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/DHG3Q"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FRED-000984",
+      "doi_r": "10.17605/OSF.IO/JXD7B",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1177/0956797618756862",
+        "url_r": "https://osf.io/4hkyn/",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FRED-000984",
+        "report_url": "https://osf.io/4hkyn/",
+        "node": "jxd7b",
+        "identifier_api": "https://api.osf.io/v2/nodes/jxd7b/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/JXD7B"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FRED-000986",
+      "doi_r": "10.17605/OSF.IO/JB9RQ",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1086/597428",
+        "url_r": "https://osf.io/bc2v6/",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FRED-000986",
+        "report_url": "https://osf.io/bc2v6/",
+        "node": "jb9rq",
+        "identifier_api": "https://api.osf.io/v2/nodes/jb9rq/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/JB9RQ"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FRED-000987",
+      "doi_r": "10.17605/OSF.IO/9U2N4",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1086/597428",
+        "url_r": "https://osf.io/2cpf8/",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FRED-000987",
+        "report_url": "https://osf.io/2cpf8/",
+        "node": "9u2n4",
+        "identifier_api": "https://api.osf.io/v2/nodes/9u2n4/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/9U2N4"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FRED-000988",
+      "doi_r": "10.17605/OSF.IO/QY62R",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.evolhumbehav.2014.02.004",
+        "url_r": "https://osf.io/pbw2f/",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FRED-000988",
+        "report_url": "https://osf.io/pbw2f/",
+        "node": "qy62r",
+        "identifier_api": "https://api.osf.io/v2/nodes/qy62r/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/QY62R"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FRED-000989",
+      "doi_r": "10.17605/OSF.IO/S2X3C",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.evolhumbehav.2014.02.004",
+        "url_r": "https://osf.io/zjt47/",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FRED-000989",
+        "report_url": "https://osf.io/zjt47/",
+        "node": "s2x3c",
+        "identifier_api": "https://api.osf.io/v2/nodes/s2x3c/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/S2X3C"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FRED-000990",
+      "doi_r": "10.17605/OSF.IO/FHYZS",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.obhdp.2009.06.003",
+        "url_r": "https://osf.io/cdqks/",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FRED-000990",
+        "report_url": "https://osf.io/cdqks/",
+        "node": "fhyzs",
+        "identifier_api": "https://api.osf.io/v2/nodes/fhyzs/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/FHYZS"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FRED-000991",
+      "doi_r": "10.17605/OSF.IO/H7WX8",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.obhdp.2009.06.003",
+        "url_r": "https://osf.io/r42en/",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FRED-000991",
+        "report_url": "https://osf.io/r42en/",
+        "node": "h7wx8",
+        "identifier_api": "https://api.osf.io/v2/nodes/h7wx8/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/H7WX8"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FRED-000992",
+      "doi_r": "10.17605/OSF.IO/WDGNS",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.cognition.2012.11.003",
+        "url_r": "https://osf.io/xn73j/",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FRED-000992",
+        "report_url": "https://osf.io/xn73j/",
+        "node": "wdgns",
+        "identifier_api": "https://api.osf.io/v2/nodes/wdgns/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/WDGNS"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FRED-000993",
+      "doi_r": "10.17605/OSF.IO/7F42K",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.cognition.2012.11.003",
+        "url_r": "https://osf.io/atwck/",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FRED-000993",
+        "report_url": "https://osf.io/atwck/",
+        "node": "7f42k",
+        "identifier_api": "https://api.osf.io/v2/nodes/7f42k/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/7F42K"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FRED-000994",
+      "doi_r": "10.17605/OSF.IO/TDR6S",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.cognition.2012.05.011",
+        "url_r": "https://osf.io/fq2vg/",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FRED-000994",
+        "report_url": "https://osf.io/fq2vg/",
+        "node": "tdr6s",
+        "identifier_api": "https://api.osf.io/v2/nodes/tdr6s/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/TDR6S"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FRED-000995",
+      "doi_r": "10.17605/OSF.IO/VT6GA",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1016/j.cognition.2012.05.011",
+        "url_r": "https://osf.io/52nkw/",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FRED-000995",
+        "report_url": "https://osf.io/52nkw/",
+        "node": "vt6ga",
+        "identifier_api": "https://api.osf.io/v2/nodes/vt6ga/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/VT6GA"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FRED-000996",
+      "doi_r": "10.17605/OSF.IO/5TK2E",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1007/s10683-011-9295-3",
+        "url_r": "https://osf.io/fzkm3/",
+        "alt_identifier_r": "10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FRED-000996",
+        "report_url": "https://osf.io/fzkm3/",
+        "node": "5tk2e",
+        "identifier_api": "https://api.osf.io/v2/nodes/5tk2e/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/5TK2E"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    },
+    {
+      "id": "FRED-000997",
+      "doi_r": "10.17605/OSF.IO/Z9EMG",
+      "baseline": {
+        "type": "replication",
+        "doi_o": "10.1007/s10683-011-9295-3",
+        "url_r": "https://osf.io/34qhg/",
+        "alt_identifier_r": "10.17605/osf.io/w3kuz; 10.1038/s41586-025-10078-y"
+      },
+      "evidence": {
+        "id": "FRED-000997",
+        "report_url": "https://osf.io/34qhg/",
+        "node": "z9emg",
+        "identifier_api": "https://api.osf.io/v2/nodes/z9emg/identifiers/",
+        "status": "verified",
+        "http_status": 200,
+        "dois": [
+          "10.17605/OSF.IO/Z9EMG"
+        ],
+        "evidence_date": "2026-11-12",
+        "method": "OSF_identifiers_API"
+      }
+    }
+  ],
+  "unfilled": [
+    {
+      "id": "FLORA-002675",
+      "report_url": "https://osf.io/hefyp",
+      "node": "yg7d2",
+      "identifier_api": "https://api.osf.io/v2/nodes/yg7d2/identifiers/",
+      "status": "no_registered_doi",
+      "http_status": 200,
+      "dois": [],
+      "evidence_date": "2026-11-12",
+      "method": "OSF_identifiers_API"
+    },
+    {
+      "id": "FLORA-002689",
+      "report_url": "https://osf.io/j24ts",
+      "node": "uyt9p",
+      "identifier_api": "https://api.osf.io/v2/nodes/uyt9p/identifiers/",
+      "status": "no_registered_doi",
+      "http_status": 200,
+      "dois": [],
+      "evidence_date": "2026-11-12",
+      "method": "OSF_identifiers_API"
+    },
+    {
+      "id": "FLORA-002690",
+      "report_url": "https://osf.io/ad9jm",
+      "node": "md84s",
+      "identifier_api": "https://api.osf.io/v2/nodes/md84s/identifiers/",
+      "status": "no_registered_doi",
+      "http_status": 200,
+      "dois": [],
+      "evidence_date": "2026-11-12",
+      "method": "OSF_identifiers_API"
+    },
+    {
+      "id": "FLORA-002733",
+      "report_url": "https://osf.io/w5eb3",
+      "node": "7ea8k",
+      "identifier_api": "https://api.osf.io/v2/nodes/7ea8k/identifiers/",
+      "status": "no_registered_doi",
+      "http_status": 200,
+      "dois": [],
+      "evidence_date": "2026-11-12",
+      "method": "OSF_identifiers_API"
+    },
+    {
+      "id": "FLORA-002734",
+      "report_url": "https://osf.io/tsvz4",
+      "node": "q5szk",
+      "identifier_api": "https://api.osf.io/v2/nodes/q5szk/identifiers/",
+      "status": "no_registered_doi",
+      "http_status": 200,
+      "dois": [],
+      "evidence_date": "2026-11-12",
+      "method": "OSF_identifiers_API"
+    },
+    {
+      "id": "FLORA-002742",
+      "report_url": "https://osf.io/x7jrb",
+      "node": "yrnmv",
+      "identifier_api": "https://api.osf.io/v2/nodes/yrnmv/identifiers/",
+      "status": "no_registered_doi",
+      "http_status": 200,
+      "dois": [],
+      "evidence_date": "2026-11-12",
+      "method": "OSF_identifiers_API"
+    },
+    {
+      "id": "FLORA-002743",
+      "report_url": "https://osf.io/rsn3b",
+      "node": "q8bhx",
+      "identifier_api": "https://api.osf.io/v2/nodes/q8bhx/identifiers/",
+      "status": "no_registered_doi",
+      "http_status": 200,
+      "dois": [],
+      "evidence_date": "2026-11-12",
+      "method": "OSF_identifiers_API"
+    },
+    {
+      "id": "FLORA-002850",
+      "report_url": "https://osf.io/8mqzu",
+      "node": "bcqem",
+      "identifier_api": "https://api.osf.io/v2/nodes/bcqem/identifiers/",
+      "status": "no_registered_doi",
+      "http_status": 200,
+      "dois": [],
+      "evidence_date": "2026-11-12",
+      "method": "OSF_identifiers_API"
+    },
+    {
+      "id": "FLORA-002862",
+      "report_url": "https://osf.io/a6nsp",
+      "node": "p9k76",
+      "identifier_api": "https://api.osf.io/v2/nodes/p9k76/identifiers/",
+      "status": "no_registered_doi",
+      "http_status": 200,
+      "dois": [],
+      "evidence_date": "2026-11-12",
+      "method": "OSF_identifiers_API"
+    },
+    {
+      "id": "FLORA-002867",
+      "report_url": "https://osf.io/zybuc",
+      "node": "u5d2y",
+      "identifier_api": "https://api.osf.io/v2/nodes/u5d2y/identifiers/",
+      "status": "no_registered_doi",
+      "http_status": 200,
+      "dois": [],
+      "evidence_date": "2026-11-12",
+      "method": "OSF_identifiers_API"
+    },
+    {
+      "id": "FLORA-002886",
+      "report_url": "https://osf.io/2vmgw",
+      "node": "mjfwp",
+      "identifier_api": "https://api.osf.io/v2/nodes/mjfwp/identifiers/",
+      "status": "no_registered_doi",
+      "http_status": 200,
+      "dois": [],
+      "evidence_date": "2026-11-12",
+      "method": "OSF_identifiers_API"
+    },
+    {
+      "id": "FLORA-002890",
+      "report_url": "https://osf.io/9s4e6",
+      "node": "ty9du",
+      "identifier_api": "https://api.osf.io/v2/nodes/ty9du/identifiers/",
+      "status": "no_registered_doi",
+      "http_status": 200,
+      "dois": [],
+      "evidence_date": "2026-11-12",
+      "method": "OSF_identifiers_API"
+    },
+    {
+      "id": "FLORA-002893",
+      "report_url": "https://osf.io/9bkuf",
+      "node": "ndbrp",
+      "identifier_api": "https://api.osf.io/v2/nodes/ndbrp/identifiers/",
+      "status": "no_registered_doi",
+      "http_status": 200,
+      "dois": [],
+      "evidence_date": "2026-11-12",
+      "method": "OSF_identifiers_API"
+    },
+    {
+      "id": "FLORA-002906",
+      "report_url": "https://osf.io/esw45",
+      "node": "g6fkp",
+      "identifier_api": "https://api.osf.io/v2/nodes/g6fkp/identifiers/",
+      "status": "no_registered_doi",
+      "http_status": 200,
+      "dois": [],
+      "evidence_date": "2026-11-12",
+      "method": "OSF_identifiers_API"
+    }
+  ]
+}
