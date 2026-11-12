@@ -456,6 +456,66 @@ def _paste_unique(values, sep):
     return sep.join(out) or None
 
 
+# Written in a merged source where the row a quote came from recorded no source, so
+# the source parts still line up with the quote parts.
+NO_SOURCE = "not recorded"
+_PART = re.compile(r"\s*\|\|\s*")
+
+
+def _evidence_pairs(quote, source):
+    """A row's quote parts, each with the source part it belongs to.
+
+    Parts line up by position when the counts match; a single source covers every
+    quote part. Anything else is kept whole, as one pair, rather than guessed at.
+    """
+    quote, source = _s(quote), _s(source)
+    if not quote:
+        return []
+    quotes = [q for q in _PART.split(quote) if q]
+    sources = [p for p in _PART.split(source) if p] if source else []
+    if len(sources) == len(quotes):
+        return list(zip(quotes, sources))
+    if len(sources) <= 1:
+        return [(q, sources[0] if sources else None) for q in quotes]
+    return [(quote, source)]
+
+
+def _locations(quotes, sources):
+    """Each distinct quote part (compared ignoring whitespace), in order of first
+    appearance, with its distinct sources (compared ignoring case)."""
+    order, located = [], {}
+    for quote, source in zip(quotes, sources):
+        for part, where in _evidence_pairs(quote, source):
+            key = " ".join(part.split())
+            if key not in located:
+                order.append((key, part))
+                located[key] = []
+            if where and where.casefold() not in {w.casefold() for w in located[key]}:
+                located[key].append(where)
+    return order, located
+
+
+def _sources_for(parts, located):
+    """The source of each quote part, joined so part i is the source of quote part i."""
+    if not any(located.get(key) for key in parts):
+        return None
+    return OUTCOME_CLASH_SEP.join("; ".join(located.get(key) or []) or NO_SOURCE
+                                  for key in parts)
+
+
+def _paste_aligned(quotes, sources):
+    """Merged rows' quotes and sources, joined so that part i of the source is the
+    source of part i of the quote (FReD-data#173). A quote repeated by several rows
+    (compared ignoring whitespace) is kept once, with its distinct sources (compared
+    ignoring case) joined by "; ". Without any quote, the sources are joined as
+    before."""
+    order, located = _locations(quotes, sources)
+    if not order:
+        return None, _paste_unique(sources, OUTCOME_CLASH_SEP)
+    return (OUTCOME_CLASH_SEP.join(part for _, part in order),
+            _sources_for([key for key, _ in order], located))
+
+
 def _first_non_null(values):
     for value in values:
         if not _blank(value):
@@ -612,7 +672,7 @@ def _merge_group(group, doi_o, doi_r, normalise_outcome):
         if column == "study_o":
             row[column] = _paste_unique(values, "; ")
         elif column in ("outcome_quote", "outcome_quote_source", "out_quote_source"):
-            row[column] = _paste_unique(values, OUTCOME_CLASH_SEP)
+            continue                                # joined as pairs below
         elif column in ("alt_identifier_o", "alt_identifier_r"):
             aliases = None
             for value in values:
@@ -632,6 +692,22 @@ def _merge_group(group, doi_o, doi_r, normalise_outcome):
             row[column] = any(bool(value) for value in values if not _blank(value))
         else:
             row[column] = _first_non_null(values)
+
+    # Quote and source parts stay paired, so a repeated source is not dropped from
+    # beside the quote it supports. out_quote_source (as the sheet gave it) follows
+    # the same pairing as outcome_quote_source (as the transform derives it).
+    if "outcome_quote" in group.columns:
+        quotes = list(group["outcome_quote"])
+        # outcome_quote_source last: the published quote follows its pairing.
+        for column in ("out_quote_source", "outcome_quote_source"):
+            if column in group.columns:
+                row["outcome_quote"], row[column] = _paste_aligned(quotes, list(group[column]))
+        if "outcome_quote_source" not in group.columns and "out_quote_source" not in group.columns:
+            row["outcome_quote"] = _paste_unique(quotes, OUTCOME_CLASH_SEP)
+    else:
+        for column in ("outcome_quote_source", "out_quote_source"):
+            if column in group.columns:
+                row[column] = _paste_unique(list(group[column]), OUTCOME_CLASH_SEP)
 
     # A reproduction's axes come whole: each axis with its quote and quote source
     # from the first row that judged it, and the outcome derived from them.
