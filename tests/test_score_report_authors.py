@@ -73,7 +73,7 @@ def test_unknown_authors_recompute_overlap_as_missing():
                            'author_r': '[{"family":"Project administrator"}]',
                            'author_overlap': 0, 'author_overlap_pct': 0.0}])
     result = flora_edits.apply(None, frame, corrections={row['id']: row['fields']})
-    assert result.iloc[0]['author_r'] is None
+    assert pd.isna(result.iloc[0]['author_r'])
     assert pd.isna(result.iloc[0]['author_overlap'])
     assert pd.isna(result.iloc[0]['author_overlap_pct'])
     assert 'author =' not in row['fields']['bibtex_ref_r'].lower()
