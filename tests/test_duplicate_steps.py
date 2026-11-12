@@ -453,3 +453,53 @@ def test_the_build_warns_about_a_correction_as_the_save_does(monkeypatch, capsys
         source("REPL-000002", doi_r="10.9999/another.report")]))
     assert ("1 corrected row(s) now match another record's identifiers: REPL-000002 "
             in capsys.readouterr().out)
+
+
+# ── coding notes and the replication columns (FReD-data#173) ──────────────────
+
+def test_a_rewritten_quote_marks_its_source_as_a_coding_note_and_keeps_it_through_a_merge():
+    """The rewrite turns coder shorthand into a note, so the note's source says so.
+    It is marked before step 5b joins the rows, so the mark stays on its own part."""
+    built = build(source("REPL-000001", outcome="failed", outcome_quote="It did not replicate.",
+                         out_quote_source="abstract"),
+                  source("REPL-000002", url_r="https://osf.io/report", outcome="failed",
+                         outcome_quote="no marked in Replicate column",
+                         out_quote_source="data file at https://osf.io/fgjvw"))
+    [row] = built.to_dict("records")
+    assert row["outcome_quote"].startswith("It did not replicate. || Coded as not replicated")
+    assert row["outcome_quote_source"] == "abstract || coding note: data file at https://osf.io/fgjvw"
+
+
+def test_a_real_quote_and_an_already_marked_source_are_left_alone():
+    built = build(source("REPL-000001", url_r="https://osf.io/a", outcome="failed",
+                         outcome_quote="It did not replicate.", out_quote_source="abstract"),
+                  source("REPL-000002", url_r="https://osf.io/b", outcome="mixed",
+                         outcome_quote="sub_rep .5 in dataset",
+                         out_quote_source="coding note: Supplemental Information"))
+    rows = by_id(built)
+    assert rows.loc["REPL-000001", "outcome_quote_source"] == "abstract"
+    assert rows.loc["REPL-000002", "outcome_quote_source"] == "coding note: Supplemental Information"
+
+
+def test_the_output_carries_the_replication_columns_for_replications_only():
+    built = build(source("REPL-000001", outcome="failed", outcome_quote="It did not replicate.",
+                         out_quote_source="abstract"),
+                  source("REPRO-000001", source="reproductions", type="reproduction",
+                         doi_r="10.9999/reproduction.1",
+                         outcome_computation="computationally reproducible",
+                         outcome_computational_quote="The numbers matched.",
+                         out_quote_computational_source="p. 2",
+                         outcome_robustness="not checked"))
+    out = by_id(transform_sources.to_output_shape(built))
+    replication, reproduction = out.loc["REPL-000001"], out.loc["REPRO-000001"]
+    assert (replication["outcome_replication"], replication["outcome_replication_quote"],
+            replication["out_quote_replication_source"]) == (
+        "failed", "It did not replicate.", "abstract")
+    assert [value(reproduction[c]) for c in ("outcome_replication", "outcome_replication_quote",
+                                             "out_quote_replication_source")] == [None] * 3
+    # The combined fields stay for older readers.
+    assert reproduction["outcome"] == "computationally reproducible, not checked"
+    assert reproduction["outcome_quote_source"] == "Computational: p. 2"
+    columns = list(out.reset_index().columns)
+    assert columns.index("out_quote_robust_source") < columns.index("outcome_replication") \
+        < columns.index("flora_id")
