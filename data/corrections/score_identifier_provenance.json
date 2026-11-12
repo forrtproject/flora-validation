@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "papers": {
+    "recorded_on": "2026-11-11",
+    "source_snapshot_sha256": "5826464541891f83c594ccc295a0512cf20329373c3b90a2fafc56e0a97e807c",
+    "publications": {
+      "replicability": {
+        "doi": "10.1038/s41586-025-10078-y",
+        "title": "Investigating the replicability of the social and behavioural sciences",
+        "official_publication_list": "https://www.cos.io/score-evidence",
+        "data_url": "https://osf.io/g5sny/",
+        "package_download": "https://osf.io/download/5xfdy/",
+        "package_sha256": "80a221f0deb78f49668c23e08b23b5f089f47d56f68feec0ecb405a55a437af2",
+        "tracking_table": "rr_internal_tracking",
+        "outcome_table": "repli_outcomes",
+        "rdata_sha256": "5e2ac8e70bc5765edaa450b5734323f1c3f4ac6eaed1081b9ff55ae451255f6b"
+      },
+      "reproducibility": {
+        "doi": "10.1038/s41586-026-10203-5",
+        "title": "Investigating the reproducibility of the social and behavioural sciences",
+        "official_publication_list": "https://www.cos.io/score-evidence",
+        "data_url": "https://osf.io/ed8pj/",
+        "package_download": "https://osf.io/download/cs8up/",
+        "package_sha256": "be3fcd7da8ac4d32bee0dfb330f0a50ce744996c378af41c0a45b81622ac29fd",
+        "tracking_table": "rr_internal_tracking",
+        "outcome_table": "repro_outcomes",
+        "rdata_sha256": "1889d1aab0e77651fd1bf51a74dd72bb3d04a5941c40f08de66bed34acf442c5"
+      }
+    },
+    "pinned_report_mapping": {
+      "commit": "17b84324ae024c6e840361173c19b335c05190da",
+      "path": "data/corrections/score_report_evidence.json",
+      "pull_request": "https://github.com/forrtproject/flora-validation/pull/26"
+    },
+    "counts": {
+      "reproduction": 135,
+      "replication": 166
+    },
+    "policy": "Append the type-specific published-paper DOI to alt_identifier_r through flora_edits; preserve individual-report identifiers, all existing alternatives and all other fields. Each matched attempt is present in that paper outcome table."
+  },
+  "reports": {
+    "recorded_on": "2026-11-12",
+    "scope": "Missing doi_r fields among the 301 verified SCORE records. Preserve SCORE paper DOIs in alt_identifier_r; no aggregate-paper fallback in doi_r.",
+    "audited_missing_fields": 180,
+    "counts": {
+      "verified": 166,
+      "no_registered_doi": 14
+    }
+  },
+  "receipts": {
+    "papers": {
+      "applied_on": "2026-11-11",
+      "field": "alt_identifier_r",
+      "records_updated": 301,
+      "change_id_min": 446,
+      "change_id_max": 746,
+      "verification": "All 301 log entries change only alt_identifier_r. Stored-table content hashes, excluding that field and update/version timestamps, remain identical before and after."
+    },
+    "reports": {
+      "applied_on": "2026-11-12",
+      "count": 166,
+      "field": "doi_r",
+      "metadata_preservation": "Normal rebuild verified no changes to bylines, references, outcomes, report URLs or SCORE alternative identifiers."
+    }
+  },
+  "historical_review_commit": "479b12dc05a04f765f5ad1460dd0cad522f96331",
+  "original_file_sha256": {
+    "score_paper_identifiers.json": "471be7c02be7a59393cc9ea912c2ae532e4fc597b433f42207333ac0ed7ea2ee",
+    "score_report_dois.json": "5420411d6bd8b1bd04687510ac08458ac692a4a9feac6b67e5f91b71adb9e870",
+    "score_paper_identifier_receipt.json": "5e4bfda22b96095ed6f6cc52701acf1f0ec459808e63ad9b5817d1dd9d4f0ddc",
+    "score_report_doi_receipt.json": "3a4140c0d9efb494ef7bd4e39eb908b4596d17295b96ecb2f82430cabf648078"
+  }
+}
