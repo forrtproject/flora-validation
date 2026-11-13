@@ -979,7 +979,7 @@ def test_a_removed_original_with_no_doi_is_told_apart_by_its_title(api, local_da
 
 
 def _withdrawn(api, conn, scope, held=True):
-    """An entry withdrawn before validation, with one judgement in and a slot held."""
+    """An entry withdrawn before validation while a validator held one of its slots."""
     client, who = api
     with conn, _cursor(conn) as cur:
         ana, bob = _validator(cur, "ana"), _validator(cur, "bob")

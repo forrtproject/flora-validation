@@ -41,10 +41,13 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     review: [{ record_id: S2, title_o: XSS, doi_o: "10.1/s2", validation_status: "consensus_reached" }],
     blocked: [],
   };
-  let scopeAfter = "not_replication";
+  // app.py WITHDRAW_SCOPES: the label the server puts in the note.
+  const SERVER_LABELS = { wrong_original: "wrong original", duplicate: "correct pair already in FLoRA",
+                          not_replication: "not a replication or reproduction" };
   const B = "44444444-4444-4444-8444-444444444444";
   let listed = [];          // what the entries list returns
   let gate = null;          // holds the withdraw answer back while set
+  let previewGate = null, previewFails = false;
   let withdrawAnswer = [200, { withdrawn: true, record_id: A, scope: "not_replication",
                                withdrawn_records: [A, S1], review_records: preview.review }];
 
@@ -59,6 +62,8 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     }
     if (url.pathname === `/api/admin/entries/${A}/withdraw-preview`) {
       previews.push(url.searchParams.get("scope"));
+      if (previewGate) await previewGate;
+      if (previewFails) return route.fulfill({ status: 500, json: { detail: "Lookup failed" } });
       return route.fulfill({ status: 200, json: preview });
     }
     if (url.pathname === `/api/admin/entries/${A}/withdraw` && request.method() === "POST") {
@@ -68,13 +73,15 @@ const XSS = '<img src=x onerror="window.__xss=1">';
       return route.fulfill({ status, json });
     }
     if (url.pathname === `/api/admin/entries/${A}`) {
-      const note = `Withdrawn before validation (scope): Paired with the wrong original\n\nEarlier note`;
+      // As the server stores it: the note and the logged scope come from the request sent.
+      const sent = withdrawals.at(-1) || {};
+      const note = `Withdrawn before validation (${SERVER_LABELS[sent.scope]}): ${sent.reason}\n\nEarlier note`;
       return route.fulfill({ status: 200, json: {
         record: { ...record, validation_status: "rejected", admin_checked: true, admin_notes: note },
         extra_originals_summary: { open_suggestions: 0, children: 0 },
         decisions: [{ action: "withdrawn", admin_handle: "boss", decided_at: "2026-11-13T10:00:00Z",
                       changes: { admin_notes: ["Earlier note", note] },
-                      detail: { scope: scopeAfter, reason: "Paired with the wrong original" } }],
+                      detail: { scope: sent.scope, reason: sent.reason } }],
       } });
     }
     if (url.pathname === "/api/me") return route.fulfill({ status: 200, json: { kind: "anonymous" } });
@@ -194,10 +201,11 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     assert.match(await page.locator(".admin-decisions li").textContent(),
                  /Withdrawn before validation \(whole article: not a replication or reproduction\)/);
     assert.equal(await button.count(), 0);
+    assert.equal(await page.locator("#admin-note-text").inputValue(),
+                 "Withdrawn before validation (not a replication or reproduction): A commentary, not a replication\n\nEarlier note");
     await shot("withdraw_after.png");
 
     // ---- A wrong original says it can come back.
-    scopeAfter = "wrong_original";
     withdrawAnswer = [200, { withdrawn: true, record_id: A, scope: "wrong_original",
                              withdrawn_records: [A], review_records: [] }];
     await review(record);
@@ -210,6 +218,28 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     assert.match(await page.locator(".not-val-decision .not-val-who").innerText(),
                  /\(wrong original\).*comes back for validation if the extractor pairs it with a different original/s);
     assert.deepEqual(withdrawals.at(-1), { scope: "wrong_original", reason: "Wrong original" });
+    assert.equal(await page.locator("#admin-note-text").inputValue(),
+                 "Withdrawn before validation (wrong original): Wrong original\n\nEarlier note");
+    assert.match(await page.locator(".admin-decisions li").textContent(), /\(wrong original\)/);
+
+    // ---- A preview that fails after the admin chose another scope leaves no stale error.
+    let answerPreview;
+    previewGate = new Promise((resolve) => { answerPreview = resolve; });
+    previewFails = true;
+    await review(record);
+    await button.click();
+    await opened();
+    await scope("not_replication").check();
+    await scope("duplicate").check();
+    answerPreview();
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator("#admin-withdraw-preview").innerHTML(), "");
+    await scope("not_replication").check();     // chosen, the error does show
+    await page.locator("#admin-withdraw-preview", { hasText: "Lookup failed" }).waitFor();
+    await dialogButton("Cancel").click();
+    await closed();
+    previewGate = null;
+    previewFails = false;
 
     // ---- Withdrawn, the entry leaves the list: Skip must not then act on another.
     listed = [{ ...record, record_id: B, title_r: "Another entry", validation_status: "unvalidated" }];

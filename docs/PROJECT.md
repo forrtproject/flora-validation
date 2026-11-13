@@ -831,12 +831,19 @@ nor published; its open assignment closes and its unanswered slots are freed, so
 validator who held it is told it was already decided. Judgements already submitted stay,
 with their points, as for any rejection. The reason goes at the head of the admin note
 as `Withdrawn before validation (<scope label>): <reason>`, above any note already there.
-Each is logged as `withdrawn`, with `{"scope", "reason"}` in `admin_decisions.detail`
-(and `"withdrawn_with"`, the entry withdrawn from, on the other pairs of an article).
+Each is logged as `withdrawn`, with this in `admin_decisions.detail`:
 
-The other pairs of an article are the extractor records with the same replication DOI,
-the set the entry screen lists as "This paper has N coded originals"
-(`paper_review.admin_paper_set`). Without a replication DOI they are the extractor records
+```json
+{"scope": "wrong_original | duplicate | not_replication",
+ "reason": "<the reason as given, trimmed>",
+ "withdrawn_with": "<record_id of the entry withdrawn from; only on the other pairs of an article>"}
+```
+
+The other pairs of an article are all the extractor records with the same replication
+DOI, case-insensitive: the set the entry screen lists as "This paper has N coded
+originals" (`paper_review.admin_paper_set`), which shows at most 50 of them. A
+withdrawal is not limited to those 50; the dialog's preview counts and lists every pair
+it takes along or leaves for review. Without a replication DOI they are the extractor records
 of the same replication work (`record_metadata.work_id`, the import's key); an entry with
 neither withdraws only itself, and the dialog says its other pairs cannot be found. For the
 whole-article scope the dialog shows, from `GET …/withdraw-preview?scope=not_replication`,

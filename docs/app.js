@@ -8212,13 +8212,15 @@ async function _askWithdraw(recordId, prev = {}) {
     if (!box) return;
     if (scope !== "not_replication") { box.innerHTML = ""; return; }
     box.innerHTML = `<p class="admin-reject-note">Looking up the other pairs of this article…</p>`;
+    // The admin may switch scope while this runs: show the answer, or the error, only
+    // while the whole article is still the one chosen.
+    const stillChosen = () =>
+      document.querySelector('input[name="withdraw-scope"]:checked')?.value === "not_replication";
     try {
       const p = await adminApi(`/entries/${recordId}/withdraw-preview?scope=not_replication`);
-      if (document.querySelector('input[name="withdraw-scope"]:checked')?.value === "not_replication") {
-        box.innerHTML = _withdrawPreviewHtml(p);
-      }
+      if (stillChosen()) box.innerHTML = _withdrawPreviewHtml(p);
     } catch (e) {
-      box.innerHTML = `<p class="withdraw-blocked">${escapeHtml(e.message)}</p>`;
+      if (stillChosen()) box.innerHTML = `<p class="withdraw-blocked">${escapeHtml(e.message)}</p>`;
     }
   };
   document.querySelectorAll('input[name="withdraw-scope"]').forEach((input) => {

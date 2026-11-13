@@ -3582,13 +3582,13 @@ details[open] > .chk-collapsible-summary::before { transform: rotate(90deg); }
 .withdraw-scope > span { display: flex; flex-direction: column; gap: 0.1rem; }
 .withdraw-req { color: var(--muted); font-weight: normal; }
 .withdraw-preview:empty { display: none; }
-.withdraw-preview { margin: 0.25rem 0 0.75rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; }
+.withdraw-preview { margin: 0.25rem 0 0.75rem; padding: 0.5rem 0.75rem; border: 1px solid var(--rule); border-radius: 6px; }
 .withdraw-preview p { margin: 0.25rem 0; }
 .withdraw-blocked { color: var(--red); }
 .withdraw-pairs { margin: 0.25rem 0 0.5rem 1.1rem; padding: 0; text-align: left; }
 .withdraw-pairs li { margin: 0.15rem 0; }
 .withdraw-reason-label { display: block; font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 0.25rem; }
-#admin-withdraw-reason { width: 100%; box-sizing: border-box; padding: 0.5rem; border: 1px solid var(--border);
+#admin-withdraw-reason { width: 100%; box-sizing: border-box; padding: 0.5rem; border: 1px solid var(--rule);
   border-radius: 6px; font-family: inherit; font-size: 0.9rem; resize: vertical; }
 .btn-reject-outline {
   font-size: 0.82rem;

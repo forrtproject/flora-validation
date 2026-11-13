@@ -910,3 +910,44 @@ def test_an_article_that_cannot_be_told_apart_withdraws_this_pair_only(env):
     assert preview["article_key"] is None and preview["open"] == []
     assert withdraw(client, main, scope="not_replication").json()["withdrawn_records"] == [main]
     assert status(conn, other) == "unvalidated"
+
+
+def test_a_whole_article_withdrawal_locks_the_article_in_record_order(env):
+    """Two whole-article withdrawals started from different pairs of one paper used to
+    lock their own pair first and then wait for the other's: a deadlock. The article's
+    records are now locked in record_id order, before the entry alone, so a withdrawal
+    waiting for a lower pair holds none of the higher ones."""
+    conn, client, st = env
+    low, high = sorted(record(conn, "unvalidated", doi_r=PAPER) for _ in range(3))[::2]
+    holder = psycopg2.connect(os.environ["DATABASE_URL"])
+    probe = psycopg2.connect(os.environ["DATABASE_URL"])
+    answer = {}
+    call = threading.Thread(target=lambda: answer.update(
+        response=withdraw(client, high, scope="not_replication")))
+    try:
+        with holder.cursor() as cur:
+            cur.execute("SELECT 1 FROM unvalidated WHERE record_id = %s FOR UPDATE", (low,))
+            call.start()
+            for _ in range(100):      # until the withdrawal waits on a lock
+                with probe.cursor() as p:
+                    p.execute("SELECT COUNT(*) FROM pg_stat_activity WHERE datname = current_database() "
+                              "AND wait_event_type = 'Lock'")
+                    waiting = p.fetchone()[0]
+                probe.rollback()
+                if waiting:
+                    break
+                threading.Event().wait(0.05)
+            assert waiting, "the withdrawal never waited for the locked pair"
+            with probe.cursor() as p:   # it holds nothing above the pair it waits for
+                p.execute("SELECT 1 FROM unvalidated WHERE record_id = %s FOR UPDATE NOWAIT", (high,))
+            probe.rollback()
+        holder.rollback()
+        call.join(10)
+    finally:
+        holder.rollback()
+        holder.close()
+        probe.rollback()
+        probe.close()
+        call.join(10)
+    assert answer["response"].status_code == 200, answer["response"].text
+    assert status(conn, low) == status(conn, high) == "rejected"

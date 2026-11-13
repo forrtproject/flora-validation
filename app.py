@@ -6045,17 +6045,43 @@ def _article_key(cur, rec: dict) -> tuple[str, str] | None:
     return ("work_id", str(row["work_id"])) if row and row["work_id"] is not None else None
 
 
+def _article_match(key: tuple[str, str]) -> str:
+    """SQL over alias u: the extractor records of the paper _article_key names."""
+    match = ("lower(u.doi_r) = lower(%s)" if key[0] == "doi_r" else
+             "u.record_id IN (SELECT record_id FROM record_metadata WHERE work_id = %s::bigint)")
+    return f"({match} AND u.origin = 'extractor')"
+
+
+def _lock_article(cur, record_id: str) -> None:
+    """Lock this entry and every record of its paper, in record_id order, before any of
+    them is locked alone. Two whole-article withdrawals started from different pairs of
+    one paper would otherwise each hold their own pair while waiting for the other's."""
+    cur.execute("SELECT record_id, doi_r, origin FROM unvalidated WHERE record_id = %s",
+                (record_id,))
+    row = cur.fetchone()
+    key = _article_key(cur, dict(row)) if row else None
+    if not key:
+        return      # nothing else to lock: _withdraw_target locks (or refuses) the entry
+    cur.execute(
+        f"""
+        SELECT u.record_id FROM unvalidated u
+        WHERE {_article_match(key)} OR u.record_id = %s
+        ORDER BY u.record_id
+        FOR UPDATE
+        """,
+        (key[1], record_id),
+    )
+
+
 def _article_siblings(cur, rec: dict, lock: bool = False) -> list[dict]:
     """The other coded originals of this entry's replication paper (_article_key)."""
     key = _article_key(cur, rec)
     if not key:
         return []
-    match = ("lower(u.doi_r) = lower(%s)" if key[0] == "doi_r" else
-             "u.record_id IN (SELECT record_id FROM record_metadata WHERE work_id = %s::bigint)")
     cur.execute(
         f"""
         SELECT u.* FROM unvalidated u
-        WHERE {match} AND u.origin = 'extractor' AND u.record_id <> %s
+        WHERE {_article_match(key)} AND u.record_id <> %s
         ORDER BY u.record_id
         {"FOR UPDATE" if lock else ""}
         """,
@@ -6195,6 +6221,8 @@ def admin_withdraw(record_id: str, req: AdminWithdrawRequest,
     if not reason:
         raise HTTPException(422, "Give a reason for withdrawing this entry")
     with db() as cur:
+        if req.scope == "not_replication":
+            _lock_article(cur, record_id)
         rec = _withdraw_target(cur, record_id, admin, lock=True)
         plan = _withdraw_plan(cur, rec, req.scope, admin, lock=True)
         if plan["blocked"]:
