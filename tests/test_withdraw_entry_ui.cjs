@@ -28,6 +28,7 @@ const XSS = '<img src=x onerror="window.__xss=1">';
   const notes = [];
   let noteFails = false;
   let storedNote = null;   // the note as the server has it now, when a test sets one
+  let savedNote = "Earlier note";   // the note a withdrawal keeps below its reason
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("dialog", (d) => { errors.push("dialog: " + d.message()); d.dismiss(); });
 
@@ -71,6 +72,7 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     }
     if (url.pathname === `/api/admin/entries/${A}/withdraw` && request.method() === "POST") {
       withdrawals.push(request.postDataJSON());
+      storedNote = null;      // the server now shows the reason above savedNote
       if (gate) await gate;
       const [status, json] = withdrawAnswer;
       return route.fulfill({ status, json });
@@ -78,12 +80,14 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     if (url.pathname === `/api/admin/entries/${A}/note` && request.method() === "POST") {
       notes.push(request.postDataJSON());
       if (noteFails) return route.fulfill({ status: 500, json: { detail: "Note store down" } });
+      savedNote = request.postDataJSON().note;
+      if (storedNote !== null) storedNote = savedNote;
       return route.fulfill({ status: 200, json: { ok: true } });
     }
     if (url.pathname === `/api/admin/entries/${A}`) {
       // As the server stores it: the note and the logged scope come from the request sent.
       const sent = withdrawals.at(-1) || {};
-      const note = storedNote ?? `Withdrawn before validation (${SERVER_LABELS[sent.scope]}): ${sent.reason}\n\nEarlier note`;
+      const note = storedNote ?? `Withdrawn before validation (${SERVER_LABELS[sent.scope]}): ${sent.reason}\n\n${savedNote}`;
       return route.fulfill({ status: 200, json: {
         record: { ...record, validation_status: "rejected", admin_checked: true, admin_notes: note },
         extra_originals_summary: { open_suggestions: 0, children: 0 },
@@ -270,7 +274,11 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     await page.locator(".not-val-decision").waitFor();
     assert.equal(withdrawals.length, before + 1);
     assert.deepEqual(notes.at(-1), { note: "Earlier note, with a draft" });
+    assert.equal(await page.locator("#admin-note-text").inputValue(),
+                 "Withdrawn before validation (wrong original): Wrong original\n\nEarlier note, with a draft",
+                 "the saved draft survives the reload, below the reason");
     notes.length = 0;
+    savedNote = "Earlier note";
 
     // ---- A note saved, then edited back to what was first shown: the draft still
     // differs from the stored note, so it is saved before the withdrawal.
@@ -290,6 +298,8 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     await page.locator(".not-val-decision").waitFor();
     assert.equal(withdrawals.length, before + 1);
     assert.deepEqual(notes.at(-1), { note: "Earlier note" });
+    assert.equal(await page.locator("#admin-note-text").inputValue(),
+                 "Withdrawn before validation (wrong original): Wrong original\n\nEarlier note");
     notes.length = 0;
     storedNote = null;
 

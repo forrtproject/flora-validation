@@ -6,6 +6,7 @@ tests/test_preparation_database.py. Without it every test here is skipped.
 import json
 import os
 import threading
+import time
 import uuid
 from unittest.mock import patch
 
@@ -924,7 +925,11 @@ def test_a_whole_article_withdrawal_never_waits_for_a_locked_pair(env):
     try:
         with holder.cursor() as cur:
             cur.execute("SELECT 1 FROM unvalidated WHERE record_id = %s FOR UPDATE", (low,))
+            client.get(f"/api/admin/entries/{high}/withdraw-preview")   # warm, takes no lock
+            started = time.monotonic()
             response = withdraw(client, high, scope="not_replication")
+            # At once (NOWAIT), not after the 500 ms lock_timeout backstop.
+            assert time.monotonic() - started < 0.4
             assert response.status_code == 409, response.text
             assert response.json()["detail"]["code"] == "entry_busy"
             with probe.cursor() as p:   # it holds nothing afterwards
