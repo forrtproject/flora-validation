@@ -9823,6 +9823,7 @@ function renderAdminDetail(data) {
     btn.textContent = "Saving…";
     try {
       await adminApi(`/entries/${rec.record_id}/note`, "POST", { note: note || null });
+      rec.admin_notes = note || null;   // the saved note is what a later draft is compared with
       btn.textContent = "Saved ✓";
       const meta = btn.closest(".admin-notes-box").querySelector(".admin-notes-meta");
       if (meta) meta.innerHTML = `Last saved by <strong>${escapeHtml(_adminHandle || "admin")}</strong> · just now`;

@@ -271,6 +271,26 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     assert.equal(withdrawals.length, before + 1);
     assert.deepEqual(notes.at(-1), { note: "Earlier note, with a draft" });
     notes.length = 0;
+
+    // ---- A note saved, then edited back to what was first shown: the draft still
+    // differs from the stored note, so it is saved before the withdrawal.
+    await review(record);
+    await page.locator("#admin-note-text").fill("A saved second note");
+    await page.locator("#admin-save-note-btn").click();
+    await page.locator("#admin-save-note-btn", { hasText: "Saved" }).waitFor();
+    assert.deepEqual(notes, [{ note: "A saved second note" }]);
+    storedNote = "A saved second note";
+    await page.locator("#admin-note-text").fill("Earlier note");
+    before = withdrawals.length;
+    await button.click();
+    await opened();
+    await scope("wrong_original").check();
+    await page.locator("#admin-withdraw-reason").fill("Wrong original");
+    await dialogButton("Withdraw").click();
+    await page.locator(".not-val-decision").waitFor();
+    assert.equal(withdrawals.length, before + 1);
+    assert.deepEqual(notes.at(-1), { note: "Earlier note" });
+    notes.length = 0;
     storedNote = null;
 
     // ---- A wrong original says it can come back.
