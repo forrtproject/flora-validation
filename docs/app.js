@@ -9898,8 +9898,18 @@ function renderAdminDetail(data) {
     // An unsaved note draft would be lost when the entry reloads: save it first, as
     // the reject button sends it. If that fails, keep the draft and withdraw nothing.
     const draft = $("#admin-note-text")?.value.trim() || "";
-    if (draft !== (rec.admin_notes || "").trim()) {
+    const shownNote = (rec.admin_notes || "").trim();
+    if (draft !== shownNote) {
       try {
+        // Saving a note is last-write-wins: never overwrite one another admin saved
+        // after this entry was opened.
+        const current = await adminApi(`/entries/${rec.record_id}`);
+        if ((current?.record?.admin_notes || "").trim() !== shownNote) {
+          btn.disabled = false;
+          await showAlert("Another admin changed the note since you opened this entry, so " +
+                          "nothing was saved or withdrawn. Copy your text, reopen the entry and try again.");
+          return;
+        }
         await adminApi(`/entries/${rec.record_id}/note`, "POST", { note: draft || null });
       } catch (e) {
         btn.disabled = false;

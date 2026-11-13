@@ -27,6 +27,7 @@ const XSS = '<img src=x onerror="window.__xss=1">';
   const previews = [];
   const notes = [];
   let noteFails = false;
+  let storedNote = null;   // the note as the server has it now, when a test sets one
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("dialog", (d) => { errors.push("dialog: " + d.message()); d.dismiss(); });
 
@@ -82,7 +83,7 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     if (url.pathname === `/api/admin/entries/${A}`) {
       // As the server stores it: the note and the logged scope come from the request sent.
       const sent = withdrawals.at(-1) || {};
-      const note = `Withdrawn before validation (${SERVER_LABELS[sent.scope]}): ${sent.reason}\n\nEarlier note`;
+      const note = storedNote ?? `Withdrawn before validation (${SERVER_LABELS[sent.scope]}): ${sent.reason}\n\nEarlier note`;
       return route.fulfill({ status: 200, json: {
         record: { ...record, validation_status: "rejected", admin_checked: true, admin_notes: note },
         extra_originals_summary: { open_suggestions: 0, children: 0 },
@@ -232,8 +233,22 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     await review(record);
     assert.deepEqual(notes, [], "an unchanged note is not saved again");
     await page.locator("#admin-note-text").fill("Earlier note, with a draft");
-    noteFails = true;
     let before = withdrawals.length;
+    // Another admin saved a note meanwhile: it is not overwritten, nothing withdrawn.
+    storedNote = "Another admin's newer note";
+    await button.click();
+    await opened();
+    await scope("wrong_original").check();
+    await page.locator("#admin-withdraw-reason").fill("Wrong original");
+    await dialogButton("Withdraw").click();
+    await page.locator("#dialog-message", { hasText: "Another admin changed the note" }).waitFor();
+    assert.equal(withdrawals.length, before);
+    assert.deepEqual(notes, []);
+    await dialogButton("OK").click();
+    await closed();
+    assert.equal(await page.locator("#admin-note-text").inputValue(), "Earlier note, with a draft");
+    storedNote = "Earlier note";
+    noteFails = true;
     await button.click();
     await opened();
     await scope("wrong_original").check();
@@ -256,6 +271,7 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     assert.equal(withdrawals.length, before + 1);
     assert.deepEqual(notes.at(-1), { note: "Earlier note, with a draft" });
     notes.length = 0;
+    storedNote = null;
 
     // ---- A wrong original says it can come back.
     withdrawAnswer = [200, { withdrawn: true, record_id: A, scope: "wrong_original",

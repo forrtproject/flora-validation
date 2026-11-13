@@ -340,10 +340,10 @@ It is refused while the entry has live added originals, which are published from
 banner says so, and the admin removes those first. If the extractor later ships a different
 original at the same work and rank, the import sends the record back to `unvalidated` with
 clean slots and archives its history in `retired_records`. The same holds for a pair an
-admin withdrew before validation as the wrong original (scope `wrong_original`); a pair
-withdrawn as a duplicate or with its whole article never comes back, nor does one an
-admin rejected again after withdrawing it (for example by resolving it as not a
-replication).
+admin withdrew before validation as the wrong original (scope `wrong_original`). A pair
+withdrawn as a duplicate or with its whole article never comes back. A pair that an
+admin rejected again after the withdrawal (for example, by resolving it as not a
+replication) does not come back either.
 
 **After rolling this release back**, check these records. The previous release counts two
 `not_applicable` answers as agreement and keeps the extracted original and outcome, so a
@@ -820,14 +820,18 @@ consensus or `auto_validate_waiting.py`) leaves the record waiting for an admin 
 An entry still open for validation (`unvalidated` or `validation_inprogress`) can be
 taken out before its validators finish. **Withdraw from validation** on the entry screen
 asks what is wrong with it and why, and calls `POST /api/admin/entries/{record_id}/withdraw`
-with a required `scope` and `reason` (at most 1,000 characters). While the nightly
-import is writing entries it refuses with 409 `import_running`, to retry a few minutes
-later: the two lock entries in different orders and could otherwise deadlock (advisory
-lock `IMPORT_WITHDRAW_LOCK_ID` in csv_to_db.py). It never waits for another write
-holding one of the entries it locks (an admin merge, a validator's submit): its row
-locks are `NOWAIT` and its other waits end at a 500 ms `lock_timeout`, so it refuses
-with 409 `entry_busy`, having changed nothing, rather than risk a deadlock. There are
-three scopes:
+with a required `scope` and `reason` (at most 1,000 characters). Two refusals ask the
+admin to retry, and change nothing:
+
+- 409 `import_running`, while the nightly import is writing entries. The import locks
+  entries in CSV order and a withdrawal locks them in record_id order, so running both
+  at once could deadlock. The import holds advisory lock `IMPORT_WITHDRAW_LOCK_ID`
+  (csv_to_db.py) exclusively; a withdrawal takes it shared, or refuses.
+- 409 `entry_busy`, when another write (an admin merge, a validator's submit) holds one
+  of the entries the withdrawal must lock. Its row locks are `NOWAIT` and its other
+  waits end at a 500 ms `lock_timeout`, so it gives up rather than risk a deadlock.
+
+There are three scopes:
 
 | Scope | Dialog label | What it withdraws | Comes back? |
 |---|---|---|---|
