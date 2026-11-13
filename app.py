@@ -6067,7 +6067,7 @@ def _lock_article(cur, record_id: str) -> None:
         SELECT u.record_id FROM unvalidated u
         WHERE {_article_match(key)} OR u.record_id = %s
         ORDER BY u.record_id
-        FOR UPDATE
+        FOR UPDATE NOWAIT
         """,
         (key[1], record_id),
     )
@@ -6083,7 +6083,7 @@ def _article_siblings(cur, rec: dict, lock: bool = False) -> list[dict]:
         SELECT u.* FROM unvalidated u
         WHERE {_article_match(key)} AND u.record_id <> %s
         ORDER BY u.record_id
-        {"FOR UPDATE" if lock else ""}
+        {"FOR UPDATE NOWAIT" if lock else ""}
         """,
         (key[1], str(rec["record_id"])),
     )
@@ -6150,7 +6150,7 @@ def _withdraw_one(cur, rec: dict, admin: dict, scope: str, reason: str,
 
 def _withdraw_target(cur, record_id: str, admin: dict, lock: bool) -> dict:
     """The entry to withdraw, or the HTTP refusal that says why it cannot be."""
-    cur.execute(f"SELECT * FROM unvalidated WHERE record_id = %s{' FOR UPDATE' if lock else ''}",
+    cur.execute(f"SELECT * FROM unvalidated WHERE record_id = %s{' FOR UPDATE NOWAIT' if lock else ''}",
                 (record_id,))
     row = cur.fetchone()
     if not row:
@@ -6198,30 +6198,13 @@ def admin_withdraw_preview(record_id: str, scope: str = "not_replication",
                 **_public_plan(_withdraw_plan(cur, rec, scope, admin))}
 
 
-@app.post("/api/admin/entries/{record_id}/withdraw")
-def admin_withdraw(record_id: str, req: AdminWithdrawRequest,
-                   admin: dict = Depends(current_admin)):
-    """Take an entry out of validation before its validators have decided it.
-
-    The scope says why, and so what happens next:
-    - wrong_original: this pair only. The import re-opens it when the extractor ships
-      a different original at the same work and rank (csv_to_db).
-    - duplicate: this pair only, for good: the correct pair is already in FLoRA.
-    - not_replication: the whole article. Every other pair of the same replication
-      paper that is still open is withdrawn with it; those decided or waiting for an
-      admin are left as they are and returned for review. One blocked pair refuses
-      the whole request, so nothing is withdrawn in part.
-
-    Each withdrawn record is rejected, so it is neither served nor published, and its
-    open assignment and unanswered slots close. Judgements already submitted stay, with
-    their points, as for any other rejection. The reason goes at the head of the admin
-    note; the note already there is kept below it.
-    """
-    reason = req.reason.strip()
-    if not reason:
-        raise HTTPException(422, "Give a reason for withdrawing this entry")
+def _withdraw_locked(record_id: str, req: "AdminWithdrawRequest", admin: dict,
+                     reason: str) -> tuple[dict, dict]:
+    """admin_withdraw's transaction. Its row locks are NOWAIT, and its other waits
+    give up after lock_timeout, so it raises LockNotAvailable rather than wait."""
     from csv_to_db import IMPORT_WITHDRAW_LOCK_ID
     with db() as cur:
+        cur.execute("SET LOCAL lock_timeout = '500ms'")
         # The import locks entries in CSV order, a withdrawal in record_id order: never
         # run them together, or they could deadlock (and roll back the import).
         cur.execute("SELECT pg_try_advisory_xact_lock_shared(%s) AS ok",
@@ -6247,6 +6230,41 @@ def admin_withdraw(record_id: str, req: AdminWithdrawRequest,
         for sibling in plan["open"]:
             _withdraw_one(cur, sibling["_row"], admin, req.scope, reason, withdrawn_with=record_id)
         public = _public_plan(plan)
+    return rec, public
+
+
+@app.post("/api/admin/entries/{record_id}/withdraw")
+def admin_withdraw(record_id: str, req: AdminWithdrawRequest,
+                   admin: dict = Depends(current_admin)):
+    """Take an entry out of validation before its validators have decided it.
+
+    The scope says why, and so what happens next:
+    - wrong_original: this pair only. The import re-opens it when the extractor ships
+      a different original at the same work and rank (csv_to_db).
+    - duplicate: this pair only, for good: the correct pair is already in FLoRA.
+    - not_replication: the whole article. Every other pair of the same replication
+      paper that is still open is withdrawn with it; those decided or waiting for an
+      admin are left as they are and returned for review. One blocked pair refuses
+      the whole request, so nothing is withdrawn in part.
+
+    Each withdrawn record is rejected, so it is neither served nor published, and its
+    open assignment and unanswered slots close. Judgements already submitted stay, with
+    their points, as for any other rejection. The reason goes at the head of the admin
+    note; the note already there is kept below it.
+    """
+    reason = req.reason.strip()
+    if not reason:
+        raise HTTPException(422, "Give a reason for withdrawing this entry")
+    try:
+        rec, public = _withdraw_locked(record_id, req, admin, reason)
+    except (psycopg2.errors.LockNotAvailable, psycopg2.errors.DeadlockDetected):
+        # Rolled back. Another write holds one of these entries (an admin merge, a
+        # validator's submit). A withdrawal gives up rather than wait for it, so the
+        # other write is never the one PostgreSQL aborts; it asks to be retried instead.
+        raise HTTPException(409, detail={
+            "code": "entry_busy",
+            "message": "This entry or another pair of its article is being changed "
+                       "right now. Nothing was withdrawn; try again in a moment."})
     return {"withdrawn": True, "record_id": record_id, "scope": req.scope,
             "withdrawn_records": [record_id] + [s["record_id"] for s in public["open"]],
             "review_records": public["review"]}

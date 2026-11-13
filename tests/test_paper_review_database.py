@@ -1105,6 +1105,30 @@ def test_a_withdrawal_waits_for_no_running_import(api, local_database):
     assert response.status_code == 200, response.text
 
 
+def test_a_withdrawal_gives_up_rather_than_wait_for_a_locked_pair(api, local_database):
+    """Another write (an admin merge) holds a sibling of the article: the withdrawal
+    refuses with a retryable 409 at once, and withdraws nothing."""
+    client, who = api
+    with local_database, _cursor(local_database) as cur:
+        record, sibling = _record(cur, 1), _record(cur, 2)
+    other = psycopg2.connect(os.environ["DATABASE_URL"])
+    try:
+        with other.cursor() as cur:
+            cur.execute("SELECT 1 FROM unvalidated WHERE record_id = %s FOR UPDATE", (sibling,))
+        response = client.post(f"/api/admin/entries/{record}/withdraw",
+                               json={"scope": "not_replication", "reason": "Not a replication"})
+        assert response.status_code == 409, response.text
+        assert response.json()["detail"]["code"] == "entry_busy"
+        assert _status(local_database, record) == "unvalidated"
+    finally:
+        other.rollback()
+        other.close()
+    response = client.post(f"/api/admin/entries/{record}/withdraw",
+                           json={"scope": "not_replication", "reason": "Not a replication"})
+    assert response.status_code == 200, response.text
+    assert response.json()["withdrawn_records"] == [record, sibling]
+
+
 def test_an_unlogged_consensus_rejection_never_reopens(api, local_database):
     with local_database, _cursor(local_database) as cur:
         record = _record(cur, 1, status="rejected")

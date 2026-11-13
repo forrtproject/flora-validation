@@ -823,7 +823,11 @@ asks what is wrong with it and why, and calls `POST /api/admin/entries/{record_i
 with a required `scope` and `reason` (at most 1,000 characters). While the nightly
 import is writing entries it refuses with 409 `import_running`, to retry a few minutes
 later: the two lock entries in different orders and could otherwise deadlock (advisory
-lock `IMPORT_WITHDRAW_LOCK_ID` in csv_to_db.py). There are three scopes:
+lock `IMPORT_WITHDRAW_LOCK_ID` in csv_to_db.py). It never waits for another write
+holding one of the entries it locks (an admin merge, a validator's submit): its row
+locks are `NOWAIT` and its other waits end at a 500 ms `lock_timeout`, so it refuses
+with 409 `entry_busy`, having changed nothing, rather than risk a deadlock. There are
+three scopes:
 
 | Scope | Dialog label | What it withdraws | Comes back? |
 |---|---|---|---|
