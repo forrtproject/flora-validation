@@ -6310,6 +6310,10 @@ def admin_flag_review(record_id: str, req: dict = Body(default={}), admin: dict 
 
 class AdminNoteRequest(BaseModel):
     note: str | None = None
+    # Save only if the stored note (trimmed) is still `expected`: a client saving a
+    # draft on the admin's behalf must not overwrite a note another admin saved since.
+    check_unchanged: bool = False
+    expected: str | None = None
 
 
 @app.post("/api/admin/entries/{record_id}/note")
@@ -6323,13 +6327,21 @@ def admin_save_note(record_id: str, req: AdminNoteRequest, admin: dict = Depends
         cur.execute(
             """
             UPDATE unvalidated
-            SET admin_notes   = %s,
-                note_saved_by = %s,
+            SET admin_notes   = %(note)s,
+                note_saved_by = %(by)s,
                 note_saved_at = NOW()
-            WHERE record_id = %s
+            WHERE record_id = %(id)s
+              AND (NOT %(check)s
+                   OR btrim(COALESCE(admin_notes, '')) = btrim(COALESCE(%(expected)s, '')))
+            RETURNING record_id
             """,
-            (req.note or None, admin_handle, record_id),
+            {"note": req.note or None, "by": admin_handle, "id": record_id,
+             "check": req.check_unchanged, "expected": req.expected},
         )
+        if cur.fetchone() is None:
+            raise HTTPException(409, detail={
+                "code": "note_changed",
+                "message": "Another admin changed the note since you opened this entry."})
     return {"saved": True}
 
 

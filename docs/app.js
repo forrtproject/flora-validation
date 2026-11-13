@@ -9902,19 +9902,17 @@ function renderAdminDetail(data) {
     const shownNote = (rec.admin_notes || "").trim();
     if (draft !== shownNote) {
       try {
-        // Saving a note is last-write-wins: never overwrite one another admin saved
-        // after this entry was opened.
-        const current = await adminApi(`/entries/${rec.record_id}`);
-        if ((current?.record?.admin_notes || "").trim() !== shownNote) {
-          btn.disabled = false;
-          await showAlert("Another admin changed the note since you opened this entry, so " +
-                          "nothing was saved or withdrawn. Copy your text, reopen the entry and try again.");
-          return;
-        }
-        await adminApi(`/entries/${rec.record_id}/note`, "POST", { note: draft || null });
+        // Only if no other admin saved a note since this entry was opened: the server
+        // compares and saves in one statement, and refuses with note_changed.
+        await adminApi(`/entries/${rec.record_id}/note`, "POST",
+                       { note: draft || null, check_unchanged: true, expected: shownNote });
+        rec.admin_notes = draft || null;   // a retried withdrawal need not save it again
       } catch (e) {
         btn.disabled = false;
-        await showAlert("The note could not be saved, so nothing was withdrawn. Error: " + e.message);
+        await showAlert(e.detail?.code === "note_changed"
+          ? "Another admin changed the note since you opened this entry, so nothing was " +
+            "saved or withdrawn. Copy your text, reopen the entry and try again."
+          : "The note could not be saved, so nothing was withdrawn. Error: " + e.message);
         return;
       }
     }

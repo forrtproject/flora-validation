@@ -27,6 +27,7 @@ const XSS = '<img src=x onerror="window.__xss=1">';
   const previews = [];
   const notes = [];
   let noteFails = false;
+  const noteRefusals = [];
   let storedNote = null;   // the note as the server has it now, when a test sets one
   let savedNote = "Earlier note";   // the note a withdrawal keeps below its reason
   page.on("pageerror", (e) => errors.push(e.message));
@@ -78,9 +79,15 @@ const XSS = '<img src=x onerror="window.__xss=1">';
       return route.fulfill({ status, json });
     }
     if (url.pathname === `/api/admin/entries/${A}/note` && request.method() === "POST") {
-      notes.push(request.postDataJSON());
+      const body = request.postDataJSON();
+      // As the server compares: the stored note (trimmed) must still be the expected one.
+      if (body.check_unchanged && storedNote !== null && storedNote.trim() !== (body.expected || "").trim()) {
+        noteRefusals.push(body);
+        return route.fulfill({ status: 409, json: { detail: { code: "note_changed", message: "Changed" } } });
+      }
+      notes.push({ note: body.note });
       if (noteFails) return route.fulfill({ status: 500, json: { detail: "Note store down" } });
-      savedNote = request.postDataJSON().note;
+      savedNote = body.note;
       if (storedNote !== null) storedNote = savedNote;
       return route.fulfill({ status: 200, json: { ok: true } });
     }
@@ -248,6 +255,8 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     await page.locator("#dialog-message", { hasText: "Another admin changed the note" }).waitFor();
     assert.equal(withdrawals.length, before);
     assert.deepEqual(notes, []);
+    assert.deepEqual(noteRefusals, [{ note: "Earlier note, with a draft", check_unchanged: true,
+                                      expected: "Earlier note" }]);
     await dialogButton("OK").click();
     await closed();
     assert.equal(await page.locator("#admin-note-text").inputValue(), "Earlier note, with a draft");
@@ -266,13 +275,31 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     assert.equal(await page.locator("#admin-note-text").inputValue(), "Earlier note, with a draft");
     assert.equal(await button.isEnabled(), true);
     noteFails = false;
+    // The note saves but the withdrawal is refused for now; the retry does not take
+    // the note it just saved for another admin's.
+    const answered = withdrawAnswer;
+    withdrawAnswer = [409, { detail: { code: "entry_busy", message: "Being changed right now" } }];
+    await button.click();
+    await opened();
+    await scope("wrong_original").check();
+    await page.locator("#admin-withdraw-reason").fill("Wrong original");
+    await dialogButton("Withdraw").click();
+    await page.locator("#dialog-message", { hasText: "Being changed right now" }).waitFor();
+    await dialogButton("OK").click();
+    await closed();
+    assert.equal(withdrawals.length, before + 1);
+    assert.equal(notes.length, 2);
+    withdrawAnswer = answered;
+    storedNote = savedNote;   // as the server has it after the save
     await button.click();
     await opened();
     await scope("wrong_original").check();
     await page.locator("#admin-withdraw-reason").fill("Wrong original");
     await dialogButton("Withdraw").click();
     await page.locator(".not-val-decision").waitFor();
-    assert.equal(withdrawals.length, before + 1);
+    assert.equal(withdrawals.length, before + 2);
+    assert.equal(notes.length, 2, "the draft saved before the refusal is not saved again");
+    assert.equal(noteRefusals.length, 1);
     assert.deepEqual(notes.at(-1), { note: "Earlier note, with a draft" });
     assert.equal(await page.locator("#admin-note-text").inputValue(),
                  "Withdrawn before validation (wrong original): Wrong original\n\nEarlier note, with a draft",

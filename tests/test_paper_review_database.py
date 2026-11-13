@@ -1129,6 +1129,27 @@ def test_a_withdrawal_gives_up_rather_than_wait_for_a_locked_pair(api, local_dat
     assert response.json()["withdrawn_records"] == [record, sibling]
 
 
+def test_a_checked_note_save_never_overwrites_a_newer_note(api, local_database):
+    client, who = api
+    with local_database, _cursor(local_database) as cur:
+        record = _record(cur, 1)
+    def save(note, **extra):
+        return client.post(f"/api/admin/entries/{record}/note", json={"note": note, **extra})
+    def stored():
+        with local_database, _cursor(local_database) as cur:
+            cur.execute("SELECT admin_notes FROM unvalidated WHERE record_id = %s", (record,))
+            return cur.fetchone()["admin_notes"]
+    assert save("First").status_code == 200                       # unchecked, as before
+    refused = save("Mine", check_unchanged=True, expected="Something older")
+    assert refused.status_code == 409 and refused.json()["detail"]["code"] == "note_changed"
+    assert stored() == "First"
+    assert save("Mine", check_unchanged=True, expected="  First ").status_code == 200
+    assert stored() == "Mine"
+    assert save(None).status_code == 200
+    assert save("Again", check_unchanged=True, expected="").status_code == 200   # empty matches empty
+    assert stored() == "Again"
+
+
 def test_an_unlogged_consensus_rejection_never_reopens(api, local_database):
     with local_database, _cursor(local_database) as cur:
         record = _record(cur, 1, status="rejected")
