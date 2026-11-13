@@ -107,6 +107,19 @@ const XSS = '<img src=x onerror="window.__xss=1">';
   const shot = async (name) => {
     if (process.env.SHOT_DIR) await page.screenshot({ path: path.join(process.env.SHOT_DIR, name) });
   };
+  // Every admin API call the page makes, recorded once it has settled. The caller's
+  // own continuation runs in the microtask after that, before any poll sees the record,
+  // so waiting for a call to settle waits for what the page does with its answer.
+  const watchApi = () => page.evaluate(() => {
+    if (window.__settled) { window.__settled.length = 0; return; }
+    window.__settled = [];
+    const original = adminApi;
+    window.adminApi = async (...args) => {
+      try { return await original(...args); } finally { window.__settled.push(args[0]); }
+    };
+  });
+  const settled = (pattern) => page.waitForFunction(
+    (source) => window.__settled.some((p) => new RegExp(source).test(p)), pattern.source);
   const refused = async (pattern) => {
     await opened();
     assert.match(await page.locator("#dialog-message").innerText(), pattern);
@@ -229,10 +242,11 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     await review(record);
     await button.click();
     await opened();
+    await watchApi();
     await scope("not_replication").check();
     await scope("duplicate").check();
     answerPreview();
-    await page.waitForTimeout(300);
+    await settled(/withdraw-preview/);
     assert.equal(await page.locator("#admin-withdraw-preview").innerHTML(), "");
     await scope("not_replication").check();     // chosen, the error does show
     await page.locator("#admin-withdraw-preview", { hasText: "Lookup failed" }).waitFor();
@@ -266,8 +280,11 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     await closed();
     await page.evaluate(() => closeAdminDetail());
     const sent = withdrawals.length;
+    await watchApi();
     release();
-    await page.waitForTimeout(500);
+    // The handler's last call is the list refresh; after it, only a reopen could follow.
+    await settled(/\/withdraw$/);
+    await settled(/^\/entries\?/);
     assert.equal(withdrawals.length, sent);
     assert.equal(await page.locator("#admin-detail-modal").isHidden(), true);
 
@@ -282,8 +299,10 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     await closed();
     await review({ ...record, record_id: B, title_r: "Another entry", validation_status: "need_review" });
     await page.locator("#admin-note-text").fill("Typed, not saved");
+    await watchApi();
     release();
-    await page.waitForTimeout(500);
+    await settled(/\/withdraw$/);
+    await settled(/^\/entries\?/);
     assert.equal(await page.locator("#admin-note-text").inputValue(), "Typed, not saved");
     assert.equal(await page.evaluate(() => _adminShownId), B);
     assert.equal(await page.evaluate(() => _adminCurrentIdx), 0, "Skip points at the entry on screen");
