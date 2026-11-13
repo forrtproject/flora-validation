@@ -430,13 +430,21 @@ identity backfills—study numbers and matching-paper OpenAlex IDs—propagate i
 If an upstream correction changes `pair_id`, the importer uses the stable
 `(work_id, original_rank)` source slot to re-key the existing raw record. It
 refuses an ambiguous source-slot match instead of merging records arbitrarily.
-A rejected record stays rejected, with one exception: when an admin removed its
-original ("Remove this original", the newest rejecting entry in `admin_decisions`)
-and the re-key ships a different original, the record returns to `unvalidated` with
-clean slots. Its earlier state is archived in `retired_records` (reason
-`original_replaced`) and the re-opening is logged as `reopened_by_import`. A record
-rejected as neither a replication nor a reproduction is about the paper and stays
-rejected, as does a removed original whose re-key only corrected the replication DOI.
+A rejected record stays rejected, with two exceptions, both when the re-key ships a
+different original: an admin removed its original ("Remove this original", the newest
+rejecting entry in `admin_decisions`, with both validators' judgements still proposing
+the removal), or an admin withdrew it before validation as the wrong original (the
+newest status-changing entry in `admin_decisions`, one whose `status_before` and
+`status_after` differ, is `withdrawn` with `detail.scope = 'wrong_original'`; entries
+that change no status, such as a dismissed suggestion, are skipped). Either way the record returns to `unvalidated` with clean slots,
+its earlier state is archived in `retired_records` (reason `original_replaced`, with a
+detail naming which), a note says why it re-opened, and the re-opening is logged as
+`reopened_by_import`. A record rejected as neither a replication nor a reproduction is
+about the paper and stays rejected, as does a pair withdrawn as a duplicate or with its
+whole article, and a removed or withdrawn original whose re-key only corrected the
+replication DOI. A senior's reject or a consensus reject is not logged, so it never
+re-opens a record: after a re-open, the logged `reopened_by_import` is the newest
+status-changing entry, and the old withdrawal no longer counts.
 Blank or duplicate resolved `pair_id` values, missing required OpenAlex lineage,
 and DOI-less originals without a stable OpenAlex identity fail validation before
 database writes.
@@ -715,8 +723,9 @@ reject by design: that senior may carry it through. "Hide entries I validated"
 leaves those out of the list.
 
 Every admin decision is logged in `admin_decisions` — who, when, the status before
-and after, and each published value it changed (a `final_*` decision, else the
-extracted value it stands in for) — and listed on the entry's panel.
+and after, each published value it changed (a `final_*` decision, else the
+extracted value it stands in for), and in `detail` what the decision was beyond its
+action (a withdrawal's scope and reason) — and listed on the entry's panel.
 
 ### Source Records rows of records no longer validated
 
@@ -1753,6 +1762,8 @@ the caller. State-changing requests are refused unless they originate from
 | GET | `/api/admin/entries/{record_id}` | Full review detail and queue rows |
 | POST | `/api/admin/entries/{record_id}/approve` | Approve pending consensus |
 | POST | `/api/admin/entries/{record_id}/remove-original` | Confirm that both validators were right to mark the original wrong with no replacement: rejects this record only |
+| GET | `/api/admin/entries/{record_id}/withdraw-preview` | Read only: for `scope=not_replication`, the article's other pairs a withdrawal would take along (`open`), leave for review (`review`) or be refused over (`blocked`) |
+| POST | `/api/admin/entries/{record_id}/withdraw` | Take an entry still open for validation out before its validators decide it, with a required `scope` (`wrong_original`, `duplicate`, `not_replication`) and `reason`: rejects it (and, for `not_replication`, every open pair of the same replication paper, all or none), closes its open slots, puts the scope and reason at the head of the admin note, and returns the article's pairs in `validated`, `consensus_reached` or `need_review` (left unchanged) as `review_records`; already rejected pairs are not returned |
 | POST | `/api/admin/entries/{record_id}/flag-review` | Move pending record to review |
 | POST | `/api/admin/entries/{record_id}/note` | Save persistent admin note |
 | GET | `/api/admin/entries/{record_id}/extra-originals` | The entry's Other originals section: validators' suggestions, added originals, and whether originals are added at once, drafted for Mark as Resolved, or blocked (with why) |

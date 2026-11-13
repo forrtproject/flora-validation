@@ -3661,9 +3661,11 @@ def _published(row: dict, final: str | None, raw: str):
     return value or row.get(raw)
 
 
-def _log_decision(cur, record_id: str, admin: dict, action: str, before: dict) -> None:
+def _log_decision(cur, record_id: str, admin: dict, action: str, before: dict,
+                  detail: dict | None = None) -> None:
     """Record an admin decision: who, what, and every published value it changed.
-    `before` is the record as read before the decision, in the same transaction."""
+    `before` is the record as read before the decision, in the same transaction.
+    `detail` is what the decision was, beyond its action (a withdrawal's scope)."""
     columns = {"validation_status"} | {c for _, final, raw in _DECISION_FIELDS
                                        for c in (final, raw) if c}
     cur.execute(
@@ -3679,12 +3681,12 @@ def _log_decision(cur, record_id: str, admin: dict, action: str, before: dict) -
     cur.execute(
         """
         INSERT INTO admin_decisions (record_id, admin_id, admin_handle, action,
-                                     status_before, status_after, changes)
-        VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
+                                     status_before, status_after, changes, detail)
+        VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb)
         """,
         (record_id, admin.get("id"), admin.get("handle"), action,
          before.get("validation_status"), after.get("validation_status"),
-         json.dumps(changes, default=str)),
+         json.dumps(changes, default=str), json.dumps(detail or {}, default=str)),
     )
 
 
@@ -5286,8 +5288,8 @@ def admin_entry_detail(record_id: str, admin: dict = Depends(current_admin)):
         self_approval = _self_approval(cur, record_id, admin)
         paper_originals, paper_differs_on = paper_review.admin_paper_set(cur, record)
         cur.execute(
-            "SELECT decided_at, admin_handle, action, status_before, status_after, changes "
-            "FROM admin_decisions WHERE record_id = %s ORDER BY decided_at",
+            "SELECT decided_at, admin_handle, action, status_before, status_after, changes, "
+            "detail FROM admin_decisions WHERE record_id = %s ORDER BY decided_at",
             (record_id,),
         )
         decisions = [{**dict(r), "decided_at": r["decided_at"].isoformat()} for r in cur.fetchall()]
@@ -5971,6 +5973,303 @@ def admin_remove_original(record_id: str, admin: dict = Depends(current_admin)):
     return {"removed": True, "record_id": record_id}
 
 
+# What an entry is withdrawn as. The label goes into the admin note; the scope is kept
+# in the decision log (admin_decisions.detail), where the import reads it.
+WITHDRAW_SCOPES = {
+    "wrong_original": "wrong original",
+    "duplicate": "correct pair already in FLoRA",
+    "not_replication": "not a replication or reproduction",
+}
+_OPEN_FOR_VALIDATION = ("unvalidated", "validation_inprogress")
+_IN_ADMIN_HANDS = ("validated", "consensus_reached", "need_review")
+
+
+class AdminWithdrawRequest(BaseModel):
+    scope: Literal["wrong_original", "duplicate", "not_replication"]
+    # As long as a validator's skip comment: a sentence or two on why the entry goes.
+    reason: str = Field(max_length=1000)
+
+
+# Where a record that is no longer open for validation is decided instead.
+_WITHDRAW_REFUSALS = {
+    "validated": "This entry is already validated. To take it out of FLoRA, reject it "
+                 "in the resolution form.",
+    "rejected": "This entry is already rejected, so it is not served or published.",
+    "consensus_reached": "The validators have already agreed on this entry. Approve it, "
+                         "or resolve or reject it in the resolution form.",
+    "need_review": "This entry is waiting for an admin. Resolve or reject it in the "
+                   "resolution form, or remove its original if the validators proposed that.",
+}
+
+
+def _merged_into(cur, record_id: str) -> str | None:
+    cur.execute(
+        "SELECT survivor_record_id::text AS survivor_record_id "
+        "FROM validated_record_merges WHERE duplicate_record_id = %s",
+        (record_id,),
+    )
+    row = cur.fetchone()
+    return row["survivor_record_id"] if row else None
+
+
+def _withdraw_blocker(cur, record_id: str, admin: dict) -> dict | None:
+    """Why this open record cannot be withdrawn by this admin, or None."""
+    survivor = _merged_into(cur, record_id)
+    if survivor:
+        return {"code": "record_already_merged", "status": 409,
+                "message": "This record has already been merged into another validated record.",
+                "survivor_record_id": survivor}
+    decision = _self_approval(cur, record_id, admin)
+    if not decision["allowed"]:
+        return {"code": "self_approval", "status": 403, "message": decision["reason"]}
+    added = extra_originals.detail_summary(cur, record_id)["children"]
+    if added:
+        return {"code": "withdraw_blocked_by_added_originals", "status": 409,
+                "message": f"This entry has {added} added original{'' if added == 1 else 's'}, "
+                           "published from it. Remove them first, then withdraw this entry.",
+                "added_originals": added}
+    return None
+
+
+def _article_key(cur, rec: dict) -> tuple[str, str] | None:
+    """How this entry's replication paper is told apart: its replication DOI, as the
+    entry screen's paper set (paper_review.admin_paper_set), else the replication work
+    the import keys it by (record_metadata.work_id). None when it has neither."""
+    if rec.get("origin") != "extractor":
+        return None
+    doi = (rec.get("doi_r") or "").strip()
+    if doi:
+        return ("doi_r", doi)
+    cur.execute("SELECT work_id FROM record_metadata WHERE record_id = %s", (str(rec["record_id"]),))
+    row = cur.fetchone()
+    return ("work_id", str(row["work_id"])) if row and row["work_id"] is not None else None
+
+
+def _article_match(key: tuple[str, str]) -> str:
+    """SQL over alias u: the extractor records of the paper _article_key names."""
+    match = ("lower(u.doi_r) = lower(%s)" if key[0] == "doi_r" else
+             "u.record_id IN (SELECT record_id FROM record_metadata WHERE work_id = %s::bigint)")
+    return f"({match} AND u.origin = 'extractor')"
+
+
+def _lock_article(cur, record_id: str) -> None:
+    """Lock this entry and every record of its paper, in record_id order, before any of
+    them is locked alone. Two whole-article withdrawals started from different pairs of
+    one paper would otherwise each hold their own pair while waiting for the other's."""
+    cur.execute("SELECT record_id, doi_r, origin FROM unvalidated WHERE record_id = %s",
+                (record_id,))
+    row = cur.fetchone()
+    key = _article_key(cur, dict(row)) if row else None
+    if not key:
+        return      # nothing else to lock: _withdraw_target locks (or refuses) the entry
+    cur.execute(
+        f"""
+        SELECT u.record_id FROM unvalidated u
+        WHERE {_article_match(key)} OR u.record_id = %s
+        ORDER BY u.record_id
+        FOR UPDATE NOWAIT
+        """,
+        (key[1], record_id),
+    )
+
+
+def _article_siblings(cur, rec: dict, lock: bool = False) -> list[dict]:
+    """The other coded originals of this entry's replication paper (_article_key)."""
+    key = _article_key(cur, rec)
+    if not key:
+        return []
+    cur.execute(
+        f"""
+        SELECT u.* FROM unvalidated u
+        WHERE {_article_match(key)} AND u.record_id <> %s
+        ORDER BY u.record_id
+        {"FOR UPDATE NOWAIT" if lock else ""}
+        """,
+        (key[1], str(rec["record_id"])),
+    )
+    return [dict(r) for r in cur.fetchall()]
+
+
+def _sibling_summary(row: dict) -> dict:
+    return {
+        "record_id": str(row["record_id"]),
+        "validation_status": row["validation_status"],
+        "title_o": row.get("final_title_o") or row.get("title_o"),
+        "doi_o": row["final_doi_o"] if row.get("final_doi_o") is not None else row.get("doi_o"),
+        "study_o": row.get("study_o"),
+    }
+
+
+def _withdraw_plan(cur, rec: dict, scope: str, admin: dict, lock: bool = False) -> dict:
+    """The siblings a whole-article withdrawal takes along (open), leaves for an admin
+    (review), and those that block it (blocked, each with its reason)."""
+    plan = {"open": [], "review": [], "blocked": []}
+    if scope != "not_replication":
+        return plan
+    for row in _article_siblings(cur, rec, lock=lock):
+        summary = _sibling_summary(row)
+        if row["validation_status"] in _IN_ADMIN_HANDS:
+            plan["review"].append(summary)
+        elif row["validation_status"] in _OPEN_FOR_VALIDATION:
+            blocker = _withdraw_blocker(cur, summary["record_id"], admin)
+            if blocker:
+                plan["blocked"].append({**summary, "reason": blocker["message"],
+                                        "code": blocker["code"]})
+            else:
+                plan["open"].append({**summary, "_row": row})
+    return plan
+
+
+def _withdraw_one(cur, rec: dict, admin: dict, scope: str, reason: str,
+                  withdrawn_with: str | None = None) -> None:
+    label = WITHDRAW_SCOPES[scope]
+    if withdrawn_with:
+        label += f"; whole article, with entry {withdrawn_with}"
+    record_id = str(rec["record_id"])
+    cur.execute(
+        """
+        UPDATE unvalidated SET
+            validation_status = 'rejected',
+            admin_checked     = TRUE,
+            admin_name        = %s,
+            admin_notes       = %s || COALESCE(E'\n\n' || NULLIF(admin_notes, ''), ''),
+            note_saved_by     = %s,
+            note_saved_at     = NOW(),
+            updated_at        = NOW()
+        WHERE record_id = %s
+        """,
+        (admin["handle"], f"Withdrawn before validation ({label}): {reason}", admin["handle"],
+         record_id),
+    )
+    _close_open_work(cur, record_id)
+    detail = {"scope": scope, "reason": reason}
+    if withdrawn_with:
+        detail["withdrawn_with"] = withdrawn_with
+    _log_decision(cur, record_id, admin, "withdrawn", rec, detail=detail)
+
+
+def _withdraw_target(cur, record_id: str, admin: dict, lock: bool) -> dict:
+    """The entry to withdraw, or the HTTP refusal that says why it cannot be."""
+    cur.execute(f"SELECT * FROM unvalidated WHERE record_id = %s{' FOR UPDATE NOWAIT' if lock else ''}",
+                (record_id,))
+    row = cur.fetchone()
+    if not row:
+        raise HTTPException(404, "Record not found")
+    rec = dict(row)
+    # Before the status: a merged duplicate is left rejected, and the merge is the
+    # more useful thing to say about it.
+    survivor = _merged_into(cur, record_id)
+    if survivor:
+        raise HTTPException(409, detail={
+            "code": "record_already_merged",
+            "message": "This record has already been merged into another validated record.",
+            "duplicate_record_id": record_id,
+            "survivor_record_id": survivor,
+        })
+    refusal = _WITHDRAW_REFUSALS.get(rec["validation_status"])
+    if refusal:
+        raise HTTPException(409, detail={"code": "record_not_open_for_validation",
+                                         "message": refusal})
+    blocker = _withdraw_blocker(cur, record_id, admin)
+    if blocker:
+        status = blocker.pop("status")
+        raise HTTPException(status, blocker["message"] if status == 403 else blocker)
+    return rec
+
+
+def _public_plan(plan: dict) -> dict:
+    return {key: [{k: v for k, v in item.items() if k != "_row"} for item in items]
+            for key, items in plan.items()}
+
+
+@app.get("/api/admin/entries/{record_id}/withdraw-preview")
+def admin_withdraw_preview(record_id: str, scope: str = "not_replication",
+                           admin: dict = Depends(current_admin)):
+    """What a withdrawal would do, read only: refused as the withdrawal would be, else
+    the article's other pairs it takes along, leaves for review, or is blocked by."""
+    if scope not in WITHDRAW_SCOPES:
+        raise HTTPException(422, f"scope must be one of: {', '.join(WITHDRAW_SCOPES)}")
+    with db() as cur:
+        rec = _withdraw_target(cur, record_id, admin, lock=False)
+        key = _article_key(cur, rec)
+        return {"record_id": record_id, "scope": scope,
+                # How the article's other pairs were found; None: they cannot be.
+                "article_key": key[0] if key else None,
+                **_public_plan(_withdraw_plan(cur, rec, scope, admin))}
+
+
+def _withdraw_locked(record_id: str, req: "AdminWithdrawRequest", admin: dict,
+                     reason: str) -> tuple[dict, dict]:
+    """admin_withdraw's transaction. Its row locks are NOWAIT, and its other waits
+    give up after lock_timeout, so it raises LockNotAvailable rather than wait."""
+    from csv_to_db import IMPORT_WITHDRAW_LOCK_ID
+    with db() as cur:
+        cur.execute("SET LOCAL lock_timeout = '500ms'")
+        # The import locks entries in CSV order, a withdrawal in record_id order: never
+        # run them together, or they could deadlock (and roll back the import).
+        cur.execute("SELECT pg_try_advisory_xact_lock_shared(%s) AS ok",
+                    (IMPORT_WITHDRAW_LOCK_ID,))
+        if not cur.fetchone()["ok"]:
+            raise HTTPException(409, detail={
+                "code": "import_running",
+                "message": "The nightly import is updating entries. Try again in a few minutes."})
+        if req.scope == "not_replication":
+            _lock_article(cur, record_id)
+        rec = _withdraw_target(cur, record_id, admin, lock=True)
+        plan = _withdraw_plan(cur, rec, req.scope, admin, lock=True)
+        if plan["blocked"]:
+            n = len(plan["blocked"])
+            raise HTTPException(409, detail={
+                "code": "withdraw_blocked_by_siblings",
+                "message": f"{n} other pair{'' if n == 1 else 's'} of this article cannot be "
+                           "withdrawn, so nothing was withdrawn. Deal with "
+                           f"{'it' if n == 1 else 'them'} first, or withdraw this pair alone.",
+                "blocked": _public_plan(plan)["blocked"],
+            })
+        _withdraw_one(cur, rec, admin, req.scope, reason)
+        for sibling in plan["open"]:
+            _withdraw_one(cur, sibling["_row"], admin, req.scope, reason, withdrawn_with=record_id)
+        public = _public_plan(plan)
+    return rec, public
+
+
+@app.post("/api/admin/entries/{record_id}/withdraw")
+def admin_withdraw(record_id: str, req: AdminWithdrawRequest,
+                   admin: dict = Depends(current_admin)):
+    """Take an entry out of validation before its validators have decided it.
+
+    The scope says why, and so what happens next:
+    - wrong_original: this pair only. The import re-opens it when the extractor ships
+      a different original at the same work and rank (csv_to_db).
+    - duplicate: this pair only, for good: the correct pair is already in FLoRA.
+    - not_replication: the whole article. Every other pair of the same replication
+      paper that is still open is withdrawn with it; those decided or waiting for an
+      admin are left as they are and returned for review. One blocked pair refuses
+      the whole request, so nothing is withdrawn in part.
+
+    Each withdrawn record is rejected, so it is neither served nor published, and its
+    open assignment and unanswered slots close. Judgements already submitted stay, with
+    their points, as for any other rejection. The reason goes at the head of the admin
+    note; the note already there is kept below it.
+    """
+    reason = req.reason.strip()
+    if not reason:
+        raise HTTPException(422, "Give a reason for withdrawing this entry")
+    try:
+        rec, public = _withdraw_locked(record_id, req, admin, reason)
+    except (psycopg2.errors.LockNotAvailable, psycopg2.errors.DeadlockDetected):
+        # Rolled back. Another write holds one of these entries (an admin merge, a
+        # validator's submit). A withdrawal gives up rather than wait for it, so the
+        # other write is never the one PostgreSQL aborts; it asks to be retried instead.
+        raise HTTPException(409, detail={
+            "code": "entry_busy",
+            "message": "This entry or another pair of its article is being changed "
+                       "right now. Nothing was withdrawn; try again in a moment."})
+    return {"withdrawn": True, "record_id": record_id, "scope": req.scope,
+            "withdrawn_records": [record_id] + [s["record_id"] for s in public["open"]],
+            "review_records": public["review"]}
+
+
 @app.post("/api/admin/entries/{record_id}/flag-review")
 def admin_flag_review(record_id: str, req: dict = Body(default={}), admin: dict = Depends(current_admin)):
     """Move a record back to need_review for further scrutiny: one awaiting
@@ -6011,6 +6310,10 @@ def admin_flag_review(record_id: str, req: dict = Body(default={}), admin: dict 
 
 class AdminNoteRequest(BaseModel):
     note: str | None = None
+    # Save only if the stored note (trimmed) is still `expected`: a client saving a
+    # draft on the admin's behalf must not overwrite a note another admin saved since.
+    check_unchanged: bool = False
+    expected: str | None = None
 
 
 @app.post("/api/admin/entries/{record_id}/note")
@@ -6024,13 +6327,21 @@ def admin_save_note(record_id: str, req: AdminNoteRequest, admin: dict = Depends
         cur.execute(
             """
             UPDATE unvalidated
-            SET admin_notes   = %s,
-                note_saved_by = %s,
+            SET admin_notes   = %(note)s,
+                note_saved_by = %(by)s,
                 note_saved_at = NOW()
-            WHERE record_id = %s
+            WHERE record_id = %(id)s
+              AND (NOT %(check)s
+                   OR btrim(COALESCE(admin_notes, '')) = btrim(COALESCE(%(expected)s, '')))
+            RETURNING record_id
             """,
-            (req.note or None, admin_handle, record_id),
+            {"note": req.note or None, "by": admin_handle, "id": record_id,
+             "check": req.check_unchanged, "expected": req.expected},
         )
+        if cur.fetchone() is None:
+            raise HTTPException(409, detail={
+                "code": "note_changed",
+                "message": "Another admin changed the note since you opened this entry."})
     return {"saved": True}
 
 

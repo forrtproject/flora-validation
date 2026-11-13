@@ -978,6 +978,185 @@ def test_a_removed_original_with_no_doi_is_told_apart_by_its_title(api, local_da
     assert _status(local_database, record) == "unvalidated"
 
 
+def _withdrawn(api, conn, scope, held=True):
+    """An entry withdrawn before validation while a validator held one of its slots."""
+    client, who = api
+    with conn, _cursor(conn) as cur:
+        ana, bob = _validator(cur, "ana"), _validator(cur, "bob")
+        record = _record(cur, 1)
+        if held:
+            _hold(cur, record, ana)
+    response = client.post(f"/api/admin/entries/{record}/withdraw",
+                           json={"scope": scope, "reason": "Paired with the wrong original"})
+    assert response.status_code == 200, response.text
+    return record
+
+
+def test_a_pair_withdrawn_as_the_wrong_original_reopens_when_the_original_changes(api, local_database):
+    record = _withdrawn(api, local_database, "wrong_original")
+    _rekey(local_database, record)
+    with local_database, _cursor(local_database) as cur:
+        cur.execute("SELECT * FROM unvalidated WHERE record_id = %s", (record,))
+        row = dict(cur.fetchone())
+        cur.execute("SELECT reason, detail, unvalidated_row FROM retired_records WHERE record_id = %s", (record,))
+        archived = dict(cur.fetchone())
+        cur.execute("SELECT action, status_before, status_after FROM admin_decisions "
+                    "WHERE record_id = %s ORDER BY decision_id", (record,))
+        decisions = [tuple(r.values()) for r in cur.fetchall()]
+    assert (row["validation_status"], row["doi_o"], row["admin_checked"]) == ("unvalidated", "10.9/corrected", False)
+    assert "withdrawn as pairing the wrong original" in row["admin_notes"]
+    assert row["admin_notes"].startswith("Withdrawn before validation (wrong original): ")
+    assert archived["reason"] == "original_replaced"
+    assert archived["detail"].startswith("Withdrawn by an admin before validation as the wrong original")
+    assert archived["unvalidated_row"]["doi_o"] == "10.9/o1"
+    assert decisions == [("withdrawn", "unvalidated", "rejected"),
+                         ("reopened_by_import", "rejected", "unvalidated")]
+
+
+def test_a_pair_withdrawn_as_the_wrong_original_stays_out_when_the_same_original_ships(api, local_database):
+    record = _withdrawn(api, local_database, "wrong_original")
+    _rekey(local_database, record, doi_o="10.9/O1", doi_r="10.9/corrected-replication", title_o="Original 1")
+    assert _status(local_database, record) == "rejected"
+
+
+@pytest.mark.parametrize("scope", ["duplicate", "not_replication"])
+def test_a_pair_withdrawn_for_another_reason_never_reopens(api, local_database, scope):
+    record = _withdrawn(api, local_database, scope)
+    _rekey(local_database, record)
+    assert _status(local_database, record) == "rejected"
+    with local_database, _cursor(local_database) as cur:
+        cur.execute("SELECT COUNT(*) AS n FROM retired_records WHERE record_id = %s", (record,))
+        assert cur.fetchone()["n"] == 0
+
+
+def test_a_reopened_withdrawal_rejected_again_unlogged_stays_rejected(api, local_database):
+    """After the re-open, a senior's reject or an agreed "not a replication" is not
+    logged, so the old withdrawal must not count again at the next re-key."""
+    record = _withdrawn(api, local_database, "wrong_original")
+    _rekey(local_database, record)
+    assert _status(local_database, record) == "unvalidated"
+    senior = json.dumps({"type_check": "incorrect", "original_check": "incorrect", "outcome_check": "incorrect",
+                         "corrected_type": "not_validation", "senior_reject": True,
+                         "additional_checks": {"senior_reject": True}})
+    with local_database, _cursor(local_database) as cur:
+        cur.execute("UPDATE unvalidated SET validation_status = 'rejected', validator_1 = %s::jsonb "
+                    "WHERE record_id = %s", (senior, record))
+    _rekey(local_database, record, doi_o="10.9/another", title_o="Another original")
+    assert _status(local_database, record) == "rejected"
+
+
+def test_a_log_row_that_changes_no_status_does_not_hide_the_withdrawal(api, local_database):
+    """Dismissing a validator's suggested original logs a row on a rejected record."""
+    record = _withdrawn(api, local_database, "wrong_original")
+    with local_database, _cursor(local_database) as cur:
+        cur.execute("""INSERT INTO admin_decisions (record_id, admin_handle, action, changes)
+                       VALUES (%s, 'boss', 'suggestion_dismissed', '{"suggestion": ["x", null]}')""", (record,))
+    _rekey(local_database, record)
+    assert _status(local_database, record) == "unvalidated"
+
+
+def test_a_rejection_after_a_withdrawal_outranks_it(api, local_database):
+    record = _withdrawn(api, local_database, "wrong_original")
+    with local_database, _cursor(local_database) as cur:
+        cur.execute("""INSERT INTO admin_decisions (record_id, admin_handle, action, status_before, status_after)
+                       VALUES (%s, 'boss', 'rejected', 'validated', 'rejected')""", (record,))
+    _rekey(local_database, record)
+    assert _status(local_database, record) == "rejected"
+
+
+def test_resolving_a_withdrawn_entry_as_not_a_replication_outranks_the_withdrawal(api, local_database):
+    """Resolve on a rejected entry logs rejected -> rejected: still the admin's later word."""
+    client, who = api
+    record = _withdrawn(api, local_database, "wrong_original")
+    response = client.post(f"/api/admin/entries/{record}/resolve", json={
+        "admin_name": "boss", "type_check": "incorrect", "corrected_type": "not_validation",
+        "original_check": "correct", "outcome_check": "correct"})
+    assert response.status_code == 200, response.text
+    with local_database, _cursor(local_database) as cur:
+        cur.execute("SELECT action, status_before, status_after FROM admin_decisions "
+                    "WHERE record_id = %s ORDER BY decision_id", (record,))
+        assert [tuple(r.values()) for r in cur.fetchall()][-1][1:] == ("rejected", "rejected")
+    _rekey(local_database, record)
+    assert _status(local_database, record) == "rejected"
+
+
+def test_a_withdrawal_waits_for_no_running_import(api, local_database):
+    """The import holds the import/withdraw lock for its transaction; a withdrawal then
+    refuses with a retryable 409 instead of risking a deadlock with it."""
+    import psycopg2
+    from csv_to_db import IMPORT_WITHDRAW_LOCK_ID
+    client, who = api
+    with local_database, _cursor(local_database) as cur:
+        record = _record(cur, 1)
+    importer = psycopg2.connect(os.environ["DATABASE_URL"])
+    try:
+        with importer.cursor() as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(%s)", (IMPORT_WITHDRAW_LOCK_ID,))
+        response = client.post(f"/api/admin/entries/{record}/withdraw",
+                                json={"scope": "not_replication", "reason": "Not a replication"})
+        assert response.status_code == 409, response.text
+        assert response.json()["detail"]["code"] == "import_running"
+        assert _status(local_database, record) == "unvalidated"
+    finally:
+        importer.rollback()
+        importer.close()
+    response = client.post(f"/api/admin/entries/{record}/withdraw",
+                           json={"scope": "not_replication", "reason": "Not a replication"})
+    assert response.status_code == 200, response.text
+
+
+def test_a_withdrawal_gives_up_rather_than_wait_for_a_locked_pair(api, local_database):
+    """Another write (an admin merge) holds a sibling of the article: the withdrawal
+    refuses with a retryable 409 at once, and withdraws nothing."""
+    client, who = api
+    with local_database, _cursor(local_database) as cur:
+        record, sibling = _record(cur, 1), _record(cur, 2)
+    other = psycopg2.connect(os.environ["DATABASE_URL"])
+    try:
+        with other.cursor() as cur:
+            cur.execute("SELECT 1 FROM unvalidated WHERE record_id = %s FOR UPDATE", (sibling,))
+        response = client.post(f"/api/admin/entries/{record}/withdraw",
+                               json={"scope": "not_replication", "reason": "Not a replication"})
+        assert response.status_code == 409, response.text
+        assert response.json()["detail"]["code"] == "entry_busy"
+        assert _status(local_database, record) == "unvalidated"
+    finally:
+        other.rollback()
+        other.close()
+    response = client.post(f"/api/admin/entries/{record}/withdraw",
+                           json={"scope": "not_replication", "reason": "Not a replication"})
+    assert response.status_code == 200, response.text
+    assert response.json()["withdrawn_records"] == [record, sibling]
+
+
+def test_a_checked_note_save_never_overwrites_a_newer_note(api, local_database):
+    client, who = api
+    with local_database, _cursor(local_database) as cur:
+        record = _record(cur, 1)
+    def save(note, **extra):
+        return client.post(f"/api/admin/entries/{record}/note", json={"note": note, **extra})
+    def stored():
+        with local_database, _cursor(local_database) as cur:
+            cur.execute("SELECT admin_notes FROM unvalidated WHERE record_id = %s", (record,))
+            return cur.fetchone()["admin_notes"]
+    assert save("First").status_code == 200                       # unchecked, as before
+    refused = save("Mine", check_unchanged=True, expected="Something older")
+    assert refused.status_code == 409 and refused.json()["detail"]["code"] == "note_changed"
+    assert stored() == "First"
+    assert save("Mine", check_unchanged=True, expected="  First ").status_code == 200
+    assert stored() == "Mine"
+    assert save(None).status_code == 200
+    assert save("Again", check_unchanged=True, expected="").status_code == 200   # empty matches empty
+    assert stored() == "Again"
+
+
+def test_an_unlogged_consensus_rejection_never_reopens(api, local_database):
+    with local_database, _cursor(local_database) as cur:
+        record = _record(cur, 1, status="rejected")
+    _rekey(local_database, record)
+    assert _status(local_database, record) == "rejected"
+
+
 def test_a_replacement_keeps_the_record_out_of_the_removal_path(api, local_database):
     client, who = api
     with local_database, _cursor(local_database) as cur:

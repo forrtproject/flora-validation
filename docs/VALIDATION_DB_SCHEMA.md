@@ -647,7 +647,8 @@ For a routine `full` run (the nightly job and the primary admin action):
     whole in `retired_records`, then deleted; touched ones are flagged in
     `admin_notes`. The summary is `safety_report.retire`. `retired_records` also keeps
     (reason `original_replaced`) the state of a record the import re-opened because the
-    extractor replaced an original an admin had removed.
+    extractor replaced an original an admin had removed, or withdrawn before
+    validation as the wrong original.
 
 Nothing is deleted for mere absence from the CSV; the retire stage is the only
 route. Any sync failure or safety block skips the report and the retire stage.

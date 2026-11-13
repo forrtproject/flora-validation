@@ -165,9 +165,14 @@ def test_removed_original_is_not_replaced_by_the_stored_markup(monkeypatch):
     from csv_to_db import _removed_original_was_replaced
     monkeypatch.setattr(consensus_engine, "removal_proposed", lambda *_: True)
     existing = {"record_id": "r1"}
-    # removed by an admin, doi_o differs: False, both doi_o blank: True
-    row = (True, False, True, "Effects of <i>TIMP2</i>  on bone", None, None)
+    # removed by an admin, doi_o differs: False, both doi_o blank: True, not withdrawn
+    row = (True, False, True, "Effects of <i>TIMP2</i>  on bone", None, None, False)
     same = {"doi_o": "", "title_o": "Effects of TIMP2 on bone"}
     other = {"doi_o": "", "title_o": "A different paper"}
-    assert _removed_original_was_replaced(_FakeCursor(row), existing, same) is False
-    assert _removed_original_was_replaced(_FakeCursor(row), existing, other) is True
+    assert _removed_original_was_replaced(_FakeCursor(row), existing, same) is None
+    assert _removed_original_was_replaced(_FakeCursor(row), existing, other) == "removed"
+    # Withdrawn as the wrong original: the same title test, no judgements needed.
+    withdrawn = (False, False, True, "Effects of <i>TIMP2</i>  on bone", None, None, True)
+    monkeypatch.setattr(consensus_engine, "removal_proposed", lambda *_: False)
+    assert _removed_original_was_replaced(_FakeCursor(withdrawn), existing, same) is None
+    assert _removed_original_was_replaced(_FakeCursor(withdrawn), existing, other) == "withdrawn"

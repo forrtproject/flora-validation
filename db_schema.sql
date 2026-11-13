@@ -2128,6 +2128,12 @@ CREATE TABLE IF NOT EXISTS admin_decisions (
 );
 CREATE INDEX IF NOT EXISTS idx_admin_decisions_record
     ON admin_decisions (record_id, decided_at DESC);
+-- What a decision was, beyond its action: a withdrawal's scope and reason
+-- ({"scope": "wrong_original" | "duplicate" | "not_replication", "reason": …}, and
+-- "withdrawn_with" on the other pairs of an article withdrawn whole). The import
+-- reads the scope: only a wrong original is re-opened when the extractor ships
+-- another (csv_to_db._removed_original_was_replaced).
+ALTER TABLE admin_decisions ADD COLUMN IF NOT EXISTS detail JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 -- ── Source Records: rows of records that are no longer validated ──────────────
 -- A validated record that leaves the validated set (sent back, rejected, merged)

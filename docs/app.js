@@ -6290,6 +6290,7 @@ let _adminSort      = "";        // column key, "" = default ordering
 let _adminSortDir   = "desc";    // "asc" | "desc"
 let _adminEntryIds   = [];   // ordered record_ids on current page
 let _adminCurrentIdx = -1;  // index of currently open record
+let _adminShownId = null;   // the record the detail modal last rendered
 let _adminDetailCache = {};  // record_id → preloaded detail data
 let _adminFetchSeq = 0;     // the latest entry-list request; an older answer is dropped
 let _adminResetOwed = false; // a reset's Loading row is up and not yet answered
@@ -8142,6 +8143,97 @@ function _trackRecordTitle(st) {
          `judgement${st.flags === 1 ? "" : "s"} flagged · ${st.judged || 0} submitted in total`;
 }
 
+/* ---------- Withdrawing an entry before validation ---------- */
+
+// The three scopes, as the server takes them (WITHDRAW_SCOPES in app.py).
+const WITHDRAW_SCOPES = [
+  { value: "wrong_original", label: "Wrong original: withdraw this pair",
+    note: "Only this pair. It comes back for validation if the extractor later pairs the replication with a different original." },
+  { value: "duplicate", label: "Correct pair already in FLoRA: withdraw this pair permanently",
+    note: "Only this pair, for good. It never comes back." },
+  { value: "not_replication", label: "Not a replication/reproduction: withdraw the whole article",
+    note: "This pair and every other pair of the same replication paper still open for validation. None comes back." },
+];
+const WITHDRAW_SCOPE_LABELS = { wrong_original: "wrong original", duplicate: "correct pair already in FLoRA",
+                                not_replication: "whole article: not a replication or reproduction" };
+
+function _withdrawPairList(items, withReason = false) {
+  return `<ul class="withdraw-pairs">${items.map((o) => `<li>${escapeHtml(o.title_o || "(no title)")}
+    ${o.doi_o ? `<span class="admin-reject-note">${escapeHtml(o.doi_o)}</span>` : ""}
+    <span class="admin-reject-note">· ${escapeHtml(withReason ? (o.reason || "") : String(o.validation_status || "").replace(/_/g, " "))}</span></li>`).join("")}</ul>`;
+}
+
+// What a whole-article withdrawal would do, from GET …/withdraw-preview.
+function _withdrawPreviewHtml(p) {
+  const open = p.open || [], review = p.review || [], blocked = p.blocked || [];
+  const pairs = (n) => `${n} other pair${n === 1 ? "" : "s"}`;
+  if (p.article_key === null) {
+    return "<p>This entry has no replication DOI or work id, so its other pairs cannot be found. Only this pair will be withdrawn.</p>";
+  }
+  let html = `<p>${open.length ? `${pairs(open.length)} of this article still open for validation will also be withdrawn.`
+                              : "No other pair of this article is still open for validation."}</p>`;
+  if (review.length) html += `<p>${pairs(review.length)} already decided or waiting for an admin will not be changed. Review ${review.length === 1 ? "it" : "them"}:</p>${_withdrawPairList(review)}`;
+  if (blocked.length) html += `<p class="withdraw-blocked">${pairs(blocked.length)} cannot be withdrawn, so this would be refused:</p>${_withdrawPairList(blocked, true)}`;
+  return html;
+}
+
+function _withdrawReviewHtml(records) {
+  const n = records.length;
+  return `<p style="text-align:left">${n} other pair${n === 1 ? "" : "s"} of this article ${n === 1 ? "was" : "were"} already decided or waiting for an admin, so ${n === 1 ? "it was" : "they were"} not withdrawn. Review ${n === 1 ? "it" : "them"}:</p>${_withdrawPairList(records)}`;
+}
+
+// The withdraw dialog: a required scope and reason. Resolves to {scope, reason}, or
+// null when cancelled. `prev` refills it after a refusal.
+async function _askWithdraw(recordId, prev = {}) {
+  const pending = showDialog({
+    title: "Withdraw from validation",
+    wide: true,
+    message: `
+      <div class="withdraw-dialog">
+        <p>Validators will no longer be given it, and it will not be in FLoRA. Judgements already submitted keep their points.</p>
+        <fieldset class="withdraw-scopes"><legend>What is wrong with it? <span class="withdraw-req">(required)</span></legend>
+          ${WITHDRAW_SCOPES.map((s) => `
+          <label class="withdraw-scope"><input type="radio" name="withdraw-scope" value="${s.value}"${prev.scope === s.value ? " checked" : ""}>
+            <span><strong>${escapeHtml(s.label)}</strong><span class="admin-reject-note">${escapeHtml(s.note)}</span></span></label>`).join("")}
+        </fieldset>
+        <div id="admin-withdraw-preview" class="withdraw-preview" aria-live="polite"></div>
+        <label for="admin-withdraw-reason" class="withdraw-reason-label">Reason <span class="withdraw-req">(required — saved at the top of the admin note)</span></label>
+        <textarea id="admin-withdraw-reason" rows="3" maxlength="1000" placeholder="e.g. Paired with the wrong original; the correct pair is MAN-000004.">${escapeHtml(prev.reason || "")}</textarea>
+      </div>`,
+    rawHtml: true,
+    buttons: [
+      { label: "Cancel", value: false },
+      { label: "Withdraw", value: true, primary: true },
+    ],
+    layout: "row",
+  });
+  const box = $("#admin-withdraw-preview");
+  const showPreview = async (scope) => {
+    if (!box) return;
+    if (scope !== "not_replication") { box.innerHTML = ""; return; }
+    box.innerHTML = `<p class="admin-reject-note">Looking up the other pairs of this article…</p>`;
+    // The admin may switch scope while this runs: show the answer, or the error, only
+    // while the whole article is still the one chosen.
+    const stillChosen = () =>
+      document.querySelector('input[name="withdraw-scope"]:checked')?.value === "not_replication";
+    try {
+      const p = await adminApi(`/entries/${recordId}/withdraw-preview?scope=not_replication`);
+      if (stillChosen()) box.innerHTML = _withdrawPreviewHtml(p);
+    } catch (e) {
+      if (stillChosen()) box.innerHTML = `<p class="withdraw-blocked">${escapeHtml(e.message)}</p>`;
+    }
+  };
+  document.querySelectorAll('input[name="withdraw-scope"]').forEach((input) => {
+    input.addEventListener("change", () => showPreview(input.value));
+  });
+  if (prev.scope) showPreview(prev.scope);
+  if (!(await pending)) return null;
+  return {
+    scope: document.querySelector('input[name="withdraw-scope"]:checked')?.value || "",
+    reason: ($("#admin-withdraw-reason")?.value || "").trim(),
+  };
+}
+
 /* ---------- Paper review (admin entry detail) ---------- */
 
 function _adminRemovalBanner(data) {
@@ -8857,6 +8949,7 @@ async function _submitAdminExtraOriginals(parent, draft) {
 
 function renderAdminDetail(data) {
   const rec = data.record;
+  _adminShownId = rec.record_id;
   const abstractBanner = data.abstract_only_conflict
     ? `<div class="admin-abstract-banner">
          <strong>Abstract conflict only</strong> — all checks and corrections agree. Only the edited abstract differs between the two validators. The longer edit is pre-filled in the resolution form and will be published when you resolve.
@@ -9482,6 +9575,7 @@ function renderAdminDetail(data) {
     merged: "Merged into another entry", flagged_for_review: "Flagged for review",
     sent_back: "Sent back for review (was auto-validated)",
     original_removed: "Removed — wrong original",
+    withdrawn: "Withdrawn before validation",
     reopened_by_import: "Re-opened — the extractor replaced the removed original",
     extra_original_added: "Another original added",
     extra_original_removed: "Other original removed",
@@ -9498,7 +9592,8 @@ function renderAdminDetail(data) {
          <ul>${decisions.map((d) => {
            const changed = Object.keys(d.changes || {})
              .map((f) => f.replace(/^final_/, "").replace(/_/g, " "));
-           return `<li><strong>${escapeHtml(DECISION_LABELS[d.action] || d.action)}</strong>
+           const scope = d.action === "withdrawn" && WITHDRAW_SCOPE_LABELS[d.detail?.scope];
+           return `<li><strong>${escapeHtml(DECISION_LABELS[d.action] || d.action)}${scope ? ` (${escapeHtml(scope)})` : ""}</strong>
              by ${escapeHtml(d.admin_handle || "an admin")} · ${escapeHtml(fmtDate(d.decided_at))}
              ${changed.length ? `<span class="chk-na-note">changed ${escapeHtml(changed.join(", "))}</span>` : ""}</li>`;
          }).join("")}</ul>
@@ -9564,6 +9659,12 @@ function renderAdminDetail(data) {
         <div class="not-val-decision">
           ${(data.decisions || []).at(-1)?.action === "original_removed"
             ? `<p class="not-val-who">⚠ This original was <strong>removed</strong>: both validators marked it as the wrong paper, so it is not in FLoRA. The paper's other originals are separate entries.</p>`
+            : (data.decisions || []).at(-1)?.action === "withdrawn"
+            ? `<p class="not-val-who">⚠ This entry was <strong>withdrawn</strong> before validation${
+                WITHDRAW_SCOPE_LABELS[(data.decisions || []).at(-1)?.detail?.scope]
+                  ? ` (${escapeHtml(WITHDRAW_SCOPE_LABELS[(data.decisions || []).at(-1).detail.scope])})` : ""}, so validators are no longer given it and it is not in FLoRA.${
+                (data.decisions || []).at(-1)?.detail?.scope === "wrong_original"
+                  ? " It comes back for validation if the extractor pairs it with a different original." : ""} The reason is in the admin note.</p>`
             : `<p class="not-val-who">⚠ This record was <strong>rejected</strong> — neither a replication nor a reproduction, so not in FLoRA${notValWho ? ` — by <strong>${notValWho}</strong>` : ""}. Validation happens once — it won't be sent back for re-validation.</p>`}
           <p class="not-val-hint">If it is a reproduction, open it as one and code the two axes. To change anything else, review and edit the fields.</p>
           <div class="not-val-buttons">
@@ -9667,6 +9768,13 @@ function renderAdminDetail(data) {
               <button id="admin-reject-btn" class="btn-reject-outline">✗ Reject — not in FLoRA</button>
               <span class="admin-reject-note">neither a replication nor a reproduction</span>
             </div>
+            ${["unvalidated", "validation_inprogress"].includes(rec.validation_status) ? `
+            <div class="admin-reject-choice">
+              <button id="admin-withdraw-btn" class="btn-reject-outline"${selfApproval.allowed === false ? " disabled" : ""}>⊘ Withdraw from validation</button>
+              <span class="admin-reject-note">${selfApproval.allowed === false
+                ? escapeHtml(selfApproval.reason || "")
+                : "stop giving it to validators, e.g. it pairs the replication with the wrong original"}</span>
+            </div>` : ""}
           </div>
         </div>`}
       </div>
@@ -9715,6 +9823,10 @@ function renderAdminDetail(data) {
     btn.textContent = "Saving…";
     try {
       await adminApi(`/entries/${rec.record_id}/note`, "POST", { note: note || null });
+      // The saved note is what a later draft is compared with; the cached entry shows
+      // it, and who saved it when, if the detail is reopened.
+      Object.assign(rec, { admin_notes: note || null, note_saved_by: _adminHandle || "admin",
+                           note_saved_at: new Date().toISOString() });
       btn.textContent = "Saved ✓";
       const meta = btn.closest(".admin-notes-box").querySelector(".admin-notes-meta");
       if (meta) meta.innerHTML = `Last saved by <strong>${escapeHtml(_adminHandle || "admin")}</strong> · just now`;
@@ -9771,6 +9883,72 @@ function renderAdminDetail(data) {
       btn.disabled = false;
       btn.textContent = "✗ Reject — not in FLoRA";
       await showAlert("Error: " + e.message);
+    }
+  });
+  // Withdraw an entry still open for validation, as one of three scopes; the same
+  // entry is shown again in its new state, after the article's pairs left for review.
+  $("#admin-withdraw-btn")?.addEventListener("click", async () => {
+    const btn = $("#admin-withdraw-btn");
+    let choice = { scope: "", reason: "" };
+    for (;;) {
+      choice = await _askWithdraw(rec.record_id, choice);
+      if (!choice) return;
+      const problem = !choice.scope ? "Choose what kind of withdrawal this is."
+        : !choice.reason ? "Give a reason for withdrawing this entry." : "";
+      if (!problem) break;
+      await showAlert(problem);
+    }
+    btn.disabled = true;
+    // An unsaved note draft would be lost when the entry reloads: save it first, as
+    // the reject button sends it. If that fails, keep the draft and withdraw nothing.
+    const draft = $("#admin-note-text")?.value.trim() || "";
+    const shownNote = (rec.admin_notes || "").trim();
+    if (draft !== shownNote) {
+      try {
+        // Only if no other admin saved a note since this entry was opened: the server
+        // compares and saves in one statement, and refuses with note_changed.
+        await adminApi(`/entries/${rec.record_id}/note`, "POST",
+                       { note: draft || null, check_unchanged: true, expected: shownNote });
+        rec.admin_notes = draft || null;   // a retried withdrawal need not save it again
+      } catch (e) {
+        btn.disabled = false;
+        await showAlert(e.detail?.code === "note_changed"
+          ? "Another admin changed the note since you opened this entry, so nothing was " +
+            "saved or withdrawn. Copy your text, reopen the entry and try again."
+          : "The note could not be saved, so nothing was withdrawn. Error: " + e.message);
+        return;
+      }
+    }
+    try {
+      const out = await adminApi(`/entries/${rec.record_id}/withdraw`, "POST", choice);
+      for (const id of out.withdrawn_records || [rec.record_id]) delete _adminDetailCache[id];
+      for (const r of out.review_records || []) delete _adminDetailCache[r.record_id];
+      const n = (out.withdrawn_records || []).length;
+      showToast(n > 1 ? `${n} pairs of this article withdrawn from validation.` : "Entry withdrawn from validation.");
+      // The admin may have closed the modal or opened another entry meanwhile: the
+      // withdrawn one is shown again only if it is still the one on screen.
+      const modalOpen = () => !$("#admin-detail-modal").classList.contains("hidden");
+      const stillShown = () => modalOpen() && _adminShownId === rec.record_id;
+      try { await fetchAdminEntries(false); } catch { /* the list refreshes on close */ }
+      // Withdrawn, the entry may have left the list's filter or page, and the refresh
+      // then clamps the index onto another record: point Skip at what is on screen,
+      // or nowhere (-1, Skip closes).
+      if (modalOpen()) _adminCurrentIdx = _adminEntryIds.indexOf(_adminShownId);
+      if ((out.review_records || []).length) {
+        await showDialog({ title: "Review these pairs", message: _withdrawReviewHtml(out.review_records),
+                           rawHtml: true, buttons: [{ label: "OK", value: true, primary: true }] });
+      }
+      if (stillShown()) await openAdminDetail(rec.record_id);
+    } catch (e) {
+      btn.disabled = false;
+      const blocked = Array.isArray(e.detail?.blocked) ? e.detail.blocked : [];
+      if (blocked.length) {
+        await showDialog({ title: "Nothing was withdrawn", rawHtml: true,
+                           message: `<p style="text-align:left">${escapeHtml(e.message)}</p>${_withdrawPairList(blocked, true)}`,
+                           buttons: [{ label: "OK", value: true, primary: true }] });
+      } else {
+        await showAlert("Error: " + e.message);
+      }
     }
   });
   $("#admin-detail-cancel")?.addEventListener("click", closeAdminDetail);
