@@ -25,6 +25,8 @@ const XSS = '<img src=x onerror="window.__xss=1">';
   const errors = [];
   const withdrawals = [];
   const previews = [];
+  const notes = [];
+  let noteFails = false;
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("dialog", (d) => { errors.push("dialog: " + d.message()); d.dismiss(); });
 
@@ -71,6 +73,11 @@ const XSS = '<img src=x onerror="window.__xss=1">';
       if (gate) await gate;
       const [status, json] = withdrawAnswer;
       return route.fulfill({ status, json });
+    }
+    if (url.pathname === `/api/admin/entries/${A}/note` && request.method() === "POST") {
+      notes.push(request.postDataJSON());
+      if (noteFails) return route.fulfill({ status: 500, json: { detail: "Note store down" } });
+      return route.fulfill({ status: 200, json: { ok: true } });
     }
     if (url.pathname === `/api/admin/entries/${A}`) {
       // As the server stores it: the note and the logged scope come from the request sent.
@@ -217,6 +224,38 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     assert.equal(await page.locator("#admin-note-text").inputValue(),
                  "Withdrawn before validation (not a replication or reproduction): A commentary, not a replication\n\nEarlier note");
     await shot("withdraw_after.png");
+
+    // ---- An unsaved note draft is saved before the withdrawal; if that fails,
+    // nothing is withdrawn and the draft stays.
+    withdrawAnswer = [200, { withdrawn: true, record_id: A, scope: "wrong_original",
+                             withdrawn_records: [A], review_records: [] }];
+    await review(record);
+    assert.deepEqual(notes, [], "an unchanged note is not saved again");
+    await page.locator("#admin-note-text").fill("Earlier note, with a draft");
+    noteFails = true;
+    let before = withdrawals.length;
+    await button.click();
+    await opened();
+    await scope("wrong_original").check();
+    await page.locator("#admin-withdraw-reason").fill("Wrong original");
+    await dialogButton("Withdraw").click();
+    await page.locator("#dialog-message", { hasText: "nothing was withdrawn" }).waitFor();
+    assert.equal(withdrawals.length, before);
+    assert.deepEqual(notes, [{ note: "Earlier note, with a draft" }]);
+    await dialogButton("OK").click();
+    await closed();
+    assert.equal(await page.locator("#admin-note-text").inputValue(), "Earlier note, with a draft");
+    assert.equal(await button.isEnabled(), true);
+    noteFails = false;
+    await button.click();
+    await opened();
+    await scope("wrong_original").check();
+    await page.locator("#admin-withdraw-reason").fill("Wrong original");
+    await dialogButton("Withdraw").click();
+    await page.locator(".not-val-decision").waitFor();
+    assert.equal(withdrawals.length, before + 1);
+    assert.deepEqual(notes.at(-1), { note: "Earlier note, with a draft" });
+    notes.length = 0;
 
     // ---- A wrong original says it can come back.
     withdrawAnswer = [200, { withdrawn: true, record_id: A, scope: "wrong_original",

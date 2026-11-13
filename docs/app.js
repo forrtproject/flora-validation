@@ -9895,6 +9895,18 @@ function renderAdminDetail(data) {
       await showAlert(problem);
     }
     btn.disabled = true;
+    // An unsaved note draft would be lost when the entry reloads: save it first, as
+    // the reject button sends it. If that fails, keep the draft and withdraw nothing.
+    const draft = $("#admin-note-text")?.value.trim() || "";
+    if (draft !== (rec.admin_notes || "").trim()) {
+      try {
+        await adminApi(`/entries/${rec.record_id}/note`, "POST", { note: draft || null });
+      } catch (e) {
+        btn.disabled = false;
+        await showAlert("The note could not be saved, so nothing was withdrawn. Error: " + e.message);
+        return;
+      }
+    }
     try {
       const out = await adminApi(`/entries/${rec.record_id}/withdraw`, "POST", choice);
       for (const id of out.withdrawn_records || [rec.record_id]) delete _adminDetailCache[id];
