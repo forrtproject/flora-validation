@@ -9823,7 +9823,10 @@ function renderAdminDetail(data) {
     btn.textContent = "Saving…";
     try {
       await adminApi(`/entries/${rec.record_id}/note`, "POST", { note: note || null });
-      rec.admin_notes = note || null;   // the saved note is what a later draft is compared with
+      // The saved note is what a later draft is compared with; the cached entry shows
+      // it, and who saved it when, if the detail is reopened.
+      Object.assign(rec, { admin_notes: note || null, note_saved_by: _adminHandle || "admin",
+                           note_saved_at: new Date().toISOString() });
       btn.textContent = "Saved ✓";
       const meta = btn.closest(".admin-notes-box").querySelector(".admin-notes-meta");
       if (meta) meta.innerHTML = `Last saved by <strong>${escapeHtml(_adminHandle || "admin")}</strong> · just now`;
