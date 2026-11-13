@@ -455,8 +455,8 @@ takes its published row and added originals with it, like every other rejection.
 
 ### A decided record stays decided
 
-An admin's decision (approve, resolve, reject, merge, remove an original) closes the
-record's open assignment and frees its unanswered slots. `/api/judge`, `/api/senior-reject`
+An admin's decision (approve, resolve, reject, merge, remove an original, withdraw) closes
+the record's open assignment and frees its unanswered slots. `/api/judge`, `/api/senior-reject`
 and `evaluate_consensus` refuse a record in `validated` or `rejected`
 (`consensus_engine.DECIDED_STATUSES`), so a late submission cannot flip it or overwrite its
 final values; the browser's queue closes that item and says the record was already closed.
@@ -716,7 +716,7 @@ Eight tabs:
 
 | Tab | What it does |
 |---|---|
-| **Entries** | Every record, filterable by All / Pending Approval / Needs Review / Skipped / Admin comments / Validated / Excluded. Shows which validators have judged the entry (handles in tooltips), distinct skip counts, human agreement % (with an LLM-dissent marker — see below), LLM errors, and who approved it (on the Validated filter only). Long outcomes and handles are cut, with the full text in a tooltip. Approve, flag for review and add notes in the Pending Approval filter, whose rows open in place; on the other filters the Pending approval status pill links to that row. Resolve conflicts in the full review. |
+| **Entries** | Every record, filterable by All / Pending Approval / Needs Review / Skipped / Admin comments / Validated / Excluded. Shows which validators have judged the entry (handles in tooltips), distinct skip counts, human agreement % (with an LLM-dissent marker — see below), LLM errors, and who approved it (on the Validated filter only). Long outcomes and handles are cut, with the full text in a tooltip. Approve, flag for review and add notes in the Pending Approval filter, whose rows open in place; on the other filters the Pending approval status pill links to that row. Resolve conflicts, or withdraw an entry still open for validation, in the full review. |
 | **Source Records** | The entry-sheet table — see [SOURCE_RECORDS.md](SOURCE_RECORDS.md) |
 | **Validator Stats** | Per-validator throughput, accuracy, flagged judgements; set tier |
 | **Admins** | Add/remove admins, toggle trusted, set the site banner |
@@ -806,6 +806,26 @@ flow rather than mutating B. Every path that publishes does the same, so two dup
 published at once can never leave one validated with no row: `admin_approve` answers
 409 as its duplicate check does, and an unattended publish (`_insert_validated`, from
 consensus or `auto_validate_waiting.py`) leaves the record waiting for an admin to merge.
+
+### Withdrawing an entry before validation
+
+An entry still open for validation (`unvalidated` or `validation_inprogress`) can be
+taken out before its validators finish, for example when the extractor paired the
+replication with the wrong original and the right pair is already in FLoRA. **Withdraw
+from validation** on the entry screen asks for a reason (required, at most 1,000
+characters) and calls `POST /api/admin/entries/{record_id}/withdraw`. The record becomes
+`rejected` with `admin_checked`, so it is neither served nor published; its open
+assignment closes and its unanswered slots are freed, so a validator who held it is told
+it was already decided. Judgements already submitted stay, with their points, as for any
+rejection. The reason goes at the head of the admin note as `Withdrawn before validation:
+<reason>`, above any note already there, and the decision is logged as `withdrawn`.
+
+It is refused (409) for an entry that is validated, rejected, `consensus_reached` or
+`need_review`, which have their own actions; for a merged duplicate; and while the entry
+has live added originals. The self-approval rule applies as for any decision. A withdrawn
+entry can still be published through **Review / edit fields** and Mark as Resolved. Unlike
+"Remove this original", the import does not re-open a withdrawn entry when the extractor
+ships a different original, and the action does not re-link the entry to another original.
 
 ---
 
@@ -1010,6 +1030,7 @@ GET    /api/admin/stats · /dashboard · /validators
 GET    /api/admin/entries                        list + filter + search + sort
 GET    /api/admin/entries/{record_id}
 POST   /api/admin/entries/{record_id}/approve · /flag-review · /note · /resolve
+POST   /api/admin/entries/{record_id}/remove-original · /withdraw
 GET    /api/admin/entries/{record_id}/extra-originals · POST (add at once)
 POST   /api/admin/entries/{record_id}/extra-originals/suggestions/{id}/dismiss
 POST   /api/admin/entries/{record_id}/extra-original/remove

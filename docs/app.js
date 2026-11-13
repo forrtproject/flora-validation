@@ -9482,6 +9482,7 @@ function renderAdminDetail(data) {
     merged: "Merged into another entry", flagged_for_review: "Flagged for review",
     sent_back: "Sent back for review (was auto-validated)",
     original_removed: "Removed — wrong original",
+    withdrawn: "Withdrawn before validation",
     reopened_by_import: "Re-opened — the extractor replaced the removed original",
     extra_original_added: "Another original added",
     extra_original_removed: "Other original removed",
@@ -9564,6 +9565,8 @@ function renderAdminDetail(data) {
         <div class="not-val-decision">
           ${(data.decisions || []).at(-1)?.action === "original_removed"
             ? `<p class="not-val-who">⚠ This original was <strong>removed</strong>: both validators marked it as the wrong paper, so it is not in FLoRA. The paper's other originals are separate entries.</p>`
+            : (data.decisions || []).at(-1)?.action === "withdrawn"
+            ? `<p class="not-val-who">⚠ This entry was <strong>withdrawn</strong> before validation, so validators are no longer given it and it is not in FLoRA. The reason is in the admin note.</p>`
             : `<p class="not-val-who">⚠ This record was <strong>rejected</strong> — neither a replication nor a reproduction, so not in FLoRA${notValWho ? ` — by <strong>${notValWho}</strong>` : ""}. Validation happens once — it won't be sent back for re-validation.</p>`}
           <p class="not-val-hint">If it is a reproduction, open it as one and code the two axes. To change anything else, review and edit the fields.</p>
           <div class="not-val-buttons">
@@ -9667,6 +9670,13 @@ function renderAdminDetail(data) {
               <button id="admin-reject-btn" class="btn-reject-outline">✗ Reject — not in FLoRA</button>
               <span class="admin-reject-note">neither a replication nor a reproduction</span>
             </div>
+            ${["unvalidated", "validation_inprogress"].includes(rec.validation_status) ? `
+            <div class="admin-reject-choice">
+              <button id="admin-withdraw-btn" class="btn-reject-outline"${selfApproval.allowed === false ? " disabled" : ""}>⊘ Withdraw from validation</button>
+              <span class="admin-reject-note">${selfApproval.allowed === false
+                ? escapeHtml(selfApproval.reason || "")
+                : "stop giving it to validators, e.g. it pairs the replication with the wrong original"}</span>
+            </div>` : ""}
           </div>
         </div>`}
       </div>
@@ -9770,6 +9780,39 @@ function renderAdminDetail(data) {
     } catch (e) {
       btn.disabled = false;
       btn.textContent = "✗ Reject — not in FLoRA";
+      await showAlert("Error: " + e.message);
+    }
+  });
+  // Withdraw an entry still open for validation: it is rejected with the reason as
+  // the head of the admin note, and the same entry is shown again in its new state.
+  $("#admin-withdraw-btn")?.addEventListener("click", async () => {
+    const btn = $("#admin-withdraw-btn");
+    const pending = showDialog({
+      title: "Withdraw from validation",
+      message: `
+        <p style="text-align:left;margin-bottom:0.75rem;font-size:0.9rem">Validators will no longer be given this entry, and it will not be in FLoRA. Judgements already submitted keep their points.</p>
+        <label for="admin-withdraw-reason" style="display:block;text-align:left;margin-bottom:0.25rem;font-size:0.85rem;color:var(--ink-soft)">Reason <span style="color:var(--muted)">(required — saved at the top of the admin note)</span></label>
+        <textarea id="admin-withdraw-reason" rows="3" maxlength="1000" style="width:100%;box-sizing:border-box;padding:0.5rem;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:0.9rem;resize:vertical" placeholder="e.g. Paired with the wrong original; the correct pair is MAN-000004."></textarea>`,
+      rawHtml: true,
+      buttons: [
+        { label: "Cancel", value: false },
+        { label: "Withdraw", value: true, primary: true },
+      ],
+      layout: "row",
+    });
+    $("#admin-withdraw-reason")?.focus();
+    if (!(await pending)) return;
+    const reason = ($("#admin-withdraw-reason")?.value || "").trim();
+    if (!reason) { await showAlert("Give a reason for withdrawing this entry."); return; }
+    btn.disabled = true;
+    try {
+      await adminApi(`/entries/${rec.record_id}/withdraw`, "POST", { reason });
+      delete _adminDetailCache[rec.record_id];
+      showToast("Entry withdrawn from validation.");
+      fetchAdminEntries(false);
+      await openAdminDetail(rec.record_id);
+    } catch (e) {
+      btn.disabled = false;
       await showAlert("Error: " + e.message);
     }
   });

@@ -1753,6 +1753,7 @@ the caller. State-changing requests are refused unless they originate from
 | GET | `/api/admin/entries/{record_id}` | Full review detail and queue rows |
 | POST | `/api/admin/entries/{record_id}/approve` | Approve pending consensus |
 | POST | `/api/admin/entries/{record_id}/remove-original` | Confirm that both validators were right to mark the original wrong with no replacement: rejects this record only |
+| POST | `/api/admin/entries/{record_id}/withdraw` | Take an entry still open for validation out before its validators decide it, with a required `reason`: rejects it, closes its open slots and puts the reason at the head of the admin note |
 | POST | `/api/admin/entries/{record_id}/flag-review` | Move pending record to review |
 | POST | `/api/admin/entries/{record_id}/note` | Save persistent admin note |
 | GET | `/api/admin/entries/{record_id}/extra-originals` | The entry's Other originals section: validators' suggestions, added originals, and whether originals are added at once, drafted for Mark as Resolved, or blocked (with why) |

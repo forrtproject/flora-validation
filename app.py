@@ -5971,6 +5971,92 @@ def admin_remove_original(record_id: str, admin: dict = Depends(current_admin)):
     return {"removed": True, "record_id": record_id}
 
 
+class AdminWithdrawRequest(BaseModel):
+    # As long as a validator's skip comment: a sentence or two on why the entry goes.
+    reason: str = Field(max_length=1000)
+
+
+# Where a record that is no longer open for validation is decided instead.
+_WITHDRAW_REFUSALS = {
+    "validated": "This entry is already validated. To take it out of FLoRA, reject it "
+                 "in the resolution form.",
+    "rejected": "This entry is already rejected, so it is not served or published.",
+    "consensus_reached": "The validators have already agreed on this entry. Approve it, "
+                         "or resolve or reject it in the resolution form.",
+    "need_review": "This entry is waiting for an admin. Resolve or reject it in the "
+                   "resolution form, or remove its original if the validators proposed that.",
+}
+
+
+@app.post("/api/admin/entries/{record_id}/withdraw")
+def admin_withdraw(record_id: str, req: AdminWithdrawRequest,
+                   admin: dict = Depends(current_admin)):
+    """Take an entry out of validation before its validators have decided it, for
+    example an extraction that paired the replication with the wrong original.
+
+    The record is rejected, so it is neither served nor published, and its open
+    assignment and unanswered slots close. Judgements already submitted stay, with
+    their points, as for any other rejection. The reason goes at the head of the
+    admin note; the note already there is kept below it. Records that are decided or
+    waiting for an admin have their own actions, so they are refused here.
+    """
+    reason = req.reason.strip()
+    if not reason:
+        raise HTTPException(422, "Give a reason for withdrawing this entry")
+    with db() as cur:
+        cur.execute("SELECT * FROM unvalidated WHERE record_id = %s FOR UPDATE", (record_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Record not found")
+        rec = dict(row)
+        # Before the status: a merged duplicate is left rejected, and the merge is
+        # the more useful thing to say about it.
+        cur.execute(
+            "SELECT survivor_record_id::text AS survivor_record_id "
+            "FROM validated_record_merges WHERE duplicate_record_id = %s",
+            (record_id,),
+        )
+        merge = cur.fetchone()
+        if merge:
+            raise HTTPException(409, detail={
+                "code": "record_already_merged",
+                "message": "This record has already been merged into another validated record.",
+                "duplicate_record_id": record_id,
+                "survivor_record_id": merge["survivor_record_id"],
+            })
+        refusal = _WITHDRAW_REFUSALS.get(rec["validation_status"])
+        if refusal:
+            raise HTTPException(409, detail={"code": "record_not_open_for_validation",
+                                             "message": refusal})
+        _require_may_decide(cur, record_id, admin)
+        added = extra_originals.detail_summary(cur, record_id)["children"]
+        if added:
+            raise HTTPException(409, detail={
+                "code": "withdraw_blocked_by_added_originals",
+                "message": f"This entry has {added} added original{'' if added == 1 else 's'}, "
+                           "published from it. Remove them first, then withdraw this entry.",
+                "added_originals": added,
+            })
+        cur.execute(
+            """
+            UPDATE unvalidated SET
+                validation_status = 'rejected',
+                admin_checked     = TRUE,
+                admin_name        = %s,
+                admin_notes       = %s || COALESCE(E'\n\n' || NULLIF(admin_notes, ''), ''),
+                note_saved_by     = %s,
+                note_saved_at     = NOW(),
+                updated_at        = NOW()
+            WHERE record_id = %s
+            """,
+            (admin["handle"], f"Withdrawn before validation: {reason}", admin["handle"],
+             record_id),
+        )
+        _close_open_work(cur, record_id)
+        _log_decision(cur, record_id, admin, "withdrawn", rec)
+    return {"withdrawn": True, "record_id": record_id}
+
+
 @app.post("/api/admin/entries/{record_id}/flag-review")
 def admin_flag_review(record_id: str, req: dict = Body(default={}), admin: dict = Depends(current_admin)):
     """Move a record back to need_review for further scrutiny: one awaiting

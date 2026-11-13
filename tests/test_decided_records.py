@@ -247,7 +247,7 @@ def test_a_decided_record_cannot_be_assigned(env):
 
 @pytest.mark.parametrize("how, start", [
     ("resolve", "need_review"), ("reject", "need_review"), ("approve", "consensus_reached"),
-    ("remove_original", "need_review"),
+    ("remove_original", "need_review"), ("withdraw", "validation_inprogress"),
 ])
 def test_a_decision_closes_the_assignment_and_the_open_slots(env, how, start):
     conn, client, st = env
@@ -270,6 +270,8 @@ def test_a_decision_closes_the_assignment_and_the_open_slots(env, how, start):
                                                        "corrected_type": "not_validation"})
     elif how == "approve":
         response = client.post(f"{url}/approve")
+    elif how == "withdraw":
+        response = client.post(f"{url}/withdraw", json={"reason": "wrong original"})
     else:
         response = client.post(f"{url}/remove-original")
     assert response.status_code == 200, response.text
@@ -601,3 +603,136 @@ def test_the_paper_table_agrees_on_what_is_hard(env, monkeypatch):
     with conn, C(conn) as cur:
         cur.execute(f"SELECT {paper_review._HARD_RECORD} AS hard FROM unvalidated u WHERE u.record_id = %s", (no_outcome,))
         assert cur.fetchone()["hard"] is False
+
+
+# ── Withdrawing an entry before its validators have decided it ───────────────
+
+def withdraw(client, record_id, reason="Paired with the wrong original; see MAN-000004"):
+    return client.post(f"/api/admin/entries/{record_id}/withdraw", json={"reason": reason})
+
+
+def test_withdrawing_an_open_entry_rejects_it_and_stops_serving_it(env):
+    conn, client, st = env
+    judge, holder, fresh = validator(conn, "a"), validator(conn, "b"), validator(conn, "c")
+    record_id = record(conn, "validation_inprogress", admin_notes="Earlier note")
+    judged(conn, record_id, judge, "human_1")
+    hold(conn, record_id, holder, "human_2")
+    run(conn, "UPDATE validators SET total_points = 7 WHERE id = %s", judge)
+
+    response = withdraw(client, record_id, "  Paired with the wrong original  ")
+    assert response.status_code == 200, response.text
+    assert response.json() == {"withdrawn": True, "record_id": record_id}
+    row = one(conn, "SELECT validation_status, admin_checked, admin_name, admin_notes, note_saved_by "
+                    "FROM unvalidated WHERE record_id = %s", record_id)
+    assert row == {"validation_status": "rejected", "admin_checked": True, "admin_name": "boss",
+                   "admin_notes": "Withdrawn before validation: Paired with the wrong original"
+                                  "\n\nEarlier note",
+                   "note_saved_by": "boss"}
+    assert published(conn, record_id) == 0
+    assert open_slots(conn, record_id) == 0
+    decision = one(conn, "SELECT action, admin_handle, status_before, status_after "
+                         "FROM admin_decisions WHERE record_id = %s", record_id)
+    assert decision == {"action": "withdrawn", "admin_handle": "boss",
+                        "status_before": "validation_inprogress", "status_after": "rejected"}
+    # The submitted judgement and its points stay, as for any rejection.
+    assert one(conn, "SELECT COUNT(*) AS n FROM validation_queue WHERE record_id = %s "
+                     "AND is_validated", record_id)["n"] == 1
+    assert one(conn, "SELECT total_points FROM validators WHERE id = %s", judge)["total_points"] == 7
+
+    # Nobody is given it again, and the holder's late answer is refused.
+    st["coder"] = fresh
+    assert client.post("/api/next-pairs?count=3").json()["pairs"] == []
+    st["coder"] = holder
+    late = client.post("/api/judge", json={"record_id": record_id, **JUDGE})
+    assert late.status_code == 409
+    assert late.json()["detail"]["code"] == "record_already_decided"
+    assert status(conn, record_id) == "rejected"
+
+    # Done once: a second withdrawal is refused rather than logged again.
+    again = withdraw(client, record_id)
+    assert again.status_code == 409
+    assert "already rejected" in again.json()["detail"]["message"]
+    assert one(conn, "SELECT COUNT(*) AS n FROM admin_decisions WHERE record_id = %s", record_id)["n"] == 1
+
+    # It can still be published through Mark as Resolved, as the docs say.
+    resolved_ = client.post(f"/api/admin/entries/{record_id}/resolve", json=RESOLVE)
+    assert resolved_.status_code == 200, resolved_.text
+    assert status(conn, record_id) == "validated" and published(conn, record_id) == 1
+
+
+def test_withdrawing_an_untouched_entry_without_a_note(env):
+    conn, client, st = env
+    record_id = record(conn, "unvalidated")
+    assert withdraw(client, record_id, "Wrong original").status_code == 200
+    assert one(conn, "SELECT admin_notes FROM unvalidated WHERE record_id = %s",
+               record_id)["admin_notes"] == "Withdrawn before validation: Wrong original"
+
+
+@pytest.mark.parametrize("closed, words", [
+    ("validated", "reject it in the resolution form"),
+    ("rejected", "already rejected"),
+    ("consensus_reached", "Approve it"),
+    ("need_review", "waiting for an admin"),
+])
+def test_an_entry_decided_or_with_an_admin_cannot_be_withdrawn(env, closed, words):
+    conn, client, st = env
+    record_id = record(conn, closed, admin_notes="Kept")
+    response = withdraw(client, record_id)
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "record_not_open_for_validation"
+    assert words in response.json()["detail"]["message"]
+    assert one(conn, "SELECT validation_status, admin_notes FROM unvalidated WHERE record_id = %s",
+               record_id) == {"validation_status": closed, "admin_notes": "Kept"}
+    assert one(conn, "SELECT COUNT(*) AS n FROM admin_decisions WHERE record_id = %s", record_id)["n"] == 0
+
+
+@pytest.mark.parametrize("body", [{}, {"reason": ""}, {"reason": "   "}, {"reason": "x" * 1001}])
+def test_withdrawing_needs_a_reason(env, body):
+    conn, client, st = env
+    record_id = record(conn, "unvalidated")
+    response = client.post(f"/api/admin/entries/{record_id}/withdraw", json=body)
+    assert response.status_code == 422
+    assert status(conn, record_id) == "unvalidated"
+
+
+def test_an_unknown_entry_cannot_be_withdrawn(env):
+    conn, client, st = env
+    assert withdraw(client, str(uuid.uuid4())).status_code == 404
+
+
+def test_a_merged_entry_cannot_be_withdrawn(env):
+    conn, client, st = env
+    survivor, duplicate = record(conn, "validated"), record(conn, "unvalidated")
+    run(conn, "INSERT INTO validated_record_merges (duplicate_record_id, survivor_record_id, merged_by) "
+              "VALUES (%s, %s, 'boss')", duplicate, survivor)
+    response = withdraw(client, duplicate)
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "record_already_merged"
+    assert response.json()["detail"]["survivor_record_id"] == survivor
+    assert status(conn, duplicate) == "unvalidated"
+
+
+def test_an_entry_with_live_added_originals_cannot_be_withdrawn(env):
+    conn, client, st = env
+    record_id = record(conn, "unvalidated")
+    child = child_of(conn, record_id)
+    response = withdraw(client, record_id)
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "withdraw_blocked_by_added_originals"
+    assert "Remove them first" in response.json()["detail"]["message"]
+    assert status(conn, record_id) == "unvalidated" and status(conn, child) == "validated"
+    # Once the added original has gone, the entry can be withdrawn.
+    run(conn, "UPDATE unvalidated SET validation_status = 'rejected' WHERE record_id = %s", child)
+    run(conn, "DELETE FROM validated WHERE record_id = %s", child)
+    assert withdraw(client, record_id).status_code == 200
+
+
+def test_an_admin_who_judged_the_entry_cannot_withdraw_it_alone(env):
+    conn, client, st = env
+    mine = validator(conn, "boss-as-validator")
+    record_id = record(conn, "validation_inprogress")
+    judged(conn, record_id, mine, "human_1")
+    flora.app.dependency_overrides[flora.current_admin] = lambda: {
+        "id": 1, "handle": "boss", "trusted": True, "validator_id": mine}
+    assert withdraw(client, record_id).status_code == 403
+    assert status(conn, record_id) == "validation_inprogress"
