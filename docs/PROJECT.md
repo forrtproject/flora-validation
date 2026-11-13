@@ -1017,7 +1017,7 @@ logged in `flora_record_changes` — see
 
 ## 11. API reference
 
-59 endpoints. All admin routes require an administrator session. Validator routes
+119 endpoints (method and path under `/api`, counted from the app's routes). All admin routes require an administrator session. Validator routes
 currently accept `coder_id` as identity; this is a known authorization vulnerability,
 not an API guarantee. The planned authenticated API will derive the validator id from
 the server-side session and remove these parameters (see [§19](#19-deferred-security-work)).

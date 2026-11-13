@@ -6290,6 +6290,7 @@ let _adminSort      = "";        // column key, "" = default ordering
 let _adminSortDir   = "desc";    // "asc" | "desc"
 let _adminEntryIds   = [];   // ordered record_ids on current page
 let _adminCurrentIdx = -1;  // index of currently open record
+let _adminShownId = null;   // the record the detail modal last rendered
 let _adminDetailCache = {};  // record_id → preloaded detail data
 let _adminFetchSeq = 0;     // the latest entry-list request; an older answer is dropped
 let _adminResetOwed = false; // a reset's Loading row is up and not yet answered
@@ -8946,6 +8947,7 @@ async function _submitAdminExtraOriginals(parent, draft) {
 
 function renderAdminDetail(data) {
   const rec = data.record;
+  _adminShownId = rec.record_id;
   const abstractBanner = data.abstract_only_conflict
     ? `<div class="admin-abstract-banner">
          <strong>Abstract conflict only</strong> — all checks and corrections agree. Only the edited abstract differs between the two validators. The longer edit is pre-filled in the resolution form and will be published when you resolve.
@@ -9897,12 +9899,20 @@ function renderAdminDetail(data) {
       for (const r of out.review_records || []) delete _adminDetailCache[r.record_id];
       const n = (out.withdrawn_records || []).length;
       showToast(n > 1 ? `${n} pairs of this article withdrawn from validation.` : "Entry withdrawn from validation.");
-      fetchAdminEntries(false);
+      // The admin may have closed the modal or opened another entry meanwhile: the
+      // withdrawn one is shown again only if it is still the one on screen.
+      const modalOpen = () => !$("#admin-detail-modal").classList.contains("hidden");
+      const stillShown = () => modalOpen() && _adminShownId === rec.record_id;
+      try { await fetchAdminEntries(false); } catch { /* the list refreshes on close */ }
+      // Withdrawn, the entry may have left the list's filter or page, and the refresh
+      // then clamps the index onto another record: point Skip at what is on screen,
+      // or nowhere (-1, Skip closes).
+      if (modalOpen()) _adminCurrentIdx = _adminEntryIds.indexOf(_adminShownId);
       if ((out.review_records || []).length) {
         await showDialog({ title: "Review these pairs", message: _withdrawReviewHtml(out.review_records),
                            rawHtml: true, buttons: [{ label: "OK", value: true, primary: true }] });
       }
-      await openAdminDetail(rec.record_id);
+      if (stillShown()) await openAdminDetail(rec.record_id);
     } catch (e) {
       btn.disabled = false;
       const blocked = Array.isArray(e.detail?.blocked) ? e.detail.blocked : [];

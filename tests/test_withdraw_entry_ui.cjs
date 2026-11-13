@@ -42,6 +42,9 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     blocked: [],
   };
   let scopeAfter = "not_replication";
+  const B = "44444444-4444-4444-8444-444444444444";
+  let listed = [];          // what the entries list returns
+  let gate = null;          // holds the withdraw answer back while set
   let withdrawAnswer = [200, { withdrawn: true, record_id: A, scope: "not_replication",
                                withdrawn_records: [A, S1], review_records: preview.review }];
 
@@ -60,6 +63,7 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     }
     if (url.pathname === `/api/admin/entries/${A}/withdraw` && request.method() === "POST") {
       withdrawals.push(request.postDataJSON());
+      if (gate) await gate;
       const [status, json] = withdrawAnswer;
       return route.fulfill({ status, json });
     }
@@ -74,6 +78,9 @@ const XSS = '<img src=x onerror="window.__xss=1">';
       } });
     }
     if (url.pathname === "/api/me") return route.fulfill({ status: 200, json: { kind: "anonymous" } });
+    if (url.pathname === "/api/admin/entries") {
+      return route.fulfill({ status: 200, json: { entries: listed, counts: {}, total: listed.length, page: 1 } });
+    }
     return route.fulfill({ status: 200, json: { records: [], entries: [], counts: {}, total: 0 } });
   });
 
@@ -203,6 +210,55 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     assert.match(await page.locator(".not-val-decision .not-val-who").innerText(),
                  /\(wrong original\).*comes back for validation if the extractor pairs it with a different original/s);
     assert.deepEqual(withdrawals.at(-1), { scope: "wrong_original", reason: "Wrong original" });
+
+    // ---- Withdrawn, the entry leaves the list: Skip must not then act on another.
+    listed = [{ ...record, record_id: B, title_r: "Another entry", validation_status: "unvalidated" }];
+    withdrawAnswer = [200, { withdrawn: true, record_id: A, scope: "duplicate", withdrawn_records: [A], review_records: [] }];
+    await review(record);
+    await page.evaluate(([a, b]) => { _adminEntryIds = [a, b]; _adminCurrentIdx = 0; }, [A, B]);
+    await button.click();
+    await opened();
+    await scope("duplicate").check();
+    await page.locator("#admin-withdraw-reason").fill("Duplicate");
+    await dialogButton("Withdraw").click();
+    await page.locator(".not-val-decision").waitFor();
+    assert.deepEqual(await page.evaluate(() => [_adminEntryIds, _adminCurrentIdx]), [[B], -1]);
+
+    // ---- Closed while the request ran: the entry is not opened again.
+    let release;
+    gate = new Promise((resolve) => { release = resolve; });
+    await review(record);
+    await button.click();
+    await opened();
+    await scope("duplicate").check();
+    await page.locator("#admin-withdraw-reason").fill("Duplicate");
+    await dialogButton("Withdraw").click();
+    await closed();
+    await page.evaluate(() => closeAdminDetail());
+    const sent = withdrawals.length;
+    release();
+    await page.waitForTimeout(500);
+    assert.equal(withdrawals.length, sent);
+    assert.equal(await page.locator("#admin-detail-modal").isHidden(), true);
+
+    // ---- Moved to another entry meanwhile: that one stays, with what was typed.
+    gate = new Promise((resolve) => { release = resolve; });
+    await review(record);
+    await button.click();
+    await opened();
+    await scope("duplicate").check();
+    await page.locator("#admin-withdraw-reason").fill("Duplicate");
+    await dialogButton("Withdraw").click();
+    await closed();
+    await review({ ...record, record_id: B, title_r: "Another entry", validation_status: "need_review" });
+    await page.locator("#admin-note-text").fill("Typed, not saved");
+    release();
+    await page.waitForTimeout(500);
+    assert.equal(await page.locator("#admin-note-text").inputValue(), "Typed, not saved");
+    assert.equal(await page.evaluate(() => _adminShownId), B);
+    assert.equal(await page.evaluate(() => _adminCurrentIdx), 0, "Skip points at the entry on screen");
+    gate = null;
+    listed = [];
 
     // ---- A blocked pair: nothing withdrawn, and the dialog names it.
     withdrawAnswer = [409, { detail: {
