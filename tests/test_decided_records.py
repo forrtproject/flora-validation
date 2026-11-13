@@ -271,7 +271,8 @@ def test_a_decision_closes_the_assignment_and_the_open_slots(env, how, start):
     elif how == "approve":
         response = client.post(f"{url}/approve")
     elif how == "withdraw":
-        response = client.post(f"{url}/withdraw", json={"reason": "wrong original"})
+        response = client.post(f"{url}/withdraw", json={"scope": "wrong_original",
+                                                         "reason": "wrong original"})
     else:
         response = client.post(f"{url}/remove-original")
     assert response.status_code == 200, response.text
@@ -607,8 +608,10 @@ def test_the_paper_table_agrees_on_what_is_hard(env, monkeypatch):
 
 # ── Withdrawing an entry before its validators have decided it ───────────────
 
-def withdraw(client, record_id, reason="Paired with the wrong original; see MAN-000004"):
-    return client.post(f"/api/admin/entries/{record_id}/withdraw", json={"reason": reason})
+def withdraw(client, record_id, reason="Paired with the wrong original; see MAN-000004",
+             scope="duplicate"):
+    return client.post(f"/api/admin/entries/{record_id}/withdraw",
+                       json={"scope": scope, "reason": reason})
 
 
 def test_withdrawing_an_open_entry_rejects_it_and_stops_serving_it(env):
@@ -621,19 +624,21 @@ def test_withdrawing_an_open_entry_rejects_it_and_stops_serving_it(env):
 
     response = withdraw(client, record_id, "  Paired with the wrong original  ")
     assert response.status_code == 200, response.text
-    assert response.json() == {"withdrawn": True, "record_id": record_id}
+    assert response.json() == {"withdrawn": True, "record_id": record_id, "scope": "duplicate",
+                               "withdrawn_records": [record_id], "review_records": []}
     row = one(conn, "SELECT validation_status, admin_checked, admin_name, admin_notes, note_saved_by "
                     "FROM unvalidated WHERE record_id = %s", record_id)
     assert row == {"validation_status": "rejected", "admin_checked": True, "admin_name": "boss",
-                   "admin_notes": "Withdrawn before validation: Paired with the wrong original"
-                                  "\n\nEarlier note",
+                   "admin_notes": "Withdrawn before validation (correct pair already in FLoRA): "
+                                  "Paired with the wrong original\n\nEarlier note",
                    "note_saved_by": "boss"}
     assert published(conn, record_id) == 0
     assert open_slots(conn, record_id) == 0
-    decision = one(conn, "SELECT action, admin_handle, status_before, status_after "
+    decision = one(conn, "SELECT action, admin_handle, status_before, status_after, detail "
                          "FROM admin_decisions WHERE record_id = %s", record_id)
     assert decision == {"action": "withdrawn", "admin_handle": "boss",
-                        "status_before": "validation_inprogress", "status_after": "rejected"}
+                        "status_before": "validation_inprogress", "status_after": "rejected",
+                        "detail": {"scope": "duplicate", "reason": "Paired with the wrong original"}}
     # The submitted judgement and its points stay, as for any rejection.
     assert one(conn, "SELECT COUNT(*) AS n FROM validation_queue WHERE record_id = %s "
                      "AND is_validated", record_id)["n"] == 1
@@ -663,9 +668,9 @@ def test_withdrawing_an_open_entry_rejects_it_and_stops_serving_it(env):
 def test_withdrawing_an_untouched_entry_without_a_note(env):
     conn, client, st = env
     record_id = record(conn, "unvalidated")
-    assert withdraw(client, record_id, "Wrong original").status_code == 200
+    assert withdraw(client, record_id, "Wrong original", scope="wrong_original").status_code == 200
     assert one(conn, "SELECT admin_notes FROM unvalidated WHERE record_id = %s",
-               record_id)["admin_notes"] == "Withdrawn before validation: Wrong original"
+               record_id)["admin_notes"] == "Withdrawn before validation (wrong original): Wrong original"
 
 
 @pytest.mark.parametrize("closed, words", [
@@ -686,7 +691,12 @@ def test_an_entry_decided_or_with_an_admin_cannot_be_withdrawn(env, closed, word
     assert one(conn, "SELECT COUNT(*) AS n FROM admin_decisions WHERE record_id = %s", record_id)["n"] == 0
 
 
-@pytest.mark.parametrize("body", [{}, {"reason": ""}, {"reason": "   "}, {"reason": "x" * 1001}])
+@pytest.mark.parametrize("body", [
+    {}, {"scope": "duplicate"}, {"scope": "duplicate", "reason": ""},
+    {"scope": "duplicate", "reason": "   "}, {"scope": "duplicate", "reason": "x" * 1001},
+    {"reason": "No scope"}, {"scope": "other", "reason": "Unknown scope"},
+    {"scope": "", "reason": "Blank scope"},
+])
 def test_withdrawing_needs_a_reason(env, body):
     conn, client, st = env
     record_id = record(conn, "unvalidated")
@@ -736,3 +746,167 @@ def test_an_admin_who_judged_the_entry_cannot_withdraw_it_alone(env):
         "id": 1, "handle": "boss", "trusted": True, "validator_id": mine}
     assert withdraw(client, record_id).status_code == 403
     assert status(conn, record_id) == "validation_inprogress"
+
+
+# ── Withdrawing a whole article ──────────────────────────────────────────────
+
+PAPER = "10.9/one-paper"
+
+
+def article(conn):
+    """One replication paper with pairs in every state, and a pair of another paper."""
+    ids = {
+        "main": record(conn, "unvalidated", doi_r=PAPER, title_o="Main"),
+        "held": record(conn, "validation_inprogress", doi_r=PAPER.upper(), title_o="Held"),
+        "fresh": record(conn, "unvalidated", doi_r=PAPER, title_o="Fresh"),
+        "waiting": record(conn, "consensus_reached", doi_r=PAPER, title_o="Waiting"),
+        "review": record(conn, "need_review", doi_r=PAPER, title_o="Review"),
+        "done": record(conn, "validated", doi_r=PAPER, title_o="Done"),
+        "gone": record(conn, "rejected", doi_r=PAPER, title_o="Gone"),
+        "other_paper": record(conn, "unvalidated", title_o="Elsewhere"),
+    }
+    return ids
+
+
+def statuses(conn, ids):
+    return {name: status(conn, record_id) for name, record_id in ids.items()}
+
+
+def test_withdrawing_a_whole_article_takes_its_open_pairs_and_lists_the_decided(env):
+    conn, client, st = env
+    ids = article(conn)
+    holder = validator(conn, "h")
+    hold(conn, ids["held"], holder)
+    before = statuses(conn, ids)
+
+    preview = client.get(f"/api/admin/entries/{ids['main']}/withdraw-preview",
+                         params={"scope": "not_replication"})
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert sorted(o["title_o"] for o in body["open"]) == ["Fresh", "Held"]
+    assert sorted((o["title_o"], o["validation_status"]) for o in body["review"]) == [
+        ("Done", "validated"), ("Review", "need_review"), ("Waiting", "consensus_reached")]
+    assert body["blocked"] == []
+    assert statuses(conn, ids) == before    # the preview changes nothing
+    # Only the whole article takes other pairs along.
+    for scope in ("wrong_original", "duplicate"):
+        alone = client.get(f"/api/admin/entries/{ids['main']}/withdraw-preview",
+                           params={"scope": scope}).json()
+        assert (alone["open"], alone["review"], alone["blocked"]) == ([], [], [])
+
+    response = withdraw(client, ids["main"], "A commentary, not a replication", scope="not_replication")
+    assert response.status_code == 200, response.text
+    out = response.json()
+    assert out["scope"] == "not_replication"
+    assert set(out["withdrawn_records"]) == {ids["main"], ids["held"], ids["fresh"]}
+    assert out["withdrawn_records"][0] == ids["main"]
+    assert sorted(r["record_id"] for r in out["review_records"]) == sorted(
+        [ids["waiting"], ids["review"], ids["done"]])
+
+    assert statuses(conn, ids) == {**before, "main": "rejected", "held": "rejected", "fresh": "rejected"}
+    assert open_slots(conn, ids["held"]) == 0
+    for name in ("held", "fresh"):
+        row = one(conn, "SELECT admin_notes, admin_checked FROM unvalidated WHERE record_id = %s", ids[name])
+        assert row["admin_checked"] is True
+        assert row["admin_notes"] == (
+            "Withdrawn before validation (not a replication or reproduction; whole article, "
+            f"with entry {ids['main']}): A commentary, not a replication")
+        decision = one(conn, "SELECT action, detail FROM admin_decisions WHERE record_id = %s", ids[name])
+        assert decision == {"action": "withdrawn", "detail": {
+            "scope": "not_replication", "reason": "A commentary, not a replication",
+            "withdrawn_with": ids["main"]}}
+    assert one(conn, "SELECT detail FROM admin_decisions WHERE record_id = %s", ids["main"])["detail"] == {
+        "scope": "not_replication", "reason": "A commentary, not a replication"}
+    for name in ("waiting", "review", "done", "gone", "other_paper"):
+        assert one(conn, "SELECT COUNT(*) AS n FROM admin_decisions WHERE record_id = %s",
+                   ids[name])["n"] == 0, name
+
+
+@pytest.mark.parametrize("scope", ["wrong_original", "duplicate"])
+def test_withdrawing_one_pair_leaves_the_rest_of_its_article(env, scope):
+    conn, client, st = env
+    ids = article(conn)
+    before = statuses(conn, ids)
+    response = withdraw(client, ids["main"], scope=scope)
+    assert response.status_code == 200, response.text
+    assert response.json()["withdrawn_records"] == [ids["main"]]
+    assert response.json()["review_records"] == []
+    assert statuses(conn, ids) == {**before, "main": "rejected"}
+
+
+def test_one_blocked_pair_refuses_the_whole_article(env):
+    conn, client, st = env
+    ids = article(conn)
+    mine = validator(conn, "boss-as-validator")
+    judged(conn, ids["held"], mine, "human_1")
+    child_of(conn, ids["fresh"])
+    flora.app.dependency_overrides[flora.current_admin] = lambda: {
+        "id": 1, "handle": "boss", "trusted": True, "validator_id": mine}
+    before = statuses(conn, ids)
+
+    preview = client.get(f"/api/admin/entries/{ids['main']}/withdraw-preview",
+                         params={"scope": "not_replication"}).json()
+    assert {b["title_o"]: b["code"] for b in preview["blocked"]} == {
+        "Held": "self_approval", "Fresh": "withdraw_blocked_by_added_originals"}
+
+    response = withdraw(client, ids["main"], scope="not_replication")
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["code"] == "withdraw_blocked_by_siblings"
+    assert "2 other pairs of this article cannot be withdrawn, so nothing was withdrawn" in detail["message"]
+    assert sorted(b["record_id"] for b in detail["blocked"]) == sorted([ids["held"], ids["fresh"]])
+    assert all(b["reason"] for b in detail["blocked"])
+    assert statuses(conn, ids) == before
+    assert one(conn, "SELECT COUNT(*) AS n FROM admin_decisions")["n"] == 0
+    # The pair alone can still go.
+    assert withdraw(client, ids["main"], scope="duplicate").status_code == 200
+
+
+def test_a_merged_sibling_blocks_the_whole_article(env):
+    conn, client, st = env
+    main = record(conn, "unvalidated", doi_r=PAPER)
+    sibling = record(conn, "unvalidated", doi_r=PAPER)
+    survivor = record(conn, "validated")
+    run(conn, "INSERT INTO validated_record_merges (duplicate_record_id, survivor_record_id, merged_by) "
+              "VALUES (%s, %s, 'boss')", sibling, survivor)
+    response = withdraw(client, main, scope="not_replication")
+    assert response.status_code == 409
+    assert [b["code"] for b in response.json()["detail"]["blocked"]] == ["record_already_merged"]
+    assert status(conn, main) == "unvalidated"
+
+
+def test_the_preview_is_refused_as_the_withdrawal_would_be(env):
+    conn, client, st = env
+    closed = record(conn, "need_review")
+    response = client.get(f"/api/admin/entries/{closed}/withdraw-preview", params={"scope": "not_replication"})
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "record_not_open_for_validation"
+    open_ = record(conn, "unvalidated")
+    assert client.get(f"/api/admin/entries/{open_}/withdraw-preview",
+                      params={"scope": "everything"}).status_code == 422
+
+
+def test_an_article_without_a_replication_doi_is_found_by_its_work(env):
+    conn, client, st = env
+    main = record(conn, "unvalidated", doi_r="")
+    sibling = record(conn, "unvalidated", doi_r="")
+    elsewhere = record(conn, "unvalidated", doi_r="")
+    for record_id, work in ((main, 77), (sibling, 77), (elsewhere, 78)):
+        run(conn, "INSERT INTO record_metadata (record_id, work_id) VALUES (%s, %s)", record_id, work)
+    preview = client.get(f"/api/admin/entries/{main}/withdraw-preview",
+                         params={"scope": "not_replication"}).json()
+    assert preview["article_key"] == "work_id"
+    assert [o["record_id"] for o in preview["open"]] == [sibling]
+    assert withdraw(client, main, scope="not_replication").json()["withdrawn_records"] == [main, sibling]
+    assert status(conn, elsewhere) == "unvalidated"
+
+
+def test_an_article_that_cannot_be_told_apart_withdraws_this_pair_only(env):
+    conn, client, st = env
+    main = record(conn, "unvalidated", doi_r="")
+    other = record(conn, "unvalidated", doi_r="")
+    preview = client.get(f"/api/admin/entries/{main}/withdraw-preview",
+                         params={"scope": "not_replication"}).json()
+    assert preview["article_key"] is None and preview["open"] == []
+    assert withdraw(client, main, scope="not_replication").json()["withdrawn_records"] == [main]
+    assert status(conn, other) == "unvalidated"

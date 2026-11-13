@@ -187,7 +187,11 @@ whole import.
 
 Re-running refreshes `record_metadata`. An upstream correction that changes
 `pair_id` is matched by stable `(work_id, original_rank)` and re-keyed; records with
-validator activity are moved to `need_review`.
+validator activity are moved to `need_review`. A rejected record stays rejected, except
+one whose original an admin removed, or withdrew before validation as the wrong
+original, when the re-key ships a different original: it returns to `unvalidated` with
+clean slots (see [Wrong paper, no replacement](#wrong-paper-no-replacement) and
+[Withdrawing an entry before validation](#withdrawing-an-entry-before-validation)).
 
 The boundary canonicalizes current replication labels and derives a reproduction's
 flat outcome from its independently coded computation and robustness axes.
@@ -335,7 +339,9 @@ siblings are untouched; correcting the original in the form and resolving remain
 It is refused while the entry has live added originals, which are published from it: the
 banner says so, and the admin removes those first. If the extractor later ships a different
 original at the same work and rank, the import sends the record back to `unvalidated` with
-clean slots and archives its history in `retired_records`.
+clean slots and archives its history in `retired_records`. The same holds for a pair an
+admin withdrew before validation as the wrong original (scope `wrong_original`); a pair
+withdrawn as a duplicate or with its whole article never comes back.
 
 **After rolling this release back**, check these records. The previous release counts two
 `not_applicable` answers as agreement and keeps the extracted original and outcome, so a
@@ -810,22 +816,43 @@ consensus or `auto_validate_waiting.py`) leaves the record waiting for an admin 
 ### Withdrawing an entry before validation
 
 An entry still open for validation (`unvalidated` or `validation_inprogress`) can be
-taken out before its validators finish, for example when the extractor paired the
-replication with the wrong original and the right pair is already in FLoRA. **Withdraw
-from validation** on the entry screen asks for a reason (required, at most 1,000
-characters) and calls `POST /api/admin/entries/{record_id}/withdraw`. The record becomes
-`rejected` with `admin_checked`, so it is neither served nor published; its open
-assignment closes and its unanswered slots are freed, so a validator who held it is told
-it was already decided. Judgements already submitted stay, with their points, as for any
-rejection. The reason goes at the head of the admin note as `Withdrawn before validation:
-<reason>`, above any note already there, and the decision is logged as `withdrawn`.
+taken out before its validators finish. **Withdraw from validation** on the entry screen
+asks what is wrong with it and why, and calls `POST /api/admin/entries/{record_id}/withdraw`
+with a required `scope` and `reason` (at most 1,000 characters). There are three scopes:
 
-It is refused (409) for an entry that is validated, rejected, `consensus_reached` or
-`need_review`, which have their own actions; for a merged duplicate; and while the entry
-has live added originals. The self-approval rule applies as for any decision. A withdrawn
-entry can still be published through **Review / edit fields** and Mark as Resolved. Unlike
-"Remove this original", the import does not re-open a withdrawn entry when the extractor
-ships a different original, and the action does not re-link the entry to another original.
+| Scope | Dialog label | What it withdraws | Comes back? |
+|---|---|---|---|
+| `wrong_original` | Wrong original: withdraw this pair | This pair only | Yes, when the extractor ships a different original at the same work and rank |
+| `duplicate` | Correct pair already in FLoRA: withdraw this pair permanently | This pair only | Never |
+| `not_replication` | Not a replication/reproduction: withdraw the whole article | This pair and every other pair of the same replication paper still open for validation | Never |
+
+Each withdrawn record becomes `rejected` with `admin_checked`, so it is neither served
+nor published; its open assignment closes and its unanswered slots are freed, so a
+validator who held it is told it was already decided. Judgements already submitted stay,
+with their points, as for any rejection. The reason goes at the head of the admin note
+as `Withdrawn before validation (<scope label>): <reason>`, above any note already there.
+Each is logged as `withdrawn`, with `{"scope", "reason"}` in `admin_decisions.detail`
+(and `"withdrawn_with"`, the entry withdrawn from, on the other pairs of an article).
+
+The other pairs of an article are the extractor records with the same replication DOI,
+the set the entry screen lists as "This paper has N coded originals"
+(`paper_review.admin_paper_set`). Without a replication DOI they are the extractor records
+of the same replication work (`record_metadata.work_id`, the import's key); an entry with
+neither withdraws only itself, and the dialog says its other pairs cannot be found. For the
+whole-article scope the dialog shows, from `GET …/withdraw-preview?scope=not_replication`,
+how many open pairs go along and which pairs are already decided or waiting for an admin
+(`validated`, `consensus_reached`, `need_review`). Those are not changed: the response
+returns them as `review_records` and the panel lists them to review. Already rejected
+pairs are left alone. Every open pair gets the same checks as the entry itself; if any
+is blocked (merged, judged by this admin under the self-approval rule, or with live
+added originals), the whole request is refused with 409 `withdraw_blocked_by_siblings`
+and a `blocked` list, and nothing is withdrawn.
+
+The entry itself is refused (409) when it is validated, rejected, `consensus_reached` or
+`need_review`, which have their own actions, when it is a merged duplicate, and while it
+has live added originals; 403 under the self-approval rule. A withdrawn entry can still
+be published through **Review / edit fields** and Mark as Resolved. Withdrawing does not
+re-link an entry to another original.
 
 ---
 

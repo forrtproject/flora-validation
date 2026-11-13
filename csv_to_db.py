@@ -695,12 +695,16 @@ def _rekey_candidates(slot_records: list, incoming_pair_ids: set,
             and record["record_id"] not in rekeyed_record_ids]
 
 
-def _removed_original_was_replaced(cur, existing: dict, incoming: dict) -> bool:
-    """Did an admin remove this record's original, and does this re-key ship another?
+def _removed_original_was_replaced(cur, existing: dict, incoming: dict) -> str | None:
+    """Did an admin take this record's original out, and does this re-key ship another?
+    Returns how it was taken out: "removed" ("Remove this original") or "withdrawn" (a
+    withdrawal before validation as the wrong original); None when it stays rejected.
 
     The newest decision that left the record rejected says why it is rejected: "not
     a replication" is about the paper, which a new original does not change, and a
     re-key of the replication's DOI alone leaves the removed original where it was.
+    A withdrawal counts only as the wrong original (detail.scope): one withdrawn as a
+    duplicate, or with its whole article as not a replication, stays withdrawn.
     """
     cur.execute(
         """
@@ -709,27 +713,56 @@ def _removed_original_was_replaced(cur, existing: dict, incoming: dict) -> bool:
                 ORDER BY d.decided_at DESC, d.decision_id DESC LIMIT 1) = 'original_removed',
                lower(btrim(COALESCE(u.doi_o, ''))) <> lower(btrim(COALESCE(%(doi_o)s, ''))),
                COALESCE(u.doi_o, '') = '' AND COALESCE(%(doi_o)s, '') = '',
-               u.title_o, u.validator_1, u.validator_2
+               u.title_o, u.validator_1, u.validator_2,
+               -- The newest status change, not only a rejecting one: after a
+               -- re-open (logged) a later senior or consensus reject is not logged, and
+               -- must not let the old withdrawal count again.
+               -- Only decisions that moved the status: dismissing a suggestion logs a
+               -- row on a rejected record without one, and must not hide the withdrawal.
+               COALESCE((SELECT d.action = 'withdrawn' AND d.detail->>'scope' = 'wrong_original'
+                         FROM admin_decisions d WHERE d.record_id = u.record_id
+                           AND d.status_before IS DISTINCT FROM d.status_after
+                         ORDER BY d.decided_at DESC, d.decision_id DESC LIMIT 1), FALSE)
         FROM unvalidated u WHERE u.record_id = %(record_id)s
         """,
         {"doi_o": incoming["doi_o"], "record_id": existing["record_id"]},
     )
     row = cur.fetchone()
-    if not (row and row[0]):
-        return False
+    if not (row and (row[0] or row[6])):
+        return None
     # The stored title may still carry markup the import now strips, so both sides are
     # cleaned here: a row this import has not refreshed yet is not a replaced original.
     if not (row[1] or (row[2] and _title(row[3]).casefold() != incoming["title_o"].casefold())):
-        return False
+        return None
+    # An admin withdrew it as the wrong original, before any validators agreed: that
+    # decision is the reason, and nothing was rejected after it (it is the newest).
+    if row[6]:
+        return "withdrawn"
     # The decision log does not hear of every rejection: a senior's reject, or two
     # validators and the LLM agreeing it is not a replication, are never logged, so a
     # reopened record they rejected again would still show the old removal as its
     # newest. Its judgements say what rejected it now.
     from consensus_engine import removal_proposed
-    return removal_proposed(row[4], row[5])
+    return "removed" if removal_proposed(row[4], row[5]) else None
 
 
-def _archive_removed_original(cur, existing: dict, incoming: dict) -> None:
+_REPLACED_ORIGINAL = {
+    "removed": (
+        "Removed by an admin as the wrong original; the extractor then shipped another "
+        "at the same work and rank.",
+        "⚠ Re-opened by the import: the original an admin removed was replaced "
+        "by the extractor. The earlier judgements are in retired_records."),
+    "withdrawn": (
+        "Withdrawn by an admin before validation as the wrong original; the extractor "
+        "then shipped another at the same work and rank.",
+        "⚠ Re-opened by the import: this entry was withdrawn as pairing the wrong "
+        "original, and the extractor has since replaced the original. The earlier "
+        "judgements are in retired_records."),
+}
+
+
+def _archive_removed_original(cur, existing: dict, incoming: dict,
+                              how: str = "removed") -> None:
     """Keep what the two validators and the admin decided about the old original,
     the record, its metadata, its judgements and its skips, whole, in the archive the
     retire step uses. The record stays: only its slots start over."""
@@ -747,8 +780,7 @@ def _archive_removed_original(cur, existing: dict, incoming: dict) -> None:
                'csv_to_db re-key'
         FROM unvalidated u WHERE u.record_id = %s
         """,
-        ("Removed by an admin as the wrong original; the extractor then shipped another "
-         "at the same work and rank.", incoming["pair_id"], existing["record_id"]),
+        (_REPLACED_ORIGINAL[how][0], incoming["pair_id"], existing["record_id"]),
     )
     if cur.rowcount != 1:
         raise RuntimeError(f"could not archive {existing['record_id']}; rolling back")
@@ -801,17 +833,18 @@ def _reopen_with_clean_slots(cur, record_id: str) -> None:
 def _refresh_rekeyed_record(cur, existing: dict, incoming: dict) -> None:
     """Apply an authoritative source re-key without overwriting final decisions.
 
-    The one exception is an original an admin removed: when the extractor ships
+    The one exception is an original an admin removed, or withdrew before validation
+    as the wrong original: when the extractor ships
     another at the same work and rank, that decision was about a paper this record
     no longer codes, so the record starts over, its history kept in retired_records
     and admin_decisions."""
-    original_replaced = (existing["validation_status"] == "rejected"
-                         and _removed_original_was_replaced(cur, existing, incoming))
+    original_replaced = (_removed_original_was_replaced(cur, existing, incoming)
+                         if existing["validation_status"] == "rejected" else None)
     if original_replaced:
         cur.execute("SELECT pair_id, doi_o, title_o FROM unvalidated WHERE record_id = %s",
                     (existing["record_id"],))
         old_pair_id, old_doi_o, old_title_o = cur.fetchone()
-        _archive_removed_original(cur, existing, incoming)
+        _archive_removed_original(cur, existing, incoming, original_replaced)
     cur.execute(
         """
         UPDATE unvalidated SET
@@ -852,9 +885,7 @@ def _refresh_rekeyed_record(cur, existing: dict, incoming: dict) -> None:
              "doi_o": [old_doi_o, incoming["doi_o"]],
              "title_o": [old_title_o, incoming["title_o"]]},
             "rejected", "unvalidated")
-        _note_admin(cur, existing["record_id"],
-                    "⚠ Re-opened by the import: the original an admin removed was replaced "
-                    "by the extractor. The earlier judgements are in retired_records.")
+        _note_admin(cur, existing["record_id"], _REPLACED_ORIGINAL[original_replaced][1])
         print(f"  Re-opened {existing['record_id']}: its removed original was replaced")
     elif existing["has_validator_activity"] and existing["validation_status"] != "rejected":
         note = (
