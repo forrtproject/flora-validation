@@ -1064,6 +1064,47 @@ def test_a_rejection_after_a_withdrawal_outranks_it(api, local_database):
     assert _status(local_database, record) == "rejected"
 
 
+def test_resolving_a_withdrawn_entry_as_not_a_replication_outranks_the_withdrawal(api, local_database):
+    """Resolve on a rejected entry logs rejected -> rejected: still the admin's later word."""
+    client, who = api
+    record = _withdrawn(api, local_database, "wrong_original")
+    response = client.post(f"/api/admin/entries/{record}/resolve", json={
+        "admin_name": "boss", "type_check": "incorrect", "corrected_type": "not_validation",
+        "original_check": "correct", "outcome_check": "correct"})
+    assert response.status_code == 200, response.text
+    with local_database, _cursor(local_database) as cur:
+        cur.execute("SELECT action, status_before, status_after FROM admin_decisions "
+                    "WHERE record_id = %s ORDER BY decision_id", (record,))
+        assert [tuple(r.values()) for r in cur.fetchall()][-1][1:] == ("rejected", "rejected")
+    _rekey(local_database, record)
+    assert _status(local_database, record) == "rejected"
+
+
+def test_a_withdrawal_waits_for_no_running_import(api, local_database):
+    """The import holds the import/withdraw lock for its transaction; a withdrawal then
+    refuses with a retryable 409 instead of risking a deadlock with it."""
+    import psycopg2
+    from csv_to_db import IMPORT_WITHDRAW_LOCK_ID
+    client, who = api
+    with local_database, _cursor(local_database) as cur:
+        record = _record(cur, 1)
+    importer = psycopg2.connect(os.environ["DATABASE_URL"])
+    try:
+        with importer.cursor() as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(%s)", (IMPORT_WITHDRAW_LOCK_ID,))
+        response = client.post(f"/api/admin/entries/{record}/withdraw",
+                                json={"scope": "not_replication", "reason": "Not a replication"})
+        assert response.status_code == 409, response.text
+        assert response.json()["detail"]["code"] == "import_running"
+        assert _status(local_database, record) == "unvalidated"
+    finally:
+        importer.rollback()
+        importer.close()
+    response = client.post(f"/api/admin/entries/{record}/withdraw",
+                           json={"scope": "not_replication", "reason": "Not a replication"})
+    assert response.status_code == 200, response.text
+
+
 def test_an_unlogged_consensus_rejection_never_reopens(api, local_database):
     with local_database, _cursor(local_database) as cur:
         record = _record(cur, 1, status="rejected")

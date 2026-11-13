@@ -6220,7 +6220,16 @@ def admin_withdraw(record_id: str, req: AdminWithdrawRequest,
     reason = req.reason.strip()
     if not reason:
         raise HTTPException(422, "Give a reason for withdrawing this entry")
+    from csv_to_db import IMPORT_WITHDRAW_LOCK_ID
     with db() as cur:
+        # The import locks entries in CSV order, a withdrawal in record_id order: never
+        # run them together, or they could deadlock (and roll back the import).
+        cur.execute("SELECT pg_try_advisory_xact_lock_shared(%s) AS ok",
+                    (IMPORT_WITHDRAW_LOCK_ID,))
+        if not cur.fetchone()["ok"]:
+            raise HTTPException(409, detail={
+                "code": "import_running",
+                "message": "The nightly import is updating entries. Try again in a few minutes."})
         if req.scope == "not_replication":
             _lock_article(cur, record_id)
         rec = _withdraw_target(cur, record_id, admin, lock=True)

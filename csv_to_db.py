@@ -717,11 +717,16 @@ def _removed_original_was_replaced(cur, existing: dict, incoming: dict) -> str |
                -- The newest status change, not only a rejecting one: after a
                -- re-open (logged) a later senior or consensus reject is not logged, and
                -- must not let the old withdrawal count again.
-               -- Only decisions that moved the status: dismissing a suggestion logs a
-               -- row on a rejected record without one, and must not hide the withdrawal.
+               -- Decisions that moved the status, or that rejected it again: resolving a
+               -- withdrawn entry as not a replication logs rejected -> rejected, and is
+               -- the admin's later word. Dismissing a suggestion also logs a row on a
+               -- rejected record without moving it, and must not hide the withdrawal.
                COALESCE((SELECT d.action = 'withdrawn' AND d.detail->>'scope' = 'wrong_original'
                          FROM admin_decisions d WHERE d.record_id = u.record_id
-                           AND d.status_before IS DISTINCT FROM d.status_after
+                           AND (d.status_before IS DISTINCT FROM d.status_after
+                                OR (d.status_after = 'rejected'
+                                    AND d.action IN ('resolved', 'rejected', 'merged',
+                                                     'original_removed', 'withdrawn')))
                          ORDER BY d.decided_at DESC, d.decision_id DESC LIMIT 1), FALSE)
         FROM unvalidated u WHERE u.record_id = %(record_id)s
         """,
@@ -1045,6 +1050,7 @@ def run_import(csv_path: Path, dry_run: bool = False, release_id: str = "",
     try:
         with conn:
             with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_xact_lock(%s)", (IMPORT_WITHDRAW_LOCK_ID,))
                 existing_pair_ids = _load_existing_pair_ids(cur)
                 # Existing source rows are not reinserted, but their extractor
                 # provenance is refreshed by the metadata upsert below.
@@ -1186,6 +1192,13 @@ class RetireManifestError(ValueError):
 # The write surface validation and record removal share. Taken before a batch is
 # re-planned so a concurrent claim/skip/judgement cannot change the decision
 # halfway through; NOWAIT aborts instead of risking a lock-order deadlock.
+# Transaction-level advisory lock between the import and admin withdrawals. The import
+# holds it exclusively for its whole transaction, before it locks any row; a withdrawal
+# takes it shared, or gives up with a retryable 409. The two lock entry rows in different
+# orders (CSV order, record_id order), so without it they could deadlock.
+IMPORT_WITHDRAW_LOCK_ID = 7_342_025_100
+
+
 WRITE_SURFACE_LOCK_SQL = """
     LOCK TABLE unvalidated, validation_queue, validated,
                validation_skips, submission_failure_releases,

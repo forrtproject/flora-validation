@@ -341,7 +341,9 @@ banner says so, and the admin removes those first. If the extractor later ships 
 original at the same work and rank, the import sends the record back to `unvalidated` with
 clean slots and archives its history in `retired_records`. The same holds for a pair an
 admin withdrew before validation as the wrong original (scope `wrong_original`); a pair
-withdrawn as a duplicate or with its whole article never comes back.
+withdrawn as a duplicate or with its whole article never comes back, nor does one an
+admin rejected again after withdrawing it (for example by resolving it as not a
+replication).
 
 **After rolling this release back**, check these records. The previous release counts two
 `not_applicable` answers as agreement and keeps the extracted original and outcome, so a
@@ -818,7 +820,10 @@ consensus or `auto_validate_waiting.py`) leaves the record waiting for an admin 
 An entry still open for validation (`unvalidated` or `validation_inprogress`) can be
 taken out before its validators finish. **Withdraw from validation** on the entry screen
 asks what is wrong with it and why, and calls `POST /api/admin/entries/{record_id}/withdraw`
-with a required `scope` and `reason` (at most 1,000 characters). There are three scopes:
+with a required `scope` and `reason` (at most 1,000 characters). While the nightly
+import is writing entries it refuses with 409 `import_running`, to retry a few minutes
+later: the two lock entries in different orders and could otherwise deadlock (advisory
+lock `IMPORT_WITHDRAW_LOCK_ID` in csv_to_db.py). There are three scopes:
 
 | Scope | Dialog label | What it withdraws | Comes back? |
 |---|---|---|---|
