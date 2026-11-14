@@ -1,12 +1,12 @@
 ## FLoRA structural validation
 
-_Generated: 2026-11-13 03:19:51 UTC | Dataset: 2,881 rows_
+_Generated: 2026-11-14 03:09:20 UTC | Dataset: 2,882 rows_
 
 Each item names the FLoRA record by its FLoRA ID and `doi_o | doi_r` (or `url_r`), says what is wrong and, after the dash, gives the value.
 
-### Problems (45)
+### Problems (44)
 
-**Invalid URLs** (7 findings):
+**Invalid URLs** (6 findings):
 
 _A url column holds something other than one complete http(s) link._
 
@@ -16,7 +16,6 @@ _A url column holds something other than one complete http(s) link._
 - FRED-000048 (`10.1177/0956797616674999 | 10.1098/rsos.231240`): url_r holds two links — `https://osf.io/v6zk8 or http://rpubs.com/catherinecthomas/final_replication`
 - VAL-000044 (`10.2307/749455 | 10.5964/jnc.6063`): url_r holds a DOI, not a link — `10.31234/osf.io/wej8z`
 - VAL-000258 (`10.2224/sbp.2008.36.6.753 | 10.5114/cipp.2021.110948`): oa_url_r contains spaces (an open-access link from enrichment, not from the source record) — `https://www.termedia.pl/Journal/-75/pdf-45660-10?filename=Williams Conceptual.pdf`
-- VAL-000274 (`10.1111/j.1467-9280.2008.02072.x | 10.17605/osf.io/yptua`): url_r is cut off — `https://journals.sagepub.com/doi/full/10.1177/2515…`
 
 **Duplicate records** (1 finding):
 

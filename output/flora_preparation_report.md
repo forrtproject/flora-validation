@@ -1,20 +1,20 @@
 # FLoRA preparation report
 
-Generated: 2026-11-13T03:18:48+00:00
+Generated: 2026-11-14T03:08:13+00:00
 
 Status: **needs review**
 
 Mode: built from the database
 
-Rows: 2,881
+Rows: 2,882
 
 ## Stages
 
 - build flora.csv and check IDs: passed
-- structural validation: needs review — 45 problems and 10 possible problems
+- structural validation: needs review — 44 problems and 10 possible problems
 - network validation: needs review
 - release files and history: passed
-- store dataset: passed — 2,881 rows in flora_data
+- store dataset: passed — 2,882 rows in flora_data
 - write output files: passed
 
 ## Warnings
@@ -22,12 +22,12 @@ Rows: 2,881
 - 39 records left out for a missing title; see flora_export_log.csv.
 - 62 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.
 - 21 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.
-- Structural validation found 45 problems and 10 possible problems.
-- Network validation needs review: 39 problems and 69 possible problems. Original work types unavailable for 180 DOI(s); previous review decisions retained. This screening is advisory..
+- Structural validation found 44 problems and 10 possible problems.
+- Network validation needs review: 39 problems and 69 possible problems. Original work types unavailable for 4 DOI(s); previous review decisions retained. This screening is advisory..
 
 ## Stored dataset
 
-- 2,881 rows stored in `flora_data`, which Download full CSV and the public API serve.
+- 2,882 rows stored in `flora_data`, which Download full CSV and the public API serve.
 
 ## Diagnostic files
 
@@ -39,13 +39,13 @@ The JSON report lists the affected records.
 
 ## FLoRA structural validation
 
-_Generated: 2026-11-13 03:29:06 UTC | Dataset: 2,881 rows_
+_Generated: 2026-11-14 03:15:44 UTC | Dataset: 2,882 rows_
 
 Each item names the FLoRA record by its FLoRA ID and `doi_o | doi_r` (or `url_r`), says what is wrong and, after the dash, gives the value.
 
-### Problems (45)
+### Problems (44)
 
-**Invalid URLs** (7 findings):
+**Invalid URLs** (6 findings):
 
 _A url column holds something other than one complete http(s) link._
 
@@ -55,7 +55,6 @@ _A url column holds something other than one complete http(s) link._
 - FRED-000048 (`10.1177/0956797616674999 | 10.1098/rsos.231240`): url_r holds two links — `https://osf.io/v6zk8 or http://rpubs.com/catherinecthomas/final_replication`
 - VAL-000044 (`10.2307/749455 | 10.5964/jnc.6063`): url_r holds a DOI, not a link — `10.31234/osf.io/wej8z`
 - VAL-000258 (`10.2224/sbp.2008.36.6.753 | 10.5114/cipp.2021.110948`): oa_url_r contains spaces (an open-access link from enrichment, not from the source record) — `https://www.termedia.pl/Journal/-75/pdf-45660-10?filename=Williams Conceptual.pdf`
-- VAL-000274 (`10.1111/j.1467-9280.2008.02072.x | 10.17605/osf.io/yptua`): url_r is cut off — `https://journals.sagepub.com/doi/full/10.1177/2515…`
 
 **Duplicate records** (1 finding):
 
@@ -166,9 +165,9 @@ _title_r is a file or project name, or a generic name such as 'Analysis'._
 
 ## FLoRA network validation
 
-_Generated: 2026-11-13 03:29:06 UTC | Dataset: 2,881 rows_
+_Generated: 2026-11-14 03:15:44 UTC | Dataset: 2,882 rows_
 
-**Original work types unavailable for 180 DOI(s); previous review decisions retained. This screening is advisory..**
+**Original work types unavailable for 4 DOI(s); previous review decisions retained. This screening is advisory..**
 
 Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says what is wrong and, after the dash, gives the DOI or link.
 
@@ -310,203 +309,27 @@ _Heuristics: a person decides whether each one is a problem._
 
 </details>
 
-<details><summary><b>Could not check</b> (180 original work types, 9 links)</summary>
+<details><summary><b>Could not check</b> (4 original work types, 9 links)</summary>
 
-_Not findings: no answer could be had for these 189, and they are checked again on the next run._
+_Not findings: no answer could be had for these 13, and they are checked again on the next run._
 
-**Original work types (advisory)** (180):
+**Original work types (advisory)** (4):
 
 - FRED-000547, FRED-000912, doi_o: Original work type unavailable or stale; previous review retained — `10.1002/(sici)1099-0771(199806)11:2<107::aid-bdm292>3.0.co;2-y`
 - REPL-000806, doi_o: Original work type unavailable or stale; previous review retained — `10.1026/0949-3946.48.2.94`
 - FRED-000585, doi_o: Original work type unavailable or stale; previous review retained — `10.1177/2f10986111211035002`
-- REPL-001126, doi_o: Original work type unavailable or stale; previous review retained — `10.2196/20572`
-- REPL-000161, doi_o: Original work type unavailable or stale; previous review retained — `10.2196/26134`
-- REPL-001009, doi_o: Original work type unavailable or stale; previous review retained — `10.2196/37954`
-- FRED-000635, doi_o: Original work type unavailable or stale; previous review retained — `10.2196/jmir.2551`
-- REPL-001457, doi_o: Original work type unavailable or stale; previous review retained — `10.22004/ag.econ.139020`
-- VAL-000258, doi_o: Original work type unavailable or stale; previous review retained — `10.2224/sbp.2008.36.6.753`
-- REPL-001653, doi_o: Original work type unavailable or stale; previous review retained — `10.2224/sbp.2013.41.2.283`
-- REPL-000166, REPL-001208, VAL-000254, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/1128199`
-- REPL-001075, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/1386523`
-- VAL-000213, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/1388548`
-- REPRO-000348, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/1392187`
-- REPL-000499, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/1412188`
-- REPL-001250, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/145795`
-- REPL-000347, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/1961661`
-- REPL-000629, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/20159604`
-- VAL-000076, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/20466649`
-- VAL-000147, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/2061139`
-- REPL-000424, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/2082710`
-- REPL-000226, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/2091819`
-- VAL-000420, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/2092399`
-- REPL-001588, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/2118508`
-- VAL-000091, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/2392469`
-- REPL-000711, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/2393473`
-- VAL-000131, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/249688`
-- VAL-000215, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/249754`
-- REPL-001364, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/255897`
-- REPL-000986, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/256894`
-- REPL-001419, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/257100`
-- REPL-000049, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/2585837`
-- REPRO-000006, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/2586119`
-- REPL-001249, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/2786238`
-- REPL-000715, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/3250921`
-- REPL-001402, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/3333827`
-- REPL-000822, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/3586735`
-- VAL-000214, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/41703463`
-- VAL-000044, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/749455`
-- REPL-000552, doi_o: Original work type unavailable or stale; previous review retained — `10.2307/976307`
-- REPL-000465, doi_o: Original work type unavailable or stale; previous review retained — `10.2308/acch-50181`
-- REPL-000723, doi_o: Original work type unavailable or stale; previous review retained — `10.2308/accr-51448`
-- REPL-000787, doi_o: Original work type unavailable or stale; previous review retained — `10.2337/diabetes.53.9.2467`
-- FRED-000009, doi_o: Original work type unavailable or stale; previous review retained — `10.2466/pms.109.2.577-580`
-- REPL-000783, doi_o: Original work type unavailable or stale; previous review retained — `10.2466/pms.1999.89.1.151`
-- VAL-000295, doi_o: Original work type unavailable or stale; previous review retained — `10.2466/pr0.1972.30.2.636`
-- VAL-000411, doi_o: Original work type unavailable or stale; previous review retained — `10.2466/pr0.1972.31.3.699`
-- VAL-000356, doi_o: Original work type unavailable or stale; previous review retained — `10.2466/pr0.1994.75.1.199`
-- VAL-000222, doi_o: Original work type unavailable or stale; previous review retained — `10.2466/pr0.1997.80.2.511`
-- REPL-000782, doi_o: Original work type unavailable or stale; previous review retained — `10.2466/pr0.1998.83.2.455`
-- REPL-000901, doi_o: Original work type unavailable or stale; previous review retained — `10.2478/v10036-009-0039-9`
-- FRED-000193, doi_o: Original work type unavailable or stale; previous review retained — `10.2501/jar-40-1-2-29-34`
-- VAL-000198, doi_o: Original work type unavailable or stale; previous review retained — `10.25300/misq/2013/37.4.01`
-- VAL-000099, doi_o: Original work type unavailable or stale; previous review retained — `10.25300/misq/2014/38.1.14`
-- VAL-000107, doi_o: Original work type unavailable or stale; previous review retained — `10.25300/misq/2018/13853`
-- REPL-001198, doi_o: Original work type unavailable or stale; previous review retained — `10.25300/misq/2020/14110`
-- REPL-000062, doi_o: Original work type unavailable or stale; previous review retained — `10.25656/01:31701`
-- REPL-000506, doi_o: Original work type unavailable or stale; previous review retained — `10.2753/jec1086-4415130103`
-- REPL-001225, doi_o: Original work type unavailable or stale; previous review retained — `10.2753/joa0091-3367370303`
-- REPL-001061, doi_o: Original work type unavailable or stale; previous review retained — `10.2753/mis0742-1222240209`
-- REPL-000746, doi_o: Original work type unavailable or stale; previous review retained — `10.2753/mis0742-1222310210`
-- REPL-001125, doi_o: Original work type unavailable or stale; previous review retained — `10.29115/sp-2022-0009`
-- SCORE-000016, doi_o: Original work type unavailable or stale; previous review retained — `10.3102/0002831208323278`
-- REPL-000602, doi_o: Original work type unavailable or stale; previous review retained — `10.3102/0002831209340043`
-- SCORE-000035, doi_o: Original work type unavailable or stale; previous review retained — `10.3102/0002831209350493`
-- REPL-000906, doi_o: Original work type unavailable or stale; previous review retained — `10.3102/0002831210362589`
-- SCORE-000005, doi_o: Original work type unavailable or stale; previous review retained — `10.3102/0002831210374874`
-- SCORE-000017, doi_o: Original work type unavailable or stale; previous review retained — `10.3102/0002831211419490`
-- REPL-000073, doi_o: Original work type unavailable or stale; previous review retained — `10.3102/0002831211419649`
-- REPL-000513, doi_o: Original work type unavailable or stale; previous review retained — `10.3102/0002831214531323`
-- REPL-000518, doi_o: Original work type unavailable or stale; previous review retained — `10.3102/0013189x11422112`
-- FRED-000877, doi_o: Original work type unavailable or stale; previous review retained — `10.3102/0013189x13507104`
-- REPL-000960, doi_o: Original work type unavailable or stale; previous review retained — `10.3102/0162373720954183`
-- REPL-001174, doi_o: Original work type unavailable or stale; previous review retained — `10.3109/0142159x.2010.541533`
-- REPL-000071, doi_o: Original work type unavailable or stale; previous review retained — `10.3109/0142159x.2012.714884`
-- REPL-000086, doi_o: Original work type unavailable or stale; previous review retained — `10.3109/10253890.2015.1040987`
-- REPL-000425, doi_o: Original work type unavailable or stale; previous review retained — `10.3109/13561820.2014.917407`
-- REPL-000928, doi_o: Original work type unavailable or stale; previous review retained — `10.3109/13816810.2015.1005317`
-- REPRO-000130, doi_o: Original work type unavailable or stale; previous review retained — `10.31234/osf.io/6a2cx`
-- REPL-000422, doi_o: Original work type unavailable or stale; previous review retained — `10.31234/osf.io/7tm3s`
-- REPRO-000147, doi_o: Original work type unavailable or stale; previous review retained — `10.31234/osf.io/e3kcw`
-- REPRO-000124, doi_o: Original work type unavailable or stale; previous review retained — `10.31234/osf.io/jkfu3`
-- REPRO-000129, doi_o: Original work type unavailable or stale; previous review retained — `10.31234/osf.io/rz78k`
-- REPRO-000142, doi_o: Original work type unavailable or stale; previous review retained — `10.31234/osf.io/yb2h8`
-- REPL-000482, doi_o: Original work type unavailable or stale; previous review retained — `10.31235/osf.io/3ye4b`
-- REPL-000038, doi_o: Original work type unavailable or stale; previous review retained — `10.3138/cmlr.3831`
-- REPL-000095, doi_o: Original work type unavailable or stale; previous review retained — `10.3233/jad-160881`
-- FRED-000578, doi_o: Original work type unavailable or stale; previous review retained — `10.3233/jad-2009-1163`
-- VAL-000030, doi_o: Original work type unavailable or stale; previous review retained — `10.3233/jsa-160165`
-- REPL-001017, doi_o: Original work type unavailable or stale; previous review retained — `10.3389/fnagi.2022.804937`
-- REPL-000341, doi_o: Original work type unavailable or stale; previous review retained — `10.3389/fnhum.2013.00257`
-- REPL-000126, doi_o: Original work type unavailable or stale; previous review retained — `10.3389/fnhum.2017.00468`
-- FRED-000027, doi_o: Original work type unavailable or stale; previous review retained — `10.3389/fped.2019.00206`
-- REPL-000421, doi_o: Original work type unavailable or stale; previous review retained — `10.3389/fpsyg.2014.00444`
-- REPL-000469, doi_o: Original work type unavailable or stale; previous review retained — `10.3389/fpsyg.2014.01202`
-- FRED-000003, FRED-000628, doi_o: Original work type unavailable or stale; previous review retained — `10.3389/fpsyg.2014.01276`
-- REPL-000079, doi_o: Original work type unavailable or stale; previous review retained — `10.3389/fpsyg.2014.01518`
-- VAL-000404, doi_o: Original work type unavailable or stale; previous review retained — `10.3389/fpsyg.2015.01216`
-- REPL-001076, doi_o: Original work type unavailable or stale; previous review retained — `10.3389/fpsyg.2016.00027`
-- REPL-000909, doi_o: Original work type unavailable or stale; previous review retained — `10.3389/fpsyg.2017.00051`
-- VAL-000256, doi_o: Original work type unavailable or stale; previous review retained — `10.3389/fpsyg.2017.00790`
-- VAL-000085, doi_o: Original work type unavailable or stale; previous review retained — `10.3389/fpsyg.2017.01508`
-- REPL-000963, doi_o: Original work type unavailable or stale; previous review retained — `10.3389/fpsyg.2020.01415`
-- FRED-000699, doi_o: Original work type unavailable or stale; previous review retained — `10.3389/fpsyg.2024.1335892`
-- REPL-000693, REPL-001308, doi_o: Original work type unavailable or stale; previous review retained — `10.3389/fpsyt.2012.00045`
-- REPL-000392, doi_o: Original work type unavailable or stale; previous review retained — `10.3389/fpsyt.2014.00019`
-- REPL-000972, doi_o: Original work type unavailable or stale; previous review retained — `10.3389/fpsyt.2024.1432679`
-- REPL-000657, doi_o: Original work type unavailable or stale; previous review retained — `10.3390/biomedicines8020034`
-- REPL-000876, doi_o: Original work type unavailable or stale; previous review retained — `10.3390/brainsci8040062`
-- REPL-001112, doi_o: Original work type unavailable or stale; previous review retained — `10.3390/cli7020028`
-- REPL-000287, doi_o: Original work type unavailable or stale; previous review retained — `10.37016/mr-2020-47`
-- REPL-000697, doi_o: Original work type unavailable or stale; previous review retained — `10.37237/relay/010204`
-- FRED-000607, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/app.71.1.9`
-- REPL-001657, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/bf03193111`
-- FRED-000526, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/bf03193824`
-- FRED-000401, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/bf03194043`
-- REPL-000619, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/bf03196313`
-- REPL-001439, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/bf03196335`
-- VAL-000498, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/bf03196610`
-- FRED-000275, FRED-000560, REPL-000290, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/bf03197186`
-- VAL-000137, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/bf03197446`
-- REPL-001239, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/bf03202642`
-- REPL-000813, REPL-000824, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/bf03206733`
-- FRED-000293, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/bf03211160`
-- REPL-000411, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/bf03214286`
-- REPL-001189, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/mc.37.1.65`
-- VAL-000264, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/pbr.16.1.139`
-- REPL-001399, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/pbr.17.5.644`
-- VAL-000395, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/pp.70.1.88`
-- REPL-000383, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/pp.70.3.477`
-- VAL-000370, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/s13414-012-0325-9`
-- VAL-000204, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/s13414-018-1498-7`
-- FRED-000246, FRED-000872, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/s13414-019-01723-6`
-- VAL-000243, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/s13414-019-01946-7`
-- FRED-000709, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/s13414-020-02150-8`
-- REPL-000618, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/s13420-016-0250-1`
-- REPL-000366, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/s13423-013-0572-3`
-- FRED-000005, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/s13423-014-0663-9`
-- REPL-000291, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/s13423-014-0683-5`
-- REPL-001214, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/s13423-015-0923-3`
-- REPL-000768, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/s13423-017-1306-8`
-- VAL-000117, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/s13428-020-01440-1`
-- FRED-000128, doi_o: Original work type unavailable or stale; previous review retained — `10.3758/s13428-021-01694-3`
-- REPL-000949, doi_o: Original work type unavailable or stale; previous review retained — `10.3928/0048-5713-19951201-07`
-- REPL-000502, doi_o: Original work type unavailable or stale; previous review retained — `10.3945/jn.112.159319`
-- REPRO-000057, REPRO-000101, doi_o: Original work type unavailable or stale; previous review retained — `10.3982/ecta10813`
-- REPRO-000040, doi_o: Original work type unavailable or stale; previous review retained — `10.3982/ecta11380`
-- REPRO-000062, REPRO-000095, doi_o: Original work type unavailable or stale; previous review retained — `10.3982/ecta12987`
-- REPL-000699, doi_o: Original work type unavailable or stale; previous review retained — `10.3982/ecta13408`
-- REPL-000430, REPRO-000150, doi_o: Original work type unavailable or stale; previous review retained — `10.3982/ecta14370`
-- REPRO-000341, doi_o: Original work type unavailable or stale; previous review retained — `10.3982/ecta6248`
-- REPL-000456, REPRO-000143, doi_o: Original work type unavailable or stale; previous review retained — `10.3982/ecta8852`
-- REPL-000973, doi_o: Original work type unavailable or stale; previous review retained — `10.4054/demres.2019.40.2`
-- FRED-000769, doi_o: Original work type unavailable or stale; previous review retained — `10.4148/1944-9771.1299`
-- REPL-001260, doi_o: Original work type unavailable or stale; previous review retained — `10.4161/viru.1.5.12486`
-- REPL-000307, doi_o: Original work type unavailable or stale; previous review retained — `10.48550/arxiv.2302.02083`
-- REPL-001026, doi_o: Original work type unavailable or stale; previous review retained — `10.4992/jjpsy.94.22334`
-- FRED-000731, doi_o: Original work type unavailable or stale; previous review retained — `10.51548/joctec-2021-016`
-- REPL-000238, doi_o: Original work type unavailable or stale; previous review retained — `10.5210/bsi.v18i1.2292`
-- REPL-000818, doi_o: Original work type unavailable or stale; previous review retained — `10.5232/ricyde2010.01804`
-- REPL-000987, doi_o: Original work type unavailable or stale; previous review retained — `10.5334/joc.91`
-- REPL-001030, doi_o: Original work type unavailable or stale; previous review retained — `10.5465/amj.2005.18803920`
-- VAL-000176, doi_o: Original work type unavailable or stale; previous review retained — `10.5465/amj.2010.0608`
-- VAL-000138, doi_o: Original work type unavailable or stale; previous review retained — `10.5465/amj.2010.51468978`
-- REPL-000549, doi_o: Original work type unavailable or stale; previous review retained — `10.5465/amj.2014.0424`
-- REPRO-000118, SCORE-000050, doi_o: Original work type unavailable or stale; previous review retained — `10.5465/amj.2016.0086`
-- REPL-001620, doi_o: Original work type unavailable or stale; previous review retained — `10.5465/amle.2010.0012`
-- VAL-000434, doi_o: Original work type unavailable or stale; previous review retained — `10.5808/gi.2014.12.4.225`
-- FRED-000311, doi_o: Original work type unavailable or stale; previous review retained — `10.5840/jphil20091061128`
-- FRED-000303, doi_o: Original work type unavailable or stale; previous review retained — `10.5840/jphil20111081238`
-- REPL-000628, doi_o: Original work type unavailable or stale; previous review retained — `10.5840/philtopics2001291/217`
-- REPL-000097, doi_o: Original work type unavailable or stale; previous review retained — `10.58680/rte20076014`
-- REPL-001637, doi_o: Original work type unavailable or stale; previous review retained — `10.5951/jresematheduc.29.5.0503`
 - REPL-000025, doi_o: Original work type unavailable or stale; previous review retained — `10.6129/cjp.2003.4501.07`
-- REPL-001226, doi_o: Original work type unavailable or stale; previous review retained — `10.64152/10125/66632`
-- REPL-000286, doi_o: Original work type unavailable or stale; previous review retained — `10.64152/10125/66973`
-- REPL-000706, doi_o: Original work type unavailable or stale; previous review retained — `10.7334/psicothema2016.24`
-- VAL-000494, doi_o: Original work type unavailable or stale; previous review retained — `10.7554/elife.42256`
-- VAL-000161, doi_o: Original work type unavailable or stale; previous review retained — `10.7554/elife.49700`
-- REPL-000828, doi_o: Original work type unavailable or stale; previous review retained — `10.7820/vli.v02.1.ishii`
 
 **Links** (9):
 
-- REPL-001087, oa_url_r: timed out — `https://hal.science/hal-02440256/document`
 - REPL-001176, oa_url_r: timed out — `https://cdr.lib.unc.edu/downloads/7w62fg56x`
+- REPL-001214, oa_url_r: timed out — `https://journalofcognition.org/articles/456/files/6888a2bd2e674.pdf`
 - REPL-001436, oa_url_o: timed out — `http://hdl.handle.net/2328/35450`
+- REPL-001612, oa_url_r: timed out — `https://journalofcognition.org/articles/508/files/6a4782df6e686.pdf`
 - VAL-000159, oa_url_r: TLS: unable to get local issuer certificate — `https://polipapers.upv.es/index.php/MUSE/article/download/10390/11334`
 - REPL-000190, oa_url_o: TLS: unable to get local issuer certificate — `http://hdl.handle.net/10902/7358`
 - REPL-001417, url_r: redirect loop — `https://www.proquest.com/docview/221001969?pq-origsite=gscholar&fromopenview=true&sourcetype=Scholarly%20Journals`
 - REPL-001618, url_o: redirect loop — `https://www.proquest.com/docview/1470800730`
-- REPRO-000365, oa_url_o: timed out — `https://sciencespo.hal.science/hal-04211174/document`
 - FRED-000798, oa_url_o: ConnectionResetError: \[Errno 104\] Connection reset by peer — `http://ira.lib.polyu.edu.hk/bitstream/10397/97105/1/Huang_Influence_Product_Anthropomorphism.pdf`
 
 </details>
@@ -514,14 +337,14 @@ _Not findings: no answer could be had for these 189, and they are checked again 
 
 **Network validation status: needs review**
 
-- Original work types (advisory): 2,575 distinct; 2,395 cached, 2,575 checked (180 could not be checked), 0 deferred.
-- DOIs: 4,832 distinct; 4,590 cached, 242 checked, 0 deferred.
-- Links: 3,400 distinct; 2,947 cached, 453 checked (9 could not be checked), 0 deferred.
+- Original work types (advisory): 2,577 distinct; 2,573 cached, 2,577 checked (4 could not be checked), 0 deferred.
+- DOIs: 4,836 distinct; 4,799 cached, 37 checked, 0 deferred.
+- Links: 3,403 distinct; 3,128 cached, 275 checked (9 could not be checked), 0 deferred.
 - Originals without a DOI: 28 distinct; 28 cached, 0 checked, 0 deferred.
 
 
 ## Release files
 
-- flora.csv: 2,881 rows, SHA-256 `0eb4bcb254481e1abe619b9cb05c9851fd6ee24465e2065a016b5e880e7c1e3a`.
+- flora.csv: 2,882 rows, SHA-256 `a74349bf5946d85376818a8decb94a0d3fce92f76909b5bb7987853c86c3c5d2`.
 - Also written: the release manifest and notes, and today's counts in flora_history.csv and flora_dataset_summary.md.
 - Publication: The repository copy (`output/` on GitHub) is committed by two workflows, each when flora.csv changed: the nightly job, with its own run's files, and Publish FLoRA, with the stored dataset. Website and local command-line runs commit nothing. Nothing is uploaded to OSF.
