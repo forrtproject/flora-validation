@@ -1,8 +1,8 @@
-# It's a replication / It's a reproduction
+# Is a replication / Is a reproduction
 
 Changes the edit form to the other FLoRA type and shows its fields.
 
-[Open interactive guide](../index.html#view=admin&node=admin-entries--it-s-a-replication-it-s-a-reproduction)
+[Open interactive guide](../index.html#view=admin&node=admin-entries--is-a-replication-is-a-reproduction)
 
 Code snapshot: 29 October 2026, `2f3a89c`.
 

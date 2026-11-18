@@ -141,12 +141,12 @@ ALIASES = {"failed": "failed", "successful": "successful", "unclear": "cannot_be
     ({"doi_o": "10.1000/a", "outcome": "failed"}, None),
     ({"doi_o": "10.1000/a", "outcome": "not checked, robust"}, None),
     ({"doi_o": None, "outcome": "failed"}, "needs the original's DOI"),
-    ({"doi_o": "10.1000/a", "outcome": "not_a_replication"}, "not a replication"),
+    ({"doi_o": "10.1000/a", "outcome": "not_a_replication"}, "does not meet FLoRA inclusion criteria"),
     # In production's outcome_alias only as a target, never as a raw value: the
     # build would refuse the whole export.
     ({"doi_o": "10.1000/a", "outcome": "cannot_be_determined"}, "would stop the export"),
     ({"doi_o": "10.1000/a", "type": "replication", "outcome": "cannot_be_determined"}, "would stop the export"),
-    ({"doi_o": "10.1000/a", "type": "not_validation", "outcome": "not_a_replication"}, "not a replication"),
+    ({"doi_o": "10.1000/a", "type": "not_validation", "outcome": "not_a_replication"}, "does not meet FLoRA inclusion criteria"),
     # One axis that cannot be determined is FLoRA's cannot_be_determined
     # reproduction; both leave nothing to publish.
     ({"doi_o": "10.1000/a", "type": "reproduction", "outcome": "cannot_be_determined",

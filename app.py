@@ -1149,7 +1149,7 @@ def _no_outcome_request(req: JudgeRequest, corrected_title_o: str | None) -> Jud
         raise HTTPException(
             400, "Only an original marked wrong with no replacement can have no outcome")
     if req.type_check == "incorrect" and req.corrected_type == "not_validation":
-        raise HTTPException(400, "A record rejected as neither type does not use 'not_applicable'")
+        raise HTTPException(400, "A record that does not meet FLoRA inclusion criteria does not use 'not_applicable'")
     if req.type_check == "incorrect" and req.corrected_type not in {"replication", "reproduction"}:
         raise HTTPException(400, "corrected_type must be replication or reproduction")
     return req.model_copy(update={
@@ -5978,7 +5978,7 @@ def admin_remove_original(record_id: str, admin: dict = Depends(current_admin)):
 WITHDRAW_SCOPES = {
     "wrong_original": "wrong original",
     "duplicate": "correct pair already in FLoRA",
-    "not_replication": "not a replication or reproduction",
+    "not_replication": "does not meet FLoRA inclusion criteria",
 }
 _OPEN_FOR_VALIDATION = ("unvalidated", "validation_inprogress")
 _IN_ADMIN_HANDS = ("validated", "consensus_reached", "need_review")

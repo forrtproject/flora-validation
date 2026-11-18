@@ -48,7 +48,7 @@ const XSS = '<img src=x onerror="window.__xss=1">';
   };
   // app.py WITHDRAW_SCOPES: the label the server puts in the note.
   const SERVER_LABELS = { wrong_original: "wrong original", duplicate: "correct pair already in FLoRA",
-                          not_replication: "not a replication or reproduction" };
+                          not_replication: "does not meet FLoRA inclusion criteria" };
   const B = "44444444-4444-4444-8444-444444444444";
   let listed = [];          // what the entries list returns
   let gate = null;          // holds the withdraw answer back while set
@@ -173,7 +173,7 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     const labels = await page.locator(".withdraw-scope strong").allTextContents();
     assert.deepEqual(labels, ["Wrong original: withdraw this pair",
                               "Correct pair already in FLoRA: withdraw this pair permanently",
-                              "Not a replication/reproduction: withdraw the whole article"]);
+                              "Does not meet FLoRA inclusion criteria: withdraw the whole article"]);
     await dialogButton("Cancel").click();
     await closed();
     assert.equal(withdrawals.length, 0);
@@ -228,13 +228,13 @@ const XSS = '<img src=x onerror="window.__xss=1">';
     await dialogButton("OK").click();
     await page.locator(".not-val-decision").waitFor();
     const notice = await page.locator(".not-val-decision .not-val-who").innerText();
-    assert.match(notice, /This entry was withdrawn before validation \(whole article: not a replication or reproduction\)/);
+    assert.match(notice, /This entry was withdrawn before validation \(whole article: does not meet FLoRA inclusion criteria\)/);
     assert.doesNotMatch(notice, /comes back/);
     assert.match(await page.locator(".admin-decisions li").textContent(),
-                 /Withdrawn before validation \(whole article: not a replication or reproduction\)/);
+                 /Withdrawn before validation \(whole article: does not meet FLoRA inclusion criteria\)/);
     assert.equal(await button.count(), 0);
     assert.equal(await page.locator("#admin-note-text").inputValue(),
-                 "Withdrawn before validation (not a replication or reproduction): A commentary, not a replication\n\nEarlier note");
+                 "Withdrawn before validation (does not meet FLoRA inclusion criteria): A commentary, not a replication\n\nEarlier note");
     await shot("withdraw_after.png");
 
     // ---- An unsaved note draft is saved before the withdrawal; if that fails,

@@ -3547,7 +3547,7 @@ details[open] > .chk-collapsible-summary::before { transform: rotate(90deg); }
   border-top: 1px solid var(--rule);
 }
 
-/* "Not a replication?": the other FLoRA type, or out of FLoRA. Each action
+/* "Other decisions": the other FLoRA type, or out of FLoRA. Each action
    carries its meaning next to it, so neither reads as the other. */
 .admin-reject-heading {
   margin: 0 0 0.45rem;

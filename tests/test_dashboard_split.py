@@ -199,7 +199,7 @@ def test_the_dashboard_shows_replications_and_reproductions_separately():
 
 
 def test_neither_type_reads_as_such_in_a_matrix():
-    assert 's === "not_validation" ? "Neither type"' in _js_function("function _renderMatrix(m, rowLabel, colLabel)")
+    assert 's === "not_validation" ? "Does not meet criteria"' in _js_function("function _renderMatrix(m, rowLabel, colLabel)")
 
 
 # ── the approval screen's track record ────────────────────────────────────────

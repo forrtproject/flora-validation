@@ -286,7 +286,7 @@ const later = ms => new Promise(resolve => setTimeout(resolve, ms));
       assert.deepEqual(await body.locator(".adj-agree").allInnerTexts(), ["FLoRA and the Observatory agree"]);
       assert.equal(await body.locator(".adj-option", { hasText: "As FLoRA" }).count(), 0);
       assert.deepEqual(await body.locator('.adj-option[data-group="type"]').allInnerTexts(),
-        ["Replication (new data)", "Reproduction (same data)", "Neither: not in FLoRA's scope"]);
+        ["Replication (new data)", "Reproduction (same data)", "Does not meet FLoRA inclusion criteria"]);
       await body.locator('.adj-option[data-value="both"]').click();
       // Chosen with the keyboard: the outcome question becomes the reproduction's two axes.
       await body.locator('.adj-option[data-group="type"][data-value="reproduction"]').focus();

@@ -1,6 +1,6 @@
 # Senior override: reject
 
-A Senior validator can immediately mark a reserved record as neither a replication nor a reproduction. This is a special authoritative rejection, separate from the ordinary type answer.
+A Senior validator can immediately reject a reserved record as not meeting FLoRA inclusion criteria, even if it calls itself a replication. This is a special authoritative rejection, separate from the ordinary type answer.
 
 [Open interactive guide](../index.html#view=overview&node=review-senior)
 
@@ -33,7 +33,7 @@ Code snapshot: 29 October 2026, `2f3a89c`.
 
 ## Keep in mind
 
-- A reproduction is an eligible type; this override is for neither type.
+- A reproduction is an eligible type; this override is for a record that does not meet FLoRA inclusion criteria.
 - The displayed two matching slots may include the senior's stamped partner slot, not two independent human submissions.
 
 ## Find it in the code

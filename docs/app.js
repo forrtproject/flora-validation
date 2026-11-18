@@ -68,9 +68,11 @@ function onBackdropClick(overlay, close) {
 // re-runs exactly those once the tab is shown again.
 const _pageHidden = () => document.visibilityState === "hidden";
 // What a `not_validation` type means, wherever a person reads it. "Not a
-// replication" read as if reproductions were rejected too; both types belong in
-// FLoRA, and only records that are neither are left out.
-const NOT_IN_FLORA_LABEL = "neither type — not in FLoRA";
+// replication" read as if reproductions were rejected too, and "neither type" as
+// if a paper that calls itself a replication could not be left out. Both types
+// belong in FLoRA; a record is left out when it does not meet FLoRA's inclusion
+// criteria, whatever the paper calls itself.
+const NOT_IN_FLORA_LABEL = "does not meet FLoRA inclusion criteria";
 const _missedWhileHidden = new Set();
 const STORAGE = {
   CODER: "flora.coder",
@@ -488,7 +490,7 @@ function buildConsensusSummary(v1, v2, llm) {
     groupBy(j => j.type_check === "correct" ? "ok" : (j.corrected_type || "incorrect")),
     s => s === "ok" ? "the type is correct"
        : s === "incorrect" ? "the type is wrong"
-       : s === "not_validation" ? "it's neither type — not in FLoRA"
+       : s === "not_validation" ? `it ${NOT_IN_FLORA_LABEL}`
        : `the type should be ${s}`
   );
   if (typeS) lines.push(typeS);
@@ -1694,7 +1696,7 @@ const _HIST_STATUS = {
   },
   rejected: {
     text: "Not added to FLoRA", short: "Not added to FLoRA", cls: "hd-status-rejected",
-    help: "This entry won't be added to FLoRA: it isn't a replication or reproduction, "
+    help: "This entry won't be added to FLoRA: it does not meet FLoRA inclusion criteria, "
       + "or it duplicates an entry that is already in FLoRA.",
   },
 };
@@ -1875,7 +1877,7 @@ function renderHistDetail(d) {
 
   const notVal = d.corrected_type === "not_validation";
   const typeCorrDisplay = d.corrected_type
-    ? (notVal ? "Neither type — not in FLoRA" : d.corrected_type)
+    ? (notVal ? "Does not meet FLoRA inclusion criteria" : d.corrected_type)
     : null;
 
   const dateStr = d.validated_at ? fmtDate(d.validated_at) : "";
@@ -3583,13 +3585,13 @@ function renderPairInto(container, p, { onboarding, judgeCount }) {
        <div class="choices">
          <button class="choice success" data-type="replication">Replication<small>different data</small></button>
          <button class="choice success" data-type="reproduction">Reproduction<small>same data</small></button>
-         <button class="choice danger" data-type="not_validation">✗ Not either type<small>not in FLoRA</small></button>
+         <button class="choice danger" data-type="not_validation">✗ Does not meet inclusion criteria<small>not in FLoRA</small></button>
        </div>`
     : `<p class="question">The system classified this as&ensp;<span class="outcome-label ${pType}">${pType}</span>&ensp;— is that correct?</p>
        <div class="choices">
          <button class="choice success" data-type="${pType}">✓ Correct</button>
          <button class="choice warn" data-type="${oppositeType}">Actually ${oppositeType}<small>${oppositeLabel}</small></button>
-         <button class="choice danger" data-type="not_validation">✗ Not either type<small>not in FLoRA</small></button>
+         <button class="choice danger" data-type="not_validation">✗ Does not meet inclusion criteria<small>not in FLoRA</small></button>
        </div>`;
   const gate2Question = onboarding
     ? "Does this match the paper actually being validated?"
@@ -3618,9 +3620,9 @@ function renderPairInto(container, p, { onboarding, judgeCount }) {
         <details>
           <summary class="senior-reject-summary">Senior override: reject — not in FLoRA</summary>
           <div class="senior-reject-body">
-            <p class="senior-reject-hint">As a senior validator you can immediately reject this record as neither a replication nor a reproduction. No second validator or LLM check will run. A reproduction is not rejected: choose it as the type above.</p>
+            <p class="senior-reject-hint">As a senior validator you can immediately reject this record as not meeting FLoRA inclusion criteria, even if it calls itself a replication. No second validator or LLM check will run. A reproduction is not rejected: choose it as the type above.</p>
             <textarea id="senior-reject-notes" class="senior-reject-notes" placeholder="Notes (optional)…"></textarea>
-            <button id="senior-reject-btn" class="btn-reject">✗ Reject — neither a replication nor a reproduction</button>
+            <button id="senior-reject-btn" class="btn-reject">✗ Reject — does not meet FLoRA inclusion criteria</button>
           </div>
         </details>
       </div>
@@ -4029,7 +4031,7 @@ function wireEditButtons(container, p) {
         await loadNextPair();
       } catch (e) {
         seniorRejectBtn.disabled = false;
-        seniorRejectBtn.textContent = "✗ Reject — neither a replication nor a reproduction";
+        seniorRejectBtn.textContent = "✗ Reject — does not meet FLoRA inclusion criteria";
         await showAlert("Error: " + e.message);
       }
     };
@@ -4458,7 +4460,7 @@ function unanswerGate(gate) {
 
 function getAnswerLabel(btn) {
   if (btn.dataset.type) {
-    return { replication: "Replication", reproduction: "Reproduction", not_validation: "Neither" }[btn.dataset.type] || btn.dataset.type;
+    return { replication: "Replication", reproduction: "Reproduction", not_validation: "Does not meet inclusion criteria" }[btn.dataset.type] || btn.dataset.type;
   }
   if (btn.dataset.original) {
     return { correct: "Correct match", wrong: "Wrong paper", unsure: "Can't tell" }[btn.dataset.original] || btn.dataset.original;
@@ -5589,7 +5591,7 @@ function _renderPaperReview() {
       <div class="pr-choices">
         <button type="button" class="ok${pr.type === p.type ? " sel" : ""}" data-pr="type" data-v="${escapeHtml(p.type)}">✓ Correct</button>
         <button type="button" class="un" data-pr="type" data-v="${other}">Actually ${other}</button>
-        <button type="button" class="no${rejected ? " sel" : ""}" data-pr="type" data-v="not_validation">✗ Not either type</button>
+        <button type="button" class="no${rejected ? " sel" : ""}" data-pr="type" data-v="not_validation">✗ Does not meet inclusion criteria</button>
       </div>
     </div>
     ${pr.type && !rejected ? `
@@ -5824,7 +5826,7 @@ const TOUR_STEPS = [
     sel: "#gate-1",
     also: [".pair-header"],
     title: "i. Type check",
-    body: "Is this a <em>Replication</em> (different data), a <em>Reproduction</em> (same data), or <em>Neither</em>? This is the first thing you verify.",
+    body: "Is this a <em>Replication</em> (different data), a <em>Reproduction</em> (same data), or does it <em>not meet FLoRA inclusion criteria</em>? This is the first thing you verify.",
   },
   {
     sel: "#gate-2",
@@ -8151,11 +8153,11 @@ const WITHDRAW_SCOPES = [
     note: "Only this pair. It comes back for validation if the extractor later pairs the replication with a different original." },
   { value: "duplicate", label: "Correct pair already in FLoRA: withdraw this pair permanently",
     note: "Only this pair, for good. It never comes back." },
-  { value: "not_replication", label: "Not a replication/reproduction: withdraw the whole article",
+  { value: "not_replication", label: "Does not meet FLoRA inclusion criteria: withdraw the whole article",
     note: "This pair and every other pair of the same replication paper still open for validation. None comes back." },
 ];
 const WITHDRAW_SCOPE_LABELS = { wrong_original: "wrong original", duplicate: "correct pair already in FLoRA",
-                                not_replication: "whole article: not a replication or reproduction" };
+                                not_replication: "whole article: does not meet FLoRA inclusion criteria" };
 
 function _withdrawPairList(items, withReason = false) {
   return `<ul class="withdraw-pairs">${items.map((o) => `<li>${escapeHtml(o.title_o || "(no title)")}
@@ -9665,10 +9667,10 @@ function renderAdminDetail(data) {
                   ? ` (${escapeHtml(WITHDRAW_SCOPE_LABELS[(data.decisions || []).at(-1).detail.scope])})` : ""}, so validators are no longer given it and it is not in FLoRA.${
                 (data.decisions || []).at(-1)?.detail?.scope === "wrong_original"
                   ? " It comes back for validation if the extractor pairs it with a different original." : ""} The reason is in the admin note.</p>`
-            : `<p class="not-val-who">⚠ This record was <strong>rejected</strong> — neither a replication nor a reproduction, so not in FLoRA${notValWho ? ` — by <strong>${notValWho}</strong>` : ""}. Validation happens once — it won't be sent back for re-validation.</p>`}
+            : `<p class="not-val-who">⚠ This record was <strong>rejected</strong>${notValWho ? ` by <strong>${notValWho}</strong>` : ""}: it does not meet FLoRA inclusion criteria, so it is not in FLoRA. Validation happens once — it won't be sent back for re-validation.</p>`}
           <p class="not-val-hint">If it is a reproduction, open it as one and code the two axes. To change anything else, review and edit the fields.</p>
           <div class="not-val-buttons">
-            <button id="notval-is-repro-btn" class="btn-outline" data-type="reproduction">↻ It's a reproduction</button>
+            <button id="notval-is-repro-btn" class="btn-outline" data-type="reproduction">↻ Is a reproduction</button>
             <button id="confirm-is-rep-btn" class="btn-outline">Review / edit fields</button>
             <button id="admin-skip-notval-btn" class="ghost-btn">Skip →</button>
           </div>
@@ -9690,7 +9692,7 @@ function renderAdminDetail(data) {
              data-orig-doi-r-published="${escapeHtml(storedPubDoi)}"
              data-orig-alt-identifier-r="${escapeHtml(finalAltIds)}">
           ${hasNotValidation
-            ? `<p class="admin-resolve-hint">Fill in the correct values — this will override the "neither type — not in FLoRA" call.</p>`
+            ? `<p class="admin-resolve-hint">Fill in the correct values — this will override the "does not meet FLoRA inclusion criteria" call.</p>`
             : hasProposals
             ? `<p class="admin-resolve-hint">Validators' corrections are <strong>pre-filled below</strong>; review them before resolving.</p>`
             : `<p class="admin-resolve-hint">Edit the final values, then mark as resolved.</p>`}
@@ -9758,15 +9760,15 @@ function renderAdminDetail(data) {
             <button id="admin-detail-cancel" class="ghost-btn">Cancel</button>
           </div>
           <div class="admin-reject-action">
-            <p class="admin-reject-heading">Not a ${finalType === "reproduction" ? "reproduction" : "replication"}?</p>
+            <p class="admin-reject-heading">Other decisions</p>
             <div class="admin-reject-choice">
               <button id="admin-other-type-btn" class="btn-outline"
-                      data-type="${finalType === "reproduction" ? "replication" : "reproduction"}">↻ It's a ${finalType === "reproduction" ? "replication" : "reproduction"}</button>
+                      data-type="${finalType === "reproduction" ? "replication" : "reproduction"}">↻ Is a ${finalType === "reproduction" ? "replication" : "reproduction"}</button>
               <span class="admin-reject-note">the other FLoRA type — switches Type and opens its fields</span>
             </div>
             <div class="admin-reject-choice">
-              <button id="admin-reject-btn" class="btn-reject-outline">✗ Reject — not in FLoRA</button>
-              <span class="admin-reject-note">neither a replication nor a reproduction</span>
+              <button id="admin-reject-btn" class="btn-reject-outline">✗ Reject — does not meet FLoRA inclusion criteria</button>
+              <span class="admin-reject-note">left out of FLoRA, whatever the paper calls itself</span>
             </div>
             ${["unvalidated", "validation_inprogress"].includes(rec.validation_status) ? `
             <div class="admin-reject-choice">
@@ -9786,7 +9788,7 @@ function renderAdminDetail(data) {
   _wireAdminPaperReview(rec, data);
   _wireAdminQuoteSource(rec.record_id);
 
-  // "It's a reproduction" / "It's a replication": the other FLoRA type is a
+  // "Is a reproduction" / "Is a replication": the other FLoRA type is a
   // correction of the type, not a rejection. Open the edit panel (hidden behind
   // the notice on a rejected record), switch Type through its own change handler
   // so the outcome options and axis fields follow, and put the admin where the
@@ -9842,14 +9844,11 @@ function renderAdminDetail(data) {
     const sel = $("#ar-outcome-sel");
     if (sel) sel.innerHTML = _outcomeOptionsFor(ev.target.value, "");
     $("#ar-repro-axes")?.classList.toggle("hidden", ev.target.value !== "reproduction");
-    // The "Not a …?" choice always offers the type the form is not set to.
-    const isRepro = ev.target.value === "reproduction";
-    const heading = $(".admin-reject-heading");
-    if (heading) heading.textContent = `Not a ${isRepro ? "reproduction" : "replication"}?`;
+    // The other-type button always offers the type the form is not set to.
     const other = $("#admin-other-type-btn");
     if (other) {
-      other.dataset.type = isRepro ? "replication" : "reproduction";
-      other.textContent = `↻ It's a ${other.dataset.type}`;
+      other.dataset.type = ev.target.value === "reproduction" ? "replication" : "reproduction";
+      other.textContent = `↻ Is a ${other.dataset.type}`;
     }
   });
   $("#admin-resolve-btn")?.addEventListener("click", () => submitAdminResolve(rec.record_id));
@@ -9861,8 +9860,8 @@ function renderAdminDetail(data) {
     // A rejected entry has no originals: drafted ones are discarded, so say so.
     const drafted = _xoResolveDrafts(rec.record_id).length;
     const sure = await showConfirm(
-      "Reject this record as neither a replication nor a reproduction? It will be left out of FLoRA. " +
-      `If it is a ${other}, use “It's a ${other}” instead.` +
+      "Reject this record as not meeting FLoRA inclusion criteria? It will be left out of FLoRA. " +
+      `If it is a ${other} that meets them, use “Is a ${other}” instead.` +
       (drafted ? ` The ${drafted} other original${drafted === 1 ? "" : "s"} you drafted for it will be discarded.` : ""));
     if (!sure) return;
     btn.disabled = true;
@@ -9881,7 +9880,7 @@ function renderAdminDetail(data) {
       await advanceToNextAdminEntry();
     } catch (e) {
       btn.disabled = false;
-      btn.textContent = "✗ Reject — not in FLoRA";
+      btn.textContent = "✗ Reject — does not meet FLoRA inclusion criteria";
       await showAlert("Error: " + e.message);
     }
   });
@@ -11492,7 +11491,7 @@ let _dashData = null;
 
 function _renderMatrix(m, rowLabel, colLabel) {
   if (!m || !m.labels || !m.labels.length) return '<p class="mx-empty">No data.</p>';
-  const lab = (s) => escapeHtml(s === "not_validation" ? "Neither type" : (fmtOutcome(s) || s));
+  const lab = (s) => escapeHtml(s === "not_validation" ? "Does not meet criteria" : (fmtOutcome(s) || s));
   const head = m.labels.map((l) => `<th>${lab(l)}</th>`).join("");
   const rows = m.labels.map((rl, i) =>
     `<tr><th class="mx-rowlab">${lab(rl)}</th>` +

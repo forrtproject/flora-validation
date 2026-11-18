@@ -152,7 +152,7 @@
       },
       "feedback": {
         "intro": "This is a false positive: the FLoRA pipeline matched on the word 'replication' in the title, but the paper is a bibliometric review of *molecular* DNA replication \u2014 not a study replication at all. Spotting these matters: leaving them in pollutes the dataset.",
-        "type_wrong": "The abstract describes a bibliometric survey of molecular biology articles. There's no original finding being re-tested. Mark this as 'Neither'."
+        "type_wrong": "The abstract describes a bibliometric survey of molecular biology articles. There's no original finding being re-tested. Mark this as 'Does not meet inclusion criteria'."
       },
       "oa_url_r": null,
       "oa_url_o": null

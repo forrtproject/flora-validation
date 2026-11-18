@@ -357,7 +357,7 @@ def draft_block(cur, rec: dict, merged_into_id=None, decision: dict | None = Non
                 or "You validated this entry, so another admin needs to decide it.", {})
     if final_type == "not_validation":
         return ("extra_originals_with_reject",
-                "This entry is being rejected as neither a replication nor a reproduction, "
+                "This entry is being rejected as not meeting FLoRA inclusion criteria, "
                 "so it cannot have other originals.", {})
     missing = missing_judgements(cur, rec)
     if missing:
@@ -1034,7 +1034,7 @@ def create_on_survivor(cur, duplicate_id, survivor_id, items: list[dict], admin:
         why = {
             "parent_not_validated": "it is not validated",
             "parent_not_admin_checked": "no admin has reviewed it yet (a rule validated it)",
-            "parent_type": "it is not a replication or a reproduction",
+            "parent_type": "it does not meet FLoRA inclusion criteria",
             "extra_original_on_child": "it is itself an added original",
         }.get(block[0], block[1])
         n = len(items)

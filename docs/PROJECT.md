@@ -837,7 +837,7 @@ There are three scopes:
 |---|---|---|---|
 | `wrong_original` | Wrong original: withdraw this pair | This pair only | Yes, when the extractor ships a different original at the same work and rank |
 | `duplicate` | Correct pair already in FLoRA: withdraw this pair permanently | This pair only | Never |
-| `not_replication` | Not a replication/reproduction: withdraw the whole article | This pair and every other pair of the same replication paper still open for validation | Never |
+| `not_replication` | Does not meet FLoRA inclusion criteria: withdraw the whole article | This pair and every other pair of the same replication paper still open for validation | Never |
 
 Each withdrawn record becomes `rejected` with `admin_checked`, so it is neither served
 nor published; its open assignment closes and its unanswered slots are freed, so a

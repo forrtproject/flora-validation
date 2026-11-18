@@ -288,7 +288,7 @@
     uninformative: "Uninformative",
     "descriptive only": "Descriptive only",
     cannot_be_determined: "Cannot be determined",
-    not_a_replication: "Not a replication",
+    not_a_replication: "Does not meet FLoRA inclusion criteria",
     cannot_tell: "Can't tell",
   };
   const MAIN_OUTCOMES = ["successful", "failed", "mixed"];
@@ -300,9 +300,9 @@
   const TYPE_CHOICES = [
     ["replication", "Replication (new data)"],
     ["reproduction", "Reproduction (same data)"],
-    ["not_validation", "Neither: not in FLoRA's scope"],
+    ["not_validation", "Does not meet FLoRA inclusion criteria"],
   ];
-  const TYPE_NAMES = { replication: "replication", reproduction: "reproduction", not_validation: "not a replication" };
+  const TYPE_NAMES = { replication: "replication", reproduction: "reproduction", not_validation: "does not meet inclusion criteria" };
   // A reproduction's two axes, labelled as app.js's reproduction buttons
   // (_REPRO_COMPUTATION, _REPRO_ROBUSTNESS) label them. Except
   // cannot_be_determined: app.js calls it "Can't tell", which here is the
@@ -495,7 +495,7 @@
       return `Reproduction · Computation: ${axisLabel("outcome_computation", a.outcome_computation)}`
         + ` · Robustness: ${axisLabel("outcome_robustness", a.outcome_robustness)}`;
     }
-    if (a.type === "not_validation") return "Not a replication";
+    if (a.type === "not_validation") return OUTCOME_LABELS.not_a_replication;
     return outcomeLabel(a.outcome);
   }
 
@@ -625,7 +625,7 @@
       </fieldset>`;
     }
     const why = answer.type === "not_validation"
-      ? "Nothing to judge: the paper is not in FLoRA's scope."
+      ? "Nothing to judge: the paper does not meet FLoRA inclusion criteria."
       : `Answer question ${n - 1} first.`;
     return `<fieldset class="adj-q"><legend>${n}. What did it find?</legend>
       <p class="adj-small">${escapeHtml(why)}</p></fieldset>`;
@@ -1331,7 +1331,7 @@
         <input type="text" id="adj-title-o" value="${escapeHtml(values.title_o || "")}"></label>
       <fieldset class="adj-q"><legend>Type</legend>
         ${TYPE_CHOICES.map(([value, label]) => typeRadio(value,
-          value === "not_validation" ? "Neither: not in FLoRA's scope (not publishable)" : label)).join("")}
+          value === "not_validation" ? "Does not meet FLoRA inclusion criteria (not publishable)" : label)).join("")}
       </fieldset>
       <div id="adj-replication-fields" ${values.type === "replication" ? "" : "hidden"}>
         <label class="adj-field">Outcome

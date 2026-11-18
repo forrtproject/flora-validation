@@ -439,7 +439,7 @@ newest status-changing entry in `admin_decisions`, one whose `status_before` and
 that change no status, such as a dismissed suggestion, are skipped). Either way the record returns to `unvalidated` with clean slots,
 its earlier state is archived in `retired_records` (reason `original_replaced`, with a
 detail naming which), a note says why it re-opened, and the re-opening is logged as
-`reopened_by_import`. A record rejected as neither a replication nor a reproduction is
+`reopened_by_import`. A record rejected as not meeting FLoRA inclusion criteria is
 about the paper and stays rejected, as does a pair withdrawn as a duplicate or with its
 whole article, and a removed or withdrawn original whose re-key only corrected the
 replication DOI. A senior's reject or a consensus reject is not logged, so it never
@@ -664,21 +664,26 @@ rule that earns the point. Each judgement records that answer as
 `additional_checks.outcome_quote_reworded` when it is submitted, against the quote
 its screen showed; older ones are compared with the record's extracted quote. The
 Corrections row shows judgements (Type, Original, Outcome, Outcome quote, Title;
-"neither type" counts under Type alone), and "Extracted vs Final" adds validated
+"does not meet FLoRA inclusion criteria" counts under Type alone), and "Extracted vs Final" adds validated
 articles whose final quote was reworded, leaving type changes to Type.
 
 ### The other type vs out of FLoRA
 
-Both replications and reproductions belong in FLoRA; only a record that is neither
-(`not_validation`) is rejected. Every screen names that case the same way —
-"neither type — not in FLoRA" — never "not a replication". The admin entry panel
-asks "Not a replication?" (or "Not a reproduction?") and offers two separate
-actions: "↻ It's a reproduction" switches the Type field, opens that type's fields
-and puts the cursor where they need input, to be saved with "Mark as Resolved";
-"✗ Reject — not in FLoRA" asks for confirmation and rejects. A record already
-rejected shows the same "↻ It's a reproduction", which opens its edit panel as a
-reproduction. The senior fast-reject reads "Reject — neither a replication nor a
-reproduction".
+Both replications and reproductions belong in FLoRA; a record is rejected
+(`not_validation`) when it does not meet FLoRA inclusion criteria, which a paper
+can fail even when it calls itself a replication. Every screen names that case
+the same way, "does not meet FLoRA inclusion criteria" (shortened to "does not
+meet inclusion criteria" on the validator's buttons and "Does not meet criteria"
+in the dashboard matrices), never "not a replication" or "neither type". The
+admin entry panel's "Other decisions" offers two separate actions: "↻ Is a
+reproduction" (or "↻ Is a replication") switches the Type field, opens that
+type's fields and puts the cursor where they need input, to be saved with "Mark
+as Resolved"; "✗ Reject — does not meet FLoRA inclusion criteria" asks for
+confirmation and rejects. A record already rejected shows the same "↻ Is a
+reproduction", which opens its edit panel as a reproduction. The senior
+fast-reject reads "Reject — does not meet FLoRA inclusion criteria". The stored
+values keep their names (`not_validation`, the outcome `not_a_replication`, the
+withdraw scope `not_replication`); only what people read changed.
 
 ### Auto-validation, self-approval and the decision log
 

@@ -78,7 +78,7 @@ If the proposed identity already belongs to another validated record, explicitly
 
 **Visible:** After confirmed resolve succeeds; downstream source retirement is triggered on deletion.
 
-### [It's a replication / It's a reproduction](admin-entries--it-s-a-replication-it-s-a-reproduction.md)
+### [Is a replication / Is a reproduction](admin-entries--is-a-replication-is-a-reproduction.md)
 
 Changes the edit form to the other FLoRA type and shows its fields.
 
@@ -86,9 +86,9 @@ Changes the edit form to the other FLoRA type and shows its fields.
 
 **Visible:** Form changes immediately; database only on resolve.
 
-### [Reject — not in FLoRA](admin-entries--reject-not-in-flora.md)
+### [Reject — does not meet FLoRA inclusion criteria](admin-entries--reject-does-not-meet-flora-inclusion-criteria.md)
 
-After confirmation, resolves as not_validation: neither a replication nor a reproduction.
+After confirmation, resolves as not_validation: the record does not meet FLoRA inclusion criteria, whatever the paper calls itself.
 
 **Saves:** unvalidated becomes rejected; existing validated row removed; decision audit written.
 

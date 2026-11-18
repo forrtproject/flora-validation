@@ -1,8 +1,8 @@
-# Reject — not in FLoRA
+# Reject — does not meet FLoRA inclusion criteria
 
-After confirmation, resolves as not_validation: neither a replication nor a reproduction.
+After confirmation, resolves as not_validation: the record does not meet FLoRA inclusion criteria, whatever the paper calls itself.
 
-[Open interactive guide](../index.html#view=admin&node=admin-entries--reject-not-in-flora)
+[Open interactive guide](../index.html#view=admin&node=admin-entries--reject-does-not-meet-flora-inclusion-criteria)
 
 Code snapshot: 29 October 2026, `2f3a89c`.
 
@@ -12,7 +12,7 @@ Code snapshot: 29 October 2026, `2f3a89c`.
 
 ## What happens
 
-1. After confirmation, resolves as not_validation: neither a replication nor a reproduction.
+1. After confirmation, resolves as not_validation: the record does not meet FLoRA inclusion criteria, whatever the paper calls itself.
 
 ## What is saved, and where
 

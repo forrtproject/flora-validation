@@ -810,7 +810,7 @@ def test_withdrawing_a_whole_article_takes_its_open_pairs_and_lists_the_decided(
         row = one(conn, "SELECT admin_notes, admin_checked FROM unvalidated WHERE record_id = %s", ids[name])
         assert row["admin_checked"] is True
         assert row["admin_notes"] == (
-            "Withdrawn before validation (not a replication or reproduction; whole article, "
+            "Withdrawn before validation (does not meet FLoRA inclusion criteria; whole article, "
             f"with entry {ids['main']}): A commentary, not a replication")
         decision = one(conn, "SELECT action, detail FROM admin_decisions WHERE record_id = %s", ids[name])
         assert decision == {"action": "withdrawn", "detail": {

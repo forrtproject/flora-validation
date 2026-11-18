@@ -158,7 +158,7 @@
           ]
         },
         {
-          "label": "It's a replication / It's a reproduction",
+          "label": "Is a replication / Is a reproduction",
           "does": "Changes the edit form to the other FLoRA type and shows its fields.",
           "saves": "Nothing until Mark as Resolved.",
           "when": "Form changes immediately; database only on resolve.",
@@ -171,8 +171,8 @@
           ]
         },
         {
-          "label": "Reject — not in FLoRA",
-          "does": "After confirmation, resolves as not_validation: neither a replication nor a reproduction.",
+          "label": "Reject — does not meet FLoRA inclusion criteria",
+          "does": "After confirmation, resolves as not_validation: the record does not meet FLoRA inclusion criteria, whatever the paper calls itself.",
           "saves": "unvalidated becomes rejected; existing validated row removed; decision audit written.",
           "when": "Entries immediately; derived FLoRA view follows source retirement; stored release waits for pipeline.",
           "sources": [

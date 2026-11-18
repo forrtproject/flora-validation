@@ -358,7 +358,7 @@ const conflict = (over = {}) => ({
                    `This record was merged into validated record ${B}. Nothing is left to resolve here.`);
     }
     const sectionText = await section.innerText();
-    assert.doesNotMatch(sectionText, /rejected|neither a replication nor a reproduction|Mark as Resolved|Review \/ edit fields/i);
+    assert.doesNotMatch(sectionText, /rejected|does not meet FLoRA inclusion criteria|Mark as Resolved|Review \/ edit fields/i);
     // The banner keeps the rest: this does not repeat it.
     assert.doesNotMatch(await page.locator(".admin-merged-note").innerText(), /sophie|not published|audit/);
     assert.equal(await page.locator(".admin-override-banner", { hasText: "Merged duplicate" }).count(), 1);
@@ -397,7 +397,7 @@ const conflict = (over = {}) => ({
 
     // ---- An entry rejected for what it is keeps its way back.
     await review({}, { ...record, validation_status: "rejected" });
-    assert.match(await page.locator(".not-val-decision").innerText(), /This record was rejected — neither a replication nor a reproduction/);
+    assert.match(await page.locator(".not-val-decision").innerText(), /This record was rejected: it does not meet FLoRA inclusion criteria, so it is not in FLoRA/);
     assert.equal(await page.locator("#ar-normal-form").isHidden(), true);
     await page.locator("#confirm-is-rep-btn").click();
     assert.equal(await page.locator("#ar-normal-form").isHidden(), false);

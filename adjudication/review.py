@@ -413,7 +413,7 @@ def publish_problem(cur, final: dict) -> str | None:
         return "FLoRA needs the original's DOI; this answer has none."
     kind = answer_type(final)
     if kind == "not_validation":
-        return "The answer is \"not a replication\", so there is nothing to add to FLoRA."
+        return "The answer is that it does not meet FLoRA inclusion criteria, so there is nothing to add to FLoRA."
     if kind == "reproduction":
         # The build derives the flat outcome from the axes; one undetermined axis
         # makes it cannot_be_determined, which FLoRA holds for a reproduction.
