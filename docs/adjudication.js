@@ -296,10 +296,33 @@
     success: "Success", failure: "Failure", inconclusive: "Inconclusive",
     reversal: "Reversal (the opposite effect)",
   };
+  // judging.TYPES, worded as app.js's own type question.
+  const TYPE_CHOICES = [
+    ["replication", "Replication (new data)"],
+    ["reproduction", "Reproduction (same data)"],
+    ["not_validation", "Neither: not in FLoRA's scope"],
+  ];
+  const TYPE_NAMES = { replication: "replication", reproduction: "reproduction", not_validation: "not a replication" };
+  // A reproduction's two axes, labelled as app.js's reproduction buttons
+  // (_REPRO_COMPUTATION, _REPRO_ROBUSTNESS) label them. Except
+  // cannot_be_determined: app.js calls it "Can't tell", which here is the
+  // judge's own answer (cannot_tell), so it keeps OUTCOME_LABELS' wording.
+  const AXES = [
+    ["outcome_computation", "Computation", "computation_choices"],
+    ["outcome_robustness", "Robustness", "robustness_choices"],
+  ];
+  const AXIS_LABELS = {
+    outcome_computation: {
+      "computationally reproducible": "Reproducible", "computational issues": "Issues",
+      "technical failure": "Technical failure", "not checked": "Not checked",
+    },
+    outcome_robustness: { robust: "Robust", "robustness challenges": "Challenges", "not checked": "Not checked" },
+  };
+  const AGREE_NOTE = "FLoRA and the Observatory agree";
 
   let summaryTimer = null;
   let judging = null;      // the /next answer being shown
-  let answer = null;       // {original_choice, suggested_doi_o, outcome, note}
+  let answer = null;       // {original_choice, suggested_doi_o, type, outcome, outcome_computation, outcome_robustness, note}
   let judgeSeq = 0;        // bumped by each load and by closing: late answers are dropped
   let saving = false;      // a submit or skip is on its way; nothing else may start
   let notice = "";         // said once, at the top of the next record
@@ -425,7 +448,14 @@
       focusWindow(judgeModal());
       return;
     }
-    answer = { original_choice: null, suggested_doi_o: "", outcome: null, note: "" };
+    // What FLoRA and the Observatory agree on starts selected; the judge may
+    // change it. Where the type is not asked, it is the one they agree on.
+    const defaults = judging.record.defaults || {};
+    answer = {
+      original_choice: defaults.original || null, suggested_doi_o: "",
+      type: defaults.type || (judging.record.ask_type ? null : "replication"),
+      outcome: defaults.outcome || null, outcome_computation: null, outcome_robustness: null, note: "",
+    };
     renderRecord(judging.record);
     body.scrollTop = 0;
     focusWindow(judgeModal());
@@ -453,6 +483,33 @@
     if (OUTCOME_LABELS[value]) return OUTCOME_LABELS[value];
     const text = String(value);
     return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  function axisLabel(axis, value) {
+    return (AXIS_LABELS[axis] || {})[value] || outcomeLabel(value);
+  }
+
+  // A judge's or the final answer, typed: {type, outcome, outcome_computation, outcome_robustness}.
+  function answerText(a) {
+    if (a.type === "reproduction") {
+      return `Reproduction · Computation: ${axisLabel("outcome_computation", a.outcome_computation)}`
+        + ` · Robustness: ${axisLabel("outcome_robustness", a.outcome_robustness)}`;
+    }
+    if (a.type === "not_validation") return "Not a replication";
+    return outcomeLabel(a.outcome);
+  }
+
+  // "The replication", "The reproduction", or "The paper" while that is open.
+  function paperLabel(type) {
+    return type === "replication" || type === "reproduction" ? `The ${type}` : "The paper";
+  }
+
+  // "FLoRA: reproduction · Observatory: direct replication"
+  function typeDispute(record) {
+    const kind = record.observatory.replication_type;
+    const mo = !kind ? TYPE_NAMES[record.observatory_type] || "replication"
+      : /reproduc|replica/i.test(kind) ? kind : `${kind} replication`;
+    return `FLoRA: ${TYPE_NAMES[record.flora_type] || record.flora_type} · Observatory: ${mo}`;
   }
 
   function originalBlock(side, judgingMode, missing) {
@@ -517,27 +574,82 @@
     return record.doi_required ? "I can't find it either" : "Can't tell";
   }
 
-  function optionButton(group, value, label) {
+  function answerValue(group) {
+    return group === "original" ? answer.original_choice : answer[group];
+  }
+
+  // An answer button, pressed when it is the answer so far. `flora` tags
+  // FLoRA's own answer, which that alone does not select.
+  function optionButton(group, value, label, flora = false) {
+    const pressed = !!answer && answerValue(group) === value;
+    const tag = flora ? ' <span class="adj-flora-tag" title="FLoRA\'s answer">FLoRA</span>' : "";
     return `<button type="button" class="adj-option" data-group="${group}"
-      data-value="${escapeHtml(value)}" aria-pressed="false">${escapeHtml(label)}</button>`;
+      data-value="${escapeHtml(value)}" aria-pressed="${pressed}">${escapeHtml(label)}${tag}</button>`;
+  }
+
+  function bindOptions(root) {
+    root.querySelectorAll(".adj-option").forEach(button =>
+      button.addEventListener("click", () => choose(button.dataset.group, button.dataset.value)));
+  }
+
+  // Marks a question whose answer starts selected because both sources give it.
+  function agreeNote(prefilled) {
+    return prefilled ? `<p class="adj-agree">${escapeHtml(AGREE_NOTE)}</p>` : "";
+  }
+
+  // The outcome question, as the chosen type asks it: a replication's outcome,
+  // a reproduction's two axes, or nothing for a paper outside FLoRA's scope.
+  function outcomeQuestion(record) {
+    const n = record.ask_type ? 3 : 2;
+    if (answer.type === "reproduction") {
+      const rows = AXES.map(([axis, label, key]) => `
+        <fieldset class="adj-axis"><legend>${escapeHtml(label)}</legend>
+          <div class="adj-options">${(record[key] || []).map(v => v === "cannot_tell"
+            ? optionButton(axis, v, "Can't tell")
+            : optionButton(axis, v, axisLabel(axis, v), v === record.flora[axis])).join("")}</div>
+        </fieldset>`).join("");
+      return `<fieldset class="adj-q"><legend>${n}. What did the reproduction find?</legend>
+        <p class="adj-small adj-q-help">FLoRA codes a reproduction on two questions: did the computation
+          reproduce, and is the conclusion robust?</p>${rows}</fieldset>`;
+    }
+    if (answer.type === "replication") {
+      const choices = record.outcome_choices.filter(v => v !== "cannot_tell");
+      const button = v => optionButton("outcome", v, outcomeLabel(v), v === record.flora.outcome);
+      return `<fieldset class="adj-q"><legend>${n}. What did the replication find?</legend>
+        ${agreeNote((record.defaults || {}).outcome)}
+        <div class="adj-options">${choices.filter(v => MAIN_OUTCOMES.includes(v)).map(button).join("")}</div>
+        <div class="adj-options adj-options-quiet">
+          ${choices.filter(v => !MAIN_OUTCOMES.includes(v)).map(button).join("")}
+          ${optionButton("outcome", "cannot_tell", "Can't tell")}
+        </div>
+      </fieldset>`;
+    }
+    const why = answer.type === "not_validation"
+      ? "Nothing to judge: the paper is not in FLoRA's scope."
+      : `Answer question ${n - 1} first.`;
+    return `<fieldset class="adj-q"><legend>${n}. What did it find?</legend>
+      <p class="adj-small">${escapeHtml(why)}</p></fieldset>`;
   }
 
   function renderRecord(record) {
     const body = judgeBody();
     const same = record.original_choices[0] === "both";
-    const lessCommon = record.outcome_choices.filter(v =>
-      OUTCOME_LABELS[v] && !MAIN_OUTCOMES.includes(v) && v !== "cannot_tell");
-    // FLoRA's own answer when it is a reproduction outcome (two axes).
-    const reproduction = record.outcome_choices.filter(v => !OUTCOME_LABELS[v]);
+    const defaults = record.defaults || {};
     const abstract = record.abstract_r
       ? `<div class="adj-abstract">${escapeHtml(record.abstract_r)}</div>
          <p class="adj-small">Abstract from ${record.abstract_source === "europepmc" ? "Europe PMC" : "OpenAlex"}</p>`
       : '<p class="adj-small adj-no-abstract">No abstract was found; open the paper to judge it.</p>';
+    const typeQuestion = record.ask_type ? `
+      <fieldset class="adj-q">
+        <legend>2. Is it a replication or a reproduction?</legend>
+        <div class="adj-options">${TYPE_CHOICES.map(([value, label]) => optionButton("type", value, label)).join("")}</div>
+      </fieldset>` : "";
     body.innerHTML = `${noticeLine()}
       <div class="adj-kind"><span class="adj-chip">${escapeHtml(KIND_LABELS[record.kind] || record.kind)}</span>
+        ${record.type_disputed ? `<span class="adj-chip adj-chip-type">${escapeHtml(typeDispute(record))}</span>` : ""}
         <span>${escapeHtml(KIND_HELP[record.kind] || "")}</span></div>
-      <section class="adj-rep" aria-label="The replication">
-        <p class="adj-label">The replication</p>
+      <section class="adj-rep" aria-labelledby="adj-rep-label">
+        <p class="adj-label" id="adj-rep-label">${escapeHtml(paperLabel(answer.type))}</p>
         <h3>${escapeHtml(record.title_r || "Untitled")}</h3>
         <p class="adj-small">${doiLink(record.doi_r)}${record.year_r ? ` · ${escapeHtml(record.year_r)}` : ""}</p>
         ${abstract}
@@ -545,21 +657,15 @@
       <div class="adj-sides">${floraSide(record.flora)}${observatorySide(record.observatory)}</div>
       <fieldset class="adj-q">
         <legend>1. ${same ? "Is this the right original?" : "Which original is right?"}</legend>
+        ${agreeNote(defaults.original)}
         <div class="adj-options">${record.original_choices.map(c =>
           optionButton("original", c, originalChoiceLabel(c, record))).join("")}</div>
         <label class="adj-doi hidden" id="adj-doi-row">DOI of the right original
           <input type="text" id="adj-doi" placeholder="10.xxxx/…" autocomplete="off" spellcheck="false">
         </label>
       </fieldset>
-      <fieldset class="adj-q">
-        <legend>2. What is the replication's outcome?</legend>
-        <div class="adj-options">${MAIN_OUTCOMES.map(v => optionButton("outcome", v, outcomeLabel(v))).join("")}</div>
-        <div class="adj-options adj-options-quiet">
-          ${lessCommon.map(v => optionButton("outcome", v, outcomeLabel(v))).join("")}
-          ${reproduction.map(v => optionButton("outcome", v, `As FLoRA: ${outcomeLabel(v)}`)).join("")}
-          ${optionButton("outcome", "cannot_tell", "Can't tell")}
-        </div>
-      </fieldset>
+      ${typeQuestion}
+      <div id="adj-outcome-q">${outcomeQuestion(record)}</div>
       <label class="adj-note"><span>Note <span class="adj-hint-inline">(optional, +1 point)</span></span>
         <textarea id="adj-note" rows="2" maxlength="2000" placeholder="Anything the admin should know"></textarea>
       </label>
@@ -571,8 +677,7 @@
         <button type="button" class="btn-primary" id="adj-submit-btn" disabled>Submit</button>
       </div>`;
 
-    body.querySelectorAll(".adj-option").forEach(button =>
-      button.addEventListener("click", () => choose(button.dataset.group, button.dataset.value)));
+    bindOptions(body);
     body.querySelectorAll("[data-suggest]").forEach(button =>
       button.addEventListener("click", () => {
         choose("original", "neither");
@@ -591,10 +696,12 @@
     updateJudgeActions();
   }
 
+  // group: original, type, outcome, outcome_computation or outcome_robustness.
   function choose(group, value) {
     if (saving || !answer) return;          // the answer on its way is the one shown
+    const changed = answerValue(group) !== value;
     if (group === "original") answer.original_choice = value;
-    else answer.outcome = value;
+    else answer[group] = value;
     judgeBody().querySelectorAll(`.adj-option[data-group="${group}"]`).forEach(button =>
       button.setAttribute("aria-pressed", String(button.dataset.value === value)));
     if (group === "original") {
@@ -606,20 +713,37 @@
         if (input) input.value = "";
       }
     }
+    if (group === "type" && changed) {
+      // The outcome question follows the type; answers to the other kind are kept.
+      const label = document.getElementById("adj-rep-label");
+      if (label) label.textContent = paperLabel(value);
+      const area = document.getElementById("adj-outcome-q");
+      if (area) {
+        area.innerHTML = outcomeQuestion(judging.record);
+        bindOptions(area);
+      }
+    }
     updateJudgeActions();
   }
 
   function answered() {
-    if (!judging || !answer || !answer.original_choice || !answer.outcome) return false;
-    return !(answer.original_choice === "neither" && judging.record.doi_required
-             && !answer.suggested_doi_o.trim());
+    if (!judging || !answer || !answer.original_choice || !answer.type) return false;
+    if (answer.original_choice === "neither" && judging.record.doi_required
+        && !answer.suggested_doi_o.trim()) return false;
+    if (answer.type === "replication") return !!answer.outcome;
+    if (answer.type === "reproduction") return !!(answer.outcome_computation && answer.outcome_robustness);
+    return true;                              // not_validation: nothing more to ask
   }
 
-  // Mirrors judging.points_for on the server.
+  // Mirrors judging.points_for on the server: a reproduction earns 1 per decided axis.
   function worth() {
     let points = Number(judging.points_base || 0);
     if (answer.original_choice !== "cannot_tell") points += 2;
-    if (answer.outcome !== "cannot_tell") points += 2;
+    if (answer.type === "reproduction") {
+      points += [answer.outcome_computation, answer.outcome_robustness].filter(v => v !== "cannot_tell").length;
+    } else if (answer.type === "not_validation" || answer.outcome !== "cannot_tell") {
+      points += 2;
+    }
     if (answer.note.trim()) points += 1;
     return points;
   }
@@ -638,7 +762,10 @@
     const note = document.getElementById("adj-note");
     if (note) note.readOnly = saving;
     const worthEl = document.getElementById("adj-worth");
-    if (worthEl) worthEl.textContent = done ? `Worth ${worth()} points` : "Answer both questions";
+    if (worthEl) {
+      worthEl.textContent = done ? `Worth ${worth()} points`
+        : judging?.record?.ask_type ? "Answer all three questions" : "Answer both questions";
+    }
   }
 
   function judgeError(message) {
@@ -656,10 +783,15 @@
     if (saving || !answered()) return;
     const seq = judgeSeq;
     const record = judging.record;
+    const type = answer.type;
+    const reproduction = type === "reproduction";
     const sent = {
       original_choice: answer.original_choice,
       suggested_doi_o: answer.original_choice === "neither" ? answer.suggested_doi_o.trim() || null : null,
-      outcome: answer.outcome,
+      type,
+      outcome: type === "replication" ? answer.outcome : type === "not_validation" ? "not_a_replication" : null,
+      outcome_computation: reproduction ? answer.outcome_computation : null,
+      outcome_robustness: reproduction ? answer.outcome_robustness : null,
       note: answer.note.trim() || null,
     };
     saving = true;
@@ -818,20 +950,27 @@
   function judgeSummary(j, same) {
     if (hidden(j)) return `<li><b>${escapeHtml(j.handle)}</b>: answered</li>`;
     return `<li><b>${escapeHtml(j.handle)}</b>: ${escapeHtml(choiceText(j.original_choice, j.suggested_doi_o, same))}
-      · ${escapeHtml(outcomeLabel(j.outcome))}</li>`;
+      · ${escapeHtml(answerText(j))}</li>`;
   }
 
-  function agreementBadge(value) {
+  // "Agree (original pre-filled)": both judges kept what the screen pre-selected
+  // because FLoRA and the Observatory agree on it.
+  function agreementBadge(value, judgements = []) {
     if (!value) return "";
+    const kept = ["original", "outcome"].filter(part =>
+      judgements.length >= 2 && judgements.every(j => j[`${part}_prefilled`]));
+    const extra = kept.length ? ` (${kept.join(" and ")} pre-filled)` : "";
     return value === "agree"
-      ? '<span class="adj-badge is-agree">Agree</span>'
-      : '<span class="adj-badge is-disagree">Disagree</span>';
+      ? `<span class="adj-badge is-agree">Agree${escapeHtml(extra)}</span>`
+      : `<span class="adj-badge is-disagree">Disagree${escapeHtml(extra)}</span>`;
   }
 
   function answerCell(r) {
     if (r.status === "published") return `<span class="adj-badge is-flora">${escapeHtml(r.published_record_id || "In FLoRA")}</span>`;
     if (r.status === "approved") {
-      return `${escapeHtml(outcomeLabel(r.final_outcome))}${r.final_doi_o ? `<br><small>${escapeHtml(r.final_doi_o)}</small>` : ""}
+      const final = { type: r.final_type, outcome: r.final_outcome, outcome_computation: r.final_outcome_computation,
+        outcome_robustness: r.final_outcome_robustness };
+      return `${escapeHtml(answerText(final))}${r.final_doi_o ? `<br><small>${escapeHtml(r.final_doi_o)}</small>` : ""}
         ${r.withdrawn_at ? '<br><small class="adj-muted">withdrawn from FLoRA</small>' : ""}`;
     }
     return `<span class="adj-muted">${escapeHtml(STATUS_LABELS[r.status] || r.status)}</span>`;
@@ -840,7 +979,7 @@
   function recordRow(r) {
     const same = r.kind === SAME_KIND;
     const judges = r.judgements.length
-      ? `${agreementBadge(r.agreement)}<ul class="adj-judges">${r.judgements.map(j => judgeSummary(j, same)).join("")}</ul>`
+      ? `${agreementBadge(r.agreement, r.judgements)}<ul class="adj-judges">${r.judgements.map(j => judgeSummary(j, same)).join("")}</ul>`
       : '<span class="adj-muted">None yet</span>';
     return `<tr>
       <td><span class="adj-row-title">${escapeHtml(r.title_r || r.doi_r)}</span><small>${escapeHtml(r.doi_r)}</small></td>
@@ -925,12 +1064,14 @@
     const abstract = record.abstract_r
       ? `<details class="adj-why"><summary>Abstract</summary><div class="adj-abstract">${escapeHtml(record.abstract_r)}</div></details>`
       : '<p class="adj-small">No abstract was found.</p>';
+    const paper = paperLabel(knownType(detail));
     body.innerHTML = `
       <div class="adj-kind"><span class="adj-chip">${escapeHtml(KIND_LABELS[record.kind] || record.kind)}</span>
+        ${record.type_disputed ? `<span class="adj-chip adj-chip-type">${escapeHtml(typeDispute(record))}</span>` : ""}
         <span>${escapeHtml(KIND_HELP[record.kind] || "")}</span>
         <span class="adj-status">${escapeHtml(STATUS_LABELS[record.status] || record.status)}</span></div>
-      <section class="adj-rep" aria-label="The replication">
-        <p class="adj-label">The replication</p>
+      <section class="adj-rep" aria-label="${escapeHtml(paper)}">
+        <p class="adj-label">${escapeHtml(paper)}</p>
         <h3>${escapeHtml(record.title_r || "Untitled")}</h3>
         <p class="adj-small">${doiLink(record.doi_r)}${record.year_r ? ` · ${escapeHtml(record.year_r)}` : ""}</p>
         ${abstract}
@@ -955,6 +1096,19 @@
         ${r.ruled_duplicate ? " · ruled a duplicate" : ""}${r.deleted ? " · deleted" : ""}</li>`).join("")}</ul></div>`;
   }
 
+  // The paper's type as far as the review knows it: the approved answer's, the
+  // two judges' when they give the same, or the one FLoRA and the Observatory share.
+  function knownType(detail) {
+    if (detail.final && detail.final.type) return detail.final.type;
+    const [a, b] = detail.judgements.filter(j => !hidden(j));
+    if (a && b && a.type && a.type === b.type) return a.type;
+    return (detail.record.defaults || {}).type || null;
+  }
+
+  function prefilledMark(kept) {
+    return kept ? ' <small class="adj-muted" title="Pre-selected because FLoRA and the Observatory agree">(pre-filled)</small>' : "";
+  }
+
   function judgementsTable(detail) {
     const rows = detail.judgements;
     if (!rows.length) {
@@ -965,14 +1119,14 @@
       ? "The two judges agree."
       : detail.agreement === "disagree" ? "The two judges disagree."
       : "One judgement so far; its answer is shown once the second is in, so the two stay independent.";
-    return `<p class="adj-label">Judgements ${agreementBadge(detail.agreement)}</p>
+    return `<p class="adj-label">Judgements ${agreementBadge(detail.agreement, rows)}</p>
       <div class="adj-table-wrap"><table class="adj-table adj-judgements">
         <thead><tr><th>Judge</th><th>Original</th><th>Outcome</th><th>Note</th><th>Points</th></tr></thead>
         <tbody>${rows.map(j => `<tr>
           <td><b>${escapeHtml(j.handle)}</b><small>${escapeHtml(TIER_MARKS[j.tier] || "")}${j.submitted_at ? ` · ${escapeHtml(new Date(j.submitted_at).toLocaleDateString())}` : ""}</small></td>
           ${hidden(j) ? '<td colspan="4" class="adj-muted">Hidden until both judgements are in</td>' : `
-          <td>${escapeHtml(choiceText(j.original_choice, null, same))}${j.suggested_doi_o ? `<br>${doiLink(j.suggested_doi_o)}` : ""}</td>
-          <td>${escapeHtml(outcomeLabel(j.outcome))}</td>
+          <td>${escapeHtml(choiceText(j.original_choice, null, same))}${prefilledMark(j.original_prefilled)}${j.suggested_doi_o ? `<br>${doiLink(j.suggested_doi_o)}` : ""}</td>
+          <td>${escapeHtml(answerText(j))}${prefilledMark(j.outcome_prefilled)}</td>
           <td>${escapeHtml(j.note || "")}</td>
           <td>${escapeHtml(j.points)}</td>`}</tr>`).join("")}</tbody></table></div>
       <p class="adj-small">${escapeHtml(verdict)}${detail.skipped ? ` ${detail.skipped} skipped.` : ""}</p>`;
@@ -1001,11 +1155,24 @@
 
   function pairWarning(detail) {
     const rows = detail.pair_conflicts || [];
-    if (!rows.length) return "";
-    const names = rows.map(r => `${r.display_id} (${r.source})`).join(", ");
-    return `<p class="adj-problem">FLoRA already holds this replication–original pair as ${escapeHtml(names)}.
-      The pipeline keeps one record per pair, and a record from the website (source "validated") imposes its
-      outcome on the record it keeps. After publishing, rule one of them a duplicate in Source Records.</p>`;
+    const names = list => list.map(r => `${r.display_id} (${r.source})`).join(", ");
+    const same = rows.filter(r => !r.other_type);
+    const other = rows.filter(r => r.other_type);
+    const kind = (detail.final && detail.final.type) || "replication";
+    const warnings = [];
+    if (same.length) {
+      warnings.push(`<p class="adj-problem">FLoRA already holds this replication–original pair as ${escapeHtml(names(same))}.
+        The pipeline keeps one record per pair, and a record from the website (source "validated") imposes its
+        outcome on the record it keeps. After publishing, rule one of them a duplicate in Source Records.</p>`);
+    }
+    [...new Set(other.map(r => r.type))].forEach(type => {
+      const held = other.filter(r => r.type === type);
+      warnings.push(`<p class="adj-problem">FLoRA holds this pair as a ${escapeHtml(type)}
+        (${escapeHtml(names(held))}). The pipeline keeps one record per pair and type, so publishing this
+        ${escapeHtml(kind)} adds a second record for the same pair. If this answer replaces it, rule one of them
+        a duplicate in Source Records after publishing.</p>`);
+    });
+    return warnings.join("");
   }
 
   function decisionArea(detail) {
@@ -1016,11 +1183,15 @@
         You can approve an answer once both are in.</div>`;
     }
     if (record.status === "awaiting_approval" || editing) return decisionForm(detail);
+    const quote = (label, text, source) => text
+      ? `<div><dt>${label}</dt><dd>${escapeHtml(text)}${source ? ` <small>(${escapeHtml(source)})</small>` : ""}</dd></div>` : "";
     const facts = `
       <dl class="adj-final">
         <div><dt>Original</dt><dd>${final.doi_o ? `${escapeHtml(final.title_o || "")} ${doiLink(final.doi_o)}` : "No original"}</dd></div>
-        <div><dt>Outcome</dt><dd>${escapeHtml(outcomeLabel(final.outcome))}</dd></div>
-        ${final.outcome_quote ? `<div><dt>Quote</dt><dd>${escapeHtml(final.outcome_quote)}${final.quote_source ? ` <small>(${escapeHtml(final.quote_source)})</small>` : ""}</dd></div>` : ""}
+        <div><dt>Outcome</dt><dd>${escapeHtml(answerText(final))}</dd></div>
+        ${quote("Quote", final.outcome_quote, final.quote_source)}
+        ${quote("Computation quote", final.computation_quote, final.computation_quote_source)}
+        ${quote("Robustness quote", final.robustness_quote, final.robustness_quote_source)}
         <div><dt>Based on</dt><dd>${escapeHtml({ flora: "FLoRA's answer", observatory: "the Observatory's answer", admin: "the admin's own answer" }[final.basis] || final.basis)}</dd></div>
         ${final.admin_note ? `<div><dt>Note</dt><dd>${escapeHtml(final.admin_note)}</dd></div>` : ""}
         <div><dt>Approved</dt><dd>by ${escapeHtml(final.approved_by)}, ${escapeHtml(new Date(final.approved_at).toLocaleString())}</dd></div>
@@ -1070,28 +1241,67 @@
     return options;
   }
 
-  // What the judges agreed on, as a starting point; nothing where they did not.
+  // The decision form's fields, empty.
+  const DECISION_FIELDS = ["title_o", "type", "outcome", "outcome_quote", "quote_source",
+    "outcome_computation", "computation_quote", "computation_quote_source",
+    "outcome_robustness", "robustness_quote", "robustness_quote_source", "admin_note"];
+
+  // A starting point: the approved answer when there is one, else each part
+  // (original, type, outcome or each axis) the two judges agree on, on its own.
   function prefill(detail) {
+    const out = { doi_o: undefined };
+    DECISION_FIELDS.forEach(field => { out[field] = ""; });
     if (detail.final) {
-      return { doi_o: detail.final.doi_o, title_o: detail.final.title_o, outcome: detail.final.outcome,
-        outcome_quote: detail.final.outcome_quote, quote_source: detail.final.quote_source,
-        admin_note: detail.final.admin_note };
+      DECISION_FIELDS.forEach(field => { out[field] = detail.final[field] || ""; });
+      out.doi_o = detail.final.doi_o;
+      return out;
     }
     const record = detail.record;
-    const out = { doi_o: undefined, title_o: "", outcome: "", outcome_quote: "", quote_source: "", admin_note: "" };
-    if (detail.agreement === "agree") {
-      const j = detail.judgements[0];
-      const pick = { flora: record.flora, observatory: record.observatory }[j.original_choice]
-        || (j.original_choice === "both" && record.original_choices[0] === "both" ? record.flora : null);
+    const [a, b] = detail.judgements.filter(j => !hidden(j));
+    if (!a || !b) return out;
+    const agreed = key => (a[key] && a[key] === b[key] && a[key] !== "cannot_tell" ? a[key] : null);
+    const original = agreed("original_choice");
+    if (original && (original !== "neither" || (a.suggested_doi_o || "") === (b.suggested_doi_o || ""))) {
+      const pick = { flora: record.flora, observatory: record.observatory }[original]
+        || (original === "both" && record.original_choices[0] === "both" ? record.flora : null);
       if (pick && String(pick.doi_o || "").startsWith("10.")) { out.doi_o = pick.doi_o; out.title_o = pick.title_o || ""; }
-      if (j.original_choice === "neither" && j.suggested_doi_o) out.doi_o = j.suggested_doi_o;
-      out.outcome = j.outcome;
+      if (original === "neither" && a.suggested_doi_o) out.doi_o = a.suggested_doi_o;
     }
-    if (out.outcome && out.outcome === record.flora.outcome && record.flora.outcome_quote) {
-      out.outcome_quote = record.flora.outcome_quote;
-      out.quote_source = record.flora.quote_source || "";
+    out.type = agreed("type") || "";
+    if (out.type === "replication") out.outcome = agreed("outcome") || "";
+    if (out.type === "reproduction") {
+      out.outcome_computation = agreed("outcome_computation") || "";
+      out.outcome_robustness = agreed("outcome_robustness") || "";
+    }
+    // FLoRA's quote, where the answer is FLoRA's outcome.
+    const flora = record.flora;
+    if (flora.outcome_quote && out.type === "replication" && out.outcome && out.outcome === flora.outcome) {
+      out.outcome_quote = flora.outcome_quote;
+      out.quote_source = flora.quote_source || "";
+    }
+    if (flora.outcome_quote && out.type === "reproduction" && out.outcome_computation
+        && out.outcome_computation === flora.outcome_computation && out.outcome_robustness === flora.outcome_robustness) {
+      ["computation", "robustness"].forEach(axis => {
+        out[`${axis}_quote`] = flora.outcome_quote;
+        out[`${axis}_quote_source`] = flora.quote_source || "";
+      });
     }
     return out;
+  }
+
+  function selectOptions(values, chosen, label) {
+    return `<option value="">Choose…</option>${(values || []).map(v =>
+      `<option value="${escapeHtml(v)}" ${chosen === v ? "selected" : ""}>${escapeHtml(label(v))}</option>`).join("")}`;
+  }
+
+  function quoteFields(prefix, values, title) {
+    const quote = prefix ? `${prefix}_quote` : "outcome_quote";
+    const source = prefix ? `${prefix}_quote_source` : "quote_source";
+    const id = prefix ? `adj-${prefix}` : "adj";
+    return `<label class="adj-field"><span>${title} <span class="adj-hint-inline">(optional)</span></span>
+        <textarea id="${id}-quote" rows="2">${escapeHtml(values[quote] || "")}</textarea></label>
+      <label class="adj-field"><span>Quote source <span class="adj-hint-inline">(optional)</span></span>
+        <input type="text" id="${id}-quote-source" list="adj-quote-sources" value="${escapeHtml(values[source] || "")}"></label>`;
   }
 
   function decisionForm(detail) {
@@ -1102,8 +1312,12 @@
     const radio = (value, label, extra = "") => `
       <label class="adj-radio"><input type="radio" name="adj-doi-choice" value="${escapeHtml(value)}"
         ${chosen === value ? "checked" : ""}> <span>${label}</span>${extra}</label>`;
-    const outcomes = detail.outcomes.map(o =>
-      `<option value="${escapeHtml(o)}" ${values.outcome === o ? "selected" : ""}>${escapeHtml(outcomeLabel(o))}</option>`).join("");
+    const typeRadio = (value, label) => `
+      <label class="adj-radio"><input type="radio" name="adj-type" value="${value}"
+        ${values.type === value ? "checked" : ""}> <span>${escapeHtml(label)}</span></label>`;
+    const axisSelect = (axis, label, key) => `
+      <label class="adj-field">${label}
+        <select id="adj-${axis.replace("outcome_", "")}">${selectOptions(detail[key], values[axis], v => axisLabel(axis, v))}</select></label>`;
     return `<form class="adj-decision" id="adj-decision" novalidate>
       <h4>${editing ? "Change the approved answer" : "Approve the final answer"}</h4>
       <fieldset class="adj-q"><legend>Original</legend>
@@ -1115,13 +1329,23 @@
       </fieldset>
       <label class="adj-field">Title of the original
         <input type="text" id="adj-title-o" value="${escapeHtml(values.title_o || "")}"></label>
-      <label class="adj-field">Outcome
-        <select id="adj-outcome"><option value="">Choose…</option>${outcomes}</select></label>
-      <label class="adj-field"><span>Outcome quote <span class="adj-hint-inline">(optional)</span></span>
-        <textarea id="adj-quote" rows="2">${escapeHtml(values.outcome_quote || "")}</textarea></label>
-      <label class="adj-field"><span>Quote source <span class="adj-hint-inline">(optional)</span></span>
-        <input type="text" id="adj-quote-source" list="adj-quote-sources" value="${escapeHtml(values.quote_source || "")}">
-        <datalist id="adj-quote-sources">${QUOTE_SOURCES.map(s => `<option value="${s}">`).join("")}</datalist></label>
+      <fieldset class="adj-q"><legend>Type</legend>
+        ${TYPE_CHOICES.map(([value, label]) => typeRadio(value,
+          value === "not_validation" ? "Neither: not in FLoRA's scope (not publishable)" : label)).join("")}
+      </fieldset>
+      <div id="adj-replication-fields" ${values.type === "replication" ? "" : "hidden"}>
+        <label class="adj-field">Outcome
+          <select id="adj-outcome">${selectOptions(detail.replication_outcomes, values.outcome, outcomeLabel)}</select></label>
+        ${quoteFields("", values, "Outcome quote")}
+      </div>
+      <div id="adj-reproduction-fields" ${values.type === "reproduction" ? "" : "hidden"}>
+        <p class="adj-small">One of the two may be "cannot be determined", not both.</p>
+        ${axisSelect("outcome_computation", "Computation", "computation_outcomes")}
+        ${quoteFields("computation", values, "Computation quote")}
+        ${axisSelect("outcome_robustness", "Robustness", "robustness_outcomes")}
+        ${quoteFields("robustness", values, "Robustness quote")}
+      </div>
+      <datalist id="adj-quote-sources">${QUOTE_SOURCES.map(s => `<option value="${s}">`).join("")}</datalist>
       <label class="adj-field"><span>Note <span class="adj-hint-inline">(optional, kept with the answer)</span></span>
         <textarea id="adj-admin-note" rows="2">${escapeHtml(values.admin_note || "")}</textarea></label>
       <p class="adj-error" id="adj-review-error" role="alert"></p>
@@ -1159,6 +1383,13 @@
       const other = form.querySelector('input[name="adj-doi-choice"][value="other"]');
       if (other && !other.checked) { other.checked = true; document.getElementById("adj-title-o").value = ""; }
     });
+    // The type decides which outcome fields there are.
+    form.querySelectorAll('input[name="adj-type"]').forEach(input =>
+      input.addEventListener("change", () => {
+        reviewError("");
+        document.getElementById("adj-replication-fields").hidden = input.value !== "replication";
+        document.getElementById("adj-reproduction-fields").hidden = input.value !== "reproduction";
+      }));
     form.addEventListener("submit", event => { event.preventDefault(); approve(); });
   }
 
@@ -1184,22 +1415,34 @@
   async function approve() {
     if (reviewBusy || !review) return;
     const form = document.getElementById("adj-decision");
+    const value = id => document.getElementById(id).value;
     const choice = form.querySelector('input[name="adj-doi-choice"]:checked');
     if (!choice) { reviewError("Choose the original."); return; }
-    const outcome = document.getElementById("adj-outcome").value;
-    if (!outcome) { reviewError("Choose the outcome."); return; }
     const doi = choice.value === "none" ? null
-      : choice.value === "other" ? document.getElementById("adj-other-doi").value.trim()
+      : choice.value === "other" ? value("adj-other-doi").trim()
       : doiOptions(review).find(o => o.doi.toLowerCase() === choice.value).doi;
     if (choice.value === "other" && !doi) { reviewError("Type the DOI of the original."); return; }
-    const body = {
-      doi_o: doi,
-      title_o: document.getElementById("adj-title-o").value,
-      outcome,
-      outcome_quote: document.getElementById("adj-quote").value,
-      quote_source: document.getElementById("adj-quote-source").value,
-      admin_note: document.getElementById("adj-admin-note").value,
-    };
+    const type = form.querySelector('input[name="adj-type"]:checked')?.value;
+    if (!type) { reviewError("Choose whether it is a replication or a reproduction."); return; }
+    const body = { doi_o: doi, title_o: value("adj-title-o"), type };
+    if (type === "replication") {
+      if (!value("adj-outcome")) { reviewError("Choose the outcome."); return; }
+      Object.assign(body, { outcome: value("adj-outcome"), outcome_quote: value("adj-quote"),
+        quote_source: value("adj-quote-source") });
+    }
+    if (type === "reproduction") {
+      if (!value("adj-computation") || !value("adj-robustness")) {
+        reviewError("Choose both the computation and the robustness outcome.");
+        return;
+      }
+      Object.assign(body, {
+        outcome_computation: value("adj-computation"), computation_quote: value("adj-computation-quote"),
+        computation_quote_source: value("adj-computation-quote-source"),
+        outcome_robustness: value("adj-robustness"), robustness_quote: value("adj-robustness-quote"),
+        robustness_quote_source: value("adj-robustness-quote-source"),
+      });
+    }
+    body.admin_note = value("adj-admin-note");
     const seq = reviewSeq;
     reviewError("");
     setReviewBusy(true);

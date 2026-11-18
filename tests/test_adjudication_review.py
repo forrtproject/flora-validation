@@ -14,7 +14,7 @@ from psycopg2.extras import RealDictCursor
 
 import adjudication
 from adjudication import export, judging, review
-from tests.test_adjudication_judging import DIFFERENT, NEITHER, SAME, _judge, _record
+from tests.test_adjudication_judging import DIFFERENT, NEITHER, REPRODUCTION, SAME, _judge, _record
 from tests.test_preparation_database import local_database  # noqa: F401
 
 
@@ -22,8 +22,15 @@ from tests.test_preparation_database import local_database  # noqa: F401
 # Rules
 # ---------------------------------------------------------------------------
 
-def _j(choice, outcome, suggested=None):
-    return {"original_choice": choice, "outcome": outcome, "suggested_doi_o": suggested}
+def _j(choice, outcome, suggested=None, **typed):
+    return {"original_choice": choice, "outcome": outcome, "suggested_doi_o": suggested, **typed}
+
+
+def _r(computation, robustness, choice="both"):
+    """A reproduction judgement as judging.check_answer stores it."""
+    from extractor_vocab import derive_reproduction_outcome
+    return _j(choice, derive_reproduction_outcome(computation, robustness), type="reproduction",
+              outcome_computation=computation, outcome_robustness=robustness)
 
 
 @pytest.mark.parametrize(("judgements", "verdict"), [
@@ -33,6 +40,16 @@ def _j(choice, outcome, suggested=None):
     ([_j("flora", "failed"), _j("flora", "mixed")], "disagree"),
     ([_j("neither", "failed", "10.5555/a"), _j("neither", "failed", "10.5555/b")], "disagree"),
     ([_j("cannot_tell", "failed"), _j("cannot_tell", "failed")], "disagree"),
+    # A judgement saved before types were stored is typed by its outcome.
+    ([_j("flora", "failed", type="replication"), _j("flora", "failed")], "agree"),
+    ([_r("not checked", "robust"), _r("not checked", "robust")], "agree"),
+    ([_r("not checked", "robust"), _j("both", "not checked, robust")], "agree"),
+    ([_r("not checked", "robust"), _r("not checked", "robustness challenges")], "disagree"),
+    # The same flat outcome, but a replication against a reproduction.
+    ([_j("both", "cannot_be_determined"), _r("cannot_be_determined", "robust")], "disagree"),
+    ([_r("cannot_be_determined", "robust"), _r("technical failure", "robust")], "disagree"),
+    ([_r("cannot_tell", "robust"), _r("cannot_tell", "robust")], "disagree"),
+    ([_j("both", "not_a_replication", type="not_validation"), _j("both", "not_a_replication")], "agree"),
 ])
 def test_two_judges_agree_only_on_the_same_decided_answer(judgements, verdict):
     assert review.agreement(judgements) == verdict
@@ -58,17 +75,50 @@ def test_the_basis_says_whose_answer_was_approved(record, doi, outcome, basis):
     ({"doi_o": "10.1000/a", "outcome": ""}, "vocabulary"),
     ({"doi_o": "nope", "outcome": "failed"}, "DOI"),
     ({"doi_o": "10.1000/a", "outcome": "failed", "admin_note": "x" * 2001}, "admin_note"),
+    ({"doi_o": "10.1000/a", "type": "meta-analysis", "outcome": "failed"}, "replication or a reproduction"),
+    ({"doi_o": "10.1000/a", "type": "replication", "outcome": "not checked, robust"}, "vocabulary"),
+    # An admin decides: "can't tell" is a judge's answer, not FLoRA's.
+    ({"doi_o": "10.1000/a", "type": "reproduction", "outcome_computation": "cannot_tell",
+      "outcome_robustness": "robust"}, "computation outcome from FLoRA's vocabulary"),
+    ({"doi_o": "10.1000/a", "type": "reproduction", "outcome_computation": "not checked"},
+     "robustness outcome from FLoRA's vocabulary"),
+    ({"doi_o": "10.1000/a", "type": "reproduction", "outcome_computation": "not checked",
+      "outcome_robustness": "robust", "robustness_quote": "x" * 4001}, "robustness_quote"),
 ])
 def test_a_decision_outside_floras_vocabulary_is_refused(decision, message):
     with pytest.raises(judging.Refused, match=message):
         review.check_decision(decision)
 
 
+_NO_AXES = {"outcome_computation": None, "outcome_robustness": None, "computation_quote": None,
+            "computation_quote_source": None, "robustness_quote": None, "robustness_quote_source": None}
+
+
 def test_a_decision_is_cleaned():
     assert review.check_decision({"doi_o": "https://doi.org/10.1000/A", "outcome": " Failed ",
                                   "title_o": " T ", "outcome_quote": "", "quote_source": None}) == {
-        "doi_o": "10.1000/a", "title_o": "T", "outcome": "failed", "outcome_quote": None,
-        "quote_source": None, "admin_note": None}
+        "doi_o": "10.1000/a", "title_o": "T", "type": "replication", "outcome": "failed",
+        "outcome_quote": None, "quote_source": None, **_NO_AXES, "admin_note": None}
+    # A reproduction: any pair of FLoRA's axis values, its outcome derived, a
+    # quote for each axis (a stray replication quote is not kept).
+    assert review.check_decision({
+        "doi_o": "10.1000/a", "type": "reproduction", "outcome": "failed",
+        "outcome_computation": "Cannot_Be_Determined", "outcome_robustness": "robust",
+        "outcome_quote": "stale", "quote_source": "abstract", "computation_quote": " No code. ",
+        "computation_quote_source": "full text", "robustness_quote": "Holds.",
+        "robustness_quote_source": "results"}) == {
+        "doi_o": "10.1000/a", "title_o": None, "type": "reproduction", "outcome": "cannot_be_determined",
+        "outcome_computation": "cannot_be_determined", "outcome_robustness": "robust",
+        "outcome_quote": None, "quote_source": None, "computation_quote": "No code.",
+        "computation_quote_source": "full text", "robustness_quote": "Holds.",
+        "robustness_quote_source": "results", "admin_note": None}
+    # From a page loaded before the type was asked, the flat outcome says which.
+    old = review.check_decision({"doi_o": "10.1000/a", "outcome": "not checked, robust"})
+    assert (old["type"], old["outcome_computation"], old["outcome_robustness"]) == \
+        ("reproduction", "not checked", "robust")
+    for decision in ({"outcome": "not_a_replication"}, {"type": "not_validation"}):
+        clean = review.check_decision({"doi_o": None, **decision})
+        assert (clean["type"], clean["outcome"]) == ("not_validation", "not_a_replication")
 
 
 class _AliasCursor:
@@ -95,6 +145,15 @@ ALIASES = {"failed": "failed", "successful": "successful", "unclear": "cannot_be
     # In production's outcome_alias only as a target, never as a raw value: the
     # build would refuse the whole export.
     ({"doi_o": "10.1000/a", "outcome": "cannot_be_determined"}, "would stop the export"),
+    ({"doi_o": "10.1000/a", "type": "replication", "outcome": "cannot_be_determined"}, "would stop the export"),
+    ({"doi_o": "10.1000/a", "type": "not_validation", "outcome": "not_a_replication"}, "not a replication"),
+    # One axis that cannot be determined is FLoRA's cannot_be_determined
+    # reproduction; both leave nothing to publish.
+    ({"doi_o": "10.1000/a", "type": "reproduction", "outcome": "cannot_be_determined",
+      "outcome_computation": "cannot_be_determined", "outcome_robustness": "robust"}, None),
+    ({"doi_o": "10.1000/a", "type": "reproduction", "outcome": "cannot_be_determined",
+      "outcome_computation": "cannot_be_determined", "outcome_robustness": "cannot_be_determined"},
+     "Neither the computation nor the robustness"),
 ])
 def test_only_what_the_flora_build_accepts_can_be_published(final, problem):
     found = review.publish_problem(_AliasCursor(ALIASES), final)
@@ -104,6 +163,7 @@ def test_only_what_the_flora_build_accepts_can_be_published(final, problem):
 def test_a_reproduction_is_published_on_its_two_axes():
     record = {**SAME, "record_id": uuid.uuid4(), "doi_r": "10.9/r", "imported_from": "x",
               "abstract_r": "A", "year_r": "2020"}
+    # Approved before the axes were stored: the flat outcome holds both.
     final = {"doi_o": "10.1/orig", "outcome": "computational issues, robust", "outcome_quote": "Q",
              "quote_source": "abstract", "basis": "flora", "approved_by": "Hamid", "approved_at": "t"}
     row = review.source_row(record, final, "ana; ben")
@@ -115,6 +175,60 @@ def test_a_reproduction_is_published_on_its_two_axes():
     assert (row["type"], row["outcome"], row["outcome_quote"], row["out_quote_source"]) == \
         ("replication", "failed", "Q", "abstract")
     assert row["outcome_computation"] is None and row["source"] == "adjudicated"
+    assert row["outcome_computational_quote"] is None and row["out_quote_robust_source"] is None
+    # Typed, with a quote for each axis.
+    final = {**final, "type": "reproduction", "outcome": "cannot_be_determined",
+             "outcome_computation": "technical failure", "outcome_robustness": "cannot_be_determined",
+             "computation_quote": "No data.", "computation_quote_source": "full text",
+             "robustness_quote": None, "robustness_quote_source": None}
+    row = review.source_row(record, final, "")
+    assert (row["type"], row["outcome"], row["outcome_quote"], row["out_quote_source"]) == \
+        ("reproduction", None, None, None)
+    assert {c: row[c] for c in review._AXIS_COLUMNS} == {
+        "outcome_computation": "technical failure", "outcome_computational_quote": "No data.",
+        "out_quote_computational_source": "full text", "outcome_robustness": "cannot_be_determined",
+        "outcome_robustness_quote": None, "out_quote_robust_source": None}
+    assert '"computation_quote": "No data."' in row["raw"] and '"type": "reproduction"' in row["raw"]
+
+
+def test_final_csv_and_source_records_read_the_axes_through_one_helper():
+    """export.final_rows and review.source_row both take FLoRA's columns from
+    review.flora_fields, so the two never split an answer differently."""
+    final = {"type": "reproduction", "outcome": "not checked, robust", "outcome_computation": "not checked",
+             "outcome_robustness": "robust", "outcome_quote": None, "quote_source": None,
+             "computation_quote": "Not rerun.", "computation_quote_source": "abstract",
+             "robustness_quote": "Holds.", "robustness_quote_source": "results"}
+    fields = review.flora_fields(final)
+    assert set(fields) <= set(export.FLORA_COLUMNS)
+    assert fields == {"type": "reproduction", "outcome": "not checked, robust", "outcome_quote": None,
+                      "outcome_quote_source": None, "outcome_computation": "not checked",
+                      "outcome_computational_quote": "Not rerun.",
+                      "out_quote_computational_source": "abstract", "outcome_robustness": "robust",
+                      "outcome_robustness_quote": "Holds.", "out_quote_robust_source": "results"}
+    import inspect
+    assert "flora_fields" in inspect.getsource(export.final_rows)
+    assert "flora_fields" in inspect.getsource(review.source_row)
+    assert "split_joined_outcome" not in inspect.getsource(export)
+
+
+@pytest.mark.parametrize(("final", "conflicts"), [
+    ({"doi_o": "10.1000/A", "type": "replication", "outcome": "failed"},
+     [("VAL-1", False), ("REPRO-1", True)]),
+    ({"doi_o": "10.1000/a", "type": "reproduction", "outcome": "not checked, robust"},
+     [("VAL-1", True), ("REPRO-1", False)]),
+    ({"doi_o": "10.1000/a", "outcome": "not checked, robust"}, [("VAL-1", True), ("REPRO-1", False)]),
+    ({"doi_o": "10.1000/a", "type": "not_validation", "outcome": "not_a_replication"}, []),
+    ({"doi_o": "10.9999/other", "type": "replication", "outcome": "failed"}, []),
+])
+def test_a_pair_flora_holds_as_either_type_is_a_conflict(final, conflicts):
+    in_flora = [
+        {"display_id": "VAL-1", "type": "replication", "doi_o": "https://doi.org/10.1000/a", "deleted": False},
+        {"display_id": "REPRO-1", "type": "reproduction", "doi_o": "10.1000/a", "deleted": False},
+        {"display_id": "OLD-1", "type": "replication", "doi_o": "10.1000/a", "deleted": True},
+        {"display_id": "DUP-1", "type": "replication", "doi_o": "10.1000/a", "deleted": False,
+         "ruled_duplicate": True},
+    ]
+    assert [(r["display_id"], r["other_type"]) for r in review.pair_conflicts(final, in_flora)] == conflicts
 
 
 def test_typed_notes_cannot_run_as_spreadsheet_formulas():
@@ -187,9 +301,9 @@ def test_actions_carry_the_admin(monkeypatch):
                        json={"doi_o": "10.1000/a", "outcome": "failed"}).json() == {"ok": "approve"}
     for action, name in (("undo", "undo_approval"), ("publish", "publish"), ("withdraw", "withdraw")):
         assert client.post(f"/api/admin/disagreements/records/{rid}/{action}").json() == {"ok": name}
-    assert seen[0] == ("approve", "Hamid", ({"doi_o": "10.1000/a", "title_o": None, "outcome": "failed",
-                                             "outcome_quote": None, "quote_source": None,
-                                             "admin_note": None},))
+    assert seen[0] == ("approve", "Hamid", ({"doi_o": "10.1000/a", "title_o": None, "type": None,
+                                             "outcome": "failed", "outcome_quote": None,
+                                             "quote_source": None, **_NO_AXES, "admin_note": None},))
     assert [s[0] for s in seen] == ["approve", "undo_approval", "publish", "withdraw"]
 
 
@@ -385,12 +499,18 @@ def test_answers_stay_hidden_until_both_are_in_and_judges_do_not_approve_their_o
     listed = run(review.list_records, "open")["records"][0]
     assert listed["judgements"] == [{"handle": "judge-1-0", "tier": 1}]
     detail = run(review.detail, one)["judgements"][0]
-    assert {"original_choice", "outcome", "note", "points"}.isdisjoint(detail)
+    assert set(review.ANSWER_FIELDS).isdisjoint(detail)
+    assert {"type", "outcome_computation", "outcome_robustness", "original_prefilled",
+            "outcome_prefilled"} <= set(review.ANSWER_FIELDS)
     assert detail["handle"] == "judge-1-0"
     csv_rows = list(csv.DictReader(io.StringIO(run(export.export_csv, "judgements").lstrip("\ufeff"))))
     open_row = next(r for r in csv_rows if r["adjudication_record_id"] == one)
     assert (open_row["judge_1_handle"], open_row["judge_1_outcome"], open_row["judge_1_note"]) == \
         ("judge-1-0", "", "")
+    assert all(open_row[f"judge_1_{f}"] == "" for f in export.JUDGE_FIELDS
+               if f in review.ANSWER_FIELDS), "nothing of the answer before the second is in"
+    done_row = next(r for r in csv_rows if r["adjudication_record_id"] == two)
+    assert (done_row["judge_1_type"], done_row["judge_2_outcome_prefilled"]) == ("replication", "False")
 
     # An admin account linked to one of the judges cannot approve that record.
     with conn, conn.cursor() as cur:
@@ -417,10 +537,14 @@ def test_a_pair_flora_already_holds_is_flagged_before_publishing_on_postgres(rev
                     "'10.9/rep-1', 'mixed')")
     detail = run(review.approve, x, ADMIN, {"doi_o": "10.1000/a", "outcome": "failed"})
     assert [r["display_id"] for r in detail["in_flora"]] == ["REPL-000001", "VAL-000001"]
-    assert [r["display_id"] for r in detail["pair_conflicts"]] == ["VAL-000001"]
-    # A reproduction answer is a different FLoRA row type: no conflict.
-    detail = run(review.approve, x, ADMIN, {"doi_o": "10.1000/a", "outcome": "not checked, robust"})
-    assert detail["pair_conflicts"] == []
+    assert [(r["display_id"], r["other_type"]) for r in detail["pair_conflicts"]] == [("VAL-000001", False)]
+    # A reproduction answer is another FLoRA row type: the build would keep both,
+    # so FLoRA would hold the pair twice.
+    detail = run(review.approve, x, ADMIN, {"doi_o": "10.1000/a", "type": "reproduction",
+                                              "outcome_computation": "not checked",
+                                              "outcome_robustness": "robust"})
+    assert [(r["display_id"], r["type"], r["other_type"]) for r in detail["pair_conflicts"]] == \
+        [("VAL-000001", "replication", True)]
 
 
 def test_an_outcome_the_build_would_refuse_is_never_published_on_postgres(review_db):
@@ -440,6 +564,61 @@ def test_an_outcome_the_build_would_refuse_is_never_published_on_postgres(review
     row = _source(conn, x)
     assert (row["type"], row["outcome"], row["outcome_computation"], row["outcome_robustness"]) == \
         ("reproduction", None, "not checked", "robust")
+
+
+def test_a_reproduction_with_one_axis_undetermined_is_published_on_postgres(review_db):
+    import transform_sources
+    run, conn = review_db
+    answer = {"original_choice": "both", "type": "reproduction",
+              "outcome_computation": "technical failure", "outcome_robustness": "cannot_tell"}
+    shape = {**REPRODUCTION, "flora_doi_o": "10.1000/orig", "mo_doi_o": "https://doi.org/10.1000/ORIG"}
+    x = _judged(run, conn, 1, shape, [answer, answer])
+    detail = run(review.detail, x)
+    assert detail["agreement"] == "disagree", "a judge's \"can't tell\" is no agreement"
+    assert [j["type"] for j in detail["judgements"]] == ["reproduction", "reproduction"]
+
+    both = {"doi_o": "10.1000/orig", "type": "reproduction", "outcome_computation": "cannot_be_determined",
+            "outcome_robustness": "cannot_be_determined"}
+    detail = run(review.approve, x, ADMIN, both)
+    assert "Neither the computation nor the robustness" in detail["publish_problem"]
+    with pytest.raises(judging.Refused, match="Neither the computation"):
+        run(review.publish, x, ADMIN)
+
+    detail = run(review.approve, x, ADMIN, {**both, "outcome_computation": "technical failure",
+                                              "computation_quote": "The code would not run.",
+                                              "computation_quote_source": "full text"})
+    assert detail["publish_problem"] is None
+    assert (detail["final"]["type"], detail["final"]["outcome"]) == ("reproduction", "cannot_be_determined")
+    run(review.publish, x, ADMIN)
+    row = _source(conn, x)
+    assert (row["type"], row["outcome"], row["outcome_computation"], row["outcome_robustness"],
+            row["outcome_computational_quote"], row["out_quote_computational_source"]) == \
+        ("reproduction", None, "technical failure", "cannot_be_determined",
+         "The code would not run.", "full text")
+    # The build derives the flat outcome from the axes, with no problem raised.
+    with conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        frame = transform_sources.load(cur)
+        aliases, _ = transform_sources.load_rules(cur)
+    mine = frame[frame["source"] == "adjudicated"].to_dict("records")
+    problems = {"unknown_alias": [], "bad_alias": [], "invalid_axis": []}
+    assert transform_sources.derive_outcome(mine[0], aliases, problems) == "cannot_be_determined"
+    assert problems == {"unknown_alias": [], "bad_alias": [], "invalid_axis": []}
+    assert transform_sources.derive_quote(mine[0]) == "Computational: The code would not run."
+
+    final = list(csv.DictReader(io.StringIO(run(export.export_csv, "final").lstrip("﻿"))))
+    assert {k: final[0][k] for k in ("type", "outcome", "outcome_quote", "outcome_computation",
+                                      "outcome_computational_quote", "out_quote_computational_source",
+                                      "outcome_robustness", "outcome_robustness_quote")} == {
+        "type": "reproduction", "outcome": "cannot_be_determined", "outcome_quote": "",
+        "outcome_computation": "technical failure", "outcome_computational_quote": "The code would not run.",
+        "out_quote_computational_source": "full text", "outcome_robustness": "cannot_be_determined",
+        "outcome_robustness_quote": ""}
+    rows = list(csv.DictReader(io.StringIO(run(export.export_csv, "judgements").lstrip("﻿"))))
+    assert {k: rows[0][k] for k in ("judge_1_type", "judge_1_outcome_computation", "judge_1_outcome_robustness",
+                                     "final_type", "final_outcome_computation", "final_outcome_robustness")} == {
+        "judge_1_type": "reproduction", "judge_1_outcome_computation": "technical failure",
+        "judge_1_outcome_robustness": "cannot_tell", "final_type": "reproduction",
+        "final_outcome_computation": "technical failure", "final_outcome_robustness": "cannot_be_determined"}
 
 
 def test_what_flora_already_holds_is_shown_on_postgres(review_db):

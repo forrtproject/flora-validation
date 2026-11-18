@@ -23,6 +23,12 @@ MO_ONLY = {"kind": "we found no original", "flora_doi_o": None, "mo_doi_o": "10.
            "flora_outcome": "pending", "mo_outcome": "inconclusive"}
 NEITHER = {"kind": "we found no original", "flora_doi_o": None, "mo_doi_o": None,
            "flora_outcome": "pending", "mo_outcome": "success"}
+# FLoRA codes a reproduction where the Observatory sees a direct replication
+# (10.1038/nature08637 in the PR's file).
+REPRODUCTION = {**SAME, "flora_outcome": "computational issues, robustness challenges",
+                "mo_outcome": "failure", "mo_replication_type": "direct"}
+# Same original, and the Observatory's "reversal" is FLoRA's "failed".
+AGREEING = {**SAME, "flora_outcome": "failed", "mo_outcome": "reversal"}
 
 
 # ---------------------------------------------------------------------------
@@ -41,25 +47,117 @@ def test_each_record_offers_only_the_answers_that_make_sense(record, choices):
     assert judging.doi_required(record) is (record is NEITHER)
 
 
+@pytest.mark.parametrize(("record", "flora", "disputed", "asked"), [
+    (SAME, "replication", False, False),
+    (FLORA_ONLY, None, False, True),     # cannot_be_determined: either type
+    (NEITHER, None, False, True),        # pending: FLoRA found no original to code
+    (REPRODUCTION, "reproduction", True, True),
+    ({**SAME, "mo_replication_type": "reproduction"}, "replication", True, True),
+    ({**REPRODUCTION, "mo_replication_type": "computational reproduction"}, "reproduction", False, False),
+    ({**SAME, "flora_outcome": "not_a_replication"}, "not_validation", True, True),
+])
+def test_the_type_is_asked_when_floras_is_unknown_or_disputed(record, flora, disputed, asked):
+    assert judging.flora_type(record) == flora
+    assert judging.type_disputed(record) is disputed
+    assert judging.ask_type(record) is asked
+
+
 @pytest.mark.parametrize("flora_outcome", [
     # Every reproduction outcome FLoRA gives in the PR's file.
     "computational issues, robustness challenges", "not checked, robustness challenges",
     "computationally reproducible, robustness challenges", "not checked, robust",
     "not checked, not checked", "computational issues, robust",
 ])
-def test_floras_own_reproduction_outcome_can_be_confirmed(flora_outcome):
-    choices = judging.outcome_choices({**SAME, "flora_outcome": flora_outcome})
-    assert flora_outcome in choices
-    assert choices[-1] == "cannot_tell"
+def test_floras_reproduction_outcomes_are_reproductions_on_two_axes(flora_outcome):
+    record = {**SAME, "flora_outcome": flora_outcome}
+    assert judging.flora_type(record) == "reproduction"
+    view = judging.public_view({**record, "record_id": uuid.uuid4(), "doi_r": "10.1/r"})
+    assert f"{view['flora']['outcome_computation']}, {view['flora']['outcome_robustness']}" == flora_outcome
+    # Never offered as a replication outcome: the axes ask it.
+    assert flora_outcome not in judging.outcome_choices(record)
 
 
 def test_outcomes_are_floras_vocabulary_and_nothing_else():
-    from extractor_vocab import REPLICATION_OUTCOMES
-    assert set(judging.REPLICATION_CHOICES) == set(REPLICATION_OUTCOMES)
-    assert judging.outcome_choices(MO_ONLY) == (*judging.REPLICATION_CHOICES, "cannot_tell")
+    from extractor_vocab import OUTCOME_COMPUTATION_VALUES, OUTCOME_ROBUSTNESS_VALUES, REPLICATION_OUTCOMES
+    for choices, vocabulary in ((judging.REPLICATION_CHOICES, REPLICATION_OUTCOMES),
+                                (judging.COMPUTATION_CHOICES, OUTCOME_COMPUTATION_VALUES),
+                                (judging.ROBUSTNESS_CHOICES, OUTCOME_ROBUSTNESS_VALUES)):
+        assert set(choices) == set(vocabulary) and len(choices) == len(vocabulary)
+    assert judging.outcome_choices(SAME) == (*judging.REPLICATION_CHOICES, "cannot_tell")
+    # Asked the type, "neither" there is "not a replication".
+    assert judging.outcome_choices(MO_ONLY) == (
+        *(c for c in judging.REPLICATION_CHOICES if c != "not_a_replication"), "cannot_tell")
+
+
+@pytest.mark.parametrize(("record", "expected"), [
+    (AGREEING, {"original": "both", "type": "replication", "outcome": "failed"}),
+    (SAME, {"original": "both", "type": "replication", "outcome": None}),
+    ({**DIFFERENT, "mo_outcome": "success"}, {"original": None, "type": "replication", "outcome": "successful"}),
+    ({**SAME, "mo_outcome": "inconclusive", "flora_outcome": "mixed"},
+     {"original": "both", "type": "replication", "outcome": None}),
+    # The type is asked, so not pre-selected; the shared original still is.
+    ({**SAME, "flora_outcome": "cannot_be_determined"}, {"original": "both", "type": None, "outcome": None}),
+    # Nothing at all: FLoRA's outcome is pending.
+    ({**SAME, "flora_outcome": "pending", "mo_outcome": "failure"}, {"original": None, "type": None, "outcome": None}),
+    (MO_ONLY, {"original": None, "type": None, "outcome": None}),
+    # The two disagree about the type: only the shared original.
+    (REPRODUCTION, {"original": "both", "type": None, "outcome": None}),
+    ({**AGREEING, "mo_replication_type": "reproduction"}, {"original": "both", "type": None, "outcome": None}),
+    ({**REPRODUCTION, "mo_doi_o": "10.2000/b"}, {"original": None, "type": None, "outcome": None}),
+])
+def test_what_flora_and_the_observatory_agree_on_is_pre_selected(record, expected):
+    assert judging.defaults(record) == expected
+    view = judging.public_view({**record, "record_id": uuid.uuid4(), "doi_r": "10.1/r"})
+    assert view["defaults"] == expected
+    # A type is pre-selected exactly where it is not asked.
+    assert (expected["type"] is None) is view["ask_type"]
+
+
+def test_the_observatorys_outcome_in_floras_words_is_one_function():
+    from adjudication import review
+    assert review._observatory_outcome is judging._observatory_outcome
+    assert [judging._observatory_outcome({"mo_outcome": o}) for o in
+            ("success", "Failure", "reversal", "inconclusive", None)] == \
+        ["successful", "failed", "failed", None, None]
+
+
+@pytest.mark.parametrize("computation", [*judging.COMPUTATION_CHOICES, "cannot_tell"])
+@pytest.mark.parametrize("robustness", [*judging.ROBUSTNESS_CHOICES, "cannot_tell"])
+def test_a_reproduction_takes_any_pair_of_axes(computation, robustness):
+    from extractor_vocab import derive_reproduction_outcome
+    clean = judging.check_answer(REPRODUCTION, {
+        "original_choice": "both", "type": " Reproduction ", "outcome": "ignored",
+        "outcome_computation": computation.upper(), "outcome_robustness": robustness})
+    assert (clean["type"], clean["outcome_computation"], clean["outcome_robustness"]) == \
+        ("reproduction", computation, robustness)
+    assert clean["outcome"] == derive_reproduction_outcome(computation, robustness)
+
+
+def test_an_answer_from_a_page_without_the_type_question_is_typed_by_its_outcome():
+    old = judging.check_answer(REPRODUCTION, {"original_choice": "both",
+                                              "outcome": "computational issues, robustness challenges"})
+    assert (old["type"], old["outcome_computation"], old["outcome_robustness"]) == \
+        ("reproduction", "computational issues", "robustness challenges")
+    assert judging.check_answer(SAME, {"original_choice": "both", "outcome": "failed"})["type"] == "replication"
+    # "Not a replication" is the type 'not_validation', however it is given.
+    for answer in ({"outcome": "not_a_replication"}, {"type": "replication", "outcome": "not_a_replication"},
+                   {"type": "not_validation", "outcome": "failed"}):
+        clean = judging.check_answer(SAME, {"original_choice": "both", **answer})
+        assert (clean["type"], clean["outcome"], clean["outcome_computation"]) == \
+            ("not_validation", "not_a_replication", None)
 
 
 @pytest.mark.parametrize(("record", "answer", "message"), [
+    (SAME, {"original_choice": "both", "type": "meta-analysis", "outcome": "failed"}, "replication or a reproduction"),
+    (SAME, {"original_choice": "both", "type": "replication", "outcome": "computational issues, robust"}, "the outcome"),
+    (REPRODUCTION, {"original_choice": "both", "type": "reproduction", "outcome_computation": "robust",
+                    "outcome_robustness": "robust"}, "computation"),
+    (REPRODUCTION, {"original_choice": "both", "type": "reproduction", "outcome_computation": "not checked",
+                    "outcome_robustness": "computational issues"}, "robustness"),
+    (REPRODUCTION, {"original_choice": "both", "type": "reproduction", "outcome_computation": "not checked"},
+     "robustness"),
+    (REPRODUCTION, {"original_choice": "both", "type": "reproduction", "outcome": "not checked, robust"},
+     "computation"),
     (SAME, {"original_choice": "flora", "outcome": "failed"}, "which original"),
     (DIFFERENT, {"original_choice": "flora", "outcome": "success"}, "the outcome"),
     (DIFFERENT, {"original_choice": "flora", "outcome": "failed", "suggested_doi_o": "10.3000/c"}, "goes with"),
@@ -79,7 +177,8 @@ def test_an_answer_is_cleaned():
     clean = judging.check_answer(NEITHER, {"original_choice": "neither", "outcome": " Failed ",
                                            "suggested_doi_o": "https://doi.org/10.5555/XYZ", "note": "  "})
     assert clean == {"original_choice": "neither", "suggested_doi_o": "10.5555/xyz",
-                     "outcome": "failed", "note": None}
+                     "type": "replication", "outcome": "failed", "outcome_computation": None,
+                     "outcome_robustness": None, "note": None}
 
 
 @pytest.mark.parametrize(("choice", "outcome", "note", "points"), [
@@ -92,6 +191,43 @@ def test_points_are_those_of_a_normal_judgement(choice, outcome, note, points):
     assert judging.points_for(10, {"original_choice": choice, "outcome": outcome, "note": note}) == points
 
 
+@pytest.mark.parametrize(("answer", "points"), [
+    ({"type": "reproduction", "outcome_computation": "computational issues",
+      "outcome_robustness": "robustness challenges"}, 14),
+    ({"type": "reproduction", "outcome_computation": "cannot_be_determined",
+      "outcome_robustness": "cannot_tell"}, 13),
+    ({"type": "reproduction", "outcome_computation": "cannot_tell", "outcome_robustness": "cannot_tell"}, 12),
+    ({"type": "not_validation", "outcome": "not_a_replication"}, 14),
+    ({"type": "replication", "outcome": "cannot_tell"}, 12),
+])
+def test_a_reproduction_earns_a_point_for_each_decided_axis(answer, points):
+    clean = judging.check_answer(REPRODUCTION, {"original_choice": "both", **answer})
+    assert judging.points_for(10, clean) == points
+
+
+def test_pre_selected_answers_earn_the_same_and_are_recorded_as_kept():
+    kept = judging.check_answer(AGREEING, {"original_choice": "both", "type": "replication", "outcome": "failed"})
+    assert judging.prefilled(AGREEING, kept) == {"original_prefilled": True, "outcome_prefilled": True}
+    assert judging.points_for(10, kept) == 14
+    changed = judging.check_answer(AGREEING, {"original_choice": "neither", "suggested_doi_o": "10.5555/x",
+                                              "type": "replication", "outcome": "mixed"})
+    assert judging.prefilled(AGREEING, changed) == {"original_prefilled": False, "outcome_prefilled": False}
+    assert judging.points_for(10, changed) == 14
+    original_only = judging.check_answer(SAME, {"original_choice": "both", "outcome": "failed"})
+    assert judging.prefilled(SAME, original_only) == {"original_prefilled": True, "outcome_prefilled": False}
+    # The type is disputed: only the shared original was pre-selected.
+    answer = judging.check_answer(REPRODUCTION, {"original_choice": "both", "type": "reproduction",
+                                                 "outcome_computation": "computational issues",
+                                                 "outcome_robustness": "robust"})
+    assert judging.prefilled(REPRODUCTION, answer) == {"original_prefilled": True, "outcome_prefilled": False}
+    # Nothing was pre-selected, so nothing was kept, whatever the answer.
+    elsewhere = {**REPRODUCTION, "mo_doi_o": "10.2000/b"}
+    answer = judging.check_answer(elsewhere, {"original_choice": "flora", "type": "reproduction",
+                                              "outcome_computation": "computational issues",
+                                              "outcome_robustness": "robust"})
+    assert judging.prefilled(elsewhere, answer) == {"original_prefilled": False, "outcome_prefilled": False}
+
+
 def test_validators_see_both_answers_but_never_the_raw_row():
     view = judging.public_view({**SAME, "record_id": uuid.uuid4(), "doi_r": "10.1/r",
                                 "raw": {"secret": 1}, "flora_outcome_quote": "It failed."})
@@ -99,6 +235,14 @@ def test_validators_see_both_answers_but_never_the_raw_row():
     assert view["flora"]["outcome_quote"] == "It failed."
     assert view["observatory"]["outcome"] == "success"
     assert view["original_choices"] == ["both", "neither", "cannot_tell"]
+    assert (view["flora_type"], view["observatory_type"], view["type_disputed"], view["ask_type"]) == \
+        ("replication", "replication", False, False)
+    assert view["computation_choices"] == [*judging.COMPUTATION_CHOICES, "cannot_tell"]
+    assert view["robustness_choices"] == [*judging.ROBUSTNESS_CHOICES, "cannot_tell"]
+    view = judging.public_view({**REPRODUCTION, "record_id": uuid.uuid4(), "doi_r": "10.1/r"})
+    assert (view["flora_type"], view["type_disputed"], view["ask_type"]) == ("reproduction", True, True)
+    assert (view["flora"]["outcome_computation"], view["flora"]["outcome_robustness"]) == \
+        ("computational issues", "robustness challenges")
 
 
 def test_its_lock_is_its_own():
@@ -194,8 +338,16 @@ def test_the_submitted_answer_reaches_the_rules(monkeypatch):
         json={"original_choice": "neither", "suggested_doi_o": "10.5/x", "outcome": "failed"})
     assert response.json() == {"points": 15}
     assert seen == {"validator": "Sam", "record_id": str(record_id),
-                    "answer": {"original_choice": "neither", "suggested_doi_o": "10.5/x",
-                               "outcome": "failed", "note": None}}
+                    "answer": {"original_choice": "neither", "suggested_doi_o": "10.5/x", "type": None,
+                               "outcome": "failed", "outcome_computation": None,
+                               "outcome_robustness": None, "note": None}}
+    client = _client(cursor=_a_cursor)
+    client.post(f"/api/disagreements/{record_id}/submit", json={
+        "original_choice": "both", "type": "reproduction", "outcome_computation": "not checked",
+        "outcome_robustness": "robust"})
+    assert seen["answer"] == {"original_choice": "both", "suggested_doi_o": None, "type": "reproduction",
+                              "outcome": None, "outcome_computation": "not checked",
+                              "outcome_robustness": "robust", "note": None}
 
 
 # ---------------------------------------------------------------------------
@@ -275,11 +427,13 @@ def test_two_judges_per_record_with_points_on_postgres(judging_db):
         cur.execute("SELECT handle, total_points, total_judgements FROM validators "
                     "WHERE id IN (%s, %s) ORDER BY handle", (a["coder_id"], b["coder_id"]))
         assert [tuple(r.values()) for r in cur.fetchall()] == [("ana", 15, 1), ("ben", 12, 1)]
-        cur.execute("SELECT validator_handle, original_choice, outcome, note, points "
+        cur.execute("SELECT validator_handle, original_choice, type, outcome, note, points, "
+                    "original_prefilled, outcome_prefilled "
                     "FROM adjudication.judgements WHERE record_id = %s ORDER BY validator_handle", (x,))
+        # Both name the same original, so "both" was pre-selected: ana kept it.
         assert [tuple(r.values()) for r in cur.fetchall()] == [
-            ("ana", "both", "failed", "Read the full text", 15),
-            ("ben", "cannot_tell", "successful", None, 12)]
+            ("ana", "both", "replication", "failed", "Read the full text", 15, True, False),
+            ("ben", "cannot_tell", "replication", "successful", None, 12, False, False)]
 
     # A skip frees the place and is never served to that validator again.
     assert run(judging.skip, c, y) == {"left": 1, "judged": 0}
@@ -310,3 +464,38 @@ def test_two_judges_per_record_with_points_on_postgres(judging_db):
         cur.execute("SELECT COUNT(*) FROM adjudication.judgements WHERE validator_id = %s "
                     "AND state = 'claimed'", (c["coder_id"],))
         assert cur.fetchone()[0] == 0, "the lost claim is let go"
+
+
+def test_a_reproduction_and_pre_selected_answers_on_postgres(judging_db):
+    run, conn = judging_db
+    with conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        repro = _record(cur, 1, REPRODUCTION)
+        agreeing = _record(cur, 2, {**AGREEING, "kind": "different original", "mo_doi_o": "10.2000/b",
+                                    "flora_doi_o": "10.1000/a"})
+        a, b = _judge(cur, "ana", 1), _judge(cur, "ben", 2)
+
+    view = run(judging.next_record, a)["record"]
+    assert view["record_id"] == repro and view["type_disputed"] and view["ask_type"]
+    assert view["defaults"] == {"original": "both", "type": None, "outcome": None}
+    done = run(judging.submit, a, repro, {"original_choice": "both", "type": "reproduction",
+                                          "outcome_computation": "computational issues",
+                                          "outcome_robustness": "cannot_tell"})
+    assert done["points"] == 13, "10 + 2 for the original + 1 for the one decided axis"
+
+    view = run(judging.next_record, b)["record"]
+    assert view["record_id"] == repro, "the half-judged record comes first"
+    run(judging.skip, b, repro)
+    view = run(judging.next_record, b)["record"]
+    assert view["record_id"] == agreeing
+    assert view["defaults"] == {"original": None, "type": "replication", "outcome": "failed"}
+    done = run(judging.submit, b, agreeing, {"original_choice": "flora", "type": "replication",
+                                             "outcome": "failed"})
+    assert done["points"] == 14, "a pre-selected answer earns what any other does"
+
+    with conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("SELECT validator_handle, type, outcome, outcome_computation, outcome_robustness, "
+                    "original_prefilled, outcome_prefilled FROM adjudication.judgements "
+                    "WHERE state = 'submitted' ORDER BY validator_handle")
+        assert [tuple(r.values()) for r in cur.fetchall()] == [
+            ("ana", "reproduction", "cannot_be_determined", "computational issues", "cannot_tell", True, False),
+            ("ben", "replication", "failed", None, None, False, True)]

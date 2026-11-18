@@ -22,18 +22,30 @@ const record = {
   flora: { doi_o: "10.1234/orig-a", title_o: "Anchoring, the original", outcome: "failed",
     outcome_quote: "The effect did not replicate.", quote_source: "abstract" },
   observatory: { doi_o: null, outcome: "failure", replication_type: "direct" },
+  flora_type: "replication", observatory_type: "replication", type_disputed: false, ask_type: false,
   original_choices: ["flora", "neither", "cannot_tell"], outcome_choices: [], doi_required: false,
+  defaults: { original: null, type: "replication", outcome: "failed" },
 };
+// Both kept the outcome the judging screen pre-selected (FLoRA and the Observatory agree on it).
 const judgements = [
-  { handle: "ana", tier: 1, original_choice: "flora", suggested_doi_o: null, outcome: "failed", note: "Checked", points: 15, submitted_at: "2026-10-01T10:00:00Z" },
-  { handle: "ben", tier: 2, original_choice: "flora", suggested_doi_o: null, outcome: "failed", note: null, points: 14, submitted_at: "2026-10-01T11:00:00Z" },
+  { handle: "ana", tier: 1, original_choice: "flora", suggested_doi_o: null, type: "replication", outcome: "failed",
+    outcome_computation: null, outcome_robustness: null, original_prefilled: false, outcome_prefilled: true,
+    note: "Checked", points: 15, submitted_at: "2026-10-01T10:00:00Z" },
+  { handle: "ben", tier: 2, original_choice: "flora", suggested_doi_o: null, type: "replication", outcome: "failed",
+    outcome_computation: null, outcome_robustness: null, original_prefilled: false, outcome_prefilled: true,
+    note: null, points: 14, submitted_at: "2026-10-01T11:00:00Z" },
 ];
-const outcomes = ["cannot_be_determined", "computational issues, robust", "descriptive only", "failed", "mixed",
-  "not_a_replication", "statistically successful but flawed", "successful", "uninformative"];
+const outcomes = {
+  replication_outcomes: ["successful", "failed", "mixed", "statistically successful but flawed", "uninformative",
+    "descriptive only", "cannot_be_determined"],
+  computation_outcomes: ["computationally reproducible", "computational issues", "technical failure", "not checked",
+    "cannot_be_determined"],
+  robustness_outcomes: ["robust", "robustness challenges", "not checked", "cannot_be_determined"],
+};
 
 function detail(status, final = null, extra = {}) {
   return { record: { ...record, status }, judgements, skipped: 0, agreement: "agree", final,
-    publish_problem: null, outcomes,
+    publish_problem: null, ...outcomes,
     in_flora: [{ display_id: "REPRO-000009", source: "reproductions", type: "reproduction", doi_o: "10.1234/orig-a", outcome: null, deleted: false }],
     ...extra };
 }
@@ -82,8 +94,8 @@ function finalOf(body, more = {}) {
       return route.fulfill({ json: { records: [{ record_id: ID, kind: r.kind, doi_r: r.doi_r, title_r: r.title_r,
         status: r.status, final_doi_o: current.final?.doi_o, final_outcome: current.final?.outcome,
         published_record_id: current.final?.published_record_id, withdrawn_at: null,
-        judgements: judgements.map(({ handle, tier, original_choice, suggested_doi_o, outcome }) =>
-          ({ handle, tier, original_choice, suggested_doi_o, outcome })), agreement: "agree" }] } });
+        judgements: current.judgements.map(({ note, points, submitted_at, ...listed }) => listed),
+        agreement: current.agreement }] } });
     }
     if (p === `/api/admin/disagreements/records/${ID}`) return route.fulfill({ json: current });
     const action = p.startsWith(`/api/admin/disagreements/records/${ID}/`) && p.split("/").pop();
@@ -122,7 +134,7 @@ function finalOf(body, more = {}) {
     assert.deepEqual(listQueries, ["awaiting_approval"]);
     assert.deepEqual((await page.locator(".adj-filter").allInnerTexts()).map(t => t.replace(/\s+/g, " ").trim()),
       ["Awaiting approval 1", "Approved 0", "In FLoRA 0", "Waiting for judgements 150", "All 159"]);
-    assert.match(await list.innerText(), /Agree[\s\S]*ana: FLoRA's original · Failed[\s\S]*ben: FLoRA's original · Failed/);
+    assert.match(await list.innerText(), /Agree \(outcome pre-filled\)[\s\S]*ana: FLoRA's original · Failed[\s\S]*ben: FLoRA's original · Failed/);
     assert.equal(await page.locator('.adj-download').nth(0).getAttribute("href"), "/api/admin/disagreements/export/final.csv");
     assert.equal(await page.locator('.adj-download').nth(1).getAttribute("href"), "/api/admin/disagreements/export/judgements.csv");
     // A slow filter answered after a newer one does not replace it.
@@ -162,8 +174,14 @@ function finalOf(body, more = {}) {
     await body.locator("#adj-decision").waitFor();
     assert.equal(await body.locator("[data-suggest]").count(), 0, "admins are not asked to suggest");
     assert.match(await body.locator(".adj-in-flora").innerText(), /already in Source Records[\s\S]*REPRO-000009/);
-    assert.match(await body.locator(".adj-judgements").innerText(), /ana[\s\S]*Trusted[\s\S]*Checked[\s\S]*ben[\s\S]*Senior/);
+    assert.match(await body.locator(".adj-judgements").innerText(), /ana[\s\S]*Trusted[\s\S]*Failed\s*\(pre-filled\)[\s\S]*Checked[\s\S]*ben[\s\S]*Senior/);
+    assert.match(await body.locator(".adj-label").filter({ hasText: "Judgements" }).innerText(), /Agree \(outcome pre-filled\)/i);
+    assert.equal(await body.locator(".adj-rep .adj-label").innerText(), "THE REPLICATION");
     assert.equal(await body.locator('input[name="adj-doi-choice"][value="10.1234/orig-a"]').isChecked(), true);
+    assert.equal(await body.locator('input[name="adj-type"][value="replication"]').isChecked(), true);
+    assert.equal(await body.locator("#adj-reproduction-fields").isHidden(), true);
+    assert.deepEqual(await page.locator("#adj-outcome option").evaluateAll(os => os.map(o => o.value)),
+      ["", ...outcomes.replication_outcomes], "\"not a replication\" is a type here");
     assert.equal(await page.locator("#adj-outcome").inputValue(), "failed");
     assert.equal(await page.locator("#adj-title-o").inputValue(), "Anchoring, the original");
     assert.equal(await page.locator("#adj-quote").inputValue(), "The effect did not replicate.");
@@ -182,7 +200,8 @@ function finalOf(body, more = {}) {
 
     await body.locator('[data-action="publish"]').waitFor();
     assert.deepEqual(posts[0], { action: "approve", body: { doi_o: "10.1234/orig-a", title_o: "Anchoring, the original",
-      outcome: "failed", outcome_quote: "The effect did not replicate.", quote_source: "abstract", admin_note: "Both judges agree." } });
+      type: "replication", outcome: "failed", outcome_quote: "The effect did not replicate.", quote_source: "abstract",
+      admin_note: "Both judges agree." } });
     assert.match(await body.locator(".adj-final").innerText(), /Failed[\s\S]*FLoRA's answer[\s\S]*Both judges agree\.[\s\S]*by Hamid/);
 
     // Change, then cancel: back to the approved answer.
@@ -232,6 +251,69 @@ function finalOf(body, more = {}) {
     assert.match(await body.locator(".adj-problem").innerText(),
       /already holds this replication–original pair as VAL-000004 \(validated\)[\s\S]*rule one of them a duplicate/);
     assert.equal(await body.locator('[data-action="publish"]').isEnabled(), true);
+    await page.locator("#adj-review-close").click();
+
+    // A pair FLoRA holds as the other type: the build would keep both records.
+    current = detail("approved", finalOf({ doi_o: "10.1234/orig-a", type: "replication", outcome: "failed" }),
+      { pair_conflicts: [{ display_id: "REPRO-000009", source: "reproductions", type: "reproduction",
+        doi_o: "10.1234/orig-a", other_type: true }] });
+    await list.locator("[data-review]").click();
+    await body.locator(".adj-problem").waitFor();
+    assert.equal(await body.locator(".adj-problem").count(), 1);
+    assert.match(await body.locator(".adj-problem").innerText(),
+      /FLoRA holds this pair as a reproduction \(REPRO-000009 \(reproductions\)\)[\s\S]*publishing this replication adds a second record/);
+    await page.locator("#adj-review-close").click();
+
+    // A reproduction FLoRA holds where the Observatory sees a replication. Each
+    // part both judges give is filled in on its own: the original, the type and
+    // the computation, but not the robustness they differ on.
+    const reproRecord = { ...record, status: "awaiting_approval", flora_type: "reproduction", type_disputed: true,
+      ask_type: true, defaults: { original: null, type: null, outcome: null },
+      flora: { ...record.flora, outcome: "computational issues, robust", outcome_computation: "computational issues",
+        outcome_robustness: "robust" } };
+    const reproJudgements = [
+      { ...judgements[0], type: "reproduction", outcome: "cannot_be_determined", outcome_computation: "computational issues",
+        outcome_robustness: "cannot_tell", outcome_prefilled: false },
+      { ...judgements[1], type: "reproduction", outcome: "computational issues, robust",
+        outcome_computation: "computational issues", outcome_robustness: "robust", outcome_prefilled: false },
+    ];
+    current = { ...detail("awaiting_approval"), record: reproRecord, judgements: reproJudgements, agreement: "disagree" };
+    await page.locator('.adj-filter[data-filter=""]').click();          // the list again, as it is now
+    await list.getByText("Disagree").waitFor();
+    assert.match(await list.innerText(), /Disagree[\s\S]*ana: FLoRA's original · Reproduction · Computation: Issues · Robustness: Can't tell/);
+    await list.locator("[data-review]").click();
+    await body.locator("#adj-decision").waitFor();
+    assert.equal(await body.locator(".adj-chip-type").innerText(), "FLoRA: reproduction · Observatory: direct replication");
+    assert.equal(await body.locator(".adj-rep .adj-label").innerText(), "THE REPRODUCTION");
+    assert.match(await body.locator(".adj-judgements").innerText(),
+      /Reproduction · Computation: Issues · Robustness: Can't tell[\s\S]*Reproduction · Computation: Issues · Robustness: Robust/);
+    assert.equal(await body.locator('input[name="adj-doi-choice"][value="10.1234/orig-a"]').isChecked(), true);
+    assert.equal(await body.locator('input[name="adj-type"][value="reproduction"]').isChecked(), true);
+    assert.equal(await body.locator("#adj-replication-fields").isHidden(), true);
+    assert.equal(await page.locator("#adj-computation").inputValue(), "computational issues");
+    assert.equal(await page.locator("#adj-robustness").inputValue(), "", "the judges differ on robustness");
+    assert.equal(await page.locator("#adj-computation-quote").inputValue(), "", "FLoRA's quote only with its whole answer");
+    assert.deepEqual(await page.locator("#adj-robustness option").allInnerTexts(),
+      ["Choose…", "Robust", "Challenges", "Not checked", "Cannot be determined"]);
+    // The type radio decides which fields there are.
+    await body.locator('input[name="adj-type"][value="replication"]').check();
+    assert.equal(await body.locator("#adj-replication-fields").isVisible(), true);
+    assert.equal(await body.locator("#adj-reproduction-fields").isHidden(), true);
+    await body.locator('input[name="adj-type"][value="reproduction"]').check();
+    await page.locator("#adj-approve-btn").click();
+    assert.match(await page.locator("#adj-review-error").innerText(), /both the computation and the robustness/);
+    await page.locator("#adj-robustness").selectOption("cannot_be_determined");
+    await page.locator("#adj-computation-quote").fill("The code would not run.");
+    await page.locator("#adj-computation-quote-source").fill("full text");
+    if (shots) await page.screenshot({ path: path.join(shots, "review-reproduction.png") });
+    await page.locator("#adj-approve-btn").click();
+    await body.locator('[data-action="publish"]').waitFor();
+    assert.deepEqual(posts.at(-1), { action: "approve", body: { doi_o: "10.1234/orig-a", title_o: "Anchoring, the original",
+      type: "reproduction", outcome_computation: "computational issues", computation_quote: "The code would not run.",
+      computation_quote_source: "full text", outcome_robustness: "cannot_be_determined", robustness_quote: "",
+      robustness_quote_source: "", admin_note: "" } });
+    assert.match(await body.locator(".adj-final").innerText(),
+      /Reproduction · Computation: Issues · Robustness: Cannot be determined[\s\S]*Computation quote[\s\S]*The code would not run\. \(full text\)/i);
     await page.locator("#adj-review-close").click();
 
     // While a record waits for its second judgement, the first answer is hidden.

@@ -218,6 +218,24 @@ body:has(.adj-judge-overlay:not(.hidden)) #toast.show { z-index: 9600; }
 .adj-option:hover { border-color: var(--accent); }
 .adj-option[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
 .adj-option:focus-visible, .adj-link-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* A reproduction's two axes, each its own row of answers. */
+.adj-axis { margin: 0.7rem 0 0; padding: 0; border: 0; min-width: 0; }
+.adj-axis legend { margin-bottom: 0.35rem; color: var(--ink-soft); font-size: 0.8rem; font-weight: 650; }
+.adj-q-help { margin: -0.2rem 0 0.1rem; }
+/* "FLoRA and the Observatory agree": the answer below starts selected. */
+.adj-agree { margin: -0.2rem 0 0.45rem; color: var(--green); font-size: 0.78rem; font-weight: 600; }
+/* FLoRA's own answer among the buttons. */
+.adj-flora-tag {
+  margin-left: 0.3rem;
+  padding: 0 0.3rem;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  vertical-align: 1px;
+}
+.adj-chip-type { border-color: var(--amber); color: #8a4a12; }
 
 .adj-doi, .adj-note { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.7rem; font-size: 0.85rem; font-weight: 600; }
 .adj-doi.hidden { display: none; }

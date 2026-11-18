@@ -8,18 +8,32 @@ claim stays good for as long as the place is still free. Claims, submissions
 and skips are serialised by one advisory lock, so two validators can never take
 the same place.
 
+A judgement says which original is right, whether the paper is a replication
+or a reproduction (asked only when FLoRA's type is unknown or the Observatory
+disputes it), and what it found: a replication outcome, or a reproduction's two
+axes as FLoRA's codebook codes them. What FLoRA and the Observatory already
+agree on is offered pre-selected (defaults()), and the submission records which
+of those answers the judge kept.
+
 A submission earns points as a normal judgement does (the validator's
-vote_score, plus 2 for a decided original, 2 for a decided outcome and 1 for a
-note), added to their normal total in the same transaction. The second
-submission moves the record to 'awaiting_approval'. Validators never see each
-other's answers.
+vote_score, plus 2 for a decided original, 2 for a decided outcome, or 1 for
+each decided axis of a reproduction, and 1 for a note), added to their normal
+total in the same transaction. The second submission moves the record to
+'awaiting_approval'. Validators never see each other's answers.
 """
 
 from __future__ import annotations
 
 import re
 
-from extractor_vocab import CURRENT_REPRODUCTION_OUTCOMES, FLAWED_OUTCOME, DESCRIPTIVE_OUTCOME
+from extractor_vocab import (
+    CURRENT_REPRODUCTION_OUTCOMES,
+    DESCRIPTIVE_OUTCOME,
+    FLAWED_OUTCOME,
+    REPLICATION_OUTCOMES,
+    derive_reproduction_outcome,
+    split_joined_outcome,
+)
 
 JUDGES_PER_RECORD = 2
 CLAIM_MINUTES = 60
@@ -30,13 +44,24 @@ JUDGING_LOCK_ID = 7_342_025_096
 LOCK_TIMEOUT = "5s"
 
 CANNOT_TELL = "cannot_tell"
+NOT_A_REPLICATION = "not_a_replication"
 ORIGINAL_CHOICES = ("flora", "observatory", "both", "neither", CANNOT_TELL)
+# What kind of paper it is. 'not_validation' is outside FLoRA's scope, the same
+# answer as the outcome "not_a_replication", which is stored with it.
+TYPES = ("replication", "reproduction", "not_validation")
 # FLoRA's replication outcomes (extractor_vocab.REPLICATION_OUTCOMES), in the
 # order the judging screen offers them.
 REPLICATION_CHOICES = (
     "successful", "failed", "mixed", FLAWED_OUTCOME, "uninformative",
-    DESCRIPTIVE_OUTCOME, "cannot_be_determined", "not_a_replication",
+    DESCRIPTIVE_OUTCOME, "cannot_be_determined", NOT_A_REPLICATION,
 )
+# A reproduction's two independent axes (extractor_vocab.OUTCOME_COMPUTATION_VALUES
+# and OUTCOME_ROBUSTNESS_VALUES), in the order the screens offer them.
+COMPUTATION_CHOICES = (
+    "computationally reproducible", "computational issues", "technical failure",
+    "not checked", "cannot_be_determined",
+)
+ROBUSTNESS_CHOICES = ("robust", "robustness challenges", "not checked", "cannot_be_determined")
 # Served first: records already half judged, then the kinds in this order. The
 # analysis spec samples every 'same original, different outcome' row.
 KIND_ORDER = (
@@ -60,6 +85,10 @@ class Refused(Exception):
 
 def _doi(value) -> str:
     return _DOI_PREFIX.sub("", str(value or "").strip()).strip().lower()
+
+
+def _word(value) -> str:
+    return str(value or "").strip().lower()
 
 
 def can_judge(validator: dict) -> bool:
@@ -91,14 +120,117 @@ def doi_required(record: dict) -> bool:
     return not _doi(record.get("flora_doi_o")) and not _doi(record.get("mo_doi_o"))
 
 
+def outcome_type(outcome) -> str | None:
+    """The type a flat FLoRA outcome implies, or None when it implies none:
+    "pending", a blank, or cannot_be_determined, which a replication and a
+    reproduction (with an axis undetermined) share."""
+    value = _word(outcome)
+    if value in CURRENT_REPRODUCTION_OUTCOMES or split_joined_outcome(value) != (None, None):
+        return "reproduction"
+    if value == NOT_A_REPLICATION:
+        return "not_validation"
+    if value in REPLICATION_OUTCOMES and value != "cannot_be_determined":
+        return "replication"
+    return None
+
+
+def flora_type(record: dict) -> str | None:
+    """FLoRA's type for the record. PR #143's file has no type column, so its
+    outcome is the only evidence; None where that says nothing."""
+    return outcome_type(record.get("flora_outcome"))
+
+
+def observatory_type(record: dict) -> str:
+    """The Observatory's database is of replications; its replication_type
+    ('direct', 'close extension', 'conceptual', …) never names a reproduction in
+    PR #143's file, but would be believed if it did."""
+    return "reproduction" if "reproduc" in _word(record.get("mo_replication_type")) else "replication"
+
+
+def type_disputed(record: dict) -> bool:
+    """FLoRA holds the paper as one type and the Observatory as another."""
+    flora = flora_type(record)
+    return flora is not None and flora != observatory_type(record)
+
+
+def ask_type(record: dict) -> bool:
+    """Whether the judge is asked the type: when FLoRA's is unknown or disputed."""
+    return flora_type(record) is None or type_disputed(record)
+
+
 def outcome_choices(record: dict) -> tuple[str, ...]:
-    """FLoRA's replication outcomes, FLoRA's own answer when it is a reproduction
-    outcome (two axes, e.g. "computational issues, robust"), and "can't tell"."""
-    extra = ()
-    flora = str(record.get("flora_outcome") or "").strip().lower()
-    if flora in CURRENT_REPRODUCTION_OUTCOMES:
-        extra = (flora,)
-    return (*REPLICATION_CHOICES, *extra, CANNOT_TELL)
+    """FLoRA's replication outcomes and "can't tell". Where the judge is asked
+    the type, "not a replication" is the type question's "neither" instead."""
+    choices = REPLICATION_CHOICES
+    if ask_type(record):
+        choices = tuple(c for c in choices if c != NOT_A_REPLICATION)
+    return (*choices, CANNOT_TELL)
+
+
+def _observatory_outcome(record: dict) -> str | None:
+    """The Observatory's outcome in FLoRA's words, where there is one. A reversal
+    (a significant effect the other way) is a failed replication; "inconclusive"
+    has no single counterpart, so approving one of FLoRA's words for it counts as
+    the admin's own answer."""
+    return {"success": "successful", "failure": "failed", "reversal": "failed"}.get(
+        _word(record.get("mo_outcome")))
+
+
+def defaults(record: dict) -> dict:
+    """The answers FLoRA and the Observatory already agree on, which the judging
+    screen pre-selects (the judge may still change them): the original when both
+    name the same one, the type when it is not asked, and the outcome when
+    FLoRA's replication outcome is the Observatory's in FLoRA's words. Nothing
+    when FLoRA's outcome is pending (it found no original to code); only the
+    original when the two disagree about the type."""
+    out = {"original": None, "type": None, "outcome": None}
+    flora_outcome = _word(record.get("flora_outcome"))
+    if flora_outcome in ("", "pending"):
+        return out
+    if original_choices(record)[0] == "both":
+        out["original"] = "both"
+    if type_disputed(record):
+        return out
+    kind = flora_type(record)          # not disputed, so the Observatory's too
+    out["type"] = kind
+    if kind == "replication" and _observatory_outcome(record) == flora_outcome:
+        out["outcome"] = flora_outcome
+    return out
+
+
+def check_outcome(answer: dict, *, decision: bool = False) -> tuple[str, str, str | None, str | None]:
+    """(type, outcome, computation, robustness), cleaned, or Refused(422).
+
+    A reproduction is answered on its two axes, any pair of FLoRA's values, and
+    its outcome is the flat value derived from them; "not a replication" is the
+    type 'not_validation'. An answer without a type (from a page loaded before
+    the type was asked) is typed by its outcome. A judge may also say they
+    cannot tell; an admin's *decision* may not."""
+    kind = _word(answer.get("type"))
+    outcome = _word(answer.get("outcome"))
+    computation = _word(answer.get("outcome_computation"))
+    robustness = _word(answer.get("outcome_robustness"))
+    if not kind:
+        kind = "reproduction" if outcome_type(outcome) == "reproduction" else "replication"
+        if kind == "reproduction":
+            computation, robustness = split_joined_outcome(outcome)
+    if kind not in TYPES:
+        raise Refused(422, "Choose whether it is a replication or a reproduction")
+    unsure = () if decision else (CANNOT_TELL,)
+    vocabulary = " from FLoRA's vocabulary" if decision else ""
+    if kind == "replication":
+        if outcome not in (*REPLICATION_CHOICES, *unsure):
+            raise Refused(422, f"Choose the outcome{vocabulary}")
+        if outcome != NOT_A_REPLICATION:
+            return kind, outcome, None, None
+        kind = "not_validation"
+    if kind == "not_validation":
+        return kind, NOT_A_REPLICATION, None, None
+    if computation not in (*COMPUTATION_CHOICES, *unsure):
+        raise Refused(422, f"Choose the computation outcome{vocabulary}")
+    if robustness not in (*ROBUSTNESS_CHOICES, *unsure):
+        raise Refused(422, f"Choose the robustness outcome{vocabulary}")
+    return kind, derive_reproduction_outcome(computation, robustness), computation, robustness
 
 
 def check_answer(record: dict, answer: dict) -> dict:
@@ -117,23 +249,37 @@ def check_answer(record: dict, answer: dict) -> dict:
         raise Refused(422, "That is FLoRA's original: choose FLoRA's answer instead")
     if suggested and suggested == _doi(record.get("mo_doi_o")):
         raise Refused(422, "That is the Observatory's original: choose its answer instead")
-    outcome = str(answer.get("outcome") or "").strip().lower()
-    if outcome not in outcome_choices(record):
-        raise Refused(422, "Choose the outcome")
+    kind, outcome, computation, robustness = check_outcome(answer)
     note = str(answer.get("note") or "").strip()
     if len(note) > NOTE_LIMIT:
         raise Refused(422, f"The note is longer than {NOTE_LIMIT} characters")
-    return {"original_choice": choice, "suggested_doi_o": suggested or None,
-            "outcome": outcome, "note": note or None}
+    return {"original_choice": choice, "suggested_doi_o": suggested or None, "type": kind,
+            "outcome": outcome, "outcome_computation": computation,
+            "outcome_robustness": robustness, "note": note or None}
+
+
+def prefilled(record: dict, clean: dict) -> dict:
+    """Which of the pre-selected answers (defaults()) the judge submitted."""
+    offered = defaults(record)
+    return {
+        "original_prefilled": offered["original"] is not None
+                              and clean["original_choice"] == offered["original"],
+        "outcome_prefilled": offered["outcome"] is not None and clean["type"] == "replication"
+                             and clean["outcome"] == offered["outcome"],
+    }
 
 
 def points_for(vote_score: int, answer: dict) -> int:
     """As a normal judgement: the validator's base, +2 for a decided original,
-    +2 for a decided outcome, +1 for a note."""
+    +2 for a decided outcome (+1 for each decided axis of a reproduction), +1
+    for a note. A pre-selected answer counts as any other."""
     points = int(vote_score or 0)
     if answer["original_choice"] != CANNOT_TELL:
         points += 2
-    if answer["outcome"] != CANNOT_TELL:
+    if answer.get("type") == "reproduction":
+        points += sum(axis != CANNOT_TELL
+                      for axis in (answer["outcome_computation"], answer["outcome_robustness"]))
+    elif answer["outcome"] != CANNOT_TELL:
         points += 2
     if answer["note"]:
         points += 1
@@ -143,6 +289,7 @@ def points_for(vote_score: int, answer: dict) -> int:
 def public_view(record: dict) -> dict:
     """What a validator sees: both answers, labelled by source. Never another
     validator's judgement, never the raw CSV row."""
+    computation, robustness = split_joined_outcome(record.get("flora_outcome"))
     return {
         "record_id": str(record["record_id"]),
         "kind": record["kind"],
@@ -155,6 +302,9 @@ def public_view(record: dict) -> dict:
             "doi_o": record.get("flora_doi_o"),
             "title_o": record.get("flora_title_o"),
             "outcome": record.get("flora_outcome"),
+            # A reproduction outcome's two axes; None for any other outcome.
+            "outcome_computation": computation,
+            "outcome_robustness": robustness,
             "outcome_quote": record.get("flora_outcome_quote"),
             "quote_source": record.get("flora_quote_source"),
             "link_method": record.get("flora_link_method"),
@@ -169,9 +319,16 @@ def public_view(record: dict) -> dict:
             "discipline": record.get("mo_discipline"),
             "confidence": record.get("mo_confidence"),
         },
+        "flora_type": flora_type(record),
+        "observatory_type": observatory_type(record),
+        "type_disputed": type_disputed(record),
+        "ask_type": ask_type(record),
         "original_choices": list(original_choices(record)),
         "outcome_choices": list(outcome_choices(record)),
+        "computation_choices": [*COMPUTATION_CHOICES, CANNOT_TELL],
+        "robustness_choices": [*ROBUSTNESS_CHOICES, CANNOT_TELL],
         "doi_required": doi_required(record),
+        "defaults": defaults(record),
     }
 
 
@@ -328,12 +485,16 @@ def submit(cur, validator: dict, record_id: str, answer: dict) -> dict:
         """
         UPDATE adjudication.judgements
            SET state = 'submitted', original_choice = %(original_choice)s,
-               suggested_doi_o = %(suggested_doi_o)s, outcome = %(outcome)s,
+               suggested_doi_o = %(suggested_doi_o)s, type = %(type)s, outcome = %(outcome)s,
+               outcome_computation = %(outcome_computation)s,
+               outcome_robustness = %(outcome_robustness)s,
+               original_prefilled = %(original_prefilled)s,
+               outcome_prefilled = %(outcome_prefilled)s,
                note = %(note)s, points = %(points)s, submitted_at = NOW(),
                validator_handle = %(handle)s, validator_tier = %(tier)s
          WHERE record_id = %(rid)s AND validator_id = %(vid)s AND state = 'claimed'
         """,
-        {**clean, "points": points, "handle": validator["handle"],
+        {**clean, **prefilled(record, clean), "points": points, "handle": validator["handle"],
          "tier": int(validator["validator_tier"]), "rid": record_id, "vid": vid},
     )
     # The validator's normal total, as every judgement adds to it.

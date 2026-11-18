@@ -25,24 +25,47 @@ const DIFFERENT = {
     link_method: "llm_references", link_confidence: "high", link_evidence: "Cites Smith (2001) as the target." },
   observatory: { doi_o: "10.1234/orig-b", title_o: "Another original", outcome: "failure",
     replication_type: "direct", discipline: "psychology", confidence: "high" },
+  flora_type: "replication", observatory_type: "replication", type_disputed: false, ask_type: false,
   original_choices: ["flora", "observatory", "both", "neither", "cannot_tell"],
   outcome_choices: ["successful", "failed", "mixed", "statistically successful but flawed", "uninformative",
     "descriptive only", "cannot_be_determined", "not_a_replication", "cannot_tell"],
+  computation_choices: ["computationally reproducible", "computational issues", "technical failure",
+    "not checked", "cannot_be_determined", "cannot_tell"],
+  robustness_choices: ["robust", "robustness challenges", "not checked", "cannot_be_determined", "cannot_tell"],
   doi_required: false,
+  // Both say failed (the Observatory's "failure"): that outcome starts selected.
+  defaults: { original: null, type: "replication", outcome: "failed" },
 };
+// Asked the type, "neither" there is "not a replication".
+const ASKED_OUTCOMES = DIFFERENT.outcome_choices.filter(v => v !== "not_a_replication");
 const NONE = {
   ...DIFFERENT, record_id: "22222222-2222-2222-2222-222222222222", kind: "we found no original",
   title_r: "A <b>bold</b> replication", abstract_r: null, abstract_source: null,
   flora: { doi_o: null, outcome: "pending" },
   observatory: { doi_o: null, outcome: "success" },
   original_choices: ["neither", "cannot_tell"], doi_required: true,
+  // FLoRA's outcome is pending: its type is unknown, so it is asked, and nothing is pre-selected.
+  flora_type: null, ask_type: true, outcome_choices: ASKED_OUTCOMES,
+  defaults: { original: null, type: null, outcome: null },
 };
+// FLoRA codes a reproduction where the Observatory sees a direct replication.
 const SAME = {
   ...DIFFERENT, record_id: "33333333-3333-3333-3333-333333333333", kind: "same original, different outcome",
-  flora: { ...DIFFERENT.flora, doi_o: "10.1234/orig-a", outcome: "computational issues, robust" },
-  observatory: { ...DIFFERENT.observatory, doi_o: "10.1234/orig-a", outcome: "success" },
+  flora: { ...DIFFERENT.flora, doi_o: "10.1234/orig-a", outcome: "computational issues, robustness challenges",
+    outcome_computation: "computational issues", outcome_robustness: "robustness challenges" },
+  observatory: { ...DIFFERENT.observatory, doi_o: "10.1234/orig-a", outcome: "failure" },
   original_choices: ["both", "neither", "cannot_tell"],
-  outcome_choices: [...DIFFERENT.outcome_choices.slice(0, -1), "computational issues, robust", "cannot_tell"],
+  flora_type: "reproduction", type_disputed: true, ask_type: true, outcome_choices: ASKED_OUTCOMES,
+  // They disagree about the type, but both name the same original: only that is pre-selected.
+  defaults: { original: "both", type: null, outcome: null },
+};
+// The same original, and the Observatory's "reversal" is FLoRA's "failed".
+const AGREED = {
+  ...DIFFERENT, record_id: "44444444-4444-4444-4444-444444444444", kind: "same original, different outcome",
+  flora: { ...DIFFERENT.flora, doi_o: "10.1234/orig-a" },
+  observatory: { ...DIFFERENT.observatory, doi_o: "10.1234/orig-a", outcome: "reversal" },
+  original_choices: ["both", "neither", "cannot_tell"],
+  defaults: { original: "both", type: "replication", outcome: "failed" },
 };
 
 function serveFiles({ delayScript = 0, scriptMissing = false } = {}) {
@@ -132,11 +155,12 @@ const later = ms => new Promise(resolve => setTimeout(resolve, ms));
       await page.close();
     }
 
-    // The whole flow: open, judge one, suggest a DOI on the next, confirm FLoRA's
-    // reproduction outcome on the third by skipping it, then the done message.
+    // The whole flow: open, judge one, suggest a DOI and say the type on the next,
+    // judge a reproduction on its two axes on the third, find the fourth
+    // pre-selected and skip it, then the done message.
     {
-      const queue = [DIFFERENT, NONE, SAME, null];
-      let left = 3, judged = 0;
+      const queue = [DIFFERENT, NONE, SAME, AGREED, null];
+      let left = 4, judged = 0;
       const api = {
         summary: () => ({ available: true, left, judged }),
         next: () => ({ record: queue[0], points_base: 10, left, judged }),
@@ -147,7 +171,7 @@ const later = ms => new Promise(resolve => setTimeout(resolve, ms));
       await page.evaluate(() => window.Adjudication.initValidator());
       const button = page.locator("#adj-validator-btn");
       await button.waitFor();
-      assert.match(await page.locator("#adj-validator-bar").innerText(), /3 Observatory disagreements left for you to judge/);
+      assert.match(await page.locator("#adj-validator-bar").innerText(), /4 Observatory disagreements left for you to judge/);
       // At the top of the work area, not in the header: "Sign out" stays on screen.
       assert.equal(await page.evaluate(() =>
         document.querySelector("#game-screen .game-area").firstElementChild.id), "adj-validator-bar");
@@ -160,19 +184,33 @@ const later = ms => new Promise(resolve => setTimeout(resolve, ms));
       await button.click();
       const body = page.locator("#adj-judge-body");
       await body.locator(".adj-side-flora").waitFor();
-      assert.match(await page.locator("#adj-judge-progress").innerText(), /3 left · 0 judged by you/);
+      assert.match(await page.locator("#adj-judge-progress").innerText(), /4 left · 0 judged by you/);
       assert.equal(await body.locator(".adj-side-name").first().innerText(), "FLoRA");
       assert.equal(await body.locator(".adj-side-name").nth(1).innerText(), "Metascience Observatory");
       assert.match(await body.locator(".adj-side-flora").innerText(), /The effect did not replicate\.[\s\S]*Quoted from the abstract/);
       assert.match(await body.locator(".adj-side-mo").innerText(), /Failure[\s\S]*direct replication · psychology · high confidence/);
       assert.match(await body.locator(".adj-abstract").innerText(), /p < \.05 and n > 300/);
+      assert.equal(await body.locator("#adj-rep-label").innerText(), "THE REPLICATION");
       assert.deepEqual(await body.locator('.adj-option[data-group="original"]').allInnerTexts(),
         ["FLoRA's original", "The Observatory's original", "Both (it replicates both)", "Neither: suggest the right one", "Can't tell"]);
+      // Two questions: the type is not asked where FLoRA and the Observatory agree on it.
+      assert.deepEqual(await body.locator(".adj-q > legend").allInnerTexts(),
+        ["1. Which original is right?", "2. What did the replication find?"]);
+      assert.equal(await body.locator(".adj-chip-type").count(), 0);
+      // The outcome both give starts selected, says so, and carries FLoRA's tag.
+      const failed = body.locator('.adj-option[data-group="outcome"][data-value="failed"]');
+      assert.equal(await failed.getAttribute("aria-pressed"), "true");
+      assert.equal(await failed.locator(".adj-flora-tag").innerText(), "FLoRA");
+      assert.equal(await body.locator(".adj-flora-tag").count(), 1);
+      assert.deepEqual(await body.locator(".adj-agree").allInnerTexts(), ["FLoRA and the Observatory agree"]);
+      assert.equal(await body.locator('.adj-option[data-group="original"][aria-pressed="true"]').count(), 0);
+      assert.equal(await body.locator(".adj-option", { hasText: "As FLoRA" }).count(), 0);
       const submit = page.locator("#adj-submit-btn");
       assert.equal(await submit.isDisabled(), true);
       assert.equal(await page.locator("#adj-worth").innerText(), "Answer both questions");
       await body.locator('.adj-option[data-value="flora"]').click();
-      await body.locator('.adj-option[data-group="outcome"][data-value="failed"]').click();
+      assert.equal(await page.locator("#adj-worth").innerText(), "Worth 14 points", "a pre-selected answer earns as any other");
+      await failed.click();
       assert.equal(await page.locator("#adj-worth").innerText(), "Worth 14 points");
       await page.locator("#adj-note").fill("Checked the reference list.");
       assert.equal(await page.locator("#adj-worth").innerText(), "Worth 15 points");
@@ -203,7 +241,8 @@ const later = ms => new Promise(resolve => setTimeout(resolve, ms));
       assert.equal(await body.locator(".adj-notice").innerText(), "Saved: +15 points.");
       const submitted = calls.find(c => c.name === "submit");
       assert.equal(submitted.path, `/api/disagreements/${DIFFERENT.record_id}/submit`);
-      assert.deepEqual(submitted.body, { original_choice: "flora", suggested_doi_o: null, outcome: "failed", note: "Checked the reference list." });
+      assert.deepEqual(submitted.body, { original_choice: "flora", suggested_doi_o: null, type: "replication",
+        outcome: "failed", outcome_computation: null, outcome_robustness: null, note: "Checked the reference list." });
       assert.equal(await page.locator("#stat-points").innerText(), "115");
       assert.equal(await body.locator(".adj-none").count(), 2);
       assert.match(await body.locator(".adj-side-flora").innerText(), /We couldn't find the original\.\s*Suggest one/);
@@ -218,25 +257,88 @@ const later = ms => new Promise(resolve => setTimeout(resolve, ms));
       assert.equal(await page.locator("#adj-doi-row").isVisible(), true);
       assert.equal(await page.evaluate(() => document.activeElement.id), "adj-doi");
       assert.equal(await body.locator('.adj-option[data-value="neither"]').getAttribute("aria-pressed"), "true");
+      // FLoRA's outcome is pending, so its type is unknown: asked, with nothing pre-selected.
+      assert.deepEqual(await body.locator(".adj-q > legend").allInnerTexts(),
+        ["1. Which original is right?", "2. Is it a replication or a reproduction?", "3. What did it find?"]);
+      assert.equal(await body.locator(".adj-agree").count(), 0);
+      assert.equal(await body.locator("#adj-rep-label").innerText(), "THE PAPER");
+      assert.equal(await page.locator("#adj-worth").innerText(), "Answer all three questions");
+      await body.locator('.adj-option[data-group="type"][data-value="replication"]').click();
+      assert.equal(await body.locator("#adj-rep-label").innerText(), "THE REPLICATION");
+      assert.equal(await body.locator('.adj-option[data-group="outcome"][data-value="not_a_replication"]').count(), 0,
+        "\"not a replication\" is the type question's \"neither\"");
       await body.locator('.adj-option[data-group="outcome"][data-value="mixed"]').click();
       assert.equal(await submit.isDisabled(), true, "the DOI is required when no side has one");
       await page.locator("#adj-doi").fill("10.5555/found");
       assert.equal(await submit.isEnabled(), true);
       await submit.click();
 
-      // The third: same original, FLoRA's reproduction outcome offered as is.
+      // The third: FLoRA's reproduction against the Observatory's replication.
       await body.locator('.adj-option[data-value="both"]').waitFor();
       assert.deepEqual(calls.filter(c => c.name === "submit")[1].body,
-        { original_choice: "neither", suggested_doi_o: "10.5555/found", outcome: "mixed", note: null });
+        { original_choice: "neither", suggested_doi_o: "10.5555/found", type: "replication", outcome: "mixed",
+          outcome_computation: null, outcome_robustness: null, note: null });
+      assert.equal(await body.locator(".adj-chip-type").innerText(), "FLoRA: reproduction · Observatory: direct replication");
       assert.equal(await body.locator(".adj-q legend").first().innerText(), "1. Is this the right original?");
       assert.equal(await body.locator('.adj-option[data-value="both"]').innerText(), "Yes, this is the original");
-      assert.equal(await body.locator('.adj-option[data-value="computational issues, robust"]').innerText(),
-        "As FLoRA: Computational issues, robust");
+      assert.deepEqual(await body.locator('.adj-option[aria-pressed="true"]').allInnerTexts(),
+        ["Yes, this is the original"], "only the shared original is pre-selected");
+      assert.deepEqual(await body.locator(".adj-agree").allInnerTexts(), ["FLoRA and the Observatory agree"]);
+      assert.equal(await body.locator(".adj-option", { hasText: "As FLoRA" }).count(), 0);
+      assert.deepEqual(await body.locator('.adj-option[data-group="type"]').allInnerTexts(),
+        ["Replication (new data)", "Reproduction (same data)", "Neither: not in FLoRA's scope"]);
+      await body.locator('.adj-option[data-value="both"]').click();
+      // Chosen with the keyboard: the outcome question becomes the reproduction's two axes.
+      await body.locator('.adj-option[data-group="type"][data-value="reproduction"]').focus();
+      await page.keyboard.press("Enter");
+      assert.equal(await page.evaluate(() => document.activeElement.dataset.value), "reproduction", "focus stays put");
+      assert.equal(await body.locator("#adj-rep-label").innerText(), "THE REPRODUCTION");
+      assert.equal(await body.locator("#adj-outcome-q .adj-q > legend").innerText(), "3. What did the reproduction find?");
+      assert.deepEqual(await body.locator(".adj-axis > legend").allInnerTexts(), ["Computation", "Robustness"]);
+      assert.deepEqual(await body.locator('.adj-option[data-group="outcome_computation"]').allInnerTexts(),
+        ["Reproducible", "Issues FLoRA", "Technical failure", "Not checked", "Cannot be determined", "Can't tell"]);
+      assert.deepEqual(await body.locator('.adj-option[data-group="outcome_robustness"]').allInnerTexts(),
+        ["Robust", "Challenges FLoRA", "Not checked", "Cannot be determined", "Can't tell"]);
+      assert.equal(await body.locator('#adj-outcome-q .adj-option[aria-pressed="true"]').count(), 0,
+        "FLoRA's answer is tagged, not chosen");
+      assert.equal(await submit.isDisabled(), true, "both axes are needed");
+      await body.locator('.adj-option[data-group="outcome_computation"][data-value="computational issues"]').click();
+      await body.locator('.adj-option[data-group="outcome_robustness"][data-value="robust"]').focus();
+      await page.keyboard.press("Space");
+      assert.equal(await page.locator("#adj-worth").innerText(), "Worth 14 points", "1 point for each decided axis");
+      await body.locator('.adj-option[data-group="outcome_robustness"][data-value="cannot_tell"]').click();
+      assert.equal(await page.locator("#adj-worth").innerText(), "Worth 13 points");
+      // Back to a replication and again: the axes are kept.
+      await body.locator('.adj-option[data-group="type"][data-value="replication"]').click();
+      assert.equal(await body.locator("#adj-outcome-q .adj-q > legend").innerText(), "3. What did the replication find?");
+      assert.equal(await submit.isDisabled(), true);
+      await body.locator('.adj-option[data-group="type"][data-value="reproduction"]').click();
+      assert.equal(await body.locator('.adj-option[data-group="outcome_computation"][data-value="computational issues"]')
+        .getAttribute("aria-pressed"), "true");
+      assert.equal(await page.locator("#adj-worth").innerText(), "Worth 13 points");
+      if (shots) await page.screenshot({ path: path.join(shots, "judging-reproduction.png"), fullPage: false });
+      await submit.click();
+
+      // The fourth: what FLoRA and the Observatory agree on starts selected; it can still change.
+      // (The third had one agree note, for its original; this one has two.)
+      await body.locator(".adj-agree").nth(1).waitFor();
+      assert.deepEqual(calls.filter(c => c.name === "submit")[2].body,
+        { original_choice: "both", suggested_doi_o: null, type: "reproduction", outcome: null,
+          outcome_computation: "computational issues", outcome_robustness: "cannot_tell", note: null });
+      assert.deepEqual(await body.locator(".adj-agree").allInnerTexts(),
+        ["FLoRA and the Observatory agree", "FLoRA and the Observatory agree"]);
+      assert.deepEqual(await body.locator('.adj-option[aria-pressed="true"]').evaluateAll(els => els.map(e => e.dataset.value)),
+        ["both", "failed"]);
+      assert.equal(await submit.isEnabled(), true);
+      assert.equal(await page.locator("#adj-worth").innerText(), "Worth 14 points");
+      await body.locator('.adj-option[data-group="outcome"][data-value="mixed"]').click();
+      assert.equal(await body.locator('.adj-option[data-value="failed"]').getAttribute("aria-pressed"), "false");
+      assert.equal(await body.locator('.adj-option[data-value="mixed"]').getAttribute("aria-pressed"), "true");
       await page.locator("#adj-skip-btn").click();
 
       await body.locator(".adj-judge-message h3").waitFor();
-      assert.equal(calls.filter(c => c.name === "skip")[0].path, `/api/disagreements/${SAME.record_id}/skip`);
-      assert.match(await body.innerText(), /Nothing left for you right now[\s\S]*You have judged 2/);
+      assert.equal(calls.filter(c => c.name === "skip")[0].path, `/api/disagreements/${AGREED.record_id}/skip`);
+      assert.match(await body.innerText(), /Nothing left for you right now[\s\S]*You have judged 3/);
       const summaries = calls.filter(c => c.name === "summary").length;
       await page.locator("#adj-done-btn").click();
       assert.equal(await page.locator("#adj-judge-modal").isHidden(), true);
@@ -313,7 +415,8 @@ const later = ms => new Promise(resolve => setTimeout(resolve, ms));
       release({ points: 15, total_points: 15, record_complete: false, left: 1, judged: 1 });
       await body.locator(".adj-notice").waitFor();
       assert.equal(answers.length, 1);
-      assert.deepEqual(answers[0], { original_choice: "flora", suggested_doi_o: null, outcome: "failed", note: null });
+      assert.deepEqual(answers[0], { original_choice: "flora", suggested_doi_o: null, type: "replication",
+        outcome: "failed", outcome_computation: null, outcome_robustness: null, note: null });
 
       // Close while the next submit is on its way, then let it finish.
       await body.locator('.adj-option[data-value="flora"]').click();

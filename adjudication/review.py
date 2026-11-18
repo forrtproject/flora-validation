@@ -1,9 +1,10 @@
 """Admin review of judged disagreements, and publishing the answers to FLoRA.
 
 An admin sees each record with both validators' answers by name, and approves
-the final answer: an original and an outcome, edited where needed. That answer
-is a row in adjudication.final; approval works the same whether the two judges
-agreed or not.
+the final answer: an original, a type and an outcome (a reproduction's on its
+two axes, with a quote for each), edited where needed. That answer is a row in
+adjudication.final; approval works the same whether the two judges agreed or
+not.
 
 Publishing copies an approved answer into Source Records under its own source,
 `adjudicated`, with an `ADJ-` display id; the FLoRA build then takes it like any
@@ -29,14 +30,33 @@ from extractor_vocab import (
     split_joined_outcome,
 )
 
-from .judging import CANNOT_TELL, Refused, _DOI, _doi, public_view
+from .judging import (
+    CANNOT_TELL,
+    COMPUTATION_CHOICES,
+    NOT_A_REPLICATION,
+    REPLICATION_CHOICES,
+    ROBUSTNESS_CHOICES,
+    Refused,
+    _DOI,
+    _doi,
+    _observatory_outcome,
+    check_outcome,
+    public_view,
+)
 
 SOURCE_KEY = "adjudicated"
 DISPLAY_PREFIX = "ADJ"
 STATUSES = ("open", "awaiting_approval", "approved", "published")
-APPROVABLE_OUTCOMES = REPLICATION_OUTCOMES | CURRENT_REPRODUCTION_OUTCOMES
-TEXT_LIMITS = {"title_o": 1000, "outcome_quote": 4000, "quote_source": 100, "admin_note": 2000}
+TEXT_LIMITS = {"title_o": 1000, "outcome_quote": 4000, "quote_source": 100,
+               "computation_quote": 4000, "computation_quote_source": 100,
+               "robustness_quote": 4000, "robustness_quote_source": 100, "admin_note": 2000}
 WITHDRAWN_REASON = "Withdrawn from the Observatory adjudication by {admin}."
+UNDETERMINED = "cannot_be_determined"
+# An approved answer's quotes: one for a replication, one per axis for a
+# reproduction. The other kind's are stored empty.
+QUOTE_FIELDS = ("outcome_quote", "quote_source")
+AXIS_QUOTE_FIELDS = ("computation_quote", "computation_quote_source",
+                     "robustness_quote", "robustness_quote_source")
 
 
 def _text(value, field: str) -> str | None:
@@ -47,25 +67,61 @@ def _text(value, field: str) -> str | None:
 
 
 def record_type(outcome: str | None) -> str:
-    return "reproduction" if outcome in CURRENT_REPRODUCTION_OUTCOMES else "replication"
+    """The type a flat outcome implies, for a row saved before types were asked."""
+    if outcome in CURRENT_REPRODUCTION_OUTCOMES:
+        return "reproduction"
+    return "not_validation" if outcome == NOT_A_REPLICATION else "replication"
+
+
+def answer_type(row: dict) -> str:
+    """A judgement's or an approved answer's type: its own, or its outcome's."""
+    return row.get("type") or record_type(row.get("outcome"))
+
+
+def answer_axes(row: dict) -> tuple[str | None, str | None]:
+    """A reproduction answer's (computation, robustness); (None, None) for any
+    other. A row saved before the axes were stored has them in its flat outcome.
+    The one place a joined outcome is split, for every reader of these rows."""
+    if answer_type(row) != "reproduction":
+        return None, None
+    if row.get("outcome_computation") or row.get("outcome_robustness"):
+        return row.get("outcome_computation"), row.get("outcome_robustness")
+    return split_joined_outcome(row.get("outcome"))
+
+
+def typed(row: dict) -> dict:
+    """The row with its type and axes filled in where it was saved without them."""
+    computation, robustness = answer_axes(row)
+    return {**row, "type": answer_type(row), "outcome_computation": computation,
+            "outcome_robustness": robustness}
+
+
+def _verdict(row: dict) -> tuple:
+    """What a judge said the paper is and found, as one comparable value."""
+    kind = answer_type(row)
+    return (kind, answer_axes(row) if kind == "reproduction" else (row.get("outcome"),))
 
 
 def agreement(judgements: list[dict]) -> str | None:
-    """'agree' when both submitted answers match on original and outcome,
-    'disagree' when they do not, None before there are two."""
+    """'agree' when both submitted answers match on original, type and outcome
+    (both axes, for a reproduction) and neither says "can't tell", 'disagree'
+    when they do not, None before there are two."""
     done = [j for j in judgements if j.get("original_choice")]
     if len(done) < 2:
         return None
     a, b = done[0], done[1]
+    kind, found = _verdict(a)
     same = (a["original_choice"] == b["original_choice"]
             and (a.get("suggested_doi_o") or "") == (b.get("suggested_doi_o") or "")
-            and a["outcome"] == b["outcome"]
-            and CANNOT_TELL not in (a["original_choice"], a["outcome"]))
+            and (kind, found) == _verdict(b)
+            and a["original_choice"] != CANNOT_TELL and CANNOT_TELL not in found)
     return "agree" if same else "disagree"
 
 
 def basis_for(record: dict, doi_o: str | None, outcome: str) -> str:
-    """Whose answer the admin approved: FLoRA's, the Observatory's, or their own."""
+    """Whose answer the admin approved: FLoRA's, the Observatory's, or their own.
+    A reproduction's outcome is the flat value derived from its axes, so it is
+    FLoRA's when it is FLoRA's flat outcome."""
     doi, flora, mo = _doi(doi_o), _doi(record.get("flora_doi_o")), _doi(record.get("mo_doi_o"))
     if doi and flora == mo == doi:
         # The same original on both sides: the outcome decides.
@@ -79,27 +135,24 @@ def basis_for(record: dict, doi_o: str | None, outcome: str) -> str:
     return "admin"
 
 
-def _observatory_outcome(record: dict) -> str | None:
-    """The Observatory's outcome in FLoRA's words, where there is one. A reversal
-    (a significant effect the other way) is a failed replication; "inconclusive"
-    has no single counterpart, so approving one of FLoRA's words for it counts as
-    the admin's own answer."""
-    return {"success": "successful", "failure": "failed", "reversal": "failed"}.get(
-        str(record.get("mo_outcome") or "").lower())
-
-
 # ---------------------------------------------------------------------------
 # Reading
 # ---------------------------------------------------------------------------
 
 _LIST_SQL = """
     SELECT r.record_id::text AS record_id, r.kind, r.doi_r, r.title_r, r.status, r.updated_at,
-           f.doi_o AS final_doi_o, f.outcome AS final_outcome, f.basis,
+           f.doi_o AS final_doi_o, f.type AS final_type, f.outcome AS final_outcome,
+           f.outcome_computation AS final_outcome_computation,
+           f.outcome_robustness AS final_outcome_robustness, f.basis,
            f.published_record_id, f.withdrawn_at,
            COALESCE(json_agg(json_build_object(
                'handle', j.validator_handle, 'tier', j.validator_tier,
                'original_choice', j.original_choice, 'suggested_doi_o', j.suggested_doi_o,
-               'outcome', j.outcome) ORDER BY j.submitted_at)
+               'type', j.type, 'outcome', j.outcome,
+               'outcome_computation', j.outcome_computation,
+               'outcome_robustness', j.outcome_robustness,
+               'original_prefilled', j.original_prefilled,
+               'outcome_prefilled', j.outcome_prefilled) ORDER BY j.submitted_at)
                FILTER (WHERE j.state = 'submitted'), '[]') AS judgements
       FROM adjudication.records r
       LEFT JOIN adjudication.final f ON f.record_id = r.record_id
@@ -118,10 +171,16 @@ def list_records(cur, status: str | None) -> dict:
     rows = []
     for row in cur.fetchall():
         item = dict(row)
-        item["judgements"] = list(item["judgements"] or [])
-        if item["status"] == "open":
-            item["judgements"] = [_unanswered(j) for j in item["judgements"]]
+        judgements = list(item["judgements"] or [])
+        hide = item["status"] == "open"
+        item["judgements"] = [_unanswered(j) if hide else typed(j) for j in judgements]
         item["agreement"] = agreement(item["judgements"])
+        if item["final_outcome"] is not None:
+            final = typed({"type": item["final_type"], "outcome": item["final_outcome"],
+                           "outcome_computation": item["final_outcome_computation"],
+                           "outcome_robustness": item["final_outcome_robustness"]})
+            item.update({f"final_{k}": final[k] for k in
+                         ("type", "outcome_computation", "outcome_robustness")})
         item["updated_at"] = item["updated_at"].isoformat() if item["updated_at"] else None
         item["withdrawn_at"] = item["withdrawn_at"].isoformat() if item["withdrawn_at"] else None
         rows.append(item)
@@ -130,7 +189,8 @@ def list_records(cur, status: str | None) -> dict:
 
 # The answers a judge gave; hidden while a record still waits for its second
 # judgement, so the two stay independent even for an admin who also judges.
-ANSWER_FIELDS = ("original_choice", "suggested_doi_o", "outcome", "note", "points")
+ANSWER_FIELDS = ("original_choice", "suggested_doi_o", "type", "outcome", "outcome_computation",
+                 "outcome_robustness", "original_prefilled", "outcome_prefilled", "note", "points")
 
 
 def _unanswered(judgement: dict) -> dict:
@@ -192,20 +252,24 @@ def _record(cur, record_id: str, *, lock: bool = False) -> dict:
 def _final(cur, record_id: str) -> dict | None:
     cur.execute("SELECT * FROM adjudication.final WHERE record_id = %s", (record_id,))
     row = cur.fetchone()
-    return dict(row) if row else None
+    return typed(dict(row)) if row else None
 
 
 def pair_conflicts(final: dict | None, in_flora: list[dict]) -> list[dict]:
-    """Live rows holding the same replication-original pair, of the same type, as
-    the approved answer. The FLoRA build keeps one row per pair, and a row from
-    the website (source 'validated') imposes its outcome on whichever row it
+    """Live rows holding the same replication-original pair as the approved
+    answer. Of the same type, the FLoRA build keeps one row per pair, and a row
+    from the website (source 'validated') imposes its outcome on whichever row it
     keeps, so until one of the two is ruled a duplicate in Source Records the
-    answer may not be what FLoRA shows."""
+    answer may not be what FLoRA shows. Of the other type (`other_type`), the
+    build keeps both (it collapses rows by type|doi_o|doi_r), so FLoRA would hold
+    the pair twice, once as each type."""
     if not final or not final.get("doi_o"):
         return []
-    kind = record_type(final.get("outcome"))
-    return [r for r in in_flora
-            if not r["deleted"] and not r.get("ruled_duplicate") and r["type"] == kind
+    kind = answer_type(final)
+    if kind not in ("replication", "reproduction"):
+        return []
+    return [{**r, "other_type": r["type"] != kind} for r in in_flora
+            if not r["deleted"] and not r.get("ruled_duplicate")
             and norm_doi(r["doi_o"]) == norm_doi(final["doi_o"])]
 
 
@@ -216,16 +280,17 @@ def detail(cur, record_id: str) -> dict:
     cur.execute(
         """
         SELECT validator_handle AS handle, validator_tier AS tier, state, original_choice,
-               suggested_doi_o, outcome, note, points, claimed_at, submitted_at
+               suggested_doi_o, type, outcome, outcome_computation, outcome_robustness,
+               original_prefilled, outcome_prefilled, note, points, claimed_at, submitted_at
           FROM adjudication.judgements WHERE record_id = %s
          ORDER BY submitted_at NULLS LAST, claimed_at
         """,
         (record_id,),
     )
     judgements = [_iso(dict(j), "claimed_at", "submitted_at") for j in cur.fetchall()]
-    submitted = [j for j in judgements if j["state"] == "submitted"]
-    if record["status"] == "open":
-        submitted = [_unanswered(j) for j in submitted]
+    hide = record["status"] == "open"
+    submitted = [_unanswered(j) if hide else typed(j)
+                 for j in judgements if j["state"] == "submitted"]
     final = _final(cur, record_id)
     in_flora = _in_flora(cur, record_id, record["doi_r"])
     return {
@@ -238,7 +303,10 @@ def detail(cur, record_id: str) -> dict:
         "publish_problem": publish_problem(cur, final) if final else None,
         "in_flora": in_flora,
         "pair_conflicts": pair_conflicts(final, in_flora),
-        "outcomes": sorted(APPROVABLE_OUTCOMES),
+        # What the approval form offers. "Not a replication" is its own type there.
+        "replication_outcomes": [o for o in REPLICATION_CHOICES if o != NOT_A_REPLICATION],
+        "computation_outcomes": list(COMPUTATION_CHOICES),
+        "robustness_outcomes": list(ROBUSTNESS_CHOICES),
     }
 
 
@@ -247,18 +315,23 @@ def detail(cur, record_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def check_decision(decision: dict) -> dict:
+    """The decision cleaned: a replication's outcome with its quote, or a
+    reproduction's two axes (from FLoRA's vocabulary, never "can't tell") with a
+    quote each, or 'not_validation'. Refused(422) otherwise."""
     doi_o = _doi(decision.get("doi_o"))
     if doi_o and not _DOI.match(doi_o):
         raise Refused(422, "The original's DOI does not look like a DOI (10.xxxx/…)")
-    outcome = str(decision.get("outcome") or "").strip().lower()
-    if outcome not in APPROVABLE_OUTCOMES:
-        raise Refused(422, "Choose an outcome from FLoRA's vocabulary")
+    kind, outcome, computation, robustness = check_outcome(decision, decision=True)
+    kept = AXIS_QUOTE_FIELDS if kind == "reproduction" else QUOTE_FIELDS
     return {
         "doi_o": doi_o or None,
         "title_o": _text(decision.get("title_o"), "title_o"),
+        "type": kind,
         "outcome": outcome,
-        "outcome_quote": _text(decision.get("outcome_quote"), "outcome_quote"),
-        "quote_source": _text(decision.get("quote_source"), "quote_source"),
+        "outcome_computation": computation,
+        "outcome_robustness": robustness,
+        **{f: _text(decision.get(f), f) if f in kept else None
+           for f in (*QUOTE_FIELDS, *AXIS_QUOTE_FIELDS)},
         "admin_note": _text(decision.get("admin_note"), "admin_note"),
     }
 
@@ -279,14 +352,24 @@ def approve(cur, record_id: str, admin: dict, decision: dict) -> dict:
     cur.execute(
         """
         INSERT INTO adjudication.final
-            (record_id, doi_r, title_r, doi_o, title_o, outcome, outcome_quote, quote_source,
+            (record_id, doi_r, title_r, doi_o, title_o, type, outcome, outcome_computation,
+             outcome_robustness, outcome_quote, quote_source, computation_quote,
+             computation_quote_source, robustness_quote, robustness_quote_source,
              basis, admin_note, approved_by_id, approved_by, approved_at)
-        VALUES (%(record_id)s, %(doi_r)s, %(title_r)s, %(doi_o)s, %(title_o)s, %(outcome)s,
-                %(outcome_quote)s, %(quote_source)s, %(basis)s, %(admin_note)s,
-                %(admin_id)s, %(admin)s, NOW())
+        VALUES (%(record_id)s, %(doi_r)s, %(title_r)s, %(doi_o)s, %(title_o)s, %(type)s,
+                %(outcome)s, %(outcome_computation)s, %(outcome_robustness)s,
+                %(outcome_quote)s, %(quote_source)s, %(computation_quote)s,
+                %(computation_quote_source)s, %(robustness_quote)s, %(robustness_quote_source)s,
+                %(basis)s, %(admin_note)s, %(admin_id)s, %(admin)s, NOW())
         ON CONFLICT (record_id) DO UPDATE SET
-            doi_o = EXCLUDED.doi_o, title_o = EXCLUDED.title_o, outcome = EXCLUDED.outcome,
+            doi_o = EXCLUDED.doi_o, title_o = EXCLUDED.title_o, type = EXCLUDED.type,
+            outcome = EXCLUDED.outcome, outcome_computation = EXCLUDED.outcome_computation,
+            outcome_robustness = EXCLUDED.outcome_robustness,
             outcome_quote = EXCLUDED.outcome_quote, quote_source = EXCLUDED.quote_source,
+            computation_quote = EXCLUDED.computation_quote,
+            computation_quote_source = EXCLUDED.computation_quote_source,
+            robustness_quote = EXCLUDED.robustness_quote,
+            robustness_quote_source = EXCLUDED.robustness_quote_source,
             basis = EXCLUDED.basis, admin_note = EXCLUDED.admin_note,
             approved_by_id = EXCLUDED.approved_by_id, approved_by = EXCLUDED.approved_by,
             approved_at = NOW()
@@ -328,11 +411,20 @@ def publish_problem(cur, final: dict) -> str | None:
     """Why this answer cannot go into FLoRA, or None when it can."""
     if not final.get("doi_o"):
         return "FLoRA needs the original's DOI; this answer has none."
-    outcome = final["outcome"]
-    if outcome == "not_a_replication":
+    kind = answer_type(final)
+    if kind == "not_validation":
         return "The answer is \"not a replication\", so there is nothing to add to FLoRA."
-    if outcome in CURRENT_REPRODUCTION_OUTCOMES:
+    if kind == "reproduction":
+        # The build derives the flat outcome from the axes; one undetermined axis
+        # makes it cannot_be_determined, which FLoRA holds for a reproduction.
+        computation, robustness = answer_axes(final)
+        if computation not in COMPUTATION_CHOICES or robustness not in ROBUSTNESS_CHOICES:
+            return "The answer lacks one of a reproduction's two outcomes (computation and robustness)."
+        if computation == robustness == UNDETERMINED:
+            return ("Neither the computation nor the robustness of this reproduction could be "
+                    "determined, so there is no outcome to add to FLoRA.")
         return None
+    outcome = final["outcome"]
     cur.execute("SELECT canonical_value FROM outcome_alias WHERE raw_value = %s", (outcome,))
     row = cur.fetchone()
     if row is None or row["canonical_value"] not in REPLICATION_OUTCOMES:
@@ -348,19 +440,46 @@ def _judges(cur, record_id: str) -> str:
     return cur.fetchone()["judges"] or ""
 
 
+def flora_fields(final: dict) -> dict:
+    """An approved answer's type, outcome and quotes under FLoRA's column names
+    (transform_sources.FLORA_COLUMNS): a replication's outcome with its quote,
+    or a reproduction's two axes with a quote each. `outcome` is the flat value
+    (derived from the axes, for a reproduction). Shared by the Source Records row
+    (source_row) and final.csv (export.final_rows)."""
+    kind = answer_type(final)
+    computation, robustness = answer_axes(final)
+    reproduction = kind == "reproduction"
+
+    def own(field: str):
+        return final.get(field) if reproduction == (field in AXIS_QUOTE_FIELDS) else None
+
+    return {
+        "type": kind,
+        "outcome": final.get("outcome"),
+        "outcome_quote": own("outcome_quote"),
+        "outcome_quote_source": own("quote_source"),
+        "outcome_computation": computation,
+        "outcome_computational_quote": own("computation_quote"),
+        "out_quote_computational_source": own("computation_quote_source"),
+        "outcome_robustness": robustness,
+        "outcome_robustness_quote": own("robustness_quote"),
+        "out_quote_robust_source": own("robustness_quote_source"),
+    }
+
+
 def source_row(record: dict, final: dict, judges: str) -> dict:
     """The Source Records row for an approved answer."""
-    kind = record_type(final["outcome"])
-    computation = robustness = None
-    if kind == "reproduction":
-        computation, robustness = split_joined_outcome(final["outcome"])
+    fields = flora_fields(final)
+    kind = fields["type"]
     raw = {
         "adjudication_record_id": str(record["record_id"]),
         "kind": record["kind"],
         "imported_from": record["imported_from"],
         "title_r": record.get("title_r"), "title_o": final.get("title_o"),
-        "outcome": final["outcome"], "outcome_quote": final.get("outcome_quote"),
-        "quote_source": final.get("quote_source"),
+        "type": kind, "outcome": final["outcome"],
+        "outcome_computation": fields["outcome_computation"],
+        "outcome_robustness": fields["outcome_robustness"],
+        **{field: final.get(field) for field in (*QUOTE_FIELDS, *AXIS_QUOTE_FIELDS)},
         "basis": final["basis"], "judges": judges,
         "approved_by": final["approved_by"], "approved_at": final["approved_at"],
         "admin_note": final.get("admin_note"),
@@ -375,11 +494,12 @@ def source_row(record: dict, final: dict, judges: str) -> dict:
         "doi_r": record["doi_r"],
         "abstract_r": record.get("abstract_r"),
         "year_r": record.get("year_r"),
-        "outcome": final["outcome"] if kind == "replication" else None,
-        "outcome_quote": final.get("outcome_quote") if kind == "replication" else None,
-        "out_quote_source": final.get("quote_source") if kind == "replication" else None,
-        "outcome_computation": computation,
-        "outcome_robustness": robustness,
+        # Source Records holds a reproduction on its axes only; the build derives
+        # its flat outcome (transform_sources.derive_outcome).
+        "outcome": fields["outcome"] if kind == "replication" else None,
+        "outcome_quote": fields["outcome_quote"],
+        "out_quote_source": fields["outcome_quote_source"],
+        **{column: fields[column] for column in _AXIS_COLUMNS},
         # Stringified like every other source's raw row.
         "raw": json.dumps({k: ("" if v is None else str(v)) for k, v in raw.items()}),
     }
@@ -397,8 +517,11 @@ def _next_display_id(cur) -> str:
     return f"{DISPLAY_PREFIX}-{cur.fetchone()['last_value']:06d}"
 
 
+_AXIS_COLUMNS = ("outcome_computation", "outcome_computational_quote",
+                 "out_quote_computational_source", "outcome_robustness",
+                 "outcome_robustness_quote", "out_quote_robust_source")
 _SOURCE_COLUMNS = ("type", "doi_o", "doi_r", "abstract_r", "year_r", "outcome", "outcome_quote",
-                   "out_quote_source", "outcome_computation", "outcome_robustness", "raw")
+                   "out_quote_source", *_AXIS_COLUMNS, "raw")
 
 
 def publish(cur, record_id: str, admin: dict) -> dict:

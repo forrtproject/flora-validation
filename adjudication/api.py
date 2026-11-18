@@ -37,16 +37,28 @@ _BY_KIND_SQL = "SELECT kind, COUNT(*) AS n FROM adjudication.records GROUP BY ki
 class Answer(BaseModel):
     original_choice: str
     suggested_doi_o: str | None = None
-    outcome: str
+    # replication / reproduction / not_validation. Without it (a page loaded
+    # before the type was asked), the outcome says which (judging.check_outcome).
+    type: str | None = None
+    outcome: str | None = None              # a replication's
+    outcome_computation: str | None = None  # a reproduction's two axes
+    outcome_robustness: str | None = None
     note: str | None = None
 
 
 class Decision(BaseModel):
     doi_o: str | None = None
     title_o: str | None = None
-    outcome: str
+    type: str | None = None
+    outcome: str | None = None
+    outcome_computation: str | None = None
+    outcome_robustness: str | None = None
     outcome_quote: str | None = None
     quote_source: str | None = None
+    computation_quote: str | None = None
+    computation_quote_source: str | None = None
+    robustness_quote: str | None = None
+    robustness_quote_source: str | None = None
     admin_note: str | None = None
 
 

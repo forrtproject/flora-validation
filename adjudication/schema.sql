@@ -95,6 +95,19 @@ CREATE TABLE IF NOT EXISTS adjudication.judgements (
     CHECK (state <> 'submitted' OR (original_choice IS NOT NULL AND submitted_at IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS judgements_validator_idx ON adjudication.judgements (validator_id);
+-- The type of paper the judge says it is, and a reproduction's two outcome axes
+-- (FLoRA codes a reproduction on both; `outcome` holds the flat value derived
+-- from them, and 'not_validation' goes with the outcome 'not_a_replication').
+-- A judgement saved before these were asked has no type: its outcome says which
+-- (adjudication/review.py answer_type()).
+ALTER TABLE adjudication.judgements ADD COLUMN IF NOT EXISTS type TEXT
+    CHECK (type IN ('replication', 'reproduction', 'not_validation'));
+ALTER TABLE adjudication.judgements ADD COLUMN IF NOT EXISTS outcome_computation TEXT;
+ALTER TABLE adjudication.judgements ADD COLUMN IF NOT EXISTS outcome_robustness TEXT;
+-- Whether the judge submitted the answer the screen pre-selected because FLoRA
+-- and the Observatory agree on it (adjudication/judging.py defaults()).
+ALTER TABLE adjudication.judgements ADD COLUMN IF NOT EXISTS original_prefilled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE adjudication.judgements ADD COLUMN IF NOT EXISTS outcome_prefilled BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- The admin-approved answer for a record: what FLoRA should hold. Publishing
 -- copies it into Source Records under its own source; withdrawing marks that
@@ -124,3 +137,15 @@ CREATE TABLE IF NOT EXISTS adjudication.final (
 -- Who published and who withdrew it (adjudication/review.py).
 ALTER TABLE adjudication.final ADD COLUMN IF NOT EXISTS published_by TEXT;
 ALTER TABLE adjudication.final ADD COLUMN IF NOT EXISTS withdrawn_by TEXT;
+-- The approved type, a reproduction's two axes, and a quote with its source for
+-- each axis (a replication's quote stays in outcome_quote / quote_source). As in
+-- judgements, `outcome` is derived from the axes, and a row approved before
+-- these existed is typed by its outcome.
+ALTER TABLE adjudication.final ADD COLUMN IF NOT EXISTS type TEXT
+    CHECK (type IN ('replication', 'reproduction', 'not_validation'));
+ALTER TABLE adjudication.final ADD COLUMN IF NOT EXISTS outcome_computation TEXT;
+ALTER TABLE adjudication.final ADD COLUMN IF NOT EXISTS outcome_robustness TEXT;
+ALTER TABLE adjudication.final ADD COLUMN IF NOT EXISTS computation_quote TEXT;
+ALTER TABLE adjudication.final ADD COLUMN IF NOT EXISTS computation_quote_source TEXT;
+ALTER TABLE adjudication.final ADD COLUMN IF NOT EXISTS robustness_quote TEXT;
+ALTER TABLE adjudication.final ADD COLUMN IF NOT EXISTS robustness_quote_source TEXT;

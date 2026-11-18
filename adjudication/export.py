@@ -14,7 +14,7 @@ from __future__ import annotations
 import csv
 import io
 
-from .review import SOURCE_KEY, agreement, record_type
+from .review import ANSWER_FIELDS, SOURCE_KEY, agreement, flora_fields, typed
 
 # transform_sources.FLORA_COLUMNS; a test keeps the two in step.
 FLORA_COLUMNS = (
@@ -32,7 +32,9 @@ FINAL_EXTRA = (
     "approved_by", "approved_at", "published_record_id", "published_at", "withdrawn_at",
     "adjudication_record_id",
 )
-JUDGE_FIELDS = ("handle", "tier", "original_choice", "suggested_doi_o", "outcome", "note", "submitted_at")
+JUDGE_FIELDS = ("handle", "tier", "original_choice", "suggested_doi_o", "type", "outcome",
+                "outcome_computation", "outcome_robustness", "original_prefilled",
+                "outcome_prefilled", "note", "submitted_at")
 JUDGEMENT_COLUMNS = (
     "adjudication_record_id", "kind", "status", "doi_r", "title_r", "year_r",
     "flora_doi_o", "flora_title_o", "flora_outcome", "flora_outcome_quote",
@@ -41,8 +43,8 @@ JUDGEMENT_COLUMNS = (
     "mo_confidence",
     *(f"judge_{n}_{field}" for n in (1, 2) for field in JUDGE_FIELDS),
     "agreement",
-    "final_doi_o", "final_title_o", "final_outcome", "final_basis", "approved_by",
-    "approved_at", "published_record_id",
+    "final_doi_o", "final_title_o", "final_type", "final_outcome", "final_outcome_computation",
+    "final_outcome_robustness", "final_basis", "approved_by", "approved_at", "published_record_id",
 )
 EXPORTS = ("final", "judgements")
 # Free text people typed. A spreadsheet runs a cell that starts with one of
@@ -74,14 +76,15 @@ def _judges(cur) -> dict:
     cur.execute(
         """
         SELECT record_id::text AS record_id, validator_handle AS handle, validator_tier AS tier,
-               original_choice, suggested_doi_o, outcome, note, submitted_at
+               original_choice, suggested_doi_o, type, outcome, outcome_computation,
+               outcome_robustness, original_prefilled, outcome_prefilled, note, submitted_at
           FROM adjudication.judgements WHERE state = 'submitted'
          ORDER BY record_id, submitted_at
         """
     )
     by_record: dict[str, list] = {}
     for row in cur.fetchall():
-        by_record.setdefault(row["record_id"], []).append(dict(row))
+        by_record.setdefault(row["record_id"], []).append(typed(dict(row)))
     return by_record
 
 
@@ -96,20 +99,12 @@ def final_rows(cur) -> list[dict]:
     )
     rows = []
     for f in cur.fetchall():
-        kind = record_type(f["outcome"])
-        computation = robustness = None
-        if kind == "reproduction":
-            computation, _, robustness = f["outcome"].partition(", ")
         rows.append({
-            **{k: f[k] for k in ("doi_o", "doi_r", "abstract_r", "outcome", "title_o", "title_r",
+            **{k: f[k] for k in ("doi_o", "doi_r", "abstract_r", "title_o", "title_r",
                                  "year_r", "kind", "basis", "admin_note", "approved_by",
                                  "published_record_id", "adjudication_record_id")},
-            "outcome_quote": f["outcome_quote"] if kind == "replication" else None,
-            "outcome_quote_source": f["quote_source"] if kind == "replication" else None,
-            "type": kind,
+            **flora_fields(f),
             "source": SOURCE_KEY,
-            "outcome_computation": computation,
-            "outcome_robustness": robustness,
             "judges": "; ".join(j["handle"] for j in judges.get(f["adjudication_record_id"], [])),
             "approved_at": f["approved_at"].isoformat() if f["approved_at"] else None,
             "published_at": f["published_at"].isoformat() if f["published_at"] else None,
@@ -123,7 +118,9 @@ def judgement_rows(cur) -> list[dict]:
     cur.execute(
         """
         SELECT r.*, r.record_id::text AS adjudication_record_id,
-               f.doi_o AS final_doi_o, f.title_o AS final_title_o, f.outcome AS final_outcome,
+               f.doi_o AS final_doi_o, f.title_o AS final_title_o, f.type AS final_type,
+               f.outcome AS final_outcome, f.outcome_computation AS final_outcome_computation,
+               f.outcome_robustness AS final_outcome_robustness,
                f.basis AS final_basis, f.approved_by, f.approved_at, f.published_record_id
           FROM adjudication.records r LEFT JOIN adjudication.final f ON f.record_id = r.record_id
          ORDER BY r.kind, r.doi_r, r.record_id
@@ -132,11 +129,15 @@ def judgement_rows(cur) -> list[dict]:
     rows = []
     for r in cur.fetchall():
         row = dict(r)
+        if row["final_outcome"] is not None:
+            # An answer approved before types were stored is typed by its outcome.
+            final = typed({k[len("final_"):]: row[k] for k in (
+                "final_type", "final_outcome", "final_outcome_computation", "final_outcome_robustness")})
+            row.update({f"final_{k}": v for k, v in final.items()})
         mine = judges.get(row["adjudication_record_id"], [])
         if row["status"] == "open":
             # The first answer stays hidden until the second is in.
-            mine = [{**j, "original_choice": None, "suggested_doi_o": None,
-                     "outcome": None, "note": None} for j in mine]
+            mine = [{**j, **dict.fromkeys(ANSWER_FIELDS)} for j in mine]
         for n, judge in enumerate(mine[:2], start=1):
             for field in JUDGE_FIELDS:
                 value = judge[field]
