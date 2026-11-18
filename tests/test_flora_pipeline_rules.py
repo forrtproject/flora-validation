@@ -270,6 +270,38 @@ def test_a_title_comes_out_on_one_line(raw):
     assert ts.clean_text(once, one_line=True) == once
 
 
+@pytest.mark.parametrize(("raw", "expected"), [
+    ("Affirmative Action and the Behavior of Decision Makers<sup>1</sup>",
+     "Affirmative Action and the Behavior of Decision Makers"),
+    ("THREE PECK‐PRODUCED REINFORCEMENTS<sup>1</sup>", "THREE PECK‐PRODUCED REINFORCEMENTS"),
+    ("What Should We Know About Making Risk Comparisons?<sup>1</sup>",
+     "What Should We Know About Making Risk Comparisons?"),
+    ("Mindful Persuasion and the Pique Technique<sup>*</sup> ", "Mindful Persuasion and the Pique Technique"),
+    ("A Replication and Extension<sup>1, 2</sup>", "A Replication and Extension"),
+    ("Determined by Self‐Ratings in Normals <sup>1</sup>", "Determined by Self‐Ratings in Normals"),
+    ("Why Visual Cues of Portion Size May Influence Intake<sup>**</sup>",
+     "Why Visual Cues of Portion Size May Influence Intake"),
+])
+def test_a_footnote_marker_at_the_end_of_a_title_is_dropped(raw, expected):
+    """A superscript joins the word before it, which read "Decision Makers1"."""
+    assert ts.clean_text(raw, one_line=True) == expected
+
+
+@pytest.mark.parametrize(("raw", "one_line", "expected"), [
+    ("Habitat area in km<sup>2</sup>", True, "Habitat area in km2"),
+    ("Habitat area in km <sup>2</sup>", True, "Habitat area in km 2"),
+    ("Variance explained, R<sup>2</sup>", True, "Variance explained, R2"),
+    ("Study<sup>1</sup> and its replication", True, "Study1 and its replication"),
+    ("rates fell by 10<sup>3</sup>", True, "rates fell by 103"),
+    ("ends with Makers<sup>1</sup>", False, "ends with Makers1"),
+])
+def test_a_superscript_that_may_be_an_exponent_stays(raw, one_line, expected):
+    """Only the end of a one-line value, after a word or punctuation: a unit, a
+    variable, a number or the middle of a title keeps its superscript, and so does
+    an abstract."""
+    assert ts.clean_text(raw, one_line=one_line) == expected
+
+
 def test_an_identifier_in_angle_brackets_is_not_a_tag():
     assert ts.clean_text("Teenage Employment <halshs-01945777>") \
         == "Teenage Employment <halshs-01945777>"

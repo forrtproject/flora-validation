@@ -201,6 +201,13 @@ _BLOCK_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6", "p", "div", "sec", 
                          "li", "br"})
 # Tags around a part of the word before them: CO<sub>2</sub>, 10<sup>-3</sup>.
 _ATTACHED_TAGS = frozenset({"sub", "sup"})
+# A footnote marker closing a title: "…Decision Makers<sup>1</sup>", "…Comparisons?
+# <sup>1</sup>". Only at the very end, after a word of three letters or more or after
+# punctuation, so "in km<sup>2</sup>" and "R<sup>2</sup>" keep their exponent.
+_FOOTNOTE_MARK = r"(?:\d{1,2}|[*†‡§¶#]{1,3})"
+_TRAILING_FOOTNOTE_RE = re.compile(
+    r"(?:(?<=[^\W\d_]{3})|(?<=[.?!:)\]\"'”’]))"
+    rf"\s*<sup>\s*{_FOOTNOTE_MARK}(?:\s*,\s*{_FOOTNOTE_MARK})*\s*</sup>\s*$")
 # A single newline inside a paragraph is a PDF copy artefact — the sentence simply
 # continued. Two or more are a real paragraph break and are preserved.
 _SOFT_BREAK_RE = re.compile(r"(?<!\n)\n(?!\n)")
@@ -298,13 +305,16 @@ def clean_text(value, one_line=False):
     differing only by an `<i>` is not mistaken for a different paper.
 
     Paragraphs come out separated by one blank line, or by a space with `one_line`,
-    for a column outside PARAGRAPH_COLUMNS.
+    for a column outside PARAGRAPH_COLUMNS. A one-line value also drops a footnote
+    marker at its end, which would otherwise read "Decision Makers1".
     """
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
     text = str(value)
     if not text.strip():
         return None
+    if one_line:
+        text = _TRAILING_FOOTNOTE_RE.sub("", text)
     text = _TAG_RUN_RE.sub(_replace_tags, text)
     # Unrecognised capitalised entities are lowercased before unescaping: CrossRef
     # returns forms ("&Amp;", "&Rsquo;") that html.unescape does not recognise, and
