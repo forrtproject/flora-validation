@@ -14,6 +14,7 @@ The [FLoRA database](https://forrt.org/replication-hub/flora/) is part of [FORRT
 - **Explore the pipeline visually:** open the [clickable field guide](docs/pipeline-guide/index.html) for the system, input, processing and output diagrams, all admin tabs and buttons, save locations, update timing and exact source links. [Text guide and slide-ready pictures](docs/pipeline-guide/README.md).
 - **Check preprints for journal versions:** see the [published-version enrichment guide](docs/published-versions.md) for evidence, caching, and confirmation.
 - **Use the public API:** read the [API guide](docs/FLORA_API.md).
+- **Undo or repeat a fix to production data:** each fix has a folder in `audit/` with its script, log and commands. For example, the [markup cleanup of 18 November 2026](audit/markup_cleanup_2026-11-18/README.md) stripped HTML from stored titles and abstracts.
 
 ## Repository boundaries
 
