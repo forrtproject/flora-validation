@@ -1,29 +1,12 @@
 ## FLoRA structural validation
 
-_Generated: 2026-11-14 03:09:20 UTC | Dataset: 2,882 rows_
+_Generated: 2026-11-19 03:11:18 UTC | Dataset: 2,882 rows_
 
 Each item names the FLoRA record by its FLoRA ID and `doi_o | doi_r` (or `url_r`), says what is wrong and, after the dash, gives the value.
 
-### Problems (44)
+### Problems (21)
 
-**Invalid URLs** (6 findings):
-
-_A url column holds something other than one complete http(s) link._
-
-- REPL-001235 (`10.1006/jesp.2001.1488 | 10.71889/5fylantbak.29863007`): oa_url_r contains spaces (an open-access link from enrichment, not from the source record) — `http://libres.uncg.edu/ir/asu/f/Eshenbaugh_Brooklyn Spring 2018 Thesis.pdf`
-- REPL-001621 (`10.1016/j.jml.2020.104174 | 10.31234/osf.io/kt3sw_v2`): url_r holds a DOI, not a link — `10.1037/xlm0001650`
-- FRED-000419 (`10.1037/0278-7393.34.2.408 | 10.1126/science.aac4716`): oa_url_o contains spaces (an open-access link from enrichment, not from the source record) — `http://libres.uncg.edu/ir/uncg/f/P_Delaney_Intentional_2008(MULTI UNCG AUTHORS).pdf`
-- FRED-000048 (`10.1177/0956797616674999 | 10.1098/rsos.231240`): url_r holds two links — `https://osf.io/v6zk8 or http://rpubs.com/catherinecthomas/final_replication`
-- VAL-000044 (`10.2307/749455 | 10.5964/jnc.6063`): url_r holds a DOI, not a link — `10.31234/osf.io/wej8z`
-- VAL-000258 (`10.2224/sbp.2008.36.6.753 | 10.5114/cipp.2021.110948`): oa_url_r contains spaces (an open-access link from enrichment, not from the source record) — `https://www.termedia.pl/Journal/-75/pdf-45660-10?filename=Williams Conceptual.pdf`
-
-**Duplicate records** (1 finding):
-
-_Rows the build would have made one record: the same type, doi_o, doi_r and url_r, or the same DOIs with one url_r between them._
-
-- REPRO-000009, REPRO-000019 (`10.1145/2382448.2382450 | 10.17879/replicationresearch-2026-9414`): 2 rows the build would make one record — `reproduction|10.1145/2382448.2382450|10.17879/replicationresearch-2026-9414|`
-
-<details><summary><b>Missing required fields</b> (23 findings)</summary>
+<details><summary><b>Missing required fields</b> (15 findings)</summary>
 
 _title_o, title_r, doi_r or url_r, and an identifier for the original: doi_o, a url_o that is a link or DOI (not a title), alt_identifier_o or oa_work_id_o._
 
@@ -38,33 +21,12 @@ _title_o, title_r, doi_r or url_r, and an identifier for the original: doi_o, a 
 - REPL-000356 (`| 10.1177/0958928712471227`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-000448 (`| 10.1371/journal.pone.0120644`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-000621 (`| 10.5539/ibr.v5n4p71`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
-- REPL-001248 (`| 10.3390/jintelligence7010006`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
-- FRED-000330 (`| 10.1007/s13164-018-0400-9`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-000167 (`| 10.1177/0098628311421328`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
-- REPL-000172 (`| 10.1177/0022466912449652`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
-- REPL-000338 (`| 10.18653/v1/w19-8649`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
-- REPL-000353 (`| 10.1111/j.1949-8594.2012.00166.x`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-000357 (`| 10.1177/1029864913489703`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
-- REPL-000622 (`| https://blogs.lse.ac.uk/impactofsocialsciences/2013/09/10/bias-at-the-bbc-replicating-the-cps-analysis/`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - REPL-001403 (`| 10.17885/heiup.1157.c19369`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
-- REPL-001425 (`| 10.1142/s1084946721500084`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
-- REPL-001641 (`| https://hdl.handle.net/20.500.14721/40318`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 - VAL-000394 (`| 10.5406/bulcouresmusedu.193.0045`): the original has no identifier: no doi_o, url_o, alt_identifier_o or oa_work_id_o
 
 </details>
-
-**Invalid DOI format** (8 findings):
-
-_doi_o or doi_r is not a bare DOI (10.NNNN/…), or a DOI listed in alt_identifier_o or alt_identifier_r is malformed._
-
-- REPL-001062 (`10.1111/j.1468-0297.2009.02267.x | 10.1108/s0193-230620150000018002`): alt_identifier_r lists a DOI that carries query or tracking text (?…) — `10.1108/s0193-230620150000018002?utm_campaign=repec&wt.mc_id=repec`
-- FRED-000059 (`djaerv_2018 | 10.1098/rsos.231240`): doi_o is not a DOI — `djaerv_2018`
-- FRED-000052 (`escholarship.orgucitem39d347bk | 10.1098/rsos.231240`): doi_o is not a DOI — `escholarship.orgucitem39d347bk`
-- VAL-000005 (`10.1016/j.im.2015.06.009 | https://aisel.aisnet.org/trr/vol7/iss1/3`): doi_r is a link, not a DOI — `https://aisel.aisnet.org/trr/vol7/iss1/3`
-- VAL-000210 (`https://www.jstor.org/stable/41387554 | 10.1037/0022-0663.83.4.444`): doi_o is a link, not a DOI — `https://www.jstor.org/stable/41387554`
-- FRED-000886 (`scholars.indianastate.edu/etds/2136 | https://digitalcommons.memphis.edu/etd/3538/`): doi_o is a link, not a DOI — `scholars.indianastate.edu/etds/2136`
-- FRED-000520 (`thekeep.eiu.edu/theses/4783 | https://thekeep.eiu.edu/theses/5025`): doi_o is a link, not a DOI — `thekeep.eiu.edu/theses/4783`
-- FRED-000997 (`10.1007/s10683-011-9295-3 | 10.17605/osf.io/z9emg`): alt_identifier_r lists a DOI that is malformed — `10.17605/osf.io/w3kuz; 10.1038/s41586-025-10078-y`
 
 **Title says retracted** (6 findings):
 
@@ -115,10 +77,13 @@ _title_r is a file or project name, or a generic name such as 'Analysis'._
 
 **Checks passed:**
 
+- All links are valid URLs
 - Outcome values valid
 - Text fields hold text
 - Type values valid
 - Source values valid
 - Year ranges reasonable
+- No duplicate records
+- DOI format valid
 - DOI mapped to conflicting references
 - No 'NA'/'N/A' strings

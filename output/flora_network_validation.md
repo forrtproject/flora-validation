@@ -1,12 +1,12 @@
 ## FLoRA network validation
 
-_Generated: 2026-11-14 03:15:39 UTC | Dataset: 2,882 rows_
+_Generated: 2026-11-19 03:17:51 UTC | Dataset: 2,882 rows_
 
-**Original work types unavailable for 4 DOI(s); previous review decisions retained. This screening is advisory..**
+**Original work types unavailable for 2 DOI(s); previous review decisions retained. This screening is advisory..**
 
 Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says what is wrong and, after the dash, gives the DOI or link.
 
-### Problems (39)
+### Problems (19)
 
 **Retracted papers** (7 findings):
 
@@ -18,45 +18,23 @@ Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says wha
 - FRED-000891 (`10.1086/661890 | 10.15626/mp.2020.2538`): doi_o is retracted (Retraction Watch) — `10.1086/661890`
 - FRED-000420 (`10.1177/1948550611410890 | 10.1037/xge0000067`): doi_o is retracted (Retraction Watch) — `10.1177/1948550611410890`
 
-**DOIs not registered at doi.org** (9 findings):
+**DOIs not registered at doi.org** (7 findings):
 
-- REPL-001616 (`10.1111/1467-9280.00441 | 10.1177/0956797626146077`): doi_r is not registered at doi.org — `10.1177/0956797626146077`
-- REPRO-000003 (`10.1093/qje/qjac034 | 10.10419/295247`): doi_r is not registered at doi.org — `10.10419/295247`
-- FRED-000585 (`10.1177/2f10986111211035002 | 10.1080/15614263.2022.2102494`): doi_o is not registered at doi.org — `10.1177/2f10986111211035002`
+- VAL-000005 (`10.1016/j.im.2015.06.009 | 10.17705/1atrr.00068`): doi_r is not registered at doi.org — `10.17705/1atrr.00068`
 - VAL-000107 (`10.25300/misq/2018/13853 | 10.17705/1atrr.00067`): doi_r is not registered at doi.org — `10.17705/1atrr.00067`
 - VAL-000125 (`10.1287/isre.1040.0032 | 10.17705/1atrr.00046`): doi_r is not registered at doi.org — `10.17705/1atrr.00046`
 - VAL-000138 (`10.5465/amj.2010.51468978 | 10.17705/1atrr.00066`): doi_r is not registered at doi.org — `10.17705/1atrr.00066`
-- VAL-000185 (`10.1080/07421222.2017.1394083 | 10.17705/1atrr.00053`): doi_r is not registered at doi.org — `10.17705/1atrr.00053`
+- VAL-000185 (`10.1080/07421222.2017.1394083 | 10.17705/1atrr.00055`): doi_r is not registered at doi.org — `10.17705/1atrr.00055`
 - VAL-000215 (`10.2307/249754 | 10.17705/1atrr.00064`): doi_r is not registered at doi.org — `10.17705/1atrr.00064`
 - VAL-000427 (`10.1287/isre.1040.0032 | 10.17705/1atrr.00061`): doi_r is not registered at doi.org — `10.17705/1atrr.00061`
 
-<details><summary><b>Dead links</b> (23 findings)</summary>
+**Dead links** (5 findings):
 
-- REPL-000068 (`10.1177/0146167205279905 | 10.1080/02619768.2014.882308`): oa_url_r is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `http://hdl.handle.net/1820/9055`
 - REPL-000073 (`10.3102/0002831211419649 | 10.1037/a0036307`): oa_url_r is dead (connection refused; an open-access link from enrichment, not from the source record) — `http://orbilu.uni.lu/handle/10993/18672`
-- REPL-000553 (`10.1016/j.obhdp.2006.10.001 | 10.1525/collabra.216`): oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `http://www.collabra.org/articles/10.1525/collabra.216/galley/263/download/`
-- REPL-000866 (`10.1126/science.1239918 | 10.1525/collabra.117`): oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `http://www.collabra.org/articles/10.1525/collabra.117/galley/146/download/`
-- REPL-001061 (`10.2753/mis0742-1222240209 | 10.17705/1atrr.00004`): oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `http://elibrary.aisnet.org/Default.aspx?url=https://aisel.aisnet.org/cgi/viewcontent.cgi?article=1006&context=trr`
-- REPL-001076 (`10.3389/fpsyg.2016.00027 | 10.1371/journal.pone.0198620`): oa_url_r is dead (HTTP 400; an open-access link from enrichment, not from the source record) — `https://storage.googleapis.com/plos-corpus-prod/10.1371/journal.pone.0198620/1/pone.0198620.pdf?X-Goog-Algorithm=GOOG4-…`
-- FRED-000983 (`10.1111/1467-9280.00376 | 10.1177/0956797620968526`): oa_url_r is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `https://biblio.ugent.be/publication/8707609`
-- VAL-000239 (`10.1177/0956797620968526 | 10.5334/irsp.546`): oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `https://biblio.ugent.be/publication/8707609`
 - REPL-001099 (`10.1037/edu0000115 | 10.1037/edu0000433`): oa_url_r is dead (connection refused; an open-access link from enrichment, not from the source record) — `http://orbilu.uni.lu/handle/10993/45413`
-- REPL-001320 (`10.1016/s0022-1031(03)00057-x | 10.1371/journal.pone.0209263`): oa_url_r is dead (HTTP 400; an open-access link from enrichment, not from the source record) — `https://storage.googleapis.com/plos-corpus-prod/10.1371/journal.pone.0209263/1/pone.0209263.pdf?X-Goog-Algorithm=GOOG4-…`
-- REPL-001624 (`10.1348/014466607x238751 | 10.1002/ejsp.70015`): oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `http://eprints.keele.ac.uk/2959/1/M%20Noor%20-%20Prescursors%20and%20mediators%20of%20Intergroup%20Reconciliation%20in%…`
-- FRED-000270, VAL-000311: oa_url_o is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `https://autopapers.ssrn.com/sol3/papers.cfm?abstract_id=1324778`
-- FRED-000012 (`10.1037/0022-3514.86.5.680 | 10.1016/j.jesp.2020.104052`): oa_url_o is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `https://autopapers.ssrn.com/sol3/papers.cfm?abstract_id=929932`
-- FRED-000643 (`10.1037/0278-7393.34.1.97 | 10.1126/science.aac4716`): oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `http://hdl.handle.net/10026.1/3213`
-- FRED-000469 (`10.1177/0146167210386238 | 10.1525/collabra.192`): oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `http://www.collabra.org/articles/10.1525/collabra.192/galley/251/download/`
 - FRED-000772 (`10.1177/0956797611434748 | 10.1016/j.cognition.2014.09.003`): oa_url_r is dead (connection refused; an open-access link from enrichment, not from the source record) — `http://orbilu.uni.lu/handle/10993/17967`
-- VAL-000031 (`10.1016/0010-0285(89)90003-0 | 10.7916/d8f76r2r`): url_r is dead (DNS: name not found) — `https://tesol-dev.journals.cdrs.columbia.edu/wp-content/uploads/sites/12/2015/06/3.-Seol-2005.pdf`
-- VAL-000031 (`10.1016/0010-0285(89)90003-0 | 10.7916/d8f76r2r`): oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `https://tesol-dev.journals.cdrs.columbia.edu/wp-content/uploads/sites/12/2015/06/3.-Seol-2005.pdf`
-- VAL-000077 (`10.1016/j.cognition.2006.12.015 | 10.1525/collabra.87`): oa_url_r is dead (DNS: name not found; an open-access link from enrichment, not from the source record) — `http://www.collabra.org/articles/10.1525/collabra.87/galley/208/download/`
-- VAL-000196 (`10.1371/journal.pone.0197268 | 10.1371/journal.pone.0253023`): oa_url_o is dead (HTTP 400; an open-access link from enrichment, not from the source record) — `https://storage.googleapis.com/plos-corpus-prod/10.1371/journal.pone.0197268/1/pone.0197268.pdf?X-Goog-Algorithm=GOOG4-…`
-- REPL-001327 (`10.1006/jmla.1996.0032 | https://openalex.org/W7110491536`): url_r is dead (HTTP 404) — `https://openalex.org/W7110491536`
+- REPRO-000118, SCORE-000050: oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `https://ore.exeter.ac.uk/repository/bitstream/10871/39185/1/AMJ-2016-0086.final.pdf`
 - FRED-000267 (`10.1037/0278-6133.3.5.431 | https://docs.google.com/document/d/10OKLI0-Kw2D7SDyLU_Ieql88gLtbnYGSyZhCBqsEAyk`): url_r is dead (HTTP 410) — `https://docs.google.com/document/d/10OKLI0-Kw2D7SDyLU_Ieql88gLtbnYGSyZhCBqsEAyk`
-- VAL-000315 (`10.1111/j.1540-4781.1996.tb05468.x | 10.32601/ejal.460588`): url_r is dead (HTTP 404) — `http://dergipark.gov.tr/download/article-file/536686`
-
-</details>
 
 ### Possible problems (69)
 
@@ -68,17 +46,15 @@ _Heuristics: a person decides whether each one is a problem._
 - FRED-000906 (`10.1509/jmkr.45.6.633 | 10.1177/2515245918781032`): doi_o has an expression of concern (Retraction Watch) — `10.1509/jmkr.45.6.633`
 - FRED-000187 (`10.1177/0956797611432497 | 10.1027/1864-9335/a000191`): doi_o has an expression of concern (Retraction Watch) — `10.1177/0956797611432497`
 
-**Original probably has a DOI** (5 findings):
+**Original probably has a DOI** (3 findings):
 
-- REPL-001248 (`| 10.3390/jintelligence7010006`): doi_o is blank; Crossref lists this paper with a DOI: 'The Mismeasure of Man' (2012, Gould) — `10.4324/9780203718087-5`
 - REPL-000409 (`| 10.1111/jpr.12599`): doi_o is blank; Crossref lists this paper with a DOI: 'Assimilation and Contrast Effects of Culture Priming Among Hong Kong Chinese' (2016, Ng) — `10.1177/0022022116631826`
 - REPL-000412 (`| 10.36948/ijfmr.2025.v07i06.61995`): doi_o is blank; Crossref lists this paper with a DOI: 'Retro-cue benefits in working memory without sustained focal attention' (2014, Rerko) — `10.3758/s13421-013-0392-8`
-- REPL-001425 (`| 10.1142/s1084946721500084`): doi_o is blank; Crossref lists this paper with a DOI: 'Poverty and Entrepreneurship in Developing Countries' (2011, Ernesto Amorós) — `10.1093/acprof:oso/9780199580866.003.0010`
 - REPL-001445 (`| 10.1525/collabra.163080`): doi_o is blank; Crossref lists this paper with a DOI: 'The dark side of self- and social perception: Black uniforms and aggression in …' (1988, Frank) — `10.1037/0022-3514.54.1.74`
 
 **Original target needs review (higher priority):** none
 
-<details><summary><b>Original publication format needs review</b> (61 findings)</summary>
+<details><summary><b>Original publication format needs review</b> (63 findings)</summary>
 
 - REPL-000015 (`10.1037/bar0000276 | 10.1002/bin.70067`): Publication-format review. OpenAlex type: letter. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1037/bar0000276 — `10.1037/bar0000276`
 - REPL-000019 (`10.1145/3328778.3366948 | 10.1080/08993408.2022.2071543`): Publication-format review. OpenAlex type: conference-paper. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1145/3328778.3366948 — `10.1145/3328778.3366948`
@@ -114,6 +90,7 @@ _Heuristics: a person decides whether each one is a problem._
 - REPL-001071 (`10.4159/9780674369542 | 10.1017/ssh.2017.27`): Publication-format review. OpenAlex type: book. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.4159/9780674369542 — `10.4159/9780674369542`
 - REPL-001117 (`10.1145/1404520.1404531 | 10.1080/08993408.2022.2079866`): Publication-format review. OpenAlex type: conference-paper. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1145/1404520.1404531 — `10.1145/1404520.1404531`
 - REPL-001181 (`10.1093/acprof:osobl/9780199927418.003.0013 | 10.1080/09515089.2013.878834`): Publication-format review. OpenAlex type: book-chapter. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1093/acprof:osobl/9780199927418.003.0013 — `10.1093/acprof:osobl/9780199927418.003.0013`
+- REPL-001248 (`10.4324/9780203718087-5 | 10.3390/jintelligence7010006`): Publication-format review. OpenAlex type: book-chapter. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.4324/9780203718087-5 — `10.4324/9780203718087-5`
 - REPL-001269 (`10.1017/cbo9780511667268.005 | 10.1017/s0261444813000049`): Publication-format review. OpenAlex type: book-chapter. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1017/cbo9780511667268.005 — `10.1017/cbo9780511667268.005`
 - REPL-001273 (`10.1038/ng.2390 | 10.1155/2013/641596`): Publication-format review. OpenAlex type: review. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1038/ng.2390 — `10.1038/ng.2390`
 - REPL-001275 (`10.1038/ng.2520 | 10.1371/journal.pone.0102100`): Publication-format review. OpenAlex type: review. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1038/ng.2520 — `10.1038/ng.2520`
@@ -132,6 +109,7 @@ _Heuristics: a person decides whether each one is a problem._
 - VAL-000139 (`10.36019/9781978817111 | 10.1111/j.1747-4469.2011.01256.x`): Publication-format review. OpenAlex type: book. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.36019/9781978817111 — `10.36019/9781978817111`
 - VAL-000166 (`10.1145/3196398.3196421 | 10.7717/peerj-cs.245`): Publication-format review. OpenAlex type: conference-paper. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1145/3196398.3196421 — `10.1145/3196398.3196421`
 - REPL-000501 (`10.1016/j.jenvp.2013.09.003 | 10.17605/osf.io/hz97d`): Publication-format review. OpenAlex type: review. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1016/j.jenvp.2013.09.003 — `10.1016/j.jenvp.2013.09.003`
+- REPL-001425 (`10.1093/acprof:oso/9780199580866.003.0010 | 10.1142/s1084946721500084`): Publication-format review. OpenAlex type: book-chapter. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1093/acprof:oso/9780199580866.003.0010 — `10.1093/acprof:oso/9780199580866.003.0010`
 - REPRO-000163 (`10.1038/s41562-023-01712-8 | https://osf.io/9y47b/`): Publication-format review. OpenAlex type: review. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1038/s41562-023-01712-8 — `10.1038/s41562-023-01712-8`
 - VAL-000282 (`10.1145/3173574.3174066 | 10.1145/3334480.3381435`): Publication-format review. OpenAlex type: conference-paper. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1145/3173574.3174066 — `10.1145/3173574.3174066`
 - REPL-001674 (`10.1111/jsbm.12240 | 10.1016/j.jbvi.2022.e00342`): Publication-format review. OpenAlex type: review. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1111/jsbm.12240 — `10.1111/jsbm.12240`
@@ -144,35 +122,39 @@ _Heuristics: a person decides whether each one is a problem._
 
 </details>
 
-<details><summary><b>Could not check</b> (4 original work types, 9 links)</summary>
+<details><summary><b>Could not check</b> (2 original work types, 10 links, 2 originals without a DOI)</summary>
 
-_Not findings: no answer could be had for these 13, and they are checked again on the next run._
+_Not findings: no answer could be had for these 14, and they are checked again on the next run._
 
-**Original work types (advisory)** (4):
+**Original work types (advisory)** (2):
 
-- FRED-000547, FRED-000912, doi_o: Original work type unavailable or stale; previous review retained — `10.1002/(sici)1099-0771(199806)11:2<107::aid-bdm292>3.0.co;2-y`
 - REPL-000806, doi_o: Original work type unavailable or stale; previous review retained — `10.1026/0949-3946.48.2.94`
-- FRED-000585, doi_o: Original work type unavailable or stale; previous review retained — `10.1177/2f10986111211035002`
 - REPL-000025, doi_o: Original work type unavailable or stale; previous review retained — `10.6129/cjp.2003.4501.07`
 
-**Links** (9):
+**Links** (10):
 
+- REPL-000739, oa_url_o: HTTP 429 — `https://dash.harvard.edu/bitstreams/7312037d-ebc7-6bd4-e053-0100007fdf3b/download`
 - REPL-001176, oa_url_r: timed out — `https://cdr.lib.unc.edu/downloads/7w62fg56x`
-- REPL-001214, oa_url_r: timed out — `https://journalofcognition.org/articles/456/files/6888a2bd2e674.pdf`
+- REPL-001309, REPRO-000305, oa_url_o: timed out — `http://hdl.handle.net/1808/10115`
 - REPL-001436, oa_url_o: timed out — `http://hdl.handle.net/2328/35450`
-- REPL-001612, oa_url_r: timed out — `https://journalofcognition.org/articles/508/files/6a4782df6e686.pdf`
 - VAL-000159, oa_url_r: TLS: unable to get local issuer certificate — `https://polipapers.upv.es/index.php/MUSE/article/download/10390/11334`
+- VAL-000182, oa_url_o: HTTP 503 — `http://insight.jci.org/articles/view/89376/files/pdf`
 - REPL-000190, oa_url_o: TLS: unable to get local issuer certificate — `http://hdl.handle.net/10902/7358`
 - REPL-001417, url_r: redirect loop — `https://www.proquest.com/docview/221001969?pq-origsite=gscholar&fromopenview=true&sourcetype=Scholarly%20Journals`
 - REPL-001618, url_o: redirect loop — `https://www.proquest.com/docview/1470800730`
 - FRED-000798, oa_url_o: ConnectionResetError: \[Errno 104\] Connection reset by peer — `http://ira.lib.polyu.edu.hk/bitstream/10397/97105/1/Huang_Influence_Product_Anthropomorphism.pdf`
+
+**Originals without a DOI** (2):
+
+- FRED-000059, title_o: HTTP 429 — `Cognitive vs. emotive factives: An experimental differentiation`
+- FRED-000052, title_o: HTTP 429 — `The first crank of the cultural ratchet: Learning and transmitting concepts through language`
 
 </details>
 
 
 **Network validation status: needs review**
 
-- Original work types (advisory): 2,577 distinct; 2,573 cached, 2,577 checked (4 could not be checked), 0 deferred.
-- DOIs: 4,836 distinct; 4,799 cached, 37 checked, 0 deferred.
-- Links: 3,403 distinct; 3,128 cached, 275 checked (9 could not be checked), 0 deferred.
-- Originals without a DOI: 28 distinct; 28 cached, 0 checked, 0 deferred.
+- Original work types (advisory): 2,581 distinct; 2,579 cached, 2,581 checked (2 could not be checked), 0 deferred.
+- DOIs: 4,841 distinct; 4,813 cached, 28 checked, 0 deferred.
+- Links: 3,416 distinct; 3,131 cached, 285 checked (10 could not be checked), 0 deferred.
+- Originals without a DOI: 31 distinct; 25 cached, 6 checked (2 could not be checked), 0 deferred.
