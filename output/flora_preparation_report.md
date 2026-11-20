@@ -1,12 +1,12 @@
 # FLoRA preparation report
 
-Generated: 2026-11-19T03:09:29+00:00
+Generated: 2026-11-20T03:07:29+00:00
 
 Status: **needs review**
 
 Mode: built from the database
 
-Rows: 2,882
+Rows: 2,884
 
 ## Stages
 
@@ -14,24 +14,24 @@ Rows: 2,882
 - structural validation: needs review — 21 problems and 10 possible problems
 - network validation: needs review
 - release files and history: passed
-- store dataset: passed — 2,882 rows in flora_data
+- store dataset: passed — 2,884 rows in flora_data
 - write output files: passed
 
 ## Warnings
 
-- 39 records left out for a missing title; see flora_export_log.csv.
+- 40 records left out for a missing title; see flora_export_log.csv.
 - 62 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.
 - 20 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.
 - Structural validation found 21 problems and 10 possible problems.
-- Network validation needs review: 19 problems and 69 possible problems. Original work types unavailable for 2 DOI(s); previous review decisions retained. This screening is advisory..
+- Network validation needs review: 18 problems and 69 possible problems. Original work types unavailable for 2 DOI(s); previous review decisions retained. This screening is advisory..
 
 ## Stored dataset
 
-- 2,882 rows stored in `flora_data`, which Download full CSV and the public API serve.
+- 2,884 rows stored in `flora_data`, which Download full CSV and the public API serve.
 
 ## Diagnostic files
 
-- flora_export_log.csv: 39 records left out for a missing title.
+- flora_export_log.csv: 40 records left out for a missing title.
 - dup_outcome_conflicts.csv: 62 merged records whose duplicates gave different outcomes.
 - preprint_dedup_candidates.csv: 20 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates).
 
@@ -39,7 +39,7 @@ The JSON report lists the affected records.
 
 ## FLoRA structural validation
 
-_Generated: 2026-11-19 03:17:57 UTC | Dataset: 2,882 rows_
+_Generated: 2026-11-20 03:11:43 UTC | Dataset: 2,884 rows_
 
 Each item names the FLoRA record by its FLoRA ID and `doi_o | doi_r` (or `url_r`), says what is wrong and, after the dash, gives the value.
 
@@ -130,13 +130,13 @@ _title_r is a file or project name, or a generic name such as 'Analysis'._
 
 ## FLoRA network validation
 
-_Generated: 2026-11-19 03:17:57 UTC | Dataset: 2,882 rows_
+_Generated: 2026-11-20 03:11:43 UTC | Dataset: 2,884 rows_
 
 **Original work types unavailable for 2 DOI(s); previous review decisions retained. This screening is advisory..**
 
 Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says what is wrong and, after the dash, gives the DOI or link.
 
-### Problems (19)
+### Problems (18)
 
 **Retracted papers** (7 findings):
 
@@ -158,13 +158,12 @@ Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says wha
 - VAL-000215 (`10.2307/249754 | 10.17705/1atrr.00064`): doi_r is not registered at doi.org — `10.17705/1atrr.00064`
 - VAL-000427 (`10.1287/isre.1040.0032 | 10.17705/1atrr.00061`): doi_r is not registered at doi.org — `10.17705/1atrr.00061`
 
-**Dead links** (5 findings):
+**Dead links** (4 findings):
 
 - REPL-000073 (`10.3102/0002831211419649 | 10.1037/a0036307`): oa_url_r is dead (connection refused; an open-access link from enrichment, not from the source record) — `http://orbilu.uni.lu/handle/10993/18672`
+- REPL-001051 (`10.1086/209200 | 10.1177/1029864913493800`): oa_url_r is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `http://nbn-resolving.org/urn:nbn:de:hebis:34-2014121646791`
 - REPL-001099 (`10.1037/edu0000115 | 10.1037/edu0000433`): oa_url_r is dead (connection refused; an open-access link from enrichment, not from the source record) — `http://orbilu.uni.lu/handle/10993/45413`
 - FRED-000772 (`10.1177/0956797611434748 | 10.1016/j.cognition.2014.09.003`): oa_url_r is dead (connection refused; an open-access link from enrichment, not from the source record) — `http://orbilu.uni.lu/handle/10993/17967`
-- REPRO-000118, SCORE-000050: oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `https://ore.exeter.ac.uk/repository/bitstream/10871/39185/1/AMJ-2016-0086.final.pdf`
-- FRED-000267 (`10.1037/0278-6133.3.5.431 | https://docs.google.com/document/d/10OKLI0-Kw2D7SDyLU_Ieql88gLtbnYGSyZhCBqsEAyk`): url_r is dead (HTTP 410) — `https://docs.google.com/document/d/10OKLI0-Kw2D7SDyLU_Ieql88gLtbnYGSyZhCBqsEAyk`
 
 ### Possible problems (69)
 
@@ -252,46 +251,40 @@ _Heuristics: a person decides whether each one is a problem._
 
 </details>
 
-<details><summary><b>Could not check</b> (2 original work types, 10 links, 2 originals without a DOI)</summary>
+<details><summary><b>Could not check</b> (2 original work types, 9 links)</summary>
 
-_Not findings: no answer could be had for these 14, and they are checked again on the next run._
+_Not findings: no answer could be had for these 11, and they are checked again on the next run._
 
 **Original work types (advisory)** (2):
 
 - REPL-000806, doi_o: Original work type unavailable or stale; previous review retained — `10.1026/0949-3946.48.2.94`
 - REPL-000025, doi_o: Original work type unavailable or stale; previous review retained — `10.6129/cjp.2003.4501.07`
 
-**Links** (10):
+**Links** (9):
 
 - REPL-000739, oa_url_o: HTTP 429 — `https://dash.harvard.edu/bitstreams/7312037d-ebc7-6bd4-e053-0100007fdf3b/download`
+- REPL-000971, oa_url_r: timed out — `https://ltr.edu.au/resources/grants_pp_physiotheraphy_instrument_griffith_report_2009.pdf`
 - REPL-001176, oa_url_r: timed out — `https://cdr.lib.unc.edu/downloads/7w62fg56x`
-- REPL-001309, REPRO-000305, oa_url_o: timed out — `http://hdl.handle.net/1808/10115`
 - REPL-001436, oa_url_o: timed out — `http://hdl.handle.net/2328/35450`
 - VAL-000159, oa_url_r: TLS: unable to get local issuer certificate — `https://polipapers.upv.es/index.php/MUSE/article/download/10390/11334`
-- VAL-000182, oa_url_o: HTTP 503 — `http://insight.jci.org/articles/view/89376/files/pdf`
 - REPL-000190, oa_url_o: TLS: unable to get local issuer certificate — `http://hdl.handle.net/10902/7358`
 - REPL-001417, url_r: redirect loop — `https://www.proquest.com/docview/221001969?pq-origsite=gscholar&fromopenview=true&sourcetype=Scholarly%20Journals`
 - REPL-001618, url_o: redirect loop — `https://www.proquest.com/docview/1470800730`
 - FRED-000798, oa_url_o: ConnectionResetError: \[Errno 104\] Connection reset by peer — `http://ira.lib.polyu.edu.hk/bitstream/10397/97105/1/Huang_Influence_Product_Anthropomorphism.pdf`
-
-**Originals without a DOI** (2):
-
-- FRED-000059, title_o: HTTP 429 — `Cognitive vs. emotive factives: An experimental differentiation`
-- FRED-000052, title_o: HTTP 429 — `The first crank of the cultural ratchet: Learning and transmitting concepts through language`
 
 </details>
 
 
 **Network validation status: needs review**
 
-- Original work types (advisory): 2,581 distinct; 2,579 cached, 2,581 checked (2 could not be checked), 0 deferred.
-- DOIs: 4,841 distinct; 4,813 cached, 28 checked, 0 deferred.
-- Links: 3,416 distinct; 3,131 cached, 285 checked (10 could not be checked), 0 deferred.
-- Originals without a DOI: 31 distinct; 25 cached, 6 checked (2 could not be checked), 0 deferred.
+- Original work types (advisory): 2,583 distinct; 2,581 cached, 2,583 checked (2 could not be checked), 0 deferred.
+- DOIs: 4,846 distinct; 4,803 cached, 43 checked, 0 deferred.
+- Links: 3,421 distinct; 3,381 cached, 40 checked (9 could not be checked), 0 deferred.
+- Originals without a DOI: 31 distinct; 30 cached, 1 checked, 0 deferred.
 
 
 ## Release files
 
-- flora.csv: 2,882 rows, SHA-256 `c1cf58bb207c83e9843299f8628fcdeb09da1e6106e5a9881efb2e61063b1b7e`.
+- flora.csv: 2,884 rows, SHA-256 `22fe9062e8bf15de8b43b86f21e1f129ab5ec63ea4203702e8e9bd28a063c4e3`.
 - Also written: the release manifest and notes, and today's counts in flora_history.csv and flora_dataset_summary.md.
 - Publication: The repository copy (`output/` on GitHub) is committed by two workflows, each when flora.csv changed: the nightly job, with its own run's files, and Publish FLoRA, with the stored dataset. Website and local command-line runs commit nothing. Nothing is uploaded to OSF.

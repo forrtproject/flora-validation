@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-19T03:09:29+00:00",
+  "generated_at": "2026-11-20T03:07:29+00:00",
   "mode": "database_pipeline",
   "status": "needs_attention",
-  "rows": 2882,
+  "rows": 2884,
   "stages": [
     {
       "name": "build flora.csv and check IDs",
@@ -25,7 +25,7 @@
     {
       "name": "store dataset",
       "status": "passed",
-      "detail": "2,882 rows in flora_data"
+      "detail": "2,884 rows in flora_data"
     },
     {
       "name": "write output files",
@@ -33,11 +33,11 @@
     }
   ],
   "warnings": [
-    "39 records left out for a missing title; see flora_export_log.csv.",
+    "40 records left out for a missing title; see flora_export_log.csv.",
     "62 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.",
     "20 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.",
     "Structural validation found 21 problems and 10 possible problems.",
-    "Network validation needs review: 19 problems and 69 possible problems. Original work types unavailable for 2 DOI(s); previous review decisions retained. This screening is advisory.."
+    "Network validation needs review: 18 problems and 69 possible problems. Original work types unavailable for 2 DOI(s); previous review decisions retained. This screening is advisory.."
   ],
   "errors": [],
   "warning_count": 5,
@@ -45,7 +45,7 @@
   "diagnostics": {
     "flora_export_log.csv": {
       "description": "records left out for a missing title",
-      "rows": 39,
+      "rows": 40,
       "records": [
         {
           "reason": "missing title_o",
@@ -436,6 +436,16 @@
           "doi_r": "",
           "url_r": "https://ir.lib.uwo.ca/etd/7854",
           "apa_ref_r": "Hillier · 2021 · Scholarship@Western (Western University)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000501",
+          "source": "validated",
+          "doi_o": "10.1016/s0022-3999(98)00023-3",
+          "apa_ref_o": "Vercoulen, J. H. M. M., Swanink, C. M. A., Galama, J. M. D., Fennis, J. F. M., Jongen, P. J. H., Hommes, O. R., van der Meer, J. W. M., & Bleijenberg, G. (1998). The persistence of fatigue in chronic fatigue syndrome and multiple sclerosis. Journal of Psychosomatic Research, 45(6), 507–517. https://doi.org/10.1016/s0022-3999(98)00023-3",
+          "doi_r": "",
+          "url_r": "https://via.library.depaul.edu/cgi/viewcontent.cgi?article=1200&context=csh_etd",
+          "apa_ref_r": "Sunnquist · 2016 · The Institutional Repository at DePaul University (DePaul University)"
         }
       ]
     },
@@ -1634,8 +1644,8 @@
   },
   "identity": {
     "status": "passed",
-    "rows": 2882,
-    "unique_ids": 2882
+    "rows": 2884,
+    "unique_ids": 2884
   },
   "columns": [
     "id",
@@ -2229,7 +2239,7 @@
     "possible_problems": 10,
     "has_problems": true,
     "has_issues": true,
-    "rows": 2882
+    "rows": 2884
   },
   "network": {
     "status": "needs_attention",
@@ -2439,6 +2449,18 @@
           {
             "check": "dead_link",
             "flora_ids": [
+              "REPL-001051"
+            ],
+            "column": "oa_url_r",
+            "value": "http://nbn-resolving.org/urn:nbn:de:hebis:34-2014121646791",
+            "detail": "oa_url_r is dead (HTTP 404; an open-access link from enrichment, not from the source record)",
+            "label": "10.1086/209200 | 10.1177/1029864913493800",
+            "key": "dead_link|REPL-001051|oa_url_r|http://nbn-resolving.org/urn:nbn:de:hebis:34-2014121646791",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
               "REPL-001099"
             ],
             "column": "oa_url_r",
@@ -2458,31 +2480,6 @@
             "detail": "oa_url_r is dead (connection refused; an open-access link from enrichment, not from the source record)",
             "label": "10.1177/0956797611434748 | 10.1016/j.cognition.2014.09.003",
             "key": "dead_link|FRED-000772|oa_url_r|http://orbilu.uni.lu/handle/10993/17967",
-            "level": "problem"
-          },
-          {
-            "check": "dead_link",
-            "flora_ids": [
-              "REPRO-000118",
-              "SCORE-000050"
-            ],
-            "column": "oa_url_o",
-            "value": "https://ore.exeter.ac.uk/repository/bitstream/10871/39185/1/AMJ-2016-0086.final.pdf",
-            "detail": "oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record)",
-            "label": "",
-            "key": "dead_link|REPRO-000118,SCORE-000050|oa_url_o|https://ore.exeter.ac.uk/repository/bitstream/10871/39185/1/amj-2016-0086.final.pdf",
-            "level": "problem"
-          },
-          {
-            "check": "dead_link",
-            "flora_ids": [
-              "FRED-000267"
-            ],
-            "column": "url_r",
-            "value": "https://docs.google.com/document/d/10OKLI0-Kw2D7SDyLU_Ieql88gLtbnYGSyZhCBqsEAyk",
-            "detail": "url_r is dead (HTTP 410)",
-            "label": "10.1037/0278-6133.3.5.431 | https://docs.google.com/document/d/10OKLI0-Kw2D7SDyLU_Ieql88gLtbnYGSyZhCBqsEAyk",
-            "key": "dead_link|FRED-000267|url_r|https://docs.google.com/document/d/10okli0-kw2d7sdylu_ieql88gltbnygsyzhcbqseayk",
             "level": "problem"
           }
         ],
@@ -3384,6 +3381,16 @@
           ]
         },
         {
+          "target": "https://ltr.edu.au/resources/grants_pp_physiotheraphy_instrument_griffith_report_2009.pdf",
+          "columns": [
+            "oa_url_r"
+          ],
+          "reason": "timed out",
+          "flora_ids": [
+            "REPL-000971"
+          ]
+        },
+        {
           "target": "https://cdr.lib.unc.edu/downloads/7w62fg56x",
           "columns": [
             "oa_url_r"
@@ -3391,17 +3398,6 @@
           "reason": "timed out",
           "flora_ids": [
             "REPL-001176"
-          ]
-        },
-        {
-          "target": "http://hdl.handle.net/1808/10115",
-          "columns": [
-            "oa_url_o"
-          ],
-          "reason": "timed out",
-          "flora_ids": [
-            "REPL-001309",
-            "REPRO-000305"
           ]
         },
         {
@@ -3422,16 +3418,6 @@
           "reason": "TLS: unable to get local issuer certificate",
           "flora_ids": [
             "VAL-000159"
-          ]
-        },
-        {
-          "target": "http://insight.jci.org/articles/view/89376/files/pdf",
-          "columns": [
-            "oa_url_o"
-          ],
-          "reason": "HTTP 503",
-          "flora_ids": [
-            "VAL-000182"
           ]
         },
         {
@@ -3475,37 +3461,16 @@
           ]
         }
       ],
-      "originals": [
-        {
-          "target": "Cognitive vs. emotive factives: An experimental differentiation",
-          "columns": [
-            "title_o"
-          ],
-          "reason": "HTTP 429",
-          "flora_ids": [
-            "FRED-000059"
-          ]
-        },
-        {
-          "target": "The first crank of the cultural ratchet: Learning and transmitting concepts through language",
-          "columns": [
-            "title_o"
-          ],
-          "reason": "HTTP 429",
-          "flora_ids": [
-            "FRED-000052"
-          ]
-        }
-      ]
+      "originals": []
     },
     "notices": [
       "Original work types unavailable for 2 DOI(s); previous review decisions retained. This screening is advisory."
     ],
     "coverage": {
       "work_types": {
-        "targets": 2581,
-        "cached": 2579,
-        "checked": 2581,
+        "targets": 2583,
+        "cached": 2581,
+        "checked": 2583,
         "unchecked": 2,
         "deferred": 0,
         "advisory": true
@@ -3514,43 +3479,43 @@
         "status": "checked"
       },
       "dois": {
-        "targets": 4841,
-        "cached": 4813,
-        "checked": 28,
+        "targets": 4846,
+        "cached": 4803,
+        "checked": 43,
         "deferred": 0,
         "unchecked": 0
       },
       "urls": {
-        "targets": 3416,
-        "cached": 3131,
-        "checked": 285,
+        "targets": 3421,
+        "cached": 3381,
+        "checked": 40,
         "deferred": 0,
-        "unchecked": 10
+        "unchecked": 9
       },
       "originals": {
         "targets": 31,
-        "cached": 25,
-        "checked": 6,
+        "cached": 30,
+        "checked": 1,
         "deferred": 0,
-        "unchecked": 2
+        "unchecked": 0
       }
     },
     "suppressed": 0,
-    "problems": 19,
+    "problems": 18,
     "possible_problems": 69,
-    "issue_count": 88,
-    "rows": 2882
+    "issue_count": 87,
+    "rows": 2884
   },
   "release": {
     "schema_version": 1,
     "status": "prepared_locally",
     "published": false,
-    "generated_at": "2026-11-19T03:17:51+00:00",
+    "generated_at": "2026-11-20T03:11:38+00:00",
     "filename": "flora.csv",
-    "bytes": 14423792,
-    "sha256": "c1cf58bb207c83e9843299f8628fcdeb09da1e6106e5a9881efb2e61063b1b7e",
-    "md5": "1b915bbb7844a35dcb37cad69c97d60c",
-    "rows": 2882,
+    "bytes": 14441106,
+    "sha256": "22fe9062e8bf15de8b43b86f21e1f129ab5ec63ea4203702e8e9bd28a063c4e3",
+    "md5": "586c6c2cc2bf2c856cd33fed2062c4a3",
+    "rows": 2884,
     "columns": [
       "id",
       "id_md5",
@@ -3611,22 +3576,22 @@
     "release_notes": "",
     "source_kind": "authoritative_publication",
     "data_version": {
-      "stored_at": "2026-11-19T03:17:52.369051+00:00",
-      "change_watermark": 1033
+      "stored_at": "2026-11-20T03:11:39.300538+00:00",
+      "change_watermark": 1035
     }
   },
   "storage": {
-    "rows": 2882,
-    "inserted": 2,
-    "updated": 13,
-    "unchanged": 2867,
-    "retired": 2,
+    "rows": 2884,
+    "inserted": 3,
+    "updated": 0,
+    "unchanged": 2881,
+    "retired": 1,
     "reactivated": 0,
     "preserved": 0,
     "table": "flora_data",
-    "snapshot_sha256": "c1cf58bb207c83e9843299f8628fcdeb09da1e6106e5a9881efb2e61063b1b7e",
-    "stored_at": "2026-11-19T03:17:52.369051+00:00",
+    "snapshot_sha256": "22fe9062e8bf15de8b43b86f21e1f129ab5ec63ea4203702e8e9bd28a063c4e3",
+    "stored_at": "2026-11-20T03:11:39.300538+00:00",
     "status": "committed"
   },
-  "finished_at": "2026-11-19T03:17:57+00:00"
+  "finished_at": "2026-11-20T03:11:43+00:00"
 }
