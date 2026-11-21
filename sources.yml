@@ -85,7 +85,8 @@ sources:
       [id, ref_o, doi_o, url_o, study_o, ref_r, doi_r, url_r, abstract_r,
        outcome_computational, outcome_computational_quote,
        out_quote_computational_source, outcome_robustness,
-       outcome_robustness_quote, out_quote_robust_source, validation]
+       outcome_robustness_quote, out_quote_robust_source, validation,
+       alt_identifier_r, alt_identifier_o]
 
     column_map:
       validation: validation_status
@@ -101,7 +102,8 @@ sources:
       [ref_o, doi_o, url_o, study_o, ref_r, doi_r, url_r, abstract_r,
        outcome_computation, outcome_computational_quote,
        out_quote_computational_source, outcome_robustness,
-       outcome_robustness_quote, out_quote_robust_source, validation_status]
+       outcome_robustness_quote, out_quote_robust_source, validation_status,
+       alt_identifier_o, alt_identifier_r]
 
   # ── Second spreadsheet: "Validating FReD replication success - Brinna" ───────
   #
