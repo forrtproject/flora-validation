@@ -5,7 +5,11 @@ production release requires Lukas's approval of the exact candidate bundle.
 
 | Version | Published | Record | Records |
 | --- | --- | --- | --- |
-| 2026.11.1 | 2026-11-23 | [10.5281/zenodo.24461023](https://doi.org/10.5281/zenodo.24461023) | 2,884 |
+| 2026.11.2 | 2026-11-23 | [10.5281/zenodo.24477135](https://doi.org/10.5281/zenodo.24477135) | 2,884 |
+| 2026.11.1 | 2026-11-23, withdrawn | [10.5281/zenodo.24461023](https://doi.org/10.5281/zenodo.24461023) | 2,884 |
+
+2026.11.1 deposited internal release files and had a one-line description; it was
+replaced the same day by 2026.11.2 (identical records) and deleted on Zenodo.
 
 All versions: concept DOI [10.5281/zenodo.24461022](https://doi.org/10.5281/zenodo.24461022).
 Published bundles and their `zenodo-state.json` receipts are archived in the
@@ -133,10 +137,10 @@ Superseded audits remain at [commit 479b12d](https://github.com/forrtproject/flo
 
 Keep each published bundle and its local `zenodo-state.json` receipt. For the next
 release, supply that directory through `--previous` (restore it from the archive,
-or recover it with `--fetch-previous 24461023` as described below):
+or recover it with `--fetch-previous 24477135` as described below):
 
 ```bash
-python3 zenodo_flora.py --version 2026.11.2 --bundle release-bundles/production/2026.11.2 --previous release-bundles/production/2026.11.1
+python3 zenodo_flora.py --version 2026.12.1 --bundle release-bundles/production/2026.12.1 --previous release-bundles/production/2026.11.2
 ```
 
 Alternatively, `--fetch-previous RECORD_ID --bundle DIRECTORY` recovers a public
