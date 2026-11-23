@@ -5,8 +5,9 @@ import hashlib
 import io
 import json
 import os
+import html
 import re
-import shutil
+import string
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -18,12 +19,27 @@ import flora_release_projects
 ROOT = Path(__file__).resolve().parent
 SOURCES = ROOT / 'release/flora'
 HOSTS = {'sandbox': 'https://sandbox.zenodo.org', 'production': 'https://zenodo.org'}
+CONCEPT_DOI = '10.5281/zenodo.24461022'
+FRED_DOI = '10.5281/zenodo.24461606'
+FAQ_URL = 'https://github.com/forrtproject/flora-validation/blob/main/release/flora/FAQ.md'
+# Deposited on Zenodo. The manifest, project report, record-level changes, metadata and
+# checksums stay in the local bundle (and its archive) for the next release.
+DEPOSITED = ('flora.csv', 'README.md', 'CODEBOOK.md', 'CHANGELOG.md', 'CITATION.cff')
 
 # Public release labels. Internal routes stay intact for syncing and audit.
 SOURCE_LABELS = {
     'replications': 'manual entry', 'reproductions': 'manual entry',
     'COS': 'FReD', 'SCORE': 'SCORE',
     'validated': 'search pipeline', 'manual': 'search pipeline',
+}
+# Codebook text for each public source label (projects first, then intake routes).
+SOURCE_MEANINGS = {
+    'RP:P': 'Reproducibility Project: Psychology (report DOI 10.1126/science.aac4716).',
+    'Student replication projects (Boyce et al.)': 'Collection of student replication projects (report DOI 10.1098/rsos.231240).',
+    'SCORE': "Replications from the SCORE programme of the Center for Open Science.",
+    'manual entry': "Entered through FLoRA's manual entry sheets.",
+    'FReD': 'Taken from FReD, the FORRT Replication Database.',
+    'search pipeline': "Added through FLoRA's website validation workflow (not necessarily found by automated search).",
 }
 REPLICATION_OUTCOME_FIELDS = ('outcome', 'outcome_quote', 'outcome_quote_source')
 REPRODUCTION_OUTCOME_FIELDS = (
@@ -83,8 +99,12 @@ def write_json(path, value):
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
 
-def assemble(output, version, destination, previous=None):
-    """Build and checksum an offline release from the authoritative CSV export."""
+def assemble(output, version, destination, previous=None, replaces=False):
+    """Build and checksum an offline release from the authoritative CSV export.
+
+    With replaces=True the previous version is being withdrawn: it stays the Zenodo parent
+    of the new version, but its changelog section is dropped and the new one says so.
+    """
     if not re.fullmatch(r'\d{4}\.(?:0[1-9]|1[0-2])\.[1-9]\d*', version):
         raise ValueError('Version must be YYYY.MM.N (N starts at 1)')
     output, destination = Path(output), Path(destination)
@@ -125,17 +145,16 @@ def assemble(output, version, destination, previous=None):
     counts = changes['counts']
     summary = (f"Added: {counts['added']:,}; changed: {counts['changed']:,}; retired: {counts['retired']:,}. "
                f"Current records: {len(rows):,}.")
-    notes = f'# FLoRA {version}\n\n{summary}\n\n'
-    notes += ('First Zenodo release: all current records are additions to this release baseline.\n'
-              'These counts do not reconstruct additions or retirements before this baseline.\n' if not previous else
-              f"Net changes since published version {prior['version']}; intermediate edits that cancel out are excluded.\n")
-    notes += '\nRecord IDs and changed field names are in changes.json. Retired means absent from this snapshot, not deleted from the registry.\n'
-    (destination / 'CHANGELOG.md').write_text(notes, encoding='utf-8')
+    stats = record_stats(rows.values())
+    entries = version_changes(stats, changes, prior, replaces)
+    history = previous_history(previous, replaces) if previous else ''
+    (destination / 'CHANGELOG.md').write_text(render_changelog(version, entries, history), encoding='utf-8')
     write_json(destination / 'changes.json', changes)
     write_json(destination / 'project_classification.json', project_report)
     # Existing manifest helper remains the authority for exact published CSV checksums.
     manifest = release_helpers.prepare_release(destination / 'flora.csv', destination, len(rows), columns,
                                              release_notes=summary)
+    (destination / 'flora_release_notes.md').unlink()  # legacy OSF-era summary; CHANGELOG.md covers it
     manifest['dataset_version'] = version
     manifest['source_manifest'] = source_manifest
     manifest['projection'] = {'columns': columns, 'source_columns': source_columns,
@@ -145,6 +164,7 @@ def assemble(output, version, destination, previous=None):
                               'project_review_required': project_report['review_required'],
                               'outcome_applicability': 'replication and reproduction fields are type-specific'}
     manifest['previous_release'] = prior
+    manifest['replaces_previous'] = bool(replaces)
     write_json(destination / 'flora_release_manifest.json', manifest)
     cff = yaml.safe_load((SOURCES / 'citation-template.cff').read_text(encoding='utf-8'))
     cff['version'] = version
@@ -153,16 +173,91 @@ def assemble(output, version, destination, previous=None):
                  **({'orcid': a['orcid']} if a.get('orcid') else {})} for a in cff['authors']]
     metadata = {'title': cff['title'], 'upload_type': 'dataset', 'creators': creators,
                 'license': 'cc-by-4.0', 'access_right': 'open', 'version': version,
-                'description': cff['abstract'] + ' Each row links an original study to a replication or reproduction attempt. '
-                + summary + ' Includes coding guidance, record-level changelog and reuse guidance.',
+                'description': description(version, stats, entries),
                 'keywords': cff['keywords'], 'related_identifiers': [
                     {'identifier': cff['repository-code'], 'relation': 'isSupplementTo'}]}
     write_json(destination / 'zenodo-metadata.json', metadata)
-    for filename in ('README.md', 'REUSE.md', 'FAQ.md'):
-        shutil.copyfile(SOURCES / filename, destination / filename)
+    readme = string.Template((SOURCES / 'README.md').read_text(encoding='utf-8')).substitute(
+        version=version, concept_doi=CONCEPT_DOI, fred_doi=FRED_DOI, faq_url=FAQ_URL,
+        **{k: f'{v:,}' for k, v in stats.items() if isinstance(v, int)})
+    (destination / 'README.md').write_text(readme, encoding='utf-8')
     (destination / 'CODEBOOK.md').write_text(codebook, encoding='utf-8')
     write_json(destination / 'bundle-checksums.json', checksums(destination))
     return counts
+
+
+def record_stats(rows):
+    """Counts quoted in the README, changelog and Zenodo description."""
+    rows = list(rows)
+    return {'records': len(rows),
+            'replications': sum(r['type'] == 'replication' for r in rows),
+            'reproductions': sum(r['type'] == 'reproduction' for r in rows)}
+
+
+def version_changes(stats, changes, prior, replaces):
+    """Changelog bullets for this version, in plain language."""
+    entries = [f"{stats['records']:,} records: {stats['replications']:,} replications and "
+               f"{stats['reproductions']:,} reproductions."]
+    counts = changes['counts']
+    if replaces:
+        same = not any(counts.values()) and not changes['columns_added'] and not changes['columns_removed']
+        entries.append(f"Replaces version {prior['version']}, which was withdrawn because of its packaging "
+                       "(internal release files and a minimal description). "
+                       + ('The records are identical.' if same else
+                          f"Records added: {counts['added']:,}; changed: {counts['changed']:,}; "
+                          f"retired: {counts['retired']:,}."))
+    elif prior:
+        entries.append(f"Since version {prior['version']}: {counts['added']:,} records added, "
+                       f"{counts['changed']:,} changed and {counts['retired']:,} retired. Retired records are "
+                       "no longer in the data; their ids are not reused.")
+        if changes['columns_added'] or changes['columns_removed']:
+            entries.append('Columns added: ' + (', '.join(changes['columns_added']) or 'none')
+                           + '; removed: ' + (', '.join(changes['columns_removed']) or 'none') + '.')
+    else:
+        entries.append('First release on Zenodo.')
+    return entries
+
+
+def previous_history(previous, replaces):
+    """Version sections of the previous CHANGELOG.md, minus a withdrawn version's own section."""
+    path = previous / 'CHANGELOG.md'
+    text = path.read_text(encoding='utf-8') if path.exists() else ''
+    sections = ['## ' + s for s in text.split('\n## ')[1:]]
+    return '\n'.join(sections[1:] if replaces else sections).strip()
+
+
+def render_changelog(version, entries, history):
+    lines = ['# FLoRA changelog', '', 'Newest first. Each version of FLoRA on Zenodo carries the full history '
+             'up to that version.', '', f'## {version}', '', *[f'- {e}' for e in entries], '']
+    return '\n'.join(lines) + (f'\n{history}\n' if history else '')
+
+
+def description(version, stats, entries):
+    """Zenodo record description (HTML)."""
+    e = html.escape
+    link = lambda url, text=None: f'<a href="{e(url)}">{e(text or url)}</a>'
+    return ''.join([
+        '<p>The FORRT Library of Reproduction and Replication Attempts (FLoRA) links published original '
+        'studies in the social and behavioural sciences to attempts to replicate them (with new data) or '
+        'reproduce them (with the original data). Each row pairs one original study with one replication '
+        'or reproduction report and records the outcome as the report\'s authors describe it. A report that '
+        'tests several original studies contributes several rows.</p>',
+        f"<p>This version has {stats['records']:,} records: {stats['replications']:,} replications and "
+        f"{stats['reproductions']:,} reproductions.</p>",
+        '<p><strong>Files</strong></p><ul>'
+        '<li><code>flora.csv</code>: the data (UTF-8 with BOM; <code>NA</code> marks missing or inapplicable values).</li>'
+        '<li><code>CODEBOOK.md</code>: definitions of all columns and the categories used.</li>'
+        '<li><code>CHANGELOG.md</code>: changes in this and earlier versions.</li>'
+        '<li><code>README.md</code>: how to read and reuse the data.</li>'
+        '<li><code>CITATION.cff</code>: how to cite this version.</li></ul>',
+        '<p><strong>Changes in this version</strong></p><ul>' + ''.join(f'<li>{e(x)}</li>' for x in entries) + '</ul>',
+        '<p>Outcomes are the report authors\' conclusions as coded by the FLoRA team, following the '
+        f"{link(FAQ_URL, 'FLoRA coding guidance')}. Rows are pairs of publications, not effect sizes; "
+        f"effect-level data are in the companion database FReD ({link('https://doi.org/' + FRED_DOI)}). "
+        f"To cite FLoRA regardless of version, use {link('https://doi.org/' + CONCEPT_DOI)}. "
+        f"Maintained by FORRT ({link('https://forrt.org/replication-hub/')}) in "
+        f"{link('https://github.com/forrtproject/flora-validation')}.</p>",
+    ])
 
 
 def validate_overlap(columns, rows):
@@ -194,9 +289,11 @@ def render_codebook(columns, rows):
     missing = set(columns) - set(definitions)
     if missing:
         raise ValueError('Codebook definitions missing: ' + ', '.join(sorted(missing)))
-    intro = section.split('| Field |', 1)[0].strip().replace('Author arrays and citations', 'References and quoted evidence')
+    intro = (section.split('| Field |', 1)[0].strip()
+             .replace('Author arrays and citations', 'References and quoted evidence')
+             .replace('See the bundled FAQ', f'See the FLoRA coding guidance ({FAQ_URL})'))
     definitions.update({
-        'source': 'Established project first (matched by report DOI, alternative report identifiers or linked report URLs), otherwise intake route. Named projects take precedence even for search-pipeline records. Projects qualify at more than 50 distinct released IDs; existing labels persist after retirements. Not a validation-status field; see project_classification.json.',
+        'source': 'Established project first (matched by report DOI, alternative report identifiers or linked report URLs), otherwise intake route. Named projects take precedence even for search-pipeline records. Projects qualify at more than 50 distinct released IDs; existing labels persist after retirements. Not a validation-status field.',
         'outcome': 'Replication outcome; NA for reproduction rows, which use the two dedicated reproduction axes.',
         'outcome_quote': 'Evidence for the replication outcome; NA for reproduction rows.',
         'outcome_quote_source': 'Source/location of the replication evidence; NA for reproduction rows.',
@@ -216,11 +313,18 @@ def render_codebook(columns, rows):
     lines += ['', 'Replication outcomes and evidence appear only on replication rows. Reproduction',
               'outcomes and their evidence appear only on reproduction rows. NA can mean',
               'inapplicable as well as unknown; use type to distinguish these cases.',
-              'The bundled FAQ explains coding decisions. Definitions are maintained in',
+              f'The FLoRA coding guidance ({FAQ_URL}) explains coding decisions. Definitions are maintained in',
               'https://github.com/forrtproject/flora-validation/blob/main/docs/FLORA_DATA_TABLE.md', '']
-    if 'source' in columns and '### Release source labels' in section:
-        labels = section.split('### Release source labels', 1)[1].split('### Author-overlap release validation', 1)[0]
-        lines += ['## Source labels', '', labels.strip(), '']
+    if 'source' in columns:
+        used = sorted({row['source'] for row in rows if row['source'] not in ('', 'NA')})
+        unexplained = set(used) - set(SOURCE_MEANINGS)
+        if unexplained:
+            raise ValueError('Add codebook meanings for source labels: ' + ', '.join(sorted(unexplained)))
+        lines += ['## Source labels', '',
+                  '`source` names the established project a record belongs to, identified from the report\'s',
+                  'identifiers, or otherwise how the record entered FLoRA. It is not a quality level.', '',
+                  '| Value | Meaning |', '| --- | --- |',
+                  *[f'| {label} | {SOURCE_MEANINGS[label]} |' for label in used], '']
     return '\n'.join(lines)
 
 
@@ -239,8 +343,7 @@ def verify_bundle(bundle):
 def verify_remote_files(bundle, deposit):
     """Require the complete remote file set and MD5s to match the reviewed bundle."""
     remote = {f['filename']: f['checksum'].removeprefix('md5:') for f in deposit.get('files', [])}
-    expected = {name: hashlib.md5((bundle / name).read_bytes()).hexdigest()
-                for name in [*checksums(bundle), 'bundle-checksums.json']}
+    expected = {name: hashlib.md5((bundle / name).read_bytes()).hexdigest() for name in DEPOSITED}
     if remote != expected:
         raise ValueError('Remote files differ from the local bundle; inspect the deposit')
 
@@ -257,16 +360,22 @@ def fetch_previous(record_id, environment, destination):
     response.raise_for_status()
     record = response.json()
     destination.mkdir(parents=True)
+    # Only the files a release builds on; Zenodo's MD5s guard the download.
     for file in record['files']:
         name = file['key']
+        if name not in DEPOSITED:
+            continue
         url = file['links']['self']
-        if (Path(name).name != name or urlparse(url).scheme != 'https'
-                or urlparse(url).netloc != urlparse(base).netloc):
-            raise ValueError('Unexpected file name or host in public record')
+        if urlparse(url).scheme != 'https' or urlparse(url).netloc != urlparse(base).netloc:
+            raise ValueError('Unexpected file host in public record')
         data = requests.get(url, timeout=180)
         data.raise_for_status()
+        if hashlib.md5(data.content).hexdigest() != file['checksum'].removeprefix('md5:'):
+            raise ValueError(f'Downloaded {name} does not match its Zenodo checksum')
         (destination / name).write_bytes(data.content)
-    verify_bundle(destination)
+    if not (destination / 'flora.csv').exists():
+        raise ValueError('Public record has no flora.csv')
+    write_json(destination / 'bundle-checksums.json', checksums(destination))
     write_json(destination / 'zenodo-state.json', {
         'environment': environment, 'id': record['id'], 'conceptrecid': record['conceptrecid'],
         'version': record['metadata']['version'], 'published': True,
@@ -342,7 +451,9 @@ def upload(bundle, environment, publish=False, approve_production=False, resume_
         deposit = api.request('GET', f"{api.base}/api/deposit/depositions/{state['id']}")
         if not has_receipt:
             state['conceptrecid'] = deposit['conceptrecid']
-        expected_versions = {metadata['version'], previous['version'] if previous else None}
+        # A new-version draft may carry the previous version or, on current Zenodo, none at all.
+        expected_versions = {metadata['version'], previous['version'] if previous else None,
+                             None if previous else metadata['version']}
         if (str(deposit['id']) != str(state['id'])
                 or str(deposit['conceptrecid']) != str(state.get('conceptrecid'))
                 or state.get('version') != metadata['version']
@@ -368,7 +479,7 @@ def upload(bundle, environment, publish=False, approve_production=False, resume_
             deposit = api.request('GET', record['links']['latest_draft'])
             if str(deposit['conceptrecid']) != str(previous['conceptrecid']):
                 raise ValueError('New draft belongs to another concept')
-            if deposit.get('metadata', {}).get('version') not in {previous['version'], metadata['version']}:
+            if deposit.get('metadata', {}).get('version') not in {previous['version'], metadata['version'], None}:
                 raise ValueError('An existing draft has another release version; inspect it before continuing')
         else:
             deposit = api.request('POST', f'{api.base}/api/deposit/depositions', json={})
@@ -393,7 +504,7 @@ def upload(bundle, environment, publish=False, approve_production=False, resume_
     # A new version inherits files. Remove them all, so retired/stale files cannot leak.
     for file in deposit.get('files', []):
         api.request('DELETE', f"{api.base}/api/deposit/depositions/{deposit['id']}/files/{file['id']}")
-    for name in [*checksums(bundle), 'bundle-checksums.json']:
+    for name in DEPOSITED:
         with (bundle / name).open('rb') as f:
             result = api.request('PUT', deposit['links']['bucket'] + '/' + name, data=f)
         expected = hashlib.md5((bundle / name).read_bytes()).hexdigest()
@@ -416,6 +527,8 @@ def main():
     parser.add_argument('--bundle', type=Path, required=True)
     parser.add_argument('--version')
     parser.add_argument('--previous', type=Path, help='Previous published bundle, including zenodo-state.json')
+    parser.add_argument('--replaces', action='store_true',
+                        help='The previous version is being withdrawn; drop its changelog section')
     parser.add_argument('--fetch-previous', help='Download a published version record as --bundle')
     parser.add_argument('--environment', choices=HOSTS, default='production')
     parser.add_argument('--upload', choices=HOSTS)
@@ -430,9 +543,11 @@ def main():
             print(json.dumps(upload(args.bundle, args.upload, args.publish, args.approve_production,
                                     args.resume_deposit)))
         else:
+            if args.replaces and not args.previous:
+                parser.error('--replaces needs --previous')
             if args.publish or args.approve_production or args.resume_deposit or not args.version:
                 parser.error('Offline assembly needs --version; publishing needs --upload')
-            print(json.dumps(assemble(args.output_dir, args.version, args.bundle, args.previous)))
+            print(json.dumps(assemble(args.output_dir, args.version, args.bundle, args.previous, args.replaces)))
     except (ValueError, KeyError, OSError) as exc:
         parser.exit(1, f'{exc}\n')
 
