@@ -1,8 +1,15 @@
 # Versioned FLoRA deposits on Zenodo
 
-FLoRA has its own concept record; this pipeline covers FLoRA only. The first
-production release requires Lukas's approval. No production deposit has been
-created or published during implementation.
+FLoRA has its own concept record; this pipeline covers FLoRA only. Each
+production release requires Lukas's approval of the exact candidate bundle.
+
+| Version | Published | Record | Records |
+| --- | --- | --- | --- |
+| 2026.11.1 | 2026-11-23 | [10.5281/zenodo.24461023](https://doi.org/10.5281/zenodo.24461023) | 2,884 |
+
+All versions: concept DOI [10.5281/zenodo.24461022](https://doi.org/10.5281/zenodo.24461022).
+Published bundles and their `zenodo-state.json` receipts are archived in the
+maintainer's private storage (`flora-validation/zenodo-releases/production/`).
 
 ## Policy and inputs
 
@@ -91,12 +98,7 @@ not load `.env`; use deposit write/action scopes. No token values or server erro
 bodies are logged. The assembly workflow needs no secret. A future
 upload job would need that name in a protected GitHub environment secret.
 
-Before the first production candidate, merge the author/export fix in
-[PR #29](https://github.com/forrtproject/flora-validation/pull/29), finish/apply the
-report-author corrections in [PR #26](https://github.com/forrtproject/flora-validation/pull/26),
-and run the normal pipeline and Publish FLoRA. Already-applied identifier patches
-are preserved in [PR #30](https://github.com/forrtproject/flora-validation/pull/30).
-Then assemble a fresh candidate into this dedicated path:
+Assemble each candidate from current `main` after the nightly Publish FLoRA run:
 
 ```bash
 python3 zenodo_flora.py --version 2026.11.1 --bundle release-bundles/production/2026.11.1
@@ -109,14 +111,14 @@ reservation and upload. **Only after that approval**, with `ZENODO_TOKEN` set:
 python3 zenodo_flora.py --bundle release-bundles/production/2026.11.1 --upload production --publish --approve-production
 ```
 
-No approved production candidate exists yet. Old previews, including the existing
-`release-bundles/2026.11.1`, must not be copied or renamed into the candidate path.
+Never copy or rename an earlier preview into a candidate path; assemble afresh.
 Superseded audits remain at [commit 479b12d](https://github.com/forrtproject/flora-validation/tree/479b12dc05a04f765f5ad1460dd0cad522f96331).
 
 ## Subsequent versions and recovery
 
 Keep each published bundle and its local `zenodo-state.json` receipt. For the next
-release, supply that directory through `--previous`:
+release, supply that directory through `--previous` (restore it from the archive,
+or recover it with `--fetch-previous 24461023` as described below):
 
 ```bash
 python3 zenodo_flora.py --version 2026.11.2 --bundle release-bundles/production/2026.11.2 --previous release-bundles/production/2026.11.1
