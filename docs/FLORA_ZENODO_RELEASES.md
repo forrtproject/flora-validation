@@ -9,7 +9,7 @@ production release requires Lukas's approval of the exact candidate bundle.
 | 2026.11.1 | 2026-11-23, withdrawn | [10.5281/zenodo.24461023](https://doi.org/10.5281/zenodo.24461023) | 2,884 |
 
 2026.11.1 deposited internal release files and had a one-line description; it was
-replaced the same day by 2026.11.2 (identical records) and deleted on Zenodo.
+replaced the same day by 2026.11.2 (identical records) and withdrawn.
 
 All versions: concept DOI [10.5281/zenodo.24461022](https://doi.org/10.5281/zenodo.24461022).
 Published bundles and their `zenodo-state.json` receipts are archived in the
