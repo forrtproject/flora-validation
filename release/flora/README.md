@@ -1,49 +1,45 @@
-# FLoRA dataset release
+# FORRT Library of Reproduction and Replication Attempts (FLoRA), version $version
 
-The FORRT Library of Reproduction and Replication Attempts links original studies
-to replication and reproduction attempts in the social and behavioural sciences.
-Each row represents a reference pair; a report may contribute multiple rows.
+FLoRA links published original studies in the social and behavioural sciences to
+attempts to replicate them (with new data) or reproduce them (with the original data).
+Each row pairs one original study with one replication or reproduction report and
+records the outcome as the report's authors describe it. A report that tests several
+original studies contributes several rows.
 
-- `flora.csv`: complete dataset, UTF-8 with BOM for Excel; `NA` denotes missing data.
-- `CODEBOOK.md`: column definitions and permanent identity/storage guidance.
-- `FAQ.md`: the team's coding guidance.
-- `CHANGELOG.md` and `changes.json`: net added, changed and retired permanent IDs.
-- `REUSE.md`: interpretation, licence and reuse guidance.
-- `CITATION.cff`: citation for this specific version.
-- `flora_release_manifest.json`: exact data hashes, source build and correction watermark.
-- `flora_release_notes.md`: release summary from the existing preparation helper.
-- `zenodo-metadata.json`: proposed descriptive metadata.
-- `project_classification.json`: project matching, counts, IDs and review candidates.
-- `bundle-checksums.json`: SHA-256 hashes of the deposited files.
+This version has $records records: $replications replications and $reproductions reproductions.
 
-The bundle projects the authoritative publication onto the 31 agreed columns in
-`release/flora/columns.json`, preserving permanent IDs and applicable outcome/evidence
-values. Source values use registered project labels or the four documented intake fallbacks. Inapplicable outcome
-and evidence fields are NA: replication outcomes on reproduction rows; the two
-reproduction axes on replication rows.
-Columns are ordered by record identity, original study, replication/reproduction
-report, author overlap percentage, outcomes and evidence, then source. The full
-internal export is not deposited. Output CSV is quoted UTF-8 with a BOM.
-Corrections must go through flora-validation's correction log, followed by a fresh publication and release; never edit this CSV.
-The manifest's `source_manifest` identifies the input publication and its correction
-watermark. `dataset_version` is the dated Zenodo version; the helper's legacy
-`version` remains null because its semantic version scheme describes another layer.
+## Files
 
-A local dry run has no DOI. On upload, the citation file receives the version DOI
-reserved by Zenodo. Reservation does not mean publication or DOI registration.
-Use the citation file in the published deposit when citing the data you analysed.
+- `flora.csv`: the data. UTF-8 with BOM, every field quoted; `NA` marks missing or
+  inapplicable values. References and quotes can contain line breaks, so read the
+  file with a CSV parser (for example, R or Python).
+- `CODEBOOK.md`: definitions of all columns and the categories used in this version.
+- `CHANGELOG.md`: changes in this and earlier versions, newest first.
+- `CITATION.cff`: how to cite this version, with its DOI.
 
-Author overlap is a surname-based proxy, not verified person identity. Percentages
-are missing if either byline is absent, malformed, or contains an unresolved or
-collective author. The final pipeline export recalculates from normalized bylines;
-release assembly blocks stale percentages.
+## Using the data
 
-Source and maintenance: https://github.com/forrtproject/flora-validation
+- Rows are pairs of publications, not effect sizes. Effect-level statistics for many
+  of these replications are in the companion database FReD: https://doi.org/$fred_doi
+- Outcomes are the report authors' conclusions as coded by the FLoRA team, not an
+  independent assessment. Replication rows use `outcome`; reproduction rows use
+  `outcome_computation` and `outcome_robustness`. The coding rules are in the FLoRA
+  coding guidance: $faq_url
+- `NA` does not mean failure. Outcome fields that do not apply to a row's `type` are `NA`.
+- `author_overlap_pct` compares family names only, so it can over- or understate
+  how much the original and replication teams overlap.
+- `source` names the project a record comes from (for example, RP:P or SCORE) or,
+  otherwise, how it entered FLoRA.
+- `id` is permanent. FLoRA is updated regularly: report the version you used, and use
+  `id` to match records across versions.
 
-Source names an established project first (RP:P, Student replication projects
-(Boyce et al.), SCORE), including matches from the search pipeline. Otherwise it
-uses `manual entry`, `FReD`, `SCORE` or `search pipeline` as intake fallbacks.
-`project_classification.json` records identifiers, seed/member IDs, the strict >50
-record threshold and uncertain candidates. Text mentions alone do not assign a
-project. A shared project is not inferred from an original-study DOI. Internal
-source keys remain unchanged; one source value does not retain both route and project.
+## Licence and citation
+
+The data are licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
+The licence covers this dataset, not the publications it references. Cite this version
+with `CITATION.cff` or this record's DOI; to cite FLoRA regardless of version, use
+https://doi.org/$concept_doi.
+
+FLoRA is maintained by FORRT (https://forrt.org/replication-hub/) in
+https://github.com/forrtproject/flora-validation. Please report errors or missing
+replications there as issues.

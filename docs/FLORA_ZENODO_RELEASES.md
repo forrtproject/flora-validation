@@ -33,9 +33,22 @@ revision/correction watermark, written by `release_helpers.add_data_version`.
 Unmarked manifests and offline previews are rejected.
 
 The codebook reuses `docs/FLORA_DATA_TABLE.md` and lists the exact categories in
-this snapshot. Missing definitions stop assembly. FAQ, citation authors and
-licence are pinned from fred-data; [SOURCES.md](../release/flora/SOURCES.md)
-records their provenance. Review them for each release.
+this snapshot. Missing definitions stop assembly. Citation authors and licence are
+pinned from fred-data; [SOURCES.md](../release/flora/SOURCES.md) records their
+provenance. Review them for each release.
+
+## What is deposited
+
+Zenodo receives five files: `flora.csv`, `README.md` (rendered from
+`release/flora/README.md`), `CODEBOOK.md`, `CHANGELOG.md` and `CITATION.cff`. The
+record description is generated with them. The README and codebook link to the coding
+guidance in `release/flora/FAQ.md` on GitHub rather than depositing it.
+
+The bundle also holds files the next release and the audit trail need, which are
+archived but not deposited: `flora_release_manifest.json` (source and release hashes,
+projection, previous release), `project_classification.json`, `changes.json`
+(record-level changes), `zenodo-metadata.json`, `bundle-checksums.json` and the
+`zenodo-state.json` receipt.
 
 ## Changelog and project classification
 
@@ -47,7 +60,9 @@ These sources cannot reconstruct every historical record value.
 
 The changelog therefore compares the current release CSV with the previous
 published Zenodo CSV by permanent `id`. `changes.json` lists added/retired IDs and
-changed field names; `CHANGELOG.md` counts unique records. Row order is ignored;
+changed field names; `CHANGELOG.md` counts unique records. Each `CHANGELOG.md` adds
+the new version's section above the previous version's history, so every deposit
+carries the full history. Row order is ignored;
 schema changes are explicit. Returning IDs count as additions. Intermediate edits
 that cancel out, including retire/reactivate cycles, are excluded. The first
 release establishes a baseline: all current IDs are additions. The embedded source
@@ -125,7 +140,8 @@ python3 zenodo_flora.py --version 2026.11.2 --bundle release-bundles/production/
 ```
 
 Alternatively, `--fetch-previous RECORD_ID --bundle DIRECTORY` recovers a public
-baseline, verifies checksums and creates its published receipt. Use the actual
+baseline (its `flora.csv` and `CHANGELOG.md`, checked against Zenodo's MD5s) and
+creates its published receipt. Use the actual
 preceding **version record ID**, never the concept ID; `--environment sandbox`
 selects sandbox. Upload calls `newversion` on that record and checks the concept;
 see the [Zenodo REST API](https://developers.zenodo.org/#new-version).
@@ -151,4 +167,8 @@ any mutation; it does not create another draft. The receipt stays local. Product
 Approval is an operator attestation, not authenticated authorization. It covers
 the reviewed payload and the sole planned mutation: the returned version DOI in
 CITATION.cff and its refreshed checksum. Data and other files remain unchanged. Published records
-and DOIs cannot simply be deleted.
+and DOIs cannot simply be deleted. Within 30 days of publication the owner can delete
+a version on its Zenodo page (Manage → Delete record); its DOI then resolves to a
+tombstone. To replace a faulty version, publish its successor with
+`--previous OLD --replaces` (the changelog drops the withdrawn version's section and
+says it was replaced), then delete the old version.

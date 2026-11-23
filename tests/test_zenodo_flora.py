@@ -40,8 +40,15 @@ def test_assembly(bundle):
     release.verify_bundle(bundle)
     assert (bundle / 'flora.csv').read_bytes().startswith(b'\xef\xbb\xbf')
     assert release.read_records(bundle / 'flora.csv')[1]['A']['title_r'] == 'Röseler, "test"\nnext line'
-    assert {'CODEBOOK.md', 'FAQ.md', 'README.md', 'REUSE.md', 'CITATION.cff',
-            'CHANGELOG.md', 'changes.json'} <= {p.name for p in bundle.iterdir()}
+    assert {p.name for p in bundle.iterdir()} == {*release.DEPOSITED, 'changes.json', 'project_classification.json',
+                                                   'flora_release_manifest.json', 'zenodo-metadata.json',
+                                                   'bundle-checksums.json'}
+    readme = (bundle / 'README.md').read_text()
+    assert 'version 2026.11.1' in readme and '1 records: 1 replications and 0 reproductions' in readme
+    assert '$' not in readme
+    changelog = (bundle / 'CHANGELOG.md').read_text()
+    assert '## 2026.11.1' in changelog and 'First release on Zenodo.' in changelog
+    assert 'FAQ' not in (bundle / 'CODEBOOK.md').read_text().replace('FAQ.md', '')
     cff = yaml.safe_load((bundle / 'CITATION.cff').read_text())
     assert cff['version'] == '2026.11.1' and 'doi' not in cff
     metadata = json.loads((bundle / 'zenodo-metadata.json').read_text())
@@ -49,7 +56,7 @@ def test_assembly(bundle):
     assert all('email' not in c for c in metadata['creators'])
     manifest = json.loads((bundle / 'flora_release_manifest.json').read_text())
     assert manifest['source_manifest']['data_version']['change_watermark'] == 346
-    assert '| FReD | COS | FReD Replication Success input |' in (bundle / 'CODEBOOK.md').read_text()
+    assert '| manual entry | Entered through FLoRA' in (bundle / 'CODEBOOK.md').read_text()
     with pytest.raises(ValueError, match='exists'):
         release.assemble(bundle, '2026.11.1', bundle)
 
@@ -195,7 +202,7 @@ def test_publish_only_after_checksums(bundle, monkeypatch, remote_difference):
         assert release.upload(bundle, 'sandbox', publish=True)['published']
         assert calls[-1] == ('POST', links['publish'])
         assert calls[-2] == ('GET', base + '/api/deposit/depositions/12')
-    assert len([url for _, url in calls if '/bucket/' in url]) == 13
+    assert len([url for _, url in calls if '/bucket/' in url]) == len(release.DEPOSITED)
 
 
 def test_codebook_matches_snapshot(bundle):
@@ -430,10 +437,12 @@ def test_new_version_rejects_unrelated_dataset_title_before_forking(bundle, monk
 @pytest.mark.parametrize('scheme', ['https', 'http'])
 def test_public_baseline_recovery_requires_https_and_checks_deposited_bytes(bundle, tmp_path, monkeypatch, scheme):
     host = 'sandbox.zenodo.org'
-    names = [*release.checksums(bundle), 'bundle-checksums.json']
+    names = [*release.checksums(bundle), 'bundle-checksums.json']  # an older, fuller record
+    md5 = lambda n: 'md5:' + hashlib.md5((bundle / n).read_bytes()).hexdigest()
     record = dict(id=12, conceptrecid=10, doi='api-reported-doi', metadata={'version': '2026.11.1'},
                   links={'html': 'https://' + host + '/records/12'},
-                  files=[{'key': n, 'links': {'self': f'{scheme}://{host}/files/{n}'}} for n in names])
+                  files=[{'key': n, 'checksum': md5(n), 'links': {'self': f'{scheme}://{host}/files/{n}'}}
+                         for n in names])
     def get(url, **kwargs):
         if '/api/records/' in url:
             return Mock(json=lambda: record)
@@ -442,13 +451,18 @@ def test_public_baseline_recovery_requires_https_and_checks_deposited_bytes(bund
     monkeypatch.setattr(release.requests, 'get', fetch)
     target = tmp_path / 'recovered'
     if scheme == 'http':
-        with pytest.raises(ValueError, match='Unexpected file name or host'):
+        with pytest.raises(ValueError, match='Unexpected file host'):
             release.fetch_previous(12, 'sandbox', target)
         assert fetch.call_count == 1
     else:
         release.fetch_previous(12, 'sandbox', target)
         release.verify_bundle(target)
         assert json.loads((target / 'zenodo-state.json').read_text(encoding='utf-8'))['published']
+        assert {p.name for p in target.iterdir()} == {*release.DEPOSITED, 'bundle-checksums.json',
+                                                      'zenodo-state.json'}
+        record['files'][0]['checksum'] = 'md5:tampered'
+        with pytest.raises(ValueError, match='Zenodo checksum'):
+            release.fetch_previous(12, 'sandbox', tmp_path / 'tampered')
 
 
 def test_recovery_rejects_previous_published_version_without_poisoning_receipt(bundle, monkeypatch):
@@ -477,3 +491,40 @@ def test_first_recovery_rejects_unidentified_draft_with_existing_files(bundle, m
         release.upload(bundle, 'sandbox', resume_deposit=12)
     assert not (bundle / 'zenodo-state.json').exists()
     assert api.request.call_count == 1
+
+
+def test_cumulative_and_replacing_changelog(bundle, tmp_path):
+    import shutil
+    first = tmp_path / 'first'
+    shutil.copytree(bundle, first)
+    release.write_json(first / 'zenodo-state.json',
+                       dict(environment='sandbox', id=11, conceptrecid=10, version='2026.11.1', published=True))
+    second = tmp_path / 'second'
+    release.assemble(bundle.parent / 'output', '2026.11.2', second, first)
+    text = (second / 'CHANGELOG.md').read_text()
+    assert text.index('## 2026.11.2') < text.index('## 2026.11.1')
+    assert 'Since version 2026.11.1: 0 records added, 0 changed and 0 retired.' in text
+    replacement = tmp_path / 'replacement'
+    release.assemble(bundle.parent / 'output', '2026.11.2', replacement, first, replaces=True)
+    text = (replacement / 'CHANGELOG.md').read_text()
+    assert '## 2026.11.1' not in text and 'Replaces version 2026.11.1' in text and 'identical' in text
+    metadata = json.loads((replacement / 'zenodo-metadata.json').read_text())
+    assert 'Replaces version 2026.11.1' in metadata['description']
+
+
+def test_only_public_files_are_deposited(bundle, monkeypatch):
+    base = release.HOSTS['sandbox']
+    deposit = {'id': 12, 'conceptrecid': 10, 'submitted': False, 'files': [],
+               'metadata': {'prereserve_doi': {'doi': 'reserved'}},
+               'links': {k: f'{base}/{k}' for k in ('self', 'bucket', 'publish', 'html')}}
+    uploaded = []
+    def request(method, url, **kw):
+        if '/bucket/' in url:
+            uploaded.append(url.rsplit('/', 1)[1])
+            return {'checksum': 'md5:' + hashlib.md5(kw['data'].read()).hexdigest()}
+        return deposit
+    api = Mock(base=base)
+    api.request.side_effect = request
+    monkeypatch.setattr(release, 'Zenodo', lambda env: api)
+    release.upload(bundle, 'sandbox')
+    assert uploaded == list(release.DEPOSITED)
