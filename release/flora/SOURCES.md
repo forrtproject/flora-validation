@@ -1,7 +1,7 @@
 # Release input provenance
 
 `FAQ.md` and the authors/licence in `citation-template.cff` were copied from
-forrtproject/fred-data at commit `42a22b635efd6ee4cc33d64f322742d0545d796a`:
+forrtproject/fred-data at commit `0f5f824ee218b5473ae94e55558888aab4f38712` (FAQ) and `42a22b635efd6ee4cc33d64f322742d0545d796a` (citation):
 `output/flora_faq.md` (the website's coding guidance) and `CITATION.cff`.
 The template excludes the old version and DOI. Local FAQ errata use the published
 alternative-identifier names, report precedence and the two reproduction axes.
