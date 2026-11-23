@@ -451,7 +451,9 @@ def upload(bundle, environment, publish=False, approve_production=False, resume_
         deposit = api.request('GET', f"{api.base}/api/deposit/depositions/{state['id']}")
         if not has_receipt:
             state['conceptrecid'] = deposit['conceptrecid']
-        expected_versions = {metadata['version'], previous['version'] if previous else None}
+        # A new-version draft may carry the previous version or, on current Zenodo, none at all.
+        expected_versions = {metadata['version'], previous['version'] if previous else None,
+                             None if previous else metadata['version']}
         if (str(deposit['id']) != str(state['id'])
                 or str(deposit['conceptrecid']) != str(state.get('conceptrecid'))
                 or state.get('version') != metadata['version']
@@ -477,7 +479,7 @@ def upload(bundle, environment, publish=False, approve_production=False, resume_
             deposit = api.request('GET', record['links']['latest_draft'])
             if str(deposit['conceptrecid']) != str(previous['conceptrecid']):
                 raise ValueError('New draft belongs to another concept')
-            if deposit.get('metadata', {}).get('version') not in {previous['version'], metadata['version']}:
+            if deposit.get('metadata', {}).get('version') not in {previous['version'], metadata['version'], None}:
                 raise ValueError('An existing draft has another release version; inspect it before continuing')
         else:
             deposit = api.request('POST', f'{api.base}/api/deposit/depositions', json={})

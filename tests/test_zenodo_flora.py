@@ -125,7 +125,8 @@ def test_upload_and_retry(bundle, monkeypatch):
     assert not any(m == 'POST' for m, _ in calls)
 
 
-def test_new_version(bundle, tmp_path, monkeypatch):
+@pytest.mark.parametrize('draft_version', ['2026.10.1', None])
+def test_new_version(bundle, tmp_path, monkeypatch, draft_version):
     prior = tmp_path / 'prior'
     import shutil
     shutil.copytree(bundle, prior)
@@ -135,7 +136,7 @@ def test_new_version(bundle, tmp_path, monkeypatch):
     release.assemble(bundle.parent / 'output', '2026.11.2', target, prior)
     base = release.HOSTS['sandbox']
     draft = {'id': 12, 'conceptrecid': 10, 'submitted': False, 'files': [],
-             'metadata': {'version': '2026.10.1', 'prereserve_doi': {'doi': 'api-reserved-next'}},
+             'metadata': {'version': draft_version, 'prereserve_doi': {'doi': 'api-reserved-next'}},
              'links': {k: f'{base}/{k}' for k in ('self', 'bucket', 'publish', 'html')}}
     api = Mock(base=base)
     api.request.side_effect = [dict(conceptrecid=10, metadata={'version': '2026.10.1',
