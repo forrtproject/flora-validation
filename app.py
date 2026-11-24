@@ -41,6 +41,7 @@ import flora_service
 import flora_store
 import manual_records
 from flora_public_api import create_router as create_flora_api_router, is_public_read_request
+import sheet_drift_service
 import source_records_service
 import source_sync_runner
 from email_templates import forgot_handle_email
@@ -7276,6 +7277,12 @@ def admin_flora_record(flora_id: str, admin: dict = Depends(current_admin)):
         # when each part last ran: a finding is only as fresh as its run.
         record["check_findings"] = flora_service.check_findings(cur, record)
         record["check_runs"] = flora_service.check_runs(cur)
+        # Cells of its source rows edited in the sheet after import, so the sheet's
+        # value can be taken in here. Never a reason for the editor to fail:
+        # editor_box() reads behind a savepoint and answers None, logged, if it cannot.
+        sheet_drift = sheet_drift_service.editor_box(cur, record)
+        if sheet_drift is not None:
+            record["sheet_drift"] = sheet_drift
     return record
 
 
@@ -7473,6 +7480,116 @@ def admin_resolve_duplicate(record_id: str, req: DuplicateResolution,
             raise HTTPException(404, "Record not found")
         except ValueError as e:
             raise HTTPException(400, str(e))
+
+
+# Sheet edits: imported rows whose sheet row changed after the import. sync_sources.py
+# finds them (sheet_drift.py) and sheet_drift_service.py says what each means for
+# FLoRA now. Declared before /source-records/{record_id}, which would otherwise take
+# "sheet-drift" for a record id. The one write is "Keep FLoRA value": taking the
+# sheet's value is an ordinary correction, saved in the FLoRA editor (PATCH above).
+
+def _drift_filters(state: str = "needs_review", source: str = "", search: str = "",
+                   page: int = 1, per_page: int = 25) -> dict:
+    return {"state": state, "source": source, "search": search,
+            "page": page, "per_page": per_page}
+
+
+@app.get("/api/admin/source-records/sheet-drift/summary")
+def admin_sheet_drift_summary(admin: dict = Depends(current_admin)):
+    """The counts the Sheet edits chip shows, and when each sheet was last compared."""
+    with db() as cur:
+        return sheet_drift_service.summary(cur)
+
+
+@app.get("/api/admin/source-records/sheet-drift")
+def admin_sheet_drift(state: str = "needs_review", source: str = "", search: str = "",
+                      page: int = 1, per_page: int = 25,
+                      admin: dict = Depends(current_admin)):
+    """One page of records with sheet edits, each field with what FLoRA shows now."""
+    with db() as cur:
+        try:
+            return sheet_drift_service.list_findings(
+                cur, _drift_filters(state, source, search, page, per_page))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+
+@app.get("/api/admin/source-records/sheet-drift/export.csv")
+def admin_sheet_drift_export(state: str = "needs_review", source: str = "", search: str = "",
+                             admin: dict = Depends(current_admin)):
+    """Every sheet edit matching the filter, one row per FLoRA record it touches, with
+    blank decision columns for a coding agent (docs/SHEET_EDITS_FOR_AGENTS.md)."""
+    with db() as cur:
+        try:
+            body = sheet_drift_service.export_csv(cur, _drift_filters(state, source, search))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        # Values from the sheets and the reviewers' notes: not for a shared cache.
+        headers={"Content-Disposition": f'attachment; filename="sheet_edits_{stamp}.csv"',
+                 "Cache-Control": "private, no-store"},
+    )
+
+
+# Generous bounds, there to refuse a runaway body. The note's own rules (required, 3
+# to 1,000 characters) are sheet_drift_service.keep's, answered with a 400 that says
+# what to fix. sheet_value is the sheet's value as the page showed it.
+class SheetDriftKeep(BaseModel):
+    note: str = Field("", max_length=10_000)
+    sheet_value: str | None = Field(default=None, max_length=200_000)
+
+
+def _drift_audit(cur, action, request, admin, finding, note, sheet_value) -> None:
+    # Within security_events.MAX_DETAIL_CHARS, or the note would be lost to a
+    # summary: the sheet's value is clipped, the note is at most 1,000 characters.
+    _audit(cur, action, request, actor=admin, target_kind="sheet_edit",
+           target_id=finding["finding_id"],
+           target_label=f"{finding['source']} {finding['sheet_row_id']} {finding['sheet_column'] or '(row)'}",
+           detail={"note": note, "source": finding["source"],
+                   "sheet_row_id": finding["sheet_row_id"],
+                   "sheet_column": finding["sheet_column"],
+                   "sheet_value": (sheet_value or "")[:500] or None})
+
+
+@app.post("/api/admin/source-records/sheet-drift/{finding_id:int}/keep")
+def admin_sheet_drift_keep(finding_id: int, req: SheetDriftKeep, request: Request,
+                           admin: dict = Depends(current_admin)):
+    """Keep FLoRA's value for one sheet edit, with the note saying why. It holds while
+    the sheet keeps the value it has now. Returns the record as the view shows it."""
+    with db() as cur:
+        try:
+            kept = sheet_drift_service.keep(cur, finding_id, admin, req.note, req.sheet_value)
+        except sheet_drift_service.FindingNotFound:
+            raise HTTPException(404, "No such sheet edit. Reload the list.")
+        except sheet_drift_service.StaleFinding:
+            raise HTTPException(409, "The sheet changed since this page loaded. Reload to see "
+                                     "what it says now.")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        _drift_audit(cur, security_events.SOURCE_DRIFT_KEPT, request, admin, kept,
+                     kept["kept_note"], kept["kept_sheet_value"])
+        return {"finding": kept, "record": sheet_drift_service.record_view(cur, kept["record_id"])}
+
+
+@app.delete("/api/admin/source-records/sheet-drift/{finding_id:int}/keep")
+def admin_sheet_drift_undo_keep(finding_id: int, request: Request,
+                                admin: dict = Depends(current_admin)):
+    """Withdraw a "Keep FLoRA value": the sheet edit needs a decision again. The
+    decision withdrawn, with its note, is kept in the audit trail."""
+    with db() as cur:
+        try:
+            done = sheet_drift_service.undo_keep(cur, finding_id, admin)
+        except sheet_drift_service.FindingNotFound:
+            raise HTTPException(404, "No such sheet edit. Reload the list.")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        withdrawn = done["withdrawn"]
+        _drift_audit(cur, security_events.SOURCE_DRIFT_KEEP_WITHDRAWN, request, admin, done,
+                     withdrawn["kept_note"], withdrawn["kept_sheet_value"])
+        return {"finding": done, "record": sheet_drift_service.record_view(cur, done["record_id"])}
 
 
 @app.get("/api/admin/source-records/{record_id}")

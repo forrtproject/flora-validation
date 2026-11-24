@@ -377,6 +377,7 @@
         <button class="admin-filter-btn" data-filter="validated">Validated <span class="filter-count" id="sfc-validated">—</span></button>
         <button class="admin-filter-btn" data-filter="manual" title="Records added by hand in the FLoRA tab (MAN-)">Added by hand <span class="filter-count" id="sfc-manual">—</span></button>
         <button class="admin-filter-btn" data-filter="flagged">Duplicates <span class="filter-count" id="sfc-flagged">—</span></button>
+        <button class="admin-filter-btn" data-filter="sheet-drift" title="Imported rows edited in their sheet after the import, which need a decision">Sheet edits <span class="filter-count" id="sfc-drift">—</span></button>
         <button class="admin-filter-btn" data-filter="deleted" title="Records no longer validated: kept, but left out of FLoRA">Deleted <span class="filter-count" id="sfc-deleted">—</span></button>
       </div>
 
@@ -436,6 +437,77 @@
         </dl>
         <div id="src-dup-body"></div>
       </div>
+
+      <!-- Sheet edits: imported rows whose sheet row was edited after the import.
+           Every sync compares them (sync_sources.py); sheet_drift_service.py says
+           what each difference means for FLoRA now. Nothing here changes a sheet or
+           a source record: the sheet's value is taken in through the FLoRA editor. -->
+      <section id="src-drift-view" class="hidden" aria-labelledby="src-drift-title">
+        <div class="src-dup-toolbar src-drift-toolbar">
+          <button id="src-drift-back" class="ghost-btn" type="button">← Back to grid</button>
+          <h3 id="src-drift-title" class="src-drift-title" tabindex="-1">Sheet edits</h3>
+          <label class="src-drift-control">State
+            <select id="src-drift-state" class="admin-input">
+              <option value="needs_review">Needs review</option>
+              <option value="nothing_to_do">Nothing to do</option>
+              <option value="resolved">Resolved</option>
+              <option value="all">All</option>
+            </select>
+          </label>
+          <label class="src-drift-control">Sheet
+            <select id="src-drift-source" class="admin-input">
+              <option value="">All sheets</option>
+            </select>
+          </label>
+          <input id="src-drift-search" type="search" class="admin-search-input src-drift-search"
+                 placeholder="Search ID…" aria-label="Search by source record, sheet or FLoRA ID">
+          <button id="src-drift-csv" class="ghost-btn" type="button">Download CSV</button>
+          <span id="src-drift-count" class="src-dim2"></span>
+        </div>
+        <p id="src-drift-checks" class="src-drift-checks"></p>
+        <dl class="flora-dedup-legend src-drift-legend">
+          <dt>Use sheet value</dt>
+          <dd>Opens the FLoRA record with the sheet's value filled in and a note saying where it
+            came from. Nothing is saved until you review it and click Save corrections.</dd>
+          <dt>Keep FLoRA value</dt>
+          <dd>FLoRA's value is right. Say why; you are asked again only if the sheet changes.</dd>
+          <dt>The sheet is never changed</dt>
+          <dd>Nor is the source record: they stay as imported. FLoRA records are corrected in the
+            FLoRA editor, as always.</dd>
+          <dt>When it updates</dt>
+          <dd>The sheets are compared at every sync: nightly at 03:00 UTC, or Run pipeline above.
+            FLoRA's side is read live, so a saved correction shows here at once.</dd>
+        </dl>
+        <details class="src-drift-states">
+          <summary>What each state means</summary>
+          <dl class="flora-dedup-legend src-drift-legend">
+            <dt>Sheet changed, FLoRA not yet</dt>
+            <dd>The sheet was corrected after import and FLoRA still has the imported value.</dd>
+            <dt>Changed in both places</dt>
+            <dd>FLoRA's value differs from both the import and the sheet: someone corrected it, it
+              comes from the row this one was merged into, or the build changed it.</dd>
+            <dt>No longer marked validated in the sheet</dt>
+            <dd>The row's status is no longer an accepted one. FLoRA still has the record: remove it
+              through the Exclusions sheet or a duplicate ruling, or keep it with a note.</dd>
+            <dt>Row deleted from the sheet</dt>
+            <dd>The row's sheet ID is gone from the sheet. If the paper was entered again under a
+              new ID, it shows under Duplicates.</dd>
+            <dt>FLoRA already has the sheet's value</dt>
+            <dd>Nothing to do: a correction or the build already gives what the sheet says now.</dd>
+            <dt>FLoRA uses publisher data</dt>
+            <dd>Nothing to do: FLoRA takes this field from the publisher's metadata, not the sheet.</dd>
+            <dt>Kept FLoRA value</dt>
+            <dd>Someone decided FLoRA's value is right, and the sheet still says what they saw.</dd>
+            <dt>Not a FLoRA field for this type</dt>
+            <dd>Nothing to do: FLoRA has no such field on a record of this type.</dd>
+            <dt>Not in FLoRA</dt>
+            <dd>Nothing to do here: the row is ruled a duplicate, excluded, retired, or not built yet.</dd>
+          </dl>
+        </details>
+        <div id="src-drift-live" class="sr-only" role="status" aria-live="polite"></div>
+        <div id="src-drift-body"></div>
+        <div class="admin-pagination" id="src-drift-pagination"></div>
+      </section>
     </div><!-- end admin-tab-sources -->
 
     <div id="admin-tab-stats" class="hidden">

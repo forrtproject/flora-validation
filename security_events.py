@@ -69,6 +69,11 @@ FLORA_MANUAL_ADDED = "flora.manual_added"
 FLORA_MANUAL_EDITED = "flora.manual_edited"
 FLORA_MANUAL_WITHDRAWN = "flora.manual_withdrawn"
 FLORA_MANUAL_RESTORED = "flora.manual_restored"
+# A sheet edit (Source Records > Sheet edits) answered "Keep FLoRA value", and that
+# withdrawn. The finding keeps only the current decision, so a withdrawn one, with
+# its note, is kept here.
+SOURCE_DRIFT_KEPT = "source_records.sheet_edit_kept"
+SOURCE_DRIFT_KEEP_WITHDRAWN = "source_records.sheet_edit_keep_withdrawn"
 
 ACTIONS = frozenset({
     ADMIN_SIGNED_IN, ADMIN_SIGN_IN_FAILED, ADMIN_SIGNED_OUT, ADMIN_INVITED,
@@ -80,6 +85,7 @@ ACTIONS = frozenset({
     FLORA_PREPRINT_RULED, FLORA_PREPRINT_WITHDRAWN,
     FLORA_FINDING_DISMISSED, FLORA_FINDING_UNDISMISSED,
     FLORA_MANUAL_ADDED, FLORA_MANUAL_EDITED, FLORA_MANUAL_WITHDRAWN, FLORA_MANUAL_RESTORED,
+    SOURCE_DRIFT_KEPT, SOURCE_DRIFT_KEEP_WITHDRAWN,
 })
 
 

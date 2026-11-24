@@ -6,9 +6,17 @@ enabled source the payload passes six integrity gates before anything touches th
 database, then accepted rows are inserted.
 
 INSERT-ONLY. A row is written the first time it is seen as accepted and is never
-updated or deleted here. Later edits in the sheet are ignored — the database is
+updated or deleted here. Later edits in the sheet are not applied — the database is
 authoritative once a row lands. This is why the gates matter: under insert-only a
 bad parse does not delete data, it inserts garbage, and garbage is permanent.
+
+SHEET EDITS. Not applied is not the same as ignored: a coder fixing an outcome in
+the sheet after import would otherwise be lost without anyone knowing. So once a
+source has passed every gate, its imported rows are compared with the sheet as
+fetched now (sheet_drift.py) and each difference is kept in sheet_drift_findings,
+for an admin to take into FLoRA or not (Source Records > Sheet edits). Nothing is
+written back to source_records or to the sheet. The check runs inside a savepoint:
+if it fails, the source's inserts and its sync result stand, and it says so.
 
 Identity is the static UUID the sheet carries in its `id` column, keyed as
 (source, sheet_row_id). A row with a blank id is skipped and reported — never
@@ -43,7 +51,8 @@ from dotenv import load_dotenv
 from console_encoding import use_utf8_output
 from pipeline_logging import start as start_logging
 from extractor_vocab import normalize_axis_value
-from psycopg2.extras import Json
+from psycopg2.extras import Json, execute_values
+import sheet_drift
 
 load_dotenv()
 
@@ -297,7 +306,9 @@ def _last_successful_run(cur, source_key: str) -> "dict | None":
     return {"rows_fetched": r[0], "payload_sha256": r[1]} if r else None
 
 
-def _record_run(cur, source_key: str, status: str, **fields) -> None:
+def _record_run(cur, source_key: str, status: str, **fields) -> "str | None":
+    """Record one source's sync. Returns its run_id, which the sheet-edit check that
+    follows it is filed under."""
     cur.execute(
         """
         INSERT INTO source_sync_runs (
@@ -309,6 +320,7 @@ def _record_run(cur, source_key: str, status: str, **fields) -> None:
             %(rows_fetched)s, %(rows_accepted)s, %(rows_inserted)s, %(rows_existing)s,
             %(rows_skipped)s, %(dup_ids)s, %(dup_fingerprints)s, %(payload_sha256)s, %(notes)s
         )
+        RETURNING run_id
         """,
         {
             "source": source_key, "status": status, "failure_reason": None,
@@ -318,6 +330,212 @@ def _record_run(cur, source_key: str, status: str, **fields) -> None:
             **fields,
         },
     )
+    row = cur.fetchone()
+    if not row:
+        return None
+    return str(row["run_id"] if isinstance(row, dict) else row[0])
+
+
+# ── sheet edits ───────────────────────────────────────────────────────────────
+
+def _first(cur, column: str):
+    """One value of the last query's single row. The sync's cursor returns tuples."""
+    row = cur.fetchone()
+    return row[column] if isinstance(row, dict) else row[0]
+
+
+def _dicts(cur) -> list:
+    """The last query's rows as dicts."""
+    names = [column[0] for column in cur.description]
+    return [row if isinstance(row, dict) else dict(zip(names, row)) for row in cur.fetchall()]
+
+
+def _drift_tables_exist(cur) -> bool:
+    """The nightly job runs from the repository and can reach the database before
+    the deployed site's init_db() has created the tables."""
+    cur.execute("SELECT to_regclass('sheet_drift_findings') IS NOT NULL "
+                "AND to_regclass('sheet_drift_runs') IS NOT NULL AS present")
+    return bool(_first(cur, "present"))
+
+
+def _drift_due(cur, key: str, digest: str) -> bool:
+    """Whether the source needs checking: never checked, checked under other rules,
+    or checked against another payload. Findings depend only on the payload and on
+    `raw`, which never changes, so the same payload under the same rules finds the
+    same thing. Anything else runs, an unchanged payload included."""
+    cur.execute("SELECT payload_sha256, rules_version FROM sheet_drift_runs "
+                "WHERE source = %s ORDER BY drift_run_id DESC LIMIT 1", (key,))
+    rows = _dicts(cur)
+    if not rows:
+        return True
+    return (rows[0]["payload_sha256"] != digest
+            or rows[0]["rules_version"] != sheet_drift.RULES_VERSION)
+
+
+def _imported_rows(cur, key: str) -> list:
+    """The source's live rows as imported. A deleted row no longer feeds FLoRA."""
+    cur.execute(
+        f"""
+        SELECT record_id::text AS record_id, sheet_row_id, raw, {", ".join(DATA_COLUMNS)}
+        FROM source_records
+        WHERE source = %s AND deleted_at IS NULL
+        """,
+        (key,),
+    )
+    return _dicts(cur)
+
+
+def _open_drift(cur, key: str) -> int:
+    cur.execute("SELECT COUNT(*) AS n FROM sheet_drift_findings "
+                "WHERE source = %s AND resolved_at IS NULL", (key,))
+    return int(_first(cur, "n"))
+
+
+def _store_drift(cur, key: str, comparison, drift_run_id: int) -> dict:
+    """Store one check. New findings open; ones seen before are refreshed, and
+    re-opened if they had resolved, keeping first_seen_at and any decision; the open
+    ones this check compared but did not find again resolve. A row gone from the
+    sheet, or present twice, was not compared, so its findings stay as they were."""
+    cur.execute(
+        """
+        SELECT finding_id, sheet_row_id, sheet_column, kind, value_at_import, value_in_sheet,
+               resolved_at IS NOT NULL AS resolved
+        FROM sheet_drift_findings WHERE source = %s
+        """,
+        (key,),
+    )
+    before = {(row["sheet_row_id"], row["sheet_column"]): row for row in _dicts(cur)}
+    counts = {"new": 0, "reopened": 0, "changed": 0, "unchanged": 0}
+    for finding in comparison.findings:
+        prior = before.get(finding.key())
+        if prior is None:
+            counts["new"] += 1
+        elif prior["resolved"]:
+            counts["reopened"] += 1
+        elif (prior["kind"], prior["value_at_import"], prior["value_in_sheet"]) != (
+                finding.kind, finding.value_at_import, finding.value_in_sheet):
+            counts["changed"] += 1
+        else:
+            counts["unchanged"] += 1
+    if comparison.findings:
+        execute_values(cur, """
+            INSERT INTO sheet_drift_findings
+                (record_id, source, sheet_row_id, sheet_column, record_column, kind,
+                 value_at_import, value_in_sheet, sheet_row_number, last_drift_run_id)
+            VALUES %s
+            ON CONFLICT (source, sheet_row_id, sheet_column) DO UPDATE SET
+                record_id = EXCLUDED.record_id, record_column = EXCLUDED.record_column,
+                kind = EXCLUDED.kind, value_at_import = EXCLUDED.value_at_import,
+                value_in_sheet = EXCLUDED.value_in_sheet,
+                sheet_row_number = COALESCE(EXCLUDED.sheet_row_number,
+                                            sheet_drift_findings.sheet_row_number),
+                last_seen_at = NOW(), last_drift_run_id = EXCLUDED.last_drift_run_id,
+                resolved_at = NULL, resolved_drift_run_id = NULL
+            """, [(f.record_id, key, f.sheet_row_id, f.sheet_column, f.record_column, f.kind,
+                   f.value_at_import, f.value_in_sheet, f.sheet_row_number, drift_run_id)
+                  for f in comparison.findings],
+            template="(%s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, %s)", page_size=500)
+
+    # Only a cell this check read can resolve: the whole row ('') once it is back,
+    # and a compared column once it holds the imported value again.
+    found = {finding.key() for finding in comparison.findings}
+    columns = comparison.columns | {""}
+    settled = [row["finding_id"] for (sheet_row_id, sheet_column), row in before.items()
+               if not row["resolved"] and sheet_row_id in comparison.compared
+               and sheet_column in columns and (sheet_row_id, sheet_column) not in found]
+    if settled:
+        cur.execute("UPDATE sheet_drift_findings SET resolved_at = NOW(), resolved_drift_run_id = %s "
+                    "WHERE finding_id = ANY(%s) AND resolved_at IS NULL",
+                    (drift_run_id, settled))
+    counts["resolved"] = len(settled)
+    counts["open"] = _open_drift(cur, key)
+    counts["missing"] = len(comparison.missing)
+    counts["ambiguous"] = len(comparison.ambiguous)
+    counts["missing_recorded"] = comparison.missing_recorded
+    return counts
+
+
+def _print_drift(comparison, counts: "dict | None") -> None:
+    """What one check found, for the run's log. By column, so a first run's backlog
+    shows where it lies."""
+    cells = [f for f in comparison.findings if f.kind != sheet_drift.MISSING]
+    line = (f"  sheet edits: {comparison.rows_compared} row(s) compared, "
+            f"{len(cells)} cell(s) differ from the import")
+    if counts is None:
+        line += " (dry run: not stored)"
+    else:
+        line += f" ({counts['new']} new, {counts['resolved']} resolved, {counts['open']} open)"
+    print(line)
+    if comparison.missing:
+        print(f"    {len(comparison.missing)} imported row(s) no longer in the sheet"
+              + ("" if comparison.missing_recorded else " (not recorded: over the cap)"))
+    by_column = {}
+    for finding in cells:
+        by_column[finding.sheet_column] = by_column.get(finding.sheet_column, 0) + 1
+    if by_column:
+        print("    by column: " + ", ".join(
+            f"{column} {n}" for column, n in sorted(by_column.items(), key=lambda kv: (-kv[1], kv[0]))))
+    for note in comparison.notes:
+        print(f"    ⚠ {note}")
+
+
+def _drift_check(cur, cfg: dict, registry: dict, df: pd.DataFrame, digest: str,
+                 sync_run_id: "str | None", dry_run: bool) -> dict:
+    """Compare the source's imported rows with the sheet as fetched (sheet_drift.py)
+    and store what differs. Called only once every gate has passed.
+
+    Everything happens inside a savepoint, the existence check and the reads too: a
+    failure rolls back to it, prints a warning and returns, so the source's inserts
+    and its sync result are kept and the run's exit code is unchanged. A dry run
+    compares and prints, whether or not a check is due, and stores nothing."""
+    key = cfg["key"]
+    cur.execute("SAVEPOINT sheet_drift")
+    try:
+        if not dry_run:
+            if not _drift_tables_exist(cur):
+                print("  sheet edits: skipped: schema not applied yet")
+                cur.execute("RELEASE SAVEPOINT sheet_drift")
+                return {"status": "no_schema"}
+            if not _drift_due(cur, key, digest):
+                open_count = _open_drift(cur, key)
+                print(f"  sheet edits: sheet unchanged since its last check ({open_count} open)")
+                cur.execute("RELEASE SAVEPOINT sheet_drift")
+                return {"status": "not_due", "open": open_count, "new": 0, "resolved": 0}
+        # Every fetched row, accepted or not: a row whose status was changed away
+        # from validated is exactly one to report.
+        sheet_rows = [{column: _s(value) for column, value in row.items()}
+                      for row in df.to_dict("records")]
+        comparison = sheet_drift.compare_source(
+            sheet_rows, _imported_rows(cur, key), cfg, registry.get("accepted_values") or [],
+            cfg.get("header_row", 0), header=list(df.columns))
+        if dry_run:
+            _print_drift(comparison, None)
+            cur.execute("RELEASE SAVEPOINT sheet_drift")
+            return {"status": "dry_run", "found": len(comparison.findings)}
+        cur.execute(
+            """
+            INSERT INTO sheet_drift_runs
+                (source, sync_run_id, payload_sha256, rules_version, rows_compared, notes)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING drift_run_id
+            """,
+            (key, sync_run_id, digest, sheet_drift.RULES_VERSION, comparison.rows_compared,
+             Json(comparison.notes)),
+        )
+        drift_run_id = _first(cur, "drift_run_id")
+        counts = _store_drift(cur, key, comparison, drift_run_id)
+        cur.execute("UPDATE sheet_drift_runs SET counts = %s WHERE drift_run_id = %s",
+                    (Json(counts), drift_run_id))
+        _print_drift(comparison, counts)
+        cur.execute("RELEASE SAVEPOINT sheet_drift")
+        return {"status": "checked", **counts}
+    except Exception as exc:
+        # Broad on purpose: whatever went wrong here must not undo inserts the gates
+        # already allowed, nor fail a sync that did its job.
+        cur.execute("ROLLBACK TO SAVEPOINT sheet_drift")
+        cur.execute("RELEASE SAVEPOINT sheet_drift")
+        print(f"  ⚠ sheet edits: check failed, nothing stored ({type(exc).__name__}: {exc})")
+        return {"status": "failed", "reason": str(exc)}
 
 
 # ── per-source sync ───────────────────────────────────────────────────────────
@@ -345,10 +563,15 @@ def sync_source(cur, cfg: dict, registry: dict, dry_run: bool) -> dict:
         digest = hashlib.sha256(payload).hexdigest()             # gate 6
         if last and last["payload_sha256"] == digest:
             print(f"  unchanged since last run ({len(df)} rows) — skipping")
+            run_id = None
             if not dry_run:
-                _record_run(cur, key, "unchanged", rows_fetched=len(df),
-                            payload_sha256=digest)
-            return {"status": "unchanged", "inserted": 0}
+                run_id = _record_run(cur, key, "unchanged", rows_fetched=len(df),
+                                     payload_sha256=digest)
+            # Still offered to the sheet-edit check: the first check after it is
+            # deployed, or after its rules change, has to read an unchanged sheet.
+            # _drift_check skips one whose answer cannot have changed.
+            drift = _drift_check(cur, cfg, registry, df, digest, run_id, dry_run)
+            return {"status": "unchanged", "inserted": 0, "drift": drift}
     except GateFailure as e:
         print(f"  ✗ FAILED — {e}")
         print("    existing rows left untouched")
@@ -465,19 +688,46 @@ def sync_source(cur, cfg: dict, registry: dict, dry_run: bool) -> dict:
     if dup_fps:
         print(f"  ⚠ {len(dup_fps)} paper(s) appear under more than one sheet id — flagged for review")
 
+    run_id = None
     if not dry_run:
-        _record_run(cur, key, "ok",
-                    rows_fetched=len(df), rows_accepted=len(accepted),
-                    rows_inserted=inserted, rows_existing=existing,
-                    rows_skipped=skipped, dup_ids=len(dup_ids),
-                    dup_fingerprints=len(dup_fps),
-                    payload_sha256=hashlib.sha256(payload).hexdigest())
+        run_id = _record_run(cur, key, "ok",
+                             rows_fetched=len(df), rows_accepted=len(accepted),
+                             rows_inserted=inserted, rows_existing=existing,
+                             rows_skipped=skipped, dup_ids=len(dup_ids),
+                             dup_fingerprints=len(dup_fps),
+                             payload_sha256=digest)
+
+    # After the inserts, so a row added tonight is compared too (and matches).
+    drift = _drift_check(cur, cfg, registry, df, digest, run_id, dry_run)
 
     return {"status": "ok", "inserted": inserted, "existing": existing,
-            "skipped": skipped, "dup_ids": len(dup_ids), "dup_fingerprints": len(dup_fps)}
+            "skipped": skipped, "dup_ids": len(dup_ids), "dup_fingerprints": len(dup_fps),
+            "drift": drift}
 
 
 # ── entry point ───────────────────────────────────────────────────────────────
+
+def _drift_summary(results: dict) -> str:
+    """The run's sheet-edit line: open differences across sources, and what moved.
+    Open means not resolved, whatever FLoRA shows; Source Records > Sheet edits says
+    which of them still need someone."""
+    checks = {key: r.get("drift") or {} for key, r in results.items() if r["status"] != "failed"}
+    if not checks:
+        return "not checked (every source failed)"
+    if all(c.get("status") == "dry_run" for c in checks.values()):
+        found = sum(c.get("found", 0) for c in checks.values())
+        return f"{found} difference(s) found (dry run: not stored)"
+    if all(c.get("status") == "no_schema" for c in checks.values()):
+        return "skipped: schema not applied yet"
+    stored = [c for c in checks.values() if c.get("status") in ("checked", "not_due")]
+    line = (f"{sum(c.get('open', 0) for c in stored)} open "
+            f"(+{sum(c.get('new', 0) for c in stored)} new, "
+            f"{sum(c.get('resolved', 0) for c in stored)} resolved)")
+    failed = sorted(key for key, c in checks.items() if c.get("status") == "failed")
+    if failed:
+        line += f"   ⚠ check failed for {', '.join(failed)}"
+    return line
+
 
 def run(only: "str | None" = None, dry_run: bool = False) -> None:
     registry = yaml.safe_load(REGISTRY_PATH.read_text(encoding="utf-8"))
@@ -533,6 +783,7 @@ def run(only: "str | None" = None, dry_run: bool = False) -> None:
             suffix = f"   ⚠ {', '.join(extra)}" if extra else ""
             print(f"  {key:16} +{r['inserted']} new, {r['existing']} existing{suffix}")
     print(f"  {'total':16} {total} row(s) inserted")
+    print(f"  {'sheet edits':16} {_drift_summary(results)}")
 
     if any(r["status"] == "failed" for r in results.values()):
         raise SystemExit(1)

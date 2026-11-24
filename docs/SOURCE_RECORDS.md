@@ -471,7 +471,7 @@ source still syncs.
 | 3 | Parse | Malformed CSV |
 | 4 | Column contract | A renamed column upstream — fails loudly instead of producing a silently NULL column for months |
 | 5 | Row-count floor | A truncated or partially-loaded sheet. Sheets grow and shrink by tens of rows; they do not halve overnight |
-| 6 | Payload hash | Identical bytes to the last successful run → skip the source entirely and report "unchanged" |
+| 6 | Payload hash | Identical bytes to the last successful run → insert nothing and report "unchanged" (the sheet-edit check below may still read it) |
 
 Gate 2 matters more than it looks. Under insert-only, a bad parse does not *delete*
 data — it **inserts permanent garbage**, and insert-only never cleans up.
@@ -490,6 +490,51 @@ For each accepted row:
 
 That is the entire merge. Nothing is ever updated or deleted.
 
+### The sheet-edit check
+
+Insert-only means a coder who fixes an outcome or a DOI in the sheet *after* the row
+was imported changes nothing here. That is still true, but it is no longer silent: once
+a source has passed every gate (and its inserts are done), each of its live imported
+rows is compared with the sheet as fetched now, by its sheet UUID, and every cell that
+differs from `raw` (the row as imported) is kept as a finding in
+`sheet_drift_findings` (§7). The comparison is a pure function in
+[`sheet_drift.py`](../sheet_drift.py); the storing is `_drift_check` and
+`_store_drift` in `sync_sources.py`. Nothing is written back to `source_records` or to
+a sheet: an admin decides in Source Records > Sheet edits (§8).
+
+- **What is compared.** The sheet columns promoted to a `source_records` column, plus
+  the validation column. Notes columns (Coder, `validator_notes`, `prep_notes`, FReD's
+  own `id`, `frq`) are not. The id column and pandas' `Unnamed: N` columns are skipped.
+  A promoted column the row's `raw` does not have (added to the sheet after the row was
+  imported) is compared with the stored column instead.
+- **What is not an edit.** Spacing, line breaks, NBSP and zero-width characters,
+  Unicode composition, a DOI's `https://doi.org/` or `doi:` prefix and its case, a URL's
+  scheme, `www.` and trailing slash, a year's `.0`, the case of an outcome or a status,
+  and the archived spellings of the reproduction axes.
+- **Kinds.** `edited` (a cell differs), `not_accepted` (the status cell no longer holds
+  an accepted value; never for `score_2025`, which has no status column) and `missing`
+  (the UUID is gone from the sheet; `sheet_column` is `''`).
+- **Lifecycle.** A finding seen again is refreshed; one the sheet put back to the
+  imported value resolves; one that comes back re-opens with its `first_seen_at` and any
+  decision kept. Only the sheet resolves a finding: FLoRA matching the sheet is a state
+  of the view, not a resolution.
+- **Left alone.** A UUID that appears more than once among *all* fetched rows (any
+  status): its row and findings stay exactly as they were. The cell findings of a
+  missing row. And missing rows themselves once there are more than
+  max(20, 5% of the imported rows): a filter or a half-pasted tab is likelier than a
+  mass deletion, so they are not recorded and the check's notes say so.
+- **When it runs.** On every `ok` sync, and on an `unchanged` one unless the source's
+  last check used the same payload hash and `sheet_drift.RULES_VERSION` (findings
+  depend only on the payload and on `raw`, which never changes). So the first run after
+  deployment, or after a rules change, reads an unchanged sheet too. Each check is a row
+  of `sheet_drift_runs`, filed under the sync's `run_id`.
+- **Safety.** Everything happens inside `SAVEPOINT sheet_drift`, the table-existence
+  check and the reads included. Any failure rolls back to it and prints
+  `⚠ sheet edits: check failed, nothing stored (…)`: the source's inserts and its sync
+  result stand, and the exit code is unchanged. Before the schema is applied it prints
+  `sheet edits: skipped: schema not applied yet`. A dry run compares and prints, by
+  column, and stores nothing.
+
 ### Sample output
 
 ```
@@ -498,10 +543,16 @@ That is the entire merge. Nothing is ever updated or deleted.
   accepted: 1635
   inserted: 9   already present: 1624   skipped (no id): 2
   ⚠ 62 paper(s) appear under more than one sheet id — flagged for review
+  sheet edits: 1633 row(s) compared, 12 cell(s) differ from the import (2 new, 1 resolved, 12 open)
+    by column: outcome 5, doi_r 4, validation_status 3
 
 ── Reproductions (reproductions) ────────────────────────
   unchanged since last run (157 rows) — skipping
+  sheet edits: sheet unchanged since its last check (0 open)
 ```
+
+The run's summary ends with `sheet edits       12 open (+2 new, 1 resolved)`: open
+means not resolved, whatever FLoRA shows; the view says which still need someone.
 
 Every run writes a row to `source_sync_runs`, which feeds the freshness banner above
 the grid. Raw payloads are written to `snapshots/` (git-ignored) and uploaded as a
@@ -572,6 +623,26 @@ Duplicate rulings still append here.
 One row per source per run: status, gate failure reason, row counts, payload hash.
 Feeds the freshness banner.
 
+### `sheet_drift_runs` and `sheet_drift_findings`
+
+The sheet-edit check (§6). `sheet_drift_runs` has one row per check of a source:
+`sync_run_id` (the `source_sync_runs` row it ran under), `checked_at`,
+`payload_sha256` and `rules_version` (an unchanged sheet under the same rules is not
+checked again), `rows_compared`, `counts` (`new`, `reopened`, `changed`, `unchanged`,
+`resolved`, `open`, `missing`, `ambiguous`) and `notes` (what a check left out).
+
+`sheet_drift_findings` has one row per differing cell, unique on
+`(source, sheet_row_id, sheet_column)` and kept across checks: `record_id`,
+`record_column` (the column it is promoted to), `kind` (`edited`, `not_accepted`,
+`missing`), `value_at_import` and `value_in_sheet` (verbatim; NULL is blank),
+`sheet_row_number` (the row in the tab when last seen: rows move when a sheet is
+sorted, the UUID is what identifies it), `first_seen_at`, `last_seen_at`,
+`resolved_at` and the runs that last saw and resolved it. The `kept_*` columns hold a
+"Keep FLoRA value" decision (who, when, the note, and the sheet value it was made
+against): it holds while `value_in_sheet` still equals `kept_sheet_value`, and no
+run writes them. Both tables have row-level security on, explicitly and through the
+loop at the end of the schema.
+
 ### `source_display_counters`
 
 `source` → `last_value`. Note the name: it stores the **last value handed out**, not
@@ -602,7 +673,8 @@ Server-side paging at 50 rows. Columns: ID, type, original, replication, outcome
 status, reviewed, open. *Reviewed* is the stamp left by the editor this tab used to
 have; it no longer changes.
 
-- **Filter chips** — All · Replications · Reproductions · Validated · Added by hand · Duplicates · Deleted
+- **Filter chips** — All · Replications · Reproductions · Validated · Added by hand · Duplicates · Sheet edits · Deleted
+  (Duplicates and Sheet edits open review views of their own)
 - **Search** — reference, DOI, `display_id`, `study_o` (press Enter)
 - **Status dropdown** — the three accepted values
 - **Sortable headers** — click to sort, click again to reverse
@@ -676,6 +748,53 @@ For each row: **Keep — distinct** (genuinely a different record) or **Duplicat
 The transform honours both decisions: `duplicate` rows are excluded, and `distinct`
 rows are exempt from automatic dedup.
 
+### Sheet edits
+
+Imported rows whose sheet row was edited after the import (§6). The **Sheet edits**
+chip counts the records that need review; it opens a view of one card per source
+row, with a table of its differing cells: the value at import, the sheet now, FLoRA
+now (with where FLoRA's value comes from: as imported, a correction with who, when and
+the note, the row it was merged into, publisher metadata, or the build) and a state.
+FLoRA's side is read live from the same frame the FLoRA editor shows
+([`sheet_drift_service.py`](../sheet_drift_service.py)), so a saved correction counts
+at once.
+
+| State | Counted | What to do |
+|---|:-:|---|
+| Sheet changed, FLoRA not yet | yes | **Use sheet value**, or Keep FLoRA value |
+| Changed in both places | yes | Decide: Use sheet value, or Keep FLoRA value |
+| No longer marked validated in the sheet | yes | Keep in FLoRA, or remove it through the Exclusions sheet or a duplicate ruling |
+| Row deleted from the sheet | yes | Keep in FLoRA, or Review duplicates when the paper was re-entered under a new UUID |
+| FLoRA already has the sheet's value | no | Nothing |
+| FLoRA uses publisher data | no | Nothing: metadata wins for references and years |
+| Kept FLoRA value | no | Nothing, until the sheet changes the cell again |
+| Not a FLoRA field for this type | no | Nothing (`study_o`, the status, a field the corrected type lacks) |
+| Not in FLoRA | no | Nothing here: ruled a duplicate (check the kept row), excluded, retired or not built yet |
+
+The view compares as the build does: outcomes through `outcome_alias`, DOIs through
+`clean_doi`, an original's DOI landing page and a `url_r` that restates `doi_r` as
+blank, alternative identifiers as a set, and an abstract filled from metadata as one the
+sheet may now supply. The State select has **Needs review** (the default), **Nothing to
+do**, **Resolved** (the sheet went back to the imported value) and **All**; there is a
+Sheet select and an ID search (source, sheet or FLoRA ID).
+
+- **Use sheet value** opens the FLoRA editor with the sheet's value filled in (in the
+  form FLoRA stores it, checked as a save would check it) and the note "Taken from
+  Replications row 245, edited in the sheet after import". Nothing is saved until Save
+  corrections, which is an ordinary correction (§9.4). A value FLoRA would refuse
+  (an outcome spelling `outcome_alias` does not know, say) disables the button and
+  says why. Closing the editor reloads the view and the count.
+- **Keep FLoRA value** takes a required note (3 to 1,000 characters) and holds while the
+  sheet keeps the value it was made against; Undo withdraws it. Both are in the audit
+  trail (`source_records.sheet_edit_kept`, `source_records.sheet_edit_keep_withdrawn`).
+- The FLoRA editor shows the same differences for the record open in it ("Sheet edited
+  after import"), each with a **Use sheet value** that fills that field in place, and a
+  link to this view for the rest.
+- **Download CSV** gives every finding of the filter, one row per FLoRA record it
+  touches, with blank decision columns for a coding agent:
+  [`SHEET_EDITS_FOR_AGENTS.md`](SHEET_EDITS_FOR_AGENTS.md).
+  [`apply_sheet_edits.py`](../apply_sheet_edits.py) applies a filled-in file, by a person.
+
 ### API
 
 All endpoints require an administrator session (the `flora_session` cookie set
@@ -686,6 +805,14 @@ GET   /api/admin/source-records                    list + counts (filters, sort,
 GET   /api/admin/source-records/export.csv         CSV of the current filter
 GET   /api/admin/source-records/sync-status        freshness banner
 GET   /api/admin/source-records/duplicates         grouped duplicate candidates
+GET   /api/admin/source-records/sheet-drift/summary     Sheet edits counts + last check per sheet
+GET   /api/admin/source-records/sheet-drift        records with sheet edits, classified
+                                                   (state, source, search, page, per_page)
+GET   /api/admin/source-records/sheet-drift/export.csv  CSV of the filter, for agents
+POST  /api/admin/source-records/sheet-drift/{finding_id}/keep   {note, sheet_value}
+                                                   400 note/resolved/nothing to decide,
+                                                   404 unknown, 409 the sheet changed
+DELETE /api/admin/source-records/sheet-drift/{finding_id}/keep  withdraw the decision
 GET   /api/admin/source-records/{record_id}        full record + raw + history + neighbours
                                                    + the FLoRA records it feeds
 POST  /api/admin/source-records/{record_id}/duplicate   {status, duplicate_of}
@@ -1567,6 +1694,25 @@ Two different causes, and the transform now distinguishes them:
 Check the freshness banner. If the last run says `failed`, read `failure_reason` in
 `source_sync_runs`, or the Actions run log.
 
+### "⚠ sheet edits: check failed, nothing stored (…)"
+
+The sheet-edit check rolled back to its savepoint; the source's sync result and inserts
+stand. The message names the error. The next sync retries it (a failed check records no
+`sheet_drift_runs` row, so it is still due). Sheet edits keeps showing the findings of
+the last check that ran, and says when that was.
+
+### "sheet edits: skipped: schema not applied yet"
+
+The nightly job reached a database the deployed site has not yet migrated. It checks
+the next time, once `init_db()` has created the two tables.
+
+### Hundreds of sheet edits at once
+
+Expected on the first run after deployment: months of edits, and promoted columns added
+to a sheet after early imports, all appear together. Run `python sync_sources.py --dry-run`
+first to see the counts by source and column. A mass of "Row deleted from the sheet" is
+held back by the missing-row cap (§6) and reported in the check's notes instead.
+
 ---
 
 ## 13. Design decisions and why
@@ -1605,6 +1751,14 @@ re-sync, an enrichment refresh or a change of dedup survivor. Identifier correct
 are applied before the metadata join so a fixed DOI brings its own title and authors,
 but after the dedup so a correction can never change which records exist.
 
+**Sheet edits are reported, never applied.** Applying them automatically would undo
+insert-only's guarantee (a bad paste would rewrite stored rows) and would overwrite
+corrections made in FLoRA since. So each difference is a finding, classified when
+someone looks against what FLoRA shows *now*, and taken in as an ordinary, noted
+correction or kept with a note. Findings have tables of their own rather than
+`flora_check_findings`: those are keyed on FLoRA IDs, a sheet row can feed none, and
+their open findings drive the FLoRA tab's Problems filters.
+
 **Record-level editing, not inline cell editing.** Abstracts and quotes are far too long
 to edit in a grid cell, and editors work record by record, not cell by cell.
 
@@ -1638,7 +1792,13 @@ by deleting a good row. A trigger keeps it correct.
   through the Duplicates queue.
 - **Rows that leave accepted status stay.** Insert-only never removes anything, so a row
   flipped back to `help needed` in the sheet remains in the table. That is intentional —
-  its edits and history are worth more than the row's absence.
+  its edits and history are worth more than the row's absence. It is reported under
+  Sheet edits ("No longer marked validated in the sheet"); taking it out of FLoRA is an
+  exclusion or a duplicate ruling, never automatic.
+- **Sheet edits compare promoted columns only.** Notes columns are left out (v1). A
+  row's number in its tab is as of the last check; the UUID is what identifies it.
+  The missing-row cap can hide a real mass deletion; the check's notes and the view
+  say when it did.
 - **The R pipeline still reads the sheets directly.** Nothing here changes it yet. If it
   should consume `flora_entry_sheets.csv` instead, that is a commit step in the workflow
   plus a URL change in the notebook.
@@ -1657,7 +1817,11 @@ by deleting a good row. A trigger keeps it correct.
 | File | Role |
 |---|---|
 | [`sources.yml`](../sources.yml) | Source registry — gids, columns, accepted statuses |
-| [`sync_sources.py`](../sync_sources.py) | Download, gates, insert-only merge |
+| [`sync_sources.py`](../sync_sources.py) | Download, gates, insert-only merge, then the sheet-edit check (`_drift_check`) |
+| [`sheet_drift.py`](../sheet_drift.py) | The sheet-edit comparison: pure, no database |
+| [`sheet_drift_service.py`](../sheet_drift_service.py) | Sheet edits view: classification against FLoRA now, Keep FLoRA value, the CSV |
+| [`apply_sheet_edits.py`](../apply_sheet_edits.py) | Applies a filled-in Sheet edits CSV through the FLoRA editor's save (dry run first) |
+| [`docs/SHEET_EDITS_FOR_AGENTS.md`](SHEET_EDITS_FOR_AGENTS.md) | How a coding agent fills in the Sheet edits CSV |
 | [`transform_sources.py`](../transform_sources.py) | Six-operation transform to the FLoRA columns |
 | [`source_records_service.py`](../source_records_service.py) | All SQL and logic; no FastAPI types; read-only apart from duplicate rulings |
 | [`flora_edits.py`](../flora_edits.py) | Corrections to FLoRA records: validation, storage, applied on top of every build |
@@ -1666,6 +1830,6 @@ by deleting a good row. A trigger keeps it correct.
 | [`app.py`](../app.py) | Thin routes (search for `Source records — entry-sheet datatable`) |
 | [`db_schema.sql`](../db_schema.sql) | Tables, constraints, triggers, rule-table seeds |
 | [`docs/index.html`](index.html) | `admin-tab-sources`, `src-detail-modal` |
-| [`docs/app.js`](app.js) | Grid, read-only record panel, duplicate view (`ADMIN: SOURCE RECORDS`); FLoRA record editor (`FLoRA: record editor`) |
+| [`docs/app.js`](app.js) | Grid, read-only record panel, duplicate view, Sheet edits view (`Sheet edits`) (`ADMIN: SOURCE RECORDS`); FLoRA record editor (`FLoRA: record editor`) |
 | [`docs/style.css`](style.css) | `SOURCE RECORDS` sections |
 | [`.github/workflows/sync-sources.yml`](../.github/workflows/sync-sources.yml) | Nightly job |

@@ -6926,12 +6926,129 @@ body.has-maint-banner #admin-screen {
   background: #eef2ea;
 }
 
+/* ---- Sheet edits: imported rows whose sheet row changed after the import ---- */
+
+.src-drift-toolbar { flex-wrap: wrap; gap: 0.6rem 1rem; }
+.src-drift-toolbar #src-drift-count { margin-left: auto; font-size: 0.83rem; }
+.src-drift-title { margin: 0; font-size: 1rem; }
+.src-drift-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.83rem;
+  color: var(--muted);
+}
+.src-drift-search { max-width: 14rem; }
+.src-drift-checks { margin: -0.4rem 0 0.9rem; font-size: 0.8rem; color: var(--muted); max-width: 90ch; }
+.src-drift-legend { margin-bottom: 0.75rem; }
+.src-drift-states { margin: 0 0 1.25rem; font-size: 0.82rem; max-width: 90ch; }
+.src-drift-states summary { cursor: pointer; color: var(--muted); }
+.src-drift-states .src-drift-legend { margin-top: 0.5rem; }
+/* The chip says there is something to decide without relying on its number alone. */
+.admin-filter-btn.src-drift-attention:not(.active) { border-color: var(--amber); }
+
+.src-drift-card {
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: #fff;
+  margin-bottom: 1.25rem;
+}
+.src-drift-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem 1rem;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg-alt);
+}
+.src-drift-card-title { margin: 0; font-size: 0.95rem; display: flex; align-items: center; gap: 0.4rem; }
+.src-drift-where { margin: 0.15rem 0 0; font-size: 0.8rem; color: var(--muted); }
+.src-drift-rownum { text-decoration: underline dotted; cursor: help; }
+.src-drift-feeds { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; font-size: 0.82rem; }
+.src-drift-feeds .ghost-btn { font-size: 0.78rem; padding: 0.2rem 0.55rem; margin-left: 0.3rem; }
+.src-drift-note {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.82rem;
+  border-bottom: 1px solid var(--rule);
+  background: #f6ecd4;
+}
+.src-drift-note .ghost-btn { font-size: 0.78rem; padding: 0.2rem 0.55rem; margin-left: 0.3rem; }
+.src-drift-card .admin-table-wrap { margin: 0; border: 0; border-radius: 0; }
+.src-drift-table { font-size: 0.82rem; }
+/* A row header gets none of .admin-table td's padding, which left the field name
+   sitting above (and left of) the rest of its row. */
+.src-drift-table th[scope="row"] {
+  padding: 0.5rem clamp(0.35rem, 0.55vw, 0.6rem);
+  font-weight: normal;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+  color: var(--ink);
+}
+.src-drift-table td { vertical-align: top; }
+.src-drift-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.src-drift-source { margin-top: 0.15rem; font-size: 0.76rem; color: var(--muted); overflow-wrap: anywhere; }
+.src-drift-state-cell { min-width: 15rem; }
+.src-drift-target + .src-drift-target { margin-top: 0.35rem; }
+/* State badges carry their words; the colour only repeats them. Text colours are
+   darker than --amber and --green so the small type keeps AA contrast. */
+.src-drift-badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 3px;
+  border: 1px solid var(--rule);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+.src-drift-badge-warn  { background: #f6ecd4; color: #6f4c0e; border-color: var(--amber); }
+.src-drift-badge-ok    { background: #dfe7d8; color: #3b5631; border-color: var(--green); }
+.src-drift-badge-muted { background: var(--bg); color: var(--muted); }
+.src-drift-use,
+.src-drift-keep { font-size: 0.78rem; padding: 0.2rem 0.55rem; margin: 0.3rem 0.3rem 0 0; }
+#src-drift-view .ghost-btn:disabled,
+#src-drift-view .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+#src-drift-view .ghost-btn:disabled:hover { background: transparent; color: var(--ink); }
+.src-drift-why,
+.src-drift-hint { margin-top: 0.25rem; font-size: 0.76rem; color: var(--muted); overflow-wrap: anywhere; }
+.src-drift-kept { margin-top: 0.35rem; font-size: 0.8rem; color: #3b5631; overflow-wrap: anywhere; }
+.src-drift-keep-form { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.4rem; }
+.src-drift-keep-form label { font-size: 0.78rem; color: var(--ink-soft); }
+.src-drift-keep-form textarea { width: 100%; font: inherit; resize: vertical; }
+.src-drift-keep-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.src-drift-keep-actions .btn-primary,
+.src-drift-keep-actions .ghost-btn { font-size: 0.78rem; padding: 0.25rem 0.6rem; }
+.src-drift-msg { font-size: 0.78rem; }
+.src-drift-card-foot { padding: 0.4rem 0.75rem; border-top: 1px solid var(--rule); font-size: 0.8rem; }
+.src-drift-error { padding: 0.75rem; border-left: 3px solid var(--red); background: #f7e3e0; }
+.src-drift-error p { margin: 0 0 0.5rem; }
+
+/* The FLoRA editor's box: the same differences, one line each. */
+.flora-sheet-drift {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--amber);
+  border-radius: 4px;
+  background: #fdf7ea;
+}
+.flora-sheet-drift h4 { margin-top: 0; }
+.flora-sheet-drift-where { margin: 0 0 0.4rem; font-size: 0.8rem; color: var(--muted); }
+.flora-sheet-drift-list { margin: 0; padding-left: 1.1rem; font-size: 0.84rem; }
+.flora-sheet-drift-line { margin-bottom: 0.35rem; overflow-wrap: anywhere; }
+.flora-sheet-drift-line .ghost-btn { font-size: 0.76rem; padding: 0.15rem 0.5rem; margin-left: 0.3rem; }
+.flora-sheet-drift-done { margin-left: 0.3rem; font-size: 0.78rem; color: #3b5631; }
+.flora-sheet-drift-why { margin-left: 0.3rem; font-size: 0.78rem; color: var(--muted); }
+.flora-sheet-drift-help { margin: 0.4rem 0 0; font-size: 0.8rem; color: var(--muted); }
+
 /* Preprint duplicates (FLoRA tab): the same side-by-side cards, one decision per pair. */
 /* The phone layout hides every .ghost-btn (a game-screen rule); on both review
    screens they are the decisions themselves, so keep them, as .flora-actions does
-   for the header. */
+   for the header. Sheet edits and its box in the FLoRA editor likewise. */
 #flora-dedup-view .ghost-btn,
-#src-dup-view .ghost-btn {
+#src-dup-view .ghost-btn,
+#src-drift-view .ghost-btn,
+.flora-sheet-drift .ghost-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;

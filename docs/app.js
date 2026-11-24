@@ -10383,7 +10383,7 @@ function switchAdminTab(tab) {
   $("#admin-tabs").querySelectorAll(".admin-tab-btn").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === tab);
   });
-  if (tab === "sources")    { resetSourceView(); fetchSourceRecords(); fetchSourceSync(); }
+  if (tab === "sources")    { resetSourceView(); fetchSourceRecords(); fetchSourceSync(); fetchSourceDriftCount(); }
   if (tab === "flora")      { resetFloraView(); fetchFloraRecords(); }
   if (tab === "stats")      fetchAdminStats();
   if (tab === "admins")     { fetchAdminAdmins(); fetchAdminBannerStatus(); }
@@ -12955,11 +12955,13 @@ let _floraOpenSeq = 0;
 // derives from other fields (the DOI hashes, work ids, author overlap).
 const FLORA_DETAIL_SKIP = new Set(["flora_id", "source_display_id", "source_record_id",
   "merged_display_ids", "merged_sources", "editing", "edited_fields", "outcome_conflict",
-  "check_findings", "check_runs"]);
+  "check_findings", "check_runs", "sheet_drift"]);
 
 /** Open (or reload) the editor. `notice` is shown in the save bar once it renders:
- *  the outcome of the save or restore that caused the reload. */
-async function openFloraRecord(floraId, notice) {
+ *  the outcome of the save or restore that caused the reload. `options.prefill`
+ *  ({field: value}) fills fields in without saving, each with its note from
+ *  `options.notes`: Sheet edits' "Use sheet value". */
+async function openFloraRecord(floraId, notice, options) {
   const seq = ++_floraOpenSeq;
   const modal = $("#flora-detail-modal");
   const body = $("#flora-detail-body");
@@ -12971,6 +12973,7 @@ async function openFloraRecord(floraId, notice) {
     if (seq !== _floraOpenSeq) return;
     renderFloraRecord(rec);
     if (notice) $("#flora-save-msg").innerHTML = notice;
+    if (options && options.prefill) floraPrefill(options.prefill, options.notes || {});
   } catch (err) {
     if (seq !== _floraOpenSeq) return;
     body.innerHTML = '<p class="admin-loading">Error: ' + escapeHtml(err.message) + "</p>";
@@ -12982,6 +12985,51 @@ function closeFloraRecord() {
   _floraCurrent = null;
   $("#flora-detail-modal").classList.add("hidden");
   document.body.style.overflow = "";
+  // Opened from Sheet edits: what was saved may have settled a difference there.
+  if (srcDriftVisible()) {
+    fetchSourceDrift({ restoreFocus: true, quiet: true });
+    fetchSourceDriftCount();
+  }
+}
+
+/** Fill fields of the open editor without saving: set each control (adding the
+ *  value to a list that lacks it), let its note box appear and fill the note, then
+ *  put the focus on the first. Other unsaved edits are left as they are. */
+function floraPrefill(prefill, notes) {
+  const body = $("#flora-detail-body");
+  const specs = new Map((((_floraCurrent || {}).editing || {}).fields || []).map((f) => [f.field, f]));
+  const filled = [];
+  const missing = [];
+  let first = null;
+  Object.keys(prefill).forEach((field) => {
+    const control = body.querySelector('[data-field="' + CSS.escape(field) + '"]');
+    if (!control) { missing.push(field); return; }
+    const value = floraBlank(prefill[field]) ? "" : String(prefill[field]);
+    if (control.tagName === "SELECT" && value && ![...control.options].some((o) => o.value === value)) {
+      control.add(new Option(value, value), 1);
+    }
+    control.value = value;
+    control.dispatchEvent(new Event("input", { bubbles: true }));
+    const note = body.querySelector('[data-note-for="' + CSS.escape(field) + '"]');
+    if (note && notes[field] && !note.value.trim()) note.value = notes[field];
+    filled.push((specs.get(field) || {}).label || field);
+    first = first || control;
+  });
+  const msg = $("#flora-save-msg");
+  if (msg) {
+    msg.innerHTML = (filled.length
+      ? '<span class="flora-notice">Filled in from the sheet: ' + escapeHtml(filled.join(", ")) +
+        ". Review it, then Save corrections.</span>"
+      : "") +
+      (missing.length
+        ? '<span class="flora-warning">⚠ Not a field of this record, so not filled in: ' +
+          escapeHtml(missing.join(", ")) + "</span>"
+        : "");
+  }
+  if (first) {
+    first.scrollIntoView({ block: "center" });
+    first.focus();
+  }
 }
 
 /** Line breaks as a browser writes them in a form control: a textarea turns \r\n
@@ -13178,6 +13226,7 @@ function renderFloraRecord(rec) {
     provenance +
     floraManualBox(rec) +
     floraConflictBox(rec) +
+    floraSheetDrift(rec) +
     floraFindings(rec) +
     '<p class="flora-edit-note">Saving logs each change, with its note, under Changes, and updates the ' +
       "stored dataset (Download full CSV, the public API) at once. Source records stay as imported; every " +
@@ -13284,6 +13333,87 @@ function floraConflictBox(rec) {
       '<input id="flora-confirm-note" class="src-input" type="text" maxlength="500" ' +
         'placeholder="Why (optional)" aria-label="Note for the decision">' +
     "</div></div>";
+}
+
+/** Cells of this record's source rows edited in the sheet after import, that still
+ *  need a decision (sheet_drift_service.for_flora_record): one line each, and for a
+ *  field a "Use sheet value" that fills it in below without saving. Keeping FLoRA's
+ *  value takes a note, which is given in Source Records > Sheet edits. Redrawn on
+ *  its own (box.outerHTML), so unsaved edits elsewhere in the form stay. */
+function floraSheetDrift(rec) {
+  const drift = rec.sheet_drift;
+  const fields = ((drift && drift.fields) || []).filter((f) => f.counted);
+  if (!fields.length) return "";
+  const rows = (drift.rows || []).map((r) =>
+    escapeHtml(r.display_id) + ", " + escapeHtml(r.source_label) +
+    (r.sheet_row_number ? " row " + escapeHtml(r.sheet_row_number) : ""));
+  const times = (drift.last_checks || []).map((c) => c.checked_at).filter(Boolean).sort();
+  const checked = times.length ? " · compared " + escapeHtml(srcDriftWhen(times[times.length - 1])) : "";
+  const quoted = (v) => floraBlank(v) ? "<i>blank</i>" : "“" + escapeHtml(srcDriftClip(v, 120)) + "”";
+  const lines = fields.map((f) => {
+    const t = (f.targets || [])[0] || {};
+    const name = f.flora_column || f.sheet_column || "row";
+    const state = '<span class="src-drift-badge ' + srcDriftTone(f.state) + '">' +
+      escapeHtml(srcDriftLabel(f.state)) + "</span>";
+    if (f.kind !== "edited") {
+      const what = f.kind === "missing"
+        ? "The row is no longer in the sheet."
+        : "The sheet's status is now " + quoted(f.value_in_sheet) + ".";
+      return '<li class="flora-sheet-drift-line">' + state + " " + what + "</li>";
+    }
+    let action = "";
+    if (f._filled) {
+      action = ' <span class="flora-sheet-drift-done">Filled in below: review it, then save.</span>';
+    } else if (t.suggested_action === "use_sheet_value" || t.state === "pending" || t.state === "conflict") {
+      action = t.sheet_value_error
+        ? ' <span class="flora-sheet-drift-why">' + escapeHtml(t.sheet_value_error) + "</span>"
+        : ' <button type="button" class="ghost-btn flora-sheet-drift-use" data-finding="' + f.finding_id +
+          '" aria-label="Use sheet value for ' + escapeHtml(name) + '">Use sheet value</button>';
+    }
+    return '<li class="flora-sheet-drift-line"><code>' + escapeHtml(name) + "</code>: import " +
+      quoted(f.value_at_import) + " → sheet " + quoted(f.value_in_sheet) + " · FLoRA " +
+      quoted(t.flora_value) + " " + state + action + "</li>";
+  }).join("");
+  return '<section class="src-group flora-sheet-drift" id="flora-sheet-drift" aria-labelledby="flora-sheet-drift-title">' +
+    '<h4 id="flora-sheet-drift-title">Sheet edited after import</h4>' +
+    '<p class="flora-sheet-drift-where">' + rows.join("; ") + checked + "</p>" +
+    '<ul class="flora-sheet-drift-list">' + lines + "</ul>" +
+    '<p class="flora-sheet-drift-help">“Use sheet value” fills the field below; review it, then Save corrections. ' +
+    '<button type="button" class="link-btn flora-sheet-drift-all" data-search="' + escapeHtml(rec.flora_id || "") +
+    '">Keep FLoRA value or see all in Sheet edits</button></p></section>';
+}
+
+/** Redraw the sheet-edit box alone, as redrawFloraFindings does. */
+function redrawFloraSheetDrift() {
+  const box = $("#flora-sheet-drift");
+  if (box && _floraCurrent) box.outerHTML = floraSheetDrift(_floraCurrent);
+}
+
+/** The editor box's "Use sheet value": fill that field in place, nothing saved. */
+function floraUseSheetValue(button) {
+  const rec = _floraCurrent;
+  const f = rec && ((rec.sheet_drift || {}).fields || [])
+    .find((x) => String(x.finding_id) === button.dataset.finding);
+  const t = f && (f.targets || [])[0];
+  if (!f || !t || !f.flora_field) return;
+  f._filled = true;
+  redrawFloraSheetDrift();
+  floraPrefill({ [f.flora_field]: t.sheet_value_for_flora },
+               { [f.flora_field]: srcDriftNote(f.source_label, f.sheet_row_number, f) });
+}
+
+/** "Keep FLoRA value or see all in Sheet edits": the view, filtered to this record.
+ *  Leaving the editor drops its unsaved edits, so it asks first when there are any. */
+async function floraOpenSheetEdits(search) {
+  const unsaved = _floraCurrent && _floraCurrent.editing ? collectFloraEdits() : { fields: {}, revert: [] };
+  if ((Object.keys(unsaved.fields).length || unsaved.revert.length) &&
+      !(await showConfirm("Leave the editor? Its unsaved edits are discarded."))) return;
+  _floraOpenSeq++;
+  _floraCurrent = null;
+  $("#flora-detail-modal").classList.add("hidden");
+  document.body.style.overflow = "";
+  if ($("#admin-tab-sources").classList.contains("hidden")) switchAdminTab("sources");
+  showSourceDrift({ state: "all", search: search || "", source: "" });
 }
 
 /** What the entry checks found in this record (entry_checks.py), problems first:
@@ -13609,6 +13739,10 @@ $("#flora-detail-body")?.addEventListener("click", (e) => {
   if (restore) { restoreFloraRecord(Number(restore.dataset.changeId)); return; }
   const finding = e.target.closest("#flora-findings button[data-finding]");
   if (finding) { floraFindingClick(finding); return; }
+  const sheetValue = e.target.closest(".flora-sheet-drift-use");
+  if (sheetValue) { floraUseSheetValue(sheetValue); return; }
+  const sheetEdits = e.target.closest(".flora-sheet-drift-all");
+  if (sheetEdits) { floraOpenSheetEdits(sheetEdits.dataset.search); return; }
   const revert = e.target.closest(".flora-revert-btn");
   if (!revert || !_floraCurrent) return;
   const name = revert.dataset.revertField;
@@ -14813,6 +14947,9 @@ async function fetchSourceSync() {
         _srcSyncWatching = false;
         fetchSourceFreshness();
         fetchSourceRecords();
+        // Every sync compares the sheets again.
+        fetchSourceDriftCount();
+        if (srcDriftVisible()) fetchSourceDrift();
         const finished = (data.jobs || []).find(job => job.job_id === _srcSyncWatchedJob);
         showToast(finished?.status === "failed"
           ? "Pipeline run failed. The report and log say why."
@@ -15022,6 +15159,7 @@ $("#src-filters").addEventListener("click", (e) => {
   _srcFilter = btn.dataset.filter;
   _srcPage = 1;
   if (_srcFilter === "flagged") { showSourceDuplicates(); return; }
+  if (_srcFilter === "sheet-drift") { showSourceDrift(); return; }
   resetSourceView();
   fetchSourceRecords();
 });
@@ -15096,6 +15234,7 @@ $("#src-next-btn").onclick = () => { if (_srcNeighbours.next_id) openSourceRecor
 let _srcDupShowResolved = false;
 
 function showSourceDuplicates() {
+  $("#src-drift-view").classList.add("hidden");
   $("#src-dup-view").classList.remove("hidden");
   $(".src-toolbar").classList.add("hidden");
   $("#admin-tab-sources").querySelector(".admin-table-wrap").classList.add("hidden");
@@ -15106,9 +15245,21 @@ function showSourceDuplicates() {
 /** Restore the grid chrome without fetching, so callers control when to reload. */
 function resetSourceView() {
   $("#src-dup-view").classList.add("hidden");
+  $("#src-drift-view").classList.add("hidden");
   $(".src-toolbar").classList.remove("hidden");
   $("#admin-tab-sources").querySelector(".admin-table-wrap").classList.remove("hidden");
   $("#src-pagination").classList.remove("hidden");
+  // "Sheet edits" is a view, not a grid filter: left lit, the grid behind it would
+  // show every row under a chip that says otherwise.
+  if (_srcFilter === "sheet-drift") srcSelectChip("all");
+}
+
+/** Light one chip of the Source Records filter row, and filter the grid by it. */
+function srcSelectChip(filter) {
+  _srcFilter = filter;
+  _srcPage = 1;
+  $("#src-filters").querySelectorAll(".admin-filter-btn")
+    .forEach((b) => b.classList.toggle("active", b.dataset.filter === filter));
 }
 
 function hideSourceDuplicates() {
@@ -15299,4 +15450,618 @@ $("#src-dup-body").addEventListener("click", (e) => {
   if (dupe) { confirmSourceDuplicate(dupe); return; }
   const open = e.target.closest(".src-dup-open");
   if (open) openSourceRecord(open.dataset.id);
+});
+
+/* ---------- Sheet edits ----------
+   Imported rows whose sheet row was edited after the import. Every sync compares
+   them with what was imported (sync_sources.py) and keeps one finding per differing
+   cell; the server says what each means for FLoRA now (sheet_drift_service.py).
+   "Use sheet value" opens the FLoRA editor with the value filled in, saved only by
+   Save corrections; "Keep FLoRA value" records the decision with a note. Nothing
+   here changes a sheet or a source record. */
+
+const SRC_DRIFT_PER_PAGE = 25;
+const SRC_DRIFT_CLIP = 200;        // characters of a long value shown before "Show all"
+const _srcDrift = { state: "needs_review", source: "", search: "", page: 1, data: null, seq: 0,
+                    opener: null };
+
+// [label, tone]. Text, never colour alone. "Conflict" is not used: the FLoRA tab
+// already names duplicate outcome clashes so.
+const SRC_DRIFT_STATES = {
+  pending:       ["Sheet changed, FLoRA not yet", "warn"],
+  conflict:      ["Changed in both places", "warn"],
+  not_validated: ["No longer marked validated in the sheet", "warn"],
+  row_removed:   ["Row deleted from the sheet", "warn"],
+  unknown:       ["FLoRA could not be checked", "warn"],
+  kept:          ["Kept FLoRA value", "ok"],
+  matches:       ["FLoRA already has the sheet's value", "ok"],
+  resolved:      ["Resolved: the sheet has the imported value again", "ok"],
+  metadata:      ["FLoRA uses publisher data", "muted"],
+  no_field:      ["Not a FLoRA field for this type", "muted"],
+  not_in_flora:  ["Not in FLoRA", "muted"],
+};
+const SRC_DRIFT_FILTERS = { needs_review: "Needs review", nothing_to_do: "Nothing to do",
+                            resolved: "Resolved", all: "All" };
+
+function srcDriftLabel(state) { return (SRC_DRIFT_STATES[state] || [state || "—"])[0]; }
+function srcDriftTone(state) { return "src-drift-badge-" + (SRC_DRIFT_STATES[state] || [0, "muted"])[1]; }
+
+function srcDriftVisible() {
+  return !$("#admin-tab-sources").classList.contains("hidden") &&
+         !$("#src-drift-view").classList.contains("hidden");
+}
+
+// en-GB, as the rest of the admin panel writes dates ("3 Nov 2026", "22 Nov, 03:02"),
+// and as the server words a correction's date in flora_source_text.
+function srcDriftWhen(value) {
+  const d = new Date(value);
+  if (isNaN(d)) return String(value || "");
+  return d.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function srcDriftDay(value) {
+  const d = new Date(value);
+  return isNaN(d) ? String(value || "") : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** A FLoRA record as Sheet edits names it: its permanent ID (FLORA-000123, the CSV's).
+ *  Its FLoRA-tab ID is a source row's display ID, the card's own for the record built
+ *  from it, so it would only repeat the heading. Not yet issued: the FLoRA-tab ID. */
+function srcDriftFloraName(t) {
+  return (t && (t.export_id || t.flora_id)) || "";
+}
+
+function srcDriftClip(v, n) {
+  const text = String(v);
+  return text.length > n ? text.slice(0, n) + "…" : text;
+}
+
+/** The note a correction taken from the sheet carries into the change log. */
+function srcDriftNote(label, row) {
+  return "Taken from " + (label || "the sheet") + (row ? " row " + row : "") +
+    ", edited in the sheet after import";
+}
+
+/** A value as the table shows it: blank said in words, a long one cut at
+ *  SRC_DRIFT_CLIP characters with a toggle that says whether it is open. */
+function srcDriftValue(v) {
+  if (v === null || v === undefined || v === "") return '<i class="src-dim2">blank</i>';
+  const text = String(v);
+  if (text.length <= SRC_DRIFT_CLIP) return '<span class="src-drift-val"><span class="src-drift-text">' + escapeHtml(text) + "</span></span>";
+  return '<span class="src-drift-val"><span class="src-drift-text src-drift-short">' +
+    escapeHtml(text.slice(0, SRC_DRIFT_CLIP)) + "…</span>" +
+    '<span class="src-drift-text src-drift-full hidden">' + escapeHtml(text) + "</span> " +
+    '<button type="button" class="link-btn src-drift-more" aria-expanded="false">Show all</button></span>';
+}
+
+function srcDriftParams(extra) {
+  const p = { state: _srcDrift.state, page: _srcDrift.page, per_page: SRC_DRIFT_PER_PAGE };
+  if (_srcDrift.source) p.source = _srcDrift.source;
+  if (_srcDrift.search) p.search = _srcDrift.search;
+  return new URLSearchParams(Object.assign(p, extra || {})).toString();
+}
+
+function srcDriftAnnounce(text) {
+  const live = $("#src-drift-live");
+  if (!live) return;
+  live.textContent = "";
+  setTimeout(() => { live.textContent = text; }, 30);
+}
+
+/** Open the view, optionally with a filter (the FLoRA editor opens it on a record). */
+function showSourceDrift(opts) {
+  opts = opts || {};
+  ["state", "search", "source"].forEach((key) => { if (opts[key] !== undefined) _srcDrift[key] = opts[key]; });
+  _srcDrift.page = 1;
+  $("#src-drift-state").value = _srcDrift.state;
+  $("#src-drift-search").value = _srcDrift.search;
+  $("#src-drift-source").value = _srcDrift.source;
+  srcSelectChip("sheet-drift");
+  $("#src-dup-view").classList.add("hidden");
+  $("#src-drift-view").classList.remove("hidden");
+  $(".src-toolbar").classList.add("hidden");
+  $("#admin-tab-sources").querySelector(".admin-table-wrap").classList.add("hidden");
+  $("#src-pagination").classList.add("hidden");
+  $("#src-drift-title").focus();
+  fetchSourceDrift();
+}
+
+function hideSourceDrift() {
+  resetSourceView();               // lights "All" again
+  fetchSourceRecords();
+  $('#src-filters [data-filter="sheet-drift"]').focus();
+}
+
+function srcDriftSetCount(counts) {
+  const el = $("#sfc-drift");
+  if (!el) return;
+  const n = (counts || {}).needs_review;
+  el.textContent = n === undefined || n === null ? "—" : n;
+  el.closest(".admin-filter-btn")?.classList.toggle("src-drift-attention", n > 0);
+}
+
+/** The chip's count: records that need review. "—" until it has loaded. */
+async function fetchSourceDriftCount() {
+  if (!$("#sfc-drift")) return;
+  try {
+    const data = await adminApi("/source-records/sheet-drift/summary");
+    srcDriftSetCount(data.counts);
+  } catch (e) {
+    // The chip keeps "—"; opening the view says what went wrong.
+  }
+}
+
+async function fetchSourceDrift(opts) {
+  opts = opts || {};
+  const body = $("#src-drift-body");
+  if (!body) return;
+  const seq = ++_srcDrift.seq;
+  body.setAttribute("aria-busy", "true");
+  // A quiet reload keeps the list in place until the new one arrives (closing the
+  // editor), so the page does not jump back to the top.
+  if (!opts.quiet) body.innerHTML = '<p class="admin-loading">Loading…</p>';
+  try {
+    const data = await adminApi("/source-records/sheet-drift?" + srcDriftParams());
+    if (seq !== _srcDrift.seq) return;
+    _srcDrift.data = data;
+    renderSourceDrift(data);
+    if (opts.restoreFocus) srcDriftRestoreFocus();
+  } catch (e) {
+    if (seq !== _srcDrift.seq) return;
+    _srcDrift.data = null;
+    $("#src-drift-count").textContent = "";
+    $("#src-drift-pagination").innerHTML = "";
+    body.innerHTML = '<div class="src-drift-error" role="alert"><p>Could not load the sheet edits: ' +
+      escapeHtml(e.message) + '</p><button type="button" class="ghost-btn" id="src-drift-retry">Try again</button></div>';
+  } finally {
+    if (seq === _srcDrift.seq) body.removeAttribute("aria-busy");
+  }
+}
+
+function srcDriftFillSources(checks) {
+  const select = $("#src-drift-source");
+  if (!select || select.options.length > 1 || !checks.length) return;
+  checks.forEach((c) => select.add(new Option(c.label || c.source, c.source)));
+  select.value = _srcDrift.source;
+}
+
+/** When each sheet was last compared, so a finding is read as fresh as its check. */
+function srcDriftChecks(checks) {
+  if (!checks.length) return "";
+  const parts = checks.map((c) => {
+    const label = escapeHtml(c.label || c.source);
+    let text;
+    if (c.last_sync_status === "failed") {
+      text = '<span class="src-fresh-warn">⚠ ' + label + ": last sync failed" +
+        (c.checked_at ? ", findings as of " + escapeHtml(srcDriftDay(c.checked_at)) : "") + "</span>";
+    } else if (!c.checked_at) {
+      text = label + ": not compared yet";
+    } else if (c.last_sync_status === "unchanged" && c.last_sync_at &&
+               new Date(c.last_sync_at) > new Date(c.checked_at)) {
+      text = label + " unchanged since " + escapeHtml(srcDriftDay(c.checked_at));
+    } else {
+      text = label + " " + escapeHtml(srcDriftWhen(c.checked_at));
+    }
+    const notes = (c.notes || []).map((n) => '<span class="src-fresh-warn">⚠ ' + label + ": " + escapeHtml(n) + "</span>");
+    return [text].concat(notes).join(" · ");
+  });
+  return "Compared: " + parts.join(" · ");
+}
+
+function srcDriftEmpty(data) {
+  const checks = data.last_checks || [];
+  if (data.set_up === false || !checks.some((c) => c.checked_at)) {
+    return '<p class="admin-empty">Not compared yet: the sheets are compared at the next sync ' +
+      "(nightly at 03:00 UTC, or Run pipeline above).</p>";
+  }
+  if (_srcDrift.search) {
+    return '<p class="admin-empty">No sheet edits match “' + escapeHtml(_srcDrift.search) + "”" +
+      (_srcDrift.state === "all" ? "" : " under " + escapeHtml(SRC_DRIFT_FILTERS[_srcDrift.state] || _srcDrift.state)) +
+      ".</p>";
+  }
+  const empty = {
+    needs_review: "No sheet rows need review. Every difference found is already in FLoRA, kept, or not a FLoRA field.",
+    nothing_to_do: "Nothing here: no open sheet edit is settled without a decision.",
+    resolved: "No resolved sheet edits: no sheet has gone back to an imported value yet.",
+    all: "No sheet edits: every imported row still matches its sheet.",
+  };
+  return '<p class="admin-empty">' + escapeHtml(empty[_srcDrift.state] || "No sheet edits.") + "</p>";
+}
+
+function renderSourceDrift(data) {
+  const counts = data.counts || {};
+  srcDriftSetCount(counts);
+  [...$("#src-drift-state").options].forEach((o) => {
+    const n = counts[o.value];
+    o.textContent = (SRC_DRIFT_FILTERS[o.value] || o.value) + (n === undefined ? "" : " (" + n + ")");
+  });
+  srcDriftFillSources(data.last_checks || []);
+  $("#src-drift-checks").innerHTML = srcDriftChecks(data.last_checks || []);
+  const records = data.records || [];
+  const plural = (n, word) => n + " " + word + (n === 1 ? "" : "s");
+  $("#src-drift-count").textContent = plural(data.total || 0, "record") + " · " + plural(data.fields_total || 0, "field");
+  const notice = data.flora_error
+    ? '<div class="src-dup-warn src-drift-flora-error" role="alert">' + escapeHtml(data.flora_error) + "</div>"
+    : "";
+  const body = $("#src-drift-body");
+  if (!records.length) {
+    body.innerHTML = notice + srcDriftEmpty(data);
+    $("#src-drift-pagination").innerHTML = "";
+    return;
+  }
+  body.innerHTML = notice + records.map(srcDriftCard).join("");
+  renderSourceDriftPagination(data.total || 0, data.page || 1);
+}
+
+function renderSourceDriftPagination(total, page) {
+  const pages = Math.ceil(total / SRC_DRIFT_PER_PAGE);
+  const el = $("#src-drift-pagination");
+  if (pages <= 1) { el.innerHTML = ""; return; }
+  el.innerHTML =
+    '<button class="ghost-btn" type="button" id="src-drift-prev"' + (page <= 1 ? " disabled" : "") + ">← Prev</button>" +
+    '<span class="admin-page-info">Page ' + page + " of " + pages + "</span>" +
+    '<button class="ghost-btn" type="button" id="src-drift-next"' + (page >= pages ? " disabled" : "") + ">Next →</button>";
+  const go = (delta) => { _srcDrift.page = page + delta; fetchSourceDrift(); $("#src-drift-title").focus(); };
+  $("#src-drift-prev").onclick = () => go(-1);
+  $("#src-drift-next").onclick = () => go(1);
+}
+
+/** One source row: where it is in its sheet, which FLoRA records it feeds, and a
+ *  table of its differing cells. */
+function srcDriftCard(r) {
+  const rid = escapeHtml(r.record_id);
+  const display = escapeHtml(r.display_id || "this row");
+  const sheetId = String(r.sheet_row_id || "");
+  const where = escapeHtml(r.source_label || r.source || "") +
+    (r.sheet_row_number
+      ? ' · <span class="src-drift-rownum" title="Rows move when the sheet is sorted; the sheet ID is what identifies the row.">row ' +
+        escapeHtml(r.sheet_row_number) + " at last check</span>"
+      : "") +
+    (sheetId ? ' · sheet ID <code title="' + escapeHtml(sheetId) + '">' + escapeHtml(sheetId.slice(0, 8)) + "</code>" : "");
+  const feeds = (r.flora || []).map((f) =>
+    '<span class="src-drift-feed">Feeds <code>' + escapeHtml(srcDriftFloraName(f)) + "</code>" +
+    // The FLoRA tab's own ID too, when it is not this row's (merged into another).
+    (f.export_id && f.flora_id && f.flora_id !== r.display_id
+      ? ' <span class="src-dim2">(' + escapeHtml(f.flora_id) + ")</span>" : "") +
+    (f.role === "merged" ? ' <span class="src-dim2">(merged into it)</span>' : "") +
+    ' <button type="button" class="ghost-btn src-drift-open-flora" data-flora-id="' + escapeHtml(f.flora_id) +
+    '" data-record="' + rid + '" aria-label="Open ' + escapeHtml(srcDriftFloraName(f)) +
+    ' in the FLoRA editor">Open in FLoRA editor</button></span>'
+  ).join(" ");
+  const gone = r.not_in_flora
+    ? '<p class="src-drift-note"><b>Not in FLoRA.</b> ' + escapeHtml(r.not_in_flora.text) +
+      (r.not_in_flora.survivor_record_id
+        ? ' <button type="button" class="ghost-btn src-drift-open-source" data-id="' + escapeHtml(r.not_in_flora.survivor_record_id) +
+          '">Open ' + escapeHtml(r.not_in_flora.survivor_display_id || "the kept row") + "</button>"
+        : "") + "</p>"
+    : "";
+  const again = (r.reentered_as || []).length
+    ? '<p class="src-drift-note">The same paper is also in the sheets as ' +
+      r.reentered_as.map((m) => "<code>" + escapeHtml(m.display_id) + "</code>").join(", ") +
+      ": re-entered under a new sheet ID? " +
+      '<button type="button" class="ghost-btn src-drift-dups">Review duplicates</button></p>'
+    : "";
+  return '<article class="src-drift-card" aria-labelledby="src-drift-h-' + rid + '" data-record="' + rid + '">' +
+    '<div class="src-drift-card-head"><div>' +
+      '<h4 class="src-drift-card-title" id="src-drift-h-' + rid + '" tabindex="-1">' +
+        '<span class="src-drift-id">' + display + "</span> " +
+        '<span class="src-type-badge src-type-' + escapeHtml(r.type || "") + '">' +
+          (r.type === "reproduction" ? "repro" : "repl") + "</span></h4>" +
+      '<p class="src-drift-where">' + where + "</p></div>" +
+      (feeds ? '<div class="src-drift-feeds">' + feeds + "</div>" : "") +
+    "</div>" + gone + again +
+    '<div class="admin-table-wrap"><table class="admin-table src-drift-table">' +
+      '<caption class="sr-only">Sheet edits in ' + display + "</caption>" +
+      '<thead><tr><th scope="col">Field</th><th scope="col">At import</th><th scope="col">Sheet now</th>' +
+      '<th scope="col">FLoRA now</th><th scope="col">State</th></tr></thead><tbody>' +
+      (r.fields || []).map((f) => srcDriftRow(r, f)).join("") + "</tbody></table></div>" +
+    '<div class="src-drift-card-foot"><button type="button" class="link-btn src-drift-open-source" data-id="' + rid +
+      '">Open source record</button></div>' +
+  "</article>";
+}
+
+function srcDriftRow(r, f) {
+  const display = escapeHtml(r.display_id || "this row");
+  const row = f.kind === "missing";
+  const name = row ? "the row" : (f.sheet_column || "");
+  const field = row
+    ? "<b>Whole row</b>"
+    : "<code>" + escapeHtml(f.sheet_column) + "</code>" +
+      (f.flora_column && f.flora_column !== f.sheet_column
+        ? '<div class="src-dim2">FLoRA: <code>' + escapeHtml(f.flora_column) + "</code></div>" : "");
+  const targets = f.targets || [];
+  const several = targets.length > 1;
+  const flora = !targets.length
+    ? '<span class="src-dim2">—</span>'
+    : targets.map((t) => {
+        const prefix = several ? "<code>" + escapeHtml(srcDriftFloraName(t)) + "</code>: " : "";
+        if (f.kind !== "edited") return '<div class="src-drift-target">' + prefix + "In FLoRA as <code>" + escapeHtml(srcDriftFloraName(t)) + "</code></div>";
+        if (t.state === "unknown") return '<div class="src-drift-target">' + prefix + '<span class="src-dim2">not known</span></div>';
+        if (t.state === "no_field") return '<div class="src-drift-target">' + prefix + '<span class="src-dim2">no such field</span></div>';
+        return '<div class="src-drift-target">' + prefix + srcDriftValue(t.flora_value) +
+          (t.flora_source_text ? '<div class="src-drift-source">(' + escapeHtml(t.flora_source_text) + ")</div>" : "") + "</div>";
+      }).join("");
+  return "<tr>" +
+    '<th scope="row">' + field + "</th>" +
+    "<td>" + (row ? '<span class="src-dim2">in the sheet</span>' : srcDriftValue(f.value_at_import)) + "</td>" +
+    "<td>" + (row ? '<span class="src-dim2">not in the sheet</span>' : srcDriftValue(f.value_in_sheet)) + "</td>" +
+    "<td>" + flora + "</td>" +
+    '<td class="src-drift-state-cell">' + srcDriftStateCell(r, f, name, display) + "</td></tr>";
+}
+
+/** The State cell: each FLoRA record's state, with its "Use sheet value", then the
+ *  field's one decision: Keep FLoRA value (and its form), or the keep with Undo. */
+function srcDriftStateCell(r, f, name, display) {
+  const fid = escapeHtml(f.finding_id);
+  const targets = f.targets || [];
+  const several = targets.length > 1;
+  const badge = (state) => '<span class="src-drift-badge ' + srcDriftTone(state) + '">' + escapeHtml(srcDriftLabel(state)) + "</span>";
+  let out = "";
+  if (!targets.length || f.state === "resolved") {
+    out += '<div class="src-drift-target">' + badge(f.state) +
+      (f.resolved_at ? ' <span class="src-dim2">' + escapeHtml(srcDriftDay(f.resolved_at)) + "</span>" : "") + "</div>";
+  }
+  targets.forEach((t, i) => {
+    const where = several ? " in " + escapeHtml(srcDriftFloraName(t)) : " in " + display;
+    let use = "";
+    if (f.kind === "edited" && (t.state === "pending" || t.state === "conflict")) {
+      use = t.sheet_value_error
+        ? ' <button type="button" class="ghost-btn src-drift-use" disabled aria-describedby="src-drift-why-' + fid + "-" + i +
+          '">Use sheet value</button><div class="src-drift-why" id="src-drift-why-' + fid + "-" + i + '">' +
+          escapeHtml(t.sheet_value_error) + "</div>"
+        : ' <button type="button" class="ghost-btn src-drift-use" data-finding="' + fid + '" data-target="' + i +
+          '" aria-label="Use sheet value for ' + escapeHtml(name) + where + '">Use sheet value</button>';
+    }
+    out += '<div class="src-drift-target">' + (several ? "<code>" + escapeHtml(srcDriftFloraName(t)) + "</code> " : "") +
+      badge(t.state) + use + "</div>";
+  });
+  if (f.state === "not_validated") {
+    out += '<div class="src-drift-hint">The sheet says “' + escapeHtml(f.value_in_sheet || "") +
+      "”. To take the record out of FLoRA, use the Exclusions sheet or a duplicate ruling.</div>";
+  }
+  const kept = f.kept;
+  if (kept && kept.current) {
+    out += '<div class="src-drift-kept">Kept by <b>' + escapeHtml(kept.kept_by || "an admin") + "</b>, " +
+      escapeHtml(srcDriftDay(kept.kept_at)) + (kept.note ? ": “" + escapeHtml(kept.note) + "”" : "") +
+      ' <button type="button" class="link-btn src-drift-undo" data-finding="' + fid +
+      '" aria-label="Undo keep for ' + escapeHtml(name) + " in " + display + '">Undo</button>' +
+      ' <span class="src-drift-msg"></span></div>';
+    return out;
+  }
+  if (kept && !f.resolved_at) {
+    out += '<div class="src-drift-hint">Kept earlier, by ' + escapeHtml(kept.kept_by || "an admin") +
+      ", when the sheet said “" + escapeHtml(kept.sheet_value || "") + "”; the sheet has changed since.</div>";
+  }
+  const decidable = !f.resolved_at && (["pending", "conflict", "not_validated", "row_removed"].indexOf(f.state) !== -1);
+  if (!decidable) return out;
+  const rowLevel = f.kind !== "edited";
+  const keepLabel = rowLevel ? "Keep in FLoRA" : "Keep FLoRA value";
+  const why = rowLevel ? "Why the record stays in FLoRA (required)" : "Why FLoRA's value is right (required)";
+  out += '<div class="src-drift-decide"><button type="button" class="ghost-btn src-drift-keep" data-finding="' + fid +
+      '" aria-expanded="false" aria-controls="src-drift-form-' + fid + '" aria-label="' + keepLabel + " for " +
+      escapeHtml(name) + " in " + display + '">' + keepLabel + "</button></div>" +
+    '<div class="src-drift-keep-form hidden" id="src-drift-form-' + fid + '" data-form="' + fid + '">' +
+      '<label for="src-drift-note-' + fid + '">' + why + "</label>" +
+      '<textarea id="src-drift-note-' + fid + '" class="src-input" rows="2" maxlength="1000" ' +
+        'aria-describedby="src-drift-msg-' + fid + '"></textarea>' +
+      '<div class="src-drift-keep-actions">' +
+        '<button type="button" class="btn-primary src-drift-keep-save" data-finding="' + fid + '">Save</button>' +
+        '<button type="button" class="ghost-btn src-drift-keep-cancel" data-finding="' + fid + '">Cancel</button>' +
+        '<span class="src-drift-msg" id="src-drift-msg-' + fid + '"></span>' +
+      "</div></div>";
+  return out;
+}
+
+function srcDriftFind(findingId) {
+  for (const record of ((_srcDrift.data || {}).records || [])) {
+    const field = (record.fields || []).find((f) => String(f.finding_id) === String(findingId));
+    if (field) return { record, field };
+  }
+  return null;
+}
+
+/** Redraw one card from the record the server sent back. Resolved fields the card
+ *  showed (under All) stay; a record left with nothing open goes. */
+function srcDriftReplace(recordId, fresh) {
+  const data = _srcDrift.data;
+  if (!data) return;
+  const i = data.records.findIndex((r) => r.record_id === recordId);
+  const card = $("#src-drift-body").querySelector('.src-drift-card[data-record="' + CSS.escape(recordId) + '"]');
+  if (i === -1 || !card) return;
+  if (!fresh) { data.records.splice(i, 1); card.remove(); return; }
+  if (_srcDrift.state === "all") {
+    fresh = { ...fresh, fields: fresh.fields.concat(data.records[i].fields.filter((f) => f.resolved_at)) };
+  }
+  data.records[i] = fresh;
+  card.outerHTML = srcDriftCard(fresh);
+}
+
+function srcDriftRestoreFocus() {
+  const opener = _srcDrift.opener;
+  _srcDrift.opener = null;
+  if (!opener) return;
+  const body = $("#src-drift-body");
+  const target = (opener.selector && body.querySelector(opener.selector)) ||
+    (opener.record && body.querySelector("#src-drift-h-" + CSS.escape(opener.record))) || $("#src-drift-title");
+  target?.focus();
+}
+
+/** "Use sheet value": the FLoRA editor with the value and its note filled in. It is
+ *  saved only when the admin clicks Save corrections; closing reloads this list. */
+function srcDriftUse(button) {
+  const found = srcDriftFind(button.dataset.finding);
+  if (!found) return;
+  const { record, field } = found;
+  const t = (field.targets || [])[Number(button.dataset.target) || 0];
+  if (!t || t.sheet_value_error || !field.flora_field) return;
+  _srcDrift.opener = { selector: '.src-drift-use[data-finding="' + field.finding_id + '"]', record: record.record_id };
+  openFloraRecord(t.flora_id, null, {
+    prefill: { [field.flora_field]: t.sheet_value_for_flora },
+    notes: { [field.flora_field]: srcDriftNote(record.source_label, field.sheet_row_number || record.sheet_row_number) },
+  });
+}
+
+function srcDriftForm(findingId, open) {
+  const body = $("#src-drift-body");
+  const form = body.querySelector('[data-form="' + CSS.escape(String(findingId)) + '"]');
+  const button = body.querySelector('.src-drift-keep[data-finding="' + CSS.escape(String(findingId)) + '"]');
+  if (!form || !button) return;
+  form.classList.toggle("hidden", !open);
+  button.classList.toggle("hidden", open);
+  button.setAttribute("aria-expanded", open ? "true" : "false");
+  const note = form.querySelector("textarea");
+  if (open) { note.focus(); return; }
+  note.value = "";
+  note.removeAttribute("aria-invalid");
+  form.querySelector(".src-drift-msg").textContent = "";
+  button.focus();
+}
+
+async function keepSourceDrift(findingId) {
+  const found = srcDriftFind(findingId);
+  if (!found) return;
+  const { record, field } = found;
+  const form = $("#src-drift-body").querySelector('[data-form="' + CSS.escape(String(findingId)) + '"]');
+  const note = form.querySelector("textarea");
+  const msg = form.querySelector(".src-drift-msg");
+  const text = note.value.trim();
+  if (text.length < 3) {
+    msg.innerHTML = '<span class="src-fresh-warn">Say why: at least 3 characters.</span>';
+    note.setAttribute("aria-invalid", "true");
+    note.focus();
+    return;
+  }
+  const buttons = [...form.querySelectorAll("button")];
+  buttons.forEach((b) => { b.disabled = true; });
+  msg.textContent = "Saving…";
+  const name = field.kind === "missing" ? "the row" : field.sheet_column;
+  try {
+    const res = await adminApi("/source-records/sheet-drift/" + encodeURIComponent(findingId) + "/keep", "POST",
+                               { note: text, sheet_value: field.value_in_sheet });
+    srcDriftReplace(record.record_id, res.record);
+    const undo = $("#src-drift-body").querySelector('.src-drift-undo[data-finding="' + CSS.escape(String(findingId)) + '"]');
+    (undo || $("#src-drift-title")).focus();
+    srcDriftAnnounce("Kept FLoRA's value for " + name + " in " + (record.display_id || "this row") + ".");
+    fetchSourceDriftCount();
+  } catch (err) {
+    buttons.forEach((b) => { b.disabled = false; });
+    msg.innerHTML = '<span class="src-fresh-warn">' + escapeHtml(err.message) +
+      (err.status === 409 ? " Reloading…" : "") + "</span>";
+    srcDriftAnnounce(err.message);
+    if (err.status === 409) { setTimeout(() => fetchSourceDrift(), 1500); return; }
+    note.focus();
+  }
+}
+
+async function undoKeepSourceDrift(button) {
+  const findingId = button.dataset.finding;
+  const found = srcDriftFind(findingId);
+  if (!found) return;
+  const { record, field } = found;
+  const msg = button.parentElement.querySelector(".src-drift-msg");
+  button.disabled = true;
+  if (msg) msg.textContent = "Undoing…";
+  const name = field.kind === "missing" ? "the row" : field.sheet_column;
+  try {
+    const res = await adminApi("/source-records/sheet-drift/" + encodeURIComponent(findingId) + "/keep", "DELETE");
+    srcDriftReplace(record.record_id, res.record);
+    const keep = $("#src-drift-body").querySelector('.src-drift-keep[data-finding="' + CSS.escape(String(findingId)) + '"]');
+    (keep || $("#src-drift-title")).focus();
+    srcDriftAnnounce("Undone: " + name + " in " + (record.display_id || "this row") + " needs a decision again.");
+    fetchSourceDriftCount();
+  } catch (err) {
+    button.disabled = false;
+    if (msg) msg.innerHTML = '<span class="src-fresh-warn">' + escapeHtml(err.message) + "</span>";
+    srcDriftAnnounce(err.message);
+  }
+}
+
+$("#src-drift-back").onclick = hideSourceDrift;
+$("#src-drift-state").addEventListener("change", (e) => {
+  _srcDrift.state = e.target.value;
+  _srcDrift.page = 1;
+  fetchSourceDrift();
+});
+$("#src-drift-source").addEventListener("change", (e) => {
+  _srcDrift.source = e.target.value;
+  _srcDrift.page = 1;
+  fetchSourceDrift();
+});
+function srcDriftSearch(e) {
+  _srcDrift.search = e.target.value.trim();
+  _srcDrift.page = 1;
+  fetchSourceDrift();
+}
+$("#src-drift-search").addEventListener("keydown", (e) => { if (e.key === "Enter") srcDriftSearch(e); });
+// Clearing the box with its ✕ fires "search" with an empty value.
+$("#src-drift-search").addEventListener("search", (e) => { if (!e.target.value) srcDriftSearch(e); });
+
+// A file download, so it bypasses adminApi's JSON path; the filter goes with it.
+$("#src-drift-csv").onclick = async () => {
+  const button = $("#src-drift-csv");
+  const params = { state: _srcDrift.state };
+  if (_srcDrift.source) params.source = _srcDrift.source;
+  if (_srcDrift.search) params.search = _srcDrift.search;
+  button.disabled = true;
+  try {
+    const res = await fetch("/api/admin/source-records/sheet-drift/export.csv?" + new URLSearchParams(params));
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const name = ((res.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/) || [])[1] ||
+      "sheet_edits.csv";
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+    srcDriftAnnounce("Downloaded " + name + ".");
+  } catch (e) {
+    await showAlert("Could not download the CSV: " + e.message);
+  } finally {
+    button.disabled = false;
+  }
+};
+
+$("#src-drift-body").addEventListener("click", (e) => {
+  const more = e.target.closest(".src-drift-more");
+  if (more) {
+    const box = more.closest(".src-drift-val");
+    const open = more.getAttribute("aria-expanded") !== "true";
+    box.querySelector(".src-drift-short").classList.toggle("hidden", open);
+    box.querySelector(".src-drift-full").classList.toggle("hidden", !open);
+    more.setAttribute("aria-expanded", open ? "true" : "false");
+    more.textContent = open ? "Show less" : "Show all";
+    return;
+  }
+  if (e.target.closest("#src-drift-retry")) { fetchSourceDrift(); return; }
+  const use = e.target.closest(".src-drift-use");
+  if (use) { srcDriftUse(use); return; }
+  const keep = e.target.closest(".src-drift-keep");
+  if (keep) { srcDriftForm(keep.dataset.finding, true); return; }
+  const save = e.target.closest(".src-drift-keep-save");
+  if (save) { keepSourceDrift(save.dataset.finding); return; }
+  const cancel = e.target.closest(".src-drift-keep-cancel");
+  if (cancel) { srcDriftForm(cancel.dataset.finding, false); return; }
+  const undo = e.target.closest(".src-drift-undo");
+  if (undo) { undoKeepSourceDrift(undo); return; }
+  const flora = e.target.closest(".src-drift-open-flora");
+  if (flora) {
+    _srcDrift.opener = { selector: '.src-drift-open-flora[data-flora-id="' + CSS.escape(flora.dataset.floraId) + '"]',
+                         record: flora.dataset.record };
+    openFloraRecord(flora.dataset.floraId);
+    return;
+  }
+  const source = e.target.closest(".src-drift-open-source");
+  if (source) { openSourceRecord(source.dataset.id); return; }
+  if (e.target.closest(".src-drift-dups")) { srcSelectChip("flagged"); showSourceDuplicates(); }
+});
+
+// Escape closes the keep form it is typed in, as Cancel does.
+$("#src-drift-body").addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  const form = e.target.closest(".src-drift-keep-form");
+  if (!form) return;
+  e.preventDefault();
+  e.stopPropagation();
+  srcDriftForm(form.dataset.form, false);
 });

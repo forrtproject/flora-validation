@@ -76,6 +76,8 @@ def test_the_actor_is_the_server_s_view_not_a_request_claim():
     security_events.VALIDATOR_CODE_CLAIMED,
     security_events.VALIDATOR_ASSIGNED,
     security_events.MAINTENANCE_STARTED,
+    security_events.SOURCE_DRIFT_KEPT,
+    security_events.SOURCE_DRIFT_KEEP_WITHDRAWN,
 ])
 def test_every_privileged_action_is_actually_recorded(action):
     const = next(k for k, v in vars(security_events).items()

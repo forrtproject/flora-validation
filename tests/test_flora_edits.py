@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 import flora_edits
 import flora_service
+import sheet_drift_service
 import source_records_service
 import transform_sources
 import validate_flora
@@ -1078,7 +1079,10 @@ def flora_api():
     assert {node.name for node in nodes} == set(ROUTES)
     namespace = {"app": app, "Depends": Depends, "HTTPException": HTTPException,
                  "BaseModel": BaseModel, "Field": Field, "current_admin": current_admin,
-                 "db": db, "flora_service": service}
+                 "db": db, "flora_service": service,
+                 # The real one: its editor box must leave the editor working even
+                 # on a cursor it cannot use.
+                 "sheet_drift_service": sheet_drift_service}
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(source), "exec"), namespace)
     app.dependency_overrides[current_admin] = lambda: {"id": 7, "handle": "test-admin"}
     return SimpleNamespace(app=app, client=TestClient(app), service=service)

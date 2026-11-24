@@ -27,6 +27,7 @@ import flora_public_api
 import flora_service
 import flora_store
 import security_events
+import sheet_drift_service
 import validate_flora
 from tests.test_entry_checks import TYPE_KEY, _row, _store, db  # noqa: F401
 from tests.test_preparation_database import local_database  # noqa: F401
@@ -154,6 +155,7 @@ def api(db, monkeypatch):  # noqa: F811
                  "BaseModel": BaseModel, "Field": Field, "Request": Request,
                  "JSONResponse": JSONResponse, "current_admin": current_admin, "db": database,
                  "flora_service": flora_service, "security_events": security_events,
+                 "sheet_drift_service": sheet_drift_service,
                  "_audit": audit, "_SAFE_METHODS": frozenset({"GET", "HEAD", "OPTIONS"}),
                  "_allowed_origins": lambda: {"https://flora.example"},
                  "is_public_read_request": flora_public_api.is_public_read_request}

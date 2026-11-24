@@ -2431,6 +2431,70 @@ DROP TRIGGER IF EXISTS trg_manual_records_no_truncate ON manual_records;
 CREATE TRIGGER trg_manual_records_no_truncate BEFORE TRUNCATE ON manual_records
     FOR EACH STATEMENT EXECUTE FUNCTION prevent_flora_identity_deletion();
 
+-- ── Sheet edits: imported rows whose sheet row changed after import ───────────
+-- sync_sources.py is insert-only: a row is stored once and later edits in the sheet
+-- never reach source_records. So that an edit is not silently lost, every sync that
+-- passes its gates compares each imported row's current sheet values with `raw`, the
+-- row as imported (sheet_drift.py), and keeps one finding per differing cell here.
+-- Source Records > Sheet edits lists them; an admin takes the sheet's value into the
+-- FLoRA record (an ordinary correction, flora_edits.py) or keeps FLoRA's value with
+-- a note. Neither the sheet nor source_records is ever written by this feature.
+--
+-- One row per check of a source. payload_sha256 and rules_version let an unchanged
+-- sheet skip a check whose answer cannot have changed; counts are new, reopened,
+-- changed, resolved, open, missing and ambiguous; notes say what a check left out
+-- (a mass deletion above the missing-row cap).
+CREATE TABLE IF NOT EXISTS sheet_drift_runs (
+    drift_run_id   BIGSERIAL   PRIMARY KEY,
+    source         TEXT        NOT NULL,
+    sync_run_id    UUID        REFERENCES source_sync_runs(run_id),
+    checked_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    payload_sha256 TEXT        NOT NULL,
+    rules_version  INTEGER     NOT NULL,
+    rows_compared  INTEGER     NOT NULL,
+    counts         JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    notes          JSONB       NOT NULL DEFAULT '[]'::jsonb
+);
+CREATE INDEX IF NOT EXISTS idx_sheet_drift_runs_recent
+    ON sheet_drift_runs (source, drift_run_id DESC);
+
+-- One row per (sheet row, column) that differs from the import, kept across runs: a
+-- later check refreshes it, resolves it once the cell is back to the imported value,
+-- and re-opens it if it changes again (first_seen_at and any decision are kept).
+-- sheet_column '' is the whole row: kind 'missing', the UUID is gone from the sheet.
+-- Values are verbatim; the comparison normalises them (sheet_drift.normalise). A
+-- "Keep FLoRA value" decision (kept_*) holds only while value_in_sheet still equals
+-- kept_sheet_value: a later edit of the cell asks again. No run writes kept_*.
+CREATE TABLE IF NOT EXISTS sheet_drift_findings (
+    finding_id            BIGSERIAL   PRIMARY KEY,
+    record_id             UUID        NOT NULL REFERENCES source_records(record_id) ON DELETE CASCADE,
+    source                TEXT        NOT NULL,
+    sheet_row_id          TEXT        NOT NULL,
+    sheet_column          TEXT        NOT NULL,   -- header as the sheet reads it; '' = whole row
+    record_column         TEXT,                   -- source_records column it is promoted to
+    kind                  TEXT        NOT NULL CHECK (kind IN ('edited', 'not_accepted', 'missing')),
+    value_at_import       TEXT,
+    value_in_sheet        TEXT,                   -- as last fetched; NULL for a missing row
+    sheet_row_number      INTEGER,                -- 1-based row in the tab when last seen
+    first_seen_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_drift_run_id     BIGINT      REFERENCES sheet_drift_runs(drift_run_id),
+    resolved_at           TIMESTAMPTZ,
+    resolved_drift_run_id BIGINT      REFERENCES sheet_drift_runs(drift_run_id),
+    kept_at               TIMESTAMPTZ,
+    kept_by               TEXT,
+    kept_note             TEXT,
+    kept_sheet_value      TEXT,
+    UNIQUE (source, sheet_row_id, sheet_column)
+);
+CREATE INDEX IF NOT EXISTS idx_sheet_drift_open
+    ON sheet_drift_findings (source) WHERE resolved_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_sheet_drift_record
+    ON sheet_drift_findings (record_id);
+-- The loop below would enable it too; said here so the tables never depend on it.
+ALTER TABLE sheet_drift_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sheet_drift_findings ENABLE ROW LEVEL SECURITY;
+
 -- ── Row-level security ────────────────────────────────────────────────────────
 -- Every table in public that this role owns has it on, including any added later: a
 -- table with no policy then answers only its owner and roles that bypass RLS, not an
