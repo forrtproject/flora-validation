@@ -4,7 +4,7 @@ Background entry checks inspect the stored dataset and keep findings for the FLo
 
 [Open interactive guide](../index.html#view=overview&node=process-entry-checks)
 
-Code snapshot: 29 October 2026, `2f3a89c`.
+Code snapshot: 24 November 2026, `3cc13da`.
 
 ## What goes in
 
@@ -40,7 +40,7 @@ Code snapshot: 29 October 2026, `2f3a89c`.
 
 ## Find it in the code
 
-- [entry_checks.py:1 — module workflow](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/entry_checks.py#L1) · [complete script](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/entry_checks.py)
-- [entry_checks.py:57 — PARTS and schedule constants](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/entry_checks.py#L57) · [complete script](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/entry_checks.py)
-- [app.py:6727 — entry-check scheduler](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/app.py#L6727) · [complete script](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/app.py)
-- [validate_flora_network.py:288 — cache_days](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/validate_flora_network.py#L288) · [complete script](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/validate_flora_network.py)
+- [entry_checks.py:1 — module workflow](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/entry_checks.py#L1) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/entry_checks.py)
+- [entry_checks.py:58 — PARTS and schedule constants](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/entry_checks.py#L58) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/entry_checks.py)
+- [app.py:8059 — entry-check scheduler](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/app.py#L8059) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/app.py)
+- [validate_flora_network.py:296 — cache_days](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/validate_flora_network.py#L296) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/validate_flora_network.py)

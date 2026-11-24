@@ -4,7 +4,7 @@ Records that this input is a separate study and protects it from automatic mergi
 
 [Open interactive guide](../index.html#view=admin&node=admin-sources--duplicates-keep-distinct)
 
-Code snapshot: 29 October 2026, `2f3a89c`.
+Code snapshot: 24 November 2026, `3cc13da`.
 
 ## What goes in
 
@@ -24,5 +24,5 @@ Code snapshot: 29 October 2026, `2f3a89c`.
 
 ## Find it in the code
 
-- [docs/app.js:10892 — confirmSourceDistinct](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/docs/app.js#L10892) · [complete script](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/docs/app.js)
-- [source_records_service.py:455 — resolve_duplicate](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/source_records_service.py#L455) · [complete script](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/source_records_service.py)
+- [docs/app.js:15434 — confirmSourceDistinct](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/docs/app.js#L15434) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/docs/app.js)
+- [source_records_service.py:458 — resolve_duplicate](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/source_records_service.py#L458) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/source_records_service.py)

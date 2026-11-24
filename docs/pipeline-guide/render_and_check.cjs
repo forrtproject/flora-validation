@@ -23,9 +23,9 @@ const { chromium } = require('playwright');
     const url = pathToFileURL(path.join(root, 'index.html')).href;
     await page.goto(url);
     const data = await page.locator('#guide-data').textContent().then(JSON.parse);
-    assert.equal(data.nodes.length, 101);
+    assert.equal(data.nodes.length, 104);
     assert.equal(data.nodes.filter(n => n.group === 'admin' && !n.parent).length, 11);
-    assert.equal(data.nodes.filter(n => n.parent).length, 59);
+    assert.equal(data.nodes.filter(n => n.parent).length, 62);
     await page.locator('#zoom-map').click();
     assert.equal(await page.locator('#zoom-map').getAttribute('aria-pressed'), 'true');
     await page.locator('#zoom-map').click();
@@ -138,6 +138,6 @@ const { chromium } = require('playwright');
       await artPage.screenshot({ path: path.join(root, 'diagrams', `${name}.png`) });
     }
     await art.close();
-    console.log(`PASS: ${data.nodes.length} deep links, 59 actions, 11 tabs, 8 views, 3 comparison scenarios, walkthrough, search, history, mobile layout; 6 high-resolution diagrams rendered. No external requests.`);
+    console.log(`PASS: ${data.nodes.length} deep links, ${data.nodes.filter(n => n.parent).length} actions, 11 tabs, 8 views, 3 comparison scenarios, walkthrough, search, history, mobile layout; 6 high-resolution diagrams rendered. No external requests.`);
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

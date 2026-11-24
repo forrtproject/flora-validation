@@ -12,10 +12,10 @@
       "outputs": ["A reserved study card with a queue_id and record_id."],
       "cautions": ["A reservation is not a submitted review. The displayed next study may have been prefetched earlier.", "Normal and hard mode have separate active-study resumption; switching modes does not submit a parked study."],
       "sources": [
-        {"file": "app.py", "line": 1787, "symbol": "_claim_one_pair"},
-        {"file": "app.py", "line": 1855, "symbol": "next_pairs"},
-        {"file": "app.py", "line": 1933, "symbol": "start_pair"},
-        {"file": "app.py", "line": 6609, "symbol": "_reap_stale_slots"}
+        {"file": "app.py", "line": 1862, "symbol": "_claim_one_pair"},
+        {"file": "app.py", "line": 1973, "symbol": "next_pairs"},
+        {"file": "app.py", "line": 2102, "symbol": "start_pair"},
+        {"file": "app.py", "line": 7941, "symbol": "_reap_stale_slots"}
       ]
     },
     {
@@ -30,10 +30,10 @@
       "outputs": ["A recoverable local draft, ready to submit."],
       "cautions": ["Drafts do not follow the user to another browser or computer.", "Clearing site storage removes the local draft. Changes made immediately before closing can precede the next 10-second save."],
       "sources": [
-        {"file": "docs/app.js", "line": 2371, "symbol": "_DRAFT_KEY"},
-        {"file": "docs/app.js", "line": 2383, "symbol": "_prepareDraft"},
-        {"file": "docs/app.js", "line": 2407, "symbol": "_startDraftSave"},
-        {"file": "docs/app.js", "line": 2693, "symbol": "draft restoration"}
+        {"file": "docs/app.js", "line": 2384, "symbol": "_DRAFT_KEY"},
+        {"file": "docs/app.js", "line": 2396, "symbol": "_prepareDraft"},
+        {"file": "docs/app.js", "line": 2420, "symbol": "_startDraftSave"},
+        {"file": "docs/app.js", "line": 2720, "symbol": "draft restoration"}
       ]
     },
     {
@@ -48,11 +48,11 @@
       "outputs": ["One durable human judgement, or an explicitly pending local payload if saving failed."],
       "cautions": ["Seeing the next card is not proof that the previous review was saved. Check the pending indicator.", "The queue belongs to its author and is not sent under another validator's login.", "A failed submission is not automatically released just because the network failed; release requires a server-issued failure capability or confirmation that the slot is already closed."],
       "sources": [
-        {"file": "docs/app.js", "line": 4677, "symbol": "submitJudgement"},
-        {"file": "docs/app.js", "line": 2791, "symbol": "_enqueueSubmit"},
-        {"file": "docs/app.js", "line": 2807, "symbol": "_processSubmitQueue"},
-        {"file": "app.py", "line": 2625, "symbol": "judge"},
-        {"file": "app.py", "line": 2889, "symbol": "release_failed_submission"}
+        {"file": "docs/app.js", "line": 5120, "symbol": "submitJudgement"},
+        {"file": "docs/app.js", "line": 2815, "symbol": "_enqueueSubmit"},
+        {"file": "docs/app.js", "line": 2833, "symbol": "_processSubmitQueue"},
+        {"file": "app.py", "line": 2851, "symbol": "judge"},
+        {"file": "app.py", "line": 3146, "symbol": "release_failed_submission"}
       ]
     },
     {
@@ -67,10 +67,10 @@
       "outputs": ["consensus_reached = prepared for admin approval; need_review = admin decision needed; validated = approved validation record; rejected = excluded from the validation export."],
       "cautions": ["Two matching reviewers do not always mean immediate approval.", "Approval of a validation record and publication of the final combined FLoRA dataset are separate steps.", "Gemini output is stored evidence for the decision tree, not an unrestricted database editor."],
       "sources": [
-        {"file": "consensus_engine.py", "line": 625, "symbol": "evaluate_consensus"},
-        {"file": "consensus_engine.py", "line": 111, "symbol": "auto_validation_rule"},
-        {"file": "consensus_engine.py", "line": 458, "symbol": "_update_status"},
-        {"file": "consensus_engine.py", "line": 529, "symbol": "_insert_validated"},
+        {"file": "consensus_engine.py", "line": 714, "symbol": "evaluate_consensus"},
+        {"file": "consensus_engine.py", "line": 144, "symbol": "auto_validation_rule"},
+        {"file": "consensus_engine.py", "line": 551, "symbol": "_update_status"},
+        {"file": "consensus_engine.py", "line": 627, "symbol": "_insert_validated"},
         {"file": "llm_validator.py", "line": 1, "symbol": "Gemini validation implementation"}
       ]
     },
@@ -86,10 +86,10 @@
       "outputs": ["An auditable skip or access report, not a completed human review."],
       "cautions": ["Skip is different from marking the study scientifically ineligible.", "The Skipped escalation summary counts distinct validators, so repeated requests cannot inflate it: more than 5 validators for any reason or at least 2 eligibility/data-quality skips can surface an issue."],
       "sources": [
-        {"file": "app.py", "line": 2824, "symbol": "skip_pair"},
-        {"file": "app.py", "line": 2011, "symbol": "_insert_skip_event"},
-        {"file": "app.py", "line": 2029, "symbol": "_skip_summary"},
-        {"file": "app.py", "line": 2333, "symbol": "report_restricted"},
+        {"file": "app.py", "line": 3081, "symbol": "skip_pair"},
+        {"file": "app.py", "line": 2220, "symbol": "_insert_skip_event"},
+        {"file": "app.py", "line": 2238, "symbol": "_skip_summary"},
+        {"file": "app.py", "line": 2542, "symbol": "report_restricted"},
         {"file": "db_schema.sql", "line": 140, "symbol": "validation_skips"}
       ]
     },
@@ -105,10 +105,10 @@
       "outputs": ["One completed assigned review and a record ready for the next admin decision."],
       "cautions": ["A positive assignment answer is not automatically inserted into validated by this endpoint.", "This path uses the current effective record, including earlier final_* corrections, as its review baseline."],
       "sources": [
-        {"file": "app.py", "line": 2378, "symbol": "my_assignments"},
-        {"file": "app.py", "line": 2404, "symbol": "get_assignment"},
-        {"file": "app.py", "line": 2442, "symbol": "assignment_judge"},
-        {"file": "docs/app.js", "line": 4802, "symbol": "assignment submission branch"},
+        {"file": "app.py", "line": 2587, "symbol": "my_assignments"},
+        {"file": "app.py", "line": 2613, "symbol": "get_assignment"},
+        {"file": "app.py", "line": 2651, "symbol": "assignment_judge"},
+        {"file": "docs/app.js", "line": 5147, "symbol": "assignment submission branch"},
         {"file": "db_schema.sql", "line": 810, "symbol": "assignments"}
       ]
     },
@@ -124,9 +124,9 @@
       "outputs": ["A rejected record with attributable override evidence."],
       "cautions": ["A reproduction is an eligible type; this override is for a record that does not meet FLoRA inclusion criteria.", "The displayed two matching slots may include the senior's stamped partner slot, not two independent human submissions."],
       "sources": [
-        {"file": "app.py", "line": 3050, "symbol": "senior_reject"},
-        {"file": "docs/app.js", "line": 3801, "symbol": "senior rejection button handler"},
-        {"file": "consensus_engine.py", "line": 688, "symbol": "senior-reject consensus guard"}
+        {"file": "app.py", "line": 3307, "symbol": "senior_reject"},
+        {"file": "docs/app.js", "line": 4019, "symbol": "senior rejection button handler"},
+        {"file": "consensus_engine.py", "line": 788, "symbol": "senior-reject consensus guard"}
       ]
     },
     {
@@ -141,9 +141,9 @@
       "outputs": ["An audit view of what the person submitted, current final values, and any feedback."],
       "cautions": ["There is no ordinary validator redo/edit-submitted endpoint in the current API. Change an unsent draft before Submit; a saved review needs the review-team workflow.", "Flag for review is an administrator action on the record, not a reset that erases the original human submissions."],
       "sources": [
-        {"file": "app.py", "line": 1381, "symbol": "get_my_judgements"},
-        {"file": "app.py", "line": 1474, "symbol": "get_my_judgement_detail"},
-        {"file": "app.py", "line": 5518, "symbol": "admin_flag_review"}
+        {"file": "app.py", "line": 1453, "symbol": "get_my_judgements"},
+        {"file": "app.py", "line": 1546, "symbol": "get_my_judgement_detail"},
+        {"file": "app.py", "line": 6275, "symbol": "admin_flag_review"}
       ]
     },
     {
@@ -158,13 +158,13 @@
       "outputs": ["Reviewed disagreement evidence, an approved final answer, and optionally a new Source Records input to the combined pipeline."],
       "cautions": ["Published in this lane means copied to Source Records; it does not mean a GitHub dataset release has been created.", "Skip records that this validator passed on the item and prevents it being served to that validator again.", "The feature is optional, so the tab may be absent or unavailable when ADJUDICATION_ENABLED is off."],
       "sources": [
-        {"file": "adjudication/judging.py", "line": 24, "symbol": "JUDGES_PER_RECORD, CLAIM_MINUTES, MIN_TIER"},
-        {"file": "adjudication/judging.py", "line": 233, "symbol": "next_record"},
-        {"file": "adjudication/judging.py", "line": 321, "symbol": "submit"},
-        {"file": "adjudication/review.py", "line": 266, "symbol": "approve"},
-        {"file": "adjudication/review.py", "line": 404, "symbol": "publish"},
-        {"file": "adjudication/review.py", "line": 451, "symbol": "withdraw"},
-        {"file": "adjudication/api.py", "line": 60, "symbol": "create_router"}
+        {"file": "adjudication/judging.py", "line": 38, "symbol": "JUDGES_PER_RECORD, CLAIM_MINUTES, MIN_TIER"},
+        {"file": "adjudication/judging.py", "line": 390, "symbol": "next_record"},
+        {"file": "adjudication/judging.py", "line": 478, "symbol": "submit"},
+        {"file": "adjudication/review.py", "line": 339, "symbol": "approve"},
+        {"file": "adjudication/review.py", "line": 527, "symbol": "publish"},
+        {"file": "adjudication/review.py", "line": 574, "symbol": "withdraw"},
+        {"file": "adjudication/api.py", "line": 72, "symbol": "create_router"}
       ]
     },
     {
@@ -184,8 +184,8 @@
         {"file": "db_schema.sql", "line": 243, "symbol": "validated"},
         {"file": "db_schema.sql", "line": 296, "symbol": "record_metadata"},
         {"file": "db_schema.sql", "line": 1223, "symbol": "source_records"},
-        {"file": "db_schema.sql", "line": 1536, "symbol": "flora_records"},
-        {"file": "db_schema.sql", "line": 1580, "symbol": "flora_data"}
+        {"file": "db_schema.sql", "line": 1540, "symbol": "flora_records"},
+        {"file": "db_schema.sql", "line": 1584, "symbol": "flora_data"}
       ]
     },
     {
@@ -202,8 +202,8 @@
       "sources": [
         {"file": "db_schema.sql", "line": 25, "symbol": "candidate identity"},
         {"file": "db_schema.sql", "line": 98, "symbol": "queue identity and links"},
-        {"file": "db_schema.sql", "line": 1536, "symbol": "combined-record identity registry"},
-        {"file": "db_schema.sql", "line": 1580, "symbol": "prepared permanent identity"}
+        {"file": "db_schema.sql", "line": 1540, "symbol": "combined-record identity registry"},
+        {"file": "db_schema.sql", "line": 1584, "symbol": "prepared permanent identity"}
       ]
     },
     {
@@ -218,9 +218,9 @@
       "outputs": ["A committed operation or a rolled-back operation; a separate pending-browser state can exist when response delivery is uncertain."],
       "cautions": ["Local browser autosave and exported filesystem artifacts do not participate in this database transaction.", "This describes the ordinary API database wrapper; maintenance tools can have their own transaction and stage boundaries."],
       "sources": [
-        {"file": "app.py", "line": 454, "symbol": "db"},
+        {"file": "app.py", "line": 460, "symbol": "db"},
         {"file": "db_pool.py", "line": 175, "symbol": "cursor"},
-        {"file": "app.py", "line": 2625, "symbol": "judge transaction"}
+        {"file": "app.py", "line": 2851, "symbol": "judge transaction"}
       ]
     }
   ]

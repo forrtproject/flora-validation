@@ -4,7 +4,7 @@ The input ledger: imported entry-sheet records, approved app records, and publis
 
 [Open interactive guide](../index.html#view=admin&node=admin-sources)
 
-Code snapshot: 29 October 2026, `2f3a89c`.
+Code snapshot: 24 November 2026, `3cc13da`.
 
 ## What goes in
 
@@ -14,11 +14,13 @@ Code snapshot: 29 October 2026, `2f3a89c`.
 
 1. Browse imported rows with filters and search; open one to inspect its raw fields and links to derived FLoRA records.
 2. Resolve duplicate imports where necessary.
-3. Run pipeline to ingest, prepare, store and check the complete FLoRA dataset.
+3. Review Sheet edits: imported rows whose sheet row was edited after the import. Take the sheet's value into the FLoRA record, or keep FLoRA's value with a note.
+4. Run pipeline to ingest, prepare, store and check the complete FLoRA dataset.
 
 ## What is saved, and where
 
 - Duplicate rulings update source_records and append source_record_edits.
+- Sheet edits are found by every sync (sheet_drift_findings); a Keep FLoRA value decision is stored on the finding, a sheet value taken in is a FLoRA correction (flora_record_changes).
 - Pipeline queue, log and retained artifacts: source_sync_jobs.
 
 ## When it updates
@@ -34,6 +36,7 @@ Code snapshot: 29 October 2026, `2f3a89c`.
 ## Keep in mind
 
 - Source record detail is read-only: correct the derived record in the FLoRA tab.
+- Sheet edits never change a sheet or a source record. A row no longer validated in its sheet stays in FLoRA until an exclusion or a duplicate ruling removes it.
 - Export CSV here exports source records, not the prepared public dataset.
 - Run pipeline does not directly commit a GitHub file. The Publish FLoRA workflow handles the repository copy.
 - A failed run can occasionally have committed the dataset before a later artifact step failed; inspect the report storage status and recovery artifact rather than assuming that failed means no database changes.
@@ -96,6 +99,30 @@ Names the surviving source row. A reason is requested; cross-type pairing asks f
 
 **Visible:** FLoRA grid on next fetch; full CSV/API after pipeline.
 
+### [Sheet edits → Use sheet value](admin-sources--sheet-edits-use-sheet-value.md)
+
+Opens the FLoRA editor for the record the edited sheet row feeds, with the sheet's value filled in and a note saying where it came from. Nothing is saved until Save corrections, which logs an ordinary correction. The FLoRA editor's own Sheet edited after import box does the same for one field in place.
+
+**Saves:** flora_record_changes and the stored flora_data row, only when Save corrections is clicked; source_records and the sheet are never changed.
+
+**Visible:** The Sheet edits list and its chip reload when the editor closes; the stored CSV and public API at once on save.
+
+### [Sheet edits → Keep FLoRA value / Undo](admin-sources--sheet-edits-keep-flora-value-undo.md)
+
+Records, with a required note, that FLoRA's value is right for one sheet edit, or that a record whose row left the sheet or its validated status stays in FLoRA. Undo withdraws the decision.
+
+**Saves:** sheet_drift_findings kept_by, kept_at, kept_note and the sheet value it was made against; security_events records both the decision and its withdrawal.
+
+**Visible:** Immediately in the view. The decision holds while the sheet keeps that value; a later edit of the cell asks again.
+
+### [Sheet edits → Download CSV](admin-sources--sheet-edits-download-csv.md)
+
+Downloads every sheet edit of the current filter, one row per FLoRA record it touches, with blank decision columns for a coding agent (docs/SHEET_EDITS_FOR_AGENTS.md). apply_sheet_edits.py applies a filled-in file, dry run first.
+
+**Saves:** A file downloaded by your browser; no database change.
+
+**Visible:** At click time.
+
 ### [Show resolved / Back to grid](admin-sources--show-resolved-back-to-grid.md)
 
 Includes ruled groups for reconsideration, or returns to the source table.
@@ -106,8 +133,8 @@ Includes ruled groups for reconsideration, or returns to the source table.
 
 ## Find it in the code
 
-- [docs/app.js:8954 — fetchSourceRecords](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/docs/app.js#L8954) · [complete script](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/docs/app.js)
-- [docs/app.js:10546 — renderSourceRecord](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/docs/app.js#L10546) · [complete script](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/docs/app.js)
-- [app.py:5977 — admin_source_records](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/app.py#L5977) · [complete script](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/app.py)
-- [source_records_service.py:179 — list_records](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/source_records_service.py#L179) · [complete script](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/source_records_service.py)
-- [source_sync_runner.py:340 — failed artifact path with committed-storage recovery](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/source_sync_runner.py#L340) · [complete script](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/source_sync_runner.py)
+- [docs/app.js:12496 — fetchSourceRecords](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/docs/app.js#L12496) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/docs/app.js)
+- [docs/app.js:15055 — renderSourceRecord](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/docs/app.js#L15055) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/docs/app.js)
+- [app.py:6833 — admin_source_records](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/app.py#L6833) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/app.py)
+- [source_records_service.py:179 — list_records](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/source_records_service.py#L179) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/source_records_service.py)
+- [source_sync_runner.py:340 — failed artifact path with committed-storage recovery](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/source_sync_runner.py#L340) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/source_sync_runner.py)

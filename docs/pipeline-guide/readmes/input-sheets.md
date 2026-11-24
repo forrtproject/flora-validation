@@ -4,7 +4,7 @@ Published Google Sheets are another input route. Their accepted rows are copied 
 
 [Open interactive guide](../index.html#view=overview&node=input-sheets)
 
-Code snapshot: 29 October 2026, `2f3a89c`.
+Code snapshot: 24 November 2026, `3cc13da`.
 
 ## What goes in
 
@@ -17,11 +17,13 @@ Code snapshot: 29 October 2026, `2f3a89c`.
 2. Skip an unchanged payload by checksum. Filter to accepted validation values, or accept all rows for a source explicitly configured without a validation column.
 3. Validate promoted values before writing. Skip missing/invalid UUIDs and all rows sharing a duplicated sheet UUID.
 4. Insert only new (source, sheet_row_id) identities. Commit each source independently and record its result.
+5. Compare every imported row with the sheet as fetched now, by its sheet UUID (sheet_drift.py), inside a savepoint: each cell that differs from the row as imported becomes a Sheet edits finding; a failed check never undoes the source's inserts.
 
 ## What is saved, and where
 
 - source_records stores imported fields, the original raw row, source identity and a friendly display ID.
 - source_sync_runs stores per-source timestamps, counts, failures and payload SHA-256.
+- sheet_drift_runs stores each sheet-edit check; sheet_drift_findings stores each cell that differs from the import, until the sheet goes back to the imported value.
 - snapshots/<source>.csv stores the fetched payload on that executor; the nightly workflow uploads these as 90-day artifacts.
 
 ## When it updates
@@ -36,14 +38,16 @@ Code snapshot: 29 October 2026, `2f3a89c`.
 
 ## Keep in mind
 
-- Sheet sync is insert-only: changing an already-imported UUID's sheet cells does not overwrite the existing database record.
+- Sheet sync is insert-only: changing an already-imported UUID's sheet cells does not overwrite the existing database record. The change is now reported under Source Records → Sheet edits, where an admin takes it into FLoRA or keeps FLoRA's value.
 - Corrections are made on the derived FLoRA record; this importer does not write changes back to Google Sheets.
 - The backup FReD source is disabled in sources.yml.
 
 ## Find it in the code
 
-- [sources.yml:28 — accepted_values and source registry](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/sources.yml#L28) · [complete script](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/sources.yml)
-- [sync_sources.py:325 — sync_source](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/sync_sources.py#L325) · [complete script](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/sync_sources.py)
-- [sync_sources.py:482 — run](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/sync_sources.py#L482) · [complete script](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/sync_sources.py)
-- [source_records_service.py:61 — RECORD_FIELDS](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/source_records_service.py#L61) · [complete script](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/source_records_service.py)
-- [.github/workflows/sync-sources.yml:3 — schedule](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/.github/workflows/sync-sources.yml#L3) · [complete script](https://github.com/forrtproject/flora-validation/blob/2f3a89c56a44bd7b6270eb0fa94548f6d93512f8/.github/workflows/sync-sources.yml)
+- [sources.yml:34 — accepted_values and source registry](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/sources.yml#L34) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/sources.yml)
+- [sync_sources.py:543 — sync_source](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/sync_sources.py#L543) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/sync_sources.py)
+- [sync_sources.py:732 — run](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/sync_sources.py#L732) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/sync_sources.py)
+- [sync_sources.py:482 — _drift_check](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/sync_sources.py#L482) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/sync_sources.py)
+- [sheet_drift.py:219 — compare_source](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/sheet_drift.py#L219) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/sheet_drift.py)
+- [source_records_service.py:63 — RECORD_FIELDS](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/source_records_service.py#L63) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/source_records_service.py)
+- [.github/workflows/sync-sources.yml:3 — schedule](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/.github/workflows/sync-sources.yml#L3) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/.github/workflows/sync-sources.yml)

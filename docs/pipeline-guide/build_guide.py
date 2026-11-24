@@ -12,8 +12,8 @@ import textwrap
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 REPO = "https://github.com/forrtproject/flora-validation"
-COMMIT = "2f3a89c56a44bd7b6270eb0fa94548f6d93512f8"
-DATE = "29 October 2026"
+COMMIT = "3cc13dadec9b51c8e25d03a4b30827300f32ac16"
+DATE = "24 November 2026"
 
 
 def esc(value):
@@ -61,7 +61,7 @@ def load_nodes():
         "refresh": ["The Source Records grid reloads the imported input. The FLoRA grid derives the current combined view.", "The stored complete CSV and public API update through preparation, with eligible existing-row corrections applied immediately."],
         "outputs": ["Input to transform_sources.py and the identity registry."],
         "cautions": ["Source Records, the derived FLoRA grid and stored flora_data are three distinct views of data."],
-        "sources": [{"file":"db_schema.sql","line":1223,"symbol":"source_records"}, {"file":"sync_validated.py","line":139,"symbol":"sync"}, {"file":"transform_sources.py","line":574,"symbol":"load_rules"}],
+        "sources": [{"file":"db_schema.sql","line":1223,"symbol":"source_records"}, {"file":"sync_validated.py","line":145,"symbol":"sync"}, {"file":"transform_sources.py","line":633,"symbol":"load_rules"}],
     })
     ids = [n["id"] for n in nodes]
     assert len(ids) == len(set(ids)), "Duplicate node IDs"
@@ -326,7 +326,7 @@ def build():
     template=template.replace("/*GUIDE_DATA*/",json.dumps(data,ensure_ascii=False).replace("<","\\u003c"))
     template=template.replace("/*GUIDE_JS*/",(HERE/"src"/"guide.js").read_text(encoding="utf-8"))
     (HERE/"index.html").write_text(template,encoding="utf-8")
-    readme=["# FLoRA pipeline field guide","","[Open the clickable guide](index.html)","","Double-click `index.html` to open it in a browser. The guide, explanations and code excerpts work offline. Full script links open GitHub at the reviewed commit.","",f"Verified against local code on {DATE}, commit `{COMMIT}`. This documents configured behavior, not the live deployment's health.","","## Start here","","1. Open **System map** for the complete pipeline, or use **Start walkthrough** to follow one extracted paper.","2. Open **Inputs**, **Processing**, and **Outputs** for separate diagrams.","3. Choose **Admin tabs**, pick a tab, and click a button card for its simple README, save location and exact code.","4. Use **Save & update** for timing and persistence, or **Code index** to open a whole script.","5. Search for any tab, action, table or filename. Each element has a shareable link and a plain Markdown README.","","## Diagram pictures for slides","","SVG files stay sharp when resized; PNG files can be pasted into PowerPoint or Google Slides. SVG boxes link back to the interactive guide when opened alongside this folder.",""]
+    readme=["# FLoRA pipeline field guide","","[Open the clickable guide](index.html)","","Double-click `index.html` to open it in a browser. The guide, explanations and code excerpts work offline. Full script links open GitHub at the reviewed commit.","",f"Code links and excerpts checked on {DATE} against commit `{COMMIT}`. The descriptions were last reviewed in full on 29 October 2026; later changes edited only the parts they touched. This documents configured behavior, not the live deployment's health.","","## Start here","","1. Open **System map** for the complete pipeline, or use **Start walkthrough** to follow one extracted paper.","2. Open **Inputs**, **Processing**, and **Outputs** for separate diagrams.","3. Choose **Admin tabs**, pick a tab, and click a button card for its simple README, save location and exact code.","4. Use **Save & update** for timing and persistence, or **Code index** to open a whole script.","5. Search for any tab, action, table or filename. Each element has a shareable link and a plain Markdown README.","","## Diagram pictures for slides","","SVG files stay sharp when resized; PNG files can be pasted into PowerPoint or Google Slides. SVG boxes link back to the interactive guide when opened alongside this folder.",""]
     for name,title in [("overview","Complete system"),("comparison","Source Records vs FLoRA"),("inputs","Input schema"),("processing","Processing schema"),("outputs","Output schema"),("storage","Storage schema")]:readme += [f"- **{title}:** [PNG](diagrams/{name}.png) · [SVG](diagrams/{name}.svg)"]
     readme += ["","## Source Records vs FLoRA","","[Open the comparison slide](index.html#view=comparison) · [Read the comparison](SOURCE_RECORDS_VS_FLORA.md)","","A side-by-side comparison explains inputs, corrections, duplicate decisions, downloads, update timing and provenance. Three illustrative examples follow a DOI correction, a duplicate ruling and a new sheet row across the tabs, stored CSV/API and GitHub."]
     comparison_text=["# Source Records vs FLoRA","","[Open interactive comparison](index.html#view=comparison)","",data["comparison"]["nodes"][0]["summary"],"","| Question | Source Records tab | FLoRA tab |","| --- | --- | --- |"]

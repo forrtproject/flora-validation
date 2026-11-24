@@ -4,7 +4,7 @@
 
 Double-click `index.html` to open it in a browser. The guide, explanations and code excerpts work offline. Full script links open GitHub at the reviewed commit.
 
-Verified against local code on 29 October 2026, commit `2f3a89c56a44bd7b6270eb0fa94548f6d93512f8`. This documents configured behavior, not the live deployment's health.
+Code links and excerpts checked on 24 November 2026 against commit `3cc13dadec9b51c8e25d03a4b30827300f32ac16`. The descriptions were last reviewed in full on 29 October 2026; later changes edited only the parts they touched. This documents configured behavior, not the live deployment's health.
 
 ## Start here
 
@@ -69,6 +69,9 @@ The input ledger: imported entry-sheet records, approved app records, and publis
 - [History: CSV / report / full log](readmes/admin-sources--history-csv-report-full-log.md)
 - [Duplicates → Keep — distinct](readmes/admin-sources--duplicates-keep-distinct.md)
 - [Duplicates → Duplicate of …](readmes/admin-sources--duplicates-duplicate-of.md)
+- [Sheet edits → Use sheet value](readmes/admin-sources--sheet-edits-use-sheet-value.md)
+- [Sheet edits → Keep FLoRA value / Undo](readmes/admin-sources--sheet-edits-keep-flora-value-undo.md)
+- [Sheet edits → Download CSV](readmes/admin-sources--sheet-edits-download-csv.md)
 - [Show resolved / Back to grid](readmes/admin-sources--show-resolved-back-to-grid.md)
 
 ### [FLoRA](readmes/admin-flora.md)

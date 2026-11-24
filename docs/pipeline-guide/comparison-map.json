@@ -13,14 +13,14 @@
       "cautions": ["The two tabs do not need to have the same row count: several inputs can be merged into one derived record, and excluded inputs can disappear from the final view. Filters and retirement also affect counts.", "The FLoRA tab is not a direct table viewer for flora_data. Its view can include data that the next preparation run will add to the stored snapshot.", "The pipeline uses multiple transactions. If it fails, inspect its report: some earlier stages may already have saved changes, and a late failure can occur after dataset storage.", "Examples in this comparison are illustrations of code behavior, not actual production records."],
       "sources": [
         {"file":"source_records_service.py","line":179,"symbol":"list_records"},
-        {"file":"source_records_service.py","line":265,"symbol":"get_record: raw values, history and FLoRA links"},
+        {"file":"source_records_service.py","line":268,"symbol":"get_record: raw values, history and FLoRA links"},
         {"file":"flora_service.py","line":159,"symbol":"_current: build the derived FLoRA view"},
-        {"file":"flora_service.py","line":484,"symbol":"_changed: correction without editing source inputs"},
-        {"file":"flora_service.py","line":531,"symbol":"merged_sources: provenance in FLoRA"},
-        {"file":"flora_edits.py","line":759,"symbol":"publish: immediate eligible stored-row correction"},
-        {"file":"app.py","line":6070,"symbol":"admin_flora_export: current filtered vs stored full export"},
+        {"file":"flora_service.py","line":513,"symbol":"_changed: correction without editing source inputs"},
+        {"file":"flora_service.py","line":569,"symbol":"merged_sources: provenance in FLoRA"},
+        {"file":"flora_edits.py","line":921,"symbol":"publish: immediate eligible stored-row correction"},
+        {"file":"app.py","line":6926,"symbol":"admin_flora_export: current filtered vs stored full export"},
         {"file":"source_sync_runner.py","line":269,"symbol":"_execute: refresh, prepare and store"},
-        {"file":"sync_sources.py","line":325,"symbol":"sync_source: sheet import"}
+        {"file":"sync_sources.py","line":543,"symbol":"sync_source: sheet import"}
       ]
     }
   ],
