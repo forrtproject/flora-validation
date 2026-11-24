@@ -238,7 +238,8 @@ before real records are served, and stamps `onboarded_at`.
 
 The client keeps a **prefetch buffer**. `/api/next-pairs` batch-claims up to 5 pairs:
 the first is *active* (started, locked to this validator), the rest are buffered so the
-next card renders instantly.
+next card renders instantly. Entries the validator skipped come after every other one in
+the mode, the one skipped longest ago first, marked "You skipped this entry before".
 
 A validator answers three questions in one progressive form:
 
@@ -295,7 +296,9 @@ Reproductions, the hard pool, assignments and onboarding keep the one-record scr
 
 - `POST /api/paper-review/claim` reserves this validator's open records for the paper. It is
   safe to repeat. A sibling the validator cannot judge is listed for context, with no reason
-  and no verdict. One validator can never hold both slots of a record (`_claim_free_slot`).
+  and no verdict. So is one they skipped, until the paper is served again from the end of
+  their queue: they then hold a row they had skipped, and the whole paper opens. One
+  validator can never hold both slots of a record (`_claim_free_slot`).
   It never waits for a row lock: a record locked elsewhere, for example by another validator's
   `/api/judge` during its Gemini call, is left out of that claim and lists as context.
 - The claimed rows are buffered holds on the reaper's 45-minute lock, not started slots. Only
@@ -499,6 +502,11 @@ Assignment submissions are worth **double**. Skips score zero and increment
 "other" skips also require a short comment. Every successful slot release appends a
 row to `validation_skips`. A retried request after the slot has already been released
 returns HTTP 409 and cannot inflate the history or validator total.
+
+A skip puts that one entry at the end of that validator's queue: they get it again only
+when nothing they have not skipped is left in the mode. Other validators are not affected,
+and neither are the paper's other originals. An "inaccessible" skip takes the entry out of
+serving instead.
 
 Automatic recovery after a failed background save is not a Skip. The server can
 mint a short-lived, one-time capability only after `/api/judge` fails before
@@ -911,6 +919,7 @@ timing that drives claiming and reaping. `UNIQUE (record_id, validator_slot)`.
 `record_id`, `validator_id`, the stable `queue_id`, a controlled `reason_code`, an
 optional comment (maximum 1,000 characters), and `skipped_at`. It is deliberately
 separate from `validation_queue` because a released queue slot is reusable.
+Serving reads it to put a validator's own skipped entries last.
 Historical `submission_failed` values remain valid so old audit rows can be read,
 but `/api/skip` no longer accepts that reason.
 

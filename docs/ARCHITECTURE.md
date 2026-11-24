@@ -60,8 +60,9 @@ deliberate choice recorded in
 Client → session cookie + mode/count/buffer options
        → unvalidated JOIN validation_queue JOIN record_metadata
        → find record not yet assigned to this validator, with a free human slot
+       → records this validator skipped come last, the one skipped longest ago first
        → assign slot (is_shown=TRUE, validator_id=X)
-       → returns pair data + OA URL enrichment
+       → returns pair data + OA URL enrichment + skipped_before
 ```
 
 ### Submit judgment (`POST /api/judge`)
@@ -86,6 +87,7 @@ Client → session cookie + record_id + reason_code + optional comment
        → append one validation_skips event in the same transaction
        → increment validators.skipped_count (no points and no consensus vote)
        → return the record to the pool when no other slot is active or complete
+       → from now on it is at the end of this validator's queue, and theirs only
        → route inaccessible records to the existing Restricted-access queue
 ```
 

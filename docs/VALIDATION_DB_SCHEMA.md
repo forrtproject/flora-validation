@@ -258,6 +258,10 @@ CREATE TABLE validation_skips (
 rows written by the former recovery design. `/api/skip` no longer accepts it and
 new automatic releases never write to this table.
 
+Serving reads this table too: a record a validator skipped comes after every record they
+did not skip, by the latest `skipped_at`, oldest first. `submission_failed` rows are left
+out, because they were not the validator's choice.
+
 The admin Skipped panel counts **distinct validators**, not events. It includes a
 record after more than five distinct validators skip for any reason, or after two
 distinct validators report eligibility/data-quality concerns. The detail API joins

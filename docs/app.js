@@ -2320,6 +2320,9 @@ $("#mode-toggle").onclick = async () => {
   state.mode = state.mode === "normal" ? "hard" : "normal";
   $("#mode-toggle").textContent = state.mode === "hard" ? "Hard mode" : "Normal mode";
   $("#mode-toggle").classList.toggle("active", state.mode === "hard");
+  // As Exit does: what loads next is not the assigned record, and /assignment-judge refuses it.
+  state.assignment = null;
+  $("#assignment-banner").classList.add("hidden");
   _pairBuffer = [];   // buffered (normal-mode) pairs are short-locked; let them lapse
   await loadNextPair();
   await refreshStats();
@@ -2611,8 +2614,9 @@ async function _fillBuffer() {
   if (!_bufferEligible() || _bufferFilling || _pairBuffer.length >= BUFFER_TARGET) return;
   _bufferFilling = true;
   try {
-    const need = BUFFER_TARGET - _pairBuffer.length;
-    const resp = await api(`/next-pairs?count=${need}&buffered_only=true&mode=${state.mode}`, "POST");
+    const need = BUFFER_TARGET - _pairBuffer.length, mode = state.mode;
+    const resp = await api(`/next-pairs?count=${need}&buffered_only=true&mode=${mode}`, "POST");
+    if (mode !== state.mode) return;   // switched meanwhile: the other pool's, let them lapse
     for (const p of (resp.pairs || [])) {
       if (!_pairBuffer.some(b => b.queue_id === p.queue_id)) _pairBuffer.push(p);
     }
@@ -2640,7 +2644,9 @@ async function _takeActivePair(allowResume = true) {
     if (_pairBuffer.length) {
       cand = _pairBuffer.shift();
     } else {
-      const resp = await api(`/next-pairs?count=${BUFFER_TARGET}&buffered_only=${!allowResume}&mode=${state.mode}`, "POST");
+      const mode = state.mode;
+      const resp = await api(`/next-pairs?count=${BUFFER_TARGET}&buffered_only=${!allowResume}&mode=${mode}`, "POST");
+      if (mode !== state.mode) return null;   // as in _fillBuffer
       const pairs = resp.pairs || [];
       if (!pairs.length) return null;
       _pairBuffer.push(...pairs);
@@ -2662,6 +2668,11 @@ async function _takeActivePair(allowResume = true) {
 async function loadNextPair(allowResume = true) {
   if (!_bufferEligible()) return _loadSinglePair();   // hard mode: single fetch
 
+  // An assignment opened, or the mode switched, while this loads has the screen.
+  const mode = state.mode;
+  const left = () => !!state.assignment || state.mode !== mode;
+  if (left()) return;
+
   // (B) If the buffer is empty we may need a network fetch — show a loading
   // placeholder so we never strand the user on the just-submitted card.
   if (!_pairBuffer.length) _showLoadingCard();
@@ -2671,8 +2682,13 @@ async function loadNextPair(allowResume = true) {
   const RETRY_DELAYS = [0, 2000, 5000, 10000];
   for (let i = 0; i < RETRY_DELAYS.length; i++) {
     if (RETRY_DELAYS[i]) await _sleep(RETRY_DELAYS[i]);
+    if (left()) return;
     try {
       const active = await _takeActivePair(allowResume);
+      if (left()) {
+        if (active && state.mode === mode) _pairBuffer.unshift(active);   // next, after the assignment
+        return;
+      }
       if (!active) {
         $("#pair-card").classList.add("hidden");
         $("#done-screen").classList.remove("hidden");
@@ -2686,7 +2702,7 @@ async function loadNextPair(allowResume = true) {
       // transient — fall through to the next retry
     }
   }
-  _showRetryCard(allowResume);   // (B) recoverable state instead of a dead card
+  if (!left()) _showRetryCard(allowResume);   // (B) recoverable state instead of a dead card
 }
 
 function _showLoadingCard() {
@@ -2765,6 +2781,8 @@ let _pendingModalDialogOpen = false;
 
 const _persistSubmits = () => localStorage.setItem(_SUBMIT_KEY, JSON.stringify(_submitQueue));
 const _persistFailed  = () => localStorage.setItem(_FAILED_KEY, JSON.stringify(_failedSubmits));
+// By identity: an index taken before an await is another item's once the queue has changed.
+const _dequeueSubmit  = (item) => { _submitQueue = _submitQueue.filter((it) => it !== item); _persistSubmits(); };
 
 /* Queued judgements belong to the validator who wrote them, not to the browser.
    Identity used to travel inside the payload as coder_id; the server now takes
@@ -2853,7 +2871,7 @@ async function _processSubmitQueue() {
     }
     try {
       const resp = await api("/judge", "POST", item.payload);
-      _submitQueue.splice(idx, 1); _persistSubmits();
+      _dequeueSubmit(item);
       _celebrateQueued(item, resp.points_earned);
       refreshStats().catch(() => {});
       refreshLeaderboard().catch(() => {});
@@ -2919,7 +2937,7 @@ async function _processSubmitQueue() {
             continue;
           }
         }
-        _submitQueue.splice(idx, 1); _persistSubmits();
+        _dequeueSubmit(item);
         _failedSubmits.push({
           paper: item.paper,
           at: Date.now(),
@@ -3173,8 +3191,7 @@ async function _pendingAction(action, key) {
       }
     }
     if (!ok) return;
-    _submitQueue.splice(idx, 1);
-    _persistSubmits();
+    _dequeueSubmit(item);
     _updatePendingIndicator();
     showToast("Pending judgement discarded.");
   }
@@ -3519,6 +3536,7 @@ function _extraOriginalsPayload(j) {
 /* ---------- Pair rendering (normal + onboarding) ---------- */
 let _pairShownAt = null;
 
+// No Skip on an assignment: it has no queue slot to release. Exit leaves it.
 function _pairHeaderHtml(p, onboarding) {
   const doiUrl = p.doi_r ? `https://doi.org/${p.doi_r}` : null;
   const oaUrl = p.oa_url_r || (p.url_r && p.url_r !== doiUrl ? p.url_r : null);
@@ -3529,7 +3547,8 @@ function _pairHeaderHtml(p, onboarding) {
     <div class="pair-header">
       <div class="pair-meta">
 ${onboarding ? `<span class="meta-item onboarding-tag">onboarding</span>` : ""}
-        ${onboarding ? "" : `<button class="skip-btn" id="skip-btn">Skip / report issue</button>`}
+        ${p.skipped_before ? `<span class="meta-item">You skipped this entry before</span>` : ""}
+        ${onboarding || state.assignment ? "" : `<button class="skip-btn" id="skip-btn">Skip / report issue</button>`}
       </div>
 
       <div class="abstract-block">
@@ -3615,8 +3634,8 @@ function renderPairInto(container, p, { onboarding, judgeCount }) {
         </div>
       </div>
 
-      <!-- Senior validator fast-reject panel -->
-      <div id="senior-reject-panel" class="senior-reject-panel${(state.coder && state.coder.validator_tier >= 2) ? '' : ' hidden'}">
+      <!-- Senior validator fast-reject panel (it needs a queue slot, which an assignment has not) -->
+      <div id="senior-reject-panel" class="senior-reject-panel${(state.coder && state.coder.validator_tier >= 2 && !state.assignment) ? '' : ' hidden'}">
         <details>
           <summary class="senior-reject-summary">Senior override: reject — not in FLoRA</summary>
           <div class="senior-reject-body">
@@ -3777,9 +3796,8 @@ function renderPairInto(container, p, { onboarding, judgeCount }) {
     if (open) container.querySelector(".comment").focus();
   });
 
-  if (!onboarding) {
-    container.querySelector("#skip-btn").onclick = onSkip;
-  }
+  const skipBtn = container.querySelector("#skip-btn");
+  if (skipBtn) skipBtn.onclick = onSkip;
 
   wireEditButtons(container, p);
   if (!onboarding) _wireExtraOriginals(container);
@@ -4968,10 +4986,10 @@ function showSkipReasonDialog() {
 }
 
 async function onSkip() {
-  const details = await showSkipReasonDialog();
-  if (!details) return;
   const pair = state.currentPair;
-  if (!pair) return;
+  const details = await showSkipReasonDialog();
+  // A first Skip still under way can bring the next entry up behind a second dialog.
+  if (!details || !pair || state.currentPair !== pair) return;
   let result;
   try {
     result = await api("/skip", "POST", {
@@ -4982,6 +5000,9 @@ async function onSkip() {
     });
   } catch (e) {
     await showAlert(e.message);
+    // Not theirs any more (decided meanwhile, or a skip whose answer got lost): nothing
+    // can be saved or skipped here, so the screen does not stay on it.
+    if (_slotNoLongerOwned(e) && state.currentPair === pair) await loadNextPair();
     return;
   }
 
@@ -5129,7 +5150,6 @@ async function submitJudgement() {
   // Hard-mode "I cannot access this article" — report it (no judgement, no
   // points) and move on. The record leaves circulation for the admin queue.
   if (j.no_access) {
-    _clearDraft(p.pair_id);
     try {
       await api("/restricted", "POST", { record_id: String(p.record_id) });
       showToast("Sent to the review team.");
@@ -5138,6 +5158,7 @@ async function submitJudgement() {
       btn.disabled = false;
       return;
     }
+    _clearDraft(p.pair_id);
     await loadNextPair(false);
     return;
   }
@@ -5279,6 +5300,7 @@ async function _openPaperReview(pair, { addAnother = false } = {}) {
   try {
     set = await api("/paper-review/claim", "POST", { record_id: String(pair.record_id) });
   } catch (e) {
+    if (state.currentPair !== pair) return;   // the validator has moved on
     if (addAnother) { showToast("Couldn't open the review table. Your answers are kept."); return; }
     _showActivePair({ ...pair, paper_review: false });   // the one-record screen always works
     return;
@@ -5408,12 +5430,14 @@ const _prFingerprint = (o) => `${_prDoi(o)}|${o.outcome || ""}|${_prNormQuote(o.
 
 function _prSaveDraft() {
   const pr = state.paperReview;
-  if (!pr) return;
+  // Under an assignment opened over the table, state.judgement is the assignment's.
+  if (!pr || state.currentPair !== pr.pair) return;
   try {
     localStorage.setItem(_PAPER_DRAFT_KEY(pr.pair.doi_r), JSON.stringify({
       judgement: state.judgement, type: pr.type, orig: pr.orig, fix: pr.fix,
       pulled: pr.pulled, out: pr.out, drafts: pr.drafts,
-      fingerprints: Object.fromEntries(_prLive().map(o => [o.record_id, _prFingerprint(o)])),
+      // Every claimed row, not only the live: a lost row's answers return with it.
+      fingerprints: Object.fromEntries(pr.originals.filter(o => o.queue_id).map(o => [o.record_id, _prFingerprint(o)])),
     }));
   } catch (_) { /* a full store costs the draft, never the page */ }
 }
@@ -5440,7 +5464,7 @@ function _prRestoreDraft(pair) {
     }
   }
   const gone = Object.keys(draft.orig || {}).filter(id => !live.has(id)).length;
-  if (gone) showToast(`${gone} answer${gone === 1 ? "" : "s"} in your draft cannot be used: another validator has that original now.`);
+  if (gone) showToast(`${gone} answer${gone === 1 ? "" : "s"} in your draft cannot be used: you no longer hold that original.`);
   else if (changed && Object.keys(draft.out || {}).length) showToast("A record changed since your draft. Check the outcomes again.");
 }
 
@@ -5787,6 +5811,7 @@ async function _onSkipPaper() {
       else failures.push(e.message);
     }
   }
+  if (state.paperReview !== pr) return;   // a second Skip has already moved on
   if (failures.length) {
     // A released row has left the table, or submitting it would only be refused. So
     // has one the server no longer gives this validator (a skip whose answer got lost).

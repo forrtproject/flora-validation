@@ -40,9 +40,10 @@ const PAIR = {
   const page = await context.newPage();
   page.setDefaultTimeout(10_000);
   const errors = [], judged = [], skips = [], approved = [];
-  let claimStatus = 200, claimed = SET, claimHeld = null;
+  let claimStatus = 200, claimed = SET, claimHeld = null, skipHeld = null;
+  let served = {}, nextHeld = {}, startHeld = null, judgeHeld = null;   // what /next-pairs gives and waits for, by mode
   let heldLost = new Set(), skipFails = new Set(), skipGone = new Set();
-  const refreshed = [];
+  const refreshed = [], nextAsked = [];
   const taken = (...ids) => ({ ...SET, originals: SET.originals.map(o => ids.includes(o.record_id) ? { ...o, judgeable: false } : o) });
   page.on("pageerror", error => errors.push(error.message));
   await page.route("**/*", async route => {
@@ -63,9 +64,10 @@ const PAIR = {
       refreshed.push(ids);
       return route.fulfill({ status: 200, json: { held: ids.filter(id => !heldLost.has(id)) } });
     }
-    if (url.pathname === "/api/judge") { judged.push(route.request().postDataJSON()); return route.fulfill({ status: 200, json: { points_earned: 2 } }); }
+    if (url.pathname === "/api/judge") { judged.push(route.request().postDataJSON()); await judgeHeld; return route.fulfill({ status: 200, json: { points_earned: 2 } }); }
     if (url.pathname === "/api/skip") {
       const id = route.request().postDataJSON().record_id;
+      if (skipHeld) await skipHeld;
       if (skipFails.has(id)) return route.fulfill({ status: 500, json: { detail: "Server error." } });
       if (skipGone.has(id)) return route.fulfill({ status: 409, json: { detail: "This record is no longer assigned to you" } });
       skips.push(id);
@@ -74,7 +76,13 @@ const PAIR = {
     if (url.pathname.endsWith("/approve")) { approved.push(url.pathname.split("/")[4]); return route.fulfill({ status: 200, json: {} }); }
     if (url.pathname === "/api/me") return route.fulfill({ status: 200, json: { kind: "anonymous" } });
     if (url.pathname === "/api/leaderboard") return route.fulfill({ status: 200, json: [] });
-    if (url.pathname === "/api/next-pairs") return route.fulfill({ status: 200, json: { pairs: [] } });
+    if (url.pathname === "/api/next-pairs") {
+      const mode = url.searchParams.get("mode"), pairs = (served[mode] || []).splice(0);
+      nextAsked.push(url.searchParams.get("buffered_only"));
+      await nextHeld[mode];
+      return route.fulfill({ status: 200, json: { pairs } });
+    }
+    if (url.pathname.endsWith("/start")) await startHeld;
     return route.fulfill({ status: 200, json: { records: [], points: 0, rank: 1 } });
   });
   const show = data => page.evaluate(p => {
@@ -220,6 +228,21 @@ const PAIR = {
     assert.deepEqual(await page.evaluate(() => [state.currentPair.title_o, state.currentPair.queue_id,
                                                 state.currentPair.coded_originals.find(c => c.is_current).record_id]),
                      ["Original 2", "q-b", "b"]);
+    await page.evaluate(() => { _pairBuffer = []; localStorage.clear(); });
+
+    // The skipped note is each record's own: a sibling does not inherit the served one's.
+    const note = async () => (await page.locator(".pair-header .pair-meta").textContent()).includes("You skipped this entry before");
+    claimed = { ...SET, originals: SET.originals.map(o => ({ ...o, skipped_before: o.record_id === "c" })) };
+    await show({ ...PAIR, skipped_before: true });
+    await pr('[data-pr="type"][data-v="reproduction"]').click();
+    await page.locator("#repro-outcome, #gate-2").first().waitFor();
+    assert.equal(await note(), true);
+    for (const [id, skippedBefore] of [["b", false], ["c", true]]) {
+      await page.evaluate(() => loadNextPair(false));
+      await page.waitForFunction(id => state.currentPair?.record_id === id, id);
+      assert.equal(await note(), skippedBefore, `${id} follows its own flag`);
+    }
+    claimed = SET;
     await page.evaluate(() => { _pairBuffer = []; localStorage.clear(); });
 
     // Moving on while the claim is under way strands nothing either.
@@ -373,11 +396,15 @@ const PAIR = {
     await page.waitForFunction(() => !state.paperReview);
     assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem(_PAPER_DRAFT_KEY("10.1234/paper")))?.orig?.a), "correct");
     heldLost = new Set();
+    await page.locator("#done-screen").waitFor();
+    await page.evaluate(p => { _showActivePair({ ...p }); }, PAIR);
+    await pr(".pr-table").waitFor();
+    assert.equal(await orig("a", "correct").evaluate(el => el.classList.contains("sel")), true, "and they return, as promised");
 
     // A draft answer for a row that is no longer held is not dropped in silence.
     claimed = taken("a");
     await page.evaluate(p => { _showActivePair({ ...p }); }, { ...PAIR, record_id: "b" });
-    await page.waitForFunction(() => /another validator has that original/.test(document.querySelector("#toast")?.textContent || ""));
+    await page.waitForFunction(() => /you no longer hold that original/.test(document.querySelector("#toast")?.textContent || ""));
     claimed = SET;
 
     // Leaving the table ends the beat.
@@ -395,7 +422,10 @@ const PAIR = {
 
     // ── One-record screen: wrong paper has no outcome unless corrected.
     const single = { ...row("s", 1, "failed", QUOTE_A), paper_review: false, coded_originals: [] };
+    await show({ ...single, skipped_before: true });
+    assert.equal(await note(), true);
     await show(single);
+    assert.equal(await note(), false);
     await page.locator('#gate-1 [data-type="replication"]').click();
     await page.locator('[data-original="wrong"]').click();
     assert.equal(await page.locator("#gate-3").isVisible(), false);
@@ -594,8 +624,208 @@ const PAIR = {
     assert.equal(await page.evaluate(() => _slotNoLongerOwned(new Error(
       "This entry has already been decided, so your answer was not saved and no points were added."))), true);
 
+    // ── Skip, assignments and mode switches.
+    await page.locator("#done-screen").waitFor();   // the late assignment has moved on
+    const next = { ...single, record_id: "t", pair_id: "pair-t", queue_id: "q-t" };
+    const hard = { ...next, record_id: "h", pair_id: "pair-h", queue_id: "q-h" };
+    const hold = () => { let release; const until = new Promise(resolve => { release = resolve; }); return { until, release }; };
+    const settle = () => page.evaluate(() => new Promise(r => setTimeout(r, 300)));
+    const current = () => page.evaluate(() => state.currentPair?.record_id);
+    const buffered = () => page.evaluate(() => _pairBuffer.map(b => b.record_id));
+    const reach = id => page.waitForFunction(wanted => state.currentPair?.record_id === wanted, id);
+    const toggleMode = () => page.evaluate(() => { document.querySelector("#mode-toggle").onclick(); });
+    const closeDialog = async () => {
+      await page.locator("#dialog-modal:not(.hidden)").waitFor();
+      await page.locator("#dialog-buttons .btn-primary").click();
+    };
+    await page.route("**/api/assignment/x", route => route.fulfill({ status: 200, json: { pair: { ...single, record_id: "x", pair_id: "pair-x" } } }));
+    const openAssigned = () => page.evaluate(() => openAssignment("x"));
+
+    // A skip that fails keeps the entry. One the server no longer gives this validator
+    // can be neither skipped nor saved, so the screen moves on.
+    served = { normal: [next] };
+    skipFails = new Set(["s"]);
+    await show(single);
+    await page.locator("#skip-btn").click();
+    await closeDialog();
+    await settle();
+    assert.equal(await current(), "s");
+    skipFails = new Set();
+    skipGone = new Set(["s"]);
+    await page.locator("#skip-btn").click();
+    await closeDialog();
+    await reach("t");
+    skipGone = new Set();
+
+    // A second Skip, pressed while the first is under way, is not for the entry that comes next.
+    let held = hold();
+    await page.evaluate(() => { showSkipReasonDialog = () => new Promise(r => { window.answerSkip = () => r({ reason_code: "prefer_another", comment: null }); }); });
+    await show(single);
+    skips.length = 0;
+    served = { normal: [next] };
+    skipHeld = held.until;
+    await page.locator("#skip-btn").click();
+    await page.evaluate(() => answerSkip());
+    await page.locator("#skip-btn").click();
+    held.release();
+    await reach("t");
+    await page.evaluate(() => answerSkip());
+    await settle();
+    assert.deepEqual(skips, ["s"]);
+
+    // Nor does a paper's second Skip load a second entry over it, leaving that one held unseen.
+    await page.evaluate(() => { showSkipReasonDialog = async () => ({ reason_code: "prefer_another", comment: null }); });
+    held = hold();
+    await show(PAIR);
+    await answerType();
+    served = { normal: [next] };
+    skipHeld = held.until;
+    nextAsked.length = 0;
+    await page.locator("#skip-btn").click();
+    await page.locator("#skip-btn").click();
+    held.release();
+    await reach("t");
+    await settle();
+    assert.deepEqual(nextAsked.filter(b => b === "false"), ["false"]);
+    skipHeld = null;
+
+    // A hard-mode report that fails keeps the draft and its autosave, as a skip does.
+    await page.route("**/api/restricted", route => route.fulfill({ status: 500, json: { detail: "Server error." } }));
+    await show(single);
+    await page.evaluate(p => {
+      state.mode = "hard";
+      _showActivePair(p);
+      localStorage.setItem(_DRAFT_KEY(p.pair_id), "{}");
+      state.judgement.no_access = true;
+      document.querySelector("#submit-btn").disabled = false;
+      submitJudgement();
+    }, single);
+    await closeDialog();
+    assert.deepEqual(await page.evaluate(() => [localStorage.getItem(_DRAFT_KEY("pair-s")), _draftInterval !== null]), ["{}", true]);
+    await page.unroute("**/api/restricted");
+
+    // An assignment has no queue slot, so its card offers neither Skip nor the Senior reject.
+    await show(single);
+    await page.evaluate(() => { state.coder.validator_tier = 2; });
+    await openAssigned();
+    assert.equal(await current(), "x");
+    assert.equal(await page.locator("#skip-btn").count(), 0);
+    assert.equal(await page.locator("#senior-reject-panel").isHidden(), true);
+
+    // Switching mode leaves it, as Exit does: the next entry is not the assigned record.
+    served = { hard: [hard] };
+    await toggleMode();
+    await reach("h");
+    assert.equal(await page.evaluate(() => state.assignment), null);
+    assert.equal(await page.locator("#assignment-banner").isHidden(), true);
+    assert.equal(await page.locator("#skip-btn").count(), 1);
+
+    // An entry that arrives while an assignment is opened waits behind it, and so does the done screen.
+    held = hold();
+    await show(single);
+    startHeld = held.until;
+    await page.evaluate(p => { _pairBuffer = [p]; loadNextPair(false); }, next);
+    await openAssigned();
+    held.release();
+    await settle();
+    assert.equal(await current(), "x");
+    assert.deepEqual(await buffered(), ["t"]);
+    await page.evaluate(() => exitAssignment());
+    await reach("t");
+    startHeld = null;
+    held = hold();
+    await show(single);
+    nextHeld = { normal: held.until };
+    await page.evaluate(() => { loadNextPair(false); });
+    await openAssigned();
+    held.release();
+    await settle();
+    assert.equal(await current(), "x");
+    assert.equal(await page.locator("#pair-card").isVisible(), true);
+    nextHeld = {};
+    held = hold();
+    await show(single);
+    skipHeld = held.until;
+    await page.locator("#skip-btn").click();
+    await openAssigned();
+    held.release();
+    await settle();
+    assert.equal(await page.locator("#pair-card #submit-btn").count(), 1, "nor does what a skip loads");
+    skipHeld = null;
+
+    // Nor do its answers reach the draft of the paper table it was opened over.
+    await show(PAIR);
+    await answerType();
+    await pr('[data-pr-input="note"]').fill("about the paper");
+    await openAssigned();
+    await page.locator("#note-toggle-btn").click();
+    await page.locator("#pair-card .comment").fill("about the assignment");
+    await page.evaluate(() => _prSaveDraft());   // the table's ten-second autosave is still running
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem(_PAPER_DRAFT_KEY("10.1234/paper"))).judgement.comment), "about the paper");
+
+    // Nor does a paper whose claim fails after the validator has moved on come back over it.
+    for (const [moveOn, id] of [[openAssigned, "x"], [toggleMode, "h"]]) {
+      held = hold();
+      claimHeld = held.until;
+      claimStatus = 409;
+      served = { hard: [hard] };
+      await show(PAIR);
+      await moveOn();
+      await reach(id);
+      held.release();
+      await settle();
+      assert.equal(await current(), id);
+      claimHeld = null;
+      claimStatus = 200;
+    }
+
+    // What the old mode's request answers after a switch is neither shown nor buffered.
+    for (const request of ["_fillBuffer()", "loadNextPair(false)"]) {
+      held = hold();
+      await show(single);
+      served = { normal: [next, { ...next, record_id: "u", queue_id: "q-u" }], hard: [hard] };
+      nextHeld = { normal: held.until };
+      const sent = page.waitForRequest(r => r.url().includes("mode=normal"));
+      await page.evaluate(`void ${request}`);
+      await sent;
+      await toggleMode();
+      await reach("h");
+      held.release();
+      await settle();
+      assert.equal(await current(), "h", request);
+      assert.deepEqual(await buffered(), [], request);
+      nextHeld = {};
+    }
+
+    // Discarding a stuck judgement takes that one, whatever else is sent meanwhile: no
+    // other is dropped unsent, and none is sent twice.
+    for (const [queue, until] of [[["x", "y", "z"], "after"], [["y", "x", "w"], "before"]]) {
+      held = hold();
+      judgeHeld = held.until;
+      await show(single);
+      judged.length = 0;
+      await page.evaluate(keys => {
+        for (const id of keys) {
+          if (id === "x" || id === "w") _submitQueue.push({ key: id, payload: { record_id: id, submission_id: id }, record_id: id, paper: id, blocked: true, attempts: 0, owner_id: 1 });
+          else _enqueueSubmit({ record_id: id, submission_id: id }, id);
+        }
+        _pendingAction("discard", "x");
+      }, queue);
+      await page.locator("#dialog-modal:not(.hidden)").waitFor();
+      if (until === "before") {   // the save lands while the dialog asks
+        held.release();
+        await page.waitForFunction(() => _submitQueue.length === 2);
+      }
+      await closeDialog();
+      held.release();
+      await page.waitForFunction(() => _submitQueue.every(it => it.blocked));
+      assert.deepEqual(judged.map(j => j.record_id), queue.filter(id => id === "y" || id === "z"));
+      assert.deepEqual(await page.evaluate(() => _submitQueue.map(it => it.key)), queue.filter(id => id === "w"));
+    }
+    judgeHeld = null;
+
     assert.deepEqual(errors, []);
-    console.log("Paper review checks passed: table, merging, wrong paper, replacement, drafts, submit, neither, reproduction, fallback, one-record screen, add another, admin panel.");
+    console.log("Paper review checks passed: table, merging, wrong paper, replacement, drafts, submit, neither, reproduction, fallback, one-record screen, add another, admin panel, skip, assignments, mode switch, discard.");
   } catch (error) {
     console.error(String(error).slice(0, 1200));
     console.error("page errors:", errors);

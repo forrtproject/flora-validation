@@ -1838,23 +1838,50 @@ _SERVABLE_SQL = """
 """
 
 
+# When this validator last skipped each record; takes one %s, their id. A skip clears the
+# queue slot, so this is its only trace. submission_failed is not their choice: a retired
+# browser recovery wrote it when a save failed.
+_OWN_SKIPS_SQL = """
+    SELECT record_id, MAX(skipped_at) AS last_skipped_at
+    FROM validation_skips
+    WHERE validator_id = %s AND reason_code <> 'submission_failed'
+    GROUP BY record_id
+"""
+
+
+def _skipped_records(cur, coder_id: int, record_ids) -> set[str]:
+    """Which of these records this validator has skipped."""
+    cur.execute(
+        f"SELECT record_id::text AS record_id FROM ({_OWN_SKIPS_SQL}) own_skip "
+        "WHERE record_id = ANY(%s::uuid[])",
+        (coder_id, [str(r) for r in record_ids]),
+    )
+    return {r["record_id"] for r in cur.fetchall()}
+
+
 def _select_pair_candidate(cur, coder_id: int, mode: str, extra_where: str = "", extra_params: tuple = ()):
-    """Pick one servable record for this validator, optionally narrowed by extra_where."""
+    """Pick one servable record for this validator, optionally narrowed by extra_where.
+
+    Records they skipped come after every other one, the one skipped longest ago first, so
+    a second pass does not repeat itself. MATERIALIZED: as a plain join the planner sorts
+    the wide rows by the skip date first, which spills to disk and more than doubles the time."""
     cur.execute(
         f"""
-        SELECT {_PAIR_SELECT}
+        WITH own_skip AS MATERIALIZED ({_OWN_SKIPS_SQL})
+        SELECT {_PAIR_SELECT}, own_skip.last_skipped_at
         FROM unvalidated u
         LEFT JOIN record_metadata rm ON rm.record_id = u.record_id
+        LEFT JOIN own_skip ON own_skip.record_id = u.record_id
         WHERE {_SERVABLE_SQL}
           AND {_mode_sql(mode)}
           {extra_where}
           AND u.record_id NOT IN (
               SELECT record_id FROM validation_queue WHERE validator_id = %s
           )
-        ORDER BY judge_count DESC, RANDOM()
+        ORDER BY own_skip.last_skipped_at ASC NULLS FIRST, judge_count DESC, RANDOM()
         LIMIT 1
         """,
-        (*extra_params, coder_id),
+        (coder_id, *extra_params, coder_id),
     )
     return cur.fetchone()
 
@@ -1867,7 +1894,8 @@ def _claim_one_pair(cur, coder_id: int, started: bool, mode: str = "normal"):
 
     When priority serving is enabled, each claim draws from the priority pool with
     probability = priority_share, else from the rest — falling back to the other
-    pool if the chosen one is empty, so a validator is never blocked.
+    pool if the chosen one is empty, so a validator is never blocked. A pool whose
+    only records left are ones this validator skipped counts as empty here.
 
     A record _claim_free_slot refuses (another claimer has it locked, or this
     validator's own top-up got there first) is left out and the attempts run again:
@@ -1894,7 +1922,9 @@ def _claim_one_pair(cur, coder_id: int, started: bool, mode: str = "normal"):
         for extra_where, extra_params in attempts:
             row = _select_pair_candidate(cur, coder_id, mode, f"{extra_where} {leave_out}",
                                          (*extra_params, *left_out))
-            if row:
+            # A pool's skipped records come last, so a skipped one here means the pool has
+            # no other left. Only the whole pool may hand it out.
+            if row and (not extra_where or row.get("last_skipped_at") is None):
                 break
         if not row:
             return None
@@ -1903,8 +1933,9 @@ def _claim_one_pair(cur, coder_id: int, started: bool, mode: str = "normal"):
             break
         lost.append(str(row["record_id"]))
     pair = _enrich_pair(dict(row), cur)
-    pair["queue_id"]    = str(queue_id)
-    pair["judge_count"] = row["judge_count"]
+    pair["queue_id"]       = str(queue_id)
+    pair["judge_count"]    = row["judge_count"]
+    pair["skipped_before"] = pair.pop("last_skipped_at", None) is not None
     return pair
 
 
@@ -2032,6 +2063,8 @@ def next_pairs(count: int = 3, buffered_only: bool = False,
                     pair["judge_count"] = row["judge_count"]
                     pair["started"]     = True
                     pair["resumed"]     = True
+                    pair["skipped_before"] = bool(
+                        _skipped_records(cur, coder_id, [resume["record_id"]]))
                     out.append(pair)
             if not out:
                 active = _claim_one_pair(cur, coder_id, started=True, mode=mode)
@@ -2078,7 +2111,7 @@ def claim_paper_review(req: PaperReviewRequest,
         raise HTTPException(404, "The paper review is not enabled")
     with db() as cur:
         result = paper_review.claim(cur, validator["coder_id"], str(req.record_id),
-                                    _claim_free_slot, oa_url_for)
+                                    _claim_free_slot, oa_url_for, _skipped_records)
     if result is None:
         raise HTTPException(409, "This paper cannot open in the review table")
     return result

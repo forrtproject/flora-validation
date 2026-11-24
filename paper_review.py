@@ -106,7 +106,7 @@ def refresh(cur, coder_id: int, record_ids) -> list[str]:
     return [r["record_id"] for r in cur.fetchall()]
 
 
-def claim(cur, coder_id: int, record_id: str, claim_slot, oa_url_for) -> dict | None:
+def claim(cur, coder_id: int, record_id: str, claim_slot, oa_url_for, skipped_records) -> dict | None:
     """Reserve this validator's open records for the paper and return the set.
 
     Safe to repeat: a slot the validator already holds is kept. Slots taken here are
@@ -118,6 +118,7 @@ def claim(cur, coder_id: int, record_id: str, claim_slot, oa_url_for) -> dict | 
 
     `claim_slot(cur, coder_id, record_id, started)` takes a free human slot and
     returns its queue_id, or None if another validator got there first.
+    `skipped_records(cur, coder_id, record_ids)` returns the ones this validator skipped.
     """
     cur.execute(
         """
@@ -175,8 +176,15 @@ def claim(cur, coder_id: int, record_id: str, claim_slot, oa_url_for) -> dict | 
         (coder_id, [str(r) for r in record_ids]),
     )
     own = {str(r["record_id"]): r for r in cur.fetchall()}
-
     base_type = (base["type"] or "").lower()
+    # A row this validator skipped stays out, as it does in serving, and lists as context.
+    # A paper served again from the bottom of their queue comes back whole: then they
+    # already hold one of the rows they had skipped. Not one this table cannot answer:
+    # a hard-pool sibling is held for another screen.
+    skipped = skipped_records(cur, coder_id, record_ids)
+    back = any(rid in skipped and not own[rid]["is_validated"] and _judgeable(row, base_type)
+               for row in rows if (rid := str(row["record_id"])) in own)
+
     originals = []
     for row in sorted(rows, key=_sort_key):
         rid = str(row["record_id"])
@@ -185,7 +193,7 @@ def claim(cur, coder_id: int, record_id: str, claim_slot, oa_url_for) -> dict | 
         # A slot already held counts only if the table can answer it: a buffered
         # reproduction or hard-pool sibling stays on its own screen.
         if _judgeable(row, base_type):
-            if not slot:
+            if not slot and (back or rid not in skipped):
                 queue_id = claim_slot(cur, coder_id, row["record_id"], started=False)
                 if not queue_id:
                     # This browser's buffer top-up may have got there first.
@@ -201,6 +209,7 @@ def claim(cur, coder_id: int, record_id: str, claim_slot, oa_url_for) -> dict | 
         entry["judgeable"] = queue_id is not None
         if queue_id is not None:
             entry["queue_id"] = str(queue_id)
+            entry["skipped_before"] = rid in skipped
             entry.update({field: row.get(field) for field in _JUDGEABLE_FIELDS})
             entry["outcome_phrase"] = row.get("outcome_quote") or ""
         originals.append(entry)

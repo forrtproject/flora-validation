@@ -54,6 +54,11 @@ def _hold(cur, record_id, coder_id, started=True):
         (coder_id, started, record_id))
 
 
+def _skipped(cur, record_id, coder_id):
+    cur.execute("INSERT INTO validation_skips (record_id, validator_id, reason_code) "
+                "VALUES (%s, %s, 'prefer_another')", (record_id, coder_id))
+
+
 @pytest.fixture
 def api(local_database, monkeypatch):
     import db_pool
@@ -310,6 +315,84 @@ def test_a_buffered_sibling_the_table_cannot_answer_stays_out_of_it(api, local_d
     with local_database, _cursor(local_database) as cur:
         cur.execute("SELECT started_at FROM validation_queue WHERE record_id = %s AND validator_id = %s", (repro, ana))
         assert cur.fetchone()["started_at"] is None
+
+
+def test_a_sibling_this_validator_skipped_is_not_taken(api, local_database):
+    """Opening the paper would otherwise bring the record straight back. Another
+    validator's skip does not matter, and neither does one they have judged since."""
+    client, who = api
+    with local_database, _cursor(local_database) as cur:
+        ana, bob = _validator(cur, "ana"), _validator(cur, "bob")
+        who["coder_id"] = ana
+        served, skipped, bobs, judged = (_record(cur, n) for n in range(1, 5))
+        for record, coder in ((skipped, ana), (bobs, bob), (judged, ana)):
+            _skipped(cur, record, coder)
+        _hold(cur, served, ana)
+        _hold(cur, judged, ana)
+        cur.execute("UPDATE validation_queue SET is_validated = TRUE WHERE record_id = %s AND validator_id = %s",
+                    (judged, ana))
+    for _ in range(2):   # repeating the claim takes nothing more
+        originals = client.post("/api/paper-review/claim", json={"record_id": served}).json()["originals"]
+        rows = {o["record_id"]: o for o in originals}
+        assert {i: o["judgeable"] for i, o in rows.items()} == {
+            served: True, skipped: False, bobs: True, judged: False}
+        assert "queue_id" not in rows[skipped] and "skipped_before" not in rows[skipped]
+        assert rows[bobs]["skipped_before"] is False
+    with local_database, _cursor(local_database) as cur:
+        assert _holder(cur, skipped) == []
+
+
+def test_a_paper_served_from_the_bottom_comes_back_whole(api, local_database):
+    """Each original says whether it was skipped itself: one added since was not."""
+    client, who = api
+    with local_database, _cursor(local_database) as cur:
+        ana = who["coder_id"] = _validator(cur, "ana")
+        paper = [_record(cur, n) for n in range(1, 4)]
+        for record in paper:
+            _skipped(cur, record, ana)
+    served = client.post("/api/next-pairs", params={"count": 1}).json()["pairs"][0]
+    assert served["record_id"] in paper and served["skipped_before"] is True
+    with local_database, _cursor(local_database) as cur:
+        added = _record(cur, 4)
+    originals = client.post("/api/paper-review/claim", json={"record_id": served["record_id"]}).json()["originals"]
+    assert all(o["judgeable"] for o in originals)
+    assert {o["record_id"]: o["skipped_before"] for o in originals} == {**dict.fromkeys(paper, True), added: False}
+
+
+def test_a_lapsed_row_does_not_bring_the_rest_of_a_skipped_paper_back(api, local_database):
+    """A paper skip answers 409 for a row whose hold lapsed, so that one was not skipped
+    and is served next, alone."""
+    client, who = api
+    with local_database, _cursor(local_database) as cur:
+        ana = who["coder_id"] = _validator(cur, "ana")
+        served, sibling, lapsed = (_record(cur, n) for n in range(1, 4))
+        _hold(cur, served, ana)
+    client.post("/api/paper-review/claim", json={"record_id": served})
+    with local_database, _cursor(local_database) as cur:
+        cur.execute("UPDATE validation_queue SET validator_id = NULL, is_shown = FALSE WHERE record_id = %s", (lapsed,))
+    answers = {r: client.post("/api/skip", json={"record_id": r}).status_code for r in (served, sibling, lapsed)}
+    assert answers == {served: 200, sibling: 200, lapsed: 409}
+    pairs = client.post("/api/next-pairs", params={"count": 1}).json()["pairs"]
+    assert [(p["record_id"], p["skipped_before"]) for p in pairs] == [(lapsed, False)]
+    originals = client.post("/api/paper-review/claim", json={"record_id": lapsed}).json()["originals"]
+    assert {o["record_id"]: o["judgeable"] for o in originals} == {served: False, sibling: False, lapsed: True}
+
+
+def test_a_held_row_the_table_cannot_answer_brings_nothing_back(api, local_database):
+    """A skipped hard-pool sibling, parked on its own screen, is not this paper served again."""
+    client, who = api
+    with local_database, _cursor(local_database) as cur:
+        ana = who["coder_id"] = _validator(cur, "ana")
+        served, skipped, hard = _record(cur, 1), _record(cur, 2), _record(cur, 3, outcome="cannot_be_determined")
+        for record in (skipped, hard):
+            _skipped(cur, record, ana)
+        _hold(cur, hard, ana)
+    pairs = client.post("/api/next-pairs", params={"count": 1}).json()["pairs"]
+    assert [p["record_id"] for p in pairs] == [served]
+    originals = client.post("/api/paper-review/claim", json={"record_id": served}).json()["originals"]
+    assert {o["record_id"]: o["judgeable"] for o in originals} == {served: True, skipped: False, hard: False}
+    with local_database, _cursor(local_database) as cur:
+        assert _holder(cur, skipped) == []
 
 
 def test_a_locked_record_is_passed_over_rather_than_waited_for(api, local_database):

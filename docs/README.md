@@ -540,6 +540,16 @@ The claim update uses `FOR UPDATE SKIP LOCKED` on the queue slot. A validator
 cannot receive a record already associated with their `validator_id`, and only
 records with a free human slot are candidates.
 
+A record a validator skipped is served to them again only when no other record in the
+mode can be given to them, the one skipped longest ago first, and its card says "You
+skipped this entry before" (`skipped_before` in the response). This covers that
+validator and that record only, not the other originals of its paper. Past skips count,
+for every reason except the historical `submission_failed`. Serving reads them from
+`validation_skips` (`_OWN_SKIPS_SQL` in `app.py`), because releasing the slot leaves no
+other trace. Buffered records were claimed earlier, so up to three can come before a
+record that becomes available later. An "inaccessible" skip restricts the record, so it
+is not served at all.
+
 Normal mode excludes records with no abstract or outcome
 `cannot_be_determined`; a record with no outcome at all but an abstract is in normal
 mode. Hard mode contains those records and awards double
@@ -549,7 +559,9 @@ administrator assigns them.
 Admins can enable priority serving for `failed`, `successful`, or `mixed`
 outcomes and optionally a four-digit year range. `priority_share` controls the
 probability of selecting the priority subset; the selector falls back to the
-other subset and then the whole pool so the rule cannot empty the queue.
+other subset and then the whole pool so the rule cannot empty the queue. A subset
+whose only records left are ones the validator skipped counts as empty, so priority
+never lifts a skipped record above the rest.
 
 ### Three review gates
 
@@ -788,7 +800,8 @@ also multiply the normal total by two. Senior fast-reject awards only the base
 `vote_score`. Skipping and reporting inaccessible content award no points. A normal
 skip records a controlled reason and optional comment in `validation_skips`; comments
 are required for eligibility, data-quality, and "other" reasons. The queue release,
-history insert, and `skipped_count` increment commit atomically.
+history insert, and `skipped_count` increment commit atomically. The record then goes
+to the end of that validator's queue (see [Record serving](#record-serving)).
 The endpoint locks the `unvalidated` row before clearing a queue slot, so two
 simultaneous skips cannot leave `validation_status` stuck in progress.
 
@@ -1717,9 +1730,9 @@ the caller. State-changing requests are refused unless they originate from
 | POST | `/api/update-seen` | Record current update version |
 | GET | `/api/my-judgements` | Latest 100 completed judgements for the signed-in validator |
 | GET | `/api/my-judgements/{queue_id}` | One judgement, final record, and message thread |
-| POST | `/api/next-pairs` | Resume/claim active and buffered pairs; normal/hard mode. A record lost to another claimer is left out and the claim tries the next |
+| POST | `/api/next-pairs` | Resume/claim active and buffered pairs; normal/hard mode. A record lost to another claimer is left out and the claim tries the next. Records this validator skipped come last, with `skipped_before` true |
 | POST | `/api/pairs/{queue_id}/start` | Promote a buffered claim to started |
-| POST | `/api/paper-review/claim` | Reserve this validator's open records of a paper as buffered holds; never waits for a row lock (`PAPER_REVIEW_ENABLED`) |
+| POST | `/api/paper-review/claim` | Reserve this validator's open records of a paper as buffered holds; never waits for a row lock. A record they skipped stays out, unless they already hold one of the paper's skipped records that the table can answer (`PAPER_REVIEW_ENABLED`) |
 | POST | `/api/paper-review/refresh` | Renew an open review table's holds and return the records still held |
 | GET | `/api/health` | Process-only liveness check |
 | POST | `/api/restricted` | Report inaccessible hard-mode article and release slot |
@@ -1727,7 +1740,7 @@ the caller. State-changing requests are refused unless they originate from
 | GET | `/api/assignment/{record_id}` | Load one assigned record |
 | POST | `/api/assignment-judge` | Resolve assigned record and award double points |
 | POST | `/api/judge` | Submit ordinary judgement and run consensus |
-| POST | `/api/skip` | Release a claimed slot and atomically save its reason/comment history; `reason_code` is optional for rolling-deployment compatibility and answers `reason_recorded: true` |
+| POST | `/api/skip` | Release a claimed slot and atomically save its reason/comment history; the record goes to the end of that validator's queue. `reason_code` is optional for rolling-deployment compatibility and answers `reason_recorded: true` |
 | POST | `/api/submission-failures/release` | Consume a server-issued one-time stamp to recover one failed background submission; never counts as a skip |
 | POST | `/api/senior-reject` | Tier-2 immediate rejection |
 | GET | `/api/stats` | Validator totals, queue total, and rank |
@@ -2236,7 +2249,8 @@ work; inspect them separately from source changes.
 | `tests/test_csv_to_db.py`, `test_current_extractor_contract.py`, `test_study_identifiers.py` | Strict CSV contract, importer identity, refresh/re-key behavior, study numbers, lineage, URL fallbacks, and DOI-less originals |
 | `tests/test_reproduction_judgement.py`, `test_reproduction_axes.py` | Browser/API/schema reproduction-axis contract, evidence, type conversion, and history rendering |
 | `tests/test_integrity_fixes.py`, `test_validated_identity.py` | Concurrent completion guards, migration mapping/status, explicit validated duplicate merge, source constraints, and export/backfill integrity |
-| `tests/test_skip_history.py` | Skip audit/escalation, modal behavior, draft preservation, server-issued failure stamps, and automatic-release isolation |
+| `tests/test_skip_history.py` | Skip audit/escalation, modal behavior and wording, draft preservation, server-issued failure stamps, and automatic-release isolation |
+| `tests/test_skip_serving_database.py` | Skipped records come last for the validator who skipped them, against a real PostgreSQL (opt-in) |
 | `tests/test_sync_csv.py`, `test_extractor_maintenance.py`, `test_extractor_snapshots.py` | Download/archive safety, snapshot thresholds, promotion verification, stage gates, fail-fast behavior, advisory locks, timeout, logs, the retire gate, and the database copy of each snapshot |
 | `tests/test_llm_validator.py`, `test_quote_source.py` | Structured LLM responses, canonical vocabularies, uncertainty, malformed/error retry, quote-source normalization, the browser suggestion's parity with `quote_source_for`, and when a source is recorded in an admin's name |
 | `tests/test_audit_regressions.py`, `test_extractor_vocab.py`, `test_console_encoding.py`, `test_transform_outcomes.py` | Cross-file regression contracts, shared vocabulary/schema parity, Windows console safety, and Source Records transformation |

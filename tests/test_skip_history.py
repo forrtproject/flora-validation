@@ -167,6 +167,23 @@ def test_skip_reason_sheet_and_collapsed_admin_history_are_wired_end_to_end():
     assert "item.comment" in JS
 
 
+def test_only_prefer_another_promises_the_end_of_the_queue():
+    """"Cannot access" takes the record out of the queue, and the intro covers every reason."""
+    dialog = HTML.split('id="skip-reason-modal"', 1)[1].split("</form>", 1)[0]
+    option = dialog.split('value="prefer_another"', 1)[1].split("</label>", 1)[0]
+    assert "end of your queue" in option
+    assert dialog.count("end of your queue") == 1
+
+
+def test_serving_reads_a_validators_own_skips_from_one_definition():
+    own = APP.split('_OWN_SKIPS_SQL = """', 1)[1].split('"""', 1)[0]
+    assert "validator_id = %s AND reason_code <> 'submission_failed'" in own
+    serving = _function_body(APP, "_select_pair_candidate", "_claim_one_pair")
+    assert "{_OWN_SKIPS_SQL}" in serving
+    assert "ORDER BY own_skip.last_skipped_at ASC NULLS FIRST" in serving
+    assert "{_OWN_SKIPS_SQL}" in _function_body(APP, "_skipped_records", "_select_pair_candidate")
+
+
 def test_static_skip_requires_and_persists_the_pair_identity():
     static_skip = JS.split('if (route === "/skip")', 1)[1].split(
         'if (route === "/leaderboard")', 1
@@ -218,11 +235,11 @@ def test_failed_submission_needs_a_server_stamp_and_is_not_discarded_early():
     assert "pending data kept" in failure
     assert ".catch(() => {})" not in failure
     # Removal happens only after the release call, whichever way the item is
-    # taken off the queue (it is spliced by index now, not shifted, so that a
-    # parked item earlier in the queue does not block the ones behind it).
+    # taken off the queue (by identity, not shifted, so that a parked item earlier
+    # in the queue does not block the ones behind it).
     assert "_submitQueue.shift()" not in failure
     assert failure.index('api("/submission-failures/release"') < failure.index(
-        "_submitQueue.splice(idx, 1)"
+        "_dequeueSubmit(item)"
     )
 
 
@@ -529,17 +546,17 @@ def test_blocked_pending_items_can_retry_export_or_be_explicitly_discarded():
     )[0]
     for stale_field in ("failure_stamp", "failure_id", "failure_expires_at"):
         assert f"delete item.{stale_field}" in retry
-    assert "_submitQueue.splice" not in retry
+    assert "_dequeueSubmit" not in retry
 
     export = action.split('if (action === "export")', 1)[1].split(
         'if (action === "discard")', 1
     )[0]
     assert "_exportPendingSubmission(item)" in export
-    assert "_submitQueue.splice" not in export
+    assert "_dequeueSubmit" not in export
 
     discard = action.split('if (action === "discard")', 1)[1]
     assert discard.index("await showDialog") < discard.index("if (!ok) return")
-    assert discard.index("if (!ok) return") < discard.index("_submitQueue.splice(idx, 1)")
+    assert discard.index("if (!ok) return") < discard.index("_dequeueSubmit(item)")
 
 
 def test_a_parked_submission_cannot_block_later_queue_items():
@@ -611,7 +628,7 @@ def test_a_parked_submission_offers_a_way_out():
     # Discard confirms first and is the only path that drops the payload.
     assert "Discard this pending judgement?" in action
     assert "if (!ok) return;" in action
-    assert "_submitQueue.splice(idx, 1)" in action
+    assert "_dequeueSubmit(item)" in action
 
     panel = JS.split("function _renderPendingPanel()", 1)[1].split("\nfunction ", 1)[0]
     assert "it.blocked ? _pendingActions(it.key" in panel,         "controls appear only on items that need them"
