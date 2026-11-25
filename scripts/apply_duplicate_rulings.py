@@ -60,7 +60,9 @@ def plan(cur, rows, lock=False):
         absorbed, survivor = found.get(row["absorbed_id"]), found.get(row["survivor_id"])
         # Applied already: the next build retires the absorbed id, so a rerun skips it.
         if (absorbed and survivor and absorbed["duplicate_status"] == "duplicate"
-                and absorbed["duplicate_of"] == survivor["primary_id"]):
+                and absorbed["duplicate_of"] == survivor["primary_id"]
+                and not survivor["retired_at"] and not survivor["deleted_at"]
+                and survivor["duplicate_status"] != "duplicate"):
             continue
         if (not absorbed or not survivor or absorbed["retired_at"] or survivor["retired_at"]
                 or absorbed["deleted_at"] or survivor["deleted_at"]):

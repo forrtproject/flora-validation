@@ -80,8 +80,9 @@ in `alt_identifier_r` (`transform_sources.join_metadata`).
 
 `fred_data_179_published_version_review.csv` lists every candidate the search
 did not rate high on its own, with the decision taken on each after review:
-applied (then also in the approved file), ruled a duplicate, kept distinct,
-rejected, or left unchanged for want of evidence.
+applied (then also in the approved file), applied as alternative identifier (a
+thesis keeps its record and gains the article's DOI in the field batch), ruled a
+duplicate, kept distinct, rejected, or left unchanged for want of evidence.
 
 ```bash
 python3 scripts/apply_field_corrections.py data/corrections/fred_data_179_fields.csv --check-live

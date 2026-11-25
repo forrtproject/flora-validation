@@ -85,12 +85,14 @@ def plan(cur, rows):
         # The version first, then the record, then the version again: a save between
         # the reads would otherwise pair a newer record with an older version, and
         # the batch could overwrite that save. flora_edits.save guards it once more.
-        version = flora_edits.version(cur, record_id)
-        record = flora_service.get_record(cur, record_id)
-        if record is None or not record.get("export_id"):
+        found = flora_service.get_record(cur, record_id)     # by FLoRA or published id
+        if found is None or not found.get("export_id"):
             raise flora_edits.RecordNotFound(record_id)
-        if record["export_id"] != record_id or flora_edits.version(cur, record_id) != version:
-            raise flora_edits.VersionConflict(flora_edits.version(cur, record_id))
+        export_id = found["export_id"]
+        version = flora_edits.version(cur, export_id)
+        record = flora_service.get_record(cur, export_id)
+        if record is None or flora_edits.version(cur, export_id) != version:
+            raise flora_edits.VersionConflict(flora_edits.version(cur, export_id))
         fields, notes = {}, {}
         for change in changes:
             field = change["field"]
@@ -105,7 +107,10 @@ def plan(cur, rows):
             cleaned = flora_edits.clean_value(field, value, record["type"])
             if not _same(field, current, cleaned):
                 fields[field] = cleaned
-                notes[field] = " ".join(filter(None, [notes.get(field), change["note"]]))[:flora_edits.NOTE_LIMIT]
+                notes[field] = " ".join(filter(None, [notes.get(field), change["note"]]))
+                if len(notes[field]) > flora_edits.NOTE_LIMIT:
+                    raise ValueError(f"{record_id} {field}: the combined notes exceed "
+                                     f"{flora_edits.NOTE_LIMIT} characters; shorten them")
         if fields:
             plans.append({"record_id": record["export_id"], "fields": fields,
                           "version": version, "notes": notes})

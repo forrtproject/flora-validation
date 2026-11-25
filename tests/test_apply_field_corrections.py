@@ -98,3 +98,12 @@ def test_two_appends_to_one_field_both_land(tmp_path, record):
     ])
     [item] = plan(None, rows)
     assert item["fields"]["alt_identifier_r"] == "10.1/a, 10.2/b, https://openalex.org/W1234567"
+
+
+def test_overlong_combined_notes_are_refused(tmp_path, record):
+    rows = _batch(tmp_path, [
+        {"id": "FLORA-1", "field": "alt_identifier_r", "action": "append", "value": "10.2/b", "note": "x" * 300},
+        {"id": "FLORA-1", "field": "alt_identifier_r", "action": "append", "value": "10.3/c", "note": "y" * 300},
+    ])
+    with pytest.raises(ValueError, match="combined notes"):
+        plan(None, rows)

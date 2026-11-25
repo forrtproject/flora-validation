@@ -652,9 +652,11 @@ _IDENTIFIER_SPLIT_RE = re.compile(
 
 
 def _identifier_key(part):
-    """How two listed identifiers compare: a DOI ignoring case, as DOIs do, a link
-    exactly (a path's case can name a different file)."""
-    return part.lower() if re.match(r"(doi:\s*)?10\.\d", part, re.I) else part
+    """How two listed identifiers compare: a DOI, bare or as a doi.org link,
+    ignoring case as DOIs do; any other link exactly (a path's case can name a
+    different file)."""
+    doi = re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", "", part, flags=re.I)
+    return doi.lower() if re.match(r"10\.\d", doi) else part
 
 
 def normalise_identifier_list(value):
@@ -665,7 +667,9 @@ def normalise_identifier_list(value):
         return None if not isinstance(value, str) else (value.strip() or None)
     parts, seen = [], set()
     for part in _IDENTIFIER_SPLIT_RE.split(value.strip()):
-        part = part.strip().rstrip(";,").strip()
+        part = part.strip()
+        if not re.match(r"https?://", part, re.I):   # a link may end in a comma
+            part = part.rstrip(";,").strip()
         if part and _identifier_key(part) not in seen:
             seen.add(_identifier_key(part))
             parts.append(part)
