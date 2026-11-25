@@ -44,3 +44,23 @@ explicit date provenance. Full original methods and spot checks are in
 [fred-data PR #167](https://github.com/forrtproject/fred-data/pull/167).
 Companion work: #29 handles author/export correctness; #30 retains the already-
 applied identifier corrections; #25 contains only the dependent release pipeline.
+
+# Identifier and link corrections from fred-data #179
+
+`fred_data_179_fields.csv` holds record-level corrections that the build cannot
+derive from a source: a missing report DOI, a wrong original link, and OpenAlex
+records that stood in for a report link. Each row names the field, the value it
+replaces, the new value, a note for the correction log, and the API record that
+verifies it. Published versions of preprints for the same issue are in
+`cache/approved_publication_corrections.csv`; apply those first, so a corrected
+`doi_r` and its preserved preprint alias are in place.
+
+```bash
+python3 scripts/apply_field_corrections.py data/corrections/fred_data_179_fields.csv               # offline check
+python3 scripts/apply_field_corrections.py data/corrections/fred_data_179_fields.csv --check-live  # plan, then roll back
+python3 scripts/apply_field_corrections.py data/corrections/fred_data_179_fields.csv --apply --admin-handle HANDLE
+```
+
+`set` refuses a record whose field no longer holds `before`; `append` adds an
+alternative identifier once. Each record is one editor save in the correction log,
+and the batch commits whole or not at all. Reapplying it changes nothing.
