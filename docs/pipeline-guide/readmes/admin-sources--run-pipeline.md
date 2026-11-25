@@ -4,7 +4,7 @@ POST /api/admin/source-sync/dispatch queues a server job. A background worker ru
 
 [Open interactive guide](../index.html#view=admin&node=admin-sources--run-pipeline)
 
-Code snapshot: 25 November 2026, `589664a`.
+Code snapshot: 25 November 2026, `9cc088d`.
 
 ## What goes in
 
@@ -24,7 +24,7 @@ Code snapshot: 25 November 2026, `589664a`.
 
 ## Find it in the code
 
-- [docs/app.js:14997 — startSourceSync](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/docs/app.js#L14997) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/docs/app.js)
-- [app.py:7470 — admin_source_sync_dispatch](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/app.py#L7470) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/app.py)
-- [source_sync_runner.py:110 — queue_run](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/source_sync_runner.py#L110) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/source_sync_runner.py)
-- [source_sync_runner.py:391 — run_queued](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/source_sync_runner.py#L391) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/source_sync_runner.py)
+- [docs/app.js:14997 — startSourceSync](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/docs/app.js#L14997) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/docs/app.js)
+- [app.py:7470 — admin_source_sync_dispatch](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/app.py#L7470) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/app.py)
+- [source_sync_runner.py:110 — queue_run](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/source_sync_runner.py#L110) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/source_sync_runner.py)
+- [source_sync_runner.py:391 — run_queued](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/source_sync_runner.py#L391) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/source_sync_runner.py)

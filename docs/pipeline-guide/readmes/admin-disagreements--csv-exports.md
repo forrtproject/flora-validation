@@ -4,7 +4,7 @@ Downloads the adjudication final-answer or judgement data through its dedicated 
 
 [Open interactive guide](../index.html#view=admin&node=admin-disagreements--csv-exports)
 
-Code snapshot: 25 November 2026, `589664a`.
+Code snapshot: 25 November 2026, `9cc088d`.
 
 ## What goes in
 
@@ -24,5 +24,5 @@ Code snapshot: 25 November 2026, `589664a`.
 
 ## Find it in the code
 
-- [adjudication/api.py:186 — export route](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/adjudication/api.py#L186) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/adjudication/api.py)
-- [adjudication/export.py:151 — export_csv](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/adjudication/export.py#L151) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/adjudication/export.py)
+- [adjudication/api.py:186 — export route](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/adjudication/api.py#L186) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/adjudication/api.py)
+- [adjudication/export.py:151 — export_csv](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/adjudication/export.py#L151) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/adjudication/export.py)

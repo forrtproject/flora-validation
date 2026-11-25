@@ -4,7 +4,7 @@ A read-only summary of the validation workload, completion, outcomes, disagreeme
 
 [Open interactive guide](../index.html#view=admin&node=admin-dashboard)
 
-Code snapshot: 25 November 2026, `589664a`.
+Code snapshot: 25 November 2026, `9cc088d`.
 
 ## What goes in
 
@@ -43,6 +43,6 @@ Reads dashboard aggregates and changes chart presentation.
 
 ## Find it in the code
 
-- [docs/app.js:11187 — fetchAdminDashboard](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/docs/app.js#L11187) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/docs/app.js)
-- [docs/app.js:11345 — renderAdminDashboard](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/docs/app.js#L11345) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/docs/app.js)
-- [app.py:4043 — admin_dashboard](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/app.py#L4043) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/app.py)
+- [docs/app.js:11187 — fetchAdminDashboard](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/docs/app.js#L11187) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/docs/app.js)
+- [docs/app.js:11345 — renderAdminDashboard](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/docs/app.js#L11345) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/docs/app.js)
+- [app.py:4043 — admin_dashboard](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/app.py#L4043) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/app.py)

@@ -4,7 +4,7 @@ sync_validated.py copies the application's approved records into the same input 
 
 [Open interactive guide](../index.html#view=overview&node=process-validated-bridge)
 
-Code snapshot: 25 November 2026, `589664a`.
+Code snapshot: 25 November 2026, `9cc088d`.
 
 ## What goes in
 
@@ -37,7 +37,7 @@ Code snapshot: 25 November 2026, `589664a`.
 
 ## Find it in the code
 
-- [sync_validated.py:138 — sync](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/sync_validated.py#L138) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/sync_validated.py)
-- [sync_validated.py:226 — retire_missing](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/sync_validated.py#L226) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/sync_validated.py)
-- [source_sync_runner.py:60 — STAGES](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/source_sync_runner.py#L60) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/source_sync_runner.py)
-- [db_schema.sql:2148 — retire_validated_source_row](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/db_schema.sql#L2148) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/db_schema.sql)
+- [sync_validated.py:138 — sync](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/sync_validated.py#L138) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/sync_validated.py)
+- [sync_validated.py:226 — retire_missing](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/sync_validated.py#L226) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/sync_validated.py)
+- [source_sync_runner.py:60 — STAGES](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/source_sync_runner.py#L60) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/source_sync_runner.py)
+- [db_schema.sql:2148 — retire_validated_source_row](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/db_schema.sql#L2148) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/db_schema.sql)

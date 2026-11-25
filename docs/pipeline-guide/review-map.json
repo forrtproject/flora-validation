@@ -200,7 +200,7 @@
       "sources": [
         {
           "file": "consensus_engine.py",
-          "line": 700,
+          "line": 702,
           "symbol": "evaluate_consensus"
         },
         {
@@ -210,12 +210,12 @@
         },
         {
           "file": "consensus_engine.py",
-          "line": 537,
+          "line": 539,
           "symbol": "_update_status"
         },
         {
           "file": "consensus_engine.py",
-          "line": 613,
+          "line": 615,
           "symbol": "_insert_validated"
         },
         {
@@ -381,7 +381,7 @@
         },
         {
           "file": "consensus_engine.py",
-          "line": 774,
+          "line": 776,
           "symbol": "senior-reject consensus guard"
         }
       ]
@@ -486,17 +486,17 @@
         },
         {
           "file": "adjudication/review.py",
-          "line": 339,
+          "line": 340,
           "symbol": "approve"
         },
         {
           "file": "adjudication/review.py",
-          "line": 520,
+          "line": 521,
           "symbol": "publish"
         },
         {
           "file": "adjudication/review.py",
-          "line": 567,
+          "line": 568,
           "symbol": "withdraw"
         },
         {

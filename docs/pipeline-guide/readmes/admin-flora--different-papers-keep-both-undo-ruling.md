@@ -4,7 +4,7 @@ Keep both overrides automatic merging; Undo removes the explicit ruling so autom
 
 [Open interactive guide](../index.html#view=admin&node=admin-flora--different-papers-keep-both-undo-ruling)
 
-Code snapshot: 25 November 2026, `589664a`.
+Code snapshot: 25 November 2026, `9cc088d`.
 
 ## What goes in
 
@@ -24,5 +24,5 @@ Code snapshot: 25 November 2026, `589664a`.
 
 ## Find it in the code
 
-- [docs/app.js:14780 — undoFloraDedup](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/docs/app.js#L14780) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/docs/app.js)
-- [flora_service.py:911 — undo_preprint_decision](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/flora_service.py#L911) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/flora_service.py)
+- [docs/app.js:14780 — undoFloraDedup](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/docs/app.js#L14780) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/docs/app.js)
+- [flora_service.py:911 — undo_preprint_decision](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/flora_service.py#L911) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/flora_service.py)

@@ -4,7 +4,7 @@ Published Google Sheets are another input route. Their accepted rows are copied 
 
 [Open interactive guide](../index.html#view=overview&node=input-sheets)
 
-Code snapshot: 25 November 2026, `589664a`.
+Code snapshot: 25 November 2026, `9cc088d`.
 
 ## What goes in
 
@@ -44,10 +44,10 @@ Code snapshot: 25 November 2026, `589664a`.
 
 ## Find it in the code
 
-- [sources.yml:34 — accepted_values and source registry](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/sources.yml#L34) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/sources.yml)
-- [sync_sources.py:536 — sync_source](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/sync_sources.py#L536) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/sync_sources.py)
-- [sync_sources.py:725 — run](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/sync_sources.py#L725) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/sync_sources.py)
-- [sync_sources.py:475 — _drift_check](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/sync_sources.py#L475) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/sync_sources.py)
-- [sheet_drift.py:219 — compare_source](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/sheet_drift.py#L219) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/sheet_drift.py)
-- [source_records_service.py:63 — RECORD_FIELDS](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/source_records_service.py#L63) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/source_records_service.py)
-- [.github/workflows/sync-sources.yml:3 — schedule](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/.github/workflows/sync-sources.yml#L3) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/.github/workflows/sync-sources.yml)
+- [sources.yml:34 — accepted_values and source registry](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/sources.yml#L34) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/sources.yml)
+- [sync_sources.py:534 — sync_source](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/sync_sources.py#L534) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/sync_sources.py)
+- [sync_sources.py:723 — run](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/sync_sources.py#L723) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/sync_sources.py)
+- [sync_sources.py:473 — _drift_check](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/sync_sources.py#L473) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/sync_sources.py)
+- [sheet_drift.py:219 — compare_source](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/sheet_drift.py#L219) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/sheet_drift.py)
+- [source_records_service.py:63 — RECORD_FIELDS](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/source_records_service.py#L63) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/source_records_service.py)
+- [.github/workflows/sync-sources.yml:3 — schedule](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/.github/workflows/sync-sources.yml#L3) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/.github/workflows/sync-sources.yml)

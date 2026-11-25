@@ -4,7 +4,7 @@ Marks the source row deleted, preserves history and returns the disagreement to 
 
 [Open interactive guide](../index.html#view=admin&node=admin-disagreements--withdraw-from-flora)
 
-Code snapshot: 25 November 2026, `589664a`.
+Code snapshot: 25 November 2026, `9cc088d`.
 
 ## What goes in
 
@@ -24,4 +24,4 @@ Code snapshot: 25 November 2026, `589664a`.
 
 ## Find it in the code
 
-- [adjudication/review.py:567 — withdraw](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/adjudication/review.py#L567) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/adjudication/review.py)
+- [adjudication/review.py:568 — withdraw](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/adjudication/review.py#L568) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/adjudication/review.py)

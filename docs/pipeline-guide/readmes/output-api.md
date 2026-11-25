@@ -4,7 +4,7 @@ Public clients search and look up the stored FLoRA dataset. Requests read Postgr
 
 [Open interactive guide](../index.html#view=overview&node=output-api)
 
-Code snapshot: 25 November 2026, `589664a`.
+Code snapshot: 25 November 2026, `9cc088d`.
 
 ## What goes in
 
@@ -38,7 +38,7 @@ Code snapshot: 25 November 2026, `589664a`.
 
 ## Find it in the code
 
-- [flora_public_api.py:40 — readonly_database](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/flora_public_api.py#L40) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/flora_public_api.py)
-- [flora_public_api.py:66 — DatasetCache](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/flora_public_api.py#L66) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/flora_public_api.py)
-- [flora_public_api.py:217 — create_router](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/flora_public_api.py#L217) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/flora_public_api.py)
-- [flora_public_api.py:290 — HTTP cache lifetime](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/flora_public_api.py#L290) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/flora_public_api.py)
+- [flora_public_api.py:40 — readonly_database](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/flora_public_api.py#L40) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/flora_public_api.py)
+- [flora_public_api.py:66 — DatasetCache](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/flora_public_api.py#L66) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/flora_public_api.py)
+- [flora_public_api.py:217 — create_router](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/flora_public_api.py#L217) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/flora_public_api.py)
+- [flora_public_api.py:290 — HTTP cache lifetime](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/flora_public_api.py#L290) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/flora_public_api.py)

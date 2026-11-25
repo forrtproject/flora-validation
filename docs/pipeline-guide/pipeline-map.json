@@ -167,17 +167,17 @@
         },
         {
           "file": "sync_sources.py",
-          "line": 536,
+          "line": 534,
           "symbol": "sync_source"
         },
         {
           "file": "sync_sources.py",
-          "line": 725,
+          "line": 723,
           "symbol": "run"
         },
         {
           "file": "sync_sources.py",
-          "line": 475,
+          "line": 473,
           "symbol": "_drift_check"
         },
         {
@@ -909,7 +909,7 @@
         },
         {
           "file": "export_validated.py",
-          "line": 240,
+          "line": 236,
           "symbol": "validated CSV write"
         },
         {

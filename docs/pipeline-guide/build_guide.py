@@ -12,7 +12,7 @@ import textwrap
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 REPO = "https://github.com/forrtproject/flora-validation"
-COMMIT = "589664adc46254093eab9ede2c5c76c893eb19e9"
+COMMIT = "9cc088db7f6736bc30bd37be748a15e995fbd230"
 DATE = "25 November 2026"
 
 

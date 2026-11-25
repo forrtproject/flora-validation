@@ -4,7 +4,7 @@ A different daily workflow exports only the application's approved validation re
 
 [Open interactive guide](../index.html#view=overview&node=output-validated-export)
 
-Code snapshot: 25 November 2026, `589664a`.
+Code snapshot: 25 November 2026, `9cc088d`.
 
 ## What goes in
 
@@ -35,6 +35,6 @@ Code snapshot: 25 November 2026, `589664a`.
 
 ## Find it in the code
 
-- [export_validated.py:1 — validated export script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/export_validated.py#L1) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/export_validated.py)
-- [export_validated.py:240 — validated CSV write](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/export_validated.py#L240) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/export_validated.py)
-- [.github/workflows/daily-export.yml:3 — schedule and export steps](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/.github/workflows/daily-export.yml#L3) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/.github/workflows/daily-export.yml)
+- [export_validated.py:1 — validated export script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/export_validated.py#L1) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/export_validated.py)
+- [export_validated.py:236 — validated CSV write](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/export_validated.py#L236) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/export_validated.py)
+- [.github/workflows/daily-export.yml:3 — schedule and export steps](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/.github/workflows/daily-export.yml#L3) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/.github/workflows/daily-export.yml)
