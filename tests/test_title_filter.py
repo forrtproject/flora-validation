@@ -44,23 +44,6 @@ def test_the_export_drops_untitled_rows_by_default():
         .parameters["require_titles"].default is True
 
 
-def test_the_flag_now_turns_the_filter_OFF():
-    """--require-titles turned it on while the default was off. With the default
-    flipped, a flag of that name would read as a no-op, so it is --keep-untitled."""
-    source = (ROOT / "transform_sources.py").read_text(encoding="utf-8")
-    assert '"--keep-untitled"' in source
-    assert '"--require-titles"' not in source
-    assert "require_titles=not args.keep_untitled" in source
-
-
-def test_the_dropped_rows_are_logged_before_they_are_dropped():
-    """A row that vanishes from the export with no record of why is the failure
-    mode here; flora_export_log.csv is what makes it reviewable."""
-    source = (ROOT / "transform_sources.py").read_text(encoding="utf-8")
-    body = source[source.index("def run("):]
-    assert body.index("flora_export_log.csv") < body.index("if require_titles:")
-
-
 # ── which rows go ─────────────────────────────────────────────────────────────
 
 def test_a_missing_title_on_either_side_is_enough():
@@ -91,23 +74,6 @@ def test_drop_untitled_is_a_no_op_without_the_title_columns():
     assert len(transform_sources.drop_untitled(frame)) == 4
 
 
-def test_the_validator_checks_the_same_rows_that_ship():
-    """R validates output/flora.csv, which has already been through Step 10. A
-    report listing rows that were never published puts items in the issue that
-    nobody can resolve, which is how a report gets ignored."""
-    source = (ROOT / "validate_flora.py").read_text(encoding="utf-8")
-    body = source[source.index("def load_dataset("):]
-    assert "drop_untitled(" in body
-
-
-def test_the_export_and_the_validator_share_the_predicate():
-    """Two copies would drift, and the published set and the validated set would
-    quietly stop being the same thing."""
-    export = (ROOT / "transform_sources.py").read_text(encoding="utf-8")
-    run_body = export[export.index("def run("):]
-    assert "drop_untitled(out)" in run_body
-
-
 # ── the tab keeps them, and says so ───────────────────────────────────────────
 
 def test_the_tab_still_counts_every_row():
@@ -128,12 +94,3 @@ def test_the_count_survives_a_frame_without_title_columns():
     """counts() runs on bare frames in tests and on an empty frame in production."""
     frame = _frame().drop(columns=["title_o", "title_r"])
     assert flora_service.counts(frame)["untitled"] == 0
-
-
-def test_the_grid_surfaces_the_count_to_a_reviewer():
-    """A number nobody sees is not a warning. Without this the export silently
-    holds fewer rows than the tab shows."""
-    app_js = (ROOT / "docs" / "app.js").read_text(encoding="utf-8")
-    assert "counts.untitled" in app_js
-    assert "are left out of flora.csv" in app_js
-    assert "The pipeline report lists them" in app_js

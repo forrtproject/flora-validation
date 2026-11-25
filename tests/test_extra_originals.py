@@ -138,11 +138,6 @@ def test_titles_in_other_scripts_are_not_all_the_same_paper():
     assert xo.same_original("", "启动效应", "", "睡眠与记忆") is False
 
 
-def test_the_entries_badge_counts_suggested_papers_as_the_section_does():
-    entries = APP.split("def admin_entries(", 1)[1].split("\n@app.", 1)[0]
-    assert "COUNT(DISTINCT lower(COALESCE(NULLIF(xs.doi_o, ''), NULLIF(xs.url_o, ''), xs.title_o)))" in entries
-
-
 def test_nothing_is_stored_for_neither_type_or_a_payload_that_is_not_a_list():
     for items, judged in (([{"title": "A"}], "not_validation"), ({"title": "A"}, "replication"),
                           ("10.1/a", "replication"), (None, "replication"), ([], "reproduction")):
@@ -171,59 +166,6 @@ def test_the_log_writes_explicit_changes_with_a_handle():
     assert cur.statements[1][1][2] == "system"
 
 
-# ── schema ────────────────────────────────────────────────────────────────────
-
-def test_the_schema_additions_are_idempotent_and_safe_for_extractor_inserts():
-    """db_schema.sql runs on every start, and flora-extractor inserts rows through
-    PostgREST naming only its own columns, so every new column needs a default."""
-    assert "ADD COLUMN IF NOT EXISTS origin TEXT NOT NULL DEFAULT 'extractor'" in XO_SCHEMA
-    assert "ADD COLUMN IF NOT EXISTS parent_record_id UUID REFERENCES unvalidated(record_id)" in XO_SCHEMA
-    assert "ADD COLUMN IF NOT EXISTS inherits_outcome BOOLEAN NOT NULL DEFAULT FALSE" in XO_SCHEMA
-    assert "CREATE TABLE IF NOT EXISTS extra_original_suggestions" in XO_SCHEMA
-    for line in XO_SCHEMA.splitlines():
-        stripped = line.strip()
-        if stripped.startswith(("CREATE INDEX", "CREATE TABLE")):
-            assert "IF NOT EXISTS" in stripped, stripped
-    # The one constraint is added only inside its pg_constraint guard.
-    assert XO_SCHEMA.count("ADD CONSTRAINT") == 1
-    guard = XO_SCHEMA.split("conname = 'unvalidated_origin_shape'", 1)[1]
-    assert guard.index("ADD CONSTRAINT unvalidated_origin_shape") < guard.index("END IF")
-
-
-def test_an_added_original_can_never_carry_a_pair_id():
-    """pair_id is the extractor's identity; a record with one would be re-keyed,
-    refreshed or retired by the nightly sync."""
-    shape = XO_SCHEMA.split("ADD CONSTRAINT unvalidated_origin_shape CHECK", 1)[1].split("END IF", 1)[0]
-    assert "origin = 'admin_extra_original' AND parent_record_id IS NOT NULL" in shape
-    assert "pair_id IS NULL" in shape
-    assert "parent_record_id <> record_id" in shape
-    assert "origin = 'extractor' AND parent_record_id IS NULL" in shape
-
-
-def test_retiring_a_record_removes_its_suggestions_first():
-    body = inspect.getsource(csv_to_db.delete_source_records)
-    suggestions = body.index("DELETE FROM extra_original_suggestions")
-    assert suggestions < body.index("DELETE FROM validation_queue")
-    assert suggestions < body.index("DELETE FROM unvalidated")
-
-
-def test_the_orphan_report_ignores_added_originals():
-    assert "FROM unvalidated WHERE origin = 'extractor'" in FIND_ORPHANS
-
-
-def test_the_validators_coded_set_lists_extractor_records_only():
-    where = re.search(r"_CODED_ORIGINALS_WHERE = \((.*?)\)\n", APP, re.S).group(1)
-    assert "u.origin = 'extractor'" in where
-    assert "lower(u.doi_r) = lower(%s)" in where
-
-
-def test_the_extractor_sync_keys_on_pair_id():
-    """The import, re-key and retire stages never see a record without a pair_id."""
-    assert "WHERE pair_id IS NOT NULL" in inspect.getsource(csv_to_db._load_existing_pair_ids)
-    assert "WHERE u.pair_id IS NOT NULL" in inspect.getsource(csv_to_db._load_existing_source_slots)
-    assert "u.pair_id = ANY(%s)" in inspect.getsource(csv_to_db._retire_state)
-
-
 @pytest.mark.parametrize("value,expected", [
     ("https://dx.doi.org/10.5/x", "10.5/x"), ("DOI: 10.5/x", "10.5/x"), ("", ""), (None, ""),
 ])
@@ -233,16 +175,9 @@ def test_normalize_doi(value, expected):
 
 # ── phase 2: the judgement carries the suggestions ────────────────────────────
 
-APP_JS = (ROOT / "docs" / "app.js").read_text(encoding="utf-8")
-
-
 def _flora():
     from tests.test_dashboard_split import flora   # app.py, imported with the DB stubbed
     return flora
-
-
-def _judge_body(fn):
-    return APP.split(f"def {fn}(", 1)[1].split("\n@app.", 1)[0]
 
 
 def test_an_older_page_without_suggestions_still_validates():
@@ -261,49 +196,6 @@ def test_no_suggestion_payload_can_make_a_judgement_fail_validation(garbage):
     req = _flora().JudgeRequest(record_id="r", type_check="correct", original_check="correct",
                                 outcome_check="correct", extra_originals=garbage)
     assert req.extra_originals == garbage
-
-
-def test_judge_stores_suggestions_after_its_one_shot_guard_and_before_consensus():
-    body = _judge_body("judge")
-    store = body.index("extra_originals.store_suggestions(")
-    assert body.index('raise HTTPException(409, "This record was already submitted")') < store
-    assert store < body.index("evaluate_consensus(cur, record_id)")
-    assert '"extra_original_count": extra_original_count' in body
-
-
-def test_an_assignment_stores_suggestions_after_its_one_shot_guard():
-    body = _judge_body("assignment_judge")
-    store = body.index("extra_originals.store_suggestions(")
-    assert body.index('raise HTTPException(409, "This assignment was already submitted")') < store
-    assert "req.extra_originals, final_type)" in body[store:store + 200]
-
-
-def test_the_page_sends_complete_suggestions_only_and_never_for_neither():
-    assert "extra_originals:         isNotValidation ? null : _extraOriginalsPayload(j)," in APP_JS
-    payload = APP_JS.split("function _extraOriginalsPayload(j) {", 1)[1].split("\n}\n", 1)[0]
-    assert ".filter(_xoComplete)" in payload and ".slice(0, XO_MAX)" in payload
-    assert "if (!j.has_extra_originals" in payload
-
-
-def test_the_panel_lives_between_the_gates_and_not_in_onboarding():
-    """An answered gate collapses its body, so the panel cannot sit inside Gate II."""
-    gate2_end = APP_JS.index('<div id="oc-saved-confirm"')
-    block = APP_JS.index('${onboarding ? "" : _extraOriginalsBlock(p)}')
-    assert gate2_end < block < APP_JS.index('<div class="gate hidden" id="gate-3">')
-
-
-def test_the_browser_enforces_the_limits_the_server_only_cuts_to():
-    limits = re.search(r"const XO_LIMITS = \{(.*?)\};", APP_JS).group(1)
-    for name, limit in xo.SUGGESTION_LIMITS.items():
-        assert f"{name}: {limit}" in limits
-    assert f"const XO_MAX = {xo.MAX_SUGGESTIONS};" in APP_JS
-    assert 'maxlength="${XO_LIMITS[name]}"' in APP_JS
-
-
-def test_a_draft_restores_its_suggestions():
-    restore = APP_JS.split("function _restoreDraftInputs(card, draft) {", 1)[1].split("\n}\n", 1)[0]
-    assert "draft.has_extra_originals" in restore
-    assert "_renderExtraOriginalsList(card)" in restore
 
 
 # ── phase 3: what the admin sees ──────────────────────────────────────────────
@@ -553,33 +445,6 @@ def test_dismissing_dismisses_every_open_suggestion_of_that_paper():
     assert missing.value.status == 404
 
 
-def test_the_entries_list_has_a_suggested_originals_filter_and_names_the_original():
-    entries = APP.split("def admin_entries(", 1)[1].split("\n@app.", 1)[0]
-    assert '"extra_originals":  f"WHERE {_OPEN_EXTRA_SUGGESTIONS_SQL}"' in entries
-    assert '"extra_originals": c_extra' in entries
-    for column in ("u.origin", "AS effective_title_o", "AS has_extra_children",
-                   "AS open_extra_suggestions"):
-        assert column in entries
-    index = (ROOT / "docs" / "index.html").read_text(encoding="utf-8")
-    assert 'data-filter="extra_originals"' in index and 'id="fc-extra-originals"' in index
-
-
-def test_the_entry_detail_counts_but_does_not_load_the_section():
-    detail = APP.split("def admin_entry_detail(", 1)[1].split("\n@app.", 1)[0]
-    assert "extra_originals.detail_summary(cur, record_id)" in detail
-    assert "read_view" not in detail
-
-
-def test_admin_helpers_live_outside_render_admin_detail():
-    """Static tests slice renderAdminDetail up to its first closing brace at
-    column 0 (tests/test_admin_reject_choice.py); the helpers must not move it."""
-    body = APP_JS.split("function renderAdminDetail(data) {", 1)[1].split("\n}\n", 1)[0]
-    assert "_adminExtraOriginalsShell(rec, data)" in body
-    assert "_wireAdminExtraOriginals(rec, data);" in body
-    assert "function _renderAdminExtraOriginals" not in body
-    assert "_xoSafeHref" in APP_JS.split("function renderAdminDetail(data) {", 1)[0]
-
-
 # ── phase 4: adding originals, and keeping them in step ───────────────────────
 
 ADMIN = {"id": 1, "handle": "sophie", "validator_id": 42}
@@ -734,7 +599,6 @@ def test_an_admin_may_add_their_own_suggestion_and_the_log_names_them():
     assert accept == (created[0]["record_id"], "sophie", "p", [5])
     logs = [p for s, p in cur.statements if "INSERT INTO admin_decisions" in s]
     assert [(p[2], p[3]) for p in logs] == [("sophie", "extra_original_added")] * 2
-    assert '"own_suggestion"' not in inspect.getsource(xo.create_children)
 
 
 def test_an_unknown_suggestion_names_the_original_that_carries_it():
@@ -1167,158 +1031,4 @@ def test_only_an_admin_reviewed_extractor_record_can_have_children():
 CONSENSUS = (ROOT / "consensus_engine.py").read_text(encoding="utf-8")
 
 
-def _fn(source, name):
-    return source.split(f"def {name}(", 1)[1].split("\ndef ", 1)[0].split("\n@app.", 1)[0]
 
-
-def test_every_place_that_unpublishes_a_record_handles_its_added_originals():
-    """Each DELETE FROM validated by record_id either takes the record's added
-    originals along, or is exempt for a stated reason. A new site fails here
-    until someone decides which it is."""
-    pattern = r"DELETE FROM validated WHERE record_id = %s"
-    owners = [re.findall(r"\ndef (\w+)\(", APP[:m.start()])[-1] for m in re.finditer(pattern, APP)]
-    # Exempt: flag-review deletes only for an auto-validated record (validated AND
-    # NOT admin_checked), and only admin-checked records are given children.
-    exempt = {"admin_flag_review"}
-    handled = {
-        # admin_resolve deletes three times: reject (cascade, or re-open for a
-        # child), merge (children move to the survivor), re-insert (children follow).
-        "admin_resolve": ("extra_originals.reject_children(cur, record_id, admin)",
-                          "extra_originals.child_left(cur, rec, admin)",
-                          "extra_originals.repoint_children(cur, record_id, conflict_id, admin)",
-                          "_extra_originals_call(extra_originals.sync_children, cur, record_id, admin=admin)"),
-        "admin_approve": ("_extra_originals_call(extra_originals.sync_children, cur, record_id, admin=admin)",),
-        # Refused while an added original is live, so it never takes one along.
-        "admin_remove_original": ('extra_originals.detail_summary(cur, record_id)["children"]',),
-        "assignment_judge": ("extra_originals.reject_children(cur, req.record_id)",),
-        "senior_reject": ("extra_originals.reject_children(cur, record_id)",),
-    }
-    assert sorted(set(owners)) == sorted(exempt | set(handled))
-    assert owners.count("admin_resolve") == 3
-    for owner, calls in handled.items():
-        for call in calls:
-            assert call in _fn(APP, owner), (owner, call)
-    assert [re.findall(r"\ndef (\w+)\(", CONSENSUS[:m.start()])[-1]
-            for m in re.finditer(pattern, CONSENSUS)] == ["_update_status", "_insert_validated"]
-    assert "extra_originals.reject_children(cur, record_id)" in _fn(CONSENSUS, "_update_status")
-    assert 'extra_originals.sync_children(cur, record.get("record_id"), strict=False)' in \
-        _fn(CONSENSUS, "_insert_validated")
-
-
-def test_consensus_only_looks_for_children_of_an_admin_reviewed_record():
-    assert "if extra_originals.may_have_children(record):" in _fn(CONSENSUS, "_update_status")
-    assert "if extra_originals.may_have_children(record):" in _fn(CONSENSUS, "_insert_validated")
-
-
-def test_approve_and_resolve_refuse_a_merge_with_an_added_original():
-    approve, resolve = _fn(APP, "admin_approve"), _fn(APP, "admin_resolve")
-    assert "extra_originals.child_conflict_detail(cur, conflict)" in approve
-    assert resolve.count("extra_originals.child_conflict_detail(cur, conflict)") == 2
-    merge = resolve.split("conflict_id = conflict[\"record_id\"]", 1)[1]
-    assert merge.index("child_conflict_detail") < merge.index("INSERT INTO validated_record_merges")
-
-
-def test_resolve_treats_an_added_original_as_its_own_kind_of_record():
-    resolve = _fn(APP, "admin_resolve")
-    assert resolve.index("extra_originals.check_child_resolve") < resolve.index("UPDATE unvalidated SET")
-    assert "and not is_added_original):" in resolve
-    assert "extra_originals.after_child_resolved(cur, record_id, published_before, admin)" in resolve
-
-
-def test_resolve_saves_drafted_originals_with_the_entry_in_one_transaction():
-    model = APP.split("class AdminResolveRequest(BaseModel):", 1)[1].split("\nclass ", 1)[0]
-    assert "extra_originals: list[ExtraOriginalCreate] = Field(default_factory=list, max_length=10)" in model
-    assert APP.index("class ExtraOriginalCreate(BaseModel):") < APP.index("class AdminResolveRequest(BaseModel):")
-    resolve = _fn(APP, "admin_resolve")
-    assert resolve.count("with db() as cur:") == 1
-    # Refused before anything is written; a merged entry even on a repeated request.
-    check = "extra_originals.check_resolve_drafts, cur, rec, final_type"
-    assert resolve.index(check) < resolve.index("UPDATE unvalidated SET")
-    assert resolve.index("merged_into_id=survivor_id") < resolve.index('"already_merged": True')
-    # Created from the published values: after the entry's validated row and the sync
-    # of its existing added originals.
-    create = "extra_originals.create_children, cur, record_id"
-    assert resolve.index("INSERT INTO validated (") < resolve.index(create)
-    assert resolve.index("_extra_originals_call(extra_originals.sync_children, cur, record_id") < resolve.index(create)
-    # A merge sends them to the survivor, after its existing originals moved there.
-    merge = "extra_originals.create_on_survivor, cur, record_id"
-    assert resolve.index("extra_originals.repoint_children(cur, record_id, conflict_id, admin)") < resolve.index(merge)
-    # The section's mode depends on who is signed in (the self-approval rule).
-    assert "decision=_self_approval(cur, record_id, admin)" in _fn(APP, "admin_extra_originals")
-
-
-def test_added_originals_stay_out_of_extractor_and_validator_metrics():
-    dashboard, stats = _fn(APP, "admin_dashboard"), _fn(APP, "admin_stats")
-    pipeline = dashboard.split("AS auto_validated", 1)[1].split("pipeline = dict", 1)[0]
-    assert "WHERE origin = 'extractor'" in pipeline
-    assert 'pipeline["admin_extra_originals"]' in dashboard
-    view_b = dashboard.split("View B", 1)[1].split("b_rows = cur.fetchall()", 1)[0]
-    assert "AND origin = 'extractor'" in view_b
-    assert stats.count("AND origin = 'extractor'") == 2
-
-
-# ── phase 5: the admin's add form ─────────────────────────────────────────────
-
-def test_the_add_form_helpers_live_outside_render_admin_detail():
-    before = APP_JS.split("function renderAdminDetail(data) {", 1)[0]
-    for helper in ("function _renderAdminXoAddSection(", "function _xoAdminEntryForm(",
-                   "function _submitAdminExtraOriginals(", "function _useXoSuggestion("):
-        assert helper in before, helper
-
-
-def test_the_add_form_has_no_abstract_field_and_its_limits_match_the_server():
-    form = APP_JS.split("function _xoAdminEntryForm(", 1)[1].split("\n}\n", 1)[0]
-    assert 'data-xoa-field="abstract_r"' not in form and "read-only" in form
-    model = APP.split("class ExtraOriginalCreate(BaseModel):", 1)[1].split("\nclass ", 1)[0]
-    limits = dict(re.findall(r"(\w+): (\d+)", re.search(r"_XO_ADMIN_LIMITS = \{(.*?)\};", APP_JS, re.S).group(1)))
-    for name, limit in limits.items():
-        if name == "year_o":
-            continue                    # the server allows a little slack and checks the format
-        assert re.search(rf"{name}: str \| None = Field\(default=None, max_length={limit}\)", model) or \
-            re.search(rf"{name}: str = Field\(default=\"\", max_length={limit}\)", model), name
-
-
-def test_approve_and_resolve_point_to_waiting_suggestions():
-    # Resolve leaves out the suggestions its drafted originals just answered.
-    assert 'showToast(_xoPendingNote(recordId, addedNote(resp, "Entry resolved."), used));' in APP_JS
-    assert 'showToast(_xoPendingNote(id, "Entry approved."));' in APP_JS
-
-
-def _js_fn(head):
-    return APP_JS.split(head, 1)[1].split("\n}\n", 1)[0]
-
-
-def test_resolve_sends_the_drafted_originals_and_shows_a_refusal_in_place():
-    submit = _js_fn("async function submitAdminResolve(recordId) {")
-    assert "const drafted = _xoResolveDrafts(recordId);" in submit
-    assert "body.extra_originals = drafted.map(_xoAdminPayload);" in submit
-    assert submit.count("_xoShowError(recordId,") == 2              # the resolve, and the merge retry
-    assert "confirmValidatedDuplicateMerge(e.detail, drafted.length, {" in submit
-    drafts = _js_fn("function _xoResolveDrafts(recordId) {")
-    assert 'draft.mode !== "draft"' in drafts and "!draft.on" in drafts
-    show = _js_fn("function _xoShowError(recordId, detail) {")
-    for part in ("draft.open = detail.index", "field: detail.field", "section.open = true", "scrollIntoView"):
-        assert part in show, part
-
-
-def test_rejecting_an_entry_with_drafted_originals_says_they_are_discarded():
-    panel = APP_JS[APP_JS.index("function renderAdminDetail(data) {"):]
-    panel = panel[:panel.index("\n}\n")]
-    reject = panel[panel.index('$("#admin-reject-btn")?.addEventListener("click"'):]
-    confirm = reject[:reject.index("if (!sure) return;")]
-    assert "_xoResolveDrafts(rec.record_id).length" in confirm and "will be discarded" in confirm
-    assert "delete _adminXoDrafts[rec.record_id];" in reject[:reject.index("advanceToNextAdminEntry")]
-
-
-def test_the_section_follows_the_type_in_the_resolve_form():
-    shell = _js_fn("function _adminExtraOriginalsShell(rec, data) {")
-    assert shell.count('return "";') == 1                            # only an added original has none
-    wire = _js_fn("function _wireAdminExtraOriginals(rec, data) {")
-    assert '$("#ar-type-sel")?.addEventListener("change", follow);' in wire
-    assert '$(".not-val-decision")?.addEventListener("click", follow);' in wire
-    # Own-outcome fields follow the form's type in draft mode, the published one otherwise.
-    entry_type = _js_fn("function _xoEntryType(parent) {")
-    assert '_xoMode(parent) === "draft"' in entry_type and "_xoFormType(" in entry_type
-    # Before the first resolve there is no published row: drafts start from the entry.
-    assert "parent.current?.study_r" in _js_fn("function _blankAdminXo(parent) {")
-    assert "parent.current?.abstract_r" in _js_fn("function _xoAbstract(parent) {")

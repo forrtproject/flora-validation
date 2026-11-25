@@ -12,22 +12,7 @@ import final_export
 import flora_registry
 import prepare_flora
 import transform_sources
-from tests.pg_fixtures import add_source, local_database  # noqa: F401
-
-
-def add_unregistered_source(connection, *, reference=False):
-    with final_export.REFERENCE.open(encoding="utf-8-sig", newline="") as handle:
-        row = next(csv.DictReader(handle))
-    if not reference:
-        row = dict(row, doi_o="10.9999/standalone-original", doi_r="10.9999/standalone-repeat")
-    with connection:
-        with connection.cursor(cursor_factory=RealDictCursor) as cur:
-            source_id = add_source(cur, row, "REPL-700001")
-            for side, title in [("o", "An original study"), ("r", "A replication study")]:
-                cur.execute("""INSERT INTO work_metadata (doi, title, authors, year)
-                               VALUES (%s, %s, 'Smith, A.', '2020')""",
-                            (row[f"doi_{side}"], title))
-    return source_id
+from tests.pg_fixtures import add_source, add_unregistered_source, local_database  # noqa: F401
 
 
 @pytest.mark.parametrize("reference,expected_id", [(False, "REPL-700001"), (True, "FLORA-000001")])

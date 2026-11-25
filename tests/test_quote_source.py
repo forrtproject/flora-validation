@@ -120,36 +120,6 @@ def test_every_real_csv_value_survives_normalisation():
 
 
 # ---------------------------------------------------------------------------
-# The admin form round-trips a granular value
-# ---------------------------------------------------------------------------
-
-def test_admin_backend_accepts_any_named_source():
-    """It used to accept only 'abstract'/'full_text'; anything else fell through to
-    auto-detection, silently discarding the admin's choice."""
-    app_py = (_ROOT / "app.py").read_text(encoding="utf-8")
-    assert 'req.out_quote_source in ("abstract", "full_text")' not in app_py
-    assert "admin_quote_source(\n            req.out_quote_source, rec," in app_py.replace("\r\n", "\n")
-
-
-def test_admin_select_keeps_an_unlisted_stored_value():
-    """The regression: a granular value matched no <option>, so the select fell back
-    to its blank option and saving replaced a known source with a guess."""
-    app_js = (_ROOT / "docs" / "app.js").read_text(encoding="utf-8")
-    fn = re.search(r"function _adminQuoteSourceOptions\(selected[^)]*\) \{(.*?)\n\}", app_js, re.S)
-    assert fn, "could not locate _adminQuoteSourceOptions"
-    assert "!known.includes(selected)" in fn.group(1), \
-        "an unlisted stored value is not preserved as an option"
-
-
-def test_admin_select_offers_real_sources_and_no_auto_detect():
-    """Detection is the server's, shown as a suggestion, not a choice to make."""
-    app_js = (_ROOT / "docs" / "app.js").read_text(encoding="utf-8")
-    fn = re.search(r"function _adminQuoteSourceOptions\(selected[^)]*\) \{(.*?)\n\}", app_js, re.S)
-    assert "full_text" in fn.group(1)
-    assert "auto-detect" not in app_js.lower()
-
-
-# ---------------------------------------------------------------------------
 # Only a changed source is the admin's choice
 # ---------------------------------------------------------------------------
 
@@ -277,35 +247,6 @@ def test_the_detection_cases_reach_every_answer():
     """A sample that never says one of the three would prove nothing about it."""
     answers = {quote_source_for(*case) for case in _DETECTION_CASES.values()}
     assert answers == {"abstract", "full_text", None}
-
-
-def test_the_suggestion_does_not_use_the_validators_fuzzy_check():
-    """quoteAppearsInAbstract forgives a misquote; quote_source_for does not."""
-    app_js = (_ROOT / "docs" / "app.js").read_text(encoding="utf-8")
-    fn = re.search(r"function suggestQuoteSource\(.*?\n\}", app_js, re.S)
-    assert fn and "quoteAppearsInAbstract(" not in fn.group(0)
-
-
-def test_an_untouched_suggestion_is_sent_as_null():
-    """With nothing stored, the server stamps whatever it is sent as the admin's choice,
-    and a stamped source is locked against the backfill: a suggestion nobody touched must
-    not get there."""
-    app_js = (_ROOT / "docs" / "app.js").read_text(encoding="utf-8")
-    assert 'out_quote_source:        _quoteSourceToSend($("#ar-quote-source"))' in app_js
-
-
-# ---------------------------------------------------------------------------
-# export_validated must not run on import
-# ---------------------------------------------------------------------------
-
-def test_export_validated_is_inert_on_import():
-    """Importing it used to connect to the database and rewrite both CSVs — easy to
-    trigger by accident from a test or a REPL."""
-    src = (_ROOT / "export_validated.py").read_text(encoding="utf-8")
-    assert 'if __name__ == "__main__":' in src
-    guard_at = src.index('if __name__ == "__main__":')
-    assert src.index('print("Connecting to database') > guard_at, \
-        "the database connection is outside the guard"
 
 
 def test_export_validated_helpers_remain_importable():

@@ -20,7 +20,7 @@ from shared.doi import (
     normalize_bare_doi,
     normalize_doi_key,
 )
-from tests.test_flora_store import local_database  # noqa: F401  (re-export opt-in PG fixture)
+from tests.pg_fixtures import local_database  # noqa: F401  (re-export opt-in PG fixture)
 
 
 @pytest.mark.parametrize(

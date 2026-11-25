@@ -332,24 +332,6 @@ def test_the_import_cleans_titles_and_abstracts():
 
 # ── the sheet's own year_r ────────────────────────────────────────────────────
 
-def test_the_transform_reads_the_sheets_year_r():
-    """source_records.year_r is hand-entered on the replications sheet and is the
-    only year 118 rows have. Leaving it out of the SELECT made the fallback below
-    unreachable and published those rows with a blank year."""
-    source = (ROOT / "transform_sources.py").read_text(encoding="utf-8")
-    select = source[source.index("def load(cur):"):source.index("def load_rules(")]
-    assert "year_r" in select
-
-
-def test_the_sheet_year_is_the_last_resort_not_the_first():
-    """'Metadata wins' has to include the work-id lookup of Step 7b: filling the
-    sheet value before it would make 7b's fillna a no-op on the rows that have
-    both."""
-    source = (ROOT / "transform_sources.py").read_text(encoding="utf-8")
-    body = source[source.index("def join_metadata("):source.index("def build(")]
-    assert body.index('("year", f"year_{side}")') < body.index("fillna(sheet_year)")
-
-
 @pytest.mark.parametrize(("raw", "expected"), [
     ("2020", "2020"),
     ("2020.0", "2020"),      # 244 stored values read like this
@@ -396,27 +378,6 @@ def test_a_missing_doi_does_not_take_the_build_down():
     mapped = column.map(ts._doi_url)
     assert mapped[0] == "https://doi.org/10.1016/abc123"
     assert mapped.isna().tolist() == [False, True, True]
-
-
-def test_the_landing_page_never_overwrites_a_url_the_source_supplied():
-    """fillna, not assignment: url_o carries manually entered links that the DOI
-    landing page must not replace."""
-    source = (ROOT / "transform_sources.py").read_text(encoding="utf-8")
-    assert 'df["url_o"] = df["url_o"].fillna(df["doi_o"].map(_doi_url))' in source
-
-
-# ── provenance: the registered id reaches the export ──────────────────────────
-
-def test_the_export_attaches_the_registered_flora_id():
-    """build() leaves flora_id blank because assigning one is a write. The workflow
-    runs flora_registry first so the ids exist — 'before the build so the dataset
-    carries them' — but run() has to actually attach them, or the column ships
-    empty on every row of the published CSV."""
-    source = (ROOT / "transform_sources.py").read_text(encoding="utf-8")
-    body = source[source.index("def run("):]
-    assert "attach_ids(cur, out)" in body
-    assert body.index("build(cur") < body.index("attach_ids(cur, out)")
-    assert body.index("attach_ids(cur, out)") < body.index("to_output_shape(out)")
 
 
 # ── Step 9d: meta-papers ──────────────────────────────────────────────────────

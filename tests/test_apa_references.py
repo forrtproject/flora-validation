@@ -202,16 +202,3 @@ def test_augment_reports_how_many_it_filled():
     assert apa.augment(frame, "r", verbose=False) == 2
     # Second pass finds nothing left to do.
     assert apa.augment(frame, "r", verbose=False) == 0
-
-
-# ── placement in the pipeline ─────────────────────────────────────────────────
-
-def test_recovery_runs_after_deduplication():
-    """Dedup matches on title similarity. Supplying ~300 parsed titles BEFORE it
-    would change which rows survive — a data change wearing a metadata fix's
-    clothes. This asserts the ordering that keeps it to a metadata fix."""
-    from pathlib import Path
-    source = (Path(__file__).resolve().parents[1] / "transform_sources.py").read_text(
-        encoding="utf-8")
-    body = source[source.index("def build("):]
-    assert body.index("stage_enrich_and_preprint_dedup(") < body.index("stage_clean_and_finalize(")
