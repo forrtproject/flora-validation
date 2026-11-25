@@ -89,7 +89,7 @@ def prepare_metadata(cur, plans):
     from enrich_works import load_metadata, _store_reference_rows
     metadata = load_metadata(cur)
     targets = {value for p in plans for field, value in p['fields'].items()
-               if field in ('doi_o', 'doi_r')}
+               if field in ('doi_o', 'doi_r') and value}
     for doi in sorted(targets):
         current = metadata.get(doi) or {}
         if current.get('title'):

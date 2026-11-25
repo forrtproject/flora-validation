@@ -665,7 +665,11 @@ def title_problem(title) -> "str | None":
         return None
     if "_" in text and " " not in text:
         return "looks like a file or project name"
-    if _FILE_NAME_WORD_RE.search(text) or _FILE_EXTENSION_RE.search(text):
+    # Underscored words alone can be notation ("x_1_variable"); a component code is
+    # one beside the kind of attempt it names.
+    if _FILE_EXTENSION_RE.search(text) or (
+            _FILE_NAME_WORD_RE.search(text)
+            and re.search(r"\b(?:replication|reproduction)\b", text, re.I)):
         return "looks like a file or project name"
     if preprint_dedup.normalize_title(text) in GENERIC_TITLES:
         return "is a generic name, not a title"

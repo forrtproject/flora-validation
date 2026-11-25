@@ -131,6 +131,7 @@ def test_file_names_are_not_titles(title):
     "[Replication report for “Too arrogant for their own good?”]",
     "SCORE new data replication of Wurst et al. (2017)",
     "The effect of x_1 on y",
+    "Estimating x_1_variable effects",
     "Both better and worse than others depending on difficulty",
 ])
 def test_titles_pass(title):

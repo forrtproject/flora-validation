@@ -187,3 +187,10 @@ def test_openalex_links_listed_as_alternative_identifiers_are_looked_up(monkeypa
                         lambda cur, fields: ["10.1/x, https://openalex.org/W2735016722"]
                         if "alt_identifier_r" in fields else [])
     assert ew.work_ids_in_product(_Cur()) == ["W2735016722"]
+
+
+def test_openalex_links_in_source_alternative_identifiers_are_looked_up():
+    class Cur(_Cur):
+        def fetchall(self):
+            return [{"alt": "10.1/x, https://openalex.org/W96171599"}] if "alt_identifier" in self.sql else []
+    assert ew.work_ids_in_product(Cur()) == ["W96171599"]
