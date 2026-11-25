@@ -33,7 +33,7 @@ def _record(export_id, primary, **extra):
 
 def test_the_committed_rulings_are_valid():
     rows = load_batch("data/corrections/fred_data_179_duplicates.csv")
-    assert len(rows) == 15
+    assert len(rows) == 14
     assert ("FLORA-002632", "FLORA-001168") in {(r["absorbed_id"], r["survivor_id"]) for r in rows}
 
 
