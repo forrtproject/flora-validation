@@ -64,3 +64,9 @@ def test_a_record_combining_several_sources_is_refused(tmp_path):
 def test_malformed_rulings_are_refused(tmp_path, rows):
     with pytest.raises(ValueError):
         load_batch(_write(tmp_path, rows))
+
+
+def test_a_ruling_of_distinct_is_not_overturned(tmp_path):
+    rows = load_batch(_write(tmp_path, [{"absorbed_id": "A", "survivor_id": "B", "note": "Same report."}]))
+    with pytest.raises(ValueError, match="ruled distinct"):
+        plan(_Cur([_record("A", "uuid-a", duplicate_status="distinct"), _record("B", "uuid-b")]), rows)

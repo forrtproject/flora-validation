@@ -42,15 +42,18 @@ def load_batch(path):
     return rows
 
 
-def plan(cur, rows):
-    """Source record ids for each pair, or an error naming what does not resolve."""
+def plan(cur, rows, lock=False):
+    """Source record ids for each pair, or an error naming what does not resolve.
+    With `lock`, both source rows of every pair stay locked until the transaction
+    ends, so no ruling made meanwhile in Source Records is overwritten."""
     cur.execute("""
         SELECT f.export_id, f.primary_source_record_id::text AS primary_id,
                COALESCE(array_length(f.merged_source_record_ids, 1), 0) AS merged,
                f.retired_at, s.duplicate_status, s.duplicate_of::text AS duplicate_of
         FROM flora_records f JOIN source_records s ON s.record_id = f.primary_source_record_id
         WHERE f.export_id = ANY(%s)
-    """, ([r["absorbed_id"] for r in rows] + [r["survivor_id"] for r in rows],))
+    """ + (" FOR UPDATE OF s" if lock else ""),
+                ([r["absorbed_id"] for r in rows] + [r["survivor_id"] for r in rows],))
     found = {r["export_id"]: dict(r) for r in cur.fetchall()}
     plans = []
     for row in rows:
@@ -65,6 +68,8 @@ def plan(cur, rows):
             if absorbed["duplicate_of"] != survivor["primary_id"]:
                 raise ValueError(f"{row['absorbed_id']} is already ruled a duplicate of another record")
             continue
+        if absorbed["duplicate_status"] == "distinct":
+            raise ValueError(f"{row['absorbed_id']} was ruled distinct in Source Records: review that ruling")
         plans.append({**row, "record_id": absorbed["primary_id"], "duplicate_of": survivor["primary_id"]})
     return plans
 
@@ -92,7 +97,7 @@ def main():
     conn = psycopg2.connect(os.environ["DATABASE_URL"], connect_timeout=15)
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            plans = plan(cur, rows)
+            plans = plan(cur, rows, lock=args.apply)
             if args.apply:
                 for item in plans:
                     source_records_service.resolve_duplicate(

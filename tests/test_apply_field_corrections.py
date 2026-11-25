@@ -81,3 +81,20 @@ def test_verify_compares_published_values(monkeypatch):
     verify(None, [{"record_id": "A", "fields": {"doi_r": "10.1/x", "url_r": None}}])
     with pytest.raises(ValueError, match="not published"):
         verify(None, [{"record_id": "A", "fields": {"url_r": "https://example.org"}}])
+
+
+def test_a_save_between_the_reads_is_refused(tmp_path, record, monkeypatch):
+    versions = iter([7, 8, 8])
+    monkeypatch.setattr(flora_edits, "version", lambda cur, export_id: next(versions))
+    rows = _batch(tmp_path, [{"id": "FLORA-1", "field": "doi_r", "value": "10.1/x"}])
+    with pytest.raises(flora_edits.VersionConflict):
+        plan(None, rows)
+
+
+def test_two_appends_to_one_field_both_land(tmp_path, record):
+    rows = _batch(tmp_path, [
+        {"id": "FLORA-1", "field": "alt_identifier_r", "action": "append", "value": "10.2/b"},
+        {"id": "FLORA-1", "field": "alt_identifier_r", "action": "append", "value": "https://openalex.org/W1234567"},
+    ])
+    [item] = plan(None, rows)
+    assert item["fields"]["alt_identifier_r"] == "10.1/a, 10.2/b, https://openalex.org/W1234567"

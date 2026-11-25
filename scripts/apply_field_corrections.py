@@ -43,9 +43,11 @@ def load_batch(path):
         flora_edits.editable_fields("reproduction"))
     seen = set()
     for row in rows:
-        key = (row["id"], row["field"])
-        if not row["id"] or key in seen:
-            raise ValueError(f"Missing id or repeated field: {key}")
+        # A field is set once per record; appends add one identifier each.
+        key = (row["id"], row["field"], row["value"] if row["action"] == "append" else "")
+        if not row["id"] or key in seen or (row["action"] == "set" and any(
+                k[:2] == key[:2] for k in seen)) or (row["id"], row["field"], "") in seen:
+            raise ValueError(f"Missing id, or a field both set and appended or set twice: {key[:2]}")
         seen.add(key)
         if row["action"] not in ACTIONS:
             raise ValueError(f"Unknown action {row['action']!r} for {key}")
@@ -78,13 +80,19 @@ def plan(cur, rows):
         by_record.setdefault(row["id"], []).append(row)
     plans = []
     for record_id, changes in by_record.items():
+        # The version first, then the record, then the version again: a save between
+        # the reads would otherwise pair a newer record with an older version, and
+        # the batch could overwrite that save. flora_edits.save guards it once more.
+        version = flora_edits.version(cur, record_id)
         record = flora_service.get_record(cur, record_id)
         if record is None or not record.get("export_id"):
             raise flora_edits.RecordNotFound(record_id)
-        version = flora_edits.version(cur, record["export_id"])
+        if record["export_id"] != record_id or flora_edits.version(cur, record_id) != version:
+            raise flora_edits.VersionConflict(flora_edits.version(cur, record_id))
         fields, notes = {}, {}
         for change in changes:
-            field, current = change["field"], record.get(change["field"])
+            field = change["field"]
+            current = fields.get(field, record.get(field))   # earlier appends to it included
             if change["action"] == "append":
                 value = append_alt_identifier(current, change["value"])
             else:
@@ -95,7 +103,7 @@ def plan(cur, rows):
             cleaned = flora_edits.clean_value(field, value, record["type"])
             if not _same(field, current, cleaned):
                 fields[field] = cleaned
-                notes[field] = change["note"]
+                notes[field] = " ".join(filter(None, [notes.get(field), change["note"]]))[:flora_edits.NOTE_LIMIT]
         if fields:
             plans.append({"record_id": record["export_id"], "fields": fields,
                           "version": version, "notes": notes})

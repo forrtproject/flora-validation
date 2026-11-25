@@ -40,8 +40,11 @@ def normalise_key(value) -> str:
     if value.startswith("10."):
         value = re.sub(r"\s*digital\s*object\s*identifier.*|\s*get\s*rights\s*and\s*content.*", "", value)
         value = value.split()[0] if value else ""
-        # As transform_sources.clean_doi: "%3c" and "<" spell one DOI.
-        return urllib.parse.unquote(value) if "%" in value else value
+        # As transform_sources.clean_doi: "%3c" and "<" spell one DOI. Decoded once,
+        # never an escaped "%25", and lowercased again for a decoded capital.
+        if "%" in value and "%25" not in value:
+            value = urllib.parse.unquote(value).lower()
+        return value
     value = re.sub(r"^https?://(?:www\.)?|^www\.", "", value)
     if re.fullmatch(r"w\d{5,}", value):
         return value.upper()
@@ -397,12 +400,19 @@ def authorless_reference(ref) -> bool:
 
 
 def add_reference_authors(ref, authors):
-    """`ref` with the author part it lacks, from `authors` (a structured list, its
-    JSON, or "; "-joined names). Unchanged when it has one or no author is known."""
+    """`ref` with the author part it lacks, from `authors`: a structured list or its
+    JSON. Unchanged when it has one, or when the authors are plain text, which
+    cannot say whether "Research and Development Group" is one group or two people."""
     if not authorless_reference(ref):
         return ref
-    names = apa_author_names(authors if isinstance(authors, list) else _parse_authors(authors),
-                             apa7_limit=True)
+    if isinstance(authors, str):
+        try:
+            authors = json.loads(authors) if authors.lstrip().startswith("[") else None
+        except ValueError:
+            authors = None
+    if not isinstance(authors, list) or not all(isinstance(a, dict) for a in authors):
+        return ref
+    names = apa_author_names(authors, apa7_limit=True)
     if not names:
         return ref
     # APA ends the author part with a full stop, unless an initial already does.

@@ -311,12 +311,17 @@ def _mojibake_pattern(alphabet, leads):
     """UTF-8 sequences as `alphabet` mis-decodes them, as a regex alternative.
 
     `leads` lists each allowed lead byte range with the number of continuation bytes
-    it takes, so only a well-formed UTF-8 sequence matches.
+    it takes, so only a well-formed UTF-8 sequence matches. A fourth item, when
+    given, is the lowest first continuation byte the lead may take.
     """
     def chars(lo, hi):
         return "".join(re.escape(alphabet[b]) for b in range(lo, hi + 1))
-    tail = f"[{chars(0x80, 0xBF)}]"
-    return "|".join(f"[{chars(lo, hi)}]{tail}{{{n}}}" for lo, hi, n in leads)
+    parts = []
+    for lo, hi, n, *first in leads:
+        start = first[0] if first else 0x80
+        tail = f"[{chars(start, 0xBF)}]" + (f"[{chars(0x80, 0xBF)}]{{{n - 1}}}" if n > 1 else "")
+        parts.append(f"[{chars(lo, hi)}]{tail}")
+    return "|".join(parts)
 
 
 # UTF-8 text decoded as Windows-1252 ("learnerâ€™s", "KÃ¶bach") and as Mac Roman
@@ -331,9 +336,12 @@ def _mojibake_pattern(alphabet, leads):
 # Roman's "≥" and a six-per-em space, not as Windows-1252's "â•‚" in its middle.
 _CP1252 = _mojibake_alphabet("cp1252")
 _MAC_ROMAN = _mojibake_alphabet("mac_roman")
+# Mac Roman's "¬" (0xC2) is the lead of Latin-1 symbols ("¬±" is ±, "¬∞" is °),
+# common in reported statistics. Greek leads (Î, Ï) need a continuation byte above
+# 0xA0, so "Î" before a no-break space stays as written.
 _MOJIBAKE_RE = re.compile(
-    f"(?P<mac_roman>{_mojibake_pattern(_MAC_ROMAN, [(0xE2, 0xE2, 2)])})"
-    f"|(?P<cp1252>{_mojibake_pattern(_CP1252, [(0xC2, 0xC5, 1), (0xCE, 0xCF, 1), (0xE2, 0xE2, 2)])})")
+    f"(?P<mac_roman>{_mojibake_pattern(_MAC_ROMAN, [(0xE2, 0xE2, 2), (0xC2, 0xC2, 1)])})"
+    f"|(?P<cp1252>{_mojibake_pattern(_CP1252, [(0xC2, 0xC5, 1), (0xCE, 0xCF, 1, 0xA1), (0xE2, 0xE2, 2)])})")
 _TO_BYTE = {"mac_roman": {char: byte for byte, char in _MAC_ROMAN.items()},
             "cp1252": {char: byte for byte, char in _CP1252.items()}}
 # Enough for text mis-decoded three times ("ÃƒÅ½Ã‚Â±" is α), with a bound.
@@ -538,7 +546,7 @@ def clean_doi(value):
     """
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
-    v = str(value).strip().lower()
+    v = decode_doi_escapes(str(value).strip()).lower()
     if not v:
         return None
     v = re.sub(r"^(https?://)?(dx\.)?doi\.org/", "", v)
@@ -546,9 +554,19 @@ def clean_doi(value):
     v = re.sub(r"\s*digital\s*object\s*identifier.*$", "", v)
     v = re.sub(r"\s*get\s*rights\s*and\s*content.*$", "", v)
     v = re.sub(r"\s.*$", "", v).strip()
-    if "%" in v:
-        v = urllib.parse.unquote(v)
     return v or None
+
+
+def decode_doi_escapes(value: str) -> str:
+    """A DOI copied from a link, percent-decoded once: "%3c" is "<".
+
+    Before lowercasing, so an escaped capital becomes the same letter as a typed
+    one. Left as it is when it holds an escaped percent sign ("%25"): decoding that
+    would make a new escape, and a second pass a different DOI.
+    """
+    if "%" not in value or "%25" in value.lower():
+        return value
+    return urllib.parse.unquote(value)
 
 
 _SHEET_YEAR_RE = re.compile(r"^(1[5-9]\d{2}|2\d{3})(?:\.0+)?$")
@@ -619,25 +637,35 @@ def norm_url(value):
 # cannot be one, because SICI DOIs hold them ("…<107::aid-bdm292>3.0.co;2-y"); it is
 # read as a separator only before whitespace or the start of another identifier.
 IDENTIFIER_SEPARATOR = ", "
+# Where one identifier ends and the next begins. Only before something that starts
+# an identifier, or at a comma followed by a space as the published lists are
+# written: a URL may hold a bare comma ("…/a,b") and a SICI DOI a semicolon.
+_NEXT_IDENTIFIER = r"(?=10\.\d|https?://|doi:|www\.)"
 _IDENTIFIER_SPLIT_RE = re.compile(
-    r"\s*,\s*"                                          # a comma, however spaced
-    r"|\s*;(?=\s|10\.\d|https?://|doi:)\s*"              # a semicolon between identifiers
-    r"|\s*\|\s*"                                         # a pipe
-    r"|\s+(?=10\.\d|https?://|doi:)"                     # whitespace before an identifier
-    r"|\s*\n\s*", re.I)                                  # a line break
+    r"\s*,\s+|\s*,(?=\s*" + _NEXT_IDENTIFIER[3:]                 # a comma
+    + r"|\s*;\s*" + _NEXT_IDENTIFIER + r"|\s*;\s+"            # a semicolon between identifiers
+    + r"|\s*\|\s*"                                            # a pipe
+    + r"|\s+" + _NEXT_IDENTIFIER                                # whitespace before an identifier
+    + r"|\s*\n\s*", re.I)                                     # a line break
+
+
+def _identifier_key(part):
+    """How two listed identifiers compare: a DOI ignoring case, as DOIs do, a link
+    exactly (a path's case can name a different file)."""
+    return part.lower() if re.match(r"(doi:\s*)?10\.\d", part, re.I) else part
 
 
 def normalise_identifier_list(value):
     """An alt_identifier cell as one list joined by ", ": other separators (a
     semicolon between identifiers, a pipe, a line break, a space) become it, and a
-    repeated identifier (ignoring case) is kept once. Blank stays None."""
+    repeated identifier is kept once. Blank stays None."""
     if not isinstance(value, str) or not value.strip():
         return None if not isinstance(value, str) else (value.strip() or None)
     parts, seen = [], set()
     for part in _IDENTIFIER_SPLIT_RE.split(value.strip()):
-        part = part.strip().rstrip(";").strip()
-        if part and part.lower() not in seen:
-            seen.add(part.lower())
+        part = part.strip().rstrip(";,").strip()
+        if part and _identifier_key(part) not in seen:
+            seen.add(_identifier_key(part))
             parts.append(part)
     return IDENTIFIER_SEPARATOR.join(parts) or None
 
@@ -937,10 +965,17 @@ WORK_ID_HINT = "_replaced_work_id_{side}"
 _OPENALEX_WORK_RE = re.compile(r"openalex\.org/(?:works/)?(W\d{5,})", re.I)
 
 
+def openalex_work_ids(value) -> list:
+    """The W-ids of the OpenAlex links in `value` (a URL or an identifier list)."""
+    if not isinstance(value, str):
+        return []
+    return [match.group(1).upper() for match in _OPENALEX_WORK_RE.finditer(value)]
+
+
 def openalex_work_id(value) -> "str | None":
-    """The W-id of an OpenAlex link in `value` (a URL or an identifier list)."""
-    match = _OPENALEX_WORK_RE.search(value) if isinstance(value, str) else None
-    return match.group(1).upper() if match else None
+    """The W-id of the first OpenAlex link in `value`."""
+    ids = openalex_work_ids(value)
+    return ids[0] if ids else None
 
 
 def join_metadata(df, meta, sides=("o", "r")):
@@ -993,10 +1028,14 @@ def join_metadata(df, meta, sides=("o", "r")):
             # identifiers, or, for a url corrected from the OpenAlex link to the
             # work's landing page, as the record the correction replaced (step 6c).
             # It remains the key to the metadata of a work with no DOI.
+            # Only for a side with no DOI: the DOI join describes the work, and an
+            # alias's metadata would fill its gaps with another version's authors.
+            no_doi = df[doi_col].map(lambda d: not _s(d))
             for column in (WORK_ID_HINT.format(side=side), f"alt_identifier_{side}"):
                 if column in df.columns:
-                    named = df[column].map(lambda v: meta.get(openalex_work_id(v)) if openalex_work_id(v) else None)
-                    id_keys = id_keys.where(id_keys.notna(), named)
+                    named = df[column].map(lambda v: next(
+                        (meta[w] for w in openalex_work_ids(v) if w in meta), None))
+                    id_keys = id_keys.where(id_keys.notna() | ~no_doi, named)
             for field, column in (("title", f"title_{side}"),
                                   ("authors", f"author_{side}"),
                                   ("journal", f"journal_{side}"),

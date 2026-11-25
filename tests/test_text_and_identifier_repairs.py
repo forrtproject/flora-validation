@@ -83,7 +83,8 @@ def test_a_plain_doi_is_unchanged():
     (" (2009). The Impact of Uncertainty Shocks. Econometrica, 77(3), 623–685.",
      json.dumps([{"given": "Nicholas", "family": "Bloom"}]),
      "Bloom, N. (2009). The Impact of Uncertainty Shocks. Econometrica, 77(3), 623–685."),
-    ("(n.d.). Title.", "Antràs, Pol; Chor, Davin", "Antràs, P., & Chor, D. (n.d.). Title."),
+    ("(n.d.). Title.", [{"family": "Antràs", "given": "Pol"}, {"family": "Chor", "given": "Davin"}],
+     "Antràs, P., & Chor, D. (n.d.). Title."),
 ])
 def test_a_missing_author_part_is_supplied(ref, authors, expected):
     assert bh.authorless_reference(ref)
@@ -101,6 +102,7 @@ def test_more_than_twenty_authors_are_cut_as_apa_7_does():
     ("(Ed.). (2013). Organizing the Global Value Chain.", None),  # none known
     ("(Ed.). (2013). Organizing the Global Value Chain.", "NA"),
     (None, [{"family": "Bloom"}]),
+    ("(2010). Title.", "Research and Development Group"),   # plain text: one group or two people?
 ])
 def test_a_reference_is_left_as_it_is_without_a_known_author(ref, authors):
     assert bh.add_reference_authors(ref, authors) == ref
@@ -235,3 +237,51 @@ def test_openalex_work_id():
     assert ts.openalex_work_id("https://openalex.org/works/w123456") == "W123456"
     assert ts.openalex_work_id("https://osf.io/abc") is None
     assert ts.openalex_work_id(None) is None
+
+
+# ── review of #37: the edges ──────────────────────────────────────────────────
+
+def test_an_openalex_alias_never_fills_a_side_that_has_a_doi():
+    """A DOI describes the work; another version's authors must not fill its gaps."""
+    frame = pd.DataFrame([_no_doi_row(doi_r="10.1525/collabra.151230",
+                                      alt_identifier_r="https://openalex.org/W2735016722")])
+    ts.join_metadata(frame, {"10.1525/collabra.151230": {"title": "The article"}, **META}, sides=("r",))
+    assert frame.loc[0, "title_r"] == "The article"
+    assert pd.isna(frame.loc[0, "author_r"]) and pd.isna(frame.loc[0, "year_r"])
+
+
+def test_the_first_listed_openalex_record_with_metadata_is_used():
+    frame = pd.DataFrame([_no_doi_row(url_r="https://example.org/thesis",
+                                      alt_identifier_r="https://openalex.org/W1111111, https://openalex.org/W2735016722")])
+    ts.join_metadata(frame, META, sides=("r",))
+    assert frame.loc[0, "title_r"] == "A Survey of Rewards for Teens"
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("https://example.org/a,b", "https://example.org/a,b"),                 # a comma in a link
+    ("https://x.org/File, https://x.org/file", "https://x.org/File, https://x.org/file"),
+    ("10.1/a, 10.1/A", "10.1/a"),                                           # DOIs ignore case
+])
+def test_identifier_lists_keep_links_whole(value, expected):
+    assert ts.normalise_identifier_list(value) == expected
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("https://doi.org/10.1/a%252fb", "10.1/a%252fb"),      # an escaped percent sign stays
+    ("10.1/%C3%89x", "10.1/éx"),                            # decoded, then lowercased
+])
+def test_dois_are_decoded_once(value, expected):
+    assert ts.clean_doi(value) == expected == ts.clean_doi(ts.clean_doi(value))
+    assert bh.normalise_key(value) == expected
+
+
+@pytest.mark.parametrize("broken,repaired", [
+    ("mean age 20.1 ¬± 3.2", "mean age 20.1 ± 3.2"),   # Mac Roman Latin-1 symbols
+    ("37 ¬∞C", "37 °C"),
+])
+def test_mac_roman_symbols_are_repaired(broken, repaired):
+    assert ts.repair_mojibake(broken) == repaired
+
+
+def test_a_greek_lead_before_a_no_break_space_is_text():
+    assert ts.repair_mojibake("Î\xa0x") == "Î\xa0x"
