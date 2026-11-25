@@ -147,7 +147,7 @@ def test_the_columns_survive_the_projection():
     happened to the enrichment columns once before."""
     assert "author_overlap" in transform_sources.DERIVED_COLUMNS
     assert "author_overlap_pct" in transform_sources.DERIVED_COLUMNS
-    source = (ROOT / "transform_sources.py").read_text(encoding="utf-8")
+    source = (ROOT / "pipeline" / "transform" / "stages.py").read_text(encoding="utf-8")
     assert "+ DERIVED_COLUMNS" in source
 
 
@@ -161,9 +161,8 @@ def test_the_columns_trail_the_output_contract():
 def test_overlap_is_computed_after_titles_are_recovered():
     """8b parses authors out of reference strings for rows no lookup could reach.
     Computing overlap before that would score those rows as unknown."""
-    source = (ROOT / "transform_sources.py").read_text(encoding="utf-8")
-    body = source[source.index("def build("):]
-    assert body.index("apa_references.augment(") < body.index("author_overlap.augment(")
+    source = (ROOT / "pipeline" / "transform" / "stages.py").read_text(encoding="utf-8")
+    assert source.index("apa_references.augment(") < source.index("author_overlap.augment(")
 
 
 @pytest.mark.parametrize('group', [

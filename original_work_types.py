@@ -16,7 +16,7 @@ import math
 from datetime import datetime, timedelta, timezone
 
 from preprint_dedup import normalize_doi
-from validate_flora import finding
+from pipeline.schema import finding
 
 HIGH_CHECK = 'original_target_nonstudy'
 FORMAT_CHECK = 'original_target_format'

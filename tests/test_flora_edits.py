@@ -1015,13 +1015,14 @@ def test_every_product_read_applies_the_corrections_after_the_ids():
 def test_corrected_identifiers_come_after_every_duplicate_step_and_are_joined_again():
     """So a correction can never drop, merge or hide a record, and the metadata
     still follows a corrected DOI."""
+    from pipeline.transform import stages
     build = inspect.getsource(transform_sources.build)
-    position = build.index("flora_edits.apply_identifiers(")
-    for step in ("# 5 ── dedup", "merge_doi_pair_dups(", "preprint_dedup.resolve("):
-        assert build.index(step) < position
-    # Searched from the correction on: step 6b joins its own replacements again first.
-    assert position < build.index("join_metadata_again(", position) \
-        < build.index("# 8 ── text cleaning")
+    pos = build.index("stage_identifier_corrections_and_quotes(")
+    for step in ("stage_exact_dedup_and_pair_merge(", "stage_enrich_and_preprint_dedup("):
+        assert build.index(step) < pos
+    assert pos < build.index("stage_clean_and_finalize(")
+    stage_src = inspect.getsource(stages.stage_identifier_corrections_and_quotes)
+    assert stage_src.index("apply_identifiers(") < stage_src.index("join_metadata_again(")
 
 
 def test_writing_through_moves_the_revision_the_public_api_caches_on():

@@ -165,9 +165,10 @@ def test_urls_corrected_on_flora_records_are_looked_up_too(monkeypatch):
 def test_the_transform_fills_only_what_the_doi_join_left_empty():
     """A real DOI always outranks a work id: the fill uses fillna, never assignment,
     so a DOI-resolved title is never replaced by a work-id one."""
-    source = (ROOT / "transform_sources.py").read_text(encoding="utf-8")
-    block = source[source.index("url_column = f\"url_{side}\""):]
-    block = block[:block.index("enriched =")]
+    import inspect
+    import transform_sources
+    source = inspect.getsource(transform_sources.join_metadata)
+    block = source[source.index('url_column = f"url_{side}"'):]
     assert "df[column].fillna(from_id)" in block
     assert "extract_work_id" in block
 

@@ -214,4 +214,4 @@ def test_recovery_runs_after_deduplication():
     source = (Path(__file__).resolve().parents[1] / "transform_sources.py").read_text(
         encoding="utf-8")
     body = source[source.index("def build("):]
-    assert body.index("preprint_dedup.resolve(") < body.index("apa_references.augment(")
+    assert body.index("stage_enrich_and_preprint_dedup(") < body.index("stage_clean_and_finalize(")

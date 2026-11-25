@@ -227,7 +227,7 @@ def dois_in_product(cur) -> list:
     seen, out = set(), []
     for value in [record["doi"] for record in cur.fetchall()] + corrected:
         # Cleaned the same way the transform cleans, so the join keys agree.
-        from transform_sources import clean_doi
+        from pipeline.schema import clean_doi
         doi = clean_doi(value)
         if doi and not doi.lower().startswith("dummy") and doi not in seen:
             seen.add(doi)

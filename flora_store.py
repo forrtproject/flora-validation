@@ -21,7 +21,8 @@ import psycopg2
 from psycopg2.extras import Json, RealDictCursor, execute_values
 
 import final_export
-from transform_sources import FLORA_OUTPUT_COLUMNS
+from pipeline.edit_queries import change_watermark, changed_since
+from pipeline.schema import FLORA_OUTPUT_COLUMNS
 
 DATA_COLUMNS = list(FLORA_OUTPUT_COLUMNS)
 CSV_COLUMNS = ["id", "id_md5", *DATA_COLUMNS]
@@ -43,8 +44,7 @@ def dataset_revision(cur):
     row = cur.fetchone()
     if not row:
         return None
-    import flora_edits                              # local: flora_edits imports this module
-    return row["snapshot_sha256"], row["updated_at"], flora_edits.change_watermark(cur)
+    return row["snapshot_sha256"], row["updated_at"], change_watermark(cur)
 
 
 def _value(value):
@@ -117,8 +117,7 @@ def materialize(cur, source, *, allow_empty=False, expected_revision=UNCHECKED_R
             if not (current and expected_revision and len(expected_revision) == 3
                     and current[0] == expected_revision[0]):
                 raise ValueError("The stored dataset changed during this run; run the pipeline again to build a current snapshot.")
-            import flora_edits                      # local: flora_edits imports this module
-            preserved = flora_edits.changed_since(cur, expected_revision[2])
+            preserved = changed_since(cur, expected_revision[2])
     cur.execute("SELECT export_id, export_position FROM flora_records WHERE export_id IS NOT NULL")
     registered = {row["export_id"]: row["export_position"] for row in cur.fetchall()}
     cur.execute("SELECT * FROM flora_data ORDER BY export_position")

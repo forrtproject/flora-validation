@@ -19,8 +19,9 @@ from unittest.mock import MagicMock, patch
 ROOT = Path(__file__).resolve().parent.parent
 SNAPSHOT_PATH = Path(__file__).resolve().parent / "fixtures" / "app_routes_snapshot.json"
 
-# Tightened from 3 -> 1 after breaking consensus_engine/extra_originals & csv_to_db/sync_csv cycles.
-MAX_FULL_GRAPH_CYCLES = 1
+# Only the 2-module facade pair {flora_registry, transform_sources} remains in the
+# full graph (kept so flora_registry.transform_sources.build patches stay compatible).
+ALLOWED_FULL_GRAPH_SCCS = [["flora_registry", "transform_sources"]]
 
 
 def _prod_python_files() -> list[Path]:
@@ -165,8 +166,8 @@ def test_no_top_level_import_cycles():
     top_g, full_g = _import_graphs()
     assert _find_sccs(top_g) == [], f"Top-level import cycles found: {_find_sccs(top_g)}"
     full_sccs = _find_sccs(full_g)
-    assert len(full_sccs) <= MAX_FULL_GRAPH_CYCLES, (
-        f"Full-graph import cycle count regressed ({len(full_sccs)} > {MAX_FULL_GRAPH_CYCLES}): {full_sccs}"
+    assert full_sccs == ALLOWED_FULL_GRAPH_SCCS, (
+        f"Unexpected full-graph import cycles: {full_sccs}"
     )
 
 

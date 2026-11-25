@@ -65,7 +65,7 @@
       "refresh": ["Exclusions and metadata enrichment are stages of the website and nightly FLoRA pipelines.", "Metadata is cached; normal enrichment is mainly for uncached records, with explicit retry options for misses."],
       "outputs": ["Rules and cached evidence used by the prepared dataset."],
       "cautions": ["A pair-specific exclusion can exclude one original/replication relationship without excluding every use of the replication paper.", "Changing a rule can change the derived FLoRA view before a new full stored snapshot is prepared."],
-      "sources": [{"file":"sync_exclusions.py","line":158,"symbol":"sync"},{"file":"enrich_works.py","line":295,"symbol":"enrich"},{"file":"enrich_works.py","line":467,"symbol":"enrich_work_ids"},{"file":"transform_sources.py","line":633,"symbol":"load_rules"}]
+      "sources": [{"file":"sync_exclusions.py","line":158,"symbol":"sync"},{"file":"enrich_works.py","line":295,"symbol":"enrich"},{"file":"enrich_works.py","line":467,"symbol":"enrich_work_ids"},{"file":"transform_sources.py","line":184,"symbol":"load_rules"}]
     },
     {
       "id": "process-queue",
@@ -91,7 +91,7 @@
       "refresh": ["The FLoRA admin view rebuilds from current inputs when its cache signature changes.", "The final stored CSV/API snapshot changes when preparation stores the dataset, or an eligible existing FLoRA record is corrected directly."],
       "outputs": ["A prepared dataset with consistent fields, source provenance and stable identities.", "Diagnostics for missing titles, merged outcome conflicts, preprint candidates and cross-type duplicate rulings."],
       "cautions": ["The FLoRA tab is a current derived view; it can include an untitled record that the exported dataset omits.", "Unknown outcome aliases or invalid axes block export rather than silently becoming blank.", "Simply viewing the derived table is not the same as storing a new complete snapshot."],
-      "sources": [{"file":"transform_sources.py","line":924,"symbol":"build"},{"file":"transform_sources.py","line":1540,"symbol":"run"},{"file":"flora_service.py","line":159,"symbol":"_current"},{"file":"flora_service.py","line":202,"symbol":"dataset"}]
+      "sources": [{"file":"transform_sources.py","line":431,"symbol":"build"},{"file":"transform_sources.py","line":544,"symbol":"run"},{"file":"flora_service.py","line":159,"symbol":"_current"},{"file":"flora_service.py","line":202,"symbol":"dataset"}]
     },
     {
       "id": "process-identities",
