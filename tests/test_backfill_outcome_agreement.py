@@ -64,13 +64,18 @@ def test_extractor_history_tracks_consensus_across_commits_branches_and_merges(g
     own, own_commit = git_repo_factory("own")
 
     commit("2026-06-01T10:00:00+00:00", {"data/extracted.csv": _csv(("P1", "replication", "failed"))})
-    # Side branch changes P1 outcome before merge: history must see both branches.
+    # Side branch changes P1 outcome, then merges with `-s ours` so first-parent
+    # history on main NEVER changes P1 from "failed". Full-graph history must still
+    # detect the side-branch divergence both before and after the merge.
     commit(
         "2026-06-10T10:00:00+00:00",
         {"data/extracted.csv": _csv(("P1", "replication", "successful"))},
         branch="side",
     )
-    commit.git("merge", "--no-ff", "-q", "side", "-m", "merge side", when="2026-06-12T10:00:00+00:00")
+    commit.git(
+        "merge", "--no-ff", "-s", "ours", "-q", "side", "-m", "merge side keeping ours",
+        when="2026-06-12T10:00:00+00:00",
+    )
     own_commit(
         "2026-06-02T10:00:00+00:00",
         {"data/extracted_latest.csv": _csv(("P2", "replication", "mixed"))},
@@ -78,6 +83,7 @@ def test_extractor_history_tracks_consensus_across_commits_branches_and_merges(g
 
     history = backfill.ExtractorHistory(extractor, own)
     assert history.shown("P1", _at("06-05")) == ("replication", "failed")
+    assert history.shown("P1", _at("06-11")) is None
     assert history.shown("P1", _at("06-15")) is None
     assert history.shown("P2", _at("06-05")) == ("replication", "mixed")
 

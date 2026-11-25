@@ -27,9 +27,10 @@ def github_repo(override: str | None = None) -> str:
     sync_mod = sys.modules.get("sync_csv")
     if sync_mod is not None:
         sync_val = getattr(sync_mod, "_GITHUB_REPO", None)
-        if sync_val and sync_val != GITHUB_REPO:
+        initial = getattr(sync_mod, "_INITIAL_GITHUB_REPO", GITHUB_REPO)
+        if sync_val and sync_val != initial:
             return sync_val
-    return os.environ.get("GITHUB_REPO") or GITHUB_REPO
+    return os.environ.get("GITHUB_REPO") or DEFAULT_GITHUB_REPO
 
 
 def github_branch(override: str | None = None) -> str:
@@ -39,9 +40,10 @@ def github_branch(override: str | None = None) -> str:
     sync_mod = sys.modules.get("sync_csv")
     if sync_mod is not None:
         sync_val = getattr(sync_mod, "_GITHUB_BRANCH", None)
-        if sync_val and sync_val != GITHUB_BRANCH:
+        initial = getattr(sync_mod, "_INITIAL_GITHUB_BRANCH", GITHUB_BRANCH)
+        if sync_val and sync_val != initial:
             return sync_val
-    return os.environ.get("GITHUB_BRANCH") or GITHUB_BRANCH
+    return os.environ.get("GITHUB_BRANCH") or DEFAULT_GITHUB_BRANCH
 
 
 def build_github_raw_url(repo: str, branch: str, file_path: str) -> str:

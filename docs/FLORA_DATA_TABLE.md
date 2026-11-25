@@ -373,8 +373,8 @@ and stores it with `measured_by = 'flora.csv'`:
 
 ```bash
 git clone --no-checkout https://github.com/forrtproject/fred-data.git ../fred-data
-python backfill_flora_history.py --fred-data ../fred-data            # dry run
-python backfill_flora_history.py --fred-data ../fred-data --apply
+python scripts/archive/backfill_flora_history.py --fred-data ../fred-data            # dry run
+python scripts/archive/backfill_flora_history.py --fred-data ../fred-data --apply
 ```
 
 These are counts of what was published on each day, not older records re-counted
@@ -397,8 +397,8 @@ copies of root versions and are not read. Versions before 13 Jan 2026 have no ty
 column, so their replications and reproductions are NULL:
 
 ```bash
-python backfill_flora_history.py --fred-data ../fred-data --before-launch            # dry run
-python backfill_flora_history.py --fred-data ../fred-data --before-launch --apply
+python scripts/archive/backfill_flora_history.py --fred-data ../fred-data --before-launch            # dry run
+python scripts/archive/backfill_flora_history.py --fred-data ../fred-data --before-launch --apply
 ```
 
 Between the two, `output/flora.csv`'s early versions are gone from fred-data's
@@ -420,10 +420,10 @@ days before the launch that have no row:
   count. It stops if the markers or the table are missing.
 
 ```bash
-python backfill_flora_history.py --fred-data ../fred-data --readme                 # dry run
-python backfill_flora_history.py --fred-data ../fred-data --pull-snapshots         # dry run
-python backfill_flora_history.py --fred-data ../fred-data --readme --apply
-python backfill_flora_history.py --fred-data ../fred-data --pull-snapshots --apply
+python scripts/archive/backfill_flora_history.py --fred-data ../fred-data --readme                 # dry run
+python scripts/archive/backfill_flora_history.py --fred-data ../fred-data --pull-snapshots         # dry run
+python scripts/archive/backfill_flora_history.py --fred-data ../fred-data --readme --apply
+python scripts/archive/backfill_flora_history.py --fred-data ../fred-data --pull-snapshots --apply
 ```
 
 The root `flora.csv` moved away on 13 Jan 2026, and `output/flora.csv` first

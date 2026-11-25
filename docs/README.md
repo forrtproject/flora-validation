@@ -2142,8 +2142,8 @@ count and payload-hash gates depend on previous runs.
 # Copy old pairs/coders/judgements schema into the current tables
 python db_migrate.py
 
-# Interactive destructive reset
-python db_reset.py
+# Interactive destructive reset (archived one-off script)
+python scripts/archive/db_reset.py
 ```
 
 `db_migrate.py` is intended for a legacy database and should run before the app.

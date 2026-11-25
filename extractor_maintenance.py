@@ -1327,6 +1327,9 @@ def run_pipeline(
                         "--maintenance-run-id", str(run_id),
                         "--retire-summary-json", str(retire_summary_path),
                     ]
+                    source_repo = safety_report.get("source_repo")
+                    if source_repo:
+                        retire_command.extend(["--retire-repo", str(source_repo)])
                     result = timed(
                         "retire_superseded",
                         _run_stage(run_log, "retire_superseded", retire_command, runner),

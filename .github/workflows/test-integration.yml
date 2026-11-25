@@ -9,8 +9,9 @@ on:
       - 'extractor/**'
       - 'shared/**'
       - 'db_schema.sql'
-      - 'tests/integration/**'
-      - 'tests/pg_fixtures.py'
+      - 'pytest.ini'
+      - 'requirements.txt'
+      - 'tests/**'
       - '.github/workflows/test-integration.yml'
   workflow_dispatch: {}
 

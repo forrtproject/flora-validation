@@ -45,35 +45,65 @@ def test_extractor_config_reexports_preserve_lock_ids_and_url_builder():
     )
 
 
-def test_fetch_retire_manifest_honors_env_and_sync_csv_repo_overrides(tmp_path, monkeypatch):
-    seen_urls = []
-
-    class _Resp:
-        status_code = 404
-        content = b""
-
+def test_sync_csv_and_retire_manifest_resolve_same_post_import_repo_and_branch(tmp_path, monkeypatch):
+    import json
     import requests
 
-    monkeypatch.setattr(requests, "get", lambda url, **kw: (seen_urls.append(url), _Resp())[1])
+    seen_urls = []
+    commit_sha = "a" * 40
 
-    # 1) Env override after import
+    class _Resp:
+        def __init__(self, status_code, content=b"", text=""):
+            self.status_code = status_code
+            self.content = content
+            self.text = text
+
+    def fake_get(url, **kw):
+        seen_urls.append(url)
+        if "/commits/" in url:
+            return _Resp(200, text=commit_sha)
+        if url.endswith("extracted.csv"):
+            csv_body = (
+                b"pair_id,paper_type,link_method,doi_r\n"
+                b"P1,replication,llm_references,10.1/b\n"
+            )
+            return _Resp(200, content=csv_body)
+        return _Resp(404)
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    monkeypatch.setattr(sync_csv, "run_import", lambda *a, **kw: None)
+
+    # 1) Post-import env override: BOTH sync_csv and fetch_retire_manifest must use the updated repo/branch.
     monkeypatch.setenv("GITHUB_REPO", "custom-org/custom-extractor")
     monkeypatch.setenv("GITHUB_BRANCH", "staging")
-    assert csv_to_db.fetch_retire_manifest(tmp_path / "m1.csv") is None
+    report_path = tmp_path / "sync_report.json"
+    ok = sync_csv.sync_once(data_dir=tmp_path, report_path=report_path)
+    assert ok is True
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["source_repo"] == "custom-org/custom-extractor"
+    assert report["source_commit"] == commit_sha
+    assert seen_urls[0] == "https://api.github.com/repos/custom-org/custom-extractor/commits/staging"
+    assert seen_urls[1] == f"https://raw.githubusercontent.com/custom-org/custom-extractor/{commit_sha}/data/extracted.csv"
+
+    assert csv_to_db.fetch_retire_manifest(
+        tmp_path / "m1.csv", commit=report["source_commit"], repo=report["source_repo"]
+    ) is None
     assert seen_urls[-1] == (
-        "https://raw.githubusercontent.com/custom-org/custom-extractor/staging/data/retired_pairs.csv"
+        f"https://raw.githubusercontent.com/custom-org/custom-extractor/{commit_sha}/data/retired_pairs.csv"
     )
 
-    # 2) Explicit monkeypatch on sync_csv._GITHUB_REPO / _GITHUB_BRANCH (baseline behavior)
+    # 2) Explicit monkeypatch on sync_csv._GITHUB_REPO / _GITHUB_BRANCH still works across both modules.
     monkeypatch.setattr(sync_csv, "_GITHUB_REPO", "fork-org/fork-extractor")
     monkeypatch.setattr(sync_csv, "_GITHUB_BRANCH", "exp-branch")
+    assert sync_csv._resolve_source_commit() == commit_sha
+    assert seen_urls[-1] == "https://api.github.com/repos/fork-org/fork-extractor/commits/exp-branch"
     assert csv_to_db.fetch_retire_manifest(tmp_path / "m2.csv") is None
     assert seen_urls[-1] == (
         "https://raw.githubusercontent.com/fork-org/fork-extractor/exp-branch/data/retired_pairs.csv"
     )
 
 
-def test_conftest_blocks_non_local_hostaddr_and_remote_dsn():
+def test_conftest_blocks_non_local_hostaddr_multi_host_and_keyword_dsn():
     import pytest
     from tests.conftest import _assert_safe_dsn
 
@@ -81,11 +111,16 @@ def test_conftest_blocks_non_local_hostaddr_and_remote_dsn():
     _assert_safe_dsn("postgresql://stub/stub")
     _assert_safe_dsn("postgresql://flora_test@127.0.0.1:5432/postgres")
     _assert_safe_dsn("postgresql://flora_test@localhost:5432/postgres?hostaddr=127.0.0.1")
+    _assert_safe_dsn("postgresql://127.0.0.1:5432,localhost:5433/postgres")
 
-    # Non-loopback host or hostaddr must be rejected
+    # Non-loopback host, hostaddr, loopback-first multi-host URI, and keyword DSN with URI in value
     with pytest.raises(RuntimeError, match="Blocked non-local PostgreSQL"):
         _assert_safe_dsn("postgresql://user@db.example.org:5432/prod")
     with pytest.raises(RuntimeError, match="Blocked non-local PostgreSQL"):
         _assert_safe_dsn("postgresql://user@localhost:5432/prod?hostaddr=203.0.113.10")
     with pytest.raises(RuntimeError, match="Blocked non-local PostgreSQL"):
         _assert_safe_dsn("host=localhost hostaddr=203.0.113.10 dbname=prod")
+    with pytest.raises(RuntimeError, match="Blocked non-local PostgreSQL"):
+        _assert_safe_dsn("postgresql://127.0.0.1:5432,db.example.org:5432/prod")
+    with pytest.raises(RuntimeError, match="Blocked non-local PostgreSQL"):
+        _assert_safe_dsn("host=db.example.org application_name=postgresql://127.0.0.1/db dbname=prod")

@@ -50,6 +50,8 @@ _DEFAULT_DATA_DIR = resolve_data_dir()
 
 _GITHUB_REPO = _github_repo()
 _GITHUB_BRANCH = _github_branch()
+_INITIAL_GITHUB_REPO = _GITHUB_REPO
+_INITIAL_GITHUB_BRANCH = _GITHUB_BRANCH
 _CSV_FILE_PATH = "data/extracted.csv"
 _ROUTING_RELEASE_ID = os.environ.get("ROUTING_RELEASE_ID", "")
 _REPORT_ID_SAMPLE_LIMIT = 100
@@ -101,29 +103,31 @@ def _fetch_csv(url: str) -> bytes:
 _COMMIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
-def _resolve_source_commit() -> str | None:
+def _resolve_source_commit(repo: str | None = None, branch: str | None = None) -> str | None:
     """The commit the branch points at now, so the CSV and the retire manifest
     (``csv_to_db.py --retire``) are read from the same one.
 
     Best effort: without it the sync downloads the branch as it always did, and
     the retire stage, which needs the pair, refuses to run.
     """
+    resolved_repo = _github_repo(repo)
+    resolved_branch = _github_branch(branch)
     token = os.environ.get("GITHUB_TOKEN", "")
     headers = {"Accept": "application/vnd.github.sha"}
     if token:
         headers["Authorization"] = f"token {token}"
     try:
         response = requests.get(
-            f"https://api.github.com/repos/{_GITHUB_REPO}/commits/{_GITHUB_BRANCH}",
+            f"https://api.github.com/repos/{resolved_repo}/commits/{resolved_branch}",
             headers=headers,
             timeout=60,
         )
     except requests.RequestException as exc:
-        print(f"[sync_csv] could not resolve {_GITHUB_BRANCH} to a commit: {exc}")
+        print(f"[sync_csv] could not resolve {resolved_branch} to a commit: {exc}")
         return None
     sha = response.text.strip() if isinstance(response.text, str) else ""
     if response.status_code != 200 or not _COMMIT_SHA.match(sha):
-        print(f"[sync_csv] could not resolve {_GITHUB_BRANCH} to a commit "
+        print(f"[sync_csv] could not resolve {resolved_branch} to a commit "
               f"(HTTP {response.status_code})")
         return None
     return sha
@@ -439,14 +443,18 @@ def sync_once(
         "promotion_completed": False,
         "promotion_verified": False,
         "part1_completed": False,
-        # The flora-extractor commit the CSV was read at; the retire stage reads
-        # data/retired_pairs.csv at the same one.
+        # The flora-extractor repository and commit the CSV was read from;
+        # the retire stage reads data/retired_pairs.csv from the exact same pair.
+        "source_repo": None,
         "source_commit": None,
     }
     try:
-        source_commit = _resolve_source_commit()
+        source_repo = _github_repo()
+        source_branch = _github_branch()
+        report["source_repo"] = source_repo
+        source_commit = _resolve_source_commit(repo=source_repo, branch=source_branch)
         report["source_commit"] = source_commit
-        url = _build_url(_GITHUB_REPO, source_commit or _GITHUB_BRANCH, _CSV_FILE_PATH)
+        url = _build_url(source_repo, source_commit or source_branch, _CSV_FILE_PATH)
         print(f"[sync_csv] Fetching {url} …")
         content = _fetch_csv(url)
         report["download_completed"] = True

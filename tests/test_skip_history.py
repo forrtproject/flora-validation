@@ -55,14 +55,85 @@ def test_manual_skip_clears_the_draft_only_after_release_succeeds():
 
 
 def test_failed_submission_needs_a_server_stamp_and_progresses_past_parked_items():
+    """Execute _processSubmitQueue in Node to verify real queue progression:
+    1. A terminal 4xx item without a server failure_stamp is parked (blocked=true)
+       without calling /skip or /submission-failures/release, and a later item in
+       the queue still submits cleanly.
+    2. A terminal failure WITH a server failure_stamp calls
+       /submission-failures/release with that stamp before dequeuing the item."""
+    import json
+    import subprocess
     from pathlib import Path
 
     js = (Path(__file__).resolve().parent.parent / "docs" / "app.js").read_text(encoding="utf-8")
-    body = js.split("async function _processSubmitQueue()", 1)[1].split("function _celebratePoints", 1)[0]
-    failure = body.split("if (giveUp)", 1)[1]
-    assert 'api("/submission-failures/release"' in failure
-    assert "failure_stamp: item.failure_stamp" in failure
-    assert 'api("/skip"' not in failure
-    assert "if (!item.failure_stamp)" in failure
-    assert "_submitQueue.shift()" not in failure
-    assert failure.index('api("/submission-failures/release"') < failure.index("_dequeueSubmit(item)")
+    fn_src = (
+        "async function _processSubmitQueue()"
+        + js.split("async function _processSubmitQueue()", 1)[1].split("function _celebratePoints", 1)[0]
+    )
+    harness = f"""
+const calls = [];
+const toasts = [];
+let _submitProcessing = false;
+const SUBMIT_MAX_ATTEMPTS = 3;
+let _submitQueue = [
+  {{ key: "k1", paper: "Bad First", attempts: 0, blocked: false, payload: {{ submission_id: "s1", kind: "reject4xx" }} }},
+  {{ key: "k2", paper: "Stamped Second", attempts: 2, blocked: false, failure_stamp: "stamp-xyz", payload: {{ submission_id: "s2", kind: "rollback500" }} }},
+  {{ key: "k3", paper: "Good Third", attempts: 0, blocked: false, payload: {{ submission_id: "s3", kind: "ok" }} }},
+];
+let _failedSubmits = [];
+const _isMyQueueItem = () => true;
+const _queueOwner = () => "v1";
+const _newSubmissionId = () => "new-id";
+const _persistSubmits = () => {{}};
+const _persistFailed = () => {{}};
+const _updatePendingIndicator = () => {{}};
+const _celebrateQueued = () => {{}};
+const refreshStats = async () => {{}};
+const refreshLeaderboard = async () => {{}};
+const showToast = (m) => toasts.push(m);
+const _sleep = async () => {{}};
+const _isTerminalErr = (e) => !!(e && e.terminal);
+const _slotNoLongerOwned = () => false;
+const _dequeueSubmit = (item) => {{
+  const i = _submitQueue.indexOf(item);
+  if (i !== -1) _submitQueue.splice(i, 1);
+}};
+async function api(path, method, body) {{
+  calls.push({{ path, method, body }});
+  if (path === "/judge") {{
+    if (body.kind === "reject4xx") {{
+      const err = new Error("Bad request");
+      err.terminal = true;
+      throw err;
+    }}
+    if (body.kind === "rollback500") {{
+      const err = new Error("DB error");
+      err.detail = {{ code: "judgement_save_failed", failure_stamp: "stamp-xyz" }};
+      throw err;
+    }}
+    return {{ points_earned: 1 }};
+  }}
+  if (path === "/submission-failures/release") {{
+    return {{ status: "released" }};
+  }}
+  throw new Error("unexpected path " + path);
+}}
+{fn_src}
+_processSubmitQueue().then(() => {{
+  console.log(JSON.stringify({{ calls, remaining: _submitQueue, failed: _failedSubmits }}));
+}}).catch((e) => {{ console.error(e); process.exit(1); }});
+"""
+    proc = subprocess.run(["node", "-e", harness], capture_output=True, text=True, check=True)
+    result = json.loads(proc.stdout)
+
+    paths = [c["path"] for c in result["calls"]]
+    assert "/skip" not in paths
+    # First item parked (blocked=true), second released via server stamp, third still submitted!
+    judge_ids = [c["body"]["submission_id"] for c in result["calls"] if c["path"] == "/judge"]
+    assert judge_ids == ["s1", "s2", "s3"]
+    releases = [c["body"] for c in result["calls"] if c["path"] == "/submission-failures/release"]
+    assert releases == [{"failure_stamp": "stamp-xyz"}]
+    assert [it["key"] for it in result["remaining"]] == ["k1"]
+    assert result["remaining"][0]["blocked"] is True
+    assert result["remaining"][0]["rejected"] is True
+    assert len(result["failed"]) == 1 and result["failed"][0]["paper"] == "Stamped Second"

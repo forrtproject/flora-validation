@@ -1780,6 +1780,9 @@ if __name__ == "__main__":
     parser.add_argument("--retire-commit", default=None,
                         help="With --retire github: read the manifest at this "
                              "flora-extractor commit instead of the branch.")
+    parser.add_argument("--retire-repo", default=None,
+                        help="With --retire github: read the manifest from this "
+                             "GitHub owner/repo instead of GITHUB_REPO.")
     # extractor_maintenance.py's automatic stage: apply inside that run's lock.
     parser.add_argument("--maintenance-run-id", default=None, help=argparse.SUPPRESS)
     args = parser.parse_args()
@@ -1792,7 +1795,8 @@ if __name__ == "__main__":
         import tempfile
         with tempfile.TemporaryDirectory() as scratch:
             manifest = (fetch_retire_manifest(Path(scratch) / "retired_pairs.csv",
-                                              args.retire_commit)
+                                              args.retire_commit,
+                                              repo=args.retire_repo)
                         if args.retire == "github" else Path(args.retire))
             if manifest is None:
                 print("No data/retired_pairs.csv at that commit; nothing to retire.")

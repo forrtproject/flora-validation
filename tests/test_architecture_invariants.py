@@ -24,27 +24,30 @@ SNAPSHOT_PATH = Path(__file__).resolve().parent / "fixtures" / "app_routes_snaps
 ALLOWED_FULL_GRAPH_SCCS = [["flora_registry", "transform_sources"]]
 
 
-def _prod_python_files() -> list[Path]:
+def _prod_python_files(root: Path = ROOT) -> list[Path]:
     excluded = {".venv", ".git", "__pycache__", "tests", "node_modules", "scripts", "audit", "docs"}
     files = []
-    for p in sorted(ROOT.rglob("*.py")):
-        if any(part in excluded for part in p.parts):
+    for p in sorted(root.rglob("*.py")):
+        if any(part in excluded for part in p.relative_to(root).parts):
             continue
         files.append(p)
     return files
 
 
-def _import_graphs():
-    files = _prod_python_files()
+def _import_graphs(root: Path = ROOT):
+    files = _prod_python_files(root)
     mod_of = {}
+    is_pkg_of = {}
     local_roots = set()
     for p in files:
-        rel = p.relative_to(ROOT)
+        rel = p.relative_to(root)
         parts = rel.with_suffix("").parts
         if parts[-1] == "__init__":
             mod = ".".join(parts[:-1])
+            is_pkg_of[p] = True
         else:
             mod = ".".join(parts)
+            is_pkg_of[p] = False
         mod_of[p] = mod
         local_roots.add(parts[0])
 
@@ -56,6 +59,7 @@ def _import_graphs():
 
     for p, mod in mod_of.items():
         tree = ast.parse(p.read_text(encoding="utf-8", errors="replace"), filename=str(p))
+        is_pkg = is_pkg_of[p]
 
         def walk(node, in_scope: bool):
             for child in ast.iter_child_nodes(node):
@@ -76,25 +80,36 @@ def _import_graphs():
                 elif isinstance(child, ast.ImportFrom):
                     targets = set()
                     if child.level > 0:
-                        pkg_parts = mod.split(".")[:-child.level]
+                        # In pkg/__init__.py, level=1 resolves within pkg itself (drop 0).
+                        # In pkg/mod.py, level=1 resolves within pkg (drop 1).
+                        drop = child.level - 1 if is_pkg else child.level
+                        mod_parts = mod.split(".")
+                        pkg_parts = mod_parts[:-drop] if drop > 0 else list(mod_parts)
                         base_mod = ".".join(pkg_parts + ([child.module] if child.module else []))
-                        if base_mod in full_g:
-                            targets.add(base_mod)
+                        any_non_submodule = False
                         for alias in child.names:
                             sub = f"{base_mod}.{alias.name}" if base_mod else alias.name
                             if sub in full_g:
                                 targets.add(sub)
+                            else:
+                                any_non_submodule = True
+                        if any_non_submodule and base_mod in full_g:
+                            targets.add(base_mod)
                     elif child.module:
                         base = child.module.split(".")[0]
                         if base in local_roots:
-                            if child.module in full_g:
-                                targets.add(child.module)
-                            else:
-                                targets.add(base)
+                            any_non_submodule = False
                             for alias in child.names:
                                 sub = f"{child.module}.{alias.name}"
                                 if sub in full_g:
                                     targets.add(sub)
+                                else:
+                                    any_non_submodule = True
+                            if any_non_submodule:
+                                if child.module in full_g:
+                                    targets.add(child.module)
+                                else:
+                                    targets.add(base)
                     for target in targets:
                         if target != mod:
                             full_g[mod].add(target)
@@ -174,6 +189,35 @@ def _flatten_routes(routes):
                 "name": getattr(r, "name", None),
             })
     return out
+
+
+def test_import_graph_analyzer_handles_class_bodies_submodules_and_pkg_init_relatives(tmp_path):
+    """Verify the AST import-graph detector catches all import-time cycle forms."""
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    # 1) Relative import inside __init__.py inside a ClassDef body -> cycle with pkg.child
+    (pkg / "__init__.py").write_text(
+        "class Boot:\n    from . import child\n", encoding="utf-8"
+    )
+    (pkg / "child.py").write_text("import pkg\n", encoding="utf-8")
+    # 2) `from pkg import leaf` submodule import + deferred function import back
+    (pkg / "leaf.py").write_text(
+        "def later():\n    import consumer\n", encoding="utf-8"
+    )
+    (tmp_path / "consumer.py").write_text(
+        "class Holder:\n    from pkg import leaf\n", encoding="utf-8"
+    )
+
+    top_g, full_g = _import_graphs(tmp_path)
+    assert "pkg.child" in top_g["pkg"]
+    assert "pkg" in top_g["pkg.child"]
+    assert ["pkg", "pkg.child"] in _find_sccs(top_g)
+
+    assert "pkg.leaf" in top_g["consumer"]
+    assert "consumer" not in top_g["pkg.leaf"]
+    assert "consumer" in full_g["pkg.leaf"]
+    assert ["consumer", "pkg.leaf"] not in _find_sccs(top_g)
+    assert ["consumer", "pkg.leaf"] in _find_sccs(full_g)
 
 
 def test_no_top_level_import_cycles():

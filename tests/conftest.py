@@ -45,30 +45,64 @@ def _is_loopback_host(host) -> bool:
         return False
 
 
+def _split_libpq_hosts(value) -> list[str]:
+    if value is None:
+        return []
+    return [part.strip() for part in str(value).split(",") if part.strip()]
+
+
+def _parse_dsn_with_libpq(dsn: str) -> dict[str, str] | None:
+    """Use libpq's own parser via psycopg2.extensions.parse_dsn when available."""
+    if importlib.util.find_spec("psycopg2") is None:
+        return None
+    ext = importlib.import_module("psycopg2.extensions")
+    try:
+        return dict(ext.parse_dsn(dsn))
+    except Exception as exc:
+        raise RuntimeError(f"Blocked unparseable PostgreSQL DSN in tests: {dsn!r}") from exc
+
+
 def _extract_dsn_hosts(dsn: str | None, kwargs: dict | None = None) -> list[str]:
     """Extract all effective libpq host/hostaddr values from a URI or key=value DSN."""
     hosts: list[str] = []
     if dsn:
         if dsn == STUB_DATABASE_URL:
-            return ["stub"]
-        if "://" in dsn:
-            parsed = urllib.parse.urlparse(dsn)
-            if parsed.hostname:
-                hosts.append(parsed.hostname)
-            qs = urllib.parse.parse_qs(parsed.query)
-            for key in ("host", "hostaddr"):
-                for v in qs.get(key, []):
-                    hosts.extend(part.strip() for part in v.split(",") if part.strip())
+            hosts.append("stub")
         else:
-            for key in ("host", "hostaddr"):
-                for m in re.finditer(rf"\b{key}\s*=\s*(?:'([^']*)'|(\S+))", dsn):
-                    val = m.group(1) if m.group(1) is not None else m.group(2)
-                    hosts.extend(part.strip() for part in val.split(",") if part.strip())
+            parsed_libpq = _parse_dsn_with_libpq(dsn)
+            if parsed_libpq is not None:
+                for key in ("host", "hostaddr"):
+                    hosts.extend(_split_libpq_hosts(parsed_libpq.get(key)))
+            elif dsn.lstrip().startswith(("postgresql://", "postgres://")):
+                parsed = urllib.parse.urlparse(dsn)
+                netloc = parsed.netloc
+                if "@" in netloc:
+                    netloc = netloc.rsplit("@", 1)[1]
+                for entry in netloc.split(","):
+                    entry = entry.strip()
+                    if not entry:
+                        continue
+                    if entry.startswith("["):
+                        host_part = entry.split("]", 1)[0].lstrip("[")
+                    else:
+                        host_part = entry.split(":", 1)[0]
+                    if host_part:
+                        hosts.append(host_part)
+                qs = urllib.parse.parse_qs(parsed.query)
+                for key in ("host", "hostaddr"):
+                    for v in qs.get(key, []):
+                        hosts.extend(_split_libpq_hosts(v))
+            else:
+                for key in ("host", "hostaddr"):
+                    for m in re.finditer(rf"(?:^|\s){key}\s*=\s*(?:'([^']*)'|(\S+))", dsn):
+                        val = m.group(1) if m.group(1) is not None else m.group(2)
+                        hosts.extend(_split_libpq_hosts(val))
     if kwargs:
         for key in ("host", "hostaddr"):
-            val = kwargs.get(key)
-            if val:
-                hosts.extend(part.strip() for part in str(val).split(",") if part.strip())
+            hosts.extend(_split_libpq_hosts(kwargs.get(key)))
+    if not hosts:
+        for env_key in ("PGHOST", "PGHOSTADDR"):
+            hosts.extend(_split_libpq_hosts(os.environ.get(env_key)))
     return hosts
 
 
