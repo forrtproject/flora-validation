@@ -59,8 +59,11 @@ def _import_graphs():
 
         def walk(node, in_scope: bool):
             for child in ast.iter_child_nodes(node):
-                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     walk(child, True)
+                elif isinstance(child, ast.ClassDef):
+                    # Class bodies execute at import time, not deferred.
+                    walk(child, in_scope)
                 elif isinstance(child, ast.Import):
                     for alias in child.names:
                         base = alias.name.split(".")[0]
@@ -71,21 +74,32 @@ def _import_graphs():
                                 if not in_scope:
                                     top_g[mod].add(target)
                 elif isinstance(child, ast.ImportFrom):
+                    targets = set()
                     if child.level > 0:
                         pkg_parts = mod.split(".")[:-child.level]
-                        target = ".".join(pkg_parts + ([child.module] if child.module else []))
-                        if target in full_g and target != mod:
-                            full_g[mod].add(target)
-                            if not in_scope:
-                                top_g[mod].add(target)
+                        base_mod = ".".join(pkg_parts + ([child.module] if child.module else []))
+                        if base_mod in full_g:
+                            targets.add(base_mod)
+                        for alias in child.names:
+                            sub = f"{base_mod}.{alias.name}" if base_mod else alias.name
+                            if sub in full_g:
+                                targets.add(sub)
                     elif child.module:
                         base = child.module.split(".")[0]
                         if base in local_roots:
-                            target = child.module if child.module in full_g else base
-                            if target != mod:
-                                full_g[mod].add(target)
-                                if not in_scope:
-                                    top_g[mod].add(target)
+                            if child.module in full_g:
+                                targets.add(child.module)
+                            else:
+                                targets.add(base)
+                            for alias in child.names:
+                                sub = f"{child.module}.{alias.name}"
+                                if sub in full_g:
+                                    targets.add(sub)
+                    for target in targets:
+                        if target != mod:
+                            full_g[mod].add(target)
+                            if not in_scope:
+                                top_g[mod].add(target)
                 else:
                     walk(child, in_scope)
 
@@ -182,8 +196,8 @@ def test_fastapi_routes_and_openapi_match_snapshot():
     )
     assert len(routes) == expected["route_count"]
     assert routes == expected["routes"]
-    assert sorted(schema.get("paths", {}).keys()) == expected["openapi_paths"]
-    assert sorted(schema.get("components", {}).get("schemas", {}).keys()) == expected["openapi_schemas"]
+    assert schema.get("paths", {}) == expected["openapi_paths_spec"]
+    assert schema.get("components", {}).get("schemas", {}) == expected["openapi_schemas_spec"]
 
 
 def test_all_workflow_referenced_test_files_exist():

@@ -24,7 +24,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
 EMAIL = "lukas.wallrich@gmail.com"
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).resolve().parents[2]
 CSV_PATH = ROOT / "extracted.csv"
 ONBOARDING_PATH = ROOT / "onboarding.json"
 CACHE_PATH = ROOT / "oa_cache.json"

@@ -45,4 +45,4 @@ jobs:
       - name: Run PostgreSQL integration suite
         env:
           FLORA_TEST_DATABASE_URL: postgresql://flora_test@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/postgres
-        run: python -m pytest -q tests/integration
+        run: python -m pytest -q -o addopts="" -m pg tests/

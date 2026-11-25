@@ -71,7 +71,7 @@ projects, theses and working papers; `correct_publication_identifiers.py`):
    project, Zenodo copy or thesis version beside the article). Each absorbed
    record's source row is ruled a duplicate of the survivor's, as Source Records
    does, and the next build retires its published id.
-3. `score_report_authors.json` (`scripts/apply_score_report_authors.py`, above).
+3. `score_report_authors.json` (`scripts/archive/corrections/apply_score_report_authors.py`, above).
 
 Works with no DOI keep their OpenAlex record as the key to their metadata: when
 `url_r` is corrected from the OpenAlex link to the work's own page, the build
@@ -85,10 +85,10 @@ thesis keeps its record and gains the article's DOI in the field batch), ruled a
 duplicate, kept distinct, rejected, or left unchanged for want of evidence.
 
 ```bash
-python3 scripts/apply_field_corrections.py data/corrections/fred_data_179_fields.csv --check-live
-python3 scripts/apply_field_corrections.py data/corrections/fred_data_179_fields.csv --apply --admin-handle HANDLE
-python3 scripts/apply_duplicate_rulings.py data/corrections/fred_data_179_duplicates.csv --check-live
-python3 scripts/apply_duplicate_rulings.py data/corrections/fred_data_179_duplicates.csv --apply --admin-handle HANDLE
+python3 scripts/archive/corrections/apply_field_corrections.py data/corrections/fred_data_179_fields.csv --check-live
+python3 scripts/archive/corrections/apply_field_corrections.py data/corrections/fred_data_179_fields.csv --apply --admin-handle HANDLE
+python3 scripts/archive/corrections/apply_duplicate_rulings.py data/corrections/fred_data_179_duplicates.csv --check-live
+python3 scripts/archive/corrections/apply_duplicate_rulings.py data/corrections/fred_data_179_duplicates.csv --apply --admin-handle HANDLE
 ```
 
 Each batch commits whole or not at all, and reapplying it changes nothing.

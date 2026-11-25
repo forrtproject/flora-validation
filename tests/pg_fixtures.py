@@ -21,7 +21,11 @@ def local_database(monkeypatch):
     if not configured:
         pytest.skip("Set FLORA_TEST_DATABASE_URL to opt in to isolated PostgreSQL checks")
     parameters = parse_dsn(configured)
-    assert parameters.get("host") in {"127.0.0.1", "localhost", "::1"}
+    host = parameters.get("host")
+    hostaddr = parameters.get("hostaddr")
+    assert host in {"127.0.0.1", "localhost", "::1"}, f"Non-loopback PG host: {host!r}"
+    if hostaddr is not None:
+        assert hostaddr in {"127.0.0.1", "::1"}, f"Non-loopback PG hostaddr: {hostaddr!r}"
     name = "flora_pipeline_test_" + uuid.uuid4().hex[:12]
     admin = psycopg2.connect(configured)
     admin.autocommit = True

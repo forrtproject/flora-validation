@@ -2094,19 +2094,19 @@ the constraint-invalid empty string.
 python backfill_oa_work_ids.py --dry-run
 python backfill_oa_work_ids.py
 
-python backfill_quote_source.py
-python backfill_quote_source.py --apply
-python backfill_quote_source.py --recompute-all
-python backfill_quote_source.py --recompute-all --apply
+python scripts/archive/backfill_quote_source.py
+python scripts/archive/backfill_quote_source.py --apply
+python scripts/archive/backfill_quote_source.py --recompute-all
+python scripts/archive/backfill_quote_source.py --recompute-all --apply
 
-python backfill_flora_history.py --fred-data ../fred-data
-python backfill_flora_history.py --fred-data ../fred-data --apply
+python scripts/archive/backfill_flora_history.py --fred-data ../fred-data
+python scripts/archive/backfill_flora_history.py --fred-data ../fred-data --apply
 
 python backfill_author_orcids.py
 python backfill_author_orcids.py --apply
 
-python fetch_oa.py
-python build_static.py
+python scripts/archive/fetch_oa.py
+python scripts/archive/build_static.py
 ```
 
 Quote-source backfill updates `validated` only. It never overwrites a source

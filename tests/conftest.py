@@ -11,8 +11,11 @@ DATABASE_URL at a throwaway localhost database for that test only.
 Keep this file stdlib + pytest only: .github/workflows/release-flora-zenodo.yml
 runs pytest in a minimal environment with only requests, pyyaml, pandas, pytest.
 """
+import importlib
+import importlib.util
 import ipaddress
 import os
+import re
 import socket
 import urllib.parse
 
@@ -25,6 +28,7 @@ os.environ.setdefault("ADMIN_PASSWORD", "bootstrap-password-for-import")
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
 _ORIG_CREATE_CONNECTION = socket.create_connection
 _ORIG_SOCKET_CONNECT = socket.socket.connect
+_ORIG_PSYCOPG2_CONNECT = None
 
 
 def _is_loopback_host(host) -> bool:
@@ -41,43 +45,104 @@ def _is_loopback_host(host) -> bool:
         return False
 
 
+def _extract_dsn_hosts(dsn: str | None, kwargs: dict | None = None) -> list[str]:
+    """Extract all effective libpq host/hostaddr values from a URI or key=value DSN."""
+    hosts: list[str] = []
+    if dsn:
+        if dsn == STUB_DATABASE_URL:
+            return ["stub"]
+        if "://" in dsn:
+            parsed = urllib.parse.urlparse(dsn)
+            if parsed.hostname:
+                hosts.append(parsed.hostname)
+            qs = urllib.parse.parse_qs(parsed.query)
+            for key in ("host", "hostaddr"):
+                for v in qs.get(key, []):
+                    hosts.extend(part.strip() for part in v.split(",") if part.strip())
+        else:
+            for key in ("host", "hostaddr"):
+                for m in re.finditer(rf"\b{key}\s*=\s*(?:'([^']*)'|(\S+))", dsn):
+                    val = m.group(1) if m.group(1) is not None else m.group(2)
+                    hosts.extend(part.strip() for part in val.split(",") if part.strip())
+    if kwargs:
+        for key in ("host", "hostaddr"):
+            val = kwargs.get(key)
+            if val:
+                hosts.extend(part.strip() for part in str(val).split(",") if part.strip())
+    return hosts
+
+
+def _assert_safe_dsn(dsn: str | None = None, kwargs: dict | None = None) -> None:
+    if dsn == STUB_DATABASE_URL and not kwargs:
+        return
+    hosts = _extract_dsn_hosts(dsn, kwargs)
+    if hosts == ["stub"] and not kwargs:
+        return
+    for host in hosts:
+        if host != "stub" and not _is_loopback_host(host):
+            raise RuntimeError(
+                f"Blocked non-local PostgreSQL connection target in tests: {host!r}"
+            )
+
+
 def _assert_safe_database_url() -> None:
     url = os.environ.get("DATABASE_URL", "")
-    if url == STUB_DATABASE_URL:
-        return
-    parsed = urllib.parse.urlparse(url)
-    host = parsed.hostname
+    _assert_safe_dsn(url)
+
+
+def _guarded_create_connection(address, *args, **kwargs):
+    host = address[0] if isinstance(address, tuple) and address else None
     if not _is_loopback_host(host):
-        raise AssertionError(
-            f"Refusing to run tests with non-local DATABASE_URL host: {host!r}"
-        )
+        raise RuntimeError(f"Blocked outbound network connection in tests: {address!r}")
+    return _ORIG_CREATE_CONNECTION(address, *args, **kwargs)
 
 
-@pytest.fixture(autouse=True, scope="session")
-def _guard_database_url_and_network():
-    """Never touch a non-local database or open outbound network sockets in tests."""
-    _assert_safe_database_url()
-
-    def _guarded_create_connection(address, *args, **kwargs):
+def _guarded_connect(self, address):
+    if self.family in (socket.AF_INET, socket.AF_INET6):
         host = address[0] if isinstance(address, tuple) and address else None
         if not _is_loopback_host(host):
-            raise RuntimeError(f"Blocked outbound network connection in tests: {address!r}")
-        return _ORIG_CREATE_CONNECTION(address, *args, **kwargs)
+            raise RuntimeError(f"Blocked outbound socket connect in tests: {address!r}")
+    return _ORIG_SOCKET_CONNECT(self, address)
 
-    def _guarded_connect(self, address):
-        if self.family in (socket.AF_INET, socket.AF_INET6):
-            host = address[0] if isinstance(address, tuple) and address else None
-            if not _is_loopback_host(host):
-                raise RuntimeError(f"Blocked outbound socket connect in tests: {address!r}")
-        return _ORIG_SOCKET_CONNECT(self, address)
 
-    socket.create_connection = _guarded_create_connection
-    socket.socket.connect = _guarded_connect
-    try:
-        yield
-    finally:
-        socket.create_connection = _ORIG_CREATE_CONNECTION
-        socket.socket.connect = _ORIG_SOCKET_CONNECT
+# Install network and libpq guards at import time (before test collection imports any module).
+_assert_safe_database_url()
+socket.create_connection = _guarded_create_connection
+socket.socket.connect = _guarded_connect
+
+
+def _install_psycopg2_guard() -> None:
+    """Guard real libpq connections (which bypass Python sockets) when psycopg2 is installed."""
+    global _ORIG_PSYCOPG2_CONNECT
+    if _ORIG_PSYCOPG2_CONNECT is not None:
+        return
+    if importlib.util.find_spec("psycopg2") is None:
+        return
+    pg = importlib.import_module("psycopg2")
+    _ORIG_PSYCOPG2_CONNECT = pg.connect
+
+    def _guarded_pg_connect(dsn=None, *args, **kwargs):
+        _assert_safe_dsn(dsn, kwargs)
+        return _ORIG_PSYCOPG2_CONNECT(dsn, *args, **kwargs)
+
+    pg.connect = _guarded_pg_connect
+
+
+_install_psycopg2_guard()
+
+
+def pytest_collection_modifyitems(items):
+    """Automatically tag every test using local_database with @pytest.mark.pg."""
+    pg_marker = pytest.mark.pg
+    for item in items:
+        if "local_database" in getattr(item, "fixturenames", ()):
+            item.add_marker(pg_marker)
+
+
+@pytest.fixture(autouse=True)
+def _check_safe_database_url():
+    """Verify DATABASE_URL stays stub or loopback before every test."""
+    _assert_safe_database_url()
 
 
 @pytest.fixture(autouse=True, scope="session")

@@ -84,6 +84,7 @@ def test_an_oversized_detail_blob_is_replaced_by_a_summary():
         ("LoginRequest", {"handle": "user", "email": "e" * 5000 + "@example.org"}),
         ("ClaimCodeRequest", {"handle": "a" * 5000, "code": "1234", "email": "a@example.org"}),
         ("ClaimCodeRequest", {"handle": "user", "code": "c" * 5000, "email": "a@example.org"}),
+        ("ClaimCodeRequest", {"handle": "user", "code": "1234", "email": "e" * 5000 + "@example.org"}),
         ("AuthLinkRedeemRequest", {"token": "t" * 5000, "password": "long-enough-password"}),
         ("AuthLinkRedeemRequest", {"token": "tok", "password": "p" * 5000}),
     ],
@@ -92,3 +93,14 @@ def test_credentials_are_bounded_before_argon2_sees_them(model_name, payload):
     model = getattr(flora, model_name)
     with pytest.raises(ValidationError):
         model(**payload)
+
+
+def test_an_admin_password_is_never_inferred_from_the_email_field():
+    """A password containing '@' must never be routed through the validator login flow."""
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parent.parent / "docs" / "app.js").read_text(encoding="utf-8")
+    assert '!fieldVal.includes("@")' not in js
+    assert "adminLogin(handle, fieldVal)" not in js
+    login = js.split("async function doLogin()", 1)[1].split("\nasync function", 1)[0]
+    assert "adminLogin(" not in login, "doLogin must not reach the admin endpoint"

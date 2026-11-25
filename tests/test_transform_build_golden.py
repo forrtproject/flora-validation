@@ -148,6 +148,32 @@ def _fixture_inputs():
             outcome_quote="Effect replicated after correction.",
             out_quote_source="abstract",
         ),
+        # 10 & 11) Preprint + published original pair resolved via confirmed ruling (2b)
+        # AND an unconfirmed preprint pair that populates preprint_dedup_log (6b)
+        _row(
+            "REPL-000011",
+            doi_o="10.31234/osf.io/pre11",
+            doi_r="10.5555/rep.pre11",
+            outcome="successful",
+            outcome_quote="Confirmed preprint replacement held.",
+            out_quote_source="abstract",
+        ),
+        _row(
+            "REPL-000012",
+            doi_o="10.31234/osf.io/pre12",
+            doi_r="10.5555/rep.pre12a",
+            outcome="successful",
+            outcome_quote="Unconfirmed preprint study.",
+            out_quote_source="abstract",
+        ),
+        _row(
+            "REPL-000013",
+            doi_o="10.5555/pub.pre12",
+            doi_r="10.5555/rep.pre12b",
+            outcome="failed",
+            outcome_quote="Published version of the same original.",
+            out_quote_source="abstract",
+        ),
     ]
 
     def _meta(**vals):
@@ -240,6 +266,57 @@ def _fixture_inputs():
             year=2025,
             oa_work_id="W5002",
         ),
+        "10.31234/osf.io/pre11": _meta(
+            title="Preprint Version Eleven",
+            author='[{"family":"Pre","given":"P."}]',
+            journal="PsyArXiv",
+            year=2020,
+            oa_work_id="W6000",
+        ),
+        "10.5555/pub.pre11": _meta(
+            title="Published Version Eleven",
+            author='[{"family":"Pre","given":"P."}]',
+            journal="Published J",
+            year=2022,
+            apa_ref="Pre, P. (2022). Published Version Eleven. Published J.",
+            oa_work_id="W6001",
+        ),
+        "10.5555/rep.pre11": _meta(
+            title="Replication Eleven",
+            author='[{"family":"Rep","given":"R."}]',
+            journal="Rep J",
+            year=2023,
+            oa_work_id="W6002",
+        ),
+        "10.31234/osf.io/pre12": _meta(
+            title="Cognitive Load and Spatial Memory Under Uncertainty",
+            author='[{"family":"Vogel","given":"M."}]',
+            journal="PsyArXiv",
+            year=2021,
+            oa_work_id="W7000",
+        ),
+        "10.5555/pub.pre12": _meta(
+            title="Cognitive Load and Spatial Memory Under Uncertainty",
+            author='[{"family":"Vogel","given":"M."}]',
+            journal="Memory Journal",
+            year=2022,
+            apa_ref="Vogel, M. (2022). Cognitive Load and Spatial Memory Under Uncertainty. Memory Journal.",
+            oa_work_id="W7001",
+        ),
+        "10.5555/rep.pre12a": _meta(
+            title="Replication Twelve A",
+            author='[{"family":"Lee","given":"C."}]',
+            journal="Rep J",
+            year=2024,
+            oa_work_id="W7002",
+        ),
+        "10.5555/rep.pre12b": _meta(
+            title="Replication Twelve B",
+            author='[{"family":"Kim","given":"D."}]',
+            journal="Rep J",
+            year=2024,
+            oa_work_id="W7003",
+        ),
     }
 
     exclusions = [
@@ -255,7 +332,15 @@ def _fixture_inputs():
 
 
 def _run_golden_build(monkeypatch):
-    monkeypatch.setattr(preprint_dedup, "load_confirmed", lambda path=None: [])
+    confirmed = [
+        {
+            "side": "original",
+            "doi_1": "10.31234/osf.io/pre11",
+            "doi_2": "10.5555/pub.pre11",
+            "action": "keep_2",
+        }
+    ]
+    monkeypatch.setattr(preprint_dedup, "load_confirmed", lambda path=None: confirmed)
     rows_df, metadata, exclusions, pub_ids = _fixture_inputs()
     monkeypatch.setattr(flora_edits, "load_identifiers", lambda cur: pub_ids)
     cur = Tables(exclusions=exclusions)

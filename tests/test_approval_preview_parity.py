@@ -94,11 +94,22 @@ CASES = {
     "an outcome outside the vocabulary": {**EXTRACTED, "outcome": "inconclusive"},
     "replication outcome successful": {**EXTRACTED, "outcome": "successful"},
     "replication outcome mixed": {**EXTRACTED, "outcome": "mixed"},
+    "replication outcome uninformative": {**EXTRACTED, "outcome": "uninformative"},
     "replication outcome cannot_be_determined": {**EXTRACTED, "outcome": "cannot_be_determined"},
     "axes reproducible / robust": {
         **REPRODUCTION,
         "outcome_computation": "computationally reproducible",
         "outcome_robustness": "robust",
+    },
+    "axes technical failure / robust": {
+        **REPRODUCTION,
+        "outcome_computation": "technical failure",
+        "outcome_robustness": "robust",
+    },
+    "axes not checked / robustness challenges": {
+        **REPRODUCTION,
+        "outcome_computation": "not checked",
+        "outcome_robustness": "robustness challenges",
     },
     "axes not checked / not checked": {
         **REPRODUCTION,

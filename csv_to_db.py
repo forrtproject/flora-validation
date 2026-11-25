@@ -1202,6 +1202,8 @@ from extractor.config import (
     IMPORT_WITHDRAW_LOCK_ID,
     PIPELINE_ADVISORY_LOCK_ID,
     build_github_raw_url as _build_url,
+    github_branch as _github_branch,
+    github_repo as _github_repo,
 )
 
 
@@ -1501,7 +1503,13 @@ def _print_retire_plan(plan: list) -> None:
 RETIRE_MANIFEST_REPO_PATH = "data/retired_pairs.csv"
 
 
-def fetch_retire_manifest(dest: Path, commit: "str | None" = None) -> "Path | None":
+def fetch_retire_manifest(
+    dest: Path,
+    commit: "str | None" = None,
+    *,
+    repo: "str | None" = None,
+    branch: "str | None" = None,
+) -> "Path | None":
     """Download flora-extractor's manifest the way sync_csv downloads the CSV.
 
     Same repository and token. *commit* pins it to the commit the imported CSV
@@ -1512,7 +1520,7 @@ def fetch_retire_manifest(dest: Path, commit: "str | None" = None) -> "Path | No
     """
     import requests
 
-    url = _build_url(_GITHUB_REPO, commit or _GITHUB_BRANCH, RETIRE_MANIFEST_REPO_PATH)
+    url = _build_url(_github_repo(repo), commit or _github_branch(branch), RETIRE_MANIFEST_REPO_PATH)
     print(f"Fetching {url} …")
     token = os.environ.get("GITHUB_TOKEN", "")
     response = requests.get(url, headers={"Authorization": f"token {token}"} if token
