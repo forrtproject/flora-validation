@@ -61,6 +61,21 @@ def _import_graphs(root: Path = ROOT):
         tree = ast.parse(p.read_text(encoding="utf-8", errors="replace"), filename=str(p))
         is_pkg = is_pkg_of[p]
 
+        def _add_targets(targets, in_scope: bool):
+            expanded = set(targets)
+            for target in list(targets):
+                # Importing pkg.sub from outside pkg executes pkg/__init__.py first.
+                parts = target.split(".")
+                for i in range(1, len(parts)):
+                    anc = ".".join(parts[:i])
+                    if anc in full_g and not (mod == anc or mod.startswith(anc + ".")):
+                        expanded.add(anc)
+            for target in expanded:
+                if target != mod:
+                    full_g[mod].add(target)
+                    if not in_scope:
+                        top_g[mod].add(target)
+
         def walk(node, in_scope: bool):
             for child in ast.iter_child_nodes(node):
                 if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -69,14 +84,12 @@ def _import_graphs(root: Path = ROOT):
                     # Class bodies execute at import time, not deferred.
                     walk(child, in_scope)
                 elif isinstance(child, ast.Import):
+                    targets = set()
                     for alias in child.names:
                         base = alias.name.split(".")[0]
                         if base in local_roots:
-                            target = alias.name if alias.name in full_g else base
-                            if target != mod:
-                                full_g[mod].add(target)
-                                if not in_scope:
-                                    top_g[mod].add(target)
+                            targets.add(alias.name if alias.name in full_g else base)
+                    _add_targets(targets, in_scope)
                 elif isinstance(child, ast.ImportFrom):
                     targets = set()
                     if child.level > 0:
@@ -110,11 +123,7 @@ def _import_graphs(root: Path = ROOT):
                                     targets.add(child.module)
                                 else:
                                     targets.add(base)
-                    for target in targets:
-                        if target != mod:
-                            full_g[mod].add(target)
-                            if not in_scope:
-                                top_g[mod].add(target)
+                    _add_targets(targets, in_scope)
                 else:
                     walk(child, in_scope)
 
@@ -200,13 +209,19 @@ def test_import_graph_analyzer_handles_class_bodies_submodules_and_pkg_init_rela
         "class Boot:\n    from . import child\n", encoding="utf-8"
     )
     (pkg / "child.py").write_text("import pkg\n", encoding="utf-8")
-    # 2) `from pkg import leaf` submodule import + deferred function import back
+    # 2) `from pkg import leaf` executes pkg/__init__.py first, so if pkg/__init__.py
+    #    imports `outer` and `outer` runs `from pkg import leaf`, that is a real cycle.
     (pkg / "leaf.py").write_text(
         "def later():\n    import consumer\n", encoding="utf-8"
     )
     (tmp_path / "consumer.py").write_text(
         "class Holder:\n    from pkg import leaf\n", encoding="utf-8"
     )
+    pkg2 = tmp_path / "pkg2"
+    pkg2.mkdir()
+    (pkg2 / "__init__.py").write_text("import outer\n", encoding="utf-8")
+    (pkg2 / "sub.py").write_text("X = 1\n", encoding="utf-8")
+    (tmp_path / "outer.py").write_text("from pkg2 import sub\n", encoding="utf-8")
 
     top_g, full_g = _import_graphs(tmp_path)
     assert "pkg.child" in top_g["pkg"]
@@ -214,10 +229,12 @@ def test_import_graph_analyzer_handles_class_bodies_submodules_and_pkg_init_rela
     assert ["pkg", "pkg.child"] in _find_sccs(top_g)
 
     assert "pkg.leaf" in top_g["consumer"]
+    assert "pkg" in top_g["consumer"]
     assert "consumer" not in top_g["pkg.leaf"]
     assert "consumer" in full_g["pkg.leaf"]
     assert ["consumer", "pkg.leaf"] not in _find_sccs(top_g)
     assert ["consumer", "pkg.leaf"] in _find_sccs(full_g)
+    assert ["outer", "pkg2"] in _find_sccs(top_g)
 
 
 def test_no_top_level_import_cycles():

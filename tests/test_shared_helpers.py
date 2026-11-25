@@ -103,9 +103,12 @@ def test_sync_csv_and_retire_manifest_resolve_same_post_import_repo_and_branch(t
     )
 
 
-def test_conftest_blocks_non_local_hostaddr_multi_host_and_keyword_dsn():
+def test_conftest_blocks_non_local_hostaddr_multi_host_and_keyword_dsn(monkeypatch):
     import pytest
     from tests.conftest import _assert_safe_dsn
+
+    monkeypatch.delenv("PGHOST", raising=False)
+    monkeypatch.delenv("PGHOSTADDR", raising=False)
 
     # Loopback and stub are allowed
     _assert_safe_dsn("postgresql://stub/stub")
@@ -124,3 +127,14 @@ def test_conftest_blocks_non_local_hostaddr_multi_host_and_keyword_dsn():
         _assert_safe_dsn("postgresql://127.0.0.1:5432,db.example.org:5432/prod")
     with pytest.raises(RuntimeError, match="Blocked non-local PostgreSQL"):
         _assert_safe_dsn("host=db.example.org application_name=postgresql://127.0.0.1/db dbname=prod")
+
+    # Explicit host=localhost must NOT suppress PGHOSTADDR validation
+    monkeypatch.setenv("PGHOSTADDR", "203.0.113.10")
+    with pytest.raises(RuntimeError, match="Blocked non-local PostgreSQL"):
+        _assert_safe_dsn("host=localhost dbname=prod")
+    monkeypatch.delenv("PGHOSTADDR", raising=False)
+
+    # Malformed DSN must be blocked without leaking credentials
+    with pytest.raises(RuntimeError, match="Blocked unparseable PostgreSQL DSN") as exc_info:
+        _assert_safe_dsn("host=localhost password='supersecretpw")
+    assert "supersecretpw" not in str(exc_info.value)

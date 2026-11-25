@@ -76,6 +76,9 @@ def test_extractor_history_tracks_consensus_across_commits_branches_and_merges(g
         "merge", "--no-ff", "-s", "ours", "-q", "side", "-m", "merge side keeping ours",
         when="2026-06-12T10:00:00+00:00",
     )
+    # Delete the merged branch ref so only full parent traversal (not `--all --first-parent`)
+    # can reach the side-branch commit.
+    commit.git("branch", "-D", "side")
     own_commit(
         "2026-06-02T10:00:00+00:00",
         {"data/extracted_latest.csv": _csv(("P2", "replication", "mixed"))},

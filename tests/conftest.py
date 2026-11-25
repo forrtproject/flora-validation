@@ -58,21 +58,30 @@ def _parse_dsn_with_libpq(dsn: str) -> dict[str, str] | None:
     ext = importlib.import_module("psycopg2.extensions")
     try:
         return dict(ext.parse_dsn(dsn))
-    except Exception as exc:
-        raise RuntimeError(f"Blocked unparseable PostgreSQL DSN in tests: {dsn!r}") from exc
+    except Exception:
+        # Never echo raw DSN or parser details that could include credentials.
+        raise RuntimeError(
+            "Blocked unparseable PostgreSQL DSN in tests (details redacted)"
+        ) from None
 
 
 def _extract_dsn_hosts(dsn: str | None, kwargs: dict | None = None) -> list[str]:
-    """Extract all effective libpq host/hostaddr values from a URI or key=value DSN."""
-    hosts: list[str] = []
+    """Extract all effective libpq host and hostaddr values independently.
+
+    libpq resolves PGHOST and PGHOSTADDR independently when host or hostaddr is
+    omitted from the DSN/kwargs, so an explicit host=localhost does NOT suppress
+    PGHOSTADDR.
+    """
+    explicit_hosts: list[str] = []
+    explicit_hostaddrs: list[str] = []
     if dsn:
         if dsn == STUB_DATABASE_URL:
-            hosts.append("stub")
+            explicit_hosts.append("stub")
         else:
             parsed_libpq = _parse_dsn_with_libpq(dsn)
             if parsed_libpq is not None:
-                for key in ("host", "hostaddr"):
-                    hosts.extend(_split_libpq_hosts(parsed_libpq.get(key)))
+                explicit_hosts.extend(_split_libpq_hosts(parsed_libpq.get("host")))
+                explicit_hostaddrs.extend(_split_libpq_hosts(parsed_libpq.get("hostaddr")))
             elif dsn.lstrip().startswith(("postgresql://", "postgres://")):
                 parsed = urllib.parse.urlparse(dsn)
                 netloc = parsed.netloc
@@ -87,27 +96,27 @@ def _extract_dsn_hosts(dsn: str | None, kwargs: dict | None = None) -> list[str]
                     else:
                         host_part = entry.split(":", 1)[0]
                     if host_part:
-                        hosts.append(host_part)
+                        explicit_hosts.append(host_part)
                 qs = urllib.parse.parse_qs(parsed.query)
-                for key in ("host", "hostaddr"):
-                    for v in qs.get(key, []):
-                        hosts.extend(_split_libpq_hosts(v))
+                for v in qs.get("host", []):
+                    explicit_hosts.extend(_split_libpq_hosts(v))
+                for v in qs.get("hostaddr", []):
+                    explicit_hostaddrs.extend(_split_libpq_hosts(v))
             else:
-                for key in ("host", "hostaddr"):
+                for key, bucket in (("host", explicit_hosts), ("hostaddr", explicit_hostaddrs)):
                     for m in re.finditer(rf"(?:^|\s){key}\s*=\s*(?:'([^']*)'|(\S+))", dsn):
                         val = m.group(1) if m.group(1) is not None else m.group(2)
-                        hosts.extend(_split_libpq_hosts(val))
+                        bucket.extend(_split_libpq_hosts(val))
     if kwargs:
-        for key in ("host", "hostaddr"):
-            hosts.extend(_split_libpq_hosts(kwargs.get(key)))
-    if not hosts:
-        for env_key in ("PGHOST", "PGHOSTADDR"):
-            hosts.extend(_split_libpq_hosts(os.environ.get(env_key)))
-    return hosts
+        explicit_hosts.extend(_split_libpq_hosts(kwargs.get("host")))
+        explicit_hostaddrs.extend(_split_libpq_hosts(kwargs.get("hostaddr")))
+    effective_hosts = explicit_hosts or _split_libpq_hosts(os.environ.get("PGHOST"))
+    effective_hostaddrs = explicit_hostaddrs or _split_libpq_hosts(os.environ.get("PGHOSTADDR"))
+    return effective_hosts + effective_hostaddrs
 
 
 def _assert_safe_dsn(dsn: str | None = None, kwargs: dict | None = None) -> None:
-    if dsn == STUB_DATABASE_URL and not kwargs:
+    if dsn == STUB_DATABASE_URL and not kwargs and not os.environ.get("PGHOSTADDR"):
         return
     hosts = _extract_dsn_hosts(dsn, kwargs)
     if hosts == ["stub"] and not kwargs:
