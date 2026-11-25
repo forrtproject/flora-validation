@@ -279,7 +279,9 @@ def _normalize(text: str | None) -> str:
 def _norm_doi(doi: str | None) -> str:
     """DOIs are case-insensitive and often pasted as resolver links — compare the
     bare, lowercased form so '10.1/X' and 'https://doi.org/10.1/x' agree."""
-    return re.sub(r'(?i)^(?:https?://(?:dx\.)?doi\.org/|doi:)\s*', '', (doi or '').strip()).lower()
+    from shared.doi import normalize_doi_key
+
+    return normalize_doi_key(doi)
 
 
 def _additional_checks(h: dict) -> dict:

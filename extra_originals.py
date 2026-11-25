@@ -31,7 +31,6 @@ MAX_SUGGESTIONS = 10
 # Longest stored text per suggestion field. Longer input is cut, not refused.
 SUGGESTION_LIMITS = {"doi_or_url": 500, "title": 1000, "study": 50, "note": 1000}
 
-_DOI_PREFIX = re.compile(r"(?i)^(?:https?://(?:dx\.)?doi\.org/|doi:)\s*")
 _HTTP_URL = re.compile(r"(?i)^https?://\S+$")
 
 
@@ -59,7 +58,9 @@ def text(value, limit: int | None = None) -> str:
 def normalize_doi(value) -> str:
     """A bare DOI: no resolver prefix or 'doi:'. '' when blank. Case is kept;
     comparisons lower-case both sides, as DOI names are case-insensitive."""
-    return _DOI_PREFIX.sub("", text(value)).strip()
+    from shared.doi import normalize_bare_doi
+
+    return normalize_bare_doi(text(value)) or ""
 
 
 def norm_title(value) -> str:

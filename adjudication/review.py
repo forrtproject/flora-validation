@@ -209,8 +209,9 @@ def _iso(row: dict | None, *fields: str) -> dict | None:
 
 def norm_doi(value) -> str:
     """db_schema.sql's source_norm_doi(), in Python."""
-    text = re.sub(r"^https?://(dx\.)?doi\.org/", "", str(value or "").strip().lower())
-    return re.sub(r"\s.*$", "", re.sub(r"^doi:\s*", "", text))
+    from shared.doi import normalize_doi_key
+
+    return normalize_doi_key(value, drop_whitespace=True)
 
 
 def _in_flora(cur, record_id: str, doi_r: str) -> list[dict]:

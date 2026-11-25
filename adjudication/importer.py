@@ -89,12 +89,9 @@ class ImportDataError(ValueError):
 # ---------------------------------------------------------------------------
 
 def normalise_doi(value) -> str:
-    text = str(value or "").strip().lower()
-    for prefix in ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/",
-                   "http://dx.doi.org/", "doi:"):
-        if text.startswith(prefix):
-            text = text[len(prefix):]
-    return text.strip()
+    from shared.doi import normalize_doi_key
+
+    return normalize_doi_key(value)
 
 
 # A DOI inside a cell that holds more: "10.1017/x (case conflict 1)" or

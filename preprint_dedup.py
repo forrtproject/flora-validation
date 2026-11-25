@@ -226,17 +226,9 @@ def normalize_doi(doi) -> str:
     detectable at all: `10.1037//0022-3514.46.4.778` and `10.1037/0022-3514.46.4.778`
     are the same paper, and so are the `%3c` and `<` spellings of a Wiley DOI.
     """
-    text = _s(doi).lower()
-    if not text:
-        return ""
-    text = re.sub(r"^(https?://)?(dx\.)?doi\.org/", "", text)
-    text = re.sub(r"^doi:", "", text)
-    text = re.sub(r"^(10\.[0-9]+)//", r"\1/", text)
-    try:
-        text = unquote(text)
-    except Exception:                                          # noqa: BLE001
-        pass
-    return text.strip()
+    from shared.doi import canonical_doi
+
+    return canonical_doi(_s(doi), repair_double_slash=True)
 
 
 def normalize_title(title) -> str:

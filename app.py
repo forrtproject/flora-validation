@@ -1067,9 +1067,9 @@ def _validated_outcome_request(req, base_type: str | None, base_outcome: str | N
 def _normalize_doi(doi: str | None) -> str | None:
     """Bare DOI: strip a doi.org resolver prefix / 'doi:' and whitespace.
     Returns None for empty input so '' keeps its 'clear the value' meaning."""
-    if doi is None:
-        return None
-    return re.sub(r'(?i)^(?:https?://(?:dx\.)?doi\.org/|doi:)\s*', '', doi.strip()) or None
+    from shared.doi import normalize_bare_doi
+
+    return normalize_bare_doi(doi)
 
 
 def _same_outcome_as_agreement(req: JudgeRequest, base_type: str | None,
