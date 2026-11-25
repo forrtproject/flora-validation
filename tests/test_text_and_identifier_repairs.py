@@ -292,3 +292,8 @@ def test_names_na_and_nan_are_kept():
     assert bh.add_reference_authors("(2010). Title.", [{"family": "Jiang", "given": "Nan"}, {"family": "Na", "given": "Elim"}]) \
         == "Jiang, N., & Na, E. (2010). Title."
 
+
+
+def test_a_doi_link_keeps_a_hash_in_the_doi():
+    assert ts._doi_url("10.1/a#b") == "https://doi.org/10.1/a%23b"
+    assert ts._doi_url(DECODED) == "https://doi.org/" + DECODED

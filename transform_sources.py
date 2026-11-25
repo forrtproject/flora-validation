@@ -598,7 +598,9 @@ def _doi_url(value):
     with a TypeError on every row that has no original DOI.
     """
     doi = _s(value)
-    return "https://doi.org/" + doi if _DOI_URL_RE.match(doi) else None
+    # "#" and "?" would end the link's path; the rest of a DOI is written as it is.
+    return ("https://doi.org/" + doi.replace("#", "%23").replace("?", "%3F")
+            if _DOI_URL_RE.match(doi) else None)
 
 
 def _without_tracking(url):
