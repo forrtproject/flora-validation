@@ -295,5 +295,5 @@ def test_names_na_and_nan_are_kept():
 
 
 def test_a_doi_link_keeps_a_hash_in_the_doi():
-    assert ts._doi_url("10.1/a#b") == "https://doi.org/10.1/a%23b"
+    assert ts._doi_url("10.1234/a#b") == "https://doi.org/10.1234/a%23b"
     assert ts._doi_url(DECODED) == "https://doi.org/" + DECODED
