@@ -495,6 +495,11 @@ def to_output_shape(frame, keep_extras: bool = True):
     for column in ("author_o", "author_r"):
         if column in out.columns:
             out[column] = out[column].map(lambda value: normalise_author_json(value, preserve_unresolved=True))
+    # One separator in the identifier lists, corrections included: ", ".
+    for column in ("alt_identifier_o", "alt_identifier_r"):
+        if column in out.columns:
+            out[column] = out[column].map(lambda v: normalise_identifier_list(v)
+                                          if isinstance(v, str) else v)
     out["doi_o_hash"] = out["doi_o"].apply(doi_hash)
     out["doi_r_hash"] = out["doi_r"].apply(doi_hash)
     if "source" in out:
@@ -607,6 +612,34 @@ def norm_url(value):
     v = _without_tracking(v)
     v = v.rstrip("/")
     return v or None
+
+
+# The one separator of a multi-value identifier column (alt_identifier_o/_r) as
+# published: ", ", as preprint_dedup.append_alt_identifier writes it. A semicolon
+# cannot be one, because SICI DOIs hold them ("…<107::aid-bdm292>3.0.co;2-y"); it is
+# read as a separator only before whitespace or the start of another identifier.
+IDENTIFIER_SEPARATOR = ", "
+_IDENTIFIER_SPLIT_RE = re.compile(
+    r"\s*,\s*"                                          # a comma, however spaced
+    r"|\s*;(?=\s|10\.\d|https?://|doi:)\s*"              # a semicolon between identifiers
+    r"|\s*\|\s*"                                         # a pipe
+    r"|\s+(?=10\.\d|https?://|doi:)"                     # whitespace before an identifier
+    r"|\s*\n\s*", re.I)                                  # a line break
+
+
+def normalise_identifier_list(value):
+    """An alt_identifier cell as one list joined by ", ": other separators (a
+    semicolon between identifiers, a pipe, a line break, a space) become it, and a
+    repeated identifier (ignoring case) is kept once. Blank stays None."""
+    if not isinstance(value, str) or not value.strip():
+        return None if not isinstance(value, str) else (value.strip() or None)
+    parts, seen = [], set()
+    for part in _IDENTIFIER_SPLIT_RE.split(value.strip()):
+        part = part.strip().rstrip(";").strip()
+        if part and part.lower() not in seen:
+            seen.add(part.lower())
+            parts.append(part)
+    return IDENTIFIER_SEPARATOR.join(parts) or None
 
 
 def strip_redundant_url(row):

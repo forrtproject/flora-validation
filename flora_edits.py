@@ -200,6 +200,8 @@ def clean_value(field: str, value, record_type) -> "str | None":
         if not doi or not doi.startswith("10."):
             raise ValueError(f"{field} must be a DOI starting with 10. (leave it blank for none)")
         return doi
+    if field in ("alt_identifier_o", "alt_identifier_r"):
+        return transform_sources.normalise_identifier_list(text)
     if field == "outcome":
         outcome = normalize_outcome(text)
         if outcome not in REPLICATION_OUTCOMES:

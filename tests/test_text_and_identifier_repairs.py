@@ -163,3 +163,41 @@ def test_the_metadata_join_supplies_a_cached_reference_its_author():
         "authors_json": json.dumps([{"name": "The TwiLex Group"}])}}
     ts.join_metadata(frame, meta, sides=("r",))
     assert frame.loc[0, "ref_r"].startswith("The TwiLex Group. (2024). First language effects")
+
+
+# ── one separator in identifier lists ─────────────────────────────────────────
+
+SICI = "10.1002/(sici)1099-0771(199806)11:2<107::aid-bdm292>3.0.co;2-y"
+
+
+@pytest.mark.parametrize("value,expected", [
+    (SICI, SICI),                                    # its semicolon is part of the DOI
+    (SICI + "; 10.2/b", SICI + ", 10.2/b"),
+    ("10.1/a;10.2/b", "10.1/a, 10.2/b"),
+    ("10.1/a ,10.2/b, 10.1/A", "10.1/a, 10.2/b"),
+    ("10.1/a | https://osf.io/x", "10.1/a, https://osf.io/x"),
+    ("10.1/a\n10.2/b", "10.1/a, 10.2/b"),
+    ("10.1/a 10.2/b", "10.1/a, 10.2/b"),
+    ("10.1/a, 10.2/b", "10.1/a, 10.2/b"),
+    ("  ", None),
+])
+def test_identifier_lists_are_joined_by_one_separator(value, expected):
+    assert ts.normalise_identifier_list(value) == expected
+
+
+def test_export_and_corrections_use_the_separator():
+    import flora_edits
+    assert flora_edits.clean_value("alt_identifier_r", "10.1/a; 10.2/b", "replication") == "10.1/a, 10.2/b"
+    frame = pd.DataFrame([{"doi_o": "10.1/o", "doi_r": "10.1/r", "title_o": "O", "title_r": "R",
+                           "type": "replication", "alt_identifier_r": "10.1/a;10.2/b",
+                           "alt_identifier_o": SICI}])
+    out = ts.to_output_shape(frame)
+    assert out.loc[0, "alt_identifier_r"] == "10.1/a, 10.2/b"
+    assert out.loc[0, "alt_identifier_o"] == SICI
+
+
+def test_separator_check():
+    frame = pd.DataFrame([{"flora_id": "A", "alt_identifier_o": SICI, "alt_identifier_r": "10.1/a; 10.2/b"},
+                          {"flora_id": "B", "alt_identifier_o": None, "alt_identifier_r": "10.1/a, 10.2/b"}])
+    items = vf._check_identifier_separators(frame)
+    assert [(item["column"], item["value"]) for item in items] == [("alt_identifier_r", "10.1/a; 10.2/b")]

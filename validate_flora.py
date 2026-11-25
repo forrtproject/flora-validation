@@ -542,6 +542,17 @@ def _check_doi_format(df):
     return issues
 
 
+def _check_identifier_separators(df):
+    issues = []
+    for _, row in df.iterrows():
+        for column in ALT_COLUMNS:
+            value = _text(row.get(column))
+            if value and transform_sources.normalise_identifier_list(value) != value:
+                issues.append(finding("identifier_separator", [row], column, value,
+                                      f"{column} is not one list separated by \", \""))
+    return issues
+
+
 def _references_conflict(refs, threshold=0.2) -> bool:
     """Whether any two of these references are more than `threshold` apart.
 
@@ -746,6 +757,11 @@ CHECKS = [
     ("invalid_doi", PROBLEM, "DOI format valid", "Invalid DOI format", _check_doi_format,
      "doi_o or doi_r is not a bare DOI (10.NNNN/…), or a DOI listed in alt_identifier_o "
      "or alt_identifier_r is malformed."),
+    ("identifier_separator", PROBLEM, "Identifier lists use one separator",
+     "Identifier list with another separator", _check_identifier_separators,
+     "alt_identifier_o or alt_identifier_r separates its values with something other "
+     "than \", \" (a semicolon, a pipe, a line break), or lists one twice. Semicolons "
+     "belong to some DOIs (…3.0.co;2-y), so readers split on commas only."),
     ("reference_conflict", PROBLEM, "DOI mapped to conflicting references",
      "DOI with conflicting references", _check_reference_conflicts,
      "The same DOI appears with references more than 20% apart."),
