@@ -302,3 +302,14 @@ def test_a_doi_link_keeps_a_hash_in_the_doi():
 def test_identifier_list_edges():
     assert ts.normalise_identifier_list("10.1/a, https://doi.org/10.1/A") == "10.1/a"
     assert ts.normalise_identifier_list("https://example.org/a,") == "https://example.org/a,"
+
+
+@pytest.mark.parametrize("authors,expected", [
+    ("The TwiLex Group", "The TwiLex Group. (2024)."),      # OpenAlex display names
+    ("Nicholas Bloom", "Bloom, N. (2024)."),
+])
+def test_the_join_completes_a_reference_from_plain_text_authors(authors, expected):
+    frame = pd.DataFrame([_no_doi_row(doi_r="10.1017/s0272263124000275")])
+    ts.join_metadata(frame, {"10.1017/s0272263124000275": {
+        "title": "T", "authors": authors, "apa_ref": "(Ed.). (2024). T. Journal."}}, sides=("r",))
+    assert frame.loc[0, "ref_r"].startswith(expected)

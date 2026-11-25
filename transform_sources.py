@@ -992,7 +992,10 @@ def join_metadata(df, meta, sides=("o", "r")):
     must hold the source's values, which are kept where no provider answers.
     """
     from enrich_works import extract_work_id        # local: avoids an import cycle
-    from bibliographic_helpers import add_reference_authors, normalise_key
+    from bibliographic_helpers import add_reference_authors, normalise_author_json, normalise_key
+
+    def authors_present(value):
+        return isinstance(value, (str, list)) and bool(value)
     for side in sides:
         doi_col = f"doi_{side}"
         keys = df[doi_col].map(lambda d: meta.get(normalise_key(d)) if d else None)
@@ -1070,8 +1073,12 @@ def join_metadata(df, meta, sides=("o", "r")):
         # A cached reference that opens with "(Ed.). (2010)." lacks its author: DOI
         # content negotiation drops group authors and works deposited without any.
         # The author list joined above supplies it where one is known.
-        df[f"ref_{side}"] = [add_reference_authors(ref, authors) for ref, authors
-                             in zip(df[f"ref_{side}"], df[f"author_{side}"])]
+        # Authors read as the export will publish them: OpenAlex supplies display
+        # names, which normalise_author_json structures, keeping a group whole.
+        df[f"ref_{side}"] = [
+            add_reference_authors(ref, normalise_author_json(authors, preserve_unresolved=True)
+                                  if authors_present(authors) else None)
+            for ref, authors in zip(df[f"ref_{side}"], df[f"author_{side}"])]
 
         if side == "o":
             # R's formatted metadata includes the original DOI landing page.
