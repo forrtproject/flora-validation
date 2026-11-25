@@ -201,3 +201,37 @@ def test_separator_check():
                           {"flora_id": "B", "alt_identifier_o": None, "alt_identifier_r": "10.1/a, 10.2/b"}])
     items = vf._check_identifier_separators(frame)
     assert [(item["column"], item["value"]) for item in items] == [("alt_identifier_r", "10.1/a; 10.2/b")]
+
+
+# ── OpenAlex records as metadata keys beside a landing page ──────────────────
+
+def _no_doi_row(**values):
+    row = {f"{field}_r": None for field in ("doi", "url", "ref", "author", "year", "title",
+                                            "journal", "volume", "issue", "pages", "language",
+                                            "oa_url", "oa_work_id", "bibtex_ref", "alt_identifier")}
+    return {**row, "abstract_r": None, **values}
+
+
+META = {"W2735016722": {"title": "A Survey of Rewards for Teens", "year": "2017",
+                        "authors_json": json.dumps([{"family": "King", "given": "Abigail"}])}}
+
+
+@pytest.mark.parametrize("values", [
+    {"url_r": "https://openalex.org/W2735016722"},
+    {"url_r": "https://cornerstone.lib.mnsu.edu/etds/693",
+     "alt_identifier_r": "https://openalex.org/W2735016722"},
+    {"url_r": "https://cornerstone.lib.mnsu.edu/etds/693",
+     ts.WORK_ID_HINT.format(side="r"): "https://openalex.org/W2735016722"},
+])
+def test_a_work_with_no_doi_keeps_its_openalex_metadata(values):
+    frame = pd.DataFrame([_no_doi_row(**values)])
+    ts.join_metadata(frame, META, sides=("r",))
+    assert frame.loc[0, "title_r"] == "A Survey of Rewards for Teens"
+    assert frame.loc[0, "year_r"] == "2017"
+
+
+def test_openalex_work_id():
+    assert ts.openalex_work_id("10.1/x, https://openalex.org/W2735016722") == "W2735016722"
+    assert ts.openalex_work_id("https://openalex.org/works/w123456") == "W123456"
+    assert ts.openalex_work_id("https://osf.io/abc") is None
+    assert ts.openalex_work_id(None) is None

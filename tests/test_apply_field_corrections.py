@@ -31,7 +31,7 @@ def record(monkeypatch):
 
 def test_the_committed_batch_is_valid():
     rows = load_batch("data/corrections/fred_data_179_fields.csv")
-    assert {row["id"] for row in rows} >= {"FLORA-002628", "FLORA-002632", "VAL-000497"}
+    assert {row["id"] for row in rows} >= {"FLORA-002628", "FLORA-001168", "VAL-000497"}
 
 
 def test_one_save_per_record_with_its_notes_and_version(tmp_path, record):

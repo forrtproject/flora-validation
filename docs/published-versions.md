@@ -118,13 +118,14 @@ applies only the reviewed cache/approved_publication_corrections.csv, using the
 existing database secret, and records github-actions plus the triggering actor.
 The checkbox defaults to false. A second manual option, resolve_published_versions, runs automatic resolution against the live database.
 The approved file contains the seven verified recent cases, the two
-user-specified fixtures, and 32 corrections from fred-data #179: preprints, OSF
+user-specified fixtures, and 40 corrections from fred-data #179: preprints, OSF
 projects, theses and working papers whose journal version the routine does not
 check (OSF projects and repository DOIs are not assumed to be preprints). Each was
 found by a Crossref title and first-author search and checked against the Crossref
 record. Candidates that need a person's judgement, and versions that already exist
 as another record, are listed in data/corrections/fred_data_179_published_version_review.csv
-and are not applied. Subsequent runs safely skip already-correct records.
+and are not applied. Rows marked `superseded` are skipped: their record was later merged
+into one that already carries the DOI. Subsequent runs safely skip already-correct records.
 
 ## Schedule, cache and failure handling
 

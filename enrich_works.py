@@ -373,6 +373,21 @@ def work_ids_in_product(cur) -> list:
     """
     import flora_edits                              # local: it imports transform_sources
     corrected = flora_edits.identifier_values(cur, ("url_o", "url_r"))
+    # An OpenAlex link listed as an alternative identifier is a metadata key too
+    # (transform_sources.join_metadata), whether a sheet or a correction put it there.
+    alternatives = flora_edits.identifier_values(cur, ("alt_identifier_o", "alt_identifier_r"))
+    cur.execute(
+        """
+        SELECT alt_identifier_o AS alt FROM source_records
+         WHERE duplicate_status IS DISTINCT FROM 'duplicate' AND deleted_at IS NULL
+           AND alt_identifier_o ~* 'openalex\\.org/'
+        UNION ALL
+        SELECT alt_identifier_r FROM source_records
+         WHERE duplicate_status IS DISTINCT FROM 'duplicate' AND deleted_at IS NULL
+           AND alt_identifier_r ~* 'openalex\\.org/'
+        """
+    )
+    alternatives += [record.get("alt") for record in cur.fetchall()]
     cur.execute(
         """
         SELECT DISTINCT url FROM (
@@ -387,12 +402,19 @@ def work_ids_in_product(cur) -> list:
         WHERE url ~* 'openalex\\.org/W[0-9]+'
         """
     )
+    urls = [record["url"] for record in cur.fetchall()]
     seen, out = set(), []
-    for url in [record["url"] for record in cur.fetchall()] + corrected:
+    for url in urls + corrected:
         work_id = extract_work_id(url)
         if work_id and work_id not in seen:
             seen.add(work_id)
             out.append(work_id)
+    for listed in alternatives:
+        for match in re.finditer(r"openalex\.org/(?:works/)?(W\d{5,})", listed or "", re.I):
+            work_id = match.group(1).upper()
+            if work_id not in seen:
+                seen.add(work_id)
+                out.append(work_id)
     return out
 
 

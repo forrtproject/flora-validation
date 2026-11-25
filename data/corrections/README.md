@@ -55,22 +55,38 @@ explicit date provenance. Full original methods and spot checks are in
 Companion work: #29 handles author/export correctness; #30 retains the already-
 applied identifier corrections; #25 contains only the dependent release pipeline.
 
-# Identifier and link corrections from fred-data #179
+# Identifier, link and duplicate corrections from fred-data #179
 
-`fred_data_179_fields.csv` holds record-level corrections that the build cannot
-derive from a source: a missing report DOI, a wrong original link, and OpenAlex
-records that stood in for a report link. Each row names the field, the value it
-replaces, the new value, a note for the correction log, and the API record that
-verifies it. Published versions of preprints for the same issue are in
-`cache/approved_publication_corrections.csv`; apply those first, so a corrected
-`doi_r` and its preserved preprint alias are in place.
+Three batches, applied in this order after
+`cache/approved_publication_corrections.csv` (journal versions of preprints, OSF
+projects, theses and working papers; `correct_publication_identifiers.py`):
+
+1. `fred_data_179_fields.csv` (`scripts/apply_field_corrections.py`): record-level
+   field corrections. A missing thesis DOI, a wrong original link, OpenAlex records
+   that stood in for a report link, and the identifiers of absorbed duplicates
+   carried to the record that keeps the report. `set` refuses a record whose field
+   no longer holds `before`; `append` adds an alternative identifier once.
+2. `fred_data_179_duplicates.csv` (`scripts/apply_duplicate_rulings.py`): records
+   that are another version of a report FLoRA already holds (a preprint, OSF
+   project, Zenodo copy or thesis version beside the article). Each absorbed
+   record's source row is ruled a duplicate of the survivor's, as Source Records
+   does, and the next build retires its published id.
+3. `score_report_authors.json` (`scripts/apply_score_report_authors.py`, above).
+
+Works with no DOI keep their OpenAlex record as the key to their metadata: when
+`url_r` is corrected from the OpenAlex link to the work's own page, the build
+looks the work up by the record the correction replaced, or by an OpenAlex link
+in `alt_identifier_r` (`transform_sources.join_metadata`).
+
+`fred_data_179_published_version_review.csv` lists every candidate the search
+found that is not in the approved file, with the decision taken on each: ruled a
+duplicate, kept distinct, rejected, or left unchanged for want of evidence.
 
 ```bash
-python3 scripts/apply_field_corrections.py data/corrections/fred_data_179_fields.csv               # offline check
-python3 scripts/apply_field_corrections.py data/corrections/fred_data_179_fields.csv --check-live  # plan, then roll back
+python3 scripts/apply_field_corrections.py data/corrections/fred_data_179_fields.csv --check-live
 python3 scripts/apply_field_corrections.py data/corrections/fred_data_179_fields.csv --apply --admin-handle HANDLE
+python3 scripts/apply_duplicate_rulings.py data/corrections/fred_data_179_duplicates.csv --check-live
+python3 scripts/apply_duplicate_rulings.py data/corrections/fred_data_179_duplicates.csv --apply --admin-handle HANDLE
 ```
 
-`set` refuses a record whose field no longer holds `before`; `append` adds an
-alternative identifier once. Each record is one editor save in the correction log,
-and the batch commits whole or not at all. Reapplying it changes nothing.
+Each batch commits whole or not at all, and reapplying it changes nothing.

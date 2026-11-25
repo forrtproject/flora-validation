@@ -931,6 +931,18 @@ JOINED_COLUMNS = {
 }
 
 
+# A working column for step 6c: the url a correction replaced, which can be the
+# OpenAlex record of a work with no DOI.
+WORK_ID_HINT = "_replaced_work_id_{side}"
+_OPENALEX_WORK_RE = re.compile(r"openalex\.org/(?:works/)?(W\d{5,})", re.I)
+
+
+def openalex_work_id(value) -> "str | None":
+    """The W-id of an OpenAlex link in `value` (a URL or an identifier list)."""
+    match = _OPENALEX_WORK_RE.search(value) if isinstance(value, str) else None
+    return match.group(1).upper() if match else None
+
+
 def join_metadata(df, meta, sides=("o", "r")):
     """Step 7: join cached bibliographic metadata onto df, in place, per side.
 
@@ -977,6 +989,14 @@ def join_metadata(df, meta, sides=("o", "r")):
         if url_column in df.columns:
             id_keys = df[url_column].map(
                 lambda u: (meta.get(normalise_key(u)) or meta.get(extract_work_id(u))) if u else None)
+            # The OpenAlex record can also be named elsewhere: in the alternative
+            # identifiers, or, for a url corrected from the OpenAlex link to the
+            # work's landing page, as the record the correction replaced (step 6c).
+            # It remains the key to the metadata of a work with no DOI.
+            for column in (WORK_ID_HINT.format(side=side), f"alt_identifier_{side}"):
+                if column in df.columns:
+                    named = df[column].map(lambda v: meta.get(openalex_work_id(v)) if openalex_work_id(v) else None)
+                    id_keys = id_keys.where(id_keys.notna(), named)
             for field, column in (("title", f"title_{side}"),
                                   ("authors", f"author_{side}"),
                                   ("journal", f"journal_{side}"),
@@ -1438,11 +1458,17 @@ def build(cur, verbose: bool = True,
             corrected = [rid for rid, fields in identifier_edits.items()
                          if fields.keys() & {f"doi_{side}", f"url_{side}"}]
             rows = df.index[df["record_id"].isin(corrected)]
+            # A url corrected from the OpenAlex record to the work's own page keeps
+            # that record as the metadata key: it is a work with no DOI.
+            hint = WORK_ID_HINT.format(side=side)
+            df[hint] = df["record_id"].map(
+                lambda rid: (identifier_edits.get(rid) or {}).get(f"url_{side}"))
             if len(rows):
                 join_metadata_again(
                     df, rows, side, meta, join_fallbacks,
                     kept_urls={rid for rid in corrected
                                if f"url_{side}" in identifier_edits[rid]})
+        df = df.drop(columns=[WORK_ID_HINT.format(side=side) for side in ("o", "r")], errors="ignore")
         # An exclusion added after a correction still removes the record: the
         # exclusion is the decision. A save refuses a correction onto one outright.
         excluded = pd.Series(False, index=df.index)
