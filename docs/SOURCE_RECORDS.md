@@ -174,7 +174,7 @@ column, so `year_r` is NULL for every FReD row.
 Seven columns are shared. The rest differ, which is why one table carries both with
 `type` as the discriminator and unused columns left NULL.
 
-| | replications (14) | reproductions (15) |
+| | replications (14) | reproductions (17) |
 |---|:---:|:---:|
 | `ref_o` `doi_o` `url_o` | ✅ | ✅ |
 | `ref_r` `doi_r` `url_r` | ✅ | ✅ |
@@ -182,7 +182,7 @@ Seven columns are shared. The rest differ, which is why one table carries both w
 | `validation_status` | ✅ | ✅ *(sheet calls it `validation`)* |
 | `outcome` `outcome_quote` `out_quote_source` | ✅ | — |
 | `year_r` | ✅ *(sheet calls it `year`)* | — |
-| `alt_identifier_o` `alt_identifier_r` | ✅ | — |
+| `alt_identifier_o` `alt_identifier_r` | ✅ | ✅ *(reproductions since 2026-11-16)* |
 | `study_o` | — | ✅ |
 | `outcome_computation` + `_quote` + `out_quote_computational_source` | — | ✅ |
 | `outcome_robustness` + `_quote` + `out_quote_robust_source` | — | ✅ |
@@ -576,7 +576,8 @@ One row per accepted sheet row.
 |---|---|
 | Identity | `record_id` (UUID PK) · `source` · `sheet_row_id` · `display_id` · `type` |
 | Shared | `ref_o` `doi_o` `url_o` `ref_r` `doi_r` `url_r` `abstract_r` |
-| Replication-only | `outcome` `outcome_quote` `out_quote_source` `year_r` `alt_identifier_o` `alt_identifier_r` |
+| Replication-only | `outcome` `outcome_quote` `out_quote_source` `year_r` |
+| Both types | `alt_identifier_o` `alt_identifier_r` |
 | Reproduction-only | `study_o` · `outcome_computation`(+`_quote`, +`out_quote_computational_source`) · `outcome_robustness`(+`_quote`, +`out_quote_robust_source`) |
 | Merged | `validation_status` |
 | Derived | `oa_work_id_o` `oa_work_id_r` · `content_fingerprint` |
