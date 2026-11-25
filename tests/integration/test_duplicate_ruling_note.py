@@ -3,7 +3,7 @@ note does, and names records by their display ids. Opt-in PostgreSQL test:
 FLORA_TEST_DATABASE_URL."""
 import pytest
 
-from tests.test_preparation_database import add_source, local_database  # noqa: F401
+from tests.pg_fixtures import add_source, local_database  # noqa: F401
 
 ORIGINAL, REPORT = "10.1037/xge0000001", "10.1016/j.replication.2020"
 

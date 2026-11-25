@@ -22,7 +22,7 @@ import consensus_engine as ce
 import llm_validator
 from backfill_outcome_agreement import converted
 from tests.test_consensus_engine import BASE_RECORD, H1_AGREE, LLM_ERROR, _written
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 ROOT = Path(__file__).resolve().parent.parent
 

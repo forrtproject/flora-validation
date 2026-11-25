@@ -11,7 +11,7 @@ from psycopg2.extras import RealDictCursor
 
 import adjudication
 from adjudication import judging
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 SAME = {"kind": "same original, different outcome", "flora_doi_o": "10.1/orig",
         "mo_doi_o": "https://doi.org/10.1/ORIG", "flora_outcome": "failed", "mo_outcome": "success"}

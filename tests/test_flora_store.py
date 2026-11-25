@@ -9,7 +9,7 @@ import pytest
 
 import final_export
 import flora_store
-from tests.test_preparation_database import local_database, add_source
+from tests.pg_fixtures import local_database, add_source
 
 
 def snapshot(*identifiers, **extras):

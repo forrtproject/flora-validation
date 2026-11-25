@@ -20,7 +20,7 @@ import flora_service
 import flora_store
 import source_records_service
 import transform_sources
-from tests.test_preparation_database import add_source, local_database  # noqa: F401
+from tests.pg_fixtures import add_source, local_database  # noqa: F401
 
 ORIGINAL = "10.9999/original.1"
 REPORT = "10.9999/report.1"

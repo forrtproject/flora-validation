@@ -11,7 +11,7 @@ from psycopg2.extras import RealDictCursor
 import pytest
 
 import flora_registry
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 
 def seed_identity(connection, *, published=True):

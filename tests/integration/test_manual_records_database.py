@@ -16,7 +16,7 @@ import manual_records
 import transform_sources
 import validate_flora
 from extractor_vocab import derive_reproduction_outcome
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 ADMIN = {"id": 1, "handle": "sophie"}
 OTHER = {"id": 2, "handle": "luke"}

@@ -16,8 +16,8 @@ import flora_store
 from output_lock import output_directory_lock
 import prepare_flora
 import source_sync_runner as runner
-from tests.test_preparation_database import local_database  # noqa: F401
-from tests.test_standalone_preparation_identity import add_unregistered_source
+from tests.pg_fixtures import local_database  # noqa: F401
+from tests.pg_fixtures import add_unregistered_source
 from tests.test_preparation_runner import frame, write_input
 
 

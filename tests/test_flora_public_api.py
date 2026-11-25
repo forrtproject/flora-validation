@@ -20,7 +20,7 @@ import pytest
 
 import flora_public_api
 import flora_store
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 
 ORIGINAL = "10.1234/original"

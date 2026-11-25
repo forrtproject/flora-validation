@@ -15,8 +15,8 @@ import flora_service
 import flora_store
 import prepare_flora
 import source_sync_runner as runner
-from tests.test_preparation_database import local_database, add_source  # noqa: F401
-from tests.test_standalone_preparation_identity import add_unregistered_source
+from tests.pg_fixtures import local_database, add_source  # noqa: F401
+from tests.pg_fixtures import add_unregistered_source
 from tests.test_preparation_runner import Connection, frame, write_input
 
 

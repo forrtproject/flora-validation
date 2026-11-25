@@ -394,12 +394,12 @@ def test_no_test_module_imports_app_unguarded():
     bare `import app` anywhere in tests/ applies this schema — index DDL included —
     to whatever DATABASE_URL points at, which is production when .env is present."""
     offenders = []
-    for f in sorted(Path(__file__).parent.glob("test_*.py")):
+    for f in sorted(Path(__file__).parent.rglob("test_*.py")):
         src = f.read_text(encoding="utf-8")
         imports_app = any(
             ln.startswith(("import app", "from app"))
             for ln in src.splitlines()
         )
         if imports_app and 'patch("psycopg2.connect"' not in src:
-            offenders.append(f.name)
+            offenders.append(str(f.relative_to(Path(__file__).parent)))
     assert not offenders, f"unguarded app import in: {offenders}"

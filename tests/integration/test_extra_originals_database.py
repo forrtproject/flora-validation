@@ -12,7 +12,7 @@ import pytest
 from psycopg2.extras import RealDictCursor
 
 import csv_to_db
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 
 def _cursor(conn):

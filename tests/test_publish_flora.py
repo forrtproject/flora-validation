@@ -16,7 +16,7 @@ import publish_flora
 import validate_flora
 import validate_flora_network
 from prepare_flora import read_export
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "publish-flora.yml"

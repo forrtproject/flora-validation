@@ -8,7 +8,7 @@ import pytest
 from psycopg2.extras import RealDictCursor
 
 import final_export
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 SCHEMA = (final_export.ROOT / "db_schema.sql").read_text(encoding="utf-8")
 

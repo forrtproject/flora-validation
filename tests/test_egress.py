@@ -40,7 +40,7 @@ import flora_public_api
 import flora_service
 import source_sync_runner
 import transform_sources
-from tests.test_preparation_database import add_source, local_database  # noqa: F401
+from tests.pg_fixtures import add_source, local_database  # noqa: F401
 
 ROOT = Path(__file__).resolve().parent.parent
 

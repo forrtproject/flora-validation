@@ -6,7 +6,7 @@ import pytest
 import backfill_outcome_agreement as backfill
 import consensus_engine
 from tests.test_outcome_quote_agreement import _now_agree, _seed, _state
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 
 @pytest.mark.parametrize("record_type, expected_status, expected_candidates", [

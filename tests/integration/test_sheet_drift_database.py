@@ -18,10 +18,10 @@ from psycopg2.extras import Json, RealDictCursor
 import flora_service
 import sheet_drift_service as svc
 import sync_sources as ss
-from tests.test_flora_edits_database import _pipeline, offline  # noqa: F401
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.integration.test_flora_edits_database import _pipeline, offline  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = yaml.safe_load((ROOT / "sources.yml").read_text(encoding="utf-8"))
 REPL = next(s for s in REGISTRY["sources"] if s["key"] == "replications")
 U1 = "11111111-1111-4111-8111-111111111111"

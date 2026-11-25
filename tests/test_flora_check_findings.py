@@ -30,7 +30,7 @@ import security_events
 import sheet_drift_service
 import validate_flora
 from tests.test_entry_checks import TYPE_KEY, _row, _store, db  # noqa: F401
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 ROOT = Path(__file__).resolve().parent.parent
 YEAR_KEY = validate_flora.finding_key("year_order", ["REPL-000003"], "year_r", "2011")

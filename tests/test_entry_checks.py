@@ -23,7 +23,7 @@ import final_export
 import flora_store
 import validate_flora
 import validate_flora_network as network
-from tests.test_preparation_database import add_source, local_database  # noqa: F401
+from tests.pg_fixtures import add_source, local_database  # noqa: F401
 
 OK, FAILED, UNCHECKED = network.OK, network.FAILED, network.UNCHECKED
 

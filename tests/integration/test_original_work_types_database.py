@@ -9,7 +9,7 @@ import enrich_works
 import entry_checks
 import original_work_types as types
 import validate_flora_network as network
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 DOI = '10.1002/npr2.70058'
 ADMIN = {'handle': 'type-review-test'}

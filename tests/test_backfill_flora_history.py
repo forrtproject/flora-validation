@@ -19,7 +19,7 @@ from psycopg2.extras import RealDictCursor
 import backfill_flora_history as bf
 import flora_registry
 import flora_service
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 UTC = dt.timezone.utc
 

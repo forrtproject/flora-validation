@@ -25,7 +25,7 @@ import auto_validate_waiting
 import consensus_engine
 import db_pool
 from tests.test_dashboard_split import flora
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 ROOT = Path(__file__).resolve().parent.parent
 APP_JS = (ROOT / "docs" / "app.js").read_text(encoding="utf-8")

@@ -253,7 +253,7 @@ def test_the_validation_report_flags_json_in_a_text_field():
 
 # ── against PostgreSQL: both DOI forms find the record ───────────────────────
 
-from tests.test_preparation_database import local_database  # noqa: E402,F401
+from tests.pg_fixtures import local_database  # noqa: E402,F401
 
 
 def test_both_forms_of_a_sici_doi_find_the_record(local_database):  # noqa: F811
@@ -284,7 +284,7 @@ def test_the_conflicts_filter_follows_the_build_and_its_corrections(local_databa
     import flora_registry
     import transform_sources
     from psycopg2.extras import RealDictCursor
-    from tests.test_preparation_database import add_source
+    from tests.pg_fixtures import add_source
 
     monkeypatch.setattr("bibliographic_helpers.request",
                         lambda *a, **kw: pytest.fail("Unexpected network lookup"))
@@ -356,7 +356,7 @@ def test_a_dropped_duplicates_clash_is_listed_too(local_database, monkeypatch): 
     import flora_registry
     import transform_sources
     from psycopg2.extras import RealDictCursor
-    from tests.test_preparation_database import add_source
+    from tests.pg_fixtures import add_source
 
     monkeypatch.setattr("bibliographic_helpers.request",
                         lambda *a, **kw: pytest.fail("Unexpected network lookup"))
@@ -456,7 +456,7 @@ def test_a_merged_reproductions_published_outcome_can_settle_its_clash(local_dat
 
 def test_an_older_change_log_accepts_a_confirmation(local_database):  # noqa: F811
     """Databases created before 'confirm' have the old CHECK; the schema replaces it."""
-    from tests.test_preparation_database import final_export
+    from tests.pg_fixtures import final_export
     schema = (final_export.ROOT / "db_schema.sql").read_text(encoding="utf-8")
     with local_database, local_database.cursor() as cur:
         cur.execute("ALTER TABLE flora_record_changes DROP CONSTRAINT flora_record_changes_action_check")

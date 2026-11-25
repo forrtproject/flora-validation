@@ -13,8 +13,8 @@ from psycopg2.extras import RealDictCursor
 import flora_service
 import preprint_dedup
 import resolve_publication_versions as runner
-from tests.test_flora_edits_database import _pipeline, _published, _source_rows, offline  # noqa: F401
-from tests.test_preparation_database import add_source, local_database  # noqa: F401
+from tests.integration.test_flora_edits_database import _pipeline, _published, _source_rows, offline  # noqa: F401
+from tests.pg_fixtures import add_source, local_database  # noqa: F401
 from tests.test_published_versions import ARTICLE, PREPRINT, FakeClient
 
 ORIGINAL, UNRELATED = "10.9999/original.1", "10.9999/original.2"

@@ -19,7 +19,7 @@ import source_records_service as grid
 import sync_validated
 import transform_sources
 from tests.test_auto_validation import _judge, _pair, _record, _validator, admin  # noqa: F401
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 
 def _validate(cur, record_id, title="A replication"):

@@ -23,7 +23,7 @@ import flora_service
 import preprint_dedup
 import security_events
 import transform_sources
-from tests.test_preparation_database import local_database  # noqa: F401 (fixture)
+from tests.pg_fixtures import local_database  # noqa: F401 (fixture)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -354,7 +354,7 @@ def _seed_pairs(cur):
       first authors, both preprints -> held for review, both rows kept.
     * One team's preprint and its publication -> the preprint dropped automatically.
     """
-    from tests.test_preparation_database import add_source
+    from tests.pg_fixtures import add_source
     rows = [
         ("REPL-000001", "10.1016/j.jenvp.2014.10.008", "10.31234/osf.io/aaaa1",
          "Reproduction (with author data): Ku & Zaroff (2014)", "Lena Parsons", "2022"),

@@ -15,8 +15,8 @@ import pytest
 
 import consensus_engine
 from tests.test_dashboard_split import flora
-from tests.test_decided_records import JUDGE, env, judged, one, record, run, validator  # noqa: F401
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.integration.test_decided_records import JUDGE, env, judged, one, record, run, validator  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 
 def serve(client, count=1, mode="normal", buffered=False):

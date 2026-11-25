@@ -1,0 +1,1135 @@
+{
+  "route_count": 120,
+  "routes": [
+    {
+      "type": "Route",
+      "path": "/openapi.json",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "name": "openapi"
+    },
+    {
+      "type": "Route",
+      "path": "/docs",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "name": "swagger_ui_html"
+    },
+    {
+      "type": "Route",
+      "path": "/docs/oauth2-redirect",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "name": "swagger_ui_redirect"
+    },
+    {
+      "type": "Route",
+      "path": "/redoc",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "name": "redoc_html"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/login",
+      "methods": [
+        "POST"
+      ],
+      "name": "login"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/login/claim-code",
+      "methods": [
+        "POST"
+      ],
+      "name": "claim_code_account"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/onboarding",
+      "methods": [
+        "GET"
+      ],
+      "name": "onboarding_pairs"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/onboarding/complete",
+      "methods": [
+        "POST"
+      ],
+      "name": "onboarding_complete"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/update-seen",
+      "methods": [
+        "POST"
+      ],
+      "name": "mark_update_seen"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/my-judgements",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_my_judgements"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/my-judgements/{queue_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_my_judgement_detail"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/next-pairs",
+      "methods": [
+        "POST"
+      ],
+      "name": "next_pairs"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/paper-review/claim",
+      "methods": [
+        "POST"
+      ],
+      "name": "claim_paper_review"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/paper-review/refresh",
+      "methods": [
+        "POST"
+      ],
+      "name": "refresh_paper_review"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/pairs/{queue_id}/start",
+      "methods": [
+        "POST"
+      ],
+      "name": "start_pair"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/flora/history",
+      "methods": [
+        "GET"
+      ],
+      "name": "public_flora_history"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/health",
+      "methods": [
+        "GET"
+      ],
+      "name": "health"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/restricted",
+      "methods": [
+        "POST"
+      ],
+      "name": "report_restricted"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/my-assignments",
+      "methods": [
+        "GET"
+      ],
+      "name": "my_assignments"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/assignment/{record_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_assignment"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/assignment-judge",
+      "methods": [
+        "POST"
+      ],
+      "name": "assignment_judge"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/judge",
+      "methods": [
+        "POST"
+      ],
+      "name": "judge"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/skip",
+      "methods": [
+        "POST"
+      ],
+      "name": "skip_pair"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/submission-failures/release",
+      "methods": [
+        "POST"
+      ],
+      "name": "release_failed_submission"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/senior-reject",
+      "methods": [
+        "POST"
+      ],
+      "name": "senior_reject"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/stats",
+      "methods": [
+        "GET"
+      ],
+      "name": "stats"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/leaderboard",
+      "methods": [
+        "GET"
+      ],
+      "name": "leaderboard"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/forgot-handle",
+      "methods": [
+        "POST"
+      ],
+      "name": "forgot_handle"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/stats",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_stats"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/serving-config",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_serving_config"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/serving-config",
+      "methods": [
+        "PUT"
+      ],
+      "name": "put_serving_config"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/serving-config/preview",
+      "methods": [
+        "GET"
+      ],
+      "name": "preview_serving_config"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/dashboard",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_dashboard"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/banner",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_site_banner"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/banner",
+      "methods": [
+        "POST"
+      ],
+      "name": "set_site_banner"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/validators",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_list_validators"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/restricted",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_restricted"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/assign",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_assign"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/validators/{validator_id}/flagged",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_validator_flagged"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/validators/{validator_id}/set-tier",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_set_tier"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/security-events",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_security_events"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/admins",
+      "methods": [
+        "GET"
+      ],
+      "name": "list_admins"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/admins/{admin_id}/validator",
+      "methods": [
+        "POST"
+      ],
+      "name": "link_admin_validator"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/admins",
+      "methods": [
+        "POST"
+      ],
+      "name": "create_admin"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/invite/resend",
+      "methods": [
+        "POST"
+      ],
+      "name": "resend_admin_invite"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/auth-link/{token}",
+      "methods": [
+        "GET"
+      ],
+      "name": "describe_auth_link"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/auth-link/redeem",
+      "methods": [
+        "POST"
+      ],
+      "name": "redeem_auth_link"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/admins/{admin_id}",
+      "methods": [
+        "DELETE"
+      ],
+      "name": "delete_admin"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/admins/{admin_id}/toggle-trusted",
+      "methods": [
+        "POST"
+      ],
+      "name": "toggle_admin_trusted"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/login",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_login"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/logout",
+      "methods": [
+        "POST"
+      ],
+      "name": "logout"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/me",
+      "methods": [
+        "GET"
+      ],
+      "name": "whoami"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_entries"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_entry_detail"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/extra-originals",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_extra_originals"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/extra-originals/suggestions/{suggestion_id}/dismiss",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_dismiss_extra_original"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/extra-originals",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_add_extra_originals"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/extra-original/remove",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_remove_extra_original"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/queue/{queue_id}/flag",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flag_queue"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/messages",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_validator_messages"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/messages/{msg_id}/read",
+      "methods": [
+        "POST"
+      ],
+      "name": "mark_message_read"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/messages/{parent_id}/reply",
+      "methods": [
+        "POST"
+      ],
+      "name": "reply_to_message"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/messages",
+      "methods": [
+        "GET"
+      ],
+      "name": "list_admin_conversations"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/thread/{thread_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_admin_thread"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/thread/{thread_id}/reply",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_reply_to_thread"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/messages/{validator_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_admin_conversation"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/message",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_send_message"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/approve",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_approve"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/remove-original",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_remove_original"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/withdraw-preview",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_withdraw_preview"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/withdraw",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_withdraw"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/flag-review",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flag_review"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/note",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_save_note"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/resolve",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_resolve"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_source_records"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/export.csv",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_source_records_export"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/sync-status",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_source_sync_status"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_records"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/stats",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_stats"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/export.csv",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_export"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/preprint-duplicates",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_preprint_duplicates"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/preprint-duplicates/decision",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flora_preprint_decide"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/preprint-duplicates/decision",
+      "methods": [
+        "DELETE"
+      ],
+      "name": "admin_flora_preprint_undo"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/checks/summary",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_checks_summary"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/findings/dismiss",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flora_finding_dismiss"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/findings/dismiss",
+      "methods": [
+        "DELETE"
+      ],
+      "name": "admin_flora_finding_undismiss"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/manual/options",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_manual_options"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/manual/counts",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_manual_counts"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/manual/check",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flora_manual_check"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/manual",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_manual_list"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/manual",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flora_manual_create"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/manual/{ref}",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_manual_record"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/manual/{ref}",
+      "methods": [
+        "PATCH"
+      ],
+      "name": "admin_flora_manual_update"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/manual/{ref}/withdraw",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flora_manual_withdraw"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/manual/{ref}/restore",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flora_manual_restore"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/{flora_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_record"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/{flora_id}",
+      "methods": [
+        "PATCH"
+      ],
+      "name": "admin_flora_record_update"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/{flora_id}/restore",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flora_record_restore"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/{flora_id}/confirm-outcome",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flora_confirm_outcome"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/{flora_id}/type",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flora_change_type"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-sync/status",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_source_sync_status_panel"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-sync/jobs/{job_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_source_sync_job"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-sync/jobs/{job_id}/artifacts/{artifact}",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_source_sync_artifact"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-sync/dispatch",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_source_sync_dispatch"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/duplicates",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_source_duplicates"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/{record_id}/duplicate",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_resolve_duplicate"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/sheet-drift/summary",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_sheet_drift_summary"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/sheet-drift",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_sheet_drift"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/sheet-drift/export.csv",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_sheet_drift_export"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/sheet-drift/{finding_id:int}/keep",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_sheet_drift_keep"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/sheet-drift/{finding_id:int}/keep",
+      "methods": [
+        "DELETE"
+      ],
+      "name": "admin_sheet_drift_undo_keep"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/{record_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_source_record_detail"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/maintenance/runs",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_maintenance_runs"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/maintenance/runs/{run_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_maintenance_run_detail"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/maintenance/run",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_start_maintenance"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/index.html",
+      "methods": [
+        "GET"
+      ],
+      "name": "serve_index"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "name": "serve_index"
+    },
+    {
+      "type": "_IncludedRouter",
+      "path": null,
+      "methods": [],
+      "name": null
+    },
+    {
+      "type": "_IncludedRouter",
+      "path": null,
+      "methods": [],
+      "name": null
+    },
+    {
+      "type": "Mount",
+      "path": "",
+      "methods": [],
+      "name": "docs"
+    }
+  ],
+  "openapi_paths": [
+    "/api/admin/admins",
+    "/api/admin/admins/{admin_id}",
+    "/api/admin/admins/{admin_id}/toggle-trusted",
+    "/api/admin/admins/{admin_id}/validator",
+    "/api/admin/assign",
+    "/api/admin/auth-link/redeem",
+    "/api/admin/auth-link/{token}",
+    "/api/admin/banner",
+    "/api/admin/dashboard",
+    "/api/admin/disagreements/export/{name}.csv",
+    "/api/admin/disagreements/import",
+    "/api/admin/disagreements/records",
+    "/api/admin/disagreements/records/{record_id}",
+    "/api/admin/disagreements/records/{record_id}/approve",
+    "/api/admin/disagreements/records/{record_id}/publish",
+    "/api/admin/disagreements/records/{record_id}/undo",
+    "/api/admin/disagreements/records/{record_id}/withdraw",
+    "/api/admin/disagreements/status",
+    "/api/admin/entries",
+    "/api/admin/entries/{record_id}",
+    "/api/admin/entries/{record_id}/approve",
+    "/api/admin/entries/{record_id}/extra-original/remove",
+    "/api/admin/entries/{record_id}/extra-originals",
+    "/api/admin/entries/{record_id}/extra-originals/suggestions/{suggestion_id}/dismiss",
+    "/api/admin/entries/{record_id}/flag-review",
+    "/api/admin/entries/{record_id}/note",
+    "/api/admin/entries/{record_id}/remove-original",
+    "/api/admin/entries/{record_id}/resolve",
+    "/api/admin/entries/{record_id}/withdraw",
+    "/api/admin/entries/{record_id}/withdraw-preview",
+    "/api/admin/flora",
+    "/api/admin/flora/checks/summary",
+    "/api/admin/flora/export.csv",
+    "/api/admin/flora/findings/dismiss",
+    "/api/admin/flora/manual",
+    "/api/admin/flora/manual/check",
+    "/api/admin/flora/manual/counts",
+    "/api/admin/flora/manual/options",
+    "/api/admin/flora/manual/{ref}",
+    "/api/admin/flora/manual/{ref}/restore",
+    "/api/admin/flora/manual/{ref}/withdraw",
+    "/api/admin/flora/preprint-duplicates",
+    "/api/admin/flora/preprint-duplicates/decision",
+    "/api/admin/flora/stats",
+    "/api/admin/flora/{flora_id}",
+    "/api/admin/flora/{flora_id}/confirm-outcome",
+    "/api/admin/flora/{flora_id}/restore",
+    "/api/admin/flora/{flora_id}/type",
+    "/api/admin/invite/resend",
+    "/api/admin/login",
+    "/api/admin/maintenance/run",
+    "/api/admin/maintenance/runs",
+    "/api/admin/maintenance/runs/{run_id}",
+    "/api/admin/message",
+    "/api/admin/messages",
+    "/api/admin/messages/{validator_id}",
+    "/api/admin/queue/{queue_id}/flag",
+    "/api/admin/restricted",
+    "/api/admin/security-events",
+    "/api/admin/serving-config",
+    "/api/admin/serving-config/preview",
+    "/api/admin/source-records",
+    "/api/admin/source-records/duplicates",
+    "/api/admin/source-records/export.csv",
+    "/api/admin/source-records/sheet-drift",
+    "/api/admin/source-records/sheet-drift/export.csv",
+    "/api/admin/source-records/sheet-drift/summary",
+    "/api/admin/source-records/sheet-drift/{finding_id}/keep",
+    "/api/admin/source-records/sync-status",
+    "/api/admin/source-records/{record_id}",
+    "/api/admin/source-records/{record_id}/duplicate",
+    "/api/admin/source-sync/dispatch",
+    "/api/admin/source-sync/jobs/{job_id}",
+    "/api/admin/source-sync/jobs/{job_id}/artifacts/{artifact}",
+    "/api/admin/source-sync/status",
+    "/api/admin/stats",
+    "/api/admin/thread/{thread_id}",
+    "/api/admin/thread/{thread_id}/reply",
+    "/api/admin/validators",
+    "/api/admin/validators/{validator_id}/flagged",
+    "/api/admin/validators/{validator_id}/set-tier",
+    "/api/assignment-judge",
+    "/api/assignment/{record_id}",
+    "/api/banner",
+    "/api/disagreements/next",
+    "/api/disagreements/summary",
+    "/api/disagreements/{record_id}/skip",
+    "/api/disagreements/{record_id}/submit",
+    "/api/flora/history",
+    "/api/forgot-handle",
+    "/api/health",
+    "/api/judge",
+    "/api/leaderboard",
+    "/api/login",
+    "/api/login/claim-code",
+    "/api/logout",
+    "/api/me",
+    "/api/messages",
+    "/api/messages/{msg_id}/read",
+    "/api/messages/{parent_id}/reply",
+    "/api/my-assignments",
+    "/api/my-judgements",
+    "/api/my-judgements/{queue_id}",
+    "/api/next-pairs",
+    "/api/onboarding",
+    "/api/onboarding/complete",
+    "/api/pairs/{queue_id}/start",
+    "/api/paper-review/claim",
+    "/api/paper-review/refresh",
+    "/api/restricted",
+    "/api/senior-reject",
+    "/api/skip",
+    "/api/stats",
+    "/api/submission-failures/release",
+    "/api/update-seen",
+    "/v1/dois",
+    "/v1/id-lookup",
+    "/v1/original-lookup",
+    "/v1/prefix-lookup",
+    "/v1/search"
+  ],
+  "openapi_schemas": [
+    "AdminCreateRequest",
+    "AdminLinkResendRequest",
+    "AdminLoginRequest",
+    "AdminMessageRequest",
+    "AdminNoteRequest",
+    "AdminReplyRequest",
+    "AdminResolveRequest",
+    "AdminValidatorLinkRequest",
+    "AdminWithdrawRequest",
+    "Answer",
+    "AssignRequest",
+    "AuthLinkRedeemRequest",
+    "BannerRequest",
+    "Body_disagreements_import_api_admin_disagreements_import_post",
+    "ClaimCodeRequest",
+    "Decision",
+    "DuplicateResolution",
+    "ExtraOriginalCreate",
+    "ExtraOriginalsCreateRequest",
+    "FindingDismissal",
+    "FindingKey",
+    "FlagQueueRequest",
+    "FloraOutcomeConfirm",
+    "FloraRecordRestore",
+    "FloraRecordUpdate",
+    "FloraTypeChange",
+    "ForgotHandleRequest",
+    "HTTPValidationError",
+    "JudgeRequest",
+    "LoginRequest",
+    "MaintenanceRunRequest",
+    "ManualRecordAction",
+    "ManualRecordCheck",
+    "ManualRecordCreate",
+    "ManualRecordFields",
+    "ManualRecordUpdate",
+    "PaperReviewRefreshRequest",
+    "PaperReviewRequest",
+    "PreprintPairDecision",
+    "ReplyRequest",
+    "RestrictedRequest",
+    "SeniorRejectRequest",
+    "ServingConfigRequest",
+    "SetTierRequest",
+    "SheetDriftKeep",
+    "SkipRequest",
+    "SubmissionFailureReleaseRequest",
+    "ValidationError"
+  ]
+}

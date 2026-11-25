@@ -20,7 +20,7 @@ from psycopg2.extras import RealDictCursor
 
 import backfill_outcome_agreement as backfill
 from tests.test_outcome_quote_agreement import _now_agree, _seed, _state, offline_llm  # noqa: F401
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 
 # ── reading the history ───────────────────────────────────────────────────────

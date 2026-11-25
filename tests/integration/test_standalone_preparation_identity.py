@@ -12,7 +12,7 @@ import final_export
 import flora_registry
 import prepare_flora
 import transform_sources
-from tests.test_preparation_database import add_source, local_database  # noqa: F401
+from tests.pg_fixtures import add_source, local_database  # noqa: F401
 
 
 def add_unregistered_source(connection, *, reference=False):

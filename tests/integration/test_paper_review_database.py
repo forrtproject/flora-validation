@@ -13,7 +13,7 @@ import psycopg2
 import pytest
 from psycopg2.extras import RealDictCursor
 
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 DOI = "10.9/paper"
 QUOTE = "Neither study replicated."
@@ -908,7 +908,7 @@ def test_the_rollback_check_lists_no_outcome_records_past_review(local_database)
     """The query in docs/PROJECT.md is what a rollback relies on, so it is run here."""
     import re
     from pathlib import Path
-    project = (Path(__file__).resolve().parent.parent / "docs" / "PROJECT.md").read_text(encoding="utf-8")
+    project = (Path(__file__).resolve().parents[2] / "docs" / "PROJECT.md").read_text(encoding="utf-8")
     query = re.search(r"```sql\n(-- rollback-check.*?);\n```", project, re.S).group(1)
     with local_database, _cursor(local_database) as cur:
         waiting = _record(cur, 1, status="consensus_reached")

@@ -11,7 +11,7 @@ import pytest
 import flora_service
 import preprint_dedup
 import source_records_service
-from tests.test_preparation_database import add_source, local_database  # noqa: F401
+from tests.pg_fixtures import add_source, local_database  # noqa: F401
 
 ORIGINAL, REPORT = "10.1086/511995", "10.5018/economics-ejournal.ja.2017-13"
 
