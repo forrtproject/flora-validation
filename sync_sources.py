@@ -262,15 +262,8 @@ def _build_row(raw_row: dict, cfg: dict, source_key: str) -> dict:
 def _next_display_id(cur, source_key: str, prefix: str) -> str:
     """Sequential per source, assigned once, never reused. A raw UUID is unreadable
     aloud or in Slack; REPL-000847 is not."""
-    cur.execute(
-        """
-        INSERT INTO source_display_counters (source, last_value) VALUES (%s, 1)
-        ON CONFLICT (source) DO UPDATE SET last_value = source_display_counters.last_value + 1
-        RETURNING last_value
-        """,
-        (source_key,),
-    )
-    return f"{prefix}-{cur.fetchone()[0]:06d}"
+    from shared.display_id import next_display_id
+    return next_display_id(cur, source_key, prefix)
 
 
 def _insert(cur, row: dict, display_id: str) -> bool:

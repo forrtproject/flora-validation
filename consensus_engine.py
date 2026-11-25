@@ -269,11 +269,10 @@ def approval_values(rec: dict) -> dict:
     }
 
 
-def _normalize(text: str | None) -> str:
-    """Lowercase, strip punctuation and whitespace — used for fuzzy abstract comparison."""
-    if not text:
-        return ""
-    return re.sub(r'[^a-z0-9]', '', text.lower())
+from extractor_vocab import (  # noqa: E402
+    _normalize_for_quote_match as _normalize,
+    quote_source_for,
+)
 
 
 def _norm_doi(doi: str | None) -> str:
@@ -387,19 +386,6 @@ def _llm_matches(llm: dict, human: dict) -> bool:
     # disagreement, and the record falls through to need_review instead of the LLM
     # accidentally winning a tiebreak or forcing a reject on a guess.
     return all(llm.get(f) == human.get(f) for f in _CHECK_FIELDS)
-
-
-def quote_source_for(quote: str | None, abstract: str | None) -> str | None:
-    """Where does this outcome quote come from?
-      'abstract'  — the (normalised) quote is contained in the (normalised) abstract
-      'full_text' — it isn't (so it must have come from the paper body)
-      None        — there is no quote to place.
-    Normalising (lowercase, drop punctuation/whitespace) makes the match robust to
-    the light edits validators make to quotes."""
-    nq = _normalize(quote)
-    if not nq:
-        return None
-    return "abstract" if nq in _normalize(abstract) else "full_text"
 
 
 def admin_quote_source(submitted, rec: dict, quote: str | None, abstract: str | None,

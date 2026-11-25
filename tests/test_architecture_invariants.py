@@ -19,8 +19,8 @@ from unittest.mock import MagicMock, patch
 ROOT = Path(__file__).resolve().parent.parent
 SNAPSHOT_PATH = Path(__file__).resolve().parent / "fixtures" / "app_routes_snapshot.json"
 
-# Tightened from 3 -> 0 once all import cycles are broken.
-MAX_FULL_GRAPH_CYCLES = 3
+# Tightened from 3 -> 1 after breaking consensus_engine/extra_originals & csv_to_db/sync_csv cycles.
+MAX_FULL_GRAPH_CYCLES = 1
 
 
 def _prod_python_files() -> list[Path]:

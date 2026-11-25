@@ -32,6 +32,11 @@ from dotenv import load_dotenv
 from console_encoding import use_utf8_output
 
 from csv_to_db import run_import
+from extractor.config import (
+    GITHUB_BRANCH as _GITHUB_BRANCH,
+    GITHUB_REPO as _GITHUB_REPO,
+    build_github_raw_url as _build_url,
+)
 from extractor_storage import matches, resolve_data_dir, sha256_bytes, sha256_file
 from extractor_vocab import check_csv_vocabulary, resolved_mask
 
@@ -43,8 +48,6 @@ use_utf8_output()
 
 _DEFAULT_DATA_DIR = resolve_data_dir()
 
-_GITHUB_REPO = os.environ.get("GITHUB_REPO", "forrtproject/flora-extractor")
-_GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
 _CSV_FILE_PATH = "data/extracted.csv"
 _ROUTING_RELEASE_ID = os.environ.get("ROUTING_RELEASE_ID", "")
 _REPORT_ID_SAMPLE_LIMIT = 100
@@ -79,10 +82,6 @@ class SnapshotSafetyError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.details = details or {}
-
-
-def _build_url(repo: str, branch: str, file_path: str) -> str:
-    return f"https://raw.githubusercontent.com/{repo}/{branch}/{file_path}"
 
 
 def _fetch_csv(url: str) -> bytes:

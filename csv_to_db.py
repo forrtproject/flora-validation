@@ -1196,7 +1196,13 @@ class RetireManifestError(ValueError):
 # holds it exclusively for its whole transaction, before it locks any row; a withdrawal
 # takes it shared, or gives up with a retryable 409. The two lock entry rows in different
 # orders (CSV order, record_id order), so without it they could deadlock.
-IMPORT_WITHDRAW_LOCK_ID = 7_342_025_100
+from extractor.config import (
+    GITHUB_BRANCH as _GITHUB_BRANCH,
+    GITHUB_REPO as _GITHUB_REPO,
+    IMPORT_WITHDRAW_LOCK_ID,
+    PIPELINE_ADVISORY_LOCK_ID,
+    build_github_raw_url as _build_url,
+)
 
 
 WRITE_SURFACE_LOCK_SQL = """
@@ -1505,7 +1511,6 @@ def fetch_retire_manifest(dest: Path, commit: "str | None" = None) -> "Path | No
     no manifest (HTTP 404): nothing is named, so nothing is retired.
     """
     import requests
-    from sync_csv import _GITHUB_BRANCH, _GITHUB_REPO, _build_url
 
     url = _build_url(_GITHUB_REPO, commit or _GITHUB_BRANCH, RETIRE_MANIFEST_REPO_PATH)
     print(f"Fetching {url} …")
@@ -1618,7 +1623,6 @@ def run_retire(manifest_path: Path, csv_path: Path, apply: bool = False,
                   f"--expect-retire {sum(s['action'] == 'retire' for s in plan)}")
             return plan
 
-        from extractor_maintenance import PIPELINE_ADVISORY_LOCK_ID
         took_lock = False
         with conn.cursor() as cur:
             cur.execute("SELECT to_regclass('public.retired_records') IS NOT NULL")

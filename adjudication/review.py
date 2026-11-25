@@ -507,15 +507,8 @@ def source_row(record: dict, final: dict, judges: str) -> dict:
 
 
 def _next_display_id(cur) -> str:
-    cur.execute(
-        """
-        INSERT INTO source_display_counters (source, last_value) VALUES (%s, 1)
-        ON CONFLICT (source) DO UPDATE SET last_value = source_display_counters.last_value + 1
-        RETURNING last_value
-        """,
-        (SOURCE_KEY,),
-    )
-    return f"{DISPLAY_PREFIX}-{cur.fetchone()['last_value']:06d}"
+    from shared.display_id import next_display_id
+    return next_display_id(cur, SOURCE_KEY, DISPLAY_PREFIX)
 
 
 _AXIS_COLUMNS = ("outcome_computation", "outcome_computational_quote",

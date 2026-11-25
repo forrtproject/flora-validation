@@ -125,15 +125,8 @@ def _build_row(v: dict) -> dict:
 
 
 def _next_display_id(cur, prefix: str) -> str:
-    cur.execute(
-        """
-        INSERT INTO source_display_counters (source, last_value) VALUES (%s, 1)
-        ON CONFLICT (source) DO UPDATE SET last_value = source_display_counters.last_value + 1
-        RETURNING last_value
-        """,
-        (SOURCE_KEY,),
-    )
-    return f"{prefix}-{cur.fetchone()['last_value']:06d}"
+    from shared.display_id import next_display_id
+    return next_display_id(cur, SOURCE_KEY, prefix)
 
 
 def _fetch_validated(cur) -> list:

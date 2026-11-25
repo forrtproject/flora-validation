@@ -73,7 +73,7 @@ DEFAULT_LOG_PATH = ROOT / "logs" / "extractor_maintenance.log"
 # A fixed, application-specific PostgreSQL advisory-lock key. Session-level
 # advisory locks are released automatically if the process, connection, or pod
 # dies, making PostgreSQL the authoritative cross-worker process mutex.
-PIPELINE_ADVISORY_LOCK_ID = 7_342_025_091
+from extractor.config import PIPELINE_ADVISORY_LOCK_ID
 DEFAULT_STAGE_TIMEOUT_SECONDS = 2 * 60 * 60
 DEFAULT_LOCK_WAIT_SECONDS = 15
 
