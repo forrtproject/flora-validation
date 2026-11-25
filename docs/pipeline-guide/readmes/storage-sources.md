@@ -4,7 +4,7 @@ source_records is the shared input collection for final preparation. It combines
 
 [Open interactive guide](../index.html#view=overview&node=storage-sources)
 
-Code snapshot: 25 November 2026, `f0cb8de`.
+Code snapshot: 25 November 2026, `589664a`.
 
 ## What goes in
 
@@ -38,6 +38,6 @@ Code snapshot: 25 November 2026, `f0cb8de`.
 
 ## Find it in the code
 
-- [db_schema.sql:1223 — source_records](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/db_schema.sql#L1223) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/db_schema.sql)
-- [sync_validated.py:138 — sync](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/sync_validated.py#L138) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/sync_validated.py)
-- [transform_sources.py:184 — load_rules](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/transform_sources.py#L184) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/transform_sources.py)
+- [db_schema.sql:1223 — source_records](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/db_schema.sql#L1223) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/db_schema.sql)
+- [sync_validated.py:138 — sync](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/sync_validated.py#L138) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/sync_validated.py)
+- [transform_sources.py:184 — load_rules](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/transform_sources.py#L184) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/transform_sources.py)

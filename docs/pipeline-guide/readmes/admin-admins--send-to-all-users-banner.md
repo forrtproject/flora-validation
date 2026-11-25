@@ -4,7 +4,7 @@ Saves and activates the banner text. This is a page notice rather than an inbox 
 
 [Open interactive guide](../index.html#view=admin&node=admin-admins--send-to-all-users-banner)
 
-Code snapshot: 25 November 2026, `f0cb8de`.
+Code snapshot: 25 November 2026, `589664a`.
 
 ## What goes in
 
@@ -24,6 +24,6 @@ Code snapshot: 25 November 2026, `f0cb8de`.
 
 ## Find it in the code
 
-- [docs/app.js:12156 — saveAdminBanner](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/docs/app.js#L12156) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/docs/app.js)
-- [app.py:4253 — set_site_banner](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/app.py#L4253) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/app.py)
-- [docs/app.js:2285 — banner polling](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/docs/app.js#L2285) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/docs/app.js)
+- [docs/app.js:12156 — saveAdminBanner](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/docs/app.js#L12156) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/docs/app.js)
+- [app.py:4253 — set_site_banner](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/app.py#L4253) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/app.py)
+- [docs/app.js:2285 — banner polling](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/docs/app.js#L2285) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/docs/app.js)

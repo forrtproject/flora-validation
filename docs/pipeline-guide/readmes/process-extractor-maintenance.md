@@ -4,7 +4,7 @@ This pipeline refreshes the human-review input and reports or retires obsolete e
 
 [Open interactive guide](../index.html#view=overview&node=process-extractor-maintenance)
 
-Code snapshot: 25 November 2026, `f0cb8de`.
+Code snapshot: 25 November 2026, `589664a`.
 
 ## What goes in
 
@@ -42,8 +42,8 @@ Code snapshot: 25 November 2026, `f0cb8de`.
 
 ## Find it in the code
 
-- [extractor_maintenance.py:959 — run_pipeline](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/extractor_maintenance.py#L959) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/extractor_maintenance.py)
-- [extractor_maintenance.py:1406 — run_scheduled](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/extractor_maintenance.py#L1406) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/extractor_maintenance.py)
-- [csv_to_db.py:1587 — run_retire](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/csv_to_db.py#L1587) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/csv_to_db.py)
-- [csv_to_db.py:1430 — _apply_retire_batch](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/csv_to_db.py#L1430) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/csv_to_db.py)
-- [app.py:8070 — extractor_maintenance_dispatcher](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/app.py#L8070) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/app.py)
+- [extractor_maintenance.py:959 — run_pipeline](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/extractor_maintenance.py#L959) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/extractor_maintenance.py)
+- [extractor_maintenance.py:1409 — run_scheduled](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/extractor_maintenance.py#L1409) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/extractor_maintenance.py)
+- [csv_to_db.py:1587 — run_retire](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/csv_to_db.py#L1587) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/csv_to_db.py)
+- [csv_to_db.py:1430 — _apply_retire_batch](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/csv_to_db.py#L1430) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/csv_to_db.py)
+- [app.py:8070 — extractor_maintenance_dispatcher](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/app.py#L8070) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/app.py)

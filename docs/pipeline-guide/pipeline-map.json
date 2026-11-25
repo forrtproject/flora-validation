@@ -38,7 +38,7 @@
       "sources": [
         {
           "file": "sync_csv.py",
-          "line": 404,
+          "line": 408,
           "symbol": "sync_once"
         },
         {
@@ -104,7 +104,7 @@
         },
         {
           "file": "extractor_maintenance.py",
-          "line": 1406,
+          "line": 1409,
           "symbol": "run_scheduled"
         },
         {

@@ -4,7 +4,7 @@
 
 Double-click `index.html` to open it in a browser. The guide, explanations and code excerpts work offline. Full script links open GitHub at the reviewed commit.
 
-Code links and excerpts checked on 25 November 2026 against commit `f0cb8de088ea65f429125505b68908990d9d2f76`. The descriptions were last reviewed in full on 29 October 2026; later changes edited only the parts they touched. This documents configured behavior, not the live deployment's health.
+Code links and excerpts checked on 25 November 2026 against commit `589664adc46254093eab9ede2c5c76c893eb19e9`. The descriptions were last reviewed in full on 29 October 2026; later changes edited only the parts they touched. This documents configured behavior, not the live deployment's health.
 
 ## Start here
 

@@ -4,7 +4,7 @@ After two human reviews are complete, the consensus engine compares their answer
 
 [Open interactive guide](../index.html#view=overview&node=review-consensus)
 
-Code snapshot: 25 November 2026, `f0cb8de`.
+Code snapshot: 25 November 2026, `589664a`.
 
 ## What goes in
 
@@ -43,8 +43,8 @@ Code snapshot: 25 November 2026, `f0cb8de`.
 
 ## Find it in the code
 
-- [consensus_engine.py:700 — evaluate_consensus](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/consensus_engine.py#L700) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/consensus_engine.py)
-- [consensus_engine.py:144 — auto_validation_rule](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/consensus_engine.py#L144) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/consensus_engine.py)
-- [consensus_engine.py:537 — _update_status](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/consensus_engine.py#L537) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/consensus_engine.py)
-- [consensus_engine.py:613 — _insert_validated](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/consensus_engine.py#L613) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/consensus_engine.py)
-- [llm_validator.py:1 — Gemini validation implementation](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/llm_validator.py#L1) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/llm_validator.py)
+- [consensus_engine.py:700 — evaluate_consensus](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/consensus_engine.py#L700) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/consensus_engine.py)
+- [consensus_engine.py:144 — auto_validation_rule](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/consensus_engine.py#L144) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/consensus_engine.py)
+- [consensus_engine.py:537 — _update_status](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/consensus_engine.py#L537) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/consensus_engine.py)
+- [consensus_engine.py:613 — _insert_validated](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/consensus_engine.py#L613) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/consensus_engine.py)
+- [llm_validator.py:1 — Gemini validation implementation](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/llm_validator.py#L1) · [complete script](https://github.com/forrtproject/flora-validation/blob/589664adc46254093eab9ede2c5c76c893eb19e9/llm_validator.py)
