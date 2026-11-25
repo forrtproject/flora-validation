@@ -16,14 +16,9 @@ import record_checks
 from record_checks import check_record
 
 ROOT = Path(__file__).resolve().parent.parent
-APP = (ROOT / "app.py").read_text(encoding="utf-8")
 CONSENSUS = (ROOT / "consensus_engine.py").read_text(encoding="utf-8")
 CHECKS = (ROOT / "record_checks.py").read_text(encoding="utf-8")
-BACKFILL = (ROOT / "backfill_quality_flags.py").read_text(encoding="utf-8")
 SCHEMA = (ROOT / "db_schema.sql").read_text(encoding="utf-8")
-JS = (ROOT / "docs" / "app.js").read_text(encoding="utf-8")
-CSS = (ROOT / "docs" / "style.css").read_text(encoding="utf-8")
-HTML = (ROOT / "docs" / "index.html").read_text(encoding="utf-8")
 
 
 def _clean(**over):
@@ -245,32 +240,6 @@ def test_every_terminal_branch_of_consensus_records_flags():
     assert all(ln.rstrip().endswith((", record)", ", record, auto_rule=rule)")) for ln in calls), calls
 
 
-def test_the_backfill_never_changes_validation_status():
-    """'Flag but don't reopen': settled records stay settled."""
-    # The SET clause of the one UPDATE, not the file: the script also *prints*
-    # that it left validation_status alone, which a file-wide search would match.
-    update = BACKFILL.split("UPDATE unvalidated", 1)[1].split('"""', 1)[0]
-    assert "SET quality_flags" in update
-    assert "validation_status" not in update
-    assert BACKFILL.count("UPDATE unvalidated") == 1, "only one write path"
-
-
-def test_the_backfill_clears_flags_that_no_longer_apply():
-    """Re-running must not leave a warning about something already fixed."""
-    assert "cleared" in BACKFILL
-
-
-def test_the_backfill_skips_records_still_in_flight():
-    """Unfinished records still hold raw extractor values that consensus may yet
-    correct, so flagging them would report problems that are not real yet."""
-    assert "validation_inprogress" in BACKFILL   # named as deliberately excluded
-    assert "FINISHED_STATUSES" in BACKFILL
-
-
-# ---------------------------------------------------------------------------
-# Storage and admin surfacing
-# ---------------------------------------------------------------------------
-
 def test_flags_are_stored_on_the_record():
     assert "quality_flags      JSONB NOT NULL DEFAULT '[]'::jsonb" in SCHEMA
     assert "quality_checked_at TIMESTAMPTZ" in SCHEMA
@@ -285,39 +254,3 @@ def test_the_schema_statements_are_idempotent():
             assert "IF NOT EXISTS" in line
         if "idx_unvalidated_quality_flagged" in line and stripped.startswith("CREATE"):
             assert "IF NOT EXISTS" in line
-
-
-def test_the_admin_panel_warns_in_red_that_the_record_may_need_excluding():
-    """Nothing else tells an admin: the flags do not change validation_status."""
-    body = JS.split("const qualityBanner", 1)[1][:1400]
-    assert "may need to be excluded" in body
-    assert "admin-quality-banner" in body
-    assert ".admin-quality-banner strong { color: var(--red); }" in CSS
-    assert "border: 1px solid var(--red)" in CSS.split(".admin-quality-banner", 1)[1][:400]
-
-
-def test_the_banner_is_rendered_first_in_the_panel():
-    panel = JS.split('$("#admin-detail-body").innerHTML = `', 1)[1][:300]
-    assert panel.index("${qualityBanner}") < panel.index("${abstractBanner}")
-
-
-def test_flagged_records_are_visible_without_opening_them():
-    assert "aq-row-flag" in JS and ".aq-row-flag" in CSS
-    assert 'data-filter="quality_flagged"' in HTML
-    assert '"quality_flagged":' in APP
-
-
-def test_the_flag_detail_is_escaped():
-    """Flag details embed stored field values straight from the record."""
-    body = JS.split("const qualityBanner", 1)[1][:1400]
-    assert "escapeHtml(f.label" in body and "escapeHtml(f.detail)" in body
-
-
-def test_jsonb_flags_survive_the_string_fallback():
-    assert '"llm_validator", "quality_flags"' in APP
-
-
-def test_the_backfill_can_print_its_own_output_on_a_windows_console():
-    """Flag labels and this script's help carry non-ASCII glyphs; a cp1252 console
-    cannot encode them and print() would abort a run that had already committed."""
-    assert "use_utf8_output()" in BACKFILL

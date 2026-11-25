@@ -47,18 +47,28 @@ def git(cwd, *args):
                           capture_output=True, text=True).stdout
 
 
-def run(cwd, message, trigger, *paths, manifest=None):
+_FAKE_SLEEP_CTX: dict[str, Path] = {}
+
+
+def run(cwd, message, trigger, *paths, manifest=None, fake_sleep_dir=None, sleep_log=None):
     env = {**os.environ, "GITHUB_REF_NAME": "main", "PYTHON": sys.executable}
+    sleep_dir = fake_sleep_dir if fake_sleep_dir is not None else _FAKE_SLEEP_CTX.get("dir")
+    log_path = sleep_log if sleep_log is not None else _FAKE_SLEEP_CTX.get("log")
+    if sleep_dir is not None:
+        env["PATH"] = f"{sleep_dir}{os.pathsep}{env.get('PATH', '')}"
+    if log_path is not None:
+        env["FAKE_SLEEP_LOG"] = str(log_path)
     if manifest:
         env["RELEASE_MANIFEST"] = manifest
     return subprocess.run([BASH, str(SCRIPT), message, trigger, *paths], cwd=cwd, env=env,
                           capture_output=True, text=True)
 
 
-def release(clone, *paths, manifest=True):
+def release(clone, *paths, manifest=True, fake_sleep_dir=None, sleep_log=None):
     """Commit `clone`'s owned files as a release job does."""
     return run(clone, "release", "output/flora.csv", *(paths or OWNED),
-               manifest=MANIFEST if manifest else None)
+               manifest=MANIFEST if manifest else None,
+               fake_sleep_dir=fake_sleep_dir, sleep_log=sleep_log)
 
 
 def write(clone, name, text):
@@ -93,6 +103,22 @@ def jobs(tmp_path):
     git(seed, "commit", "-q", "-m", "seed")
     git(seed, "push", "-q", "origin", "HEAD:main")
 
+    fake_bin = tmp_path / "fakebin"
+    fake_bin.mkdir()
+    sleep_log = tmp_path / "sleep_calls.log"
+    fake_sleep = fake_bin / "sleep"
+    fake_sleep.write_text(
+        '#!/usr/bin/env bash\n'
+        'if [ -n "${FAKE_SLEEP_LOG:-}" ]; then printf "%s\\n" "$*" >> "$FAKE_SLEEP_LOG"; fi\n'
+        'exit 0\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+    fake_sleep.chmod(0o755)
+    # Expose fakebin via module-level default for run()/release() during this test.
+    _FAKE_SLEEP_CTX["dir"] = fake_bin
+    _FAKE_SLEEP_CTX["log"] = sleep_log
+
     def checkout(name):
         clone = tmp_path / name
         # A file:// URL, as a shallow clone needs: like actions/checkout's depth 1.
@@ -100,7 +126,10 @@ def jobs(tmp_path):
                        check=True, capture_output=True)
         return clone
 
-    return remote, checkout
+    try:
+        yield remote, checkout
+    finally:
+        _FAKE_SLEEP_CTX.clear()
 
 
 def on_main(remote, name):
@@ -146,6 +175,7 @@ def test_a_racing_push_never_blends_two_versions_of_a_file(jobs):
     result = release(publish)
     assert result.returncode == 0, result.stderr
     assert "Push rejected" in result.stdout
+    assert _FAKE_SLEEP_CTX["log"].read_text(encoding="utf-8").splitlines() == ["5"]
     assert on_main(remote, "output/flora.csv") == published, "the whole file, not a blend"
 
 

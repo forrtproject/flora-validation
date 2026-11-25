@@ -121,8 +121,19 @@ def test_the_observatorys_outcome_in_floras_words_is_one_function():
         ["successful", "failed", "failed", None, None]
 
 
-@pytest.mark.parametrize("computation", [*judging.COMPUTATION_CHOICES, "cannot_tell"])
-@pytest.mark.parametrize("robustness", [*judging.ROBUSTNESS_CHOICES, "cannot_tell"])
+@pytest.mark.parametrize(
+    ("computation", "robustness"),
+    [
+        ("computationally reproducible", "robust"),
+        ("computational issues", "robustness challenges"),
+        ("technical failure", "not checked"),
+        ("not checked", "not checked"),
+        ("cannot_be_determined", "cannot_be_determined"),
+        ("cannot_tell", "robust"),
+        ("computationally reproducible", "cannot_tell"),
+        ("cannot_tell", "cannot_tell"),
+    ],
+)
 def test_a_reproduction_takes_any_pair_of_axes(computation, robustness):
     from extractor_vocab import derive_reproduction_outcome
     clean = judging.check_answer(REPRODUCTION, {

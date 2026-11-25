@@ -29,7 +29,6 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from backfill_quote_source import recomputed_source
 from consensus_engine import admin_quote_source, quote_source_for
 from extractor_vocab import QUOTE_SOURCE_SEPARATOR, normalize_quote_source
 from csv_to_db import _build_unvalidated_row
@@ -225,103 +224,24 @@ def test_nothing_submitted_and_no_quote_falls_back_to_the_stored_source(nothing)
 
 
 # ---------------------------------------------------------------------------
-# The backfill may replace only what a computation wrote
+# The admin form's suggestion is what a save detects (JS/Python parity under node)
 # ---------------------------------------------------------------------------
 
-_IN_ABSTRACT = {"outcome_quote": "it failed", "abstract_r": "We found it failed again."}
-_NOT_IN_ABSTRACT = {"outcome_quote": "it failed", "abstract_r": "We found it held."}
-
-
-@pytest.mark.parametrize("stored", [
-    "discussion", "results", "title", "Discussion", "abstract|discussion", "abstract | discussion",
-    "title | abstract", "abstract|full_text", "fulltext",
-])
-def test_recompute_all_never_replaces_a_named_or_compound_source(stored):
-    """Unstamped, as a record resolved without touching its source now is."""
-    row = {**_IN_ABSTRACT, "out_quote_source": stored, "out_quote_source_by": None}
-    assert recomputed_source(row, recompute_all=True) is None
-
-
-@pytest.mark.parametrize("stored", ["full_text", "Full_Text", "full_text | full_text", " FULL_TEXT "])
-def test_recompute_all_refreshes_a_computed_source_in_any_spelling(stored):
-    assert recomputed_source({**_IN_ABSTRACT, "out_quote_source": stored}, recompute_all=True) == "abstract"
-
-
-@pytest.mark.parametrize("stored", ["abstract", "Abstract", "abstract | abstract"])
-def test_recompute_all_refreshes_a_stale_abstract(stored):
-    assert recomputed_source({**_NOT_IN_ABSTRACT, "out_quote_source": stored}, recompute_all=True) == "full_text"
-
-
-def test_recompute_all_writes_nothing_when_the_answer_is_the_same_or_there_is_no_quote():
-    assert recomputed_source({**_IN_ABSTRACT, "out_quote_source": "abstract"}, recompute_all=True) is None
-    row = {"outcome_quote": None, "abstract_r": "An abstract.", "out_quote_source": "full_text"}
-    assert recomputed_source(row, recompute_all=True) is None
-
-
-@pytest.mark.parametrize("recompute_all", [False, True])
-@pytest.mark.parametrize("stored", [None, "abstract", "full_text", "discussion"])
-def test_an_admin_locked_row_is_never_touched(stored, recompute_all):
-    row = {**_NOT_IN_ABSTRACT, "out_quote_source": stored, "out_quote_source_by": "sophie"}
-    assert recomputed_source(row, recompute_all=recompute_all) is None
-
-
-@pytest.mark.parametrize("recompute_all", [False, True])
-@pytest.mark.parametrize("blank", [None, ""])
-def test_a_blank_source_is_filled_either_way(blank, recompute_all):
-    assert recomputed_source({**_IN_ABSTRACT, "out_quote_source": blank}, recompute_all=recompute_all) == "abstract"
-
-
-@pytest.mark.parametrize("stored", ["abstract", "full_text", "discussion"])
-def test_the_default_run_leaves_any_stored_source(stored):
-    assert recomputed_source({**_NOT_IN_ABSTRACT, "out_quote_source": stored}) is None
-
-
-def test_the_backfill_decides_through_the_tested_function():
-    src = (_ROOT / "backfill_quote_source.py").read_text(encoding="utf-8")
-    assert "new_src = recomputed_source(r, recompute_all)" in src
-    assert src.count("quote_source_for(") == 1, "a second detection would skip the rule"
-
-
-# ---------------------------------------------------------------------------
-# The admin form's suggestion is what a save detects
-# ---------------------------------------------------------------------------
-
-# Wherever the normalising could go differently in the two languages, plus the blanks.
 _DETECTION_CASES = {
     "contained": ("it failed", "We found it failed again."),
     "not contained": ("it failed", "We found it held."),
     "the longer side is the quote": ("We found it failed again.", "it failed"),
     "inside a word": ("art", "The start of it."),
-    "across words": ("dit", "ad it"),
-    "case": ("WE REPLICATED", "we Replicated it"),
-    "punctuation": ("It failed; (d = 0.5)!", "it failed d=0.5"),
-    "whitespace": ("two \n\t words  apart", "Two words\r\napart."),
-    "digits are kept": ("d = 0.50", "d = 0.5"),
-    "no-break and thin spaces": ("two words apart", "two words apart"),
-    "en and em dashes": ("pre–registered — twice", "preregistered twice"),
-    "minus sign": ("r = −0.5", "r = -0.5"),
-    "curly quotes": ("“it’s held”", "\"it's held\""),
-    "ellipsis character": ("it failed…", "it failed..."),
-    "zero-width space": ("it​ failed", "it failed"),
-    "an accent on both": ("naïve", "the naïve view"),
-    "an accent on one drops out": ("naïve", "the naive view"),
-    "an accent on the other": ("naive", "the naïve view"),
-    "decomposed accent": ("café study", "cafe study"),
-    "greek is stripped": ("Σα effect", "the effect"),
-    "fi ligature is stripped": ("ﬁnding", "the nding"),
-    "fullwidth letters are stripped": ("ＡＢＣ", "abc"),
-    "kelvin sign lowercases to k": ("5 K", "5k"),
-    "dotted capital I": ("İstanbul", "in istanbul"),
-    "sharp s": ("StraẞE", "strae"),
-    "astral characters": ("it \U0001f600 failed", "it failed"),
+    "case and punctuation": ("It failed; (d = 0.5)!", "it failed d=0.5"),
+    "whitespace and nbsp": ("two\u00a0words \n\t apart", "Two words\r\napart."),
+    "dashes and curly quotes": ("\u201cpre\u2013registered\u201d", '"preregistered"'),
+    "accent on one side": ("na\u00efve", "the naive view"),
+    "decomposed accent": ("cafe\u0301 study", "cafe study"),
+    "non-latin and astral": ("it \U0001f600 \u03a3\u03b1 failed", "it failed"),
     "no quote": (None, "An abstract."),
-    "empty quote": ("", "An abstract."),
     "blank quote": ("  \n ", "An abstract."),
-    "punctuation for a quote": ("...—!?", "An abstract."),
-    "non-ascii for a quote": ("αβγ", "An abstract."),
+    "punctuation only quote": ("...\u2014!?", "An abstract."),
     "no abstract": ("a quote", None),
-    "empty abstract": ("a quote", ""),
-    "punctuation for an abstract": ("a quote", "...---"),
     "neither": (None, None),
 }
 

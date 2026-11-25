@@ -17,6 +17,27 @@ import pytest
 
 import admin_auth
 import auth_links
+from argon2 import PasswordHasher
+
+_PRODUCTION_HASHER = admin_auth._HASHER
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _fast_argon2_hasher():
+    """Keep Argon2id hashing real in tests while avoiding ~120ms/call production cost."""
+    fast = PasswordHasher(time_cost=1, memory_cost=8192, parallelism=1)
+    admin_auth._HASHER = fast
+    try:
+        yield
+    finally:
+        admin_auth._HASHER = _PRODUCTION_HASHER
+
+
+def test_production_hasher_uses_argon2_library_defaults():
+    defaults = PasswordHasher()
+    assert _PRODUCTION_HASHER.time_cost == defaults.time_cost
+    assert _PRODUCTION_HASHER.memory_cost == defaults.memory_cost
+    assert _PRODUCTION_HASHER.parallelism == defaults.parallelism
 
 
 # ---------------------------------------------------------------------------
@@ -58,11 +79,13 @@ def test_a_plaintext_row_can_never_authenticate():
         (None, "not-a-real-password-7Kq"),
         ("", "not-a-real-password-7Kq"),
         ("$argon2id$not-a-real-hash", "not-a-real-password-7Kq"),
-        (admin_auth.hash_password("not-a-real-password-7Kq"), ""),
-        (admin_auth.hash_password("not-a-real-password-7Kq"), None),
+        ("__VALID_HASH__", ""),
+        ("__VALID_HASH__", None),
     ],
 )
 def test_unusable_credentials_are_rejected_without_raising(stored, password):
+    if stored == "__VALID_HASH__":
+        stored = admin_auth.hash_password("not-a-real-password-7Kq")
     assert admin_auth.verify_password(stored, password) is False
 
 

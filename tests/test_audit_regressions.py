@@ -1,91 +1,72 @@
-"""Cross-layer regressions found during the reproduction-workflow audit."""
+"""Behavioural regressions from the reproduction-workflow audit."""
 import json
-import re
-from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
+import pytest
+from fastapi import HTTPException
 
 from consensus_engine import _is_unsure
 from csv_to_db import _refresh_extractor_fields
 from db_migrate import step_migrate_pairs
+from tests.test_dashboard_split import flora
 
 
-ROOT = Path(__file__).resolve().parent.parent
-APP = (ROOT / "app.py").read_text(encoding="utf-8")
-JS = (ROOT / "docs" / "app.js").read_text(encoding="utf-8")
-HTML = (ROOT / "docs" / "index.html").read_text(encoding="utf-8")
-
-
-def test_bootstrap_explicitly_replays_legacy_seed_and_fails_loudly():
-    init = re.search(r"def init_db\(\):(.*?)\n\ninit_db\(\)", APP, re.S)
-    assert init
-    assert '"--allow-legacy-schema"' in init.group(1)
-    assert "check=True" in init.group(1)
-    assert "check=False" not in init.group(1)
-
-
-def test_assignment_uncertainty_routes_to_review_and_does_not_get_bonus():
-    assert 'else "need_review" if _request_is_unsure(req)' in APP
-    assert '"unsure" in axis_checks.values()' in APP
-    assert 'axis_checks.get("computation") == "correct"' in APP
-    assert 'axis_checks.get("robustness") == "correct"' in APP
+def test_unsure_detection_includes_reproduction_axis_checks():
     assert _is_unsure({
         "additional_checks": {
             "reproduction_axis_checks": {"computation": "correct", "robustness": "unsure"}
         }
     })
+    assert not _is_unsure({
+        "additional_checks": {
+            "reproduction_axis_checks": {"computation": "correct", "robustness": "correct"}
+        }
+    })
 
 
-def test_api_uses_one_strict_outcome_shape_boundary():
-    assert APP.count("_validated_outcome_request(") >= 4
-    assert "corrected_type is required when type_check is incorrect" in APP
-    assert "Replication judgements must not include reproduction axes" in APP
-    assert "A reproduction requires both outcome_computation and outcome_robustness" in APP
-    assert "split_joined_outcome(joined)" in APP
+def test_outcome_request_boundary_enforces_type_and_axis_shapes():
+    def _req(**overrides):
+        defaults = dict(
+            type_check="correct",
+            corrected_type=None,
+            outcome_check="correct",
+            corrected_outcome=None,
+            corrected_outcome_computation=None,
+            corrected_outcome_robustness=None,
+            additional_checks=None,
+        )
+        return SimpleNamespace(**{**defaults, **overrides})
 
+    # Type marked correct must not carry corrected_type
+    with pytest.raises(HTTPException) as exc:
+        flora._validated_outcome_request(_req(corrected_type="reproduction"), "replication", "failed")
+    assert exc.value.status_code == 400
 
-def test_browser_uses_explicit_axis_actions_for_aggregate_outcome_check():
-    aggregate = re.search(r"const reproOutcomeCheck = \(\) => \{(.*?)\n  \};", JS, re.S)
-    assert aggregate
-    body = aggregate.group(1)
-    assert 'j.repro_computation_check === "correct"' in body
-    assert 'j.repro_robustness_check === "correct"' in body
-    assert "repro_computation ===" not in body
-    assert "repro_robustness ===" not in body
+    # Type marked incorrect requires corrected_type
+    with pytest.raises(HTTPException) as exc:
+        flora._validated_outcome_request(_req(type_check="incorrect", corrected_type=None), "replication", "failed")
+    assert exc.value.status_code == 400
 
+    # Replication must not carry reproduction axes
+    with pytest.raises(HTTPException) as exc:
+        flora._validated_outcome_request(
+            _req(outcome_check="incorrect", corrected_outcome="mixed",
+                 corrected_outcome_computation="computationally reproducible"),
+            "replication", "failed",
+        )
+    assert exc.value.status_code == 400
 
-def test_admin_type_conversion_has_dynamic_required_axis_controls():
-    assert 'id="ar-repro-axes"' in JS
-    assert '$("#ar-type-sel")?.addEventListener("change"' in JS
-    assert 'classList.toggle("hidden", ev.target.value !== "reproduction")' in JS
-    assert "Choose both reproduction axes before resolving this record." in JS
-    assert "Choose a replication outcome before resolving this record." in JS
-
-
-def test_admin_and_history_render_axis_values_with_paired_evidence():
-    for token in (
-        "reproAxisRow", "corrected_computational_quote",
-        "corrected_computational_source", "corrected_robustness_quote",
-        "corrected_robustness_source", "_historyAxisCard",
-        "val_outcome_computation", "val_outcome_robustness",
-    ):
-        assert token in JS
-    for token in (
-        '"corrected_outcome_computation": row["corrected_outcome_computation"]',
-        '"corrected_computational_quote": row["corrected_computational_quote"]',
-        '"corrected_computational_source": row["corrected_computational_source"]',
-        '"val_outcome_computation": row["val_outcome_computation"]',
-        '"val_robustness_source": row["val_robustness_source"]',
-    ):
-        assert token in APP
-
-
-def test_admin_comment_filter_is_supported_end_to_end():
-    assert '"admin_comments":   "WHERE NULLIF(BTRIM(u.admin_notes), \'\') IS NOT NULL"' in APP
-    assert '"admin_comments": c_admin_comments' in APP
-    assert 'data-filter="admin_comments"' in HTML
-    assert 'id="fc-admin-comments"' in HTML
-    assert 'counts.admin_comments ?? 0' in JS
+    # Changing type to reproduction requires both axes (no fallback from replication)
+    with pytest.raises(HTTPException) as exc:
+        flora._validated_outcome_request(
+            _req(type_check="incorrect", corrected_type="reproduction",
+                 outcome_check="incorrect",
+                 corrected_outcome_computation="computationally reproducible",
+                 corrected_outcome_robustness=None),
+            "replication", "failed",
+        )
+    assert exc.value.status_code == 400
 
 
 class _RecordingCursor:

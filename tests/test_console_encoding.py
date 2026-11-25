@@ -22,7 +22,6 @@ _ROOT = Path(__file__).resolve().parent.parent
 # encode, and which therefore has to call use_utf8_output(). Kept explicit rather
 # than derived, so adding a script with non-ASCII output is a deliberate choice.
 _SCRIPTS_WITH_NON_ASCII_OUTPUT = [
-    "backfill_quote_source.py",
     "csv_to_db.py",
     "db_migrate.py",
     "export_validated.py",
