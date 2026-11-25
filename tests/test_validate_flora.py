@@ -422,6 +422,9 @@ def test_an_original_with_no_identifier_at_all_is_a_problem(url_o, detail):
     ("10.1/x", "doi_o is not a DOI"),
     ("10.1108/s0193-230620150000018002?utm_campaign=repec&wt.mc_id=repec",
      "doi_o carries query or tracking text (?…)"),
+    # Copied from a link: doi.org does not resolve the escaped spelling (fred-data#179).
+    ("10.1002/(sici)1099-0771(199806)11:2%3c107::aid-bdm292%3e3.0.co;2-y",
+     "doi_o is percent-encoded (%3c for <): decode it"),
 ])
 def test_bad_doi_formats_are_flagged_with_what_is_wrong(doi, detail):
     assert _details(vf._check_doi_format(_df({"doi_o": doi}))) == [detail]
@@ -429,9 +432,8 @@ def test_bad_doi_formats_are_flagged_with_what_is_wrong(doi, detail):
 
 @pytest.mark.parametrize("doi", [
     "10.1234/abc.def",
-    # Old Wiley SICI DOIs, and the escaped spelling of one, are valid.
+    # Old Wiley SICI DOIs are valid.
     "10.1002/(sici)1097-0266(199704)18:4<303::aid-smj869>3.0.co;2-g",
-    "10.1002/(sici)1099-0771(199806)11:2%3c107::aid-bdm292%3e3.0.co;2-y",
     "10.1644/1545-1542(2005)086[0745:bbabss]2.0.co;2",
     "10.1002/(sici)1520-6297(199601/02)12:1<1::aid-agr1>3.0.co;2-#",
     "10.1093/acprof:oso/9780190205782.001.0001",
