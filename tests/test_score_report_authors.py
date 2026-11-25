@@ -19,8 +19,8 @@ def current(row):
 def test_batch_is_bibliographic_and_explicitly_represents_unknown_authors():
     import flora_edits
     rows = load_batch()
-    assert len(rows) == 289
-    assert sum(r['author_status'] == 'named' for r in rows) == 277
+    assert len(rows) == 302
+    assert sum(r['author_status'] == 'named' for r in rows) == 290
     assert sum(r['author_status'] == 'unknown' for r in rows) == 12
     for row in rows:
         for kind in ('replication', 'reproduction'):

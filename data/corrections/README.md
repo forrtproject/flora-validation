@@ -1,11 +1,23 @@
 # SCORE report authors
 
-This unapplied batch corrects bibliographic metadata through the existing FLoRA
-correction log. It prepares 277 named report bylines and explicitly marks 12
-unestablished report bylines unknown. Project contributors are never substituted
-for report writers. `score_report_audit.csv` retains the reasons (four deleted
-files, eight unsigned/unestablished reports); its disposition column separates
-named bylines from explicit unknown handling. One unrelated candidate is excluded.
+This batch corrects bibliographic metadata through the existing FLoRA correction
+log. It prepares 290 named report bylines and explicitly marks 12 unestablished
+report bylines unknown. Project contributors are never substituted for report
+writers. `score_report_audit.csv` retains the reasons (four deleted files, eight
+unsigned/unestablished reports); its disposition column separates named bylines
+from explicit unknown handling. One unrelated candidate is excluded.
+
+The corrections also replace titles that are SCORE's internal component codes
+("Wurst_JournPerSocPsy_2017_qPxQ - Edlund - New Data Replication - 69136"). Those
+codes are the titles OSF and DataCite hold for the report DOIs, so every metadata
+refresh brings them back; only a correction keeps the descriptive title.
+
+On 25 November (fred-data #179) the reference baselines of 153 rows were refreshed
+to the live values, after their references had reverted to DataCite's code titles;
+the reviewed report URL, original DOI and type of all 289 rows were unchanged. The
+13 individual attempts FRED-000984 to FRED-000997 were added from the bylines
+verified on 10 November in fred-data's
+`cos_score_integration/report_references/audit.csv`.
 
 For unknown authors, author_r is null, citations/BibTeX do not credit contributors,
 and author overlap recalculates to missing. Titles in brackets are supplied
@@ -22,7 +34,7 @@ python3 scripts/apply_score_report_authors.py --apply --admin-id "$FLORA_ADMIN_I
 ```
 
 Before application, export `FLORA_ADMIN_ID` in the calling shell with the verified
-administrator ID of the operator. Apply outside the sync window: the 289
+administrator ID of the operator. Apply outside the sync window: the 302
 corrections rebuild the dataset while holding a single transaction.
 
 The default opens no database. --check-live runs with a read-only connection.
@@ -34,10 +46,8 @@ URL and outcome fields are excluded from the batch. Any baseline drift aborts.
 
 REPRO-000101's baseline was refreshed on 12 November only for the verified
 `OSF .` → `OSF.` whitespace change. Its report URL and DOI identity were unchanged;
-the strict reference guard is retained. Live preflight: all 289 ready, none already
-applied. Local simulation of the entire batch preserved all identifiers,
-alternatives, URLs and outcomes, and made all 12 unknown overlaps missing.
-No database write or tracked-output edit was performed for this revision.
+the strict reference guard is retained. Live preflight on 25 November: all 302
+ready, none already applied.
 
 The source evidence includes OSF report links, report bylines, file hashes and
 explicit date provenance. Full original methods and spot checks are in
