@@ -8,6 +8,12 @@ network at request time. Re-run when extracted.csv or onboarding.json change.
 Usage: .venv/bin/python fetch_oa.py
 """
 
+import sys as _sys
+from pathlib import Path as _Path
+if str(_Path(__file__).resolve().parents[2]) not in _sys.path:
+    _sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))
+
+
 import csv
 import json
 import sys

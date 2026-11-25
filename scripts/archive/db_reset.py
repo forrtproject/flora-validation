@@ -2,6 +2,12 @@
 db_reset.py — wipe all data except validators.
 Run: DATABASE_URL=<url> python db_reset.py
 """
+
+import sys as _sys
+from pathlib import Path as _Path
+if str(_Path(__file__).resolve().parents[2]) not in _sys.path:
+    _sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))
+
 import os, psycopg2
 
 TABLES_TO_CLEAR = [

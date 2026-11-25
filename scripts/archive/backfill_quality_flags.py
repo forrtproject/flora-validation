@@ -19,6 +19,12 @@ Usage:
     python backfill_quality_flags.py --status validated   # limit to one status
     python backfill_quality_flags.py --limit 500    # cap rows processed
 """
+
+import sys as _sys
+from pathlib import Path as _Path
+if str(_Path(__file__).resolve().parents[2]) not in _sys.path:
+    _sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))
+
 import argparse
 import json
 import os

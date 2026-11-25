@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 import sys
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 BATCH = ROOT / 'data/corrections/score_report_dois.csv'
 
@@ -55,7 +55,7 @@ def _records(frame):
 def apply_batch(cur, rows, admin):
     import flora_edits
     import flora_service
-    from scripts.apply_score_paper_identifiers import _baseline
+    from scripts.archive.corrections.apply_score_paper_identifiers import _baseline
 
     ids = [r['id'] for r in rows]
     # A correction committed during/after the snapshot must fail save's version guard.

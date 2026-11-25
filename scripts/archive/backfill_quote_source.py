@@ -23,6 +23,12 @@ Usage:
     python backfill_quote_source.py --recompute-all # dry-run, refresh computed values
     python backfill_quote_source.py --recompute-all --apply
 """
+
+import sys as _sys
+from pathlib import Path as _Path
+if str(_Path(__file__).resolve().parents[2]) not in _sys.path:
+    _sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))
+
 import argparse
 import os
 

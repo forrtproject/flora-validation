@@ -11,6 +11,12 @@ Run after editing extracted.csv, onboarding.json, or refreshing oa_cache.json.
 Usage: .venv/bin/python build_static.py
 """
 
+import sys as _sys
+from pathlib import Path as _Path
+if str(_Path(__file__).resolve().parents[2]) not in _sys.path:
+    _sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))
+
+
 import csv
 import json
 from pathlib import Path

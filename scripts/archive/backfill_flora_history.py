@@ -79,6 +79,12 @@ Usage:
 Required environment variables:
     DATABASE_URL — PostgreSQL connection string
 """
+
+import sys as _sys
+from pathlib import Path as _Path
+if str(_Path(__file__).resolve().parents[2]) not in _sys.path:
+    _sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))
+
 import argparse
 import contextlib
 import csv

@@ -12,7 +12,7 @@ from pathlib import Path
 import re
 import sys
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 BATCH = ROOT / 'data/corrections/score_report_authors.json'
 AUDIT = ROOT / 'data/corrections/score_report_audit.csv'
