@@ -35,6 +35,8 @@ import html
 import os
 import re
 import sys
+import unicodedata
+import urllib.parse
 from html.entities import html5
 from pathlib import Path
 
@@ -298,6 +300,81 @@ def _replace_tags(match):
     return " " if between_words else ""
 
 
+def _mojibake_alphabet(codec):
+    """Each byte 0x80-0xFF as `codec` shows it. Bytes cp1252 leaves undefined (0x81,
+    0x8D, 0x8F, 0x90, 0x9D) arrive as the control character of the same number."""
+    return {byte: bytes([byte]).decode(codec, errors="ignore") or chr(byte)
+            for byte in range(0x80, 0x100)}
+
+
+def _mojibake_pattern(alphabet, leads):
+    """UTF-8 sequences as `alphabet` mis-decodes them, as a regex alternative.
+
+    `leads` lists each allowed lead byte range with the number of continuation bytes
+    it takes, so only a well-formed UTF-8 sequence matches.
+    """
+    def chars(lo, hi):
+        return "".join(re.escape(alphabet[b]) for b in range(lo, hi + 1))
+    tail = f"[{chars(0x80, 0xBF)}]"
+    return "|".join(f"[{chars(lo, hi)}]{tail}{{{n}}}" for lo, hi, n in leads)
+
+
+# UTF-8 text decoded as Windows-1252 ("learnerâ€™s", "KÃ¶bach") and as Mac Roman
+# ("Kruger‚Äôs"), as provider metadata and pasted sheet cells deliver it. Narrowed to
+# the lead bytes those sources produce, because a pattern this short can also be
+# real text: Mac Roman shows "“É" as a two-byte sequence, and French "à « " (with a
+# no-break space) reads as a three-byte one. So two-byte sequences are repaired only
+# for U+0080 to U+017F (Â, Ã, Ä, Å leads: accented Latin letters and Polish/Czech
+# ones) and Greek (Î, Ï: "Î±" for α), and three-byte ones only for U+2000 to U+2FFF
+# (â€™ for ’, â€“ for –, ‚Äô in Mac Roman): punctuation and symbols.
+# One pattern, Mac Roman first: scanning left to right, "‚â•‚ÄÖ" must read as Mac
+# Roman's "≥" and a six-per-em space, not as Windows-1252's "â•‚" in its middle.
+_CP1252 = _mojibake_alphabet("cp1252")
+_MAC_ROMAN = _mojibake_alphabet("mac_roman")
+_MOJIBAKE_RE = re.compile(
+    f"(?P<mac_roman>{_mojibake_pattern(_MAC_ROMAN, [(0xE2, 0xE2, 2)])})"
+    f"|(?P<cp1252>{_mojibake_pattern(_CP1252, [(0xC2, 0xC5, 1), (0xCE, 0xCF, 1), (0xE2, 0xE2, 2)])})")
+_TO_BYTE = {"mac_roman": {char: byte for byte, char in _MAC_ROMAN.items()},
+            "cp1252": {char: byte for byte, char in _CP1252.items()}}
+# Enough for text mis-decoded three times ("ÃƒÅ½Ã‚Â±" is α), with a bound.
+_MOJIBAKE_PASSES = 4
+
+
+def _undo_mojibake(match):
+    to_byte = _TO_BYTE[match.lastgroup]
+    raw = bytes(to_byte[char] for char in match.group(0))
+    try:
+        decoded = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return match.group(0)
+    # A control or format character is no repair: "Â" before a C1 control byte, or
+    # "â" and a no-break space before "«" (U+202B), which is real Portuguese text.
+    if unicodedata.category(decoded) in ("Cc", "Cf"):
+        return match.group(0)
+    return decoded
+
+
+def has_mojibake(value) -> bool:
+    """Whether text holds UTF-8 that was decoded with the wrong character set."""
+    return isinstance(value, str) and repair_mojibake(value) != value
+
+
+def repair_mojibake(value):
+    """`value` with mis-decoded UTF-8 decoded again; other text left exactly as it is.
+
+    Only well-formed UTF-8 sequences in the alphabets above are touched, so a real
+    "Köbach" or "Ä" stays. Non-strings pass through.
+    """
+    if not isinstance(value, str):
+        return value
+    for _ in range(_MOJIBAKE_PASSES):
+        repaired = _MOJIBAKE_RE.sub(_undo_mojibake, value)
+        if repaired == value:
+            break
+        value = repaired
+    return value
+
+
 def clean_text(value, one_line=False):
     """Strip markup, decode entities, and repair PDF-copied line breaks.
 
@@ -321,6 +398,8 @@ def clean_text(value, one_line=False):
     # which then reach the published reference verbatim. Only an entity that is not
     # itself a real one is touched — see _lower_unknown_entity.
     text = unescape_entities(text)
+    # After the entities: "&acirc;&euro;&trade;" is mojibake once decoded.
+    text = repair_mojibake(text)
     # Tags stripped again: publisher XML double-encodes, so &amp;lt;i&amp;gt; only
     # becomes a literal tag once unescaped.
     if "<" in text and ">" in text:
@@ -446,7 +525,11 @@ def clean_doi(value):
         '10.1002/pits.22106digital object identifier (doi)'
         'https://doi.org/10.1016/0010-0285(92)90013-R'
         '10.1016/j.learninstruc.2018.04.010 get rights and content'
+        '10.1002/(sici)1099-0771(199806)11:2%3c107::aid-bdm292%3e3.0.co;2-y'
     DOIs cannot contain whitespace, so everything from the first space is dropped.
+    A percent-encoded DOI is decoded: copied from a link, a Wiley SICI DOI arrives
+    with %3c and %3e for < and >, which never match a citation of the paper and
+    which doi.org does not resolve.
     """
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
@@ -458,6 +541,8 @@ def clean_doi(value):
     v = re.sub(r"\s*digital\s*object\s*identifier.*$", "", v)
     v = re.sub(r"\s*get\s*rights\s*and\s*content.*$", "", v)
     v = re.sub(r"\s.*$", "", v).strip()
+    if "%" in v:
+        v = urllib.parse.unquote(v)
     return v or None
 
 
@@ -821,7 +906,7 @@ def join_metadata(df, meta, sides=("o", "r")):
     must hold the source's values, which are kept where no provider answers.
     """
     from enrich_works import extract_work_id        # local: avoids an import cycle
-    from bibliographic_helpers import normalise_key
+    from bibliographic_helpers import add_reference_authors, normalise_key
     for side in sides:
         doi_col = f"doi_{side}"
         keys = df[doi_col].map(lambda d: meta.get(normalise_key(d)) if d else None)
@@ -883,6 +968,12 @@ def join_metadata(df, meta, sides=("o", "r")):
         # …and only now the sheet's own year, for the rows neither lookup answered.
         if sheet_year is not None:
             df[f"year_{side}"] = df[f"year_{side}"].fillna(sheet_year)
+
+        # A cached reference that opens with "(Ed.). (2010)." lacks its author: DOI
+        # content negotiation drops group authors and works deposited without any.
+        # The author list joined above supplies it where one is known.
+        df[f"ref_{side}"] = [add_reference_authors(ref, authors) for ref, authors
+                             in zip(df[f"ref_{side}"], df[f"author_{side}"])]
 
         if side == "o":
             # R's formatted metadata includes the original DOI landing page.
@@ -1366,6 +1457,15 @@ def build(cur, verbose: bool = True,
         changed = int((before.fillna("") != df[column].fillna("")).sum())
         if changed:
             say(f"      cleaned {column}: {changed} cell(s) changed")
+    # Columns clean_text would reshape (JSON author lists, BibTeX, the reproduction
+    # quotes kept as entered) still get mis-decoded characters repaired: "KÃ¶bach"
+    # in author_o otherwise feeds the overlap and the citation. Whatever a column
+    # holds, only the mis-decoded sequences change.
+    for column in ("author_o", "author_r", "bibtex_ref_o", "bibtex_ref_r",
+                   "outcome_computational_quote", "outcome_robustness_quote",
+                   "outcome_replication_quote"):
+        if column in df.columns:
+            df[column] = df[column].map(repair_mojibake)
     # Links only unescaped: the rest of clean_text would rewrite a URL. An OpenAlex
     # link arrives as "...?article=1063&amp;amp;context=trr", which no browser opens.
     for column in ("oa_url_o", "oa_url_r"):

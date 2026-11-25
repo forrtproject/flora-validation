@@ -54,6 +54,7 @@ import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
 
+import bibliographic_helpers
 import preprint_dedup
 import transform_sources
 from console_encoding import use_utf8_output
@@ -495,6 +496,8 @@ def _check_required_fields(df):
 # A query string after the DOI: "?utm_campaign=…" is how a link was shared, not
 # part of the DOI. Old Wiley SICI DOIs hold < > ; # [ ] and :, but never "?…=".
 _DOI_QUERY_RE = re.compile(r"\?[\w.-]+=")
+# A DOI copied from a link: "%3c" where the DOI has "<". doi.org does not resolve it.
+_PERCENT_ESCAPE_RE = re.compile(r"%[0-9a-f]{2}", re.I)
 
 
 def doi_problem(value) -> "str | None":
@@ -503,6 +506,8 @@ def doi_problem(value) -> "str | None":
     if not text:
         return None
     if DOI_RE.match(text):
+        if _PERCENT_ESCAPE_RE.search(text):
+            return "is percent-encoded (%3c for <): decode it"
         return "carries query or tracking text (?…)" if _DOI_QUERY_RE.search(text) else None
     if text.startswith("0."):
         return "starts with 0. (missing the 1?)"
@@ -635,11 +640,21 @@ GENERIC_TITLES = {"analysis", "analyses", "final report", "report", "results", "
                   "code", "manuscript", "draft", "untitled", "preregistration"}
 
 
+# A word joined by two or more underscores ("Trémolière_Cognition_2012_8wZ0",
+# "Gelfand_covid_R3eV"), or a document's file extension. SCORE names report
+# components "Author_Journal_Year_code - Team - New Data Replication - id", and
+# DataCite hands that back as the title of the report's DOI.
+_FILE_NAME_WORD_RE = re.compile(r"[^\s_]+_[^\s_]+_[^\s_]+")
+_FILE_EXTENSION_RE = re.compile(r"\.(docx?|pdf|odt|rtf|txt|xlsx?|csv|zip|rmd|qmd|html?)$", re.I)
+
+
 def title_problem(title) -> "str | None":
     text = _text(title)
     if not text:
         return None
     if "_" in text and " " not in text:
+        return "looks like a file or project name"
+    if _FILE_NAME_WORD_RE.search(text) or _FILE_EXTENSION_RE.search(text):
         return "looks like a file or project name"
     if preprint_dedup.normalize_title(text) in GENERIC_TITLES:
         return "is a generic name, not a title"
@@ -653,6 +668,53 @@ def _check_file_name_titles(df):
         if problem:
             issues.append(finding("file_name_title", [row], "title_r", row.get("title_r"),
                                   f"title_r {problem}"))
+    return issues
+
+
+# Text columns where mis-decoded UTF-8 shows: titles, references, authors, journals,
+# the abstract and the quotes.
+MOJIBAKE_COLUMNS = ("title_o", "title_r", "apa_ref_o", "apa_ref_r", "author_o", "author_r",
+                    "journal_o", "journal_r", "bibtex_ref_o", "bibtex_ref_r", "abstract_r",
+                    "outcome_quote", "outcome_computational_quote", "outcome_robustness_quote",
+                    "outcome_replication_quote")
+
+
+def _check_mojibake(df):
+    issues = []
+    for _, row in df.iterrows():
+        for column in MOJIBAKE_COLUMNS:
+            value = row.get(column)
+            if isinstance(value, str) and transform_sources.has_mojibake(value):
+                repaired = transform_sources.repair_mojibake(value)
+                start = next(i for i, (a, b) in enumerate(zip(value, repaired)) if a != b)
+                issues.append(finding("mojibake", [row], column, value[max(0, start - 30):start + 40],
+                                      f"{column} holds mis-decoded characters"))
+    return issues
+
+
+def _check_authorless_references(df):
+    issues = []
+    for _, row in df.iterrows():
+        for column in ("apa_ref_o", "apa_ref_r"):
+            value = _text(row.get(column))
+            if bibliographic_helpers.authorless_reference(value):
+                issues.append(finding("authorless_reference", [row], column, value,
+                                      f"{column} starts with its date: the author is missing"))
+    return issues
+
+
+_OPENALEX_PAGE_RE = re.compile(r"^https?://(www\.)?openalex\.org/(works/)?W\d+", re.I)
+
+
+def _check_openalex_links(df):
+    issues = []
+    for _, row in df.iterrows():
+        value = _text(row.get("url_r"))
+        if _OPENALEX_PAGE_RE.match(value):
+            detail = ("url_r is an OpenAlex record, the report's only link"
+                      if _blank(row.get("doi_r")) else
+                      "url_r is an OpenAlex record beside the report's DOI")
+            issues.append(finding("openalex_link", [row], "url_r", value, detail))
     return issues
 
 
@@ -706,9 +768,23 @@ CHECKS = [
     ("reversed_pair", POSSIBLE_PROBLEM, "No pair entered both ways round",
      "Pair entered both ways round", _check_reversed_pairs,
      "One row's doi_o and doi_r are another row's doi_r and doi_o."),
+    ("mojibake", PROBLEM, "No mis-decoded characters", "Mis-decoded characters",
+     _check_mojibake,
+     "UTF-8 text decoded with the wrong character set (â€™ or ‚Äô for ’, Ã¶ for ö) "
+     "in a title, reference, author list, journal, abstract or quote."),
+    ("authorless_reference", PROBLEM, "References name their authors",
+     "Reference without an author", _check_authorless_references,
+     "apa_ref_o or apa_ref_r starts with the year or \"(Ed.).\": the provider's citation "
+     "dropped a group author, or its record lists none."),
+    ("openalex_link", POSSIBLE_PROBLEM, "Report links lead to the report",
+     "Report link is an OpenAlex record", _check_openalex_links,
+     "url_r points to an OpenAlex record, not to the report: link the work's landing "
+     "page or DOI."),
     ("file_name_title", POSSIBLE_PROBLEM, "Replication titles look like titles",
      "Title looks like a file or project name", _check_file_name_titles,
-     "title_r is a file or project name, or a generic name such as 'Analysis'."),
+     "title_r is a file or project name (such as a SCORE report component's "
+     "'Author_Journal_Year_code - Team - New Data Replication - id'), or a generic "
+     "name such as 'Analysis'."),
 ]
 
 
