@@ -49,7 +49,7 @@ def plan(cur, rows, lock=False):
     cur.execute("""
         SELECT f.export_id, f.primary_source_record_id::text AS primary_id,
                COALESCE(array_length(f.merged_source_record_ids, 1), 0) AS merged,
-               f.retired_at, s.duplicate_status, s.duplicate_of::text AS duplicate_of
+               f.retired_at, s.deleted_at, s.duplicate_status, s.duplicate_of::text AS duplicate_of
         FROM flora_records f JOIN source_records s ON s.record_id = f.primary_source_record_id
         WHERE f.export_id = ANY(%s)
     """ + (" FOR UPDATE OF s" if lock else ""),
@@ -58,7 +58,8 @@ def plan(cur, rows, lock=False):
     plans = []
     for row in rows:
         absorbed, survivor = found.get(row["absorbed_id"]), found.get(row["survivor_id"])
-        if not absorbed or not survivor or survivor["retired_at"]:
+        if (not absorbed or not survivor or absorbed["retired_at"] or survivor["retired_at"]
+                or absorbed["deleted_at"] or survivor["deleted_at"]):
             raise ValueError(f"Not a published record: {row['absorbed_id']} or {row['survivor_id']}")
         if absorbed["merged"]:
             raise ValueError(f"{row['absorbed_id']} combines several source rows: rule them in Source Records")

@@ -246,8 +246,12 @@ def test_supplied_seed_and_manual_workbook_are_readable():
     assert len(manual) >= 200
     # Two Wiley SICI DOIs are frozen in their percent-encoded spelling as well; the
     # decoded spelling, which is what normalise_key looks up, is there beside them.
-    assert all(key == bh.normalise_key(key) or bh.normalise_key(key) in seed["records"]
-               for key in seed["records"])
+    encoded_sici = {
+        "10.1002/(sici)1099-0992(199912)29:8%3c1011::aid-ejsp974%3e3.0.co;2-a",
+        "10.1002/(sici)1099-0771(199806)11:2%3c107::aid-bdm292%3e3.0.co;2-y",
+    }
+    assert all(key == bh.normalise_key(key) or key in encoded_sici for key in seed["records"])
+    assert all(bh.normalise_key(key) in seed["records"] for key in encoded_sici)
     assert any(row.get("authors_json") and row.get("apa_ref") for row in seed["records"].values())
 
 

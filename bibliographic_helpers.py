@@ -375,7 +375,8 @@ def apa_author_names(authors, apa7_limit=False) -> str:
     """
     formatted = []
     for author in authors:
-        family, given = text(author.get("family")), text(author.get("given"))
+        # _name_part, not text(): "Na" and "Nan" are names here.
+        family, given = _name_part(author.get("family")), _name_part(author.get("given"))
         if family:
             initials = " ".join(part[0] + "." for part in re.findall(r"[^\W\d_]+", given or ""))
             formatted.append(f"{family}, {initials}" if initials else family)
@@ -511,11 +512,13 @@ def fetch_doi_reference(doi):
     # Some registration agencies answer the APA request with CSL JSON instead of
     # text; a reference must be prose, so that falls to synthesise_references.
     if apa and not is_structured_text(apa):
-        result["apa_ref"] = add_reference_authors(
-            html.unescape(apa.strip()), result.get("authors_json") or result.get("authors"))
+        result["apa_ref"] = html.unescape(apa.strip())
     if bibtex and re.match(r"\s*@\w+\s*[{(]", bibtex):
         result["bibtex_ref"] = bibtex.strip()
         result = merge_present(parse_bibtex(bibtex), result)
+    # After the BibTeX merge, whose structured authors can supply what the APA lacks.
+    if result.get("apa_ref"):
+        result["apa_ref"] = add_reference_authors(result["apa_ref"], result.get("authors_json"))
     if sources or apa or bibtex:
         result["metadata_source"] = "+".join(sources or ["doi-negotiation"])
     return synthesise_references(result, key)

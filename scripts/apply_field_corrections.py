@@ -63,7 +63,9 @@ def load_batch(path):
 
 def _same(field, actual, expected) -> bool:
     import transform_sources
-    actual, expected = (actual or "").strip(), (expected or "").strip()
+    def text(value):
+        return "" if value is None or (isinstance(value, float) and value != value) else str(value).strip()
+    actual, expected = text(actual), text(expected)
     if field.startswith("doi_"):
         return (transform_sources.clean_doi(actual) or "") == (transform_sources.clean_doi(expected) or "")
     return actual == expected

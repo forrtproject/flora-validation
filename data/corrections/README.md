@@ -15,7 +15,7 @@ refresh brings them back; only a correction keeps the descriptive title.
 On 25 November (fred-data #179) the reference baselines of 153 rows were refreshed
 to the live values, after their references had reverted to DataCite's code titles;
 the reviewed report URL, original DOI and type of all 289 rows were unchanged. The
-13 individual attempts FRED-000984 to FRED-000997 were added from the bylines
+13 individual attempts FRED-000984 and FRED-000986 to FRED-000997 were added from the bylines
 verified on 10 November in fred-data's
 `cos_score_integration/report_references/audit.csv`.
 

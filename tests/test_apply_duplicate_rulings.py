@@ -27,11 +27,13 @@ class _Cur:
 
 def _record(export_id, primary, **extra):
     return {"export_id": export_id, "primary_id": primary, "merged": 0, "retired_at": None,
+            "deleted_at": None,
             "duplicate_status": None, "duplicate_of": None, **extra}
 
 
 def test_the_committed_rulings_are_valid():
     rows = load_batch("data/corrections/fred_data_179_duplicates.csv")
+    assert len(rows) == 15
     assert ("FLORA-002632", "FLORA-001168") in {(r["absorbed_id"], r["survivor_id"]) for r in rows}
 
 

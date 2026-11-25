@@ -285,3 +285,9 @@ def test_mac_roman_symbols_are_repaired(broken, repaired):
 
 def test_a_greek_lead_before_a_no_break_space_is_text():
     assert ts.repair_mojibake("Î\xa0x") == "Î\xa0x"
+
+
+def test_names_na_and_nan_are_kept():
+    assert bh.add_reference_authors("(2010). Title.", [{"family": "Jiang", "given": "Nan"}, {"family": "Na", "given": "Elim"}]) \
+        == "Jiang, N., & Na, E. (2010). Title."
+
