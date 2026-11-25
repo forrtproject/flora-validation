@@ -58,6 +58,10 @@ def plan(cur, rows, lock=False):
     plans = []
     for row in rows:
         absorbed, survivor = found.get(row["absorbed_id"]), found.get(row["survivor_id"])
+        # Applied already: the next build retires the absorbed id, so a rerun skips it.
+        if (absorbed and survivor and absorbed["duplicate_status"] == "duplicate"
+                and absorbed["duplicate_of"] == survivor["primary_id"]):
+            continue
         if (not absorbed or not survivor or absorbed["retired_at"] or survivor["retired_at"]
                 or absorbed["deleted_at"] or survivor["deleted_at"]):
             raise ValueError(f"Not a published record: {row['absorbed_id']} or {row['survivor_id']}")

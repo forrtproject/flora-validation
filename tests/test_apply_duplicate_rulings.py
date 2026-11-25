@@ -72,3 +72,10 @@ def test_a_ruling_of_distinct_is_not_overturned(tmp_path):
     rows = load_batch(_write(tmp_path, [{"absorbed_id": "A", "survivor_id": "B", "note": "Same report."}]))
     with pytest.raises(ValueError, match="ruled distinct"):
         plan(_Cur([_record("A", "uuid-a", duplicate_status="distinct"), _record("B", "uuid-b")]), rows)
+
+
+def test_a_rerun_after_the_build_retired_the_absorbed_record_skips_it(tmp_path):
+    rows = load_batch(_write(tmp_path, [{"absorbed_id": "A", "survivor_id": "B", "note": "Same report."}]))
+    done = _record("A", "uuid-a", duplicate_status="duplicate", duplicate_of="uuid-b",
+                   retired_at="2026-11-26")
+    assert plan(_Cur([done, _record("B", "uuid-b")]), rows) == []
