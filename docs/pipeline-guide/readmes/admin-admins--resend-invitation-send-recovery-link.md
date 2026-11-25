@@ -4,7 +4,7 @@ Issues a fresh invitation for an account without a password, or recovery for an 
 
 [Open interactive guide](../index.html#view=admin&node=admin-admins--resend-invitation-send-recovery-link)
 
-Code snapshot: 24 November 2026, `3cc13da`.
+Code snapshot: 25 November 2026, `f0cb8de`.
 
 ## What goes in
 
@@ -24,5 +24,5 @@ Code snapshot: 24 November 2026, `3cc13da`.
 
 ## Find it in the code
 
-- [docs/app.js:12042 — sendAdminLink](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/docs/app.js#L12042) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/docs/app.js)
-- [app.py:4610 — resend_admin_invite](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/app.py#L4610) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/app.py)
+- [docs/app.js:12067 — sendAdminLink](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/docs/app.js#L12067) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/docs/app.js)
+- [app.py:4643 — resend_admin_invite](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/app.py#L4643) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/app.py)

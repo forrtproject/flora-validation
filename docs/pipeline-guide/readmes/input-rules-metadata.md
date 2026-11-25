@@ -4,7 +4,7 @@ Supporting inputs tell preparation which rows to exclude, how outcome wording ma
 
 [Open interactive guide](../index.html#view=overview&node=input-rules-metadata)
 
-Code snapshot: 24 November 2026, `3cc13da`.
+Code snapshot: 25 November 2026, `f0cb8de`.
 
 ## What goes in
 
@@ -39,7 +39,7 @@ Code snapshot: 24 November 2026, `3cc13da`.
 
 ## Find it in the code
 
-- [sync_exclusions.py:158 — sync](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/sync_exclusions.py#L158) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/sync_exclusions.py)
-- [enrich_works.py:295 — enrich](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/enrich_works.py#L295) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/enrich_works.py)
-- [enrich_works.py:467 — enrich_work_ids](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/enrich_works.py#L467) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/enrich_works.py)
-- [transform_sources.py:633 — load_rules](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/transform_sources.py#L633) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/transform_sources.py)
+- [sync_exclusions.py:158 — sync](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/sync_exclusions.py#L158) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/sync_exclusions.py)
+- [enrich_works.py:295 — enrich](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/enrich_works.py#L295) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/enrich_works.py)
+- [enrich_works.py:489 — enrich_work_ids](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/enrich_works.py#L489) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/enrich_works.py)
+- [transform_sources.py:184 — load_rules](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/transform_sources.py#L184) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/transform_sources.py)

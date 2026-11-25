@@ -12,8 +12,8 @@ import textwrap
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 REPO = "https://github.com/forrtproject/flora-validation"
-COMMIT = "3cc13dadec9b51c8e25d03a4b30827300f32ac16"
-DATE = "24 November 2026"
+COMMIT = "f0cb8de088ea65f429125505b68908990d9d2f76"
+DATE = "25 November 2026"
 
 
 def esc(value):
@@ -61,7 +61,7 @@ def load_nodes():
         "refresh": ["The Source Records grid reloads the imported input. The FLoRA grid derives the current combined view.", "The stored complete CSV and public API update through preparation, with eligible existing-row corrections applied immediately."],
         "outputs": ["Input to transform_sources.py and the identity registry."],
         "cautions": ["Source Records, the derived FLoRA grid and stored flora_data are three distinct views of data."],
-        "sources": [{"file":"db_schema.sql","line":1223,"symbol":"source_records"}, {"file":"sync_validated.py","line":145,"symbol":"sync"}, {"file":"transform_sources.py","line":184,"symbol":"load_rules"}],
+        "sources": [{"file":"db_schema.sql","line":1223,"symbol":"source_records"}, {"file":"sync_validated.py","line":138,"symbol":"sync"}, {"file":"transform_sources.py","line":184,"symbol":"load_rules"}],
     })
     ids = [n["id"] for n in nodes]
     assert len(ids) == len(set(ids)), "Duplicate node IDs"

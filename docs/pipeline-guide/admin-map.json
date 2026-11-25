@@ -37,22 +37,22 @@
       "sources": [
         {
           "file": "docs/app.js",
-          "line": 6381,
+          "line": 6406,
           "symbol": "fetchAdminEntries"
         },
         {
           "file": "docs/app.js",
-          "line": 8952,
+          "line": 8977,
           "symbol": "renderAdminDetail"
         },
         {
           "file": "app.py",
-          "line": 5041,
+          "line": 5074,
           "symbol": "admin_entries"
         },
         {
           "file": "app.py",
-          "line": 5269,
+          "line": 5302,
           "symbol": "admin_entry_detail"
         },
         {
@@ -70,17 +70,17 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 6381,
+              "line": 6406,
               "symbol": "fetchAdminEntries"
             },
             {
               "file": "app.py",
-              "line": 5041,
+              "line": 5074,
               "symbol": "admin_entries"
             },
             {
               "file": "app.py",
-              "line": 5269,
+              "line": 5302,
               "symbol": "admin_entry_detail"
             }
           ]
@@ -93,12 +93,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 7925,
+              "line": 7950,
               "symbol": "_apSendApprove"
             },
             {
               "file": "app.py",
-              "line": 5809,
+              "line": 5842,
               "symbol": "admin_approve"
             }
           ]
@@ -111,12 +111,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 9817,
+              "line": 9842,
               "symbol": "Save Note click handler"
             },
             {
               "file": "app.py",
-              "line": 6321,
+              "line": 6354,
               "symbol": "admin_save_note"
             }
           ]
@@ -129,12 +129,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 10188,
+              "line": 10213,
               "symbol": "submitAdminResolve"
             },
             {
               "file": "app.py",
-              "line": 6393,
+              "line": 6426,
               "symbol": "admin_resolve"
             }
           ]
@@ -147,12 +147,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 10066,
+              "line": 10091,
               "symbol": "confirmValidatedDuplicateMerge"
             },
             {
               "file": "app.py",
-              "line": 6643,
+              "line": 6676,
               "symbol": "admin_resolve duplicate-conflict branch"
             }
           ]
@@ -165,7 +165,7 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 9796,
+              "line": 9821,
               "symbol": "openAsType"
             }
           ]
@@ -178,12 +178,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 9853,
+              "line": 9878,
               "symbol": "Reject click handler"
             },
             {
               "file": "app.py",
-              "line": 6393,
+              "line": 6426,
               "symbol": "admin_resolve"
             }
           ]
@@ -196,12 +196,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 10021,
+              "line": 10046,
               "symbol": "Send back handler"
             },
             {
               "file": "app.py",
-              "line": 6275,
+              "line": 6308,
               "symbol": "admin_flag_review"
             }
           ]
@@ -214,12 +214,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 9957,
+              "line": 9982,
               "symbol": "val-flag-btn handler"
             },
             {
               "file": "app.py",
-              "line": 5505,
+              "line": 5538,
               "symbol": "admin_flag_queue"
             }
           ]
@@ -232,12 +232,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 10340,
+              "line": 10365,
               "symbol": "advanceToNextAdminEntry"
             },
             {
               "file": "docs/app.js",
-              "line": 10359,
+              "line": 10384,
               "symbol": "closeAdminDetail"
             }
           ]
@@ -282,17 +282,17 @@
       "sources": [
         {
           "file": "docs/app.js",
-          "line": 12496,
+          "line": 12521,
           "symbol": "fetchSourceRecords"
         },
         {
           "file": "docs/app.js",
-          "line": 15055,
+          "line": 15080,
           "symbol": "renderSourceRecord"
         },
         {
           "file": "app.py",
-          "line": 6833,
+          "line": 6866,
           "symbol": "admin_source_records"
         },
         {
@@ -315,12 +315,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 15041,
+              "line": 15066,
               "symbol": "openSourceRecord"
             },
             {
               "file": "app.py",
-              "line": 7596,
+              "line": 7629,
               "symbol": "admin_source_record_detail"
             }
           ]
@@ -333,12 +333,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 15201,
+              "line": 15226,
               "symbol": "source export handler"
             },
             {
               "file": "app.py",
-              "line": 6849,
+              "line": 6882,
               "symbol": "admin_source_records_export"
             }
           ]
@@ -351,12 +351,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 14972,
+              "line": 14997,
               "symbol": "startSourceSync"
             },
             {
               "file": "app.py",
-              "line": 7437,
+              "line": 7470,
               "symbol": "admin_source_sync_dispatch"
             },
             {
@@ -379,7 +379,7 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 14926,
+              "line": 14951,
               "symbol": "fetchSourceSync"
             }
           ]
@@ -392,12 +392,12 @@
           "sources": [
             {
               "file": "app.py",
-              "line": 7402,
+              "line": 7435,
               "symbol": "admin_source_sync_artifact"
             },
             {
               "file": "docs/app.js",
-              "line": 14998,
+              "line": 15023,
               "symbol": "source history click handler"
             }
           ]
@@ -410,7 +410,7 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 15434,
+              "line": 15459,
               "symbol": "confirmSourceDistinct"
             },
             {
@@ -428,7 +428,7 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 15407,
+              "line": 15432,
               "symbol": "resolveSourceDuplicate"
             },
             {
@@ -446,12 +446,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 15891,
+              "line": 15916,
               "symbol": "srcDriftUse"
             },
             {
               "file": "docs/app.js",
-              "line": 12998,
+              "line": 13023,
               "symbol": "floraPrefill"
             },
             {
@@ -469,12 +469,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 15920,
+              "line": 15945,
               "symbol": "keepSourceDrift"
             },
             {
               "file": "app.py",
-              "line": 7558,
+              "line": 7591,
               "symbol": "admin_sheet_drift_keep"
             },
             {
@@ -492,12 +492,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 16000,
+              "line": 16025,
               "symbol": "Sheet edits CSV handler"
             },
             {
               "file": "app.py",
-              "line": 7518,
+              "line": 7551,
               "symbol": "admin_sheet_drift_export"
             },
             {
@@ -515,12 +515,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 15278,
+              "line": 15303,
               "symbol": "fetchSourceDuplicates"
             },
             {
               "file": "docs/app.js",
-              "line": 15265,
+              "line": 15290,
               "symbol": "hideSourceDuplicates"
             }
           ]
@@ -563,7 +563,7 @@
       "sources": [
         {
           "file": "docs/app.js",
-          "line": 12833,
+          "line": 12858,
           "symbol": "fetchFloraRecords"
         },
         {
@@ -578,7 +578,7 @@
         },
         {
           "file": "app.py",
-          "line": 6926,
+          "line": 6959,
           "symbol": "admin_flora_export"
         }
       ],
@@ -591,17 +591,17 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 12833,
+              "line": 12858,
               "symbol": "fetchFloraRecords"
             },
             {
               "file": "docs/app.js",
-              "line": 12964,
+              "line": 12989,
               "symbol": "openFloraRecord"
             },
             {
               "file": "app.py",
-              "line": 7262,
+              "line": 7295,
               "symbol": "admin_flora_record"
             }
           ]
@@ -614,22 +614,22 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 13644,
+              "line": 13669,
               "symbol": "saveFloraRecord"
             },
             {
               "file": "app.py",
-              "line": 7313,
+              "line": 7346,
               "symbol": "admin_flora_record_update"
             },
             {
               "file": "flora_edits.py",
-              "line": 637,
+              "line": 634,
               "symbol": "save"
             },
             {
               "file": "flora_edits.py",
-              "line": 921,
+              "line": 902,
               "symbol": "publish"
             }
           ]
@@ -642,12 +642,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 13627,
+              "line": 13652,
               "symbol": "collectFloraEdits"
             },
             {
               "file": "flora_edits.py",
-              "line": 637,
+              "line": 634,
               "symbol": "save"
             }
           ]
@@ -660,17 +660,17 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 13704,
+              "line": 13729,
               "symbol": "restoreFloraRecord"
             },
             {
               "file": "flora_edits.py",
-              "line": 692,
+              "line": 689,
               "symbol": "restore"
             },
             {
               "file": "app.py",
-              "line": 7329,
+              "line": 7362,
               "symbol": "admin_flora_record_restore"
             }
           ]
@@ -683,17 +683,17 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 13532,
+              "line": 13557,
               "symbol": "confirmFloraOutcome"
             },
             {
               "file": "app.py",
-              "line": 7344,
+              "line": 7377,
               "symbol": "admin_flora_confirm_outcome"
             },
             {
               "file": "flora_edits.py",
-              "line": 738,
+              "line": 735,
               "symbol": "confirm_outcome"
             }
           ]
@@ -706,17 +706,17 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 13480,
+              "line": 13505,
               "symbol": "markFloraFinding"
             },
             {
               "file": "app.py",
-              "line": 7053,
+              "line": 7086,
               "symbol": "admin_flora_finding_dismiss"
             },
             {
               "file": "app.py",
-              "line": 7070,
+              "line": 7103,
               "symbol": "admin_flora_finding_undismiss"
             }
           ]
@@ -729,12 +729,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 12896,
+              "line": 12921,
               "symbol": "downloadAdminArtifact"
             },
             {
               "file": "app.py",
-              "line": 6926,
+              "line": 6959,
               "symbol": "admin_flora_export"
             }
           ]
@@ -752,7 +752,7 @@
             },
             {
               "file": "app.py",
-              "line": 6926,
+              "line": 6959,
               "symbol": "admin_flora_export"
             }
           ]
@@ -765,7 +765,7 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 14735,
+              "line": 14760,
               "symbol": "decideFloraDedup"
             },
             {
@@ -775,7 +775,7 @@
             },
             {
               "file": "app.py",
-              "line": 6984,
+              "line": 7017,
               "symbol": "admin_flora_preprint_decide"
             }
           ]
@@ -788,7 +788,7 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 14755,
+              "line": 14780,
               "symbol": "undoFloraDedup"
             },
             {
@@ -828,17 +828,17 @@
       "sources": [
         {
           "file": "docs/app.js",
-          "line": 11137,
+          "line": 11162,
           "symbol": "fetchAdminStats"
         },
         {
           "file": "docs/app.js",
-          "line": 11563,
+          "line": 11588,
           "symbol": "renderAdminStats"
         },
         {
           "file": "app.py",
-          "line": 3695,
+          "line": 3728,
           "symbol": "admin_stats"
         }
       ],
@@ -851,12 +851,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 11606,
+              "line": 11631,
               "symbol": "tier handler"
             },
             {
               "file": "app.py",
-              "line": 4361,
+              "line": 4394,
               "symbol": "admin_set_tier"
             }
           ]
@@ -869,12 +869,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 11625,
+              "line": 11650,
               "symbol": "openValidatorFlagsModal"
             },
             {
               "file": "app.py",
-              "line": 4324,
+              "line": 4357,
               "symbol": "admin_validator_flagged"
             }
           ]
@@ -887,12 +887,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 11697,
+              "line": 11722,
               "symbol": "openComposeDialog"
             },
             {
               "file": "app.py",
-              "line": 5772,
+              "line": 5805,
               "symbol": "admin_send_message"
             }
           ]
@@ -929,17 +929,17 @@
       "sources": [
         {
           "file": "docs/app.js",
-          "line": 11910,
+          "line": 11935,
           "symbol": "fetchAdminAdmins"
         },
         {
           "file": "docs/app.js",
-          "line": 11924,
+          "line": 11949,
           "symbol": "renderAdminAdmins"
         },
         {
           "file": "app.py",
-          "line": 4423,
+          "line": 4456,
           "symbol": "list_admins"
         },
         {
@@ -957,12 +957,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 12147,
+              "line": 12172,
               "symbol": "addAdminAccount"
             },
             {
               "file": "app.py",
-              "line": 4552,
+              "line": 4585,
               "symbol": "create_admin"
             }
           ]
@@ -975,12 +975,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 12042,
+              "line": 12067,
               "symbol": "sendAdminLink"
             },
             {
               "file": "app.py",
-              "line": 4610,
+              "line": 4643,
               "symbol": "resend_admin_invite"
             }
           ]
@@ -993,12 +993,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 11984,
+              "line": 12009,
               "symbol": "validator link handler"
             },
             {
               "file": "app.py",
-              "line": 4465,
+              "line": 4498,
               "symbol": "link_admin_validator"
             }
           ]
@@ -1011,12 +1011,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 12001,
+              "line": 12026,
               "symbol": "trusted toggle handler"
             },
             {
               "file": "app.py",
-              "line": 4850,
+              "line": 4883,
               "symbol": "toggle_admin_trusted"
             }
           ]
@@ -1029,12 +1029,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 12021,
+              "line": 12046,
               "symbol": "delete admin handler"
             },
             {
               "file": "app.py",
-              "line": 4821,
+              "line": 4854,
               "symbol": "delete_admin"
             }
           ]
@@ -1047,12 +1047,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 12131,
+              "line": 12156,
               "symbol": "saveAdminBanner"
             },
             {
               "file": "app.py",
-              "line": 4220,
+              "line": 4253,
               "symbol": "set_site_banner"
             },
             {
@@ -1070,12 +1070,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 12131,
+              "line": 12156,
               "symbol": "saveAdminBanner"
             },
             {
               "file": "app.py",
-              "line": 4220,
+              "line": 4253,
               "symbol": "set_site_banner"
             }
           ]
@@ -1110,17 +1110,17 @@
       "sources": [
         {
           "file": "docs/app.js",
-          "line": 11162,
+          "line": 11187,
           "symbol": "fetchAdminDashboard"
         },
         {
           "file": "docs/app.js",
-          "line": 11320,
+          "line": 11345,
           "symbol": "renderAdminDashboard"
         },
         {
           "file": "app.py",
-          "line": 4010,
+          "line": 4043,
           "symbol": "admin_dashboard"
         }
       ],
@@ -1133,17 +1133,17 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 11162,
+              "line": 11187,
               "symbol": "fetchAdminDashboard"
             },
             {
               "file": "docs/app.js",
-              "line": 11320,
+              "line": 11345,
               "symbol": "renderAdminDashboard"
             },
             {
               "file": "app.py",
-              "line": 4010,
+              "line": 4043,
               "symbol": "admin_dashboard"
             }
           ]
@@ -1180,12 +1180,12 @@
       "sources": [
         {
           "file": "docs/app.js",
-          "line": 11190,
+          "line": 11215,
           "symbol": "renderServingConfig"
         },
         {
           "file": "app.py",
-          "line": 3957,
+          "line": 3990,
           "symbol": "put_serving_config"
         },
         {
@@ -1203,7 +1203,7 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 11190,
+              "line": 11215,
               "symbol": "renderServingConfig"
             }
           ]
@@ -1216,12 +1216,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 11263,
+              "line": 11288,
               "symbol": "_refreshPriorityPreview"
             },
             {
               "file": "app.py",
-              "line": 3986,
+              "line": 4019,
               "symbol": "preview_serving_config"
             }
           ]
@@ -1234,12 +1234,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 11300,
+              "line": 11325,
               "symbol": "_saveServingConfig"
             },
             {
               "file": "app.py",
-              "line": 3957,
+              "line": 3990,
               "symbol": "put_serving_config"
             }
           ]
@@ -1252,7 +1252,7 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 11242,
+              "line": 11267,
               "symbol": "Reset to defaults handler"
             }
           ]
@@ -1291,17 +1291,17 @@
       "sources": [
         {
           "file": "docs/app.js",
-          "line": 10757,
+          "line": 10782,
           "symbol": "fetchMaintenanceRuns"
         },
         {
           "file": "docs/app.js",
-          "line": 10816,
+          "line": 10841,
           "symbol": "startMaintenanceRun"
         },
         {
           "file": "app.py",
-          "line": 7695,
+          "line": 7728,
           "symbol": "admin_start_maintenance"
         },
         {
@@ -1319,12 +1319,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 10816,
+              "line": 10841,
               "symbol": "startMaintenanceRun"
             },
             {
               "file": "app.py",
-              "line": 7695,
+              "line": 7728,
               "symbol": "admin_start_maintenance"
             },
             {
@@ -1342,12 +1342,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 10800,
+              "line": 10825,
               "symbol": "refreshMaintenanceRuns"
             },
             {
               "file": "app.py",
-              "line": 7621,
+              "line": 7654,
               "symbol": "admin_maintenance_runs"
             }
           ]
@@ -1360,12 +1360,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 10980,
+              "line": 11005,
               "symbol": "_loadMaintenanceLog"
             },
             {
               "file": "app.py",
-              "line": 7672,
+              "line": 7705,
               "symbol": "admin_maintenance_run_detail"
             }
           ]
@@ -1401,22 +1401,22 @@
       "sources": [
         {
           "file": "docs/app.js",
-          "line": 11064,
+          "line": 11089,
           "symbol": "fetchAdminRestricted"
         },
         {
           "file": "docs/app.js",
-          "line": 11086,
+          "line": 11111,
           "symbol": "renderRestricted"
         },
         {
           "file": "app.py",
-          "line": 4253,
+          "line": 4286,
           "symbol": "admin_restricted"
         },
         {
           "file": "app.py",
-          "line": 4289,
+          "line": 4322,
           "symbol": "admin_assign"
         }
       ],
@@ -1429,12 +1429,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 11126,
+              "line": 11151,
               "symbol": "assignment handler"
             },
             {
               "file": "app.py",
-              "line": 4289,
+              "line": 4322,
               "symbol": "admin_assign"
             }
           ]
@@ -1488,7 +1488,7 @@
         },
         {
           "file": "adjudication/review.py",
-          "line": 527,
+          "line": 520,
           "symbol": "publish"
         }
       ],
@@ -1586,7 +1586,7 @@
           "sources": [
             {
               "file": "adjudication/review.py",
-              "line": 527,
+              "line": 520,
               "symbol": "publish"
             }
           ]
@@ -1599,7 +1599,7 @@
           "sources": [
             {
               "file": "adjudication/review.py",
-              "line": 574,
+              "line": 567,
               "symbol": "withdraw"
             }
           ]
@@ -1654,22 +1654,22 @@
       "sources": [
         {
           "file": "docs/app.js",
-          "line": 11743,
+          "line": 11768,
           "symbol": "fetchAdminMessages"
         },
         {
           "file": "docs/app.js",
-          "line": 11811,
+          "line": 11836,
           "symbol": "openThread"
         },
         {
           "file": "docs/app.js",
-          "line": 12191,
+          "line": 12216,
           "symbol": "openComposePanel"
         },
         {
           "file": "app.py",
-          "line": 5772,
+          "line": 5805,
           "symbol": "admin_send_message"
         }
       ],
@@ -1682,12 +1682,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 11811,
+              "line": 11836,
               "symbol": "openThread"
             },
             {
               "file": "app.py",
-              "line": 5670,
+              "line": 5703,
               "symbol": "get admin thread route"
             }
           ]
@@ -1700,12 +1700,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 12191,
+              "line": 12216,
               "symbol": "openComposePanel"
             },
             {
               "file": "app.py",
-              "line": 5772,
+              "line": 5805,
               "symbol": "admin_send_message"
             }
           ]
@@ -1718,12 +1718,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 12294,
+              "line": 12319,
               "symbol": "compose submit handler"
             },
             {
               "file": "app.py",
-              "line": 5772,
+              "line": 5805,
               "symbol": "admin_send_message"
             }
           ]
@@ -1736,12 +1736,12 @@
           "sources": [
             {
               "file": "docs/app.js",
-              "line": 11876,
+              "line": 11901,
               "symbol": "reply handler"
             },
             {
               "file": "app.py",
-              "line": 5717,
+              "line": 5750,
               "symbol": "admin_reply_to_thread"
             }
           ]

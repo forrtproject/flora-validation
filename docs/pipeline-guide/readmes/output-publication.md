@@ -4,7 +4,7 @@ The Publish FLoRA GitHub Action writes the currently stored dataset to output/fl
 
 [Open interactive guide](../index.html#view=overview&node=output-publication)
 
-Code snapshot: 24 November 2026, `3cc13da`.
+Code snapshot: 25 November 2026, `f0cb8de`.
 
 ## What goes in
 
@@ -41,8 +41,8 @@ Code snapshot: 24 November 2026, `3cc13da`.
 
 ## Find it in the code
 
-- [publish_flora.py:73 — publish](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/publish_flora.py#L73) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/publish_flora.py)
-- [publish_flora.py:123 — main](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/publish_flora.py#L123) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/publish_flora.py)
-- [.github/workflows/publish-flora.yml:13 — workflow_dispatch and workflow_run](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/.github/workflows/publish-flora.yml#L13) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/.github/workflows/publish-flora.yml)
-- [.github/workflows/sync-sources.yml:180 — repository release commit](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/.github/workflows/sync-sources.yml#L180) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/.github/workflows/sync-sources.yml)
-- [.github/scripts/commit_and_push.sh:1 — commit/push helper](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/.github/scripts/commit_and_push.sh#L1) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/.github/scripts/commit_and_push.sh)
+- [publish_flora.py:73 — publish](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/publish_flora.py#L73) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/publish_flora.py)
+- [publish_flora.py:123 — main](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/publish_flora.py#L123) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/publish_flora.py)
+- [.github/workflows/publish-flora.yml:13 — workflow_dispatch and workflow_run](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/.github/workflows/publish-flora.yml#L13) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/.github/workflows/publish-flora.yml)
+- [.github/workflows/sync-sources.yml:180 — repository release commit](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/.github/workflows/sync-sources.yml#L180) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/.github/workflows/sync-sources.yml)
+- [.github/scripts/commit_and_push.sh:1 — commit/push helper](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/.github/scripts/commit_and_push.sh#L1) · [complete script](https://github.com/forrtproject/flora-validation/blob/f0cb8de088ea65f429125505b68908990d9d2f76/.github/scripts/commit_and_push.sh)
