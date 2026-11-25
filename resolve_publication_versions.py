@@ -120,7 +120,8 @@ def live_frame(cur):
     frame = transform_sources.drop_untitled(flora_service.dataset(cur)).copy()
     frame = frame[frame['export_id'].notna() & frame['export_id'].ne('')]
     frame['id'] = frame['export_id']
-    return frame.fillna('')
+    # Not fillna(''): the author-overlap columns are nullable numbers, which refuse ''.
+    return frame.astype(object).where(frame.notna(), '')
 
 
 def main():

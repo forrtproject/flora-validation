@@ -338,6 +338,34 @@ def test_a_retraction_check_that_did_not_run_resolves_nothing(db, fake_network):
     assert lifted["counts"]["resolved"] == 2 and _open(db) == set()
 
 
+def test_labelling_a_retracted_originals_title_resolves_its_finding(db, fake_network):
+    day = datetime(2020, 1, 1).date()
+    fake_network.notices = {"10.1000/o1": [("retraction", day)], "10.1000/r2": [("retraction", day)]}
+    _store(db, _row(1), _row(2))
+    entry_checks.run_network(db, minutes=0)
+    original = _key("retracted", ["REPL-000001"], "doi_o", "10.1000/o1")
+    replication = _key("retracted", ["REPL-000002"], "doi_r", "10.1000/r2")
+    assert _open(db) == {original, replication}
+
+    _store(db, _row(1, title_o="RETRACTED: Original 1"), _row(2, title_r="RETRACTED: Replication 2"))
+    labelled = entry_checks.run_network(db, minutes=0)
+    assert labelled["counts"]["resolved"] == 1
+    assert _open(db) == {replication}, "a label does not settle a retracted replication"
+
+
+def test_a_stored_finding_on_a_labelled_originals_title_resolves(db):
+    """Left open by the rule that flagged any title saying RETRACTED."""
+    title = "RETRACTED: Original 1"
+    key = _key("retracted_title", ["REPL-000001"], "title_o", title)
+    _store(db, _row(1, title_o=title))
+    _query(db, "INSERT INTO flora_check_findings (finding_key, part, check_code, level, flora_ids, "
+               "column_name, value) VALUES (%s, 'structural', 'retracted_title', 'problem', %s, "
+               "'title_o', %s)", (key, ["REPL-000001"], title))
+    assert _open(db) == {key}
+    entry_checks.run_structural(db)
+    assert _open(db) == set()
+
+
 def test_a_dois_registration_answered_this_run_resolves_it(db, fake_network):
     _store(db, _row(1))
     fake_network.dois = {"10.1000/r1": (FAILED, "not registered at doi.org")}

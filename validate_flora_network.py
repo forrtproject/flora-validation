@@ -4,7 +4,8 @@ A Python port of R/validate_flora_network.R, with each check asking the question
 that decides whether a value is wrong:
 
     N1  Retracted papers and expressions of concern, from Crossref's Retraction
-        Watch data (both sides)
+        Watch data (both sides). A retracted original is a finding only when its
+        title does not say so; a retracted replication always is
     N2  DOIs registered at doi.org, asked of its handle API
     N3  Links reachable: HEAD, then GET (url_r, oa_url_o, oa_url_r and url_o)
     N4  Originals without a doi_o that probably have one, looked up in Crossref
@@ -73,8 +74,8 @@ from pipeline_logging import start as start_logging
 from validate_flora import (ENRICHED_COLUMNS, ENRICHED_NOTE, LEVEL_NOTES, LEVEL_TITLES,
                             POSSIBLE_PROBLEM, PROBLEM, _blank, _code, _text, count_text,
                             doi_problem, finding, is_suppressed, load_dataset,
-                            load_suppressions, plain, render_section, suppressed_note,
-                            url_problem)
+                            load_suppressions, plain, render_section, says_retracted,
+                            suppressed_note, url_problem)
 
 load_dotenv()
 use_utf8_output()
@@ -438,6 +439,13 @@ def retraction_notices() -> dict:
         return parse_retraction_watch(text)
 
 
+# What a retraction asks for: a label on an original, a decision on a replication.
+RETRACTED_DETAIL = {
+    "doi_o": "doi_o is retracted (Retraction Watch), but title_o does not say so",
+    "doi_r": "doi_r is retracted (Retraction Watch): decide whether the record stays in FLoRA",
+}
+
+
 def check_retractions(df):
     """(findings, None), or ([], the reason) when the check could not run."""
     try:
@@ -446,15 +454,20 @@ def check_retractions(df):
         return [], f"{type(exc).__name__}: {exc}"[:200]
 
     def accept(value, row, column):
-        return notice_status(notices.get(preprint_dedup.normalize_doi(value), [])) is not None
+        status = notice_status(notices.get(preprint_dedup.normalize_doi(value), []))
+        # A retracted original stays in FLoRA, as long as its title says so.
+        if status == "retracted" and column == "doi_o" and says_retracted(row.get("title_o")):
+            return False
+        return status is not None
 
     issues = []
     for doi, columns in _occurrences(df, ("doi_o", "doi_r"), accept).items():
         status = notice_status(notices[preprint_dedup.normalize_doi(doi)])
-        check, word = (("retracted", "is retracted") if status == "retracted"
-                       else ("expression_of_concern", "has an expression of concern"))
-        issues += _findings(check, {doi: columns},
-                            lambda column: f"{column} {word} (Retraction Watch)")
+        if status == "retracted":
+            issues += _findings("retracted", {doi: columns}, RETRACTED_DETAIL.get)
+        else:
+            issues += _findings("expression_of_concern", {doi: columns}, lambda column: (
+                f"{column} has an expression of concern (Retraction Watch)"))
     return issues, None
 
 

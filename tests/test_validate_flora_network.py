@@ -492,9 +492,46 @@ def test_retractions_and_concerns_are_reported_at_their_levels(monkeypatch, few_
     issues, problem = network.check_retractions(frame)
     assert problem is None
     assert [(i["check"], i["flora_ids"], i["column"], i["value"], i["detail"]) for i in issues] == [
-        ("retracted", ["REPL-000001"], "doi_o", "10.1/retracted", "doi_o is retracted (Retraction Watch)"),
+        ("retracted", ["REPL-000001"], "doi_o", "10.1/retracted",
+         "doi_o is retracted (Retraction Watch), but title_o does not say so"),
         ("expression_of_concern", ["REPL-000002"], "doi_r", "10.1/CONCERN",
          "doi_r has an expression of concern (Retraction Watch)")]
+
+
+def test_a_retracted_original_whose_title_says_so_is_fine(monkeypatch, few_rows):
+    serve(monkeypatch, Response(200, _notices(("10.1/retracted", "Retraction", "7/1/2023 0:00")).encode()))
+    frame = _frame(
+        {"doi_o": "10.1/retracted", "title_o": "RETRACTED: A finding"},
+        {"flora_id": "REPL-000002", "doi_o": "10.1/RETRACTED",
+         "title_o": "RETRACTED AND REPLACED: A finding"},
+        {"flora_id": "REPL-000003", "doi_o": "10.1/retracted", "title_o": "A finding"})
+    issues, _ = network.check_retractions(frame)
+    assert [(i["flora_ids"], i["column"]) for i in issues] == [(["REPL-000003"], "doi_o")]
+
+
+@pytest.mark.parametrize("title", [None, float("nan"), "", "NA"])
+def test_a_retracted_original_without_a_title_is_a_finding(monkeypatch, few_rows, title):
+    serve(monkeypatch, Response(200, _notices(("10.1/retracted", "Retraction", "7/1/2023 0:00")).encode()))
+    issues, _ = network.check_retractions(_frame({"doi_o": "10.1/retracted", "title_o": title}))
+    assert [(i["check"], i["column"]) for i in issues] == [("retracted", "doi_o")]
+
+
+def test_a_retracted_replication_is_an_inclusion_decision_whatever_its_title(monkeypatch, few_rows):
+    serve(monkeypatch, Response(200, _notices(("10.1/retracted", "Retraction", "7/1/2023 0:00")).encode()))
+    frame = _frame({"doi_r": "10.1/retracted", "title_r": "RETRACTED: A replication",
+                    "title_o": "RETRACTED: A finding"})
+    issues, _ = network.check_retractions(frame)
+    assert [(i["check"], i["column"], i["detail"]) for i in issues] == [
+        ("retracted", "doi_r",
+         "doi_r is retracted (Retraction Watch): decide whether the record stays in FLoRA")]
+
+
+def test_a_label_in_the_title_does_not_hide_an_expression_of_concern(monkeypatch, few_rows):
+    serve(monkeypatch, Response(200, _notices(
+        ("10.1/concern", "Expression of concern", "11/9/2021 0:00")).encode()))
+    issues, _ = network.check_retractions(
+        _frame({"doi_o": "10.1/concern", "title_o": "RETRACTED: A finding"}))
+    assert [i["check"] for i in issues] == ["expression_of_concern"]
 
 
 def test_a_failed_download_is_a_reason_not_a_finding(monkeypatch):

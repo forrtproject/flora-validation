@@ -541,17 +541,36 @@ def test_an_unknown_type_is_flagged():
     "RETRACTED: Betatrophin: A Hormone that Controls Pancreatic β Cell Proliferation",
     "Retracted: Growing up in a Recession",
     "RETRACTED BY THE AUTHORS: Dividend Taxes and the Allocation of Capital",
+    "RETRACTED AND REPLACED: A finding",
     "Retracted article: Something",
+    "Retracted Publication: Something",
+    "Retracted – A finding",
+    "RETRACTED - A finding",
     "WITHDRAWN: A preprint",
-    "Retraction: Ego depletion revisited",
-    "Retraction Note to: A finding",
     "Super Size Me (Retracted)",
     "A finding [RETRACTED ARTICLE]",
     "Effects of ego depletion on self-control, RETRACTED",
 ])
-def test_a_title_marking_a_retraction_is_a_problem(title):
-    items = vf._check_retracted_titles(_df({"title_o": title}))
-    assert _details(items) == ["title_o marks the paper retracted or withdrawn"]
+def test_a_title_marking_a_retraction_is_a_problem_on_a_replication_only(title):
+    items = vf._check_retracted_titles(_df({"title_r": title}))
+    assert _details(items) == ["title_r marks the paper retracted or withdrawn: "
+                               "decide whether the record stays in FLoRA"]
+    # A retracted original stays, and is meant to say so in its title.
+    assert not vf._check_retracted_titles(_df({"title_o": title}))
+
+
+@pytest.mark.parametrize("title", [
+    "Retraction: Ego depletion revisited",
+    "Retraction Note to: A finding",
+    "Retraction of: A finding",
+    "Notice of retraction: A finding",
+    "Notice of Retraction and Replacement. Karalunas et al. Subtyping ADHD",
+])
+def test_a_retraction_notice_is_a_problem_on_either_side(title):
+    assert _details(vf._check_retracted_titles(_df({"title_o": title}))) == [
+        "title_o is a retraction notice, not the original paper"]
+    assert _details(vf._check_retracted_titles(_df({"title_r": title}))) == [
+        "title_r marks the paper retracted or withdrawn: decide whether the record stays in FLoRA"]
 
 
 @pytest.mark.parametrize("title", [
@@ -560,8 +579,12 @@ def test_a_title_marking_a_retraction_is_a_problem(title):
     "Why researchers withdraw from replication projects",
     "RETRACTED SCIENCE AND THE PUBLIC",                    # a title in capitals
     "Retraction and replication",
+    "Retracted-paper citations after the notice",
+    "Withdrawn adolescents and their parents",
+    "Retraction of consent in online studies",
 ])
 def test_a_title_about_retractions_is_not_flagged(title):
+    assert not vf._check_retracted_titles(_df({"title_r": title}))
     assert not vf._check_retracted_titles(_df({"title_o": title}))
 
 

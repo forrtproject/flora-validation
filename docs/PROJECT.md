@@ -651,6 +651,11 @@ retracted, and a link can rot, long after a record was validated. Checking them
 once at consensus would be worse than not checking — it would read as a clean bill
 of health that silently goes stale.
 
+A retracted original stays in FLoRA: it is a Problem only while its `title_o` does
+not say RETRACTED. A `title_o` that is the retraction notice's is a Problem too: the
+record points at the notice, not the paper. A retracted replication is always a
+Problem, because whether the record stays is an inclusion decision.
+
 The right-hand column runs in two places. The pipeline runs it on every build and
 writes its report files beside `flora.csv`, as before. The website's scheduler also
 runs it over the stored dataset (`entry_checks.py`): the structural checks whenever

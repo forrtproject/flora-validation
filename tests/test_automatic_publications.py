@@ -144,6 +144,29 @@ def test_incomplete_api_lookups_prevent_all_automatic_writes(tmp_path, monkeypat
     connection.commit.assert_not_called()
 
 
+def test_live_frame_blanks_missing_values_in_number_columns(monkeypatch):
+    """The prepared dataset counts shared authors in nullable numbers, which refuse ''."""
+    import author_overlap
+    import resolve_publication_versions as runner
+    f = frame(publisher=True)
+    f['title_o'], f['author_o'] = 'Original paper', ['Sam Smith', None]
+    f['export_id'], f['url_r'] = f['id'], None
+    author_overlap.augment(f, verbose=False)
+    # What the build hands over: if these become plain columns, this test proves nothing.
+    assert [str(f[c].dtype) for c in ('author_overlap', 'author_overlap_pct')] == ['Int64', 'Float64']
+    unidentified = {**f.iloc[0], 'export_id': ''}
+    prepared = pd.concat([f, pd.DataFrame([unidentified]).astype(f.dtypes)], ignore_index=True)
+    monkeypatch.setattr(runner.flora_service, 'dataset', lambda cur: prepared)
+    live = runner.live_frame(None)
+    assert live['id'].tolist() == ['preprint-id', 'journal-id']  # nothing to correct without an id
+    assert not live.isna().any().any()
+    assert live['author_overlap'].tolist() == [1, ''] and live['author_overlap_pct'].tolist() == [100.0, '']
+    assert live['url_r'].tolist() == ['', '']
+    edits, pairs, review = automatic_actions(live, candidate(live))
+    assert len(pairs) == 1 and not edits and not review
+    assert prepared['author_overlap'].isna().any()  # the cached build is not changed
+
+
 def test_scheduled_resolution_runs_before_the_final_preparation():
     """Nightly resolution precedes the preparation and validation gate."""
     import yaml

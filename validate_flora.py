@@ -577,11 +577,18 @@ def _check_reference_conflicts(df):
     return issues
 
 
+# A publisher's notice: "Retraction: …", "Retraction note to: …", "Retraction of: …",
+# "Notice of retraction: …", "Notice of Retraction and Replacement. …"
+_RETRACTION_NOTICE_RE = re.compile(
+    r"^\W*(notice\s+of\s+retraction(\s+and\s+replacement)?\s*[:.]"
+    r"|(notice\s+of\s+retraction|retraction(\s+(note|notice))?)\s*(:|to\b)"
+    r"|retraction\s+of\s*:)", re.I)
 _RETRACTED_TITLE_RES = (
-    # "RETRACTED: …", "Retracted article: …", "RETRACTED BY THE AUTHORS: …", "[Withdrawn] …"
-    re.compile(r"^\W*(retracted|withdrawn)(\s+(article|paper|by\s+the\s+authors?))?\s*[:\]]", re.I),
-    # A publisher's notice: "Retraction: …", "Retraction note to: …", "Notice of retraction: …"
-    re.compile(r"^\W*(notice\s+of\s+retraction|retraction(\s+(note|notice))?)\s*(:|to\b)", re.I),
+    # "RETRACTED: …", "Retracted article: …", "RETRACTED BY THE AUTHORS: …", "[Withdrawn] …",
+    # "RETRACTED AND REPLACED: …", "Retracted – …"
+    re.compile(r"^\W*(retracted|withdrawn)(\s+(article|paper|publication|by\s+the\s+authors?"
+               r"|and\s+(replaced|republished)))?(\s*[:\]]|\s+[–—-]\s)", re.I),
+    _RETRACTION_NOTICE_RE,
     # "… (Retracted)", "… [RETRACTED ARTICLE]"
     re.compile(r"[\[(]\s*(retracted|withdrawn)(\s+article)?\s*[\])]", re.I),
 )
@@ -601,11 +608,25 @@ def says_retracted(title) -> bool:
     return bool(_RETRACTED_WORD_RE.search(text)) and not shouting
 
 
+def is_retraction_notice(title) -> bool:
+    """Whether a title is a publisher's notice about a retraction, not the paper's own."""
+    return bool(_RETRACTION_NOTICE_RE.search(_text(title)))
+
+
 def _check_retracted_titles(df):
-    return [finding("retracted_title", [row], column, row.get(column),
-                    f"{column} marks the paper retracted or withdrawn")
-            for _, row in df.iterrows() for column in ("title_o", "title_r")
-            if says_retracted(row.get(column))]
+    """A retracted replication is an inclusion decision. A retracted original stays in
+    FLoRA and its title should say so, which the network part checks: here only a
+    title_o that is the retraction notice's, so the record points at the notice."""
+    issues = []
+    for _, row in df.iterrows():
+        if is_retraction_notice(row.get("title_o")):
+            issues.append(finding("retracted_title", [row], "title_o", row.get("title_o"),
+                                  "title_o is a retraction notice, not the original paper"))
+        if says_retracted(row.get("title_r")):
+            issues.append(finding("retracted_title", [row], "title_r", row.get("title_r"),
+                                  "title_r marks the paper retracted or withdrawn: "
+                                  "decide whether the record stays in FLoRA"))
+    return issues
 
 
 # Names an OSF component or a report goes by, which a title lookup can return in
@@ -666,8 +687,11 @@ CHECKS = [
     ("reference_conflict", PROBLEM, "DOI mapped to conflicting references",
      "DOI with conflicting references", _check_reference_conflicts,
      "The same DOI appears with references more than 20% apart."),
-    ("retracted_title", PROBLEM, "No title marks a retraction", "Title says retracted",
-     _check_retracted_titles, "title_o or title_r marks the paper retracted or withdrawn."),
+    ("retracted_title", PROBLEM, "No title_r marks a retraction, no title_o is a notice of one",
+     "Title says retracted", _check_retracted_titles,
+     "title_r marks the paper retracted or withdrawn: whether the record stays in FLoRA is "
+     "an inclusion decision. Or title_o is the retraction notice's, not the paper's. A "
+     "retracted original is meant to say so in title_o."),
     ("na_string", PROBLEM, "No 'NA'/'N/A' strings", "Literal 'NA'/'N/A' strings found",
      _check_na_strings,
      "A text column holds the literal string 'NA' instead of a missing value."),
