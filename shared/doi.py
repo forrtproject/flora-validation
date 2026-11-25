@@ -22,15 +22,15 @@ import math
 import re
 import urllib.parse
 
-_RESOLVER_HTTP_RE = re.compile(r"^https?://(?:dx\.)?doi\.org/\s*", re.I)
-_RESOLVER_BARE_RE = re.compile(r"^(?:https?://)?(?:dx\.)?doi\.org/\s*", re.I)
+_RESOLVER_HTTP_RE = re.compile(r"^https?://(?:dx\.)?doi\.org/", re.I)
+_RESOLVER_BARE_RE = re.compile(r"^(?:https?://)?(?:dx\.)?doi\.org/", re.I)
 _DOI_SCHEME_RE = re.compile(r"^doi:\s*", re.I)
 _DOUBLE_SLASH_RE = re.compile(r"^(10\.[0-9]+)//")
 _TRAILING_DOI_GARBAGE_RE = re.compile(
     r"\s*digital\s*object\s*identifier.*$|\s*get\s*rights\s*and\s*content.*$",
-    re.I,
+    re.I | re.S,
 )
-_TRAILING_WS_RE = re.compile(r"\s.*$")
+_TRAILING_WS_RE = re.compile(r"\s.*$", re.S)
 
 
 def _is_missing(value) -> bool:
@@ -49,13 +49,18 @@ def decode_doi_escapes(value: str) -> str:
     return urllib.parse.unquote(value)
 
 
-def strip_doi_prefix(value: str, *, allow_bare_host: bool = False) -> str:
+def strip_doi_prefix(
+    value: str,
+    *,
+    allow_bare_host: bool = False,
+    strip_after: bool = True,
+) -> str:
     """Strip leading doi.org / dx.doi.org resolver URLs and ``doi:`` prefixes."""
     text = value.strip()
     resolver = _RESOLVER_BARE_RE if allow_bare_host else _RESOLVER_HTTP_RE
     text = resolver.sub("", text)
     text = _DOI_SCHEME_RE.sub("", text)
-    return text.strip()
+    return text.strip() if strip_after else text
 
 
 def normalize_bare_doi(
@@ -67,7 +72,7 @@ def normalize_bare_doi(
     """Case-preserving bare DOI, or ``None`` when blank/missing."""
     if _is_missing(value):
         return None
-    text = strip_doi_prefix(str(value))
+    text = strip_doi_prefix(str(value), strip_after=not drop_whitespace)
     if drop_whitespace:
         text = _TRAILING_WS_RE.sub("", text).strip()
     if not text:
@@ -90,7 +95,11 @@ def normalize_doi_key(
     """
     if _is_missing(value):
         return ""
-    text = strip_doi_prefix(str(value).lower(), allow_bare_host=allow_bare_host)
+    text = strip_doi_prefix(
+        str(value).lower(),
+        allow_bare_host=allow_bare_host,
+        strip_after=not drop_whitespace,
+    )
     if drop_whitespace:
         text = _TRAILING_WS_RE.sub("", text).strip()
     return text
@@ -101,14 +110,14 @@ def clean_scraped_doi(value) -> str | None:
 
     Handles percent-encoded SICI DOIs (``%3c``/``%3e``), resolver prefixes,
     trailing scraped text (``digital object identifier``, ``get rights and
-    content``), and whitespace suffixes.
+    content``), and whitespace suffixes (including multiline notes).
     """
     if _is_missing(value):
         return None
     text = decode_doi_escapes(str(value).strip()).lower()
     if not text:
         return None
-    text = strip_doi_prefix(text, allow_bare_host=True)
+    text = strip_doi_prefix(text, allow_bare_host=True, strip_after=False)
     text = _TRAILING_DOI_GARBAGE_RE.sub("", text)
     text = _TRAILING_WS_RE.sub("", text).strip()
     return text or None
@@ -121,8 +130,9 @@ def canonical_doi(value, *, repair_double_slash: bool = False) -> str:
     text = str(value).strip()
     if not text:
         return ""
-    text = decode_doi_escapes(text).lower()
-    text = strip_doi_prefix(text, allow_bare_host=True)
+    if "%" in text:
+        text = urllib.parse.unquote(text)
+    text = strip_doi_prefix(text.lower(), allow_bare_host=True)
     if repair_double_slash:
         text = _DOUBLE_SLASH_RE.sub(r"\1/", text)
     return text.strip()

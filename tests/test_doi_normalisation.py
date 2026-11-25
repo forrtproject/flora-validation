@@ -79,6 +79,7 @@ def test_clean_scraped_doi_and_bibliographic_normalise_key_agree():
             "10.1002/(sici)1099-0771(199806)11:2<107::aid-bdm292>3.0.co;2-y",
         ),
         ("https://doi.org/10.1/a%252fb", "10.1/a%252fb"),
+        ("10.1007/s11002-023-09690-7 (published version)\nSee note", "10.1007/s11002-023-09690-7"),
     ]
     for raw, expected in samples:
         assert clean_scraped_doi(raw) == expected
@@ -97,9 +98,9 @@ def test_canonical_doi_for_api_and_preprint_dedup():
     assert flora_api_records.normalize_doi(sici) == decoded
     assert preprint_dedup.normalize_doi(sici) == decoded
     assert preprint_dedup.normalize_doi("doi: 10.1037//0022-3514.46.4.778") == "10.1037/0022-3514.46.4.778"
-    # %25 idempotency prevents double-decoding across passes
-    assert flora_api_records.normalize_doi("10.1/a%252fb") == "10.1/a%252fb"
-    assert preprint_dedup.normalize_doi("10.1/a%252fb") == "10.1/a%252fb"
+    # Canonical lookup decodes %25 once (matching stored literal '%')
+    assert flora_api_records.normalize_doi("10.1063/1.123%25metric") == "10.1063/1.123%metric"
+    assert preprint_dedup.normalize_doi("10.1063/1.123%25metric") == "10.1063/1.123%metric"
     # published_doi keeps percent escapes untouched for client lookup stability
     assert flora_api_records.published_doi(sici) == sici.lower()
 
@@ -112,9 +113,11 @@ def test_normalize_doi_key_matches_postgres_source_norm_doi(local_database):
         "   ",
         "10.1037/ABC",
         "https://doi.org/10.1037/AbC",
+        "https://doi.org/ 10.1037/AbC",
         "http://dx.doi.org/10.1037/AbC",
         "DOI: 10.1037/AbC",
         "https://doi.org/10.1016/j.x.2020.01.001 get rights and content",
+        "10.1007/s11002-023-09690-7 (published version)\nSee note",
         "doi:10.1002/(sici)1099-0771(199806)11:2%3c107::aid-bdm292%3e3.0.co;2-y trailing",
     ]
     with local_database.cursor() as cur:
