@@ -1,6 +1,6 @@
 ## FLoRA structural validation
 
-_Generated: 2026-11-20 03:08:46 UTC | Dataset: 2,884 rows_
+_Generated: 2026-11-25 03:06:27 UTC | Dataset: 2,918 rows_
 
 Each item names the FLoRA record by its FLoRA ID and `doi_o | doi_r` (or `url_r`), says what is wrong and, after the dash, gives the value.
 
@@ -39,17 +39,18 @@ _title_o or title_r marks the paper retracted or withdrawn._
 - FRED-000891 (`10.1086/661890 | 10.15626/mp.2020.2538`): title_o marks the paper retracted or withdrawn — `Retracted: Super Size Me: Product Size as a Signal of Status`
 - FRED-000420 (`10.1177/1948550611410890 | 10.1037/xge0000067`): title_o marks the paper retracted or withdrawn — `RETRACTED: Sense Creative! The Impact of Global and Local Vision, Hearing, Touching, Tasting and Smelling on Creative a…`
 
-### Possible problems (10)
+### Possible problems (11)
 
 _Heuristics: a person decides whether each one is a problem._
 
-**Replication year before original year** (3 findings):
+**Replication year before original year** (4 findings):
 
 _Could be swapped entries or a data-entry error. Not reported when the original has a preprint or other earlier version._
 
 - REPL-000014 (`10.1080/13639080.2011.573776 | 10.1007/s12186-012-9090-0`): year_r is before year_o (2013) — `2012`
 - REPL-000476 (`10.1002/bin.1836 | 10.1002/jaba.659`): year_r is before year_o (2021) — `2019`
 - REPL-001689 (`10.1177/1042258719892987 | 10.1111/apps.12247`): year_r is before year_o (2021) — `2020`
+- VAL-000528 (`10.1007/s10389-020-01338-4 | 10.3389/fpubh.2021.620264`): year_r is before year_o (2022) — `2021`
 
 **Same paper pair as replication and reproduction** (5 findings):
 

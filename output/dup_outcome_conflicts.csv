@@ -61,3 +61,4 @@ doi_o,doi_r,type,outcomes,resolved_to,resolved_by,url_r,sources
 10.1177/0267658315589656,10.1017/s0261444818000368,replication,mixed | successful,successful,merge rules: the kept record's outcome; needs a decision,,replications
 10.1177/0956797618756862,,replication,mixed | successful,successful,merge rules: the kept record's outcome; needs a decision,https://osf.io/tybxg/,fred_replication_success | replications
 10.1016/j.jfbs.2016.08.001,10.1016/j.jfbs.2022.100497,replication,mixed | successful,mixed,website record,https://www.sciencedirect.com/science/article/pii/S1877858522000158?via%3Dihub#sec0050,replications | validated
+10.3758/bf03196610,10.3389/fpsyg.2020.01403,replication,failed | successful,successful,website record,https://www.frontiersin.org/articles/10.3389/fpsyg.2020.01403/pdf,validated

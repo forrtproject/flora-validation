@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-20T03:07:29+00:00",
+  "generated_at": "2026-11-25T03:05:16+00:00",
   "mode": "database_pipeline",
   "status": "needs_attention",
-  "rows": 2884,
+  "rows": 2918,
   "stages": [
     {
       "name": "build flora.csv and check IDs",
@@ -12,7 +12,7 @@
     {
       "name": "structural validation",
       "status": "needs_attention",
-      "detail": "21 problems and 10 possible problems"
+      "detail": "21 problems and 11 possible problems"
     },
     {
       "name": "network validation",
@@ -25,7 +25,7 @@
     {
       "name": "store dataset",
       "status": "passed",
-      "detail": "2,884 rows in flora_data"
+      "detail": "2,918 rows in flora_data"
     },
     {
       "name": "write output files",
@@ -33,11 +33,11 @@
     }
   ],
   "warnings": [
-    "40 records left out for a missing title; see flora_export_log.csv.",
-    "62 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.",
-    "20 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.",
-    "Structural validation found 21 problems and 10 possible problems.",
-    "Network validation needs review: 18 problems and 69 possible problems. Original work types unavailable for 2 DOI(s); previous review decisions retained. This screening is advisory.."
+    "43 records left out for a missing title; see flora_export_log.csv.",
+    "63 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.",
+    "22 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.",
+    "Structural validation found 21 problems and 11 possible problems.",
+    "Network validation needs review: 20 problems and 69 possible problems. Original work types unavailable for 2 DOI(s); previous review decisions retained. This screening is advisory.."
   ],
   "errors": [],
   "warning_count": 5,
@@ -45,7 +45,7 @@
   "diagnostics": {
     "flora_export_log.csv": {
       "description": "records left out for a missing title",
-      "rows": 40,
+      "rows": 43,
       "records": [
         {
           "reason": "missing title_o",
@@ -446,12 +446,42 @@
           "doi_r": "",
           "url_r": "https://via.library.depaul.edu/cgi/viewcontent.cgi?article=1200&context=csh_etd",
           "apa_ref_r": "Sunnquist · 2016 · The Institutional Repository at DePaul University (DePaul University)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000512",
+          "source": "validated",
+          "doi_o": "10.1016/j.jesp.2012.03.003",
+          "apa_ref_o": "Chandler, J. J., Reinhard, D., & Schwarz, N. (2012). To judge a book by its weight you need to know its content: Knowledge moderates the use of embodied cues. Journal of Experimental Social Psychology, 48(4), 948–952. https://doi.org/10.1016/j.jesp.2012.03.003",
+          "doi_r": "",
+          "url_r": "https://osf.io/549eq/#!",
+          "apa_ref_r": "Lütz · 2018"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000526",
+          "source": "validated",
+          "doi_o": "10.3389/fpsyg.2021.652673",
+          "apa_ref_o": "Durojaye, C., Fink, L., Roeske, T., Wald-Fuhrmann, M., & Larrouy-Maestri, P. (2021). Perception of Nigerian Dùndún Talking Drum Performances as Speech-Like vs. Music-Like: The Role of Familiarity and Acoustic Cues. Frontiers in Psychology, 12. https://doi.org/10.3389/fpsyg.2021.652673",
+          "doi_r": "",
+          "url_r": "https://osf.io/2635u",
+          "apa_ref_r": "Poeppel · 2025 · Arabixiv (OSF Preprints)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000527",
+          "source": "validated",
+          "doi_o": "10.1145/2380718.2380739",
+          "apa_ref_o": "Kosinski, M., Bachrach, Y., Kasneci, G., Van-Gael, J., & Graepel, T. (2012). Crowd IQ. Proceedings of the 4th Annual ACM Web Science Conference, 151–160. https://doi.org/10.1145/2380718.2380739",
+          "doi_r": "",
+          "url_r": "https://doaj.org/article/14145d3d1be84c49a18b95fc1f6158ac",
+          "apa_ref_r": "AnsVercammen · 2019 · Judgment and Decision Making"
         }
       ]
     },
     "dup_outcome_conflicts.csv": {
       "description": "merged records whose duplicates gave different outcomes",
-      "rows": 62,
+      "rows": 63,
       "records": [
         {
           "doi_o": "10.1037/0022-3514.86.5.680",
@@ -1072,13 +1102,51 @@
           "resolved_by": "website record",
           "url_r": "https://www.sciencedirect.com/science/article/pii/S1877858522000158?via%3Dihub#sec0050",
           "sources": "replications | validated"
+        },
+        {
+          "doi_o": "10.3758/bf03196610",
+          "doi_r": "10.3389/fpsyg.2020.01403",
+          "type": "replication",
+          "outcomes": "failed | successful",
+          "resolved_to": "successful",
+          "resolved_by": "website record",
+          "url_r": "https://www.frontiersin.org/articles/10.3389/fpsyg.2020.01403/pdf",
+          "sources": "validated"
         }
       ]
     },
     "preprint_dedup_candidates.csv": {
       "description": "preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates)",
-      "rows": 20,
+      "rows": 22,
       "records": [
+        {
+          "side": "replication",
+          "doi_1": "10.1098/rsos.210190",
+          "doi_2": "10.31234/osf.io/gzy26",
+          "applied_action": "auto_keep_1",
+          "resolution": "auto: drop doi_2",
+          "title_1": "A two-lab direct replication attempt of Southgate, Senju and Csibra (2007)",
+          "title_2": "A two-lab direct replication attempt of Southgate, Senju, &amp;amp; Csibra (2007)",
+          "title_sim": "0.932",
+          "first_author_1": "kampis",
+          "first_author_2": "kampis",
+          "year_1": "2021",
+          "year_2": "2020",
+          "is_preprint_1": "False",
+          "is_preprint_2": "True",
+          "group_key": "doi_o: 10.1111/j.1467-9280.2007.01944.x",
+          "doi_o_group": "10.1111/j.1467-9280.2007.01944.x",
+          "source_display_id_1": "REPL-000650",
+          "type_1": "replication",
+          "outcome_1": "failed",
+          "url_1": "",
+          "source_display_id_2": "VAL-000542",
+          "type_2": "replication",
+          "outcome_2": "failed",
+          "url_2": "",
+          "doi_remove": "10.31234/osf.io/gzy26",
+          "doi_keep": "10.1098/rsos.210190"
+        },
         {
           "side": "replication",
           "doi_1": "10.31234/osf.io/kavx4",
@@ -1613,6 +1681,34 @@
         },
         {
           "side": "original (fuzzy)",
+          "doi_1": "10.1016/j.tourman.2016.01.013",
+          "doi_2": "10.2139/ssrn.2624181",
+          "applied_action": "auto_keep_1",
+          "resolution": "auto: drop doi_2",
+          "title_1": "Trust and reputation in the sharing economy: The role of personal photos in Airbnb",
+          "title_2": "Trust and Reputation in the Sharing Economy: The Role of Personal Photos on Airbnb",
+          "title_sim": "0.988",
+          "first_author_1": "ert",
+          "first_author_2": "ert",
+          "year_1": "2016",
+          "year_2": "2015",
+          "is_preprint_1": "False",
+          "is_preprint_2": "True",
+          "group_key": "author: ert",
+          "doi_o_group": "",
+          "source_display_id_1": "",
+          "type_1": "",
+          "outcome_1": "",
+          "url_1": "",
+          "source_display_id_2": "",
+          "type_2": "",
+          "outcome_2": "",
+          "url_2": "",
+          "doi_remove": "10.2139/ssrn.2624181",
+          "doi_keep": "10.1016/j.tourman.2016.01.013"
+        },
+        {
+          "side": "original (fuzzy)",
           "doi_1": "10.3386/w6614",
           "doi_2": "10.1016/s0047-2727(99)00036-5",
           "applied_action": "auto_keep_2",
@@ -1644,8 +1740,8 @@
   },
   "identity": {
     "status": "passed",
-    "rows": 2884,
-    "unique_ids": 2884
+    "rows": 2918,
+    "unique_ids": 2918
   },
   "columns": [
     "id",
@@ -2109,6 +2205,18 @@
             "label": "10.1177/1042258719892987 | 10.1111/apps.12247",
             "key": "year_order|REPL-001689|year_r|2020",
             "level": "possible_problem"
+          },
+          {
+            "check": "year_order",
+            "flora_ids": [
+              "VAL-000528"
+            ],
+            "column": "year_r",
+            "value": "2021",
+            "detail": "year_r is before year_o (2022)",
+            "label": "10.1007/s10389-020-01338-4 | 10.3389/fpubh.2021.620264",
+            "key": "year_order|VAL-000528|year_r|2021",
+            "level": "possible_problem"
           }
         ],
         "passed": false
@@ -2236,10 +2344,10 @@
     ],
     "suppressed": 0,
     "problems": 21,
-    "possible_problems": 10,
+    "possible_problems": 11,
     "has_problems": true,
     "has_issues": true,
-    "rows": 2884
+    "rows": 2918
   },
   "network": {
     "status": "needs_attention",
@@ -2449,18 +2557,6 @@
           {
             "check": "dead_link",
             "flora_ids": [
-              "REPL-001051"
-            ],
-            "column": "oa_url_r",
-            "value": "http://nbn-resolving.org/urn:nbn:de:hebis:34-2014121646791",
-            "detail": "oa_url_r is dead (HTTP 404; an open-access link from enrichment, not from the source record)",
-            "label": "10.1086/209200 | 10.1177/1029864913493800",
-            "key": "dead_link|REPL-001051|oa_url_r|http://nbn-resolving.org/urn:nbn:de:hebis:34-2014121646791",
-            "level": "problem"
-          },
-          {
-            "check": "dead_link",
-            "flora_ids": [
               "REPL-001099"
             ],
             "column": "oa_url_r",
@@ -2473,6 +2569,18 @@
           {
             "check": "dead_link",
             "flora_ids": [
+              "REPL-001213"
+            ],
+            "column": "oa_url_r",
+            "value": "https://storkjournals.org/index.php/cik/article/download/39/23",
+            "detail": "oa_url_r is dead (HTTP 404; an open-access link from enrichment, not from the source record)",
+            "label": "10.1123/jmld.2015-0036 | 10.51224/cik.v1i2.39",
+            "key": "dead_link|REPL-001213|oa_url_r|https://storkjournals.org/index.php/cik/article/download/39/23",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
               "FRED-000772"
             ],
             "column": "oa_url_r",
@@ -2480,6 +2588,30 @@
             "detail": "oa_url_r is dead (connection refused; an open-access link from enrichment, not from the source record)",
             "label": "10.1177/0956797611434748 | 10.1016/j.cognition.2014.09.003",
             "key": "dead_link|FRED-000772|oa_url_r|http://orbilu.uni.lu/handle/10993/17967",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "VAL-000534"
+            ],
+            "column": "oa_url_o",
+            "value": "https://www.dovepress.com/getfile.php?fileID=35846",
+            "detail": "oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record)",
+            "label": "10.2147/ott.s136006 | 10.1016/j.tranon.2017.09.008",
+            "key": "dead_link|VAL-000534|oa_url_o|https://www.dovepress.com/getfile.php?fileid=35846",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "VAL-000535"
+            ],
+            "column": "oa_url_o",
+            "value": "https://www.dovepress.com/getfile.php?fileID=34813",
+            "detail": "oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record)",
+            "label": "10.2147/ott.s129042 | 10.1016/j.tranon.2017.09.008",
+            "key": "dead_link|VAL-000535|oa_url_o|https://www.dovepress.com/getfile.php?fileid=34813",
             "level": "problem"
           }
         ],
@@ -3371,26 +3503,6 @@
       "dois": [],
       "urls": [
         {
-          "target": "https://dash.harvard.edu/bitstreams/7312037d-ebc7-6bd4-e053-0100007fdf3b/download",
-          "columns": [
-            "oa_url_o"
-          ],
-          "reason": "HTTP 429",
-          "flora_ids": [
-            "REPL-000739"
-          ]
-        },
-        {
-          "target": "https://ltr.edu.au/resources/grants_pp_physiotheraphy_instrument_griffith_report_2009.pdf",
-          "columns": [
-            "oa_url_r"
-          ],
-          "reason": "timed out",
-          "flora_ids": [
-            "REPL-000971"
-          ]
-        },
-        {
           "target": "https://cdr.lib.unc.edu/downloads/7w62fg56x",
           "columns": [
             "oa_url_r"
@@ -3418,16 +3530,6 @@
           "reason": "TLS: unable to get local issuer certificate",
           "flora_ids": [
             "VAL-000159"
-          ]
-        },
-        {
-          "target": "http://hdl.handle.net/10902/7358",
-          "columns": [
-            "oa_url_o"
-          ],
-          "reason": "TLS: unable to get local issuer certificate",
-          "flora_ids": [
-            "REPL-000190"
           ]
         },
         {
@@ -3459,6 +3561,16 @@
           "flora_ids": [
             "FRED-000798"
           ]
+        },
+        {
+          "target": "https://www.biorxiv.org/content/biorxiv/early/2020/10/28/2020.10.27.355032.full.pdf",
+          "columns": [
+            "url_r"
+          ],
+          "reason": "HTTP 429",
+          "flora_ids": [
+            "VAL-000518"
+          ]
         }
       ],
       "originals": []
@@ -3468,9 +3580,9 @@
     ],
     "coverage": {
       "work_types": {
-        "targets": 2583,
-        "cached": 2581,
-        "checked": 2583,
+        "targets": 2609,
+        "cached": 2607,
+        "checked": 2609,
         "unchecked": 2,
         "deferred": 0,
         "advisory": true
@@ -3479,43 +3591,43 @@
         "status": "checked"
       },
       "dois": {
-        "targets": 4846,
-        "cached": 4803,
-        "checked": 43,
+        "targets": 4897,
+        "cached": 4827,
+        "checked": 70,
         "deferred": 0,
         "unchecked": 0
       },
       "urls": {
-        "targets": 3421,
-        "cached": 3381,
-        "checked": 40,
+        "targets": 3470,
+        "cached": 3397,
+        "checked": 73,
         "deferred": 0,
-        "unchecked": 9
+        "unchecked": 7
       },
       "originals": {
         "targets": 31,
-        "cached": 30,
-        "checked": 1,
+        "cached": 29,
+        "checked": 2,
         "deferred": 0,
         "unchecked": 0
       }
     },
     "suppressed": 0,
-    "problems": 18,
+    "problems": 20,
     "possible_problems": 69,
-    "issue_count": 87,
-    "rows": 2884
+    "issue_count": 89,
+    "rows": 2918
   },
   "release": {
     "schema_version": 1,
     "status": "prepared_locally",
     "published": false,
-    "generated_at": "2026-11-20T03:11:38+00:00",
+    "generated_at": "2026-11-25T03:08:44+00:00",
     "filename": "flora.csv",
-    "bytes": 14441106,
-    "sha256": "22fe9062e8bf15de8b43b86f21e1f129ab5ec63ea4203702e8e9bd28a063c4e3",
-    "md5": "586c6c2cc2bf2c856cd33fed2062c4a3",
-    "rows": 2884,
+    "bytes": 14616324,
+    "sha256": "3116d178761e1a3a51398f04b8bda45e2ecf64250a744343f9ad4569e1b3e21f",
+    "md5": "e40392a0ab8a2d30834263da89f4658a",
+    "rows": 2918,
     "columns": [
       "id",
       "id_md5",
@@ -3576,22 +3688,22 @@
     "release_notes": "",
     "source_kind": "authoritative_publication",
     "data_version": {
-      "stored_at": "2026-11-20T03:11:39.300538+00:00",
+      "stored_at": "2026-11-25T03:08:45.350277+00:00",
       "change_watermark": 1035
     }
   },
   "storage": {
-    "rows": 2884,
-    "inserted": 3,
-    "updated": 0,
+    "rows": 2918,
+    "inserted": 34,
+    "updated": 3,
     "unchanged": 2881,
-    "retired": 1,
+    "retired": 0,
     "reactivated": 0,
     "preserved": 0,
     "table": "flora_data",
-    "snapshot_sha256": "22fe9062e8bf15de8b43b86f21e1f129ab5ec63ea4203702e8e9bd28a063c4e3",
-    "stored_at": "2026-11-20T03:11:39.300538+00:00",
+    "snapshot_sha256": "3116d178761e1a3a51398f04b8bda45e2ecf64250a744343f9ad4569e1b3e21f",
+    "stored_at": "2026-11-25T03:08:45.350277+00:00",
     "status": "committed"
   },
-  "finished_at": "2026-11-20T03:11:43+00:00"
+  "finished_at": "2026-11-25T03:08:49+00:00"
 }
