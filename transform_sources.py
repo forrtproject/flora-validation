@@ -35,6 +35,8 @@ import html
 import os
 import re
 import sys
+import unicodedata
+import urllib.parse
 from html.entities import html5
 from pathlib import Path
 
@@ -298,6 +300,89 @@ def _replace_tags(match):
     return " " if between_words else ""
 
 
+def _mojibake_alphabet(codec):
+    """Each byte 0x80-0xFF as `codec` shows it. Bytes cp1252 leaves undefined (0x81,
+    0x8D, 0x8F, 0x90, 0x9D) arrive as the control character of the same number."""
+    return {byte: bytes([byte]).decode(codec, errors="ignore") or chr(byte)
+            for byte in range(0x80, 0x100)}
+
+
+def _mojibake_pattern(alphabet, leads):
+    """UTF-8 sequences as `alphabet` mis-decodes them, as a regex alternative.
+
+    `leads` lists each allowed lead byte range with the number of continuation bytes
+    it takes, so only a well-formed UTF-8 sequence matches. A fourth item, when
+    given, is the lowest first continuation byte the lead may take.
+    """
+    def chars(lo, hi):
+        return "".join(re.escape(alphabet[b]) for b in range(lo, hi + 1))
+    parts = []
+    for lo, hi, n, *first in leads:
+        start = first[0] if first else 0x80
+        tail = f"[{chars(start, 0xBF)}]" + (f"[{chars(0x80, 0xBF)}]{{{n - 1}}}" if n > 1 else "")
+        parts.append(f"[{chars(lo, hi)}]{tail}")
+    return "|".join(parts)
+
+
+# UTF-8 text decoded as Windows-1252 ("learnerâ€™s", "KÃ¶bach") and as Mac Roman
+# ("Kruger‚Äôs"), as provider metadata and pasted sheet cells deliver it. Narrowed to
+# the lead bytes those sources produce, because a pattern this short can also be
+# real text: Mac Roman shows "“É" as a two-byte sequence, and French "à « " (with a
+# no-break space) reads as a three-byte one. So two-byte sequences are repaired only
+# for U+0080 to U+017F (Â, Ã, Ä, Å leads: accented Latin letters and Polish/Czech
+# ones) and Greek (Î, Ï: "Î±" for α), and three-byte ones only for U+2000 to U+2FFF
+# (â€™ for ’, â€“ for –, ‚Äô in Mac Roman): punctuation and symbols.
+# One pattern, Mac Roman first: scanning left to right, "‚â•‚ÄÖ" must read as Mac
+# Roman's "≥" and a six-per-em space, not as Windows-1252's "â•‚" in its middle.
+_CP1252 = _mojibake_alphabet("cp1252")
+_MAC_ROMAN = _mojibake_alphabet("mac_roman")
+# Mac Roman's "¬" (0xC2) is the lead of Latin-1 symbols ("¬±" is ±, "¬∞" is °),
+# common in reported statistics. Greek leads (Î, Ï) need a continuation byte above
+# 0xA0, so "Î" before a no-break space stays as written.
+_MOJIBAKE_RE = re.compile(
+    f"(?P<mac_roman>{_mojibake_pattern(_MAC_ROMAN, [(0xE2, 0xE2, 2), (0xC2, 0xC2, 1)])})"
+    f"|(?P<cp1252>{_mojibake_pattern(_CP1252, [(0xC2, 0xC5, 1), (0xCE, 0xCF, 1, 0xA1), (0xE2, 0xE2, 2)])})")
+_TO_BYTE = {"mac_roman": {char: byte for byte, char in _MAC_ROMAN.items()},
+            "cp1252": {char: byte for byte, char in _CP1252.items()}}
+# Enough for text mis-decoded three times ("ÃƒÅ½Ã‚Â±" is α), with a bound.
+_MOJIBAKE_PASSES = 4
+
+
+def _undo_mojibake(match):
+    to_byte = _TO_BYTE[match.lastgroup]
+    raw = bytes(to_byte[char] for char in match.group(0))
+    try:
+        decoded = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return match.group(0)
+    # A control or format character is no repair: "Â" before a C1 control byte, or
+    # "â" and a no-break space before "«" (U+202B), which is real Portuguese text.
+    if unicodedata.category(decoded) in ("Cc", "Cf"):
+        return match.group(0)
+    return decoded
+
+
+def has_mojibake(value) -> bool:
+    """Whether text holds UTF-8 that was decoded with the wrong character set."""
+    return isinstance(value, str) and repair_mojibake(value) != value
+
+
+def repair_mojibake(value):
+    """`value` with mis-decoded UTF-8 decoded again; other text left exactly as it is.
+
+    Only well-formed UTF-8 sequences in the alphabets above are touched, so a real
+    "Köbach" or "Ä" stays. Non-strings pass through.
+    """
+    if not isinstance(value, str):
+        return value
+    for _ in range(_MOJIBAKE_PASSES):
+        repaired = _MOJIBAKE_RE.sub(_undo_mojibake, value)
+        if repaired == value:
+            break
+        value = repaired
+    return value
+
+
 def clean_text(value, one_line=False):
     """Strip markup, decode entities, and repair PDF-copied line breaks.
 
@@ -321,6 +406,8 @@ def clean_text(value, one_line=False):
     # which then reach the published reference verbatim. Only an entity that is not
     # itself a real one is touched — see _lower_unknown_entity.
     text = unescape_entities(text)
+    # After the entities: "&acirc;&euro;&trade;" is mojibake once decoded.
+    text = repair_mojibake(text)
     # Tags stripped again: publisher XML double-encodes, so &amp;lt;i&amp;gt; only
     # becomes a literal tag once unescaped.
     if "<" in text and ">" in text:
@@ -416,6 +503,11 @@ def to_output_shape(frame, keep_extras: bool = True):
     for column in ("author_o", "author_r"):
         if column in out.columns:
             out[column] = out[column].map(lambda value: normalise_author_json(value, preserve_unresolved=True))
+    # One separator in the identifier lists, corrections included: ", ".
+    for column in ("alt_identifier_o", "alt_identifier_r"):
+        if column in out.columns:
+            out[column] = out[column].map(lambda v: normalise_identifier_list(v)
+                                          if isinstance(v, str) else v)
     out["doi_o_hash"] = out["doi_o"].apply(doi_hash)
     out["doi_r_hash"] = out["doi_r"].apply(doi_hash)
     if "source" in out:
@@ -446,11 +538,15 @@ def clean_doi(value):
         '10.1002/pits.22106digital object identifier (doi)'
         'https://doi.org/10.1016/0010-0285(92)90013-R'
         '10.1016/j.learninstruc.2018.04.010 get rights and content'
+        '10.1002/(sici)1099-0771(199806)11:2%3c107::aid-bdm292%3e3.0.co;2-y'
     DOIs cannot contain whitespace, so everything from the first space is dropped.
+    A percent-encoded DOI is decoded: copied from a link, a Wiley SICI DOI arrives
+    with %3c and %3e for < and >, which never match a citation of the paper and
+    which doi.org does not resolve.
     """
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
-    v = str(value).strip().lower()
+    v = decode_doi_escapes(str(value).strip()).lower()
     if not v:
         return None
     v = re.sub(r"^(https?://)?(dx\.)?doi\.org/", "", v)
@@ -459,6 +555,18 @@ def clean_doi(value):
     v = re.sub(r"\s*get\s*rights\s*and\s*content.*$", "", v)
     v = re.sub(r"\s.*$", "", v).strip()
     return v or None
+
+
+def decode_doi_escapes(value: str) -> str:
+    """A DOI copied from a link, percent-decoded once: "%3c" is "<".
+
+    Before lowercasing, so an escaped capital becomes the same letter as a typed
+    one. Left as it is when it holds an escaped percent sign ("%25"): decoding that
+    would make a new escape, and a second pass a different DOI.
+    """
+    if "%" not in value or "%25" in value.lower():
+        return value
+    return urllib.parse.unquote(value)
 
 
 _SHEET_YEAR_RE = re.compile(r"^(1[5-9]\d{2}|2\d{3})(?:\.0+)?$")
@@ -490,7 +598,9 @@ def _doi_url(value):
     with a TypeError on every row that has no original DOI.
     """
     doi = _s(value)
-    return "https://doi.org/" + doi if _DOI_URL_RE.match(doi) else None
+    # "#" and "?" would end the link's path; the rest of a DOI is written as it is.
+    return ("https://doi.org/" + doi.replace("#", "%23").replace("?", "%3F")
+            if _DOI_URL_RE.match(doi) else None)
 
 
 def _without_tracking(url):
@@ -522,6 +632,48 @@ def norm_url(value):
     v = _without_tracking(v)
     v = v.rstrip("/")
     return v or None
+
+
+# The one separator of a multi-value identifier column (alt_identifier_o/_r) as
+# published: ", ", as preprint_dedup.append_alt_identifier writes it. A semicolon
+# cannot be one, because SICI DOIs hold them ("…<107::aid-bdm292>3.0.co;2-y"); it is
+# read as a separator only before whitespace or the start of another identifier.
+IDENTIFIER_SEPARATOR = ", "
+# Where one identifier ends and the next begins. Only before something that starts
+# an identifier, or at a comma followed by a space as the published lists are
+# written: a URL may hold a bare comma ("…/a,b") and a SICI DOI a semicolon.
+_NEXT_IDENTIFIER = r"(?=10\.\d|https?://|doi:|www\.)"
+_IDENTIFIER_SPLIT_RE = re.compile(
+    r"\s*,\s+|\s*,(?=\s*" + _NEXT_IDENTIFIER[3:]                 # a comma
+    + r"|\s*;\s*" + _NEXT_IDENTIFIER + r"|\s*;\s+"            # a semicolon between identifiers
+    + r"|\s*\|\s*"                                            # a pipe
+    + r"|\s+" + _NEXT_IDENTIFIER                                # whitespace before an identifier
+    + r"|\s*\n\s*", re.I)                                     # a line break
+
+
+def _identifier_key(part):
+    """How two listed identifiers compare: a DOI, bare or as a doi.org link,
+    ignoring case as DOIs do; any other link exactly (a path's case can name a
+    different file)."""
+    doi = re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", "", part, flags=re.I)
+    return doi.lower() if re.match(r"10\.\d", doi) else part
+
+
+def normalise_identifier_list(value):
+    """An alt_identifier cell as one list joined by ", ": other separators (a
+    semicolon between identifiers, a pipe, a line break, a space) become it, and a
+    repeated identifier is kept once. Blank stays None."""
+    if not isinstance(value, str) or not value.strip():
+        return None if not isinstance(value, str) else (value.strip() or None)
+    parts, seen = [], set()
+    for part in _IDENTIFIER_SPLIT_RE.split(value.strip()):
+        part = part.strip()
+        if not re.match(r"https?://", part, re.I):   # a link may end in a comma
+            part = part.rstrip(";,").strip()
+        if part and _identifier_key(part) not in seen:
+            seen.add(_identifier_key(part))
+            parts.append(part)
+    return IDENTIFIER_SEPARATOR.join(parts) or None
 
 
 def strip_redundant_url(row):
@@ -813,6 +965,25 @@ JOINED_COLUMNS = {
 }
 
 
+# A working column for step 6c: the url a correction replaced, which can be the
+# OpenAlex record of a work with no DOI.
+WORK_ID_HINT = "_replaced_work_id_{side}"
+_OPENALEX_WORK_RE = re.compile(r"openalex\.org/(?:works/)?(W\d{5,})", re.I)
+
+
+def openalex_work_ids(value) -> list:
+    """The W-ids of the OpenAlex links in `value` (a URL or an identifier list)."""
+    if not isinstance(value, str):
+        return []
+    return [match.group(1).upper() for match in _OPENALEX_WORK_RE.finditer(value)]
+
+
+def openalex_work_id(value) -> "str | None":
+    """The W-id of the first OpenAlex link in `value`."""
+    ids = openalex_work_ids(value)
+    return ids[0] if ids else None
+
+
 def join_metadata(df, meta, sides=("o", "r")):
     """Step 7: join cached bibliographic metadata onto df, in place, per side.
 
@@ -821,7 +992,10 @@ def join_metadata(df, meta, sides=("o", "r")):
     must hold the source's values, which are kept where no provider answers.
     """
     from enrich_works import extract_work_id        # local: avoids an import cycle
-    from bibliographic_helpers import normalise_key
+    from bibliographic_helpers import add_reference_authors, normalise_author_json, normalise_key
+
+    def authors_present(value):
+        return isinstance(value, (str, list)) and bool(value)
     for side in sides:
         doi_col = f"doi_{side}"
         keys = df[doi_col].map(lambda d: meta.get(normalise_key(d)) if d else None)
@@ -859,6 +1033,18 @@ def join_metadata(df, meta, sides=("o", "r")):
         if url_column in df.columns:
             id_keys = df[url_column].map(
                 lambda u: (meta.get(normalise_key(u)) or meta.get(extract_work_id(u))) if u else None)
+            # The OpenAlex record can also be named elsewhere: in the alternative
+            # identifiers, or, for a url corrected from the OpenAlex link to the
+            # work's landing page, as the record the correction replaced (step 6c).
+            # It remains the key to the metadata of a work with no DOI.
+            # Only for a side with no DOI: the DOI join describes the work, and an
+            # alias's metadata would fill its gaps with another version's authors.
+            no_doi = df[doi_col].map(lambda d: not _s(d))
+            for column in (WORK_ID_HINT.format(side=side), f"alt_identifier_{side}"):
+                if column in df.columns:
+                    named = df[column].map(lambda v: next(
+                        (meta[w] for w in openalex_work_ids(v) if w in meta), None))
+                    id_keys = id_keys.where(id_keys.notna() | ~no_doi, named)
             for field, column in (("title", f"title_{side}"),
                                   ("authors", f"author_{side}"),
                                   ("journal", f"journal_{side}"),
@@ -883,6 +1069,16 @@ def join_metadata(df, meta, sides=("o", "r")):
         # …and only now the sheet's own year, for the rows neither lookup answered.
         if sheet_year is not None:
             df[f"year_{side}"] = df[f"year_{side}"].fillna(sheet_year)
+
+        # A cached reference that opens with "(Ed.). (2010)." lacks its author: DOI
+        # content negotiation drops group authors and works deposited without any.
+        # The author list joined above supplies it where one is known.
+        # Authors read as the export will publish them: OpenAlex supplies display
+        # names, which normalise_author_json structures, keeping a group whole.
+        df[f"ref_{side}"] = [
+            add_reference_authors(ref, normalise_author_json(authors, preserve_unresolved=True)
+                                  if authors_present(authors) else None)
+            for ref, authors in zip(df[f"ref_{side}"], df[f"author_{side}"])]
 
         if side == "o":
             # R's formatted metadata includes the original DOI landing page.
@@ -1314,11 +1510,17 @@ def build(cur, verbose: bool = True,
             corrected = [rid for rid, fields in identifier_edits.items()
                          if fields.keys() & {f"doi_{side}", f"url_{side}"}]
             rows = df.index[df["record_id"].isin(corrected)]
+            # A url corrected from the OpenAlex record to the work's own page keeps
+            # that record as the metadata key: it is a work with no DOI.
+            hint = WORK_ID_HINT.format(side=side)
+            df[hint] = df["record_id"].map(
+                lambda rid: (identifier_edits.get(rid) or {}).get(f"url_{side}"))
             if len(rows):
                 join_metadata_again(
                     df, rows, side, meta, join_fallbacks,
                     kept_urls={rid for rid in corrected
                                if f"url_{side}" in identifier_edits[rid]})
+        df = df.drop(columns=[WORK_ID_HINT.format(side=side) for side in ("o", "r")], errors="ignore")
         # An exclusion added after a correction still removes the record: the
         # exclusion is the decision. A save refuses a correction onto one outright.
         excluded = pd.Series(False, index=df.index)
@@ -1366,6 +1568,15 @@ def build(cur, verbose: bool = True,
         changed = int((before.fillna("") != df[column].fillna("")).sum())
         if changed:
             say(f"      cleaned {column}: {changed} cell(s) changed")
+    # Columns clean_text would reshape (JSON author lists, BibTeX, the reproduction
+    # quotes kept as entered) still get mis-decoded characters repaired: "KÃ¶bach"
+    # in author_o otherwise feeds the overlap and the citation. Whatever a column
+    # holds, only the mis-decoded sequences change.
+    for column in ("author_o", "author_r", "bibtex_ref_o", "bibtex_ref_r",
+                   "outcome_computational_quote", "outcome_robustness_quote",
+                   "outcome_replication_quote"):
+        if column in df.columns:
+            df[column] = df[column].map(repair_mojibake)
     # Links only unescaped: the rest of clean_text would rewrite a URL. An OpenAlex
     # link arrives as "...?article=1063&amp;amp;context=trr", which no browser opens.
     for column in ("oa_url_o", "oa_url_r"):

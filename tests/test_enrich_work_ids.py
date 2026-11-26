@@ -177,3 +177,20 @@ def test_enrichment_runs_the_work_id_pass():
     join finds nothing to fill with."""
     source = (ROOT / "enrich_works.py").read_text(encoding="utf-8")
     assert "enrich_work_ids(cur" in source[source.index("def main("):]
+
+
+def test_openalex_links_listed_as_alternative_identifiers_are_looked_up(monkeypatch):
+    """A url corrected to the work's own page moves its OpenAlex link to the
+    alternative identifiers, which stay the key to the metadata."""
+    import flora_edits
+    monkeypatch.setattr(flora_edits, "identifier_values",
+                        lambda cur, fields: ["10.1/x, https://openalex.org/W2735016722"]
+                        if "alt_identifier_r" in fields else [])
+    assert ew.work_ids_in_product(_Cur()) == ["W2735016722"]
+
+
+def test_openalex_links_in_source_alternative_identifiers_are_looked_up():
+    class Cur(_Cur):
+        def fetchall(self):
+            return [{"alt": "10.1/x, https://openalex.org/W96171599"}] if "alt_identifier" in self.sql else []
+    assert ew.work_ids_in_product(Cur()) == ["W96171599"]

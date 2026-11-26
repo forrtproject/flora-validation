@@ -1,0 +1,15 @@
+absorbed_id,survivor_id,note
+FLORA-002424,FLORA-000316,"fred-data#179: the Zenodo deposit 10.5281/zenodo.18538611 of the same article as 10.1037/com0000223 (Soler et al. 2020): same title, authors, original and outcome."
+FLORA-002596,FLORA-002801,"fred-data#179: the OSF preprint (2021) of the report published in Judgment and Decision Making (Korbmacher, Kwan and Feldman 2022): same title, authors, original and outcome."
+VAL-000277,FLORA-001180,"fred-data#179: the OSF record of the report published as 10.1098/rsos.200664 (Eben et al. 2020): same title, authors, original and outcome."
+VAL-000279,FLORA-001907,"fred-data#179: the OSF preprint (Calderon 2020, retitled from ""Subjective Probability"") of the replication of Wakslak et al. published as 10.1037/pspa0000214: same original, first author and outcome."
+VAL-000290,FLORA-002595,"fred-data#179: the OSF record of the two replication attempts of Yoon, Johnson and Csibra published as 10.1016/j.infbeh.2019.03.005 (Silverstein et al.): same title, authors and outcome."
+VAL-000291,FLORA-001133,"fred-data#179: the OSF preprint (2017) of the article 10.1098/rsos.160431 (Ratner, Burrow and Thoemmes): same title, authors, original and outcome."
+VAL-000463,FLORA-000795,"fred-data#179: the DepositOnce working paper of the article 10.1007/s40881-022-00118-y (Ahrens, Bosch-Rosa and Meissner 2022): same title, authors, original and outcome."
+VAL-000507,FLORA-000352,"fred-data#179: the OSF record of the article 10.1371/journal.pone.0211416 (Humiston and Wamsley 2019): same title, authors, original and outcome."
+VAL-000519,FLORA-001824,"fred-data#179: the OSF preprint (2018) of the article 10.1016/j.joep.2018.11.004 (Jaeger et al.): same title, authors, original and outcome."
+VAL-000522,FLORA-001093,"fred-data#179: the OSF record of the article 10.1098/rsos.200724 (Murre 2021): same title, author, original and outcome."
+FLORA-002632,FLORA-001168,"fred-data#179: the PsyArXiv preprint 10.31234/osf.io/bjmyx (2017) of the article 10.1177/1948550618792057 (Crawford, Vodapalli, Stingel and Ruscio 2018): same four authors, original (Wilkins and Kaiser 2014), studies and outcome."
+VAL-000482,FLORA-001094,"fred-data#179: the OSF preprint (2019) of the article 10.1098/rsos.191114 (Rodríguez-Ferreiro et al.): same title, authors, original and outcome."
+VAL-000401,VAL-000366,fred-data#179: version 1 (10.26686/wgtn.17143838.v1) of the same Victoria University of Wellington thesis (Toomer 2019) that VAL-000366 cites by its concept DOI.
+VAL-000312,FLORA-001169,"fred-data#179: the OSF project (osf.io/q5rgw) of Chabris et al.'s two failures to replicate Williams and Bargh (2008), the report FLORA-001169 holds as its PsyArXiv preprint and journal article: same title, authors, original and outcome."

@@ -1,10 +1,21 @@
 ## FLoRA structural validation
 
-_Generated: 2026-11-25 03:06:27 UTC | Dataset: 2,918 rows_
+_Generated: 2026-11-26 03:34:00 UTC | Dataset: 2,970 rows_
 
 Each item names the FLoRA record by its FLoRA ID and `doi_o | doi_r` (or `url_r`), says what is wrong and, after the dash, gives the value.
 
 ### Problems (21)
+
+**Duplicate records** (6 findings):
+
+_Rows the build would have made one record: the same type, doi_o, doi_r and url_r, or the same DOIs with one url_r between them._
+
+- REPL-000933, REPL-001497 (`10.1007/s10683-015-9437-0 | 10.1007/s40881-022-00118-y`): 2 rows the build would make one record — `replication|10.1007/s10683-015-9437-0|10.1007/s40881-022-00118-y|`
+- FRED-000199, FRED-000200 (`10.1037/0096-3445.135.4.641 | 10.1037/pspa0000214`): 2 rows the build would make one record — `replication|10.1037/0096-3445.135.4.641|10.1037/pspa0000214|`
+- VAL-000207, VAL-000591 (`10.1162/jocn.2008.21154 | 10.3389/fnhum.2021.680885`): 2 rows the build would make one record — `replication|10.1162/jocn.2008.21154|10.3389/fnhum.2021.680885|`
+- VAL-000260, VAL-000345 (`10.1073/pnas.0804388105 | 10.1016/j.infbeh.2019.03.005`): 2 rows the build would make one record — `replication|10.1073/pnas.0804388105|10.1016/j.infbeh.2019.03.005|doi.org/10.31234/osf.io/fs2ez`
+- VAL-000285, VAL-000607 (`10.1027/1618-3169/a000414 | 10.1027/1618-3169/a000486`): 2 rows the build would make one record — `replication|10.1027/1618-3169/a000414|10.1027/1618-3169/a000486|osf.io/tj4sh`
+- VAL-000293, VAL-000549 (`10.1111/puar.12401 | 10.1080/14719037.2016.1195009`): 2 rows the build would make one record — `replication|10.1111/puar.12401|10.1080/14719037.2016.1195009|`
 
 <details><summary><b>Missing required fields</b> (15 findings)</summary>
 
@@ -28,22 +39,11 @@ _title_o, title_r, doi_r or url_r, and an identifier for the original: doi_o, a 
 
 </details>
 
-**Title says retracted** (6 findings):
-
-_title_o or title_r marks the paper retracted or withdrawn._
-
-- REPL-000405 (`10.1126/science.abh4340 | 10.1126/sciadv.adl0999`): title_o marks the paper retracted or withdrawn — `RETRACTED: In vivo direct imaging of neuronal activity at high temporospatial resolution`
-- REPL-000626 (`10.1016/j.cell.2013.04.008 | 10.2337/db13-1435`): title_o marks the paper retracted or withdrawn — `RETRACTED: Betatrophin: A Hormone that Controls Pancreatic β Cell Proliferation`
-- REPL-001349 (`10.1073/pnas.1209746109 | 10.1073/pnas.1911695117`): title_o marks the paper retracted or withdrawn — `RETRACTED: Signing at the beginning makes ethics salient and decreases dishonest self-reports in comparison to signing …`
-- REPRO-000331 (`10.1257/aer.20210369 | 10.1257/aer.20221432`): title_o marks the paper retracted or withdrawn — `RETRACTED BY THE AUTHORS: Dividend Taxes and the Allocation of Capital`
-- FRED-000891 (`10.1086/661890 | 10.15626/mp.2020.2538`): title_o marks the paper retracted or withdrawn — `Retracted: Super Size Me: Product Size as a Signal of Status`
-- FRED-000420 (`10.1177/1948550611410890 | 10.1037/xge0000067`): title_o marks the paper retracted or withdrawn — `RETRACTED: Sense Creative! The Impact of Global and Local Vision, Hearing, Touching, Tasting and Smelling on Creative a…`
-
 ### Possible problems (11)
 
 _Heuristics: a person decides whether each one is a problem._
 
-**Replication year before original year** (4 findings):
+**Replication year before original year** (5 findings):
 
 _Could be swapped entries or a data-entry error. Not reported when the original has a preprint or other earlier version._
 
@@ -51,6 +51,7 @@ _Could be swapped entries or a data-entry error. Not reported when the original 
 - REPL-000476 (`10.1002/bin.1836 | 10.1002/jaba.659`): year_r is before year_o (2021) — `2019`
 - REPL-001689 (`10.1177/1042258719892987 | 10.1111/apps.12247`): year_r is before year_o (2021) — `2020`
 - VAL-000528 (`10.1007/s10389-020-01338-4 | 10.3389/fpubh.2021.620264`): year_r is before year_o (2022) — `2021`
+- VAL-000557 (`10.1080/21670811.2021.1969974 | 10.1037/tmb0000083`): year_r is before year_o (2023) — `2022`
 
 **Same paper pair as replication and reproduction** (5 findings):
 
@@ -68,12 +69,6 @@ _One row's doi_o and doi_r are another row's doi_r and doi_o._
 
 - REPL-000476, REPL-000529: the paper pair is entered both ways round: one row's original is the other's replication — `10.1002/bin.1836 | 10.1002/jaba.659`
 
-**Title looks like a file or project name** (1 finding):
-
-_title_r is a file or project name, or a generic name such as 'Analysis'._
-
-- REPL-000453 (`10.1037/a0023937 | https://osf.io/up8xs`): title_r is a generic name, not a title — `Analysis`
-
 ---
 
 **Checks passed:**
@@ -84,7 +79,12 @@ _title_r is a file or project name, or a generic name such as 'Analysis'._
 - Type values valid
 - Source values valid
 - Year ranges reasonable
-- No duplicate records
 - DOI format valid
+- Identifier lists use one separator
 - DOI mapped to conflicting references
+- No title_r marks a retraction, no title_o is a notice of one
 - No 'NA'/'N/A' strings
+- No mis-decoded characters
+- References name their authors
+- Report links lead to the report
+- Replication titles look like titles

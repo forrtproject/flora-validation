@@ -39,7 +39,12 @@ def normalise_key(value) -> str:
     value = re.sub(r"^(?:https?://)?(?:dx\.)?doi\.org/|^doi:\s*", "", value)
     if value.startswith("10."):
         value = re.sub(r"\s*digital\s*object\s*identifier.*|\s*get\s*rights\s*and\s*content.*", "", value)
-        return value.split()[0] if value else ""
+        value = value.split()[0] if value else ""
+        # As transform_sources.clean_doi: "%3c" and "<" spell one DOI. Decoded once,
+        # never an escaped "%25", and lowercased again for a decoded capital.
+        if "%" in value and "%25" not in value:
+            value = urllib.parse.unquote(value).lower()
+        return value
     value = re.sub(r"^https?://(?:www\.)?|^www\.", "", value)
     if re.fullmatch(r"w\d{5,}", value):
         return value.upper()
@@ -362,6 +367,60 @@ def merge_present(base, incoming):
     return {**base, **{key: value for key, value in incoming.items() if text(value)}}
 
 
+def apa_author_names(authors, apa7_limit=False) -> str:
+    """The author part of an APA reference: "Family, I. I., Family, I., & Name".
+
+    With `apa7_limit`, more than 20 authors are cut as APA 7 does: the first 19, an
+    ellipsis, and the last.
+    """
+    formatted = []
+    for author in authors:
+        # _name_part, not text(): "Na" and "Nan" are names here.
+        family, given = _name_part(author.get("family")), _name_part(author.get("given"))
+        if family:
+            initials = " ".join(part[0] + "." for part in re.findall(r"[^\W\d_]+", given or ""))
+            formatted.append(f"{family}, {initials}" if initials else family)
+        elif text(author.get("name") or author.get("literal")):
+            formatted.append(text(author.get("name") or author.get("literal")))
+    if apa7_limit and len(formatted) > 20:
+        return ", ".join(formatted[:19]) + ", … " + formatted[-1]
+    return (", ".join(formatted[:-1]) + ", & " + formatted[-1]
+            if len(formatted) > 1 else "".join(formatted))
+
+
+# A reference that opens with its date: the author part is missing. DOI content
+# negotiation renders a work whose Crossref record lists no person as author as
+# "(Ed.). (2013). Title…": a group author (TASC, the TwiLex Group) is dropped, and
+# some publishers deposit no authors at all (Econometrica).
+_AUTHORLESS_REF_RE = re.compile(r"^\s*(?:\(Eds?\.\)\.?\s*)?(?=\((?:\d{4}|n\.d\.)[^)]*\)\.)")
+
+
+def authorless_reference(ref) -> bool:
+    """Whether an APA reference starts with its date, without an author."""
+    return isinstance(ref, str) and bool(_AUTHORLESS_REF_RE.match(ref))
+
+
+def add_reference_authors(ref, authors):
+    """`ref` with the author part it lacks, from `authors`: a structured list or its
+    JSON. Unchanged when it has one, or when the authors are plain text, which
+    cannot say whether "Research and Development Group" is one group or two people."""
+    if not authorless_reference(ref):
+        return ref
+    if isinstance(authors, str):
+        try:
+            authors = json.loads(authors) if authors.lstrip().startswith("[") else None
+        except ValueError:
+            authors = None
+    if not isinstance(authors, list) or not all(isinstance(a, dict) for a in authors):
+        return ref
+    names = apa_author_names(authors, apa7_limit=True)
+    if not names:
+        return ref
+    # APA ends the author part with a full stop, unless an initial already does.
+    author_part = names if names.endswith(".") else names + "."
+    return _AUTHORLESS_REF_RE.sub(lambda _: author_part + " ", ref, count=1)
+
+
 def synthesise_references(row, key):
     """Last-resort citation strings; existing supplied citations always win."""
     row = dict(row)
@@ -369,16 +428,7 @@ def synthesise_references(row, key):
         return row
     authors = _parse_authors(row.get("authors_json") or row.get("authors"))
     if not row.get("apa_ref"):
-        formatted = []
-        for author in authors:
-            family, given = text(author.get("family")), text(author.get("given"))
-            if family:
-                initials = " ".join(part[0] + "." for part in re.findall(r"[^\W\d_]+", given or ""))
-                formatted.append(f"{family}, {initials}" if initials else family)
-            elif author.get("name"):
-                formatted.append(author["name"])
-        names = (", ".join(formatted[:-1]) + ", & " + formatted[-1]
-                 if len(formatted) > 1 else "".join(formatted))
+        names = apa_author_names(authors)
         citation = f"{names} ({row.get('year') or 'n.d.'}). {row['title'].rstrip('.')}.".strip()
         journal = text(row.get("journal"))
         if journal:
@@ -466,6 +516,9 @@ def fetch_doi_reference(doi):
     if bibtex and re.match(r"\s*@\w+\s*[{(]", bibtex):
         result["bibtex_ref"] = bibtex.strip()
         result = merge_present(parse_bibtex(bibtex), result)
+    # After the BibTeX merge, whose structured authors can supply what the APA lacks.
+    if result.get("apa_ref"):
+        result["apa_ref"] = add_reference_authors(result["apa_ref"], result.get("authors_json"))
     if sources or apa or bibtex:
         result["metadata_source"] = "+".join(sources or ["doi-negotiation"])
     return synthesise_references(result, key)

@@ -22,7 +22,7 @@ with BOM. See the bundled FAQ for outcome definitions and coding decisions.
 | `id` | Permanent published record ID; stable through corrections and retirement. |
 | `id_md5` | Full MD5 of the permanent id, for lookup; not a DOI hash. |
 | `doi_o` | DOI of the publication, when available. Original study. |
-| `alt_identifier_o` | Alternative publication identifiers, including preprints. Original study. |
+| `alt_identifier_o` | Alternative publication identifiers, including preprints. Original study. Several values are separated by a comma and a space (`, `); semicolons are part of some DOIs (`…3.0.co;2-y`) and never separate values. |
 | `doi_o_hash` | Short original-DOI hash; distinct from id_md5. |
 | `title_o` | Publication title. Original study. |
 | `author_o` | Author metadata as a JSON array. Original study. |
@@ -36,7 +36,7 @@ with BOM. See the bundled FAQ for outcome definitions and coding decisions.
 | `url_o` | Publication URL. Original study. |
 | `language_o` | Publication language code. Original study. |
 | `doi_r` | DOI of the publication, when available. Replication/reproduction report. |
-| `alt_identifier_r` | Alternative report identifiers, including preprints and the DOI of an associated aggregate project paper. Multiple values may be separated by commas or semicolons; a project-paper DOI supplements the individual report identifier/link. |
+| `alt_identifier_r` | Alternative report identifiers, including preprints and the DOI of an associated aggregate project paper. Several values are separated by a comma and a space (`, `), as in `alt_identifier_o`; a project-paper DOI supplements the individual report identifier/link. |
 | `doi_r_hash` | Short report-DOI hash; distinct from id_md5. |
 | `title_r` | Publication title. Replication/reproduction report. |
 | `author_r` | Author metadata as a JSON array. Replication/reproduction report. |

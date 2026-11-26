@@ -13,7 +13,7 @@ doi_o,doi_r,type,outcomes,resolved_to,resolved_by,url_r,sources
 10.1177/1948550611410890,10.1037/xge0000067,replication,failed | uninformative,uninformative,merge rules: the kept record's outcome; needs a decision,,fred_replication_success
 10.1037/0022-3514.71.2.230,10.1037/0022-3514.83.2.406,replication,mixed | successful,mixed,merge rules,,fred_replication_success
 10.1111/j.1468-0017.2006.00297.x,10.1177/2515245918810225,replication,mixed | successful,mixed,merge rules,,fred_replication_success
-10.1002/(sici)1099-0771(199806)11:2%3c107::aid-bdm292%3e3.0.co;2-y,10.1177/2515245918810225,replication,failed | successful,mixed,merge rules,,fred_replication_success
+10.1002/(sici)1099-0771(199806)11:2<107::aid-bdm292>3.0.co;2-y,10.1177/2515245918810225,replication,failed | successful,mixed,merge rules,,fred_replication_success
 10.1037/0022-3514.73.4.733,10.1177/08902070221094216,replication,failed | mixed,mixed,merge rules,,fred_replication_success
 10.1126/science.1239918,10.1037/pspa0000064,replication,failed | mixed,mixed,merge rules,,fred_replication_success
 10.4148/1944-9771.1299,10.1111/fare.13030,replication,mixed | successful,mixed,merge rules,,fred_replication_success
@@ -42,12 +42,14 @@ doi_o,doi_r,type,outcomes,resolved_to,resolved_by,url_r,sources
 10.1037/0022-3514.75.1.5,10.1177/25152459251401177,replication,failed | mixed,mixed,merge rules,,replications
 10.1016/s1386-4181(01)00024-6,10.1561/104.00000058,replication,mixed | successful,mixed,merge rules,https://doi.org/10.1561/104.00000058,replications
 10.1073/pnas.1211645109,10.1002/ejsp.2390,replication,mixed | successful,mixed,website record,https://doi.org/10.1002/ejsp.2390,replications | validated
+10.1002/ab.21544,10.1002/ab.22027,replication,mixed | successful,mixed,website record,https://doi.org/10.1002/ab.22027,replications | validated
 10.1016/j.jfineco.2004.06.007,10.1561/104.00000072,replication,failed | mixed,mixed,merge rules,https://doi.org/10.1561/104.00000072,replications
 10.1198/073500102317352029,10.17016/feds.2017.062,replication,mixed | successful,mixed,merge rules,https://doi.org/10.17016/feds.2017.062,replications
 10.1016/s0022-4359(00)00035-x,10.1080/15332969.2014.916148,replication,mixed | successful,successful,website record,https://doi.org/10.1080/15332969.2014.916148,replications | validated
 10.1002/jaba.672,10.1002/jaba.740,replication,mixed | successful,successful,website record,https://doi.org/10.1002/jaba.740,replications | validated
 10.1287/orsc.1040.0065,10.1002/smj.2573,replication,failed | mixed,mixed,website record,https://doi.org/10.1002/smj.2573,replications | validated
 10.1038/nm.4246,10.1016/j.nicl.2019.101796,replication,failed | mixed,mixed,website record,,replications | validated
+10.3758/bf03202642,10.3758/s13421-020-01073-x,replication,failed | mixed,mixed,website record,https://doi.org/10.3758/s13421-020-01073-x,replications | validated
 10.1016/j.neuron.2008.07.005,10.1016/j.cortex.2022.12.003,replication,failed | mixed,mixed,website record,https://doi.org/10.1016/j.cortex.2022.12.003,replications | validated
 10.1287/orsc.2017.1146,10.1057/s41267-022-00532-8,replication,mixed | successful,mixed,merge rules,https://doi.org/10.1057/s41267-022-00532-8,replications
 10.1016/j.jbusvent.2003.12.007,10.1177/10422587251347060,replication,mixed | successful,mixed,website record,https://doi.org/10.1177/10422587251347060,replications | validated
