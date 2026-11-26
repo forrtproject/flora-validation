@@ -88,6 +88,7 @@ def test_clean_scraped_doi_and_bibliographic_normalise_key_agree():
         assert enrich_works._norm_doi(raw) == expected
     assert clean_scraped_doi(None) is None
     assert clean_scraped_doi(float("nan")) is None
+    assert bibliographic_helpers.normalise_key("https://doi.org/ 10.1037/AbC") == "10.1037/abc"
     assert decode_doi_escapes("10.1/a%252fb") == "10.1/a%252fb"
 
 

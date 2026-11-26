@@ -38,10 +38,10 @@ def normalise_key(value) -> str:
     from shared.doi import clean_scraped_doi, strip_doi_prefix
 
     raw = text(value) or ""
-    stripped = strip_doi_prefix(raw.lower(), allow_bare_host=True)
-    if stripped.startswith("10."):
-        return clean_scraped_doi(raw) or ""
-    value = re.sub(r"^https?://(?:www\.)?|^www\.", "", stripped)
+    stripped = strip_doi_prefix(raw, allow_bare_host=True)
+    if stripped.lower().startswith("10."):
+        return clean_scraped_doi(stripped) or ""
+    value = re.sub(r"^https?://(?:www\.)?|^www\.", "", stripped.lower())
     if re.fullmatch(r"w\d{5,}", value):
         return value.upper()
     return value.rstrip("/")
