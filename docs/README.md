@@ -1460,8 +1460,10 @@ its error text is shown to admins only.
    `adjudicated`, display id `ADJ-000001`, which the FLoRA build takes like any
    other source. Before publishing, the outcome is checked against
    `outcome_alias`: the build refuses the whole export for a replication outcome
-   that table does not map, so such an answer (today `cannot_be_determined` and
-   `not_a_replication`) can be approved but not published. A reproduction is
+   that table does not map, so an answer with an unmapped outcome can be approved
+   but not published. The schema maps every replication outcome the website stores,
+   `cannot_be_determined` included; a `not_a_replication` answer is refused before
+   this check, as not meeting FLoRA's inclusion criteria. A reproduction is
    published on its two axes. Where the replication is already in Source Records
    (8 of the 136 papers), the review window lists those rows; publishing adds a
    separate row, and Source Records' duplicate review decides which FLoRA keeps.

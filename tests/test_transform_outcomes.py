@@ -21,6 +21,7 @@ _ALIASES = {
     "failed": "failed",
     "mixed": "mixed",
     "uninformative": "uninformative",
+    "cannot_be_determined": "cannot_be_determined",
     "unclear": "cannot_be_determined",
     "descriptive": "descriptive only",
     "descriptive only": "descriptive only",
@@ -65,6 +66,15 @@ def test_unknown_spelling_is_collected_not_passed_through():
     result = derive_outcome(_replication("mostly worked tbh"), _ALIASES, p)
     assert result is None
     assert p["unknown_alias"] == [("R-1", "mostly worked tbh")]
+
+
+def test_an_undetermined_replication_is_its_own_outcome():
+    """The website stores cannot_be_determined for a replication ("Can't tell" on a
+    record with no extracted outcome). Unmapped, four such records stopped the
+    export on 2026-11-26."""
+    p = _problems()
+    assert derive_outcome(_replication("cannot_be_determined"), _ALIASES, p) == "cannot_be_determined"
+    assert p == {"unknown_alias": [], "bad_alias": []}
 
 
 def test_alias_pointing_at_a_rejected_value_is_collected():
@@ -212,3 +222,17 @@ def test_schema_seeds_every_flawed_spelling_onto_the_category():
     for spelling in (FLAWED_OUTCOME, *FLAWED_OUTCOME_ALIASES):
         assert re.search(rf"\('{re.escape(spelling)}',\s*'{re.escape(FLAWED_OUTCOME)}'\)", seed.group(0)), \
             f"{spelling!r} is not seeded onto {FLAWED_OUTCOME!r}"
+
+
+def test_schema_seeds_every_stored_replication_outcome_as_itself():
+    """Every replication outcome the website can store reaches the build as itself,
+    and the build refuses the whole export for one outcome_alias does not map.
+    not_a_replication is left out on purpose: validate_flora flags it and the
+    website refuses it for a replication."""
+    import re
+    from pathlib import Path
+    sql = (Path(__file__).resolve().parent.parent / "db_schema.sql").read_text(encoding="utf-8")
+    seed = re.search(r"INSERT INTO outcome_alias .*?ON CONFLICT", sql, re.S).group(0)
+    for outcome in sorted(REPLICATION_OUTCOMES - {"not_a_replication"}):
+        assert re.search(rf"\('{re.escape(outcome)}',\s*'{re.escape(outcome)}'\)", seed), \
+            f"{outcome!r} is not seeded as itself in outcome_alias"

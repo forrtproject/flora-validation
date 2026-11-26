@@ -1899,6 +1899,10 @@ INSERT INTO outcome_alias (raw_value, canonical_value) VALUES
     ('failed',          'failed'),
     ('mixed',           'mixed'),
     ('uninformative',   'uninformative'),
+    -- The website stores this for a replication: "Can't tell" on a record with no
+    -- extracted outcome, and consensus when no answer settles one. Unmapped, one
+    -- such record stopped the whole export (2026-11-26).
+    ('cannot_be_determined', 'cannot_be_determined'),
     ('unclear',         'cannot_be_determined'),
     ('descriptive',     'descriptive only'),
     ('descriptive only','descriptive only'),

@@ -654,7 +654,7 @@ collide on the `display_id` index.
 
 | Table | Purpose |
 |---|---|
-| `outcome_alias` | Replication outcome spelling → canonical value (8 rows) |
+| `outcome_alias` | Replication outcome spelling → canonical value (11 rows) |
 | `reproduction_outcome_map` | `(computational, robustness)` → single label (12 rows) |
 | `transform_exclusions` | Rows dropped from the output, by `doi_r` or `url_r`, with a reason |
 | `preprint_dedup_decisions` | Admin rulings on preprint duplicate pairs (`keep_1` / `keep_2` / `keep_both`), made in the FLoRA tab |

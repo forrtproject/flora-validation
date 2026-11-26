@@ -134,7 +134,8 @@ class _AliasCursor:
         return self.row
 
 
-ALIASES = {"failed": "failed", "successful": "successful", "unclear": "cannot_be_determined"}
+ALIASES = {"failed": "failed", "successful": "successful", "cannot_be_determined": "cannot_be_determined",
+           "unclear": "cannot_be_determined"}
 
 
 @pytest.mark.parametrize(("final", "problem"), [
@@ -142,10 +143,10 @@ ALIASES = {"failed": "failed", "successful": "successful", "unclear": "cannot_be
     ({"doi_o": "10.1000/a", "outcome": "not checked, robust"}, None),
     ({"doi_o": None, "outcome": "failed"}, "needs the original's DOI"),
     ({"doi_o": "10.1000/a", "outcome": "not_a_replication"}, "does not meet FLoRA inclusion criteria"),
-    # In production's outcome_alias only as a target, never as a raw value: the
-    # build would refuse the whole export.
-    ({"doi_o": "10.1000/a", "outcome": "cannot_be_determined"}, "would stop the export"),
-    ({"doi_o": "10.1000/a", "type": "replication", "outcome": "cannot_be_determined"}, "would stop the export"),
+    ({"doi_o": "10.1000/a", "outcome": "cannot_be_determined"}, None),
+    ({"doi_o": "10.1000/a", "type": "replication", "outcome": "cannot_be_determined"}, None),
+    # A spelling outcome_alias does not map: the build would refuse the whole export.
+    ({"doi_o": "10.1000/a", "type": "replication", "outcome": "mostly worked"}, "would stop the export"),
     ({"doi_o": "10.1000/a", "type": "not_validation", "outcome": "not_a_replication"}, "does not meet FLoRA inclusion criteria"),
     # One axis that cannot be determined is FLoRA's cannot_be_determined
     # reproduction; both leave nothing to publish.
@@ -551,11 +552,21 @@ def test_an_outcome_the_build_would_refuse_is_never_published_on_postgres(review
     run, conn = review_db
     answer = {"original_choice": "flora", "outcome": "cannot_be_determined"}
     x = _judged(run, conn, 1, DIFFERENT, [answer, answer])
+    # The schema maps every replication outcome the website stores, so the guard is
+    # reached by taking one of its rows away.
+    with conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM outcome_alias WHERE raw_value = 'cannot_be_determined'")
     detail = run(review.approve, x, ADMIN, {"doi_o": "10.1000/a", "outcome": "cannot_be_determined"})
     assert "would stop the export" in detail["publish_problem"]
     with pytest.raises(judging.Refused, match="would stop the export"):
         run(review.publish, x, ADMIN)
     assert _source(conn, x) is None
+
+    # Mapped, as the schema seeds it, the build takes it.
+    with conn, conn.cursor() as cur:
+        cur.execute("INSERT INTO outcome_alias VALUES ('cannot_be_determined', 'cannot_be_determined')")
+    detail = run(review.approve, x, ADMIN, {"doi_o": "10.1000/a", "outcome": "cannot_be_determined"})
+    assert detail["publish_problem"] is None
 
     # A reproduction goes in on its two axes.
     detail = run(review.approve, x, ADMIN, {"doi_o": "10.1000/a", "outcome": "not checked, robust"})
