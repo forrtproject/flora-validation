@@ -544,17 +544,9 @@ def clean_doi(value):
     with %3c and %3e for < and >, which never match a citation of the paper and
     which doi.org does not resolve.
     """
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return None
-    v = decode_doi_escapes(str(value).strip()).lower()
-    if not v:
-        return None
-    v = re.sub(r"^(https?://)?(dx\.)?doi\.org/", "", v)
-    v = re.sub(r"^doi:\s*", "", v)
-    v = re.sub(r"\s*digital\s*object\s*identifier.*$", "", v)
-    v = re.sub(r"\s*get\s*rights\s*and\s*content.*$", "", v)
-    v = re.sub(r"\s.*$", "", v).strip()
-    return v or None
+    from shared.doi import clean_scraped_doi
+
+    return clean_scraped_doi(value)
 
 
 def decode_doi_escapes(value: str) -> str:
@@ -564,9 +556,9 @@ def decode_doi_escapes(value: str) -> str:
     one. Left as it is when it holds an escaped percent sign ("%25"): decoding that
     would make a new escape, and a second pass a different DOI.
     """
-    if "%" not in value or "%25" in value.lower():
-        return value
-    return urllib.parse.unquote(value)
+    from shared.doi import decode_doi_escapes as _decode_doi_escapes
+
+    return _decode_doi_escapes(value)
 
 
 _SHEET_YEAR_RE = re.compile(r"^(1[5-9]\d{2}|2\d{3})(?:\.0+)?$")

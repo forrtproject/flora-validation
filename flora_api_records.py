@@ -60,14 +60,13 @@ def _text(value):
     return "" if value is None else str(value).strip()
 
 
-_DOI_URL = re.compile(r"^(?:(?:https?://)?(?:dx\.)?doi\.org/|doi:\s*)")
-
-
 def published_doi(value):
     """A DOI as shown and answered under: lower-case, without a resolver prefix, and
     otherwise as given ("%3c" stays "%3c"), so a client finds its answer under the
     string it sent and the DOI list reads as the published dataset does."""
-    return _DOI_URL.sub("", _text(value).lower()).strip()
+    from shared.doi import normalize_doi_key
+
+    return normalize_doi_key(_text(value), allow_bare_host=True)
 
 
 def normalize_doi(value):
@@ -75,10 +74,9 @@ def normalize_doi(value):
     records. Percent-escapes are decoded first: a SICI DOI published as
     "…11:2%3c107::…%3e…" (as fred-data has it) is the DOI "…11:2<107::…>…", and a
     lookup by either finds it. Decoded before lower-casing, so "%41" reads as "a"."""
-    value = _text(value)
-    if "%" in value:
-        value = urllib.parse.unquote(value)
-    return _DOI_URL.sub("", value.lower()).strip()
+    from shared.doi import canonical_doi
+
+    return canonical_doi(_text(value))
 
 
 def author_names(value):

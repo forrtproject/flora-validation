@@ -35,17 +35,13 @@ def text(value):
 
 def normalise_key(value) -> str:
     """Use the same key for DOI URLs, bare DOIs and scheme-varied source URLs."""
-    value = (text(value) or "").lower()
-    value = re.sub(r"^(?:https?://)?(?:dx\.)?doi\.org/|^doi:\s*", "", value)
-    if value.startswith("10."):
-        value = re.sub(r"\s*digital\s*object\s*identifier.*|\s*get\s*rights\s*and\s*content.*", "", value)
-        value = value.split()[0] if value else ""
-        # As transform_sources.clean_doi: "%3c" and "<" spell one DOI. Decoded once,
-        # never an escaped "%25", and lowercased again for a decoded capital.
-        if "%" in value and "%25" not in value:
-            value = urllib.parse.unquote(value).lower()
-        return value
-    value = re.sub(r"^https?://(?:www\.)?|^www\.", "", value)
+    from shared.doi import clean_scraped_doi, strip_doi_prefix
+
+    raw = text(value) or ""
+    stripped = strip_doi_prefix(raw, allow_bare_host=True)
+    if stripped.lower().startswith("10."):
+        return clean_scraped_doi(stripped) or ""
+    value = re.sub(r"^https?://(?:www\.)?|^www\.", "", stripped.lower())
     if re.fullmatch(r"w\d{5,}", value):
         return value.upper()
     return value.rstrip("/")

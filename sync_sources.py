@@ -112,11 +112,9 @@ def _norm_doi(value: str) -> str:
     """Normalise a DOI for fingerprinting only. The stored value stays as the sheet
     has it — cleaning belongs in the downstream transform, where a reviewer can
     still see (and fix) the real problem."""
-    v = _s(value).lower()
-    v = re.sub(r"^https?://(dx\.)?doi\.org/", "", v)
-    v = re.sub(r"^doi:\s*", "", v)
-    v = re.sub(r"\s.*$", "", v)
-    return v
+    from shared.doi import normalize_doi_key
+
+    return normalize_doi_key(_s(value), drop_whitespace=True)
 
 
 def _norm_url(value: str) -> str:

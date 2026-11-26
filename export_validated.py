@@ -63,13 +63,9 @@ OPENALEX_MAILTO   = "lukas.wallrich@gmail.com"   # OpenAlex "polite pool" contac
 
 def clean_doi(value) -> str | None:
     """Normalise a DOI-ish value to a bare '10.…' DOI, or None if it isn't one."""
-    if not value or (isinstance(value, float) and pd.isna(value)):
-        return None
-    v = str(value).strip()
-    v = re.sub(r"^https?://(dx\.)?doi\.org/", "", v, flags=re.I)
-    v = re.sub(r"^doi:\s*", "", v, flags=re.I)
-    v = re.sub(r"\s.*$", "", v)            # drop anything after first whitespace
-    return v if v.lower().startswith("10.") else None
+    from shared.doi import normalize_bare_doi
+
+    return normalize_bare_doi(value, drop_whitespace=True, require_prefix_10=True)
 
 
 def _format_openalex_ref(work: dict) -> str:

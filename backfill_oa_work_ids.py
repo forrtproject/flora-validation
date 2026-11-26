@@ -31,11 +31,9 @@ BATCH = 50   # OpenAlex allows up to 50 values in an OR filter
 
 def _norm_doi(doi: str) -> str:
     """Lowercase, strip any URL/prefix → bare '10.xxxx/…' for matching."""
-    d = (doi or "").strip().lower()
-    for p in ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "doi:"):
-        if d.startswith(p):
-            d = d[len(p):]
-    return d
+    from shared.doi import normalize_doi_key
+
+    return normalize_doi_key(doi)
 
 
 def _fetch_batch(dois: list[str]) -> dict[str, str]:
