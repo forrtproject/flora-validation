@@ -4,7 +4,7 @@ Saving, refreshing sources, preparing a snapshot, checking it and committing Git
 
 [Open interactive guide](../index.html#view=overview&node=schedule-updates)
 
-Code snapshot: 25 November 2026, `9cc088d`.
+Code snapshot: 24 November 2026, `3cc13da`.
 
 ## What goes in
 
@@ -41,9 +41,9 @@ Code snapshot: 25 November 2026, `9cc088d`.
 
 ## Find it in the code
 
-- [app.py:8052 — _start_scheduler](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/app.py#L8052) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/app.py)
-- [app.py:7805 — _retry_tiebreakers](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/app.py#L7805) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/app.py)
-- [entry_checks.py:58 — schedule constants](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/entry_checks.py#L58) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/entry_checks.py)
-- [.github/workflows/sync-sources.yml:3 — 03:00 UTC cron](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/.github/workflows/sync-sources.yml#L3) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/.github/workflows/sync-sources.yml)
-- [.github/workflows/daily-export.yml:3 — 04:00 UTC cron](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/.github/workflows/daily-export.yml#L3) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/.github/workflows/daily-export.yml)
-- [.github/workflows/publish-flora.yml:13 — publish triggers](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/.github/workflows/publish-flora.yml#L13) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/.github/workflows/publish-flora.yml)
+- [app.py:8019 — _start_scheduler](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/app.py#L8019) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/app.py)
+- [app.py:7772 — _retry_tiebreakers](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/app.py#L7772) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/app.py)
+- [entry_checks.py:58 — schedule constants](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/entry_checks.py#L58) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/entry_checks.py)
+- [.github/workflows/sync-sources.yml:3 — 03:00 UTC cron](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/.github/workflows/sync-sources.yml#L3) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/.github/workflows/sync-sources.yml)
+- [.github/workflows/daily-export.yml:3 — 04:00 UTC cron](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/.github/workflows/daily-export.yml#L3) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/.github/workflows/daily-export.yml)
+- [.github/workflows/publish-flora.yml:13 — publish triggers](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/.github/workflows/publish-flora.yml#L13) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/.github/workflows/publish-flora.yml)

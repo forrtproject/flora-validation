@@ -4,7 +4,7 @@ Records, with a required note, that FLoRA's value is right for one sheet edit, o
 
 [Open interactive guide](../index.html#view=admin&node=admin-sources--sheet-edits-keep-flora-value-undo)
 
-Code snapshot: 25 November 2026, `9cc088d`.
+Code snapshot: 24 November 2026, `3cc13da`.
 
 ## What goes in
 
@@ -24,6 +24,6 @@ Code snapshot: 25 November 2026, `9cc088d`.
 
 ## Find it in the code
 
-- [docs/app.js:15945 — keepSourceDrift](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/docs/app.js#L15945) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/docs/app.js)
-- [app.py:7591 — admin_sheet_drift_keep](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/app.py#L7591) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/app.py)
-- [sheet_drift_service.py:952 — keep](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/sheet_drift_service.py#L952) · [complete script](https://github.com/forrtproject/flora-validation/blob/9cc088db7f6736bc30bd37be748a15e995fbd230/sheet_drift_service.py)
+- [docs/app.js:15920 — keepSourceDrift](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/docs/app.js#L15920) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/docs/app.js)
+- [app.py:7558 — admin_sheet_drift_keep](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/app.py#L7558) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/app.py)
+- [sheet_drift_service.py:952 — keep](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/sheet_drift_service.py#L952) · [complete script](https://github.com/forrtproject/flora-validation/blob/3cc13dadec9b51c8e25d03a4b30827300f32ac16/sheet_drift_service.py)

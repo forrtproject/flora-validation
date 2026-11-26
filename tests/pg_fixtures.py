@@ -108,22 +108,27 @@ def local_database(monkeypatch):
     name = "flora_pipeline_test_" + uuid.uuid4().hex[:12]
     admin = psycopg2.connect(configured)
     admin.autocommit = True
-    with admin.cursor() as cur:
-        cur.execute(
-            sql.SQL("CREATE DATABASE {} TEMPLATE {}").format(
-                sql.Identifier(name), sql.Identifier(tpl_name)
-            )
-        )
-    dsn = make_dsn(configured, dbname=name)
-    monkeypatch.setenv("DATABASE_URL", dsn)
-    connection = psycopg2.connect(dsn)
+    created = False
+    connection = None
     try:
+        with admin.cursor() as cur:
+            cur.execute(
+                sql.SQL("CREATE DATABASE {} TEMPLATE {}").format(
+                    sql.Identifier(name), sql.Identifier(tpl_name)
+                )
+            )
+        created = True
+        dsn = make_dsn(configured, dbname=name)
+        monkeypatch.setenv("DATABASE_URL", dsn)
+        connection = psycopg2.connect(dsn)
         yield connection
     finally:
         flora_service.invalidate()
-        connection.close()
-        with admin.cursor() as cur:
-            cur.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
+        if connection is not None:
+            connection.close()
+        if created:
+            with admin.cursor() as cur:
+                cur.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(name)))
         admin.close()
 
 

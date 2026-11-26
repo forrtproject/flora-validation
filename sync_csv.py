@@ -226,9 +226,11 @@ def _baseline_from_history(
     the archive's own timestamp are tried in turn; only bytes whose sha256 equals
     the recorded digest are accepted, so the source need not be trusted.
     """
+    repo = _github_repo()
+    branch = _github_branch()
     params: dict = {
         "path": _CSV_FILE_PATH,
-        "sha": _GITHUB_BRANCH,
+        "sha": branch,
         "per_page": _BASELINE_HISTORY_COMMITS,
     }
     stamp = _ARCHIVE_TIMESTAMP.search(baseline_file or "")
@@ -240,7 +242,7 @@ def _baseline_from_history(
     if token:
         headers["Authorization"] = f"token {token}"
     response = requests.get(
-        f"https://api.github.com/repos/{_GITHUB_REPO}/commits",
+        f"https://api.github.com/repos/{repo}/commits",
         headers=headers,
         params=params,
         timeout=60,
@@ -256,7 +258,7 @@ def _baseline_from_history(
         if not isinstance(sha, str) or not sha:
             continue
         try:
-            content = _fetch_csv(_build_url(_GITHUB_REPO, sha, _CSV_FILE_PATH))
+            content = _fetch_csv(_build_url(repo, sha, _CSV_FILE_PATH))
         except Exception as exc:
             print(f"[sync_csv] baseline recovery: could not read {sha[:7]}: {exc}")
             continue
@@ -302,7 +304,7 @@ def _recover_baseline(
         print(f"[sync_csv] baseline recovery could not write {restored.name}: {exc}")
         return None
     print(
-        f"[sync_csv] baseline recovered from {_GITHUB_REPO}@{commit} "
+        f"[sync_csv] baseline recovered from {_github_repo()}@{commit} "
         f"(sha256={baseline_sha256}) → {restored.name}"
     )
     return restored

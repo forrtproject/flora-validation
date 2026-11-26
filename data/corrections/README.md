@@ -26,11 +26,11 @@ metadata; the four deleted files have no established date and use n.d. No author
 year is invented. Report DOI and SCORE paper alternatives remain unchanged.
 
 ```bash
-python3 scripts/apply_score_report_authors.py
+python3 scripts/archive/corrections/apply_score_report_authors.py
 # DATABASE_URL from the configured environment or ignored .env:
-python3 scripts/apply_score_report_authors.py --check-live
+python3 scripts/archive/corrections/apply_score_report_authors.py --check-live
 # Only when applying the reviewed batch:
-python3 scripts/apply_score_report_authors.py --apply --admin-id "$FLORA_ADMIN_ID"
+python3 scripts/archive/corrections/apply_score_report_authors.py --apply --admin-id "$FLORA_ADMIN_ID"
 ```
 
 Before application, export `FLORA_ADMIN_ID` in the calling shell with the verified
@@ -61,12 +61,12 @@ Three batches, applied in this order after
 `cache/approved_publication_corrections.csv` (journal versions of preprints, OSF
 projects, theses and working papers; `correct_publication_identifiers.py`):
 
-1. `fred_data_179_fields.csv` (`scripts/apply_field_corrections.py`): record-level
+1. `fred_data_179_fields.csv` (`scripts/archive/corrections/apply_field_corrections.py`): record-level
    field corrections. A missing thesis DOI, a wrong original link, OpenAlex records
    that stood in for a report link, and the identifiers of absorbed duplicates
    carried to the record that keeps the report. `set` refuses a record whose field
    no longer holds `before`; `append` adds an alternative identifier once.
-2. `fred_data_179_duplicates.csv` (`scripts/apply_duplicate_rulings.py`): records
+2. `fred_data_179_duplicates.csv` (`scripts/archive/corrections/apply_duplicate_rulings.py`): records
    that are another version of a report FLoRA already holds (a preprint, OSF
    project, Zenodo copy or thesis version beside the article). Each absorbed
    record's source row is ruled a duplicate of the survivor's, as Source Records

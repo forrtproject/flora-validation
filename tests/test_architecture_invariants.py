@@ -8,6 +8,7 @@ Guards against:
    release-flora-zenodo.yml workflow environment).
 """
 import ast
+import hashlib
 import json
 import os
 import re
@@ -184,20 +185,38 @@ def _load_app_stubbed():
     return app_mod.app
 
 
-def _flatten_routes(routes):
+def _flatten_routes(routes, prefix: str = ""):
     out = []
     for r in routes:
+        orig_router = getattr(r, "original_router", None)
+        if orig_router is not None:
+            sub_prefix = prefix + (getattr(r, "prefix", "") or "")
+            out.extend(_flatten_routes(orig_router.routes, prefix=sub_prefix))
+            continue
         sub = getattr(r, "routes", None)
         if sub and type(r).__name__ != "Mount":
-            out.extend(_flatten_routes(sub))
+            sub_prefix = prefix + (getattr(r, "path", "") or "")
+            out.extend(_flatten_routes(sub, prefix=sub_prefix))
         else:
+            raw_path = getattr(r, "path", None)
+            full_path = (prefix + raw_path) if (prefix and raw_path is not None) else raw_path
             out.append({
                 "type": type(r).__name__,
-                "path": getattr(r, "path", None),
+                "path": full_path,
                 "methods": sorted(getattr(r, "methods", []) or []),
                 "name": getattr(r, "name", None),
             })
     return out
+
+
+def _spec_hashes(mapping: dict) -> dict[str, str]:
+    """Deterministic SHA-256 digest per OpenAPI path or component schema."""
+    return {
+        key: hashlib.sha256(
+            json.dumps(val, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()[:16]
+        for key, val in sorted(mapping.items())
+    }
 
 
 def test_import_graph_analyzer_handles_class_bodies_submodules_and_pkg_init_relatives(tmp_path):
@@ -257,8 +276,8 @@ def test_fastapi_routes_and_openapi_match_snapshot():
     )
     assert len(routes) == expected["route_count"]
     assert routes == expected["routes"]
-    assert schema.get("paths", {}) == expected["openapi_paths_spec"]
-    assert schema.get("components", {}).get("schemas", {}) == expected["openapi_schemas_spec"]
+    assert _spec_hashes(schema.get("paths", {})) == expected["openapi_path_hashes"]
+    assert _spec_hashes(schema.get("components", {}).get("schemas", {})) == expected["openapi_schema_hashes"]
 
 
 def test_all_workflow_referenced_test_files_exist():
