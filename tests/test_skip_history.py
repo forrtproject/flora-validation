@@ -66,6 +66,7 @@ def test_failed_submission_needs_a_server_stamp_and_progresses_past_parked_items
     from pathlib import Path
 
     js = (Path(__file__).resolve().parent.parent / "docs" / "app.js").read_text(encoding="utf-8")
+    ownership_src = js[js.index("const _queueOwner ="):js.index("const _myFailed =")]
     fn_src = (
         "async function _processSubmitQueue()"
         + js.split("async function _processSubmitQueue()", 1)[1].split("function _celebratePoints", 1)[0]
@@ -76,14 +77,15 @@ const toasts = [];
 let stillQueuedDuringRelease = null;
 let _submitProcessing = false;
 const SUBMIT_MAX_ATTEMPTS = 3;
+const state = {{ coder: {{ coder_id: "v1" }} }};
 let _submitQueue = [
-  {{ key: "k1", paper: "Bad First", attempts: 0, blocked: false, payload: {{ submission_id: "s1", kind: "reject4xx" }} }},
-  {{ key: "k2", paper: "Stamped Second", attempts: 2, blocked: false, payload: {{ submission_id: "s2", kind: "rollback500" }} }},
-  {{ key: "k3", paper: "Good Third", attempts: 0, blocked: false, payload: {{ submission_id: "s3", kind: "ok" }} }},
+  {{ key: "k_other", owner_id: "v2", paper: "Other Validator", attempts: 0, blocked: false, payload: {{ submission_id: "s_other", kind: "ok" }} }},
+  {{ key: "k1", owner_id: "v1", paper: "Bad First", attempts: 0, blocked: false, payload: {{ submission_id: "s1", kind: "reject4xx" }} }},
+  {{ key: "k2", owner_id: "v1", paper: "Stamped Second", attempts: 2, blocked: false, payload: {{ submission_id: "s2", kind: "rollback500" }} }},
+  {{ key: "k3", owner_id: "v1", paper: "Good Third", attempts: 0, blocked: false, payload: {{ submission_id: "s3", kind: "ok" }} }},
 ];
 let _failedSubmits = [];
-const _isMyQueueItem = () => true;
-const _queueOwner = () => "v1";
+{ownership_src}
 const _newSubmissionId = () => "new-id";
 const _persistSubmits = () => {{}};
 const _persistFailed = () => {{}};
@@ -130,14 +132,15 @@ _processSubmitQueue().then(() => {{
 
     paths = [c["path"] for c in result["calls"]]
     assert "/skip" not in paths
-    # First item parked (blocked=true), second minted stamp from /judge and stayed queued until
-    # /submission-failures/release ran, third still submitted cleanly!
+    # Foreign-owned item k_other is NEVER sent and stays queued; k1 parked; k2 minted stamp &
+    # stayed queued until release; k3 submitted cleanly!
     judge_ids = [c["body"]["submission_id"] for c in result["calls"] if c["path"] == "/judge"]
     assert judge_ids == ["s1", "s2", "s3"]
     releases = [c["body"] for c in result["calls"] if c["path"] == "/submission-failures/release"]
     assert releases == [{"failure_stamp": "stamp-xyz"}]
     assert result["stillQueuedDuringRelease"] is True
-    assert [it["key"] for it in result["remaining"]] == ["k1"]
-    assert result["remaining"][0]["blocked"] is True
-    assert result["remaining"][0]["rejected"] is True
+    assert [it["key"] for it in result["remaining"]] == ["k_other", "k1"]
+    assert result["remaining"][0]["blocked"] is False
+    assert result["remaining"][1]["blocked"] is True
+    assert result["remaining"][1]["rejected"] is True
     assert len(result["failed"]) == 1 and result["failed"][0]["paper"] == "Stamped Second"

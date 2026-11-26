@@ -137,3 +137,109 @@ def test_openapi_enforces_server_side_identity_and_post_for_next_pairs(app_modul
         props = model.get("properties", {})
         assert "coder_id" not in props, model_name
     assert "code" not in schema["components"]["schemas"]["LoginRequest"]["properties"]
+
+
+def test_admin_password_reset_revokes_existing_session_cookies(app_module, monkeypatch):
+    """Redeeming an admin password-reset link must immediately invalidate live sessions."""
+    from contextlib import contextmanager
+    from fastapi.testclient import TestClient
+
+    import auth_links
+
+    live_sessions: dict[str, dict] = {}
+    reset_token = "reset-token-1234567890"
+    pending_links = {
+        auth_links.token_digest(reset_token): {
+            "subject_id": 7,
+            "purpose": "reset",
+            "email": "admin@example.org",
+        }
+    }
+    admins = {
+        7: {
+            "id": 7,
+            "handle": "alice",
+            "email": "admin@example.org",
+            "trusted": True,
+            "validator_id": None,
+            "created_at": None,
+        }
+    }
+
+    class _FakeCursor:
+        def __init__(self):
+            self._one = None
+            self._all = []
+            self.rowcount = 0
+
+        def execute(self, sql, params=None):
+            params = params or ()
+            s = " ".join(sql.split())
+            self._one = None
+            self._all = []
+            self.rowcount = 0
+            if s.startswith("INSERT INTO sessions"):
+                kind, principal_id, token_hash, *_ = params
+                live_sessions[token_hash] = {
+                    "session_id": len(live_sessions) + 1,
+                    "principal_kind": kind,
+                    "principal_id": principal_id,
+                    "expires_at": None,
+                    "revoked": False,
+                }
+                self.rowcount = 1
+            elif s.startswith("UPDATE sessions SET last_used_at = NOW()"):
+                row = live_sessions.get(params[0])
+                if row and not row["revoked"]:
+                    self._one = dict(row)
+                    self.rowcount = 1
+            elif s.startswith("UPDATE sessions SET revoked_at = NOW() WHERE principal_kind = %s"):
+                kind, principal_id = params
+                for row in live_sessions.values():
+                    if row["principal_kind"] == kind and row["principal_id"] == principal_id and not row["revoked"]:
+                        row["revoked"] = True
+                        self.rowcount += 1
+            elif "FROM admins WHERE id = %s" in s:
+                row = admins.get(params[0])
+                self._one = dict(row) if row else None
+            elif s.startswith("SELECT id, handle") and "FROM admins" in s:
+                self._all = [dict(r) for r in admins.values()]
+            elif s.startswith("UPDATE auth_links SET status = 'used'"):
+                link = pending_links.pop(params[0], None)
+                self._one = dict(link) if link else None
+                self.rowcount = 1 if link else 0
+            elif s.startswith("UPDATE admins SET password_hash = %s WHERE id = %s RETURNING handle"):
+                row = admins.get(params[1])
+                self._one = {"handle": row["handle"]} if row else None
+                self.rowcount = 1 if row else 0
+
+        def fetchone(self):
+            return self._one
+
+        def fetchall(self):
+            return list(self._all)
+
+    @contextmanager
+    def _fake_db():
+        yield _FakeCursor()
+
+    monkeypatch.setattr(app_module, "db", _fake_db)
+    monkeypatch.setattr(app_module, "_audit", lambda *a, **k: None)
+
+    with _fake_db() as cur:
+        cookie_token = sessions.create(cur, sessions.KIND_ADMIN, 7)
+
+    client = TestClient(app_module.app, cookies={sessions.COOKIE_NAME: cookie_token})
+    # Before reset, the existing session cookie authenticates normally.
+    assert client.get("/api/admin/admins").status_code == 200
+
+    # Reset the admin's password via the one-time auth link.
+    resp = client.post(
+        "/api/admin/auth-link/redeem",
+        json={"token": reset_token, "password": "A-Strong-New-Password-2026!"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["handle"] == "alice"
+
+    # The pre-reset session cookie must now be rejected with 401.
+    assert client.get("/api/admin/admins").status_code == 401
