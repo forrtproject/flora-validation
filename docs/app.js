@@ -537,7 +537,8 @@ function escapeHtml(s) {
   }[c]));
 }
 
-function showToast(numOrMsg, label) {
+let _toastTimer = null;
+function showToast(numOrMsg, label, ms = 1800) {
   const toast = $("#toast");
   if (label === undefined) {
     toast.textContent = numOrMsg;
@@ -545,7 +546,8 @@ function showToast(numOrMsg, label) {
     toast.innerHTML = `<span class="num">+${escapeHtml(String(numOrMsg))}</span> ${escapeHtml(String(label))}`;
   }
   toast.classList.add("show");
-  setTimeout(() => toast.classList.remove("show"), 1800);
+  clearTimeout(_toastTimer);   // an earlier toast's timer must not hide this one
+  _toastTimer = setTimeout(() => toast.classList.remove("show"), ms);
 }
 
 /* ---------- Auth ---------- */
@@ -1248,6 +1250,7 @@ async function enterGame() {
   _processSubmitQueue();       // resume sending them
   refreshAssignments();        // show the Assignments button if any are open
   startAssignmentsPoll();      // near-real-time updates while the app is open
+  startMessagesPoll();
   window.Adjudication?.initValidator?.();   // ⚖ Disagreements: Trusted and Senior only
   await refreshAll();
   fetchMessages(); // after refreshAll so resume dialog (if any) fires first
@@ -1280,7 +1283,7 @@ async function refreshAssignments() {
   if (!$("#assignments-modal")?.classList.contains("hidden")) _renderAssignmentsList();
 }
 
-// Near-real-time: poll every 30s while the app is open (matches the inbox poll),
+// Near-real-time: poll every 30s while the app is open (as startMessagesPoll does),
 // so an admin's assignment surfaces without a page reload. Paused while the tab
 // is hidden, and caught up when it is shown again.
 function startAssignmentsPoll() {
@@ -1375,6 +1378,23 @@ function startKeepWarm() {
    ============================================================ */
 
 let _inboxMessages = [];
+// The inbox belongs to one sign-in: `_inboxFor` is that state.coder object, and
+// any other one starts empty (_claimInbox).
+let _inboxFor = null;
+let _inboxLatestId = null;     // newest message from the team known here; null until asked
+let _inboxLoadSeq = 0;         // numbers the list requests…
+let _inboxLoadShown = 0;       // …so an older list never replaces a newer one
+// A message opened here may still be unread in an answer the server wrote before
+// its /read arrived. Lists are corrected from _readHere; an unread count asked for
+// while a /read was open, or before the inbox changed (_inboxStamp), is not shown.
+const _readHere = new Set();
+let _readsInFlight = 0;
+let _inboxStamp = 0;
+let _messagesPollTimer = null;
+// The list renderInbox last drew. The rows hold its messages, so a fresh answer that
+// says the same does not replace it: that would lose a click on a row, and the scroll.
+let _inboxDrawn = null;
+const _inboxShape = messages => JSON.stringify(messages.map(m => [m.id, m.is_read]));
 
 function initInbox() {
   $("#inbox-btn")?.addEventListener("click", openInbox);
@@ -1382,13 +1402,88 @@ function initInbox() {
   onBackdropClick($("#inbox-modal"), closeInbox);
 }
 
+function _claimInbox() {
+  if (_inboxFor === state.coder) return;
+  _inboxFor = state.coder;
+  _inboxMessages = [];
+  _inboxLatestId = null;
+  _readHere.clear();
+  _inboxStamp++;
+  _updateInboxBadge();
+}
+
+// Fetch the whole inbox and show it: the badge, and the list if that is what is on
+// screen. An open thread is left alone, since a reply may be half typed. Returns
+// false when the answer belongs to a sign-in that has ended; throws on failure.
+async function _loadInbox() {
+  if (!state.coder) return false;
+  _claimInbox();
+  const me = state.coder;
+  const seq = ++_inboxLoadSeq;
+  const resp = await api("/messages");
+  if (state.coder !== me) return false;
+  if (seq < _inboxLoadShown) return true;
+  _inboxLoadShown = seq;
+  const fresh = resp.messages || [];
+  _inboxLatestId = _inboxLatestId || 0;
+  for (const m of fresh) {
+    if (_readHere.has(m.id)) m.is_read = true;
+    if (m.direction !== "inbound") _inboxLatestId = Math.max(_inboxLatestId, m.id);
+  }
+  if (_inboxShape(fresh) !== _inboxShape(_inboxMessages)) _inboxMessages = fresh;
+  _inboxStamp++;
+  _updateInboxBadge();
+  const listOpen = !$("#inbox-modal")?.classList.contains("hidden")
+    && !$("#inbox-body .inbox-thread-view");
+  if (listOpen && _inboxDrawn !== _inboxMessages) renderInbox();
+  return true;
+}
+
+// One small request; the whole inbox is fetched only when a message arrived.
+async function pollMessages() {
+  if (!state.coder) return;
+  _claimInbox();
+  const me = state.coder;
+  const stamp = _inboxStamp;
+  const reading = _readsInFlight > 0;
+  let now;
+  try { now = await api("/messages/unread"); } catch (_) { return; }   // keep what is shown
+  if (state.coder !== me || !Number.isInteger(now?.unread)) return;
+  const latest = now.latest_id || 0;
+  const known = _inboxLatestId;
+  if (known !== null && latest > known) {
+    _inboxLatestId = latest;   // before the request, so an overlapping poll stays quiet
+    try {
+      if (!(await _loadInbox())) return;
+    } catch (_) {
+      // Forget it again, so that the next poll retries.
+      if (state.coder === me && _inboxLatestId === latest) _inboxLatestId = known;
+      return;
+    }
+    if (now.unread > 0) showToast("✉ New message from the review team.");   // not if read in another tab
+    return;
+  }
+  // Nothing known yet (fetchMessages has not answered, or failed): no news, only a start.
+  if (known === null) _inboxLatestId = latest;
+  if (!reading && stamp === _inboxStamp) _updateInboxBadge(now.unread);
+}
+
+function startMessagesPoll() {
+  if (API_MODE === "static") return;
+  _claimInbox();
+  clearInterval(_messagesPollTimer);
+  _messagesPollTimer = setInterval(() => {
+    if (!state.coder) return;
+    if (_pageHidden()) { _missedWhileHidden.add("messages"); return; }
+    pollMessages();
+  }, 30_000);
+}
+
 async function fetchMessages() {
   if (!state.coder) return;
   try {
-    const resp = await api("/messages");
-    _inboxMessages = resp.messages || [];
-    _updateInboxBadge();
-    const unread = _inboxMessages.filter(m => m.direction !== "inbound" && !m.is_read).length;
+    if (!(await _loadInbox())) return;
+    const unread = _inboxUnread();
     if (unread > 0) {
       const v = await showDialog({
         icon: "✉",
@@ -1404,10 +1499,11 @@ async function fetchMessages() {
   } catch {}
 }
 
-function _updateInboxBadge() {
+const _inboxUnread = () => _inboxMessages.filter(m => m.direction !== "inbound" && !m.is_read).length;
+
+function _updateInboxBadge(unread = _inboxUnread()) {
   const badge = $("#inbox-badge");
   if (!badge) return;
-  const unread = _inboxMessages.filter(m => m.direction !== "inbound" && !m.is_read).length;
   if (unread > 0) {
     badge.textContent = unread > 99 ? "99+" : String(unread);
     badge.classList.remove("hidden");
@@ -1416,38 +1512,30 @@ function _updateInboxBadge() {
   }
 }
 
-let _inboxPollTimer = null;
-
 function openInbox() {
   const modal = $("#inbox-modal");
   if (!modal) return;
-  clearInterval(_inboxPollTimer);
-  renderInbox();
+  // Already open on a thread (the sign-in pop-up came late): leave it alone.
+  if (!modal.classList.contains("hidden") && $("#inbox-body .inbox-thread-view")) return;
+  renderInbox();               // what is known, until the fresh list replaces it
   modal.classList.remove("hidden");
   document.body.style.overflow = "hidden";
-  // Poll for new messages every 30s while inbox is open and the tab is visible
-  _inboxPollTimer = setInterval(async () => {
-    if ($("#inbox-modal")?.classList.contains("hidden") || _pageHidden()) return;
-    try {
-      const r = await api("/messages");
-      const prev = _inboxMessages.length;
-      _inboxMessages = r.messages || [];
-      _updateInboxBadge();
-      // Only re-render list if we're on the list view (not inside a thread)
-      const body = $("#inbox-body");
-      if (body && !body.querySelector(".inbox-thread-view")) {
-        const hadMore = _inboxMessages.length > prev;
-        if (hadMore) renderInbox();
-      }
-    } catch (_) {}
-  }, 30000);
+  _loadInbox().catch(() => {});
 }
 
 function closeInbox() {
   $("#inbox-modal")?.classList.add("hidden");
   document.body.style.overflow = "";
-  clearInterval(_inboxPollTimer);
-  _inboxPollTimer = null;
+}
+
+function _markRead(m) {
+  m.is_read = true;
+  _readHere.add(m.id);
+  _readsInFlight++;
+  _inboxStamp++;
+  api(`/messages/${m.id}/read`, "POST")
+    .catch(() => _readHere.delete(m.id))   // the server still has it unread: let it say so
+    .finally(() => { _readsInFlight--; _inboxStamp++; });
 }
 
 function _buildConvMap() {
@@ -1477,6 +1565,7 @@ function _buildConvMap() {
 function renderInbox() {
   const body = $("#inbox-body");
   if (!body) return;
+  _inboxDrawn = _inboxMessages;
   if (_inboxMessages.length === 0) {
     body.innerHTML = `<p class="inbox-empty">No messages yet.</p>`;
     return;
@@ -1510,10 +1599,7 @@ function renderInbox() {
       const conv = convs[idx];
       // Mark this conversation's unread messages as read
       conv.messages.forEach(m => {
-        if (!m.is_read && m.direction !== "inbound") {
-          api(`/messages/${m.id}/read`, "POST").catch(() => {});
-          m.is_read = true;
-        }
+        if (!m.is_read && m.direction !== "inbound") _markRead(m);
       });
       conv.hasUnread = false;
       _updateInboxBadge();
@@ -1567,12 +1653,9 @@ function _renderInboxThread(body, conv, num) {
 
   // Back button — refresh messages then re-render list
   body.querySelector(".inbox-back-btn").addEventListener("click", async () => {
-    try {
-      const r = await api("/messages");
-      _inboxMessages = r.messages || [];
-      _updateInboxBadge();
-    } catch (_) {}
-    renderInbox();
+    const thread = body.querySelector(".inbox-thread-view");
+    try { await _loadInbox(); } catch (_) {}
+    if (thread.isConnected) renderInbox();   // unless the inbox was reopened meanwhile
   });
 
   // View judgement button — opens detail on top without closing inbox
@@ -2298,6 +2381,7 @@ function startMaintenanceSystem() {
 document.addEventListener("visibilitychange", () => {
   if (_pageHidden()) return;
   if (_missedWhileHidden.delete("assignments") && state.coder) refreshAssignments();
+  if (_missedWhileHidden.delete("messages")) pollMessages();
   if (_missedWhileHidden.delete("banner")) _pollAdminBanner();
 });
 
@@ -10005,6 +10089,7 @@ function renderAdminDetail(data) {
       btn.disabled = true;
       try {
         const resp = await adminApi(`/queue/${qId}/flag`, "POST", { reason });
+        if (resp.email_notice) showSentNotice(resp);   // only when a message was created
         btn.classList.toggle("flagged", resp.flagged);
         btn.title = resp.flagged ? "Unflag judgement" : "Flag judgement as problematic";
         // Bust cache so re-opening reflects new state
@@ -11719,6 +11804,20 @@ onBackdropClick($("#validator-flags-modal"), (e) => {
   document.body.style.overflow = "";
 });
 
+// After an admin message: whether the validator was emailed about it too. Stays up
+// longer than other toasts, because it is a sentence to read.
+function showSentNotice(resp) {
+  const text = resp.broadcast
+    ? `Message sent to ${resp.sent} validators in the app (no emails).`
+    : {
+        sent: "Message sent. The validator was emailed.",
+        no_email: "Message sent. No email on file, so they will only see it in the app.",
+        failed: "Message sent, but the email could not be delivered.",
+        off: "Message sent. Email is not set up on this server.",
+      }[resp.email_notice] || "Message sent.";
+  showToast(text, undefined, 5000);
+}
+
 async function openComposeDialog(validatorId, handle) {
   const rawHtml = `
     <p style="text-align:left;margin-bottom:0.75rem;font-size:0.88rem;color:var(--muted)">To: <strong>${escapeHtml(handle)}</strong></p>
@@ -11742,8 +11841,7 @@ async function openComposeDialog(validatorId, handle) {
   const body = ($("#compose-body")?.value || "").trim();
   if (!subject || !body) { await showAlert("Subject and message are both required."); return; }
   try {
-    await adminApi("/message", "POST", { validator_id: validatorId, subject, body });
-    showToast("Message sent.");
+    showSentNotice(await adminApi("/message", "POST", { validator_id: validatorId, subject, body }));
   } catch (e) {
     await showAlert("Failed to send: " + e.message);
   }
@@ -11791,6 +11889,10 @@ function _updateAdminMsgBadge(conversations) {
   }
 }
 
+const _msgEmail = (email) => email
+  ? `<span class="msg-email">${escapeHtml(email)}</span>`
+  : `<span class="msg-email msg-email-none">no email on file</span>`;
+
 function renderAdminConversations(conversations) {
   const list = $("#msg-convo-list");
   if (!list) return;
@@ -11813,6 +11915,7 @@ function renderAdminConversations(conversations) {
       </div>
       <div class="msg-convo-row-meta">
         <span class="msg-convo-validator">${escapeHtml(c.validator_handle)}</span>
+        ${_msgEmail(c.validator_email)}
         ${c.admin_name ? `<span class="msg-convo-admin-tag">via ${escapeHtml(c.admin_name)}</span>` : ""}
       </div>
       <div class="msg-convo-preview">${preview}</div>
@@ -11839,7 +11942,7 @@ async function openThread(threadId) {
   panel.innerHTML = '<p class="admin-loading">Loading…</p>';
   try {
     const data = await adminApi(`/thread/${threadId}?mark_read=1`);
-    renderConversationThread(data.messages, data.handle, data.subject, data.admin_name, threadId);
+    renderConversationThread(data.messages, data.handle, data.subject, data.admin_name, threadId, data.validator_email);
     const listData = await adminApi("/messages");
     renderAdminConversations(listData.conversations);
     _updateAdminMsgBadge(listData.conversations);
@@ -11848,7 +11951,7 @@ async function openThread(threadId) {
   }
 }
 
-function renderConversationThread(messages, handle, subject, adminName, threadId) {
+function renderConversationThread(messages, handle, subject, adminName, threadId, email) {
   const panel = $("#msg-thread-panel");
   if (!panel) return;
   const fmtFull = (iso) => new Date(iso).toLocaleString("en-GB", {
@@ -11860,6 +11963,7 @@ function renderConversationThread(messages, handle, subject, adminName, threadId
       <div class="msg-thread-subject">${escapeHtml(subject || "(no subject)")}</div>
       <div class="msg-thread-meta">
         <span class="msg-thread-validator">${escapeHtml(handle)}</span>
+        ${_msgEmail(email)}
         ${adminName ? `<span class="msg-thread-admin">· via ${escapeHtml(adminName)}</span>` : ""}
       </div>
     </div>
@@ -11912,6 +12016,7 @@ function renderConversationThread(messages, handle, subject, adminName, threadId
         <div class="msg-bubble-meta">${escapeHtml(_adminHandle || "Admin")} · ${fmtFull(res.sent_at)}</div>`;
       wrap.appendChild(bubble);
       wrap.scrollTop = wrap.scrollHeight;
+      showSentNotice(res);
       // Refresh conversation list so preview updates
       adminApi("/messages").then(d => {
         renderAdminConversations(d.conversations);
@@ -12317,7 +12422,7 @@ function openComposePanel() {
           ? { broadcast: true, subject, body }
           : { validator_id: _selectedValidator.id, subject, body };
         const resp = await adminApi("/message", "POST", payload);
-        showToast(isBroadcast ? `Message sent to ${resp.sent} validators.` : "Message sent.");
+        showSentNotice(resp);
         const listData = await adminApi("/messages");
         renderAdminConversations(listData.conversations);
         _updateAdminMsgBadge(listData.conversations);

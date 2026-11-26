@@ -52,6 +52,7 @@ from admin_auth import hash_password, verify_password
 from email_templates import (
     admin_invite_email,
     admin_reset_email,
+    new_message_email,
     validator_signin_notice_email,
 )
 from extractor_storage import resolve_data_dir
@@ -5538,6 +5539,7 @@ def admin_remove_extra_original(record_id: str, admin: dict = Depends(current_ad
 def admin_flag_queue(queue_id: str, req: FlagQueueRequest | None = None, admin: dict = Depends(current_admin)):
     admin_handle = admin["handle"]
     reason = req.reason.strip() if req and req.reason else ""
+    recipient = None   # set only when a message was created
     with db() as cur:
         cur.execute(
             "UPDATE validation_queue SET flagged = NOT flagged WHERE queue_id = %s RETURNING flagged, validator_id, record_id",
@@ -5571,9 +5573,39 @@ def admin_flag_queue(queue_id: str, req: FlagQueueRequest | None = None, admin: 
                     """,
                     (row["validator_id"], "Your judgement was flagged", body_text, admin_handle, queue_id),
                 )
+                cur.execute("SELECT handle, email FROM validators WHERE id = %s", (row["validator_id"],))
+                recipient = cur.fetchone()
         else:
             cur.execute("UPDATE validation_queue SET flag_reason = NULL WHERE queue_id = %s", (queue_id,))
-    return {"flagged": now_flagged}
+    notice = _notify_new_message(recipient["handle"], recipient["email"]) if recipient else None
+    return {"flagged": now_flagged, "email_notice": notice}
+
+
+def _notify_new_message(handle: str, email: str | None) -> str:
+    """Email a validator that a message is waiting in the app. Returns "sent",
+    "no_email" (none on file), "off" (no RESEND_API_KEY) or "failed".
+
+    Call it only after the `with db()` block that saved the message has closed:
+    the mail is then about a committed message, and no connection or row lock is
+    held during the HTTP call. A mail failure never becomes an error here, since
+    the message itself is saved and shows in the validator's inbox.
+    """
+    if not email:
+        return "no_email"
+    if not RESEND_API_KEY:
+        return "off"
+    try:
+        template = new_message_email(handle)
+        resend.api_key = RESEND_API_KEY
+        resend.Emails.send({
+            "from": EMAIL_FROM, "to": [email],
+            "subject": template["subject"], "html": template["html"],
+            "text": template["text"],
+        })
+        return "sent"
+    except Exception:
+        logger.exception("Could not email %s about a new message", handle)
+        return "failed"
 
 
 @app.get("/api/messages")
@@ -5595,6 +5627,24 @@ def get_validator_messages(validator: dict = Depends(current_validator)):
         )
         msgs = [dict(r) for r in cur.fetchall()]
     return {"messages": msgs}
+
+
+@app.get("/api/messages/unread")
+def get_unread_messages(validator: dict = Depends(current_validator)):
+    """What the open app polls every 30 seconds: one small row, because the
+    database bills egress. /api/messages is fetched only when latest_id grew."""
+    with db() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*) FILTER (WHERE is_read = FALSE) AS unread,
+                   MAX(id) AS latest_id
+            FROM validator_messages
+            WHERE validator_id = %s AND direction = 'outbound'
+            """,
+            (validator["coder_id"],),
+        )
+        row = cur.fetchone()
+    return {"unread": row["unread"], "latest_id": row["latest_id"]}
 
 
 @app.post("/api/messages/{msg_id}/read")
@@ -5670,6 +5720,7 @@ def list_admin_conversations(admin: dict = Depends(current_admin)):
                 r.id                               AS thread_id,
                 r.validator_id,
                 v.handle                           AS validator_handle,
+                v.email                            AS validator_email,
                 COALESCE(u.title_r, r.subject)     AS subject,
                 r.sent_by                          AS admin_name,
                 r.queue_id,
@@ -5727,6 +5778,7 @@ def get_admin_thread(thread_id: int, mark_read: bool = False, admin: dict = Depe
         cur.execute(
             """
             SELECT v.handle,
+                   v.email AS validator_email,
                    COALESCE(u.title_r, vm.subject) AS subject,
                    vm.sent_by AS admin_name
             FROM validator_messages vm
@@ -5741,6 +5793,7 @@ def get_admin_thread(thread_id: int, mark_read: bool = False, admin: dict = Depe
     return {
         "messages": msgs,
         "handle":     meta["handle"]     if meta else "",
+        "validator_email": meta["validator_email"] if meta else None,
         "subject":    meta["subject"]    if meta else "",
         "admin_name": meta["admin_name"] if meta else "",
     }
@@ -5754,7 +5807,12 @@ def admin_reply_to_thread(thread_id: int, req: AdminReplyRequest, admin: dict = 
         raise HTTPException(400, "Reply cannot be empty")
     with db() as cur:
         cur.execute(
-            "SELECT validator_id, subject, queue_id FROM validator_messages WHERE id = %s AND parent_id IS NULL",
+            """
+            SELECT m.validator_id, m.subject, m.queue_id, v.handle, v.email
+            FROM validator_messages m
+            JOIN validators v ON v.id = m.validator_id
+            WHERE m.id = %s AND m.parent_id IS NULL
+            """,
             (thread_id,),
         )
         root = cur.fetchone()
@@ -5772,7 +5830,8 @@ def admin_reply_to_thread(thread_id: int, req: AdminReplyRequest, admin: dict = 
              thread_id, root["queue_id"], admin_handle),
         )
         row = cur.fetchone()
-    return {"ok": True, "id": row["id"], "sent_at": row["sent_at"].isoformat()}
+    return {"ok": True, "id": row["id"], "sent_at": row["sent_at"].isoformat(),
+            "email_notice": _notify_new_message(root["handle"], root["email"])}
 
 
 @app.get("/api/admin/messages/{validator_id}")
@@ -5821,12 +5880,13 @@ def admin_send_message(req: AdminMessageRequest, admin: dict = Depends(current_a
                 """,
                 [(vid, subject, body_text, admin_handle) for vid in ids],
             )
-            return {"ok": True, "broadcast": True, "sent": len(ids)}
+            return {"ok": True, "broadcast": True, "sent": len(ids), "email_notice": None}
 
         if req.validator_id is None:
             raise HTTPException(400, "validator_id is required")
-        cur.execute("SELECT id FROM validators WHERE id = %s", (req.validator_id,))
-        if not cur.fetchone():
+        cur.execute("SELECT handle, email FROM validators WHERE id = %s", (req.validator_id,))
+        recipient = cur.fetchone()
+        if not recipient:
             raise HTTPException(404, "Validator not found")
         cur.execute(
             """
@@ -5835,7 +5895,8 @@ def admin_send_message(req: AdminMessageRequest, admin: dict = Depends(current_a
             """,
             (req.validator_id, subject, body_text, admin_handle),
         )
-    return {"ok": True}
+    return {"ok": True,
+            "email_notice": _notify_new_message(recipient["handle"], recipient["email"])}
 
 
 @app.post("/api/admin/entries/{record_id}/approve")

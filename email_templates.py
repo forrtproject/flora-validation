@@ -3,6 +3,7 @@ email_templates.py — HTML email templates for FLoRA Validation.
 Uses inline styles for maximum email client compatibility.
 Matches the game's visual identity: warm cream, burnt-orange accent, academic tone.
 """
+from html import escape
 
 BG        = "#f4efe6"   # warm cream — main background
 BG_ALT    = "#ebe4d2"   # slightly darker cream — panels
@@ -314,6 +315,38 @@ def validator_signin_notice_email(handle: str, when: str, is_new: bool) -> dict:
             f"Someone signed in to the account {handle} at {when}.\n\n"
             f"If that was you, nothing to do: {APP_URL}\n\n"
             f"If that was NOT you, tell the FLoRA team as soon as you can.\n\n"
+            f"\u2014 The FLoRA Validation team"
+        ),
+    }
+
+
+def new_message_email(handle: str) -> dict:
+    """Notice that a message from the review team is waiting in the app.
+
+    It carries neither the message's subject nor its body: those stay behind the
+    sign-in. The sender is a no-reply address, so the copy says where to reply.
+    """
+    body = "".join([
+        f'<p style="margin:0 0 20px;font-size:16px;font-weight:600;color:{INK};">'
+        f"You have a new message, {escape(handle)}.</p>",
+        _paragraph(
+            "The FLoRA review team sent you a message. Sign in to FLoRA Validation "
+            "and open your inbox to read it and reply."
+        ),
+        _link_button(APP_URL, "Read the message"),
+        f'<p style="margin:24px 0 0;font-size:13px;color:{MUTED};line-height:1.7;">'
+        f"Please reply in the app, not to this email.</p>",
+        _divider(),
+        _sign_off(),
+    ])
+    return {
+        "subject": "New message from the FLoRA review team",
+        "html": _base_layout(body),
+        "text": (
+            f"You have a new message, {handle}.\n\n"
+            f"The FLoRA review team sent you a message. Sign in to FLoRA Validation "
+            f"and open your inbox to read it and reply:\n{APP_URL}\n\n"
+            f"Please reply in the app, not to this email.\n\n"
             f"\u2014 The FLoRA Validation team"
         ),
     }

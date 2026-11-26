@@ -2469,6 +2469,8 @@ body:has(.banner:not(.hidden)) .leaderboard { top: calc(var(--header-h) + 2.6rem
   align-items: baseline;
 }
 .toast.show { transform: translateX(-50%) translateY(0); }
+/* The site banner shares the top edge (z-index 9999) and would hide the toast. */
+body.has-maint-banner #toast.show { z-index: 10000; }
 .toast .num {
   font-family: 'JetBrains Mono', monospace;
   font-style: normal;
@@ -4909,8 +4911,9 @@ body.has-maint-banner #admin-screen {
 
 .msg-convo-row-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0 0.35rem;
   margin-bottom: 0.15rem;
 }
 
@@ -4919,6 +4922,15 @@ body.has-maint-banner #admin-screen {
   font-weight: 600;
   color: var(--ink-soft);
 }
+
+/* A long address goes to its own line and breaks there, rather than widening the row. */
+.msg-email {
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.msg-email-none { color: var(--muted); font-style: italic; }
 
 .msg-convo-admin-tag {
   font-size: 0.72rem;
@@ -4969,8 +4981,9 @@ body.has-maint-banner #admin-screen {
 
 .msg-thread-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0 0.3rem;
 }
 
 .msg-thread-validator {

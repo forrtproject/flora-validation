@@ -102,10 +102,6 @@
 .adj-bar-btn:hover { background: var(--ink); color: var(--bg); }
 .adj-bar-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* Toasts sit under the site's overlays (z-index 100 against 200): lift them
-   while one of these windows is open, so "+15 points" is seen. */
-body:has(.adj-judge-overlay:not(.hidden)) #toast.show { z-index: 9600; }
-
 .adj-judge-overlay { padding: 1.5rem 1rem; }
 .adj-judge-panel { max-width: 1100px; }
 .adj-judge-panel .faq-panel-header { gap: 1rem; }

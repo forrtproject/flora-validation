@@ -149,7 +149,7 @@ transform_sources.py -> output/flora_entry_sheets.csv
 | In-process schedules | APScheduler |
 | Repository schedules | GitHub Actions |
 | Data processing | pandas, PyYAML, Python standard library |
-| Email | Resend, used only for validator handle reminders |
+| Email | Resend: validator sign-in notices, new-message notices and handle reminders, admin invitation and reset links |
 | Tests | pytest with mocked cursors, HTTP, and Gemini calls |
 
 There is no frontend build step. `docs/index.html` loads `docs/style.css` and
@@ -172,7 +172,7 @@ no ORM in this repository.
 - A PostgreSQL database. Supabase is the documented hosted option, but ordinary
   PostgreSQL-compatible providers work because the app uses `psycopg2` directly.
 - A Gemini API key for consensus calls.
-- Optional Resend credentials for handle-reminder email.
+- Optional Resend credentials for email.
 
 ### Windows PowerShell
 
@@ -230,8 +230,8 @@ Use a disposable database for development unless you intend those actions to run
 | `ALLOWED_ORIGINS` | No | empty | Additional comma-separated origins allowed to make state-changing requests |
 | `SESSION_COOKIE_INSECURE` | No | unset | Development only: drop `Secure` from the session cookie for plain-HTTP localhost |
 | `ADMIN_PASSWORD` | Required when `admins` is empty | none — startup fails without it | Seeds the first trusted administrator. Stored as an Argon2id hash; there is no fallback password |
-| `RESEND_API_KEY` | No | empty | Enables `/api/forgot-handle`; without it the endpoint returns 503 |
-| `EMAIL_FROM` | No | `Flora Validator <noreply@forrt.org>` | Sender for handle-reminder email |
+| `RESEND_API_KEY` | No | empty | Enables email. Without it `/api/forgot-handle` returns 503, an admin link is shown to the sender instead, and no sign-in or new-message notice goes out |
+| `EMAIL_FROM` | No | `Flora Validator <noreply@forrt.org>` | Sender for every email |
 | `GITHUB_TOKEN` | No for a public source repository | empty | Authorization header for nightly extractor CSV download |
 | `GITHUB_REPO` | No | `forrtproject/flora-extractor` | Extractor source repository |
 | `GITHUB_BRANCH` | No | `main` | Extractor source branch |
@@ -1404,8 +1404,17 @@ admin overrides. Validator statistics include timing only for submissions betwee
 
 Admins can flag/unflag an individual queue judgement. Supplying a flag reason
 creates a linked validator message. Messaging supports per-validator messages,
-broadcasts, threads, read state, and inbox badges. A public site banner is stored
-as a single row and returned without admin authentication at `/api/banner`.
+broadcasts, threads, read state, and inbox badges. The Messages tab shows each
+validator's email address. A public site banner is stored as a single row and
+returned without admin authentication at `/api/banner`.
+
+A validator is emailed about a single message, an admin reply, and a flag with a
+reason, but not about a broadcast. The email goes out after the message is saved,
+says only that one is waiting, and never contains its text. The response reports
+it as `email_notice`: `sent`, `no_email` (none on file), `off` (no
+`RESEND_API_KEY`), or `failed`. The message is saved in every case. While the app
+is open, the validator's browser polls `/api/messages/unread` every 30 seconds and
+fetches the messages only when a new one has arrived.
 
 ## Observatory disagreements (adjudication)
 
@@ -1748,6 +1757,7 @@ the caller. State-changing requests are refused unless they originate from
 | POST | `/api/forgot-handle` | Rate-limited, non-enumerating Resend reminder |
 | GET | `/api/banner` | Public active site banner |
 | GET | `/api/messages` | Validator message list |
+| GET | `/api/messages/unread` | Unread count and newest team message id; polled by the open app |
 | POST | `/api/messages/{msg_id}/read` | Mark owned message read |
 | POST | `/api/messages/{parent_id}/reply` | Reply to an owned outbound root message |
 | GET | `/api/disagreements/summary` | Whether this validator judges the Observatory disagreements, and how many are left (Trusted and Senior; never fails) |
@@ -1789,7 +1799,7 @@ the caller. State-changing requests are refused unless they originate from
 | POST | `/api/admin/entries/{record_id}/extra-originals/suggestions/{suggestion_id}/dismiss` | Dismiss a validator's suggested original |
 | POST | `/api/admin/entries/{record_id}/extra-original/remove` | Remove an added original; it leaves FLoRA at the next sync and its suggestions reopen |
 | POST | `/api/admin/entries/{record_id}/resolve` | Correct and accept/reject a record; a confirmed `merge_into_record_id` performs an explicit audited duplicate merge; optional `extra_originals` (up to 10) are created with it in one transaction, on the survivor after a merge (see VALIDATION_DB_SCHEMA.md, Other originals) |
-| POST | `/api/admin/queue/{queue_id}/flag` | Toggle judgement flag and optionally message validator |
+| POST | `/api/admin/queue/{queue_id}/flag` | Toggle judgement flag and optionally message and email the validator |
 | GET | `/api/admin/maintenance/runs` | At least seven days of run summaries, plus the retire settings |
 | GET | `/api/admin/maintenance/runs/{run_id}` | Complete retained log for one run |
 | POST | `/api/admin/maintenance/run` | Queue the full routine (`full`) or the sync (`sync`) or report (`find`) alone |
@@ -1817,9 +1827,9 @@ All answer 503 while the feature is switched off or not set up.
 | --- | --- | --- |
 | GET | `/api/admin/messages` | Thread-level conversation list |
 | GET | `/api/admin/thread/{thread_id}` | Load/optionally mark one thread read |
-| POST | `/api/admin/thread/{thread_id}/reply` | Admin thread reply |
+| POST | `/api/admin/thread/{thread_id}/reply` | Admin thread reply; emails the validator |
 | GET | `/api/admin/messages/{validator_id}` | Full validator conversation (legacy view) |
-| POST | `/api/admin/message` | Individual or broadcast message |
+| POST | `/api/admin/message` | Individual message, emailed as a notice, or broadcast, not emailed |
 
 ### Source Records admin routes
 
@@ -2165,7 +2175,7 @@ against a database you have not backed up.
 | `consensus_engine.py` | Two-human/LLM decision tree and final-row insertion |
 | `llm_validator.py` | Gemini prompt, response schema, coercion, retry, error object |
 | `source_records_service.py` | Source Records queries, review edits, versions, duplicate decisions |
-| `email_templates.py` | Inline HTML/plaintext handle-reminder email |
+| `email_templates.py` | Inline HTML/plaintext templates of every email |
 
 ### Synchronization, export, and maintenance
 

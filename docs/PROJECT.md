@@ -478,7 +478,11 @@ retry still work.
 ### Messages
 
 A two-way inbox between validators and admins, threaded (`validator_messages`, 72 rows
-live). Admins get a badge count; validators get an inbox icon.
+live). Admins get a badge count; validators get an inbox icon, whose badge follows new
+messages every 30 seconds while the app is open (`GET /api/messages/unread`). A single
+message, an admin reply, and a flag with a reason also email the validator that a message
+is waiting, without its text. Broadcasts are not emailed. The admin is told whether the
+email went out.
 
 ---
 
@@ -1079,7 +1083,8 @@ GET  /api/my-assignments
 GET  /api/assignment/{record_id}
 POST /api/assignment-judge             double points
 GET  /api/stats · /api/leaderboard · /api/banner · /api/health
-GET  /api/messages · POST /api/messages/{id}/read · /api/messages/{id}/reply
+GET  /api/messages · /api/messages/unread
+POST /api/messages/{id}/read · /api/messages/{id}/reply
 POST /api/forgot-handle
 ```
 

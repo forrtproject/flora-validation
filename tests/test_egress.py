@@ -502,7 +502,7 @@ def _js_function(signature):
 
 @pytest.mark.parametrize("signature", [
     "function startAssignmentsPoll()",
-    "function openInbox()",
+    "function startMessagesPoll()",
     "function startMaintenanceSystem()",
     "async function fetchMaintenanceRuns()",
     "async function fetchSourceSync()",
@@ -522,10 +522,12 @@ def test_a_tab_shown_again_catches_up_exactly_the_pollers_that_missed_a_tick():
     """No 30-second grace period: a tick that fell into a short absence is still
     caught up, and an absence no tick fell into costs nothing."""
     assert '_missedWhileHidden.add("assignments")' in _js_function("function startAssignmentsPoll()")
+    assert '_missedWhileHidden.add("messages")' in _js_function("function startMessagesPoll()")
     assert '_missedWhileHidden.add("banner")' in _js_function("function startMaintenanceSystem()")
     start = APP_JS.index('document.addEventListener("visibilitychange", () => {')
     listener = APP_JS[start:APP_JS.index("\n});\n", start)]
     assert '_missedWhileHidden.delete("assignments")' in listener and "refreshAssignments()" in listener
+    assert '_missedWhileHidden.delete("messages")' in listener and "pollMessages()" in listener
     assert '_missedWhileHidden.delete("banner")' in listener and "_pollAdminBanner()" in listener
     assert "_hiddenSince" not in APP_JS
 
