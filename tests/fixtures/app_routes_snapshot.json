@@ -1,5 +1,5 @@
 {
-  "route_count": 145,
+  "route_count": 146,
   "routes": [
     {
       "type": "Route",
@@ -484,6 +484,14 @@
         "GET"
       ],
       "name": "get_validator_messages"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/messages/unread",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_unread_messages"
     },
     {
       "type": "APIRoute",
@@ -1263,6 +1271,7 @@
     "/api/logout": "9ccf58a45e1d184b",
     "/api/me": "d5b4ed66af9f7bf2",
     "/api/messages": "85c6c5408835516a",
+    "/api/messages/unread": "5d34b04d4a70056e",
     "/api/messages/{msg_id}/read": "d52be622b09a0acb",
     "/api/messages/{parent_id}/reply": "540d66ebad0b36f5",
     "/api/my-assignments": "87d01216b08cc60a",
