@@ -1,12 +1,12 @@
 # FLoRA preparation report
 
-Generated: 2026-11-25T03:05:16+00:00
+Generated: 2026-11-26T03:31:21+00:00
 
 Status: **needs review**
 
 Mode: built from the database
 
-Rows: 2,918
+Rows: 2,970
 
 ## Stages
 
@@ -14,36 +14,47 @@ Rows: 2,918
 - structural validation: needs review — 21 problems and 11 possible problems
 - network validation: needs review
 - release files and history: passed
-- store dataset: passed — 2,918 rows in flora_data
+- store dataset: passed — 2,970 rows in flora_data
 - write output files: passed
 
 ## Warnings
 
-- 43 records left out for a missing title; see flora_export_log.csv.
-- 63 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.
-- 22 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.
+- 54 records left out for a missing title; see flora_export_log.csv.
+- 65 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.
+- 25 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.
 - Structural validation found 21 problems and 11 possible problems.
-- Network validation needs review: 20 problems and 69 possible problems. Original work types unavailable for 2 DOI(s); previous review decisions retained. This screening is advisory..
+- Network validation needs review: 19 problems and 71 possible problems. Original work types unavailable for 5 DOI(s); previous review decisions retained. This screening is advisory..
 
 ## Stored dataset
 
-- 2,918 rows stored in `flora_data`, which Download full CSV and the public API serve.
+- 2,970 rows stored in `flora_data`, which Download full CSV and the public API serve.
 
 ## Diagnostic files
 
-- flora_export_log.csv: 43 records left out for a missing title.
-- dup_outcome_conflicts.csv: 63 merged records whose duplicates gave different outcomes.
-- preprint_dedup_candidates.csv: 22 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates).
+- flora_export_log.csv: 54 records left out for a missing title.
+- dup_outcome_conflicts.csv: 65 merged records whose duplicates gave different outcomes.
+- preprint_dedup_candidates.csv: 25 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates).
 
 The JSON report lists the affected records.
 
 ## FLoRA structural validation
 
-_Generated: 2026-11-25 03:08:49 UTC | Dataset: 2,918 rows_
+_Generated: 2026-11-26 03:36:46 UTC | Dataset: 2,970 rows_
 
 Each item names the FLoRA record by its FLoRA ID and `doi_o | doi_r` (or `url_r`), says what is wrong and, after the dash, gives the value.
 
 ### Problems (21)
+
+**Duplicate records** (6 findings):
+
+_Rows the build would have made one record: the same type, doi_o, doi_r and url_r, or the same DOIs with one url_r between them._
+
+- REPL-000933, REPL-001497 (`10.1007/s10683-015-9437-0 | 10.1007/s40881-022-00118-y`): 2 rows the build would make one record — `replication|10.1007/s10683-015-9437-0|10.1007/s40881-022-00118-y|`
+- FRED-000199, FRED-000200 (`10.1037/0096-3445.135.4.641 | 10.1037/pspa0000214`): 2 rows the build would make one record — `replication|10.1037/0096-3445.135.4.641|10.1037/pspa0000214|`
+- VAL-000207, VAL-000591 (`10.1162/jocn.2008.21154 | 10.3389/fnhum.2021.680885`): 2 rows the build would make one record — `replication|10.1162/jocn.2008.21154|10.3389/fnhum.2021.680885|`
+- VAL-000260, VAL-000345 (`10.1073/pnas.0804388105 | 10.1016/j.infbeh.2019.03.005`): 2 rows the build would make one record — `replication|10.1073/pnas.0804388105|10.1016/j.infbeh.2019.03.005|doi.org/10.31234/osf.io/fs2ez`
+- VAL-000285, VAL-000607 (`10.1027/1618-3169/a000414 | 10.1027/1618-3169/a000486`): 2 rows the build would make one record — `replication|10.1027/1618-3169/a000414|10.1027/1618-3169/a000486|osf.io/tj4sh`
+- VAL-000293, VAL-000549 (`10.1111/puar.12401 | 10.1080/14719037.2016.1195009`): 2 rows the build would make one record — `replication|10.1111/puar.12401|10.1080/14719037.2016.1195009|`
 
 <details><summary><b>Missing required fields</b> (15 findings)</summary>
 
@@ -67,22 +78,11 @@ _title_o, title_r, doi_r or url_r, and an identifier for the original: doi_o, a 
 
 </details>
 
-**Title says retracted** (6 findings):
-
-_title_o or title_r marks the paper retracted or withdrawn._
-
-- REPL-000405 (`10.1126/science.abh4340 | 10.1126/sciadv.adl0999`): title_o marks the paper retracted or withdrawn — `RETRACTED: In vivo direct imaging of neuronal activity at high temporospatial resolution`
-- REPL-000626 (`10.1016/j.cell.2013.04.008 | 10.2337/db13-1435`): title_o marks the paper retracted or withdrawn — `RETRACTED: Betatrophin: A Hormone that Controls Pancreatic β Cell Proliferation`
-- REPL-001349 (`10.1073/pnas.1209746109 | 10.1073/pnas.1911695117`): title_o marks the paper retracted or withdrawn — `RETRACTED: Signing at the beginning makes ethics salient and decreases dishonest self-reports in comparison to signing …`
-- REPRO-000331 (`10.1257/aer.20210369 | 10.1257/aer.20221432`): title_o marks the paper retracted or withdrawn — `RETRACTED BY THE AUTHORS: Dividend Taxes and the Allocation of Capital`
-- FRED-000891 (`10.1086/661890 | 10.15626/mp.2020.2538`): title_o marks the paper retracted or withdrawn — `Retracted: Super Size Me: Product Size as a Signal of Status`
-- FRED-000420 (`10.1177/1948550611410890 | 10.1037/xge0000067`): title_o marks the paper retracted or withdrawn — `RETRACTED: Sense Creative! The Impact of Global and Local Vision, Hearing, Touching, Tasting and Smelling on Creative a…`
-
 ### Possible problems (11)
 
 _Heuristics: a person decides whether each one is a problem._
 
-**Replication year before original year** (4 findings):
+**Replication year before original year** (5 findings):
 
 _Could be swapped entries or a data-entry error. Not reported when the original has a preprint or other earlier version._
 
@@ -90,6 +90,7 @@ _Could be swapped entries or a data-entry error. Not reported when the original 
 - REPL-000476 (`10.1002/bin.1836 | 10.1002/jaba.659`): year_r is before year_o (2021) — `2019`
 - REPL-001689 (`10.1177/1042258719892987 | 10.1111/apps.12247`): year_r is before year_o (2021) — `2020`
 - VAL-000528 (`10.1007/s10389-020-01338-4 | 10.3389/fpubh.2021.620264`): year_r is before year_o (2022) — `2021`
+- VAL-000557 (`10.1080/21670811.2021.1969974 | 10.1037/tmb0000083`): year_r is before year_o (2023) — `2022`
 
 **Same paper pair as replication and reproduction** (5 findings):
 
@@ -107,12 +108,6 @@ _One row's doi_o and doi_r are another row's doi_r and doi_o._
 
 - REPL-000476, REPL-000529: the paper pair is entered both ways round: one row's original is the other's replication — `10.1002/bin.1836 | 10.1002/jaba.659`
 
-**Title looks like a file or project name** (1 finding):
-
-_title_r is a file or project name, or a generic name such as 'Analysis'._
-
-- REPL-000453 (`10.1037/a0023937 | https://osf.io/up8xs`): title_r is a generic name, not a title — `Analysis`
-
 ---
 
 **Checks passed:**
@@ -123,33 +118,30 @@ _title_r is a file or project name, or a generic name such as 'Analysis'._
 - Type values valid
 - Source values valid
 - Year ranges reasonable
-- No duplicate records
 - DOI format valid
+- Identifier lists use one separator
 - DOI mapped to conflicting references
+- No title_r marks a retraction, no title_o is a notice of one
 - No 'NA'/'N/A' strings
+- No mis-decoded characters
+- References name their authors
+- Report links lead to the report
+- Replication titles look like titles
 
 
 ## FLoRA network validation
 
-_Generated: 2026-11-25 03:08:49 UTC | Dataset: 2,918 rows_
+_Generated: 2026-11-26 03:36:46 UTC | Dataset: 2,970 rows_
 
-**Original work types unavailable for 2 DOI(s); previous review decisions retained. This screening is advisory..**
+**Original work types unavailable for 5 DOI(s); previous review decisions retained. This screening is advisory..**
 
 Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says what is wrong and, after the dash, gives the DOI or link.
 
-### Problems (20)
+### Problems (19)
 
-**Retracted papers** (7 findings):
+**Retracted papers:** none
 
-- REPL-000405 (`10.1126/science.abh4340 | 10.1126/sciadv.adl0999`): doi_o is retracted (Retraction Watch) — `10.1126/science.abh4340`
-- REPL-000473 (`10.1001/jamapsychiatry.2014.763 | 10.1037/pas0000664`): doi_o is retracted (Retraction Watch) — `10.1001/jamapsychiatry.2014.763`
-- REPL-000626 (`10.1016/j.cell.2013.04.008 | 10.2337/db13-1435`): doi_o is retracted (Retraction Watch) — `10.1016/j.cell.2013.04.008`
-- REPL-001349 (`10.1073/pnas.1209746109 | 10.1073/pnas.1911695117`): doi_o is retracted (Retraction Watch) — `10.1073/pnas.1209746109`
-- REPRO-000331 (`10.1257/aer.20210369 | 10.1257/aer.20221432`): doi_o is retracted (Retraction Watch) — `10.1257/aer.20210369`
-- FRED-000891 (`10.1086/661890 | 10.15626/mp.2020.2538`): doi_o is retracted (Retraction Watch) — `10.1086/661890`
-- FRED-000420 (`10.1177/1948550611410890 | 10.1037/xge0000067`): doi_o is retracted (Retraction Watch) — `10.1177/1948550611410890`
-
-**DOIs not registered at doi.org** (7 findings):
+**DOIs not registered at doi.org** (8 findings):
 
 - VAL-000005 (`10.1016/j.im.2015.06.009 | 10.17705/1atrr.00068`): doi_r is not registered at doi.org — `10.17705/1atrr.00068`
 - VAL-000107 (`10.25300/misq/2018/13853 | 10.17705/1atrr.00067`): doi_r is not registered at doi.org — `10.17705/1atrr.00067`
@@ -158,8 +150,9 @@ Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says wha
 - VAL-000185 (`10.1080/07421222.2017.1394083 | 10.17705/1atrr.00055`): doi_r is not registered at doi.org — `10.17705/1atrr.00055`
 - VAL-000215 (`10.2307/249754 | 10.17705/1atrr.00064`): doi_r is not registered at doi.org — `10.17705/1atrr.00064`
 - VAL-000427 (`10.1287/isre.1040.0032 | 10.17705/1atrr.00061`): doi_r is not registered at doi.org — `10.17705/1atrr.00061`
+- VAL-000617 (`10.1023/a:1009986821907 | 10.17705/1atrr.00045`): doi_r is not registered at doi.org — `10.17705/1atrr.00045`
 
-**Dead links** (6 findings):
+<details><summary><b>Dead links</b> (11 findings)</summary>
 
 - REPL-000073 (`10.3102/0002831211419649 | 10.1037/a0036307`): oa_url_r is dead (connection refused; an open-access link from enrichment, not from the source record) — `http://orbilu.uni.lu/handle/10993/18672`
 - REPL-001099 (`10.1037/edu0000115 | 10.1037/edu0000433`): oa_url_r is dead (connection refused; an open-access link from enrichment, not from the source record) — `http://orbilu.uni.lu/handle/10993/45413`
@@ -167,8 +160,15 @@ Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says wha
 - FRED-000772 (`10.1177/0956797611434748 | 10.1016/j.cognition.2014.09.003`): oa_url_r is dead (connection refused; an open-access link from enrichment, not from the source record) — `http://orbilu.uni.lu/handle/10993/17967`
 - VAL-000534 (`10.2147/ott.s136006 | 10.1016/j.tranon.2017.09.008`): oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `https://www.dovepress.com/getfile.php?fileID=35846`
 - VAL-000535 (`10.2147/ott.s129042 | 10.1016/j.tranon.2017.09.008`): oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `https://www.dovepress.com/getfile.php?fileID=34813`
+- VAL-000571 (`10.2147/ppa.s30763 | 10.2147/ppa.s96880`): url_r is dead (HTTP 404) — `https://www.dovepress.com/getfile.php?fileID=29102`
+- VAL-000571 (`10.2147/ppa.s30763 | 10.2147/ppa.s96880`): oa_url_r is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `https://www.dovepress.com/getfile.php?fileID=29102`
+- VAL-000571 (`10.2147/ppa.s30763 | 10.2147/ppa.s96880`): oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record) — `https://www.dovepress.com/getfile.php?fileID=13146`
+- VAL-000595 (`10.1016/j.cub.2012.05.054 | 10.1016/j.brainres.2018.06.031`): url_o is dead (the DOI is not registered at doi.org) — `https://doi.org/10.1523/jneurosci.1915-12.2012`
+- VAL-000620 (`10.1163/9789004270848_008 | 10.5117/tvt2017.1.jans`): url_o is dead (the DOI is not registered at doi.org) — `https://doi.org/10.5117/tvt2015.1.graa`
 
-### Possible problems (69)
+</details>
+
+### Possible problems (71)
 
 _Heuristics: a person decides whether each one is a problem._
 
@@ -186,7 +186,7 @@ _Heuristics: a person decides whether each one is a problem._
 
 **Original target needs review (higher priority):** none
 
-<details><summary><b>Original publication format needs review</b> (63 findings)</summary>
+<details><summary><b>Original publication format needs review</b> (65 findings)</summary>
 
 - REPL-000015 (`10.1037/bar0000276 | 10.1002/bin.70067`): Publication-format review. OpenAlex type: letter. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1037/bar0000276 — `10.1037/bar0000276`
 - REPL-000019 (`10.1145/3328778.3366948 | 10.1080/08993408.2022.2071543`): Publication-format review. OpenAlex type: conference-paper. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1145/3328778.3366948 — `10.1145/3328778.3366948`
@@ -216,7 +216,7 @@ _Heuristics: a person decides whether each one is a problem._
 - REPL-000917 (`10.1145/985692.985709 | 10.1093/hcr/hqab019`): Publication-format review. OpenAlex type: conference-paper. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1145/985692.985709 — `10.1145/985692.985709`
 - REPL-000922 (`10.1145/3379597.3387482 | 10.1109/icpc52881.2021.00052`): Publication-format review. OpenAlex type: conference-paper. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1145/3379597.3387482 — `10.1145/3379597.3387482`
 - REPL-000966 (`10.4324/9780203865972-24 | 10.1098/rsos.250290`): Publication-format review. OpenAlex type: book-chapter. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.4324/9780203865972-24 — `10.4324/9780203865972-24`
-- REPL-000977 (`10.1109/vis54172.2023.00016 | 10.31219/osf.io/v6sfg_v1`): Publication-format review. OpenAlex type: conference-paper. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1109/vis54172.2023.00016 — `10.1109/vis54172.2023.00016`
+- REPL-000977 (`10.1109/vis54172.2023.00016 | 10.1109/vis60296.2025.00070`): Publication-format review. OpenAlex type: conference-paper. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1109/vis54172.2023.00016 — `10.1109/vis54172.2023.00016`
 - REPL-001019 (`10.18653/v1/2020.findings-emnlp.139 | 10.1109/iwsc55060.2022.00015`): Publication-format review. OpenAlex type: conference-paper. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.18653/v1/2020.findings-emnlp.139 — `10.18653/v1/2020.findings-emnlp.139`
 - REPL-001038 (`10.2307/3512141 | 10.1111/j.1468-5906.2009.01499.x`): Publication-format review. OpenAlex type: book-review. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.2307/3512141 — `10.2307/3512141`
 - REPL-001071 (`10.4159/9780674369542 | 10.1017/ssh.2017.27`): Publication-format review. OpenAlex type: book. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.4159/9780674369542 — `10.4159/9780674369542`
@@ -251,19 +251,24 @@ _Heuristics: a person decides whether each one is a problem._
 - VAL-000450 (`10.21437/interspeech.2005-275 | 10.31274/psllt.17573`): Publication-format review. OpenAlex type: conference-paper. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.21437/interspeech.2005-275 — `10.21437/interspeech.2005-275`
 - VAL-000455 (`10.1161/circresaha.117.310628 | 10.7554/elife.91498`): Publication-format review. OpenAlex type: review. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1161/circresaha.117.310628 — `10.1161/circresaha.117.310628`
 - VAL-000459 (`10.1038/ng.2397 | 10.1038/s41598-017-07404-4`): Publication-format review. OpenAlex type: review. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1038/ng.2397 — `10.1038/ng.2397`
+- VAL-000545 (`10.1016/j.ejpoleco.2003.10.001 | 10.1177/1091142114568659`): Publication-format review. OpenAlex type: review. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1016/j.ejpoleco.2003.10.001 — `10.1016/j.ejpoleco.2003.10.001`
+- VAL-000620 (`10.1163/9789004270848_008 | 10.5117/tvt2017.1.jans`): Publication-format review. OpenAlex type: book-chapter. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1163/9789004270848_008 — `10.1163/9789004270848_008`
 
 </details>
 
-<details><summary><b>Could not check</b> (2 original work types, 7 links)</summary>
+<details><summary><b>Could not check</b> (5 original work types, 6 links)</summary>
 
-_Not findings: no answer could be had for these 9, and they are checked again on the next run._
+_Not findings: no answer could be had for these 11, and they are checked again on the next run._
 
-**Original work types (advisory)** (2):
+**Original work types (advisory)** (5):
 
 - REPL-000806, doi_o: Original work type unavailable or stale; previous review retained — `10.1026/0949-3946.48.2.94`
+- REPRO-000132, doi_o: Original work type unavailable or stale; previous review retained — `10.1093/gerona/glaa163`
+- REPRO-000125, doi_o: Original work type unavailable or stale; previous review retained — `10.1371/journal.pmed.1003244`
+- REPRO-000142, doi_o: Original work type unavailable or stale; previous review retained — `10.3390/jcm9103350`
 - REPL-000025, doi_o: Original work type unavailable or stale; previous review retained — `10.6129/cjp.2003.4501.07`
 
-**Links** (7):
+**Links** (6):
 
 - REPL-001176, oa_url_r: timed out — `https://cdr.lib.unc.edu/downloads/7w62fg56x`
 - REPL-001436, oa_url_o: timed out — `http://hdl.handle.net/2328/35450`
@@ -271,21 +276,20 @@ _Not findings: no answer could be had for these 9, and they are checked again on
 - REPL-001417, url_r: redirect loop — `https://www.proquest.com/docview/221001969?pq-origsite=gscholar&fromopenview=true&sourcetype=Scholarly%20Journals`
 - REPL-001618, url_o: redirect loop — `https://www.proquest.com/docview/1470800730`
 - FRED-000798, oa_url_o: ConnectionResetError: \[Errno 104\] Connection reset by peer — `http://ira.lib.polyu.edu.hk/bitstream/10397/97105/1/Huang_Influence_Product_Anthropomorphism.pdf`
-- VAL-000518, url_r: HTTP 429 — `https://www.biorxiv.org/content/biorxiv/early/2020/10/28/2020.10.27.355032.full.pdf`
 
 </details>
 
 
 **Network validation status: needs review**
 
-- Original work types (advisory): 2,609 distinct; 2,607 cached, 2,609 checked (2 could not be checked), 0 deferred.
-- DOIs: 4,897 distinct; 4,827 cached, 70 checked, 0 deferred.
-- Links: 3,470 distinct; 3,397 cached, 73 checked (7 could not be checked), 0 deferred.
-- Originals without a DOI: 31 distinct; 29 cached, 2 checked, 0 deferred.
+- Original work types (advisory): 2,660 distinct; 2,655 cached, 2,660 checked (5 could not be checked), 0 deferred.
+- DOIs: 5,002 distinct; 4,912 cached, 90 checked, 0 deferred.
+- Links: 3,501 distinct; 3,428 cached, 73 checked (6 could not be checked), 0 deferred.
+- Originals without a DOI: 31 distinct; 31 cached, 0 checked, 0 deferred.
 
 
 ## Release files
 
-- flora.csv: 2,918 rows, SHA-256 `3116d178761e1a3a51398f04b8bda45e2ecf64250a744343f9ad4569e1b3e21f`.
+- flora.csv: 2,970 rows, SHA-256 `1b1f2040bb6214bbed01d9ba952e32e0edddf40cf07049947fc92d35d727c815`.
 - Also written: the release manifest and notes, and today's counts in flora_history.csv and flora_dataset_summary.md.
 - Publication: The repository copy (`output/` on GitHub) is committed by two workflows, each when flora.csv changed: the nightly job, with its own run's files, and Publish FLoRA, with the stored dataset. Website and local command-line runs commit nothing. Nothing is uploaded to OSF.

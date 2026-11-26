@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-25T03:05:16+00:00",
+  "generated_at": "2026-11-26T03:31:21+00:00",
   "mode": "database_pipeline",
   "status": "needs_attention",
-  "rows": 2918,
+  "rows": 2970,
   "stages": [
     {
       "name": "build flora.csv and check IDs",
@@ -25,7 +25,7 @@
     {
       "name": "store dataset",
       "status": "passed",
-      "detail": "2,918 rows in flora_data"
+      "detail": "2,970 rows in flora_data"
     },
     {
       "name": "write output files",
@@ -33,11 +33,11 @@
     }
   ],
   "warnings": [
-    "43 records left out for a missing title; see flora_export_log.csv.",
-    "63 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.",
-    "22 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.",
+    "54 records left out for a missing title; see flora_export_log.csv.",
+    "65 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.",
+    "25 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.",
     "Structural validation found 21 problems and 11 possible problems.",
-    "Network validation needs review: 20 problems and 69 possible problems. Original work types unavailable for 2 DOI(s); previous review decisions retained. This screening is advisory.."
+    "Network validation needs review: 19 problems and 71 possible problems. Original work types unavailable for 5 DOI(s); previous review decisions retained. This screening is advisory.."
   ],
   "errors": [],
   "warning_count": 5,
@@ -45,7 +45,7 @@
   "diagnostics": {
     "flora_export_log.csv": {
       "description": "records left out for a missing title",
-      "rows": 43,
+      "rows": 54,
       "records": [
         {
           "reason": "missing title_o",
@@ -126,6 +126,26 @@
           "doi_r": "10.20381/ruor-28430",
           "url_r": "",
           "apa_ref_r": "C · 2022 · University of Ottawa - Library"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000569",
+          "source": "validated",
+          "doi_o": "10.1111/j.1468-0297.2009.02267.x",
+          "apa_ref_o": "Shang, J., & Croson, R. (2009). A Field Experiment in Charitable Contribution: The Impact of Social Information on the Voluntary Provision of Public Goods. The Economic Journal, 119(540), 1422–1439. https://doi.org/10.1111/j.1468-0297.2009.02267.x",
+          "doi_r": "10.1108/s0193-230620150000018002?utm_campaign=repec&amp;wt.mc_id=repec",
+          "url_r": "https://share.google/LYi9xaBydwRNrQWuR",
+          "apa_ref_r": "Murphy · 2015 · RePEc: Research Papers in Economics"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000596",
+          "source": "validated",
+          "doi_o": "10.1212/wnl.56.2.263",
+          "apa_ref_o": "Allen, R. P., Barker, P. B., Wehrl, F., Song, H. K., & Earley, C. J. (2001). MRI measurement of brain iron in patients with restless legs syndrome. Neurology, 56(2), 263–265. https://doi.org/10.1212/wnl.56.2.263",
+          "doi_r": "10.2147/nss.s12187477",
+          "url_r": "https://www.tandfonline.com/doi/full/10.2147/NSS.S12187477#d1e633",
+          "apa_ref_r": "Knake · 2009 · Nature and Science of Sleep"
         },
         {
           "reason": "missing title_r",
@@ -476,12 +496,102 @@
           "doi_r": "",
           "url_r": "https://doaj.org/article/14145d3d1be84c49a18b95fc1f6158ac",
           "apa_ref_r": "AnsVercammen · 2019 · Judgment and Decision Making"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000543",
+          "source": "validated",
+          "doi_o": "10.1521/soco.2017.35.1.66",
+          "apa_ref_o": "Monroe, A. E., Ainsworth, S. E., Vohs, K. D., & Baumeister, R. F. (2017). Fearing the Future? Future-Oriented Thought Produces Aversion to Risky Investments, Trust, and Immorality. Social Cognition, 35(1), 66–78. https://doi.org/10.1521/soco.2017.35.1.66",
+          "doi_r": "",
+          "url_r": "http://hdl.handle.net/20.500.11811/8612",
+          "apa_ref_r": "Quinten · 2020 · bonndoc (University of Bonn)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000559",
+          "source": "validated",
+          "doi_o": "10.1080/02701367.2005.10599260",
+          "apa_ref_o": "Chiviacowsky, S., & Wulf, G. (2005). Self-Controlled Feedback Is Effective if It Is Based on the Learner’s Performance. Research Quarterly for Exercise and Sport, 76(1), 42–48. https://doi.org/10.1080/02701367.2005.10599260",
+          "doi_r": "",
+          "url_r": "https://www.scapps.org/jems/index.php/1/article/view/780",
+          "apa_ref_r": "Carter · 2014 · Journal of Exercise, Movement, and Sport"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000572",
+          "source": "validated",
+          "doi_o": "10.1002/acp.727",
+          "apa_ref_o": "Klein, K., & Boals, A. (2001). The relationship of life event stress and working memory capacity. Applied Cognitive Psychology, 15(5), 565–579. Portico. https://doi.org/10.1002/acp.727",
+          "doi_r": "",
+          "url_r": "http://api.osf.io/v2/nodes/shxb6/",
+          "apa_ref_r": "Meier · 2019 · OSF Preprints (OSF Preprints)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000574",
+          "source": "validated",
+          "doi_o": "10.1016/j.cognition.2012.05.003",
+          "apa_ref_o": "Mahajan, N., & Wynn, K. (2012). Origins of “Us” versus “Them”: Prelinguistic infants prefer similar others. Cognition, 124(2), 227–233. https://doi.org/10.1016/j.cognition.2012.05.003",
+          "doi_r": "",
+          "url_r": "https://scholarlycommons.pacific.edu/purcc/2017/events/67",
+          "apa_ref_r": "Clarissa · 2017 · Scholarly Commons (University of the Pacific)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000580",
+          "source": "validated",
+          "doi_o": "10.1002/bdm.492",
+          "apa_ref_o": "Kogut, T., & Ritov, I. (2005). The “identified victim” effect: an identified group, or just a single individual? Journal of Behavioral Decision Making, 18(3), 157–167. https://doi.org/10.1002/bdm.492",
+          "doi_r": "",
+          "url_r": "http://api.osf.io/v2/nodes/9qcpj/",
+          "apa_ref_r": "Majumder · 2022 · OSF Preprints (OSF Preprints)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000589",
+          "source": "validated",
+          "doi_o": "10.1016/j.jpsychires.2013.05.003",
+          "apa_ref_o": "Engineer, N., Darwin, L., Nishigandh, D., Ngianga-Bakwin, K., Smith, S. C., & Grammatopoulos, D. K. (2013). Association of glucocorticoid and type 1 corticotropin-releasing hormone receptors gene variants and risk for depression during pregnancy and post-partum. Journal of Psychiatric Research, 47(9), 1166–1173. https://doi.org/10.1016/j.jpsychires.2013.05.003",
+          "doi_r": "",
+          "url_r": "http://www.scopus.com/inward/record.url?scp=84903792055&partnerID=8YFLogxK",
+          "apa_ref_r": "Evie · 2014 · Bristol Research (University of Bristol)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000592",
+          "source": "validated",
+          "doi_o": "10.1093/schbul/sbs118",
+          "apa_ref_o": "Haijma, S. V., Van Haren, N., Cahn, W., Koolschijn, P. C. M. P., Hulshoff Pol, H. E., & Kahn, R. S. (2012). Brain Volumes in Schizophrenia: A Meta-Analysis in Over 18 000 Subjects. Schizophrenia Bulletin, 39(5), 1129–1138. https://doi.org/10.1093/schbul/sbs118",
+          "doi_r": "",
+          "url_r": "https://repo.qst.go.jp/records/48211",
+          "apa_ref_r": "N · 2016 · Institutional Repositories DataBase (IRDB)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000593",
+          "source": "validated",
+          "doi_o": "10.1038/mp.2015.63",
+          "apa_ref_o": ", van Erp, T. G. M., Hibar, D. P., Rasmussen, J. M., Glahn, D. C., Pearlson, G. D., Andreassen, O. A., Agartz, I., Westlye, L. T., Haukvik, U. K., Dale, A. M., Melle, I., Hartberg, C. B., Gruber, O., Kraemer, B., Zilles, D., Donohoe, G., Kelly, S., McDonald, C., et al. (2015). Subcortical brain volume abnormalities in 2028 individuals with schizophrenia and 2540 healthy controls via the ENIGMA consortium. Molecular Psychiatry, 21(4), 547–553. https://doi.org/10.1038/mp.2015.63",
+          "doi_r": "",
+          "url_r": "https://repo.qst.go.jp/records/48211",
+          "apa_ref_r": "N · 2016 · Institutional Repositories DataBase (IRDB)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000594",
+          "source": "validated",
+          "doi_o": "10.1177/002224298204600109",
+          "apa_ref_o": "Gorn, G. J. (1982). The Effects of Music in Advertising on Choice Behavior: A Classical Conditioning Approach. Journal of Marketing, 46(1), 94–101. https://doi.org/10.1177/002224298204600109",
+          "doi_r": "",
+          "url_r": "http://hdl.handle.net/1871/50108",
+          "apa_ref_r": "Vermeulen · 2014 · Digital Academic REpository of VU University Amsterdam (Vrije Universiteit Amsterdam)"
         }
       ]
     },
     "dup_outcome_conflicts.csv": {
       "description": "merged records whose duplicates gave different outcomes",
-      "rows": 63,
+      "rows": 65,
       "records": [
         {
           "doi_o": "10.1037/0022-3514.86.5.680",
@@ -624,7 +734,7 @@
           "sources": "fred_replication_success"
         },
         {
-          "doi_o": "10.1002/(sici)1099-0771(199806)11:2%3c107::aid-bdm292%3e3.0.co;2-y",
+          "doi_o": "10.1002/(sici)1099-0771(199806)11:2<107::aid-bdm292>3.0.co;2-y",
           "doi_r": "10.1177/2515245918810225",
           "type": "replication",
           "outcomes": "failed | successful",
@@ -914,6 +1024,16 @@
           "sources": "replications | validated"
         },
         {
+          "doi_o": "10.1002/ab.21544",
+          "doi_r": "10.1002/ab.22027",
+          "type": "replication",
+          "outcomes": "mixed | successful",
+          "resolved_to": "mixed",
+          "resolved_by": "website record",
+          "url_r": "https://doi.org/10.1002/ab.22027",
+          "sources": "replications | validated"
+        },
+        {
           "doi_o": "10.1016/j.jfineco.2004.06.007",
           "doi_r": "10.1561/104.00000072",
           "type": "replication",
@@ -971,6 +1091,16 @@
           "resolved_to": "mixed",
           "resolved_by": "website record",
           "url_r": "",
+          "sources": "replications | validated"
+        },
+        {
+          "doi_o": "10.3758/bf03202642",
+          "doi_r": "10.3758/s13421-020-01073-x",
+          "type": "replication",
+          "outcomes": "failed | mixed",
+          "resolved_to": "mixed",
+          "resolved_by": "website record",
+          "url_r": "https://doi.org/10.3758/s13421-020-01073-x",
           "sources": "replications | validated"
         },
         {
@@ -1117,7 +1247,7 @@
     },
     "preprint_dedup_candidates.csv": {
       "description": "preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates)",
-      "rows": 22,
+      "rows": 25,
       "records": [
         {
           "side": "replication",
@@ -1146,6 +1276,34 @@
           "url_2": "",
           "doi_remove": "10.31234/osf.io/gzy26",
           "doi_keep": "10.1098/rsos.210190"
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.17605/osf.io/82bwv",
+          "doi_2": "10.17605/osf.io/hsntd",
+          "applied_action": "needs_review",
+          "resolution": "review: both are preprints or repository records",
+          "title_1": "Replication of Hajcak & Foti  (2008, PS, Study 1)",
+          "title_2": "Replication of Hajcak &amp; Foti (2008, PS, Study 1)",
+          "title_sim": "0.913",
+          "first_author_1": "lewis",
+          "first_author_2": "lewis",
+          "year_1": "2023",
+          "year_2": "2015",
+          "is_preprint_1": "False",
+          "is_preprint_2": "False",
+          "group_key": "doi_o: 10.1111/j.1467-9280.2008.02053.x",
+          "doi_o_group": "10.1111/j.1467-9280.2008.02053.x",
+          "source_display_id_1": "FRED-000603",
+          "type_1": "replication",
+          "outcome_1": "failed",
+          "url_1": "https://osf.io/82bwv",
+          "source_display_id_2": "VAL-000544",
+          "type_2": "replication",
+          "outcome_2": "failed",
+          "url_2": "",
+          "doi_remove": "",
+          "doi_keep": ""
         },
         {
           "side": "replication",
@@ -1227,34 +1385,6 @@
           "source_display_id_2": "REPL-001208",
           "type_2": "replication",
           "outcome_2": "failed",
-          "url_2": "",
-          "doi_remove": "",
-          "doi_keep": ""
-        },
-        {
-          "side": "replication",
-          "doi_1": "10.26686/wgtn.17143838",
-          "doi_2": "10.26686/wgtn.17143838.v1",
-          "applied_action": "needs_review",
-          "resolution": "review: neither is a preprint or repository record",
-          "title_1": "The effects of different learning conditions on the development of collocational knowledge in a second language",
-          "title_2": "The effects of different learning conditions on the development of collocational knowledge in a second language",
-          "title_sim": "1.0",
-          "first_author_1": "toomer",
-          "first_author_2": "toomer",
-          "year_1": "2019",
-          "year_2": "2019",
-          "is_preprint_1": "False",
-          "is_preprint_2": "False",
-          "group_key": "doi_o: 10.1111/j.1467-9922.2012.00730.x",
-          "doi_o_group": "10.1111/j.1467-9922.2012.00730.x",
-          "source_display_id_1": "VAL-000366",
-          "type_1": "replication",
-          "outcome_1": "successful",
-          "url_1": "",
-          "source_display_id_2": "VAL-000401",
-          "type_2": "replication",
-          "outcome_2": "successful",
           "url_2": "",
           "doi_remove": "",
           "doi_keep": ""
@@ -1485,6 +1615,34 @@
         },
         {
           "side": "replication",
+          "doi_1": "10.31235/osf.io/zugae",
+          "doi_2": "10.1080/13811118.2022.2083535",
+          "applied_action": "auto_keep_2",
+          "resolution": "auto: drop doi_1",
+          "title_1": "Associations between firearm and suicide rates: a replication of Kleck (2021)",
+          "title_2": "Associations Between Firearm and Suicide Rates: A Replication of Kleck (2021)",
+          "title_sim": "1.0",
+          "first_author_1": "lane",
+          "first_author_2": "lane",
+          "year_1": "2021",
+          "year_2": "2023",
+          "is_preprint_1": "True",
+          "is_preprint_2": "False",
+          "group_key": "doi_o: 10.1080/13811118.2021.1922110",
+          "doi_o_group": "10.1080/13811118.2021.1922110",
+          "source_display_id_1": "VAL-000032",
+          "type_1": "replication",
+          "outcome_1": "failed",
+          "url_1": "",
+          "source_display_id_2": "VAL-000615",
+          "type_2": "replication",
+          "outcome_2": "failed",
+          "url_2": "",
+          "doi_remove": "10.31235/osf.io/zugae",
+          "doi_keep": "10.1080/13811118.2022.2083535"
+        },
+        {
+          "side": "replication",
           "doi_1": "10.31234/osf.io/3fvyn",
           "doi_2": "10.1525/collabra.68054",
           "applied_action": "auto_keep_2",
@@ -1541,31 +1699,115 @@
         },
         {
           "side": "replication",
-          "doi_1": "10.14279/depositonce-21697",
-          "doi_2": "10.1007/s40881-022-00118-y",
+          "doi_1": "10.20378/irb-49996",
+          "doi_2": "10.3389/fnhum.2021.680885",
           "applied_action": "needs_review",
           "resolution": "review: neither is a preprint or repository record",
-          "title_1": "Intertemporal consumption and debt aversion: a replication and extension",
-          "title_2": "Intertemporal consumption and debt aversion: a replication and extension",
+          "title_1": "Intermodal Priming of Cognitive Conflict? : A Failed Replication of Mager et al. (2009)",
+          "title_2": "Intermodal Priming of Cognitive Conflict? A Failed Replication of Mager et al. (2009)",
           "title_sim": "1.0",
-          "first_author_1": "ahrens",
-          "first_author_2": "ahrens",
-          "year_1": "2022",
-          "year_2": "2022",
+          "first_author_1": "wiswede",
+          "first_author_2": "wiswede",
+          "year_1": "2021",
+          "year_2": "2021",
           "is_preprint_1": "False",
           "is_preprint_2": "False",
-          "group_key": "doi_o: 10.1007/s10683-015-9437-0",
-          "doi_o_group": "10.1007/s10683-015-9437-0",
-          "source_display_id_1": "VAL-000463",
+          "group_key": "doi_o: 10.1162/jocn.2008.21154",
+          "doi_o_group": "10.1162/jocn.2008.21154",
+          "source_display_id_1": "VAL-000207",
           "type_1": "replication",
-          "outcome_1": "successful",
-          "url_1": "https://depositonce.tu-berlin.de/handle/11303/22885",
-          "source_display_id_2": "REPL-000933",
+          "outcome_1": "failed",
+          "url_1": "",
+          "source_display_id_2": "VAL-000591",
           "type_2": "replication",
-          "outcome_2": "successful",
+          "outcome_2": "failed",
           "url_2": "",
           "doi_remove": "",
           "doi_keep": ""
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.7287/peerj.preprints.3352v1",
+          "doi_2": "10.7287/peerj.preprints.3352",
+          "applied_action": "needs_review",
+          "resolution": "review: neither is a preprint or repository record",
+          "title_1": "Resounding failure to replicate links between developmental language disorder and cerebral lateralisation",
+          "title_2": "Resounding failure to replicate links between developmental language disorder and cerebral lateralisation",
+          "title_sim": "1.0",
+          "first_author_1": "wilson",
+          "first_author_2": "wilson",
+          "year_1": "2017",
+          "year_2": "2017",
+          "is_preprint_1": "False",
+          "is_preprint_2": "False",
+          "group_key": "doi_o: 10.1093/brain/awn266",
+          "doi_o_group": "10.1093/brain/awn266",
+          "source_display_id_1": "VAL-000346",
+          "type_1": "replication",
+          "outcome_1": "failed",
+          "url_1": "",
+          "source_display_id_2": "VAL-000563",
+          "type_2": "replication",
+          "outcome_2": "failed",
+          "url_2": "",
+          "doi_remove": "",
+          "doi_keep": ""
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.7717/peerj.4217",
+          "doi_2": "10.7287/peerj.preprints.3352",
+          "applied_action": "needs_review",
+          "resolution": "review: neither is a preprint or repository record",
+          "title_1": "Resounding failure to replicate links between developmental language disorder and cerebral lateralisation",
+          "title_2": "Resounding failure to replicate links between developmental language disorder and cerebral lateralisation",
+          "title_sim": "1.0",
+          "first_author_1": "wilson",
+          "first_author_2": "wilson",
+          "year_1": "2018",
+          "year_2": "2017",
+          "is_preprint_1": "False",
+          "is_preprint_2": "False",
+          "group_key": "doi_o: 10.1002/dev.20062",
+          "doi_o_group": "10.1002/dev.20062",
+          "source_display_id_1": "VAL-000446",
+          "type_1": "replication",
+          "outcome_1": "failed",
+          "url_1": "",
+          "source_display_id_2": "VAL-000562",
+          "type_2": "replication",
+          "outcome_2": "failed",
+          "url_2": "",
+          "doi_remove": "",
+          "doi_keep": ""
+        },
+        {
+          "side": "replication",
+          "doi_1": "10.1016/j.cortex.2020.04.011",
+          "doi_2": "10.1101/2020.01.16.899021",
+          "applied_action": "auto_keep_1",
+          "resolution": "auto: drop doi_2",
+          "title_1": "Religious belief and cognitive conflict sensitivity: A preregistered fMRI study",
+          "title_2": "Religious Belief and Cognitive Conflict Sensitivity: A Preregistered fMRI Study",
+          "title_sim": "1.0",
+          "first_author_1": "hoogeveen",
+          "first_author_2": "hoogeveen",
+          "year_1": "2020",
+          "year_2": "2020",
+          "is_preprint_1": "False",
+          "is_preprint_2": "True",
+          "group_key": "doi_o: 10.1111/j.1467-9280.2009.02305.x",
+          "doi_o_group": "10.1111/j.1467-9280.2009.02305.x",
+          "source_display_id_1": "VAL-000560",
+          "type_1": "replication",
+          "outcome_1": "failed",
+          "url_1": "",
+          "source_display_id_2": "VAL-000590",
+          "type_2": "replication",
+          "outcome_2": "failed",
+          "url_2": "https://doi.org/10.1016/j.cortex.2020.04.011",
+          "doi_remove": "10.1101/2020.01.16.899021",
+          "doi_keep": "10.1016/j.cortex.2020.04.011"
         },
         {
           "side": "original",
@@ -1625,19 +1867,19 @@
         },
         {
           "side": "original",
-          "doi_1": "10.2139/ssrn.946239",
-          "doi_2": "10.1037/0096-3445.135.4.641",
-          "applied_action": "auto_keep_2",
-          "resolution": "auto: drop doi_1",
-          "title_1": "Seeing the Forest When Entry is Unlikely: Probability and the Mental Representation of Events",
-          "title_2": "Seeing the forest when entry is unlikely: Probability and the mental representation of events.",
+          "doi_1": "10.1037/0096-3445.135.4.641",
+          "doi_2": "10.2139/ssrn.946239",
+          "applied_action": "auto_keep_1",
+          "resolution": "auto: drop doi_2",
+          "title_1": "Seeing the forest when entry is unlikely: Probability and the mental representation of events.",
+          "title_2": "Seeing the Forest When Entry is Unlikely: Probability and the Mental Representation of Events",
           "title_sim": "1.0",
           "first_author_1": "wakslak",
           "first_author_2": "wakslak",
           "year_1": "2006",
           "year_2": "2006",
-          "is_preprint_1": "True",
-          "is_preprint_2": "False",
+          "is_preprint_1": "False",
+          "is_preprint_2": "True",
           "group_key": "title: seeing the forest when entry is unlikely probability and the",
           "doi_o_group": "",
           "source_display_id_1": "",
@@ -1681,34 +1923,6 @@
         },
         {
           "side": "original (fuzzy)",
-          "doi_1": "10.1016/j.tourman.2016.01.013",
-          "doi_2": "10.2139/ssrn.2624181",
-          "applied_action": "auto_keep_1",
-          "resolution": "auto: drop doi_2",
-          "title_1": "Trust and reputation in the sharing economy: The role of personal photos in Airbnb",
-          "title_2": "Trust and Reputation in the Sharing Economy: The Role of Personal Photos on Airbnb",
-          "title_sim": "0.988",
-          "first_author_1": "ert",
-          "first_author_2": "ert",
-          "year_1": "2016",
-          "year_2": "2015",
-          "is_preprint_1": "False",
-          "is_preprint_2": "True",
-          "group_key": "author: ert",
-          "doi_o_group": "",
-          "source_display_id_1": "",
-          "type_1": "",
-          "outcome_1": "",
-          "url_1": "",
-          "source_display_id_2": "",
-          "type_2": "",
-          "outcome_2": "",
-          "url_2": "",
-          "doi_remove": "10.2139/ssrn.2624181",
-          "doi_keep": "10.1016/j.tourman.2016.01.013"
-        },
-        {
-          "side": "original (fuzzy)",
           "doi_1": "10.3386/w6614",
           "doi_2": "10.1016/s0047-2727(99)00036-5",
           "applied_action": "auto_keep_2",
@@ -1740,8 +1954,8 @@
   },
   "identity": {
     "status": "passed",
-    "rows": 2918,
-    "unique_ids": 2918
+    "rows": 2970,
+    "unique_ids": 2970
   },
   "columns": [
     "id",
@@ -1861,8 +2075,87 @@
         "name": "No duplicate records",
         "heading": "Duplicate records",
         "description": "Rows the build would have made one record: the same type, doi_o, doi_r and url_r, or the same DOIs with one url_r between them.",
-        "items": [],
-        "passed": true
+        "items": [
+          {
+            "check": "duplicate_record",
+            "flora_ids": [
+              "REPL-000933",
+              "REPL-001497"
+            ],
+            "column": "",
+            "value": "replication|10.1007/s10683-015-9437-0|10.1007/s40881-022-00118-y|",
+            "detail": "2 rows the build would make one record",
+            "label": "10.1007/s10683-015-9437-0 | 10.1007/s40881-022-00118-y",
+            "key": "duplicate_record|REPL-000933,REPL-001497||replication|10.1007/s10683-015-9437-0|10.1007/s40881-022-00118-y|",
+            "level": "problem"
+          },
+          {
+            "check": "duplicate_record",
+            "flora_ids": [
+              "FRED-000199",
+              "FRED-000200"
+            ],
+            "column": "",
+            "value": "replication|10.1037/0096-3445.135.4.641|10.1037/pspa0000214|",
+            "detail": "2 rows the build would make one record",
+            "label": "10.1037/0096-3445.135.4.641 | 10.1037/pspa0000214",
+            "key": "duplicate_record|FRED-000199,FRED-000200||replication|10.1037/0096-3445.135.4.641|10.1037/pspa0000214|",
+            "level": "problem"
+          },
+          {
+            "check": "duplicate_record",
+            "flora_ids": [
+              "VAL-000207",
+              "VAL-000591"
+            ],
+            "column": "",
+            "value": "replication|10.1162/jocn.2008.21154|10.3389/fnhum.2021.680885|",
+            "detail": "2 rows the build would make one record",
+            "label": "10.1162/jocn.2008.21154 | 10.3389/fnhum.2021.680885",
+            "key": "duplicate_record|VAL-000207,VAL-000591||replication|10.1162/jocn.2008.21154|10.3389/fnhum.2021.680885|",
+            "level": "problem"
+          },
+          {
+            "check": "duplicate_record",
+            "flora_ids": [
+              "VAL-000260",
+              "VAL-000345"
+            ],
+            "column": "",
+            "value": "replication|10.1073/pnas.0804388105|10.1016/j.infbeh.2019.03.005|doi.org/10.31234/osf.io/fs2ez",
+            "detail": "2 rows the build would make one record",
+            "label": "10.1073/pnas.0804388105 | 10.1016/j.infbeh.2019.03.005",
+            "key": "duplicate_record|VAL-000260,VAL-000345||replication|10.1073/pnas.0804388105|10.1016/j.infbeh.2019.03.005|doi.org/10.31234/osf.io/fs2ez",
+            "level": "problem"
+          },
+          {
+            "check": "duplicate_record",
+            "flora_ids": [
+              "VAL-000285",
+              "VAL-000607"
+            ],
+            "column": "",
+            "value": "replication|10.1027/1618-3169/a000414|10.1027/1618-3169/a000486|osf.io/tj4sh",
+            "detail": "2 rows the build would make one record",
+            "label": "10.1027/1618-3169/a000414 | 10.1027/1618-3169/a000486",
+            "key": "duplicate_record|VAL-000285,VAL-000607||replication|10.1027/1618-3169/a000414|10.1027/1618-3169/a000486|osf.io/tj4sh",
+            "level": "problem"
+          },
+          {
+            "check": "duplicate_record",
+            "flora_ids": [
+              "VAL-000293",
+              "VAL-000549"
+            ],
+            "column": "",
+            "value": "replication|10.1111/puar.12401|10.1080/14719037.2016.1195009|",
+            "detail": "2 rows the build would make one record",
+            "label": "10.1111/puar.12401 | 10.1080/14719037.2016.1195009",
+            "key": "duplicate_record|VAL-000293,VAL-000549||replication|10.1111/puar.12401|10.1080/14719037.2016.1195009|",
+            "level": "problem"
+          }
+        ],
+        "passed": false
       },
       {
         "code": "missing_required",
@@ -2064,6 +2357,15 @@
         "passed": true
       },
       {
+        "code": "identifier_separator",
+        "level": "problem",
+        "name": "Identifier lists use one separator",
+        "heading": "Identifier list with another separator",
+        "description": "alt_identifier_o or alt_identifier_r separates its values with something other than \", \" (a semicolon, a pipe, a line break), or lists one twice. Semicolons belong to some DOIs (…3.0.co;2-y), so readers split on commas only.",
+        "items": [],
+        "passed": true
+      },
+      {
         "code": "reference_conflict",
         "level": "problem",
         "name": "DOI mapped to conflicting references",
@@ -2075,84 +2377,11 @@
       {
         "code": "retracted_title",
         "level": "problem",
-        "name": "No title marks a retraction",
+        "name": "No title_r marks a retraction, no title_o is a notice of one",
         "heading": "Title says retracted",
-        "description": "title_o or title_r marks the paper retracted or withdrawn.",
-        "items": [
-          {
-            "check": "retracted_title",
-            "flora_ids": [
-              "REPL-000405"
-            ],
-            "column": "title_o",
-            "value": "RETRACTED: In vivo direct imaging of neuronal activity at high temporospatial resolution",
-            "detail": "title_o marks the paper retracted or withdrawn",
-            "label": "10.1126/science.abh4340 | 10.1126/sciadv.adl0999",
-            "key": "retracted_title|REPL-000405|title_o|retracted: in vivo direct imaging of neuronal activity at high temporospatial resolution",
-            "level": "problem"
-          },
-          {
-            "check": "retracted_title",
-            "flora_ids": [
-              "REPL-000626"
-            ],
-            "column": "title_o",
-            "value": "RETRACTED: Betatrophin: A Hormone that Controls Pancreatic β Cell Proliferation",
-            "detail": "title_o marks the paper retracted or withdrawn",
-            "label": "10.1016/j.cell.2013.04.008 | 10.2337/db13-1435",
-            "key": "retracted_title|REPL-000626|title_o|retracted: betatrophin: a hormone that controls pancreatic β cell proliferation",
-            "level": "problem"
-          },
-          {
-            "check": "retracted_title",
-            "flora_ids": [
-              "REPL-001349"
-            ],
-            "column": "title_o",
-            "value": "RETRACTED: Signing at the beginning makes ethics salient and decreases dishonest self-reports in comparison to signing at the end",
-            "detail": "title_o marks the paper retracted or withdrawn",
-            "label": "10.1073/pnas.1209746109 | 10.1073/pnas.1911695117",
-            "key": "retracted_title|REPL-001349|title_o|retracted: signing at the beginning makes ethics salient and decreases dishonest self-reports in comparison to signing at the end",
-            "level": "problem"
-          },
-          {
-            "check": "retracted_title",
-            "flora_ids": [
-              "REPRO-000331"
-            ],
-            "column": "title_o",
-            "value": "RETRACTED BY THE AUTHORS: Dividend Taxes and the Allocation of Capital",
-            "detail": "title_o marks the paper retracted or withdrawn",
-            "label": "10.1257/aer.20210369 | 10.1257/aer.20221432",
-            "key": "retracted_title|REPRO-000331|title_o|retracted by the authors: dividend taxes and the allocation of capital",
-            "level": "problem"
-          },
-          {
-            "check": "retracted_title",
-            "flora_ids": [
-              "FRED-000891"
-            ],
-            "column": "title_o",
-            "value": "Retracted: Super Size Me: Product Size as a Signal of Status",
-            "detail": "title_o marks the paper retracted or withdrawn",
-            "label": "10.1086/661890 | 10.15626/mp.2020.2538",
-            "key": "retracted_title|FRED-000891|title_o|retracted: super size me: product size as a signal of status",
-            "level": "problem"
-          },
-          {
-            "check": "retracted_title",
-            "flora_ids": [
-              "FRED-000420"
-            ],
-            "column": "title_o",
-            "value": "RETRACTED: Sense Creative! The Impact of Global and Local Vision, Hearing, Touching, Tasting and Smelling on Creative and Analytic Thought",
-            "detail": "title_o marks the paper retracted or withdrawn",
-            "label": "10.1177/1948550611410890 | 10.1037/xge0000067",
-            "key": "retracted_title|FRED-000420|title_o|retracted: sense creative! the impact of global and local vision, hearing, touching, tasting and smelling on creative and analytic thought",
-            "level": "problem"
-          }
-        ],
-        "passed": false
+        "description": "title_r marks the paper retracted or withdrawn: whether the record stays in FLoRA is an inclusion decision. Or title_o is the retraction notice's, not the paper's. A retracted original is meant to say so in title_o.",
+        "items": [],
+        "passed": true
       },
       {
         "code": "na_string",
@@ -2216,6 +2445,18 @@
             "detail": "year_r is before year_o (2022)",
             "label": "10.1007/s10389-020-01338-4 | 10.3389/fpubh.2021.620264",
             "key": "year_order|VAL-000528|year_r|2021",
+            "level": "possible_problem"
+          },
+          {
+            "check": "year_order",
+            "flora_ids": [
+              "VAL-000557"
+            ],
+            "column": "year_r",
+            "value": "2022",
+            "detail": "year_r is before year_o (2023)",
+            "label": "10.1080/21670811.2021.1969974 | 10.1037/tmb0000083",
+            "key": "year_order|VAL-000557|year_r|2022",
             "level": "possible_problem"
           }
         ],
@@ -2320,26 +2561,40 @@
         "passed": false
       },
       {
+        "code": "mojibake",
+        "level": "problem",
+        "name": "No mis-decoded characters",
+        "heading": "Mis-decoded characters",
+        "description": "UTF-8 text decoded with the wrong character set (â€™ or ‚Äô for ’, Ã¶ for ö) in a title, reference, author list, journal, abstract or quote.",
+        "items": [],
+        "passed": true
+      },
+      {
+        "code": "authorless_reference",
+        "level": "problem",
+        "name": "References name their authors",
+        "heading": "Reference without an author",
+        "description": "apa_ref_o or apa_ref_r starts with the year or \"(Ed.).\": the provider's citation dropped a group author, or its record lists none.",
+        "items": [],
+        "passed": true
+      },
+      {
+        "code": "openalex_link",
+        "level": "possible_problem",
+        "name": "Report links lead to the report",
+        "heading": "Report link is an OpenAlex record",
+        "description": "url_r points to an OpenAlex record, not to the report: link the work's landing page or DOI.",
+        "items": [],
+        "passed": true
+      },
+      {
         "code": "file_name_title",
         "level": "possible_problem",
         "name": "Replication titles look like titles",
         "heading": "Title looks like a file or project name",
-        "description": "title_r is a file or project name, or a generic name such as 'Analysis'.",
-        "items": [
-          {
-            "check": "file_name_title",
-            "flora_ids": [
-              "REPL-000453"
-            ],
-            "column": "title_r",
-            "value": "Analysis",
-            "detail": "title_r is a generic name, not a title",
-            "label": "10.1037/a0023937 | https://osf.io/up8xs",
-            "key": "file_name_title|REPL-000453|title_r|analysis",
-            "level": "possible_problem"
-          }
-        ],
-        "passed": false
+        "description": "title_r is a file or project name (such as a SCORE report component's 'Author_Journal_Year_code - Team - New Data Replication - id'), or a generic name such as 'Analysis'.",
+        "items": [],
+        "passed": true
       }
     ],
     "suppressed": 0,
@@ -2347,7 +2602,7 @@
     "possible_problems": 11,
     "has_problems": true,
     "has_issues": true,
-    "rows": 2918
+    "rows": 2970
   },
   "network": {
     "status": "needs_attention",
@@ -2357,93 +2612,8 @@
         "code": "retracted",
         "level": "problem",
         "heading": "Retracted papers",
-        "items": [
-          {
-            "check": "retracted",
-            "flora_ids": [
-              "REPL-000405"
-            ],
-            "column": "doi_o",
-            "value": "10.1126/science.abh4340",
-            "detail": "doi_o is retracted (Retraction Watch)",
-            "label": "10.1126/science.abh4340 | 10.1126/sciadv.adl0999",
-            "key": "retracted|REPL-000405|doi_o|10.1126/science.abh4340",
-            "level": "problem"
-          },
-          {
-            "check": "retracted",
-            "flora_ids": [
-              "REPL-000473"
-            ],
-            "column": "doi_o",
-            "value": "10.1001/jamapsychiatry.2014.763",
-            "detail": "doi_o is retracted (Retraction Watch)",
-            "label": "10.1001/jamapsychiatry.2014.763 | 10.1037/pas0000664",
-            "key": "retracted|REPL-000473|doi_o|10.1001/jamapsychiatry.2014.763",
-            "level": "problem"
-          },
-          {
-            "check": "retracted",
-            "flora_ids": [
-              "REPL-000626"
-            ],
-            "column": "doi_o",
-            "value": "10.1016/j.cell.2013.04.008",
-            "detail": "doi_o is retracted (Retraction Watch)",
-            "label": "10.1016/j.cell.2013.04.008 | 10.2337/db13-1435",
-            "key": "retracted|REPL-000626|doi_o|10.1016/j.cell.2013.04.008",
-            "level": "problem"
-          },
-          {
-            "check": "retracted",
-            "flora_ids": [
-              "REPL-001349"
-            ],
-            "column": "doi_o",
-            "value": "10.1073/pnas.1209746109",
-            "detail": "doi_o is retracted (Retraction Watch)",
-            "label": "10.1073/pnas.1209746109 | 10.1073/pnas.1911695117",
-            "key": "retracted|REPL-001349|doi_o|10.1073/pnas.1209746109",
-            "level": "problem"
-          },
-          {
-            "check": "retracted",
-            "flora_ids": [
-              "REPRO-000331"
-            ],
-            "column": "doi_o",
-            "value": "10.1257/aer.20210369",
-            "detail": "doi_o is retracted (Retraction Watch)",
-            "label": "10.1257/aer.20210369 | 10.1257/aer.20221432",
-            "key": "retracted|REPRO-000331|doi_o|10.1257/aer.20210369",
-            "level": "problem"
-          },
-          {
-            "check": "retracted",
-            "flora_ids": [
-              "FRED-000891"
-            ],
-            "column": "doi_o",
-            "value": "10.1086/661890",
-            "detail": "doi_o is retracted (Retraction Watch)",
-            "label": "10.1086/661890 | 10.15626/mp.2020.2538",
-            "key": "retracted|FRED-000891|doi_o|10.1086/661890",
-            "level": "problem"
-          },
-          {
-            "check": "retracted",
-            "flora_ids": [
-              "FRED-000420"
-            ],
-            "column": "doi_o",
-            "value": "10.1177/1948550611410890",
-            "detail": "doi_o is retracted (Retraction Watch)",
-            "label": "10.1177/1948550611410890 | 10.1037/xge0000067",
-            "key": "retracted|FRED-000420|doi_o|10.1177/1948550611410890",
-            "level": "problem"
-          }
-        ],
-        "passed": false
+        "items": [],
+        "passed": true
       },
       {
         "code": "doi_not_registered",
@@ -2533,6 +2703,18 @@
             "label": "10.1287/isre.1040.0032 | 10.17705/1atrr.00061",
             "key": "doi_not_registered|VAL-000427|doi_r|10.17705/1atrr.00061",
             "level": "problem"
+          },
+          {
+            "check": "doi_not_registered",
+            "flora_ids": [
+              "VAL-000617"
+            ],
+            "column": "doi_r",
+            "value": "10.17705/1atrr.00045",
+            "detail": "doi_r is not registered at doi.org",
+            "label": "10.1023/a:1009986821907 | 10.17705/1atrr.00045",
+            "key": "doi_not_registered|VAL-000617|doi_r|10.17705/1atrr.00045",
+            "level": "problem"
           }
         ],
         "passed": false
@@ -2612,6 +2794,66 @@
             "detail": "oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record)",
             "label": "10.2147/ott.s129042 | 10.1016/j.tranon.2017.09.008",
             "key": "dead_link|VAL-000535|oa_url_o|https://www.dovepress.com/getfile.php?fileid=34813",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "VAL-000571"
+            ],
+            "column": "url_r",
+            "value": "https://www.dovepress.com/getfile.php?fileID=29102",
+            "detail": "url_r is dead (HTTP 404)",
+            "label": "10.2147/ppa.s30763 | 10.2147/ppa.s96880",
+            "key": "dead_link|VAL-000571|url_r|https://www.dovepress.com/getfile.php?fileid=29102",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "VAL-000571"
+            ],
+            "column": "oa_url_r",
+            "value": "https://www.dovepress.com/getfile.php?fileID=29102",
+            "detail": "oa_url_r is dead (HTTP 404; an open-access link from enrichment, not from the source record)",
+            "label": "10.2147/ppa.s30763 | 10.2147/ppa.s96880",
+            "key": "dead_link|VAL-000571|oa_url_r|https://www.dovepress.com/getfile.php?fileid=29102",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "VAL-000571"
+            ],
+            "column": "oa_url_o",
+            "value": "https://www.dovepress.com/getfile.php?fileID=13146",
+            "detail": "oa_url_o is dead (HTTP 404; an open-access link from enrichment, not from the source record)",
+            "label": "10.2147/ppa.s30763 | 10.2147/ppa.s96880",
+            "key": "dead_link|VAL-000571|oa_url_o|https://www.dovepress.com/getfile.php?fileid=13146",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "VAL-000595"
+            ],
+            "column": "url_o",
+            "value": "https://doi.org/10.1523/jneurosci.1915-12.2012",
+            "detail": "url_o is dead (the DOI is not registered at doi.org)",
+            "label": "10.1016/j.cub.2012.05.054 | 10.1016/j.brainres.2018.06.031",
+            "key": "dead_link|VAL-000595|url_o|https://doi.org/10.1523/jneurosci.1915-12.2012",
+            "level": "problem"
+          },
+          {
+            "check": "dead_link",
+            "flora_ids": [
+              "VAL-000620"
+            ],
+            "column": "url_o",
+            "value": "https://doi.org/10.5117/tvt2015.1.graa",
+            "detail": "url_o is dead (the DOI is not registered at doi.org)",
+            "label": "10.1163/9789004270848_008 | 10.5117/tvt2017.1.jans",
+            "key": "dead_link|VAL-000620|url_o|https://doi.org/10.5117/tvt2015.1.graa",
             "level": "problem"
           }
         ],
@@ -3061,7 +3303,7 @@
             "column": "doi_o",
             "value": "10.1109/vis54172.2023.00016",
             "detail": "Publication-format review. OpenAlex type: conference-paper. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1109/vis54172.2023.00016",
-            "label": "10.1109/vis54172.2023.00016 | 10.31219/osf.io/v6sfg_v1",
+            "label": "10.1109/vis54172.2023.00016 | 10.1109/vis60296.2025.00070",
             "key": "original_target_format|REPL-000977|doi_o|10.1109/vis54172.2023.00016",
             "level": "possible_problem"
           },
@@ -3472,6 +3714,30 @@
             "label": "10.1038/ng.2397 | 10.1038/s41598-017-07404-4",
             "key": "original_target_format|VAL-000459|doi_o|10.1038/ng.2397",
             "level": "possible_problem"
+          },
+          {
+            "check": "original_target_format",
+            "flora_ids": [
+              "VAL-000545"
+            ],
+            "column": "doi_o",
+            "value": "10.1016/j.ejpoleco.2003.10.001",
+            "detail": "Publication-format review. OpenAlex type: review. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1016/j.ejpoleco.2003.10.001",
+            "label": "10.1016/j.ejpoleco.2003.10.001 | 10.1177/1091142114568659",
+            "key": "original_target_format|VAL-000545|doi_o|10.1016/j.ejpoleco.2003.10.001",
+            "level": "possible_problem"
+          },
+          {
+            "check": "original_target_format",
+            "flora_ids": [
+              "VAL-000620"
+            ],
+            "column": "doi_o",
+            "value": "10.1163/9789004270848_008",
+            "detail": "Publication-format review. OpenAlex type: book-chapter. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1163/9789004270848_008",
+            "label": "10.1163/9789004270848_008 | 10.5117/tvt2017.1.jans",
+            "key": "original_target_format|VAL-000620|doi_o|10.1163/9789004270848_008",
+            "level": "possible_problem"
           }
         ],
         "passed": false
@@ -3486,6 +3752,36 @@
           ],
           "flora_ids": [
             "REPL-000806"
+          ],
+          "reason": "Original work type unavailable or stale; previous review retained"
+        },
+        {
+          "target": "10.1093/gerona/glaa163",
+          "columns": [
+            "doi_o"
+          ],
+          "flora_ids": [
+            "REPRO-000132"
+          ],
+          "reason": "Original work type unavailable or stale; previous review retained"
+        },
+        {
+          "target": "10.1371/journal.pmed.1003244",
+          "columns": [
+            "doi_o"
+          ],
+          "flora_ids": [
+            "REPRO-000125"
+          ],
+          "reason": "Original work type unavailable or stale; previous review retained"
+        },
+        {
+          "target": "10.3390/jcm9103350",
+          "columns": [
+            "doi_o"
+          ],
+          "flora_ids": [
+            "REPRO-000142"
           ],
           "reason": "Original work type unavailable or stale; previous review retained"
         },
@@ -3561,29 +3857,19 @@
           "flora_ids": [
             "FRED-000798"
           ]
-        },
-        {
-          "target": "https://www.biorxiv.org/content/biorxiv/early/2020/10/28/2020.10.27.355032.full.pdf",
-          "columns": [
-            "url_r"
-          ],
-          "reason": "HTTP 429",
-          "flora_ids": [
-            "VAL-000518"
-          ]
         }
       ],
       "originals": []
     },
     "notices": [
-      "Original work types unavailable for 2 DOI(s); previous review decisions retained. This screening is advisory."
+      "Original work types unavailable for 5 DOI(s); previous review decisions retained. This screening is advisory."
     ],
     "coverage": {
       "work_types": {
-        "targets": 2609,
-        "cached": 2607,
-        "checked": 2609,
-        "unchecked": 2,
+        "targets": 2660,
+        "cached": 2655,
+        "checked": 2660,
+        "unchecked": 5,
         "deferred": 0,
         "advisory": true
       },
@@ -3591,43 +3877,43 @@
         "status": "checked"
       },
       "dois": {
-        "targets": 4897,
-        "cached": 4827,
-        "checked": 70,
+        "targets": 5002,
+        "cached": 4912,
+        "checked": 90,
         "deferred": 0,
         "unchecked": 0
       },
       "urls": {
-        "targets": 3470,
-        "cached": 3397,
+        "targets": 3501,
+        "cached": 3428,
         "checked": 73,
         "deferred": 0,
-        "unchecked": 7
+        "unchecked": 6
       },
       "originals": {
         "targets": 31,
-        "cached": 29,
-        "checked": 2,
+        "cached": 31,
+        "checked": 0,
         "deferred": 0,
         "unchecked": 0
       }
     },
     "suppressed": 0,
-    "problems": 20,
-    "possible_problems": 69,
-    "issue_count": 89,
-    "rows": 2918
+    "problems": 19,
+    "possible_problems": 71,
+    "issue_count": 90,
+    "rows": 2970
   },
   "release": {
     "schema_version": 1,
     "status": "prepared_locally",
     "published": false,
-    "generated_at": "2026-11-25T03:08:44+00:00",
+    "generated_at": "2026-11-26T03:36:41+00:00",
     "filename": "flora.csv",
-    "bytes": 14616324,
-    "sha256": "3116d178761e1a3a51398f04b8bda45e2ecf64250a744343f9ad4569e1b3e21f",
-    "md5": "e40392a0ab8a2d30834263da89f4658a",
-    "rows": 2918,
+    "bytes": 14753175,
+    "sha256": "1b1f2040bb6214bbed01d9ba952e32e0edddf40cf07049947fc92d35d727c815",
+    "md5": "ef10d14bd9d2019dae016fda093d9d52",
+    "rows": 2970,
     "columns": [
       "id",
       "id_md5",
@@ -3688,22 +3974,22 @@
     "release_notes": "",
     "source_kind": "authoritative_publication",
     "data_version": {
-      "stored_at": "2026-11-25T03:08:45.350277+00:00",
-      "change_watermark": 1035
+      "stored_at": "2026-11-26T03:36:42.164708+00:00",
+      "change_watermark": 1412
     }
   },
   "storage": {
-    "rows": 2918,
-    "inserted": 34,
-    "updated": 3,
-    "unchanged": 2881,
-    "retired": 0,
+    "rows": 2970,
+    "inserted": 23,
+    "updated": 230,
+    "unchanged": 2717,
+    "retired": 15,
     "reactivated": 0,
     "preserved": 0,
     "table": "flora_data",
-    "snapshot_sha256": "3116d178761e1a3a51398f04b8bda45e2ecf64250a744343f9ad4569e1b3e21f",
-    "stored_at": "2026-11-25T03:08:45.350277+00:00",
+    "snapshot_sha256": "1b1f2040bb6214bbed01d9ba952e32e0edddf40cf07049947fc92d35d727c815",
+    "stored_at": "2026-11-26T03:36:42.164708+00:00",
     "status": "committed"
   },
-  "finished_at": "2026-11-25T03:08:49+00:00"
+  "finished_at": "2026-11-26T03:36:46+00:00"
 }
