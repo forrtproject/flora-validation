@@ -1,0 +1,1348 @@
+{
+  "route_count": 146,
+  "routes": [
+    {
+      "type": "Route",
+      "path": "/openapi.json",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "name": "openapi"
+    },
+    {
+      "type": "Route",
+      "path": "/docs",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "name": "swagger_ui_html"
+    },
+    {
+      "type": "Route",
+      "path": "/docs/oauth2-redirect",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "name": "swagger_ui_redirect"
+    },
+    {
+      "type": "Route",
+      "path": "/redoc",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "name": "redoc_html"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/login",
+      "methods": [
+        "POST"
+      ],
+      "name": "login"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/login/claim-code",
+      "methods": [
+        "POST"
+      ],
+      "name": "claim_code_account"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/onboarding",
+      "methods": [
+        "GET"
+      ],
+      "name": "onboarding_pairs"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/onboarding/complete",
+      "methods": [
+        "POST"
+      ],
+      "name": "onboarding_complete"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/update-seen",
+      "methods": [
+        "POST"
+      ],
+      "name": "mark_update_seen"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/my-judgements",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_my_judgements"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/my-judgements/{queue_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_my_judgement_detail"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/next-pairs",
+      "methods": [
+        "POST"
+      ],
+      "name": "next_pairs"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/paper-review/claim",
+      "methods": [
+        "POST"
+      ],
+      "name": "claim_paper_review"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/paper-review/refresh",
+      "methods": [
+        "POST"
+      ],
+      "name": "refresh_paper_review"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/pairs/{queue_id}/start",
+      "methods": [
+        "POST"
+      ],
+      "name": "start_pair"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/flora/history",
+      "methods": [
+        "GET"
+      ],
+      "name": "public_flora_history"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/health",
+      "methods": [
+        "GET"
+      ],
+      "name": "health"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/restricted",
+      "methods": [
+        "POST"
+      ],
+      "name": "report_restricted"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/my-assignments",
+      "methods": [
+        "GET"
+      ],
+      "name": "my_assignments"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/assignment/{record_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_assignment"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/assignment-judge",
+      "methods": [
+        "POST"
+      ],
+      "name": "assignment_judge"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/judge",
+      "methods": [
+        "POST"
+      ],
+      "name": "judge"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/skip",
+      "methods": [
+        "POST"
+      ],
+      "name": "skip_pair"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/submission-failures/release",
+      "methods": [
+        "POST"
+      ],
+      "name": "release_failed_submission"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/senior-reject",
+      "methods": [
+        "POST"
+      ],
+      "name": "senior_reject"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/stats",
+      "methods": [
+        "GET"
+      ],
+      "name": "stats"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/leaderboard",
+      "methods": [
+        "GET"
+      ],
+      "name": "leaderboard"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/forgot-handle",
+      "methods": [
+        "POST"
+      ],
+      "name": "forgot_handle"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/stats",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_stats"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/serving-config",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_serving_config"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/serving-config",
+      "methods": [
+        "PUT"
+      ],
+      "name": "put_serving_config"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/serving-config/preview",
+      "methods": [
+        "GET"
+      ],
+      "name": "preview_serving_config"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/dashboard",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_dashboard"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/banner",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_site_banner"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/banner",
+      "methods": [
+        "POST"
+      ],
+      "name": "set_site_banner"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/validators",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_list_validators"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/restricted",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_restricted"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/assign",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_assign"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/validators/{validator_id}/flagged",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_validator_flagged"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/validators/{validator_id}/set-tier",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_set_tier"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/security-events",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_security_events"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/admins",
+      "methods": [
+        "GET"
+      ],
+      "name": "list_admins"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/admins/{admin_id}/validator",
+      "methods": [
+        "POST"
+      ],
+      "name": "link_admin_validator"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/admins",
+      "methods": [
+        "POST"
+      ],
+      "name": "create_admin"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/invite/resend",
+      "methods": [
+        "POST"
+      ],
+      "name": "resend_admin_invite"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/auth-link/{token}",
+      "methods": [
+        "GET"
+      ],
+      "name": "describe_auth_link"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/auth-link/redeem",
+      "methods": [
+        "POST"
+      ],
+      "name": "redeem_auth_link"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/admins/{admin_id}",
+      "methods": [
+        "DELETE"
+      ],
+      "name": "delete_admin"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/admins/{admin_id}/toggle-trusted",
+      "methods": [
+        "POST"
+      ],
+      "name": "toggle_admin_trusted"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/login",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_login"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/logout",
+      "methods": [
+        "POST"
+      ],
+      "name": "logout"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/me",
+      "methods": [
+        "GET"
+      ],
+      "name": "whoami"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_entries"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_entry_detail"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/extra-originals",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_extra_originals"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/extra-originals/suggestions/{suggestion_id}/dismiss",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_dismiss_extra_original"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/extra-originals",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_add_extra_originals"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/extra-original/remove",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_remove_extra_original"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/queue/{queue_id}/flag",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flag_queue"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/messages",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_validator_messages"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/messages/unread",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_unread_messages"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/messages/{msg_id}/read",
+      "methods": [
+        "POST"
+      ],
+      "name": "mark_message_read"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/messages/{parent_id}/reply",
+      "methods": [
+        "POST"
+      ],
+      "name": "reply_to_message"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/messages",
+      "methods": [
+        "GET"
+      ],
+      "name": "list_admin_conversations"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/thread/{thread_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_admin_thread"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/thread/{thread_id}/reply",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_reply_to_thread"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/messages/{validator_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "get_admin_conversation"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/message",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_send_message"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/approve",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_approve"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/remove-original",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_remove_original"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/withdraw-preview",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_withdraw_preview"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/withdraw",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_withdraw"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/flag-review",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flag_review"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/note",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_save_note"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/entries/{record_id}/resolve",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_resolve"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_source_records"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/export.csv",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_source_records_export"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/sync-status",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_source_sync_status"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_records"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/stats",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_stats"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/export.csv",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_export"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/preprint-duplicates",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_preprint_duplicates"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/preprint-duplicates/decision",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flora_preprint_decide"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/preprint-duplicates/decision",
+      "methods": [
+        "DELETE"
+      ],
+      "name": "admin_flora_preprint_undo"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/checks/summary",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_checks_summary"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/findings/dismiss",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flora_finding_dismiss"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/findings/dismiss",
+      "methods": [
+        "DELETE"
+      ],
+      "name": "admin_flora_finding_undismiss"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/manual/options",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_manual_options"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/manual/counts",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_manual_counts"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/manual/check",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flora_manual_check"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/manual",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_manual_list"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/manual",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flora_manual_create"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/manual/{ref}",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_manual_record"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/manual/{ref}",
+      "methods": [
+        "PATCH"
+      ],
+      "name": "admin_flora_manual_update"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/manual/{ref}/withdraw",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flora_manual_withdraw"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/manual/{ref}/restore",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flora_manual_restore"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/{flora_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_flora_record"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/{flora_id}",
+      "methods": [
+        "PATCH"
+      ],
+      "name": "admin_flora_record_update"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/{flora_id}/restore",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flora_record_restore"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/{flora_id}/confirm-outcome",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flora_confirm_outcome"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/flora/{flora_id}/type",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_flora_change_type"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-sync/status",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_source_sync_status_panel"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-sync/jobs/{job_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_source_sync_job"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-sync/jobs/{job_id}/artifacts/{artifact}",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_source_sync_artifact"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-sync/dispatch",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_source_sync_dispatch"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/duplicates",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_source_duplicates"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/{record_id}/duplicate",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_resolve_duplicate"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/sheet-drift/summary",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_sheet_drift_summary"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/sheet-drift",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_sheet_drift"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/sheet-drift/export.csv",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_sheet_drift_export"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/sheet-drift/{finding_id:int}/keep",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_sheet_drift_keep"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/sheet-drift/{finding_id:int}/keep",
+      "methods": [
+        "DELETE"
+      ],
+      "name": "admin_sheet_drift_undo_keep"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/source-records/{record_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_source_record_detail"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/maintenance/runs",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_maintenance_runs"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/maintenance/runs/{run_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "admin_maintenance_run_detail"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/maintenance/run",
+      "methods": [
+        "POST"
+      ],
+      "name": "admin_start_maintenance"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/index.html",
+      "methods": [
+        "GET"
+      ],
+      "name": "serve_index"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "name": "serve_index"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/v1/prefix-lookup",
+      "methods": [
+        "GET"
+      ],
+      "name": "flora_prefix_lookup_get"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/v1/prefix-lookup",
+      "methods": [
+        "POST"
+      ],
+      "name": "flora_prefix_lookup_post"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/v1/prefix-lookup",
+      "methods": [
+        "OPTIONS"
+      ],
+      "name": "flora_prefix_lookup_options"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/v1/original-lookup",
+      "methods": [
+        "GET"
+      ],
+      "name": "flora_original_lookup_get"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/v1/original-lookup",
+      "methods": [
+        "POST"
+      ],
+      "name": "flora_original_lookup_post"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/v1/original-lookup",
+      "methods": [
+        "OPTIONS"
+      ],
+      "name": "flora_original_lookup_options"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/v1/dois",
+      "methods": [
+        "GET"
+      ],
+      "name": "flora_dois_get"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/v1/dois",
+      "methods": [
+        "OPTIONS"
+      ],
+      "name": "flora_dois_options"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/v1/search",
+      "methods": [
+        "GET"
+      ],
+      "name": "flora_search_get"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/v1/search",
+      "methods": [
+        "POST"
+      ],
+      "name": "flora_search_post"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/v1/search",
+      "methods": [
+        "OPTIONS"
+      ],
+      "name": "flora_search_options"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/v1/id-lookup",
+      "methods": [
+        "GET"
+      ],
+      "name": "flora_id_lookup_get"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/v1/id-lookup",
+      "methods": [
+        "POST"
+      ],
+      "name": "flora_id_lookup_post"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/v1/id-lookup",
+      "methods": [
+        "OPTIONS"
+      ],
+      "name": "flora_id_lookup_options"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/disagreements/summary",
+      "methods": [
+        "GET"
+      ],
+      "name": "disagreements_summary"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/disagreements/next",
+      "methods": [
+        "POST"
+      ],
+      "name": "disagreements_next"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/disagreements/{record_id}/submit",
+      "methods": [
+        "POST"
+      ],
+      "name": "disagreements_submit"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/disagreements/{record_id}/skip",
+      "methods": [
+        "POST"
+      ],
+      "name": "disagreements_skip"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/disagreements/status",
+      "methods": [
+        "GET"
+      ],
+      "name": "disagreements_status"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/disagreements/records",
+      "methods": [
+        "GET"
+      ],
+      "name": "disagreements_records"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/disagreements/records/{record_id}",
+      "methods": [
+        "GET"
+      ],
+      "name": "disagreements_record"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/disagreements/records/{record_id}/approve",
+      "methods": [
+        "POST"
+      ],
+      "name": "disagreements_approve"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/disagreements/records/{record_id}/undo",
+      "methods": [
+        "POST"
+      ],
+      "name": "disagreements_undo"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/disagreements/records/{record_id}/publish",
+      "methods": [
+        "POST"
+      ],
+      "name": "disagreements_publish"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/disagreements/records/{record_id}/withdraw",
+      "methods": [
+        "POST"
+      ],
+      "name": "disagreements_withdraw"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/disagreements/export/{name}.csv",
+      "methods": [
+        "GET"
+      ],
+      "name": "disagreements_export"
+    },
+    {
+      "type": "APIRoute",
+      "path": "/api/admin/disagreements/import",
+      "methods": [
+        "POST"
+      ],
+      "name": "disagreements_import"
+    },
+    {
+      "type": "Mount",
+      "path": "",
+      "methods": [],
+      "name": "docs"
+    }
+  ],
+  "openapi_path_hashes": {
+    "/api/admin/admins": "1aeaac0365072be8",
+    "/api/admin/admins/{admin_id}": "446fc77f67300802",
+    "/api/admin/admins/{admin_id}/toggle-trusted": "a10344e07def812c",
+    "/api/admin/admins/{admin_id}/validator": "0da7b0c66e6b789d",
+    "/api/admin/assign": "768cee72aa93fc87",
+    "/api/admin/auth-link/redeem": "a11e586960516988",
+    "/api/admin/auth-link/{token}": "0422aa164238dbfe",
+    "/api/admin/banner": "3d51715b4c4cd430",
+    "/api/admin/dashboard": "0d0296f607ec764e",
+    "/api/admin/disagreements/export/{name}.csv": "274fd688d642632f",
+    "/api/admin/disagreements/import": "0a918554838050b4",
+    "/api/admin/disagreements/records": "c60f211032e1992a",
+    "/api/admin/disagreements/records/{record_id}": "70912b1fabf21d72",
+    "/api/admin/disagreements/records/{record_id}/approve": "fe16c461195cd6e3",
+    "/api/admin/disagreements/records/{record_id}/publish": "7f36c23e3e4b9f53",
+    "/api/admin/disagreements/records/{record_id}/undo": "826dec750e99cf53",
+    "/api/admin/disagreements/records/{record_id}/withdraw": "a24a797ea64535e2",
+    "/api/admin/disagreements/status": "7ee11d05c2d7e9c7",
+    "/api/admin/entries": "4b0eeb3f0806e2b7",
+    "/api/admin/entries/{record_id}": "540df1177ee95b69",
+    "/api/admin/entries/{record_id}/approve": "ba4ec1fc5a2df1f1",
+    "/api/admin/entries/{record_id}/extra-original/remove": "88eb75322f89e4fe",
+    "/api/admin/entries/{record_id}/extra-originals": "6a7ca47e9d33f687",
+    "/api/admin/entries/{record_id}/extra-originals/suggestions/{suggestion_id}/dismiss": "d7f54f5a519b809c",
+    "/api/admin/entries/{record_id}/flag-review": "26ad63e6aa3fb1f2",
+    "/api/admin/entries/{record_id}/note": "1f22c30c5e52f8cd",
+    "/api/admin/entries/{record_id}/remove-original": "4dad15c400133cb4",
+    "/api/admin/entries/{record_id}/resolve": "68a4b35779348d84",
+    "/api/admin/entries/{record_id}/withdraw": "5155db6733a44769",
+    "/api/admin/entries/{record_id}/withdraw-preview": "edeee650db360a6c",
+    "/api/admin/flora": "c982f7fc2dea7a3c",
+    "/api/admin/flora/checks/summary": "0fcbbfb63a024667",
+    "/api/admin/flora/export.csv": "7872a83ffe2425b0",
+    "/api/admin/flora/findings/dismiss": "a933985081c16861",
+    "/api/admin/flora/manual": "f973b14d559562d8",
+    "/api/admin/flora/manual/check": "6ee04a39ddc26aae",
+    "/api/admin/flora/manual/counts": "becc9ca24df3e76a",
+    "/api/admin/flora/manual/options": "c41e553ce6fcfed6",
+    "/api/admin/flora/manual/{ref}": "aef8ea183296d876",
+    "/api/admin/flora/manual/{ref}/restore": "75b0970cc01182ad",
+    "/api/admin/flora/manual/{ref}/withdraw": "1b7a8918209d4297",
+    "/api/admin/flora/preprint-duplicates": "7d2c0f1911cb1bd1",
+    "/api/admin/flora/preprint-duplicates/decision": "bf25dba942f8cdf8",
+    "/api/admin/flora/stats": "e04c764a5bfb4a57",
+    "/api/admin/flora/{flora_id}": "5690a1e6b1630982",
+    "/api/admin/flora/{flora_id}/confirm-outcome": "aeb3eb6936cccb58",
+    "/api/admin/flora/{flora_id}/restore": "c5d1ea8ff0daa57c",
+    "/api/admin/flora/{flora_id}/type": "bb2312a4a7043be4",
+    "/api/admin/invite/resend": "b2e767e0deeef1e1",
+    "/api/admin/login": "03b6d2f4eabe2c90",
+    "/api/admin/maintenance/run": "b258c64d482c2c2d",
+    "/api/admin/maintenance/runs": "6ab03ceed24cf11a",
+    "/api/admin/maintenance/runs/{run_id}": "dd144da5804c71d1",
+    "/api/admin/message": "ba6a1b2193532022",
+    "/api/admin/messages": "8e21f165b02d9b8c",
+    "/api/admin/messages/{validator_id}": "9232845b783b8f84",
+    "/api/admin/queue/{queue_id}/flag": "9c4408434d96ac69",
+    "/api/admin/restricted": "d1d935644ed72320",
+    "/api/admin/security-events": "2ff7d5818b4cd719",
+    "/api/admin/serving-config": "23b296cd62d59669",
+    "/api/admin/serving-config/preview": "c51537ad8946bca6",
+    "/api/admin/source-records": "e855cb4a95f287d0",
+    "/api/admin/source-records/duplicates": "0d4e1192f516c252",
+    "/api/admin/source-records/export.csv": "9ad4bd81e2ff06d4",
+    "/api/admin/source-records/sheet-drift": "7f66ec2794b0f919",
+    "/api/admin/source-records/sheet-drift/export.csv": "8cefe78d5d86f7fd",
+    "/api/admin/source-records/sheet-drift/summary": "cb430e46295d0798",
+    "/api/admin/source-records/sheet-drift/{finding_id}/keep": "8d52ec13f4eccda6",
+    "/api/admin/source-records/sync-status": "118746d7500e58cd",
+    "/api/admin/source-records/{record_id}": "5751701042c9a8e5",
+    "/api/admin/source-records/{record_id}/duplicate": "f634ef85d94a492f",
+    "/api/admin/source-sync/dispatch": "85bf780d0d2cad64",
+    "/api/admin/source-sync/jobs/{job_id}": "3391fc9048578b3a",
+    "/api/admin/source-sync/jobs/{job_id}/artifacts/{artifact}": "d71d92644c6e055c",
+    "/api/admin/source-sync/status": "0ad32b91d0f1f78e",
+    "/api/admin/stats": "c3086b29ad1d6428",
+    "/api/admin/thread/{thread_id}": "4a5e8a998a9f3ac1",
+    "/api/admin/thread/{thread_id}/reply": "dfdc5b13e3870309",
+    "/api/admin/validators": "7b5a16e82368ea61",
+    "/api/admin/validators/{validator_id}/flagged": "6c10ce787e0683ab",
+    "/api/admin/validators/{validator_id}/set-tier": "b683afd099ddbdcd",
+    "/api/assignment-judge": "49d5b0cddceb4054",
+    "/api/assignment/{record_id}": "31dd8dc8ef61fa15",
+    "/api/banner": "98f341aee6a324f1",
+    "/api/disagreements/next": "dfae052e98940d54",
+    "/api/disagreements/summary": "2f886c6da9790dea",
+    "/api/disagreements/{record_id}/skip": "db6512f045abf643",
+    "/api/disagreements/{record_id}/submit": "6e454846f9bd7709",
+    "/api/flora/history": "53b6e74ba2cf5ae3",
+    "/api/forgot-handle": "b432faff793e68cd",
+    "/api/health": "23864a614113f254",
+    "/api/judge": "01cdc98ed9da048b",
+    "/api/leaderboard": "f984d1a5f2bf90a1",
+    "/api/login": "b8b07848089cc261",
+    "/api/login/claim-code": "a992f4931f2139b6",
+    "/api/logout": "9ccf58a45e1d184b",
+    "/api/me": "d5b4ed66af9f7bf2",
+    "/api/messages": "85c6c5408835516a",
+    "/api/messages/unread": "5d34b04d4a70056e",
+    "/api/messages/{msg_id}/read": "d52be622b09a0acb",
+    "/api/messages/{parent_id}/reply": "540d66ebad0b36f5",
+    "/api/my-assignments": "87d01216b08cc60a",
+    "/api/my-judgements": "8060461c830c00e9",
+    "/api/my-judgements/{queue_id}": "4dc28c75a4031153",
+    "/api/next-pairs": "3070241d3e08430d",
+    "/api/onboarding": "41b2745d8e4d38c7",
+    "/api/onboarding/complete": "e92c6b0c2be8026e",
+    "/api/pairs/{queue_id}/start": "0f8a0a69cd33d419",
+    "/api/paper-review/claim": "b9ac01d5bead0c32",
+    "/api/paper-review/refresh": "277635d3cb436db2",
+    "/api/restricted": "99417d9f3aebd8c4",
+    "/api/senior-reject": "92b274c6a183fef2",
+    "/api/skip": "ffa0faa12e9d64fc",
+    "/api/stats": "d635f8d8582c1979",
+    "/api/submission-failures/release": "d8c458d4c6997bf2",
+    "/api/update-seen": "8271e3e737314236",
+    "/v1/dois": "7df9f50a1a4ce921",
+    "/v1/id-lookup": "d4defc0d8046e781",
+    "/v1/original-lookup": "5d84f059f9bec21e",
+    "/v1/prefix-lookup": "0811aac6b54a0231",
+    "/v1/search": "b790af396e560c1b"
+  },
+  "openapi_schema_hashes": {
+    "AdminCreateRequest": "896ada94a00619d9",
+    "AdminLinkResendRequest": "a3433468625d59ae",
+    "AdminLoginRequest": "68091a6daca16a19",
+    "AdminMessageRequest": "0c0c4ce5085e2c43",
+    "AdminNoteRequest": "414305e4d4480b47",
+    "AdminReplyRequest": "71b82b391809dd7a",
+    "AdminResolveRequest": "1fc3f6a694e58583",
+    "AdminValidatorLinkRequest": "9a15a2c24c6f26c7",
+    "AdminWithdrawRequest": "f9d1f789ed24a970",
+    "Answer": "5962ef9e83919311",
+    "AssignRequest": "4b65ba83a2b22a4c",
+    "AuthLinkRedeemRequest": "41df0dbfa3664c91",
+    "BannerRequest": "54e63f072ed0f843",
+    "Body_disagreements_import_api_admin_disagreements_import_post": "f739da2a577dfa40",
+    "ClaimCodeRequest": "9b3b1a92d3d9be35",
+    "Decision": "8e7e45f85e72fbf9",
+    "DuplicateResolution": "7b3d23db1b71f139",
+    "ExtraOriginalCreate": "42be0c575ebe9aac",
+    "ExtraOriginalsCreateRequest": "b3b580b46bef1f2a",
+    "FindingDismissal": "43cbff9ecc42bd7b",
+    "FindingKey": "8bfa63f5d0649191",
+    "FlagQueueRequest": "481b761b854a474d",
+    "FloraOutcomeConfirm": "ae8012840694ff11",
+    "FloraRecordRestore": "39cfbc17dfc31e9d",
+    "FloraRecordUpdate": "fac88a03ca41312a",
+    "FloraTypeChange": "9ff6a7a49446687c",
+    "ForgotHandleRequest": "df6c32becd65d531",
+    "HTTPValidationError": "7373c21f13893123",
+    "JudgeRequest": "dee280207221738e",
+    "LoginRequest": "99fa311db0200904",
+    "MaintenanceRunRequest": "acfe8a2d3497b3e6",
+    "ManualRecordAction": "95fef22349180c56",
+    "ManualRecordCheck": "d01b99a8d5c017c9",
+    "ManualRecordCreate": "e0f172cafc7fbd7e",
+    "ManualRecordFields": "f7953e477944f5fc",
+    "ManualRecordUpdate": "e03143ffb0776c12",
+    "PaperReviewRefreshRequest": "10de3aed9d6e1199",
+    "PaperReviewRequest": "491552f6e6ada920",
+    "PreprintPairDecision": "3868fa78cb39549d",
+    "ReplyRequest": "943f20deb8508ab6",
+    "RestrictedRequest": "39e0ac5cebc92ca6",
+    "SeniorRejectRequest": "35ea14e5a0a28fca",
+    "ServingConfigRequest": "3a244faf4c265cae",
+    "SetTierRequest": "e059a965961dcc13",
+    "SheetDriftKeep": "5484a03830611419",
+    "SkipRequest": "dc009ce8ace5573d",
+    "SubmissionFailureReleaseRequest": "7af9547e0aa18d28",
+    "ValidationError": "ca285d0c0e64c428"
+  }
+}

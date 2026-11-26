@@ -32,6 +32,11 @@ from dotenv import load_dotenv
 from console_encoding import use_utf8_output
 
 from csv_to_db import run_import
+from extractor.config import (
+    build_github_raw_url as _build_url,
+    github_branch as _github_branch,
+    github_repo as _github_repo,
+)
 from extractor_storage import matches, resolve_data_dir, sha256_bytes, sha256_file
 from extractor_vocab import check_csv_vocabulary, resolved_mask
 
@@ -43,8 +48,10 @@ use_utf8_output()
 
 _DEFAULT_DATA_DIR = resolve_data_dir()
 
-_GITHUB_REPO = os.environ.get("GITHUB_REPO", "forrtproject/flora-extractor")
-_GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
+_GITHUB_REPO = _github_repo()
+_GITHUB_BRANCH = _github_branch()
+_INITIAL_GITHUB_REPO = _GITHUB_REPO
+_INITIAL_GITHUB_BRANCH = _GITHUB_BRANCH
 _CSV_FILE_PATH = "data/extracted.csv"
 _ROUTING_RELEASE_ID = os.environ.get("ROUTING_RELEASE_ID", "")
 _REPORT_ID_SAMPLE_LIMIT = 100
@@ -81,10 +88,6 @@ class SnapshotSafetyError(RuntimeError):
         self.details = details or {}
 
 
-def _build_url(repo: str, branch: str, file_path: str) -> str:
-    return f"https://raw.githubusercontent.com/{repo}/{branch}/{file_path}"
-
-
 def _fetch_csv(url: str) -> bytes:
     """Download CSV from URL. Raises RuntimeError on non-200 status."""
     token = os.environ.get("GITHUB_TOKEN", "")
@@ -100,29 +103,31 @@ def _fetch_csv(url: str) -> bytes:
 _COMMIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
-def _resolve_source_commit() -> str | None:
+def _resolve_source_commit(repo: str | None = None, branch: str | None = None) -> str | None:
     """The commit the branch points at now, so the CSV and the retire manifest
     (``csv_to_db.py --retire``) are read from the same one.
 
     Best effort: without it the sync downloads the branch as it always did, and
     the retire stage, which needs the pair, refuses to run.
     """
+    resolved_repo = _github_repo(repo)
+    resolved_branch = _github_branch(branch)
     token = os.environ.get("GITHUB_TOKEN", "")
     headers = {"Accept": "application/vnd.github.sha"}
     if token:
         headers["Authorization"] = f"token {token}"
     try:
         response = requests.get(
-            f"https://api.github.com/repos/{_GITHUB_REPO}/commits/{_GITHUB_BRANCH}",
+            f"https://api.github.com/repos/{resolved_repo}/commits/{resolved_branch}",
             headers=headers,
             timeout=60,
         )
     except requests.RequestException as exc:
-        print(f"[sync_csv] could not resolve {_GITHUB_BRANCH} to a commit: {exc}")
+        print(f"[sync_csv] could not resolve {resolved_branch} to a commit: {exc}")
         return None
     sha = response.text.strip() if isinstance(response.text, str) else ""
     if response.status_code != 200 or not _COMMIT_SHA.match(sha):
-        print(f"[sync_csv] could not resolve {_GITHUB_BRANCH} to a commit "
+        print(f"[sync_csv] could not resolve {resolved_branch} to a commit "
               f"(HTTP {response.status_code})")
         return None
     return sha
@@ -221,9 +226,11 @@ def _baseline_from_history(
     the archive's own timestamp are tried in turn; only bytes whose sha256 equals
     the recorded digest are accepted, so the source need not be trusted.
     """
+    repo = _github_repo()
+    branch = _github_branch()
     params: dict = {
         "path": _CSV_FILE_PATH,
-        "sha": _GITHUB_BRANCH,
+        "sha": branch,
         "per_page": _BASELINE_HISTORY_COMMITS,
     }
     stamp = _ARCHIVE_TIMESTAMP.search(baseline_file or "")
@@ -235,7 +242,7 @@ def _baseline_from_history(
     if token:
         headers["Authorization"] = f"token {token}"
     response = requests.get(
-        f"https://api.github.com/repos/{_GITHUB_REPO}/commits",
+        f"https://api.github.com/repos/{repo}/commits",
         headers=headers,
         params=params,
         timeout=60,
@@ -251,7 +258,7 @@ def _baseline_from_history(
         if not isinstance(sha, str) or not sha:
             continue
         try:
-            content = _fetch_csv(_build_url(_GITHUB_REPO, sha, _CSV_FILE_PATH))
+            content = _fetch_csv(_build_url(repo, sha, _CSV_FILE_PATH))
         except Exception as exc:
             print(f"[sync_csv] baseline recovery: could not read {sha[:7]}: {exc}")
             continue
@@ -297,7 +304,7 @@ def _recover_baseline(
         print(f"[sync_csv] baseline recovery could not write {restored.name}: {exc}")
         return None
     print(
-        f"[sync_csv] baseline recovered from {_GITHUB_REPO}@{commit} "
+        f"[sync_csv] baseline recovered from {_github_repo()}@{commit} "
         f"(sha256={baseline_sha256}) → {restored.name}"
     )
     return restored
@@ -438,14 +445,18 @@ def sync_once(
         "promotion_completed": False,
         "promotion_verified": False,
         "part1_completed": False,
-        # The flora-extractor commit the CSV was read at; the retire stage reads
-        # data/retired_pairs.csv at the same one.
+        # The flora-extractor repository and commit the CSV was read from;
+        # the retire stage reads data/retired_pairs.csv from the exact same pair.
+        "source_repo": None,
         "source_commit": None,
     }
     try:
-        source_commit = _resolve_source_commit()
+        source_repo = _github_repo()
+        source_branch = _github_branch()
+        report["source_repo"] = source_repo
+        source_commit = _resolve_source_commit(repo=source_repo, branch=source_branch)
         report["source_commit"] = source_commit
-        url = _build_url(_GITHUB_REPO, source_commit or _GITHUB_BRANCH, _CSV_FILE_PATH)
+        url = _build_url(source_repo, source_commit or source_branch, _CSV_FILE_PATH)
         print(f"[sync_csv] Fetching {url} …")
         content = _fetch_csv(url)
         report["download_completed"] = True

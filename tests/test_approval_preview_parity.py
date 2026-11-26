@@ -92,12 +92,21 @@ CASES = {
     "no outcome": {**EXTRACTED, "outcome": None},
     "a reproduction's outcome left on a replication": {**EXTRACTED, "outcome": "computational issues, robust"},
     "an outcome outside the vocabulary": {**EXTRACTED, "outcome": "inconclusive"},
-    **{f"replication outcome {outcome}": {**EXTRACTED, "outcome": outcome}
-       for outcome in sorted(REPLICATION_OUTCOMES)},
-    **{f"axes {computation} / {robustness}": {
-           **REPRODUCTION, "outcome_computation": computation, "outcome_robustness": robustness}
-       for computation, robustness in product(sorted(OUTCOME_COMPUTATION_VALUES),
-                                              sorted(OUTCOME_ROBUSTNESS_VALUES))},
+    **{
+        f"replication outcome {outcome}": {**EXTRACTED, "outcome": outcome}
+        for outcome in sorted(REPLICATION_OUTCOMES)
+    },
+    **{
+        f"axes {computation} / {robustness}": {
+            **REPRODUCTION,
+            "outcome_computation": computation,
+            "outcome_robustness": robustness,
+        }
+        for computation, robustness in product(
+            sorted(OUTCOME_COMPUTATION_VALUES),
+            sorted(OUTCOME_ROBUSTNESS_VALUES),
+        )
+    },
 }
 
 

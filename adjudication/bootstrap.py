@@ -51,13 +51,14 @@ def _failed(exc: BaseException) -> SetupStatus:
     return SetupStatus(enabled=True, ready=False, error=message[:_ERROR_LIMIT])
 
 
-def setup(database_url: str, *, connect: Callable = psycopg2.connect) -> SetupStatus:
+def setup(database_url: str, *, connect: Callable | None = None) -> SetupStatus:
     """Apply adjudication/schema.sql when the feature is switched on."""
     if not feature_enabled():
         return SetupStatus(enabled=False, ready=False)
+    connector = connect if connect is not None else psycopg2.connect
     try:
         sql = SCHEMA_PATH.read_text(encoding="utf-8")
-        conn = connect(database_url, connect_timeout=CONNECT_TIMEOUT)
+        conn = connector(database_url, connect_timeout=CONNECT_TIMEOUT)
     except Exception as exc:
         return _failed(exc)
     try:

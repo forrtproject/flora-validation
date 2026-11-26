@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 
 import adjudication
 from adjudication import bootstrap
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = (ROOT / "adjudication" / "schema.sql").read_text(encoding="utf-8")

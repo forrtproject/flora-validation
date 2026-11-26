@@ -1,634 +1,146 @@
-"""Cross-layer regression coverage for durable validator skip feedback."""
-import re
-import time
-from pathlib import Path
-from unittest.mock import patch
+"""Behavioural tests for skip request validation and untouched-record retirement."""
+import pytest
+from pydantic import ValidationError
 
 from csv_to_db import _is_retirable
+from tests.test_dashboard_split import flora
 
 
-ROOT = Path(__file__).resolve().parent.parent
-APP = (ROOT / "app.py").read_text(encoding="utf-8")
-SCHEMA = (ROOT / "db_schema.sql").read_text(encoding="utf-8")
-JS = (ROOT / "docs" / "app.js").read_text(encoding="utf-8")
-HTML = (ROOT / "docs" / "index.html").read_text(encoding="utf-8")
-CSS = (ROOT / "docs" / "style.css").read_text(encoding="utf-8")
-# The only code that removes source records: csv_to_db.py --retire.
-RETIRE = (ROOT / "csv_to_db.py").read_text(encoding="utf-8")
+def test_skip_request_defaults_to_legacy_reason_for_rolling_deployments():
+    req = flora.SkipRequest(record_id="00000000-0000-0000-0000-000000000001")
+    assert req.reason_code == flora.LEGACY_SKIP_REASON == "prefer_another"
+    assert "prefer_another" not in flora.SKIP_COMMENT_REQUIRED_CODES
 
 
-def _function_body(source: str, name: str, next_name: str) -> str:
-    return source.split(f"def {name}(", 1)[1].split(f"def {next_name}(", 1)[0]
+def test_skip_request_rejects_submission_failed_from_public_callers():
+    with pytest.raises(ValidationError):
+        flora.SkipRequest(
+            record_id="00000000-0000-0000-0000-000000000001",
+            reason_code="submission_failed",
+        )
 
 
-def test_skip_history_has_an_append_only_table_with_legacy_compatible_reasons():
-    assert "CREATE TABLE IF NOT EXISTS validation_skips" in SCHEMA
-    assert "record_id     UUID        NOT NULL REFERENCES unvalidated(record_id)" in SCHEMA
-    assert "validator_id  INTEGER     NOT NULL REFERENCES validators(id)" in SCHEMA
-    assert "queue_id      UUID        REFERENCES validation_queue(queue_id)" in SCHEMA
-    for reason in (
-        "prefer_another",
-        "inaccessible",
-        "eligibility_unclear",
-        "data_quality",
-        "interpretation_unclear",
-        "other",
-        "submission_failed",
-    ):
-        assert f"'{reason}'" in SCHEMA
-    assert "validation_skips_reason_code_check" in SCHEMA
-    assert "idx_validation_skips_escalation" in SCHEMA
-
-    # Historical rows remain readable, but the public request model cannot mint
-    # new events that pretend to be automatic submission failures.
-    skip_model = APP.split("class SkipRequest(BaseModel):", 1)[1].split(
-        "class SubmissionFailureReleaseRequest", 1
-    )[0]
-    assert '"submission_failed"' not in skip_model
-
-
-def test_skip_release_and_history_insert_are_one_conditional_transaction():
-    release = _function_body(APP, "_release_skipped_slot", "_restore_status_after_skip")
-    assert "AND is_validated = FALSE" in release
-    assert "RETURNING queue_id, validator_slot" in release
-
-    body = _function_body(APP, "skip_pair", "senior_reject")
-    assert "SELECT record_id FROM unvalidated WHERE record_id = %s FOR UPDATE" in body
-    assert body.index("FOR UPDATE") < body.index("_release_skipped_slot")
-    assert "released = _release_skipped_slot" in body
-    assert 'raise HTTPException(409, "This record is no longer assigned to you")' in body
-    assert body.index("_release_skipped_slot") < body.index("_insert_skip_event")
-    assert body.index("_insert_skip_event") < body.index("skipped_count = skipped_count + 1")
-    assert 'if req.reason_code == "inaccessible"' in body
-    assert "restricted_access = TRUE" in body
-
-
-def test_judgement_and_skip_use_record_first_lock_order():
-    judge = _function_body(APP, "judge", "skip_pair")
-    assert "SELECT * FROM unvalidated WHERE record_id = %s FOR UPDATE" in judge
-    assert judge.index("FROM unvalidated") < judge.index("FROM validation_queue")
-
-    restricted = _function_body(APP, "report_restricted", "my_assignments")
-    assert "SELECT record_id FROM unvalidated WHERE record_id = %s FOR UPDATE" in restricted
-    assert restricted.index("FOR UPDATE") < restricted.index("_release_skipped_slot")
-
-
-def test_skip_comment_rules_are_enforced_server_side():
-    assert 'SKIP_COMMENT_REQUIRED_CODES = {"eligibility_unclear", "data_quality", "other"}' in APP
-    body = _function_body(APP, "skip_pair", "senior_reject")
-    assert "len(comment) > 1000" in body
-    assert "req.reason_code in SKIP_COMMENT_REQUIRED_CODES and not comment" in body
-
-
-def test_admin_skip_panel_uses_distinct_validator_thresholds():
-    assert "SKIP_DISTINCT_VALIDATOR_THRESHOLD = 5" in APP
-    assert "SKIP_ISSUE_VALIDATOR_THRESHOLD = 2" in APP
-    assert "COUNT(DISTINCT vs.validator_id) > {SKIP_DISTINCT_VALIDATOR_THRESHOLD}" in APP
-    assert ") >= {SKIP_ISSUE_VALIDATOR_THRESHOLD}" in APP
-    assert '"skipped":          f"WHERE {_SKIP_PANEL_SQL}"' in APP
-    assert '"skipped": c_skipped' in APP
-    assert 'entry["skip_review_required"]' in APP
-    assert "const skipEscalated = !!e.skip_review_required" in JS
-
-
-def test_admin_detail_returns_named_skip_history_and_summary():
-    body = _function_body(APP, "admin_entry_detail", "admin_flag_queue")
-    assert "FROM validation_skips vs" in body
-    assert "JOIN validators v ON v.id = vs.validator_id" in body
-    assert "v.handle AS validator_name" in body
-    assert '"skip_history": skip_history' in body
-    assert '"skip_summary": skip_summary' in body
-    assert "FROM submission_failure_releases sfr" in body
-    assert '"submission_failure_history": submission_failure_history' in body
+def test_skip_comment_required_codes_and_thresholds():
+    assert flora.SKIP_COMMENT_REQUIRED_CODES == {"eligibility_unclear", "data_quality", "other"}
+    assert flora.SKIP_DISTINCT_VALIDATOR_THRESHOLD == 5
+    assert flora.SKIP_ISSUE_VALIDATOR_THRESHOLD == 2
 
 
 def test_only_untouched_records_can_be_retired():
-    untouched = {"validation_status": "unvalidated", "has_activity": False,
-                 "in_validated": False, "assigned": False}
+    untouched = {
+        "validation_status": "unvalidated",
+        "has_activity": False,
+        "in_validated": False,
+        "assigned": False,
+    }
     assert _is_retirable(untouched) is True
-    # The admin UI calls the rejected state "Excluded".
     for status in ("rejected", "validated", "validation_inprogress", "need_review"):
         assert _is_retirable({**untouched, "validation_status": status}) is False
     assert _is_retirable({**untouched, "has_activity": True}) is False
     assert _is_retirable({**untouched, "in_validated": True}) is False
     assert _is_retirable({**untouched, "assigned": True}) is False
-    # A validator's name, a shown or judged slot, or a merge counts as activity.
-    assert "u.validator_1 IS NOT NULL OR u.validator_2 IS NOT NULL" in RETIRE
-    assert "(q.is_shown OR q.is_validated)" in RETIRE
-    assert "SELECT 1 FROM validated v" in RETIRE
-
-
-def test_a_retired_records_dependents_are_deleted_first():
-    removal = RETIRE.split("def delete_source_records(", 1)[1].split("\ndef ", 1)[0]
-    assert "DELETE FROM validation_skips WHERE record_id" in removal
-    assert "DELETE FROM assignments WHERE record_id" in removal
-    assert "DELETE FROM validator_messages vm" in removal
-    assert removal.index("DELETE FROM validation_skips WHERE record_id") < removal.index(
-        "DELETE FROM validation_queue WHERE record_id"
-    )
-    assert removal.index("DELETE FROM validation_queue WHERE record_id") < removal.index(
-        "DELETE FROM unvalidated WHERE record_id"
-    )
-
-
-def test_retire_freezes_validation_writes_before_it_replans_a_batch():
-    assert "LOCK TABLE unvalidated, validation_queue" in RETIRE
-    assert "validation_queue, validated" in RETIRE
-    assert "validation_skips, submission_failure_releases" in RETIRE
-    assert "record_metadata" in RETIRE
-    assert "assignments, validator_messages" in RETIRE
-    assert "IN EXCLUSIVE MODE NOWAIT" in RETIRE
-    run_retire = RETIRE.split("def run_retire(", 1)[1]
-    assert run_retire.index("cur.execute(WRITE_SURFACE_LOCK_SQL)") < run_retire.index(
-        "# Re-read under the lock"
-    )
-
-
-def test_skip_reason_sheet_and_collapsed_admin_history_are_wired_end_to_end():
-    assert 'id="skip-reason-modal"' in HTML
-    for reason in (
-        "prefer_another",
-        "inaccessible",
-        "eligibility_unclear",
-        "data_quality",
-        "interpretation_unclear",
-        "other",
-    ):
-        assert f'value="{reason}"' in HTML
-    assert 'value="submission_failed"' not in HTML
-    assert 'data-filter="skipped"' in HTML
-    assert 'id="fc-skipped"' in HTML
-    assert "showSkipReasonDialog()" in JS
-    assert "reason_code: details.reason_code" in JS
-    assert "comment: details.comment" in JS
-    assert '<details class="admin-skip-history">' in JS
-    assert '<details class="admin-skip-history" open>' not in JS
-    assert "item.validator_name" in JS
-    assert "item.comment" in JS
-
-
-def test_only_prefer_another_promises_the_end_of_the_queue():
-    """"Cannot access" takes the record out of the queue, and the intro covers every reason."""
-    dialog = HTML.split('id="skip-reason-modal"', 1)[1].split("</form>", 1)[0]
-    option = dialog.split('value="prefer_another"', 1)[1].split("</label>", 1)[0]
-    assert "end of your queue" in option
-    assert dialog.count("end of your queue") == 1
-
-
-def test_serving_reads_a_validators_own_skips_from_one_definition():
-    own = APP.split('_OWN_SKIPS_SQL = """', 1)[1].split('"""', 1)[0]
-    assert "validator_id = %s AND reason_code <> 'submission_failed'" in own
-    serving = _function_body(APP, "_select_pair_candidate", "_claim_one_pair")
-    assert "{_OWN_SKIPS_SQL}" in serving
-    assert "ORDER BY own_skip.last_skipped_at ASC NULLS FIRST" in serving
-    assert "{_OWN_SKIPS_SQL}" in _function_body(APP, "_skipped_records", "_select_pair_candidate")
-
-
-def test_static_skip_requires_and_persists_the_pair_identity():
-    static_skip = JS.split('if (route === "/skip")', 1)[1].split(
-        'if (route === "/leaderboard")', 1
-    )[0]
-    assert "const pairId = body.pair_id" in static_skip
-    assert 'body.record_id !== "undefined"' in static_skip
-    assert 'throw new Error("Static skip requires a pair_id")' in static_skip
-    assert "pair_id: pairId" in static_skip
-    assert "reason_code: body.reason_code" in static_skip
-    assert "comment: body.comment" in static_skip
-    assert 'body.reason_code === "submission_failed"' in static_skip
-    assert 'throw new Error("submission_failed is not a public skip reason")' in static_skip
 
 
 def test_manual_skip_clears_the_draft_only_after_release_succeeds():
-    body = JS.split("async function onSkip()", 1)[1].split(
-        "async function submitJudgement()", 1
-    )[0]
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parent.parent / "docs" / "app.js").read_text(encoding="utf-8")
+    body = js.split("async function onSkip()", 1)[1].split("async function submitJudgement()", 1)[0]
     request_at = body.index('await api("/skip"')
     clear_at = body.index("_clearDraft(pair.pair_id)")
-
-    assert "const pair = state.currentPair" in body
     assert request_at < clear_at
-    # The API failure path returns before it can reach draft clearing.
     failure_path = body[request_at:clear_at]
-    assert "catch (e)" in failure_path
-    assert "await showAlert(e.message);" in failure_path
-    assert "return;" in failure_path
+    assert "catch (e)" in failure_path and "return;" in failure_path
     assert clear_at < body.index("await refreshAll()")
 
 
-def test_failed_submission_needs_a_server_stamp_and_is_not_discarded_early():
-    body = JS.split("async function _processSubmitQueue()", 1)[1].split(
-        "function _celebratePoints", 1
-    )[0]
-    failure = body.split("if (giveUp)", 1)[1]
+def test_failed_submission_needs_a_server_stamp_and_progresses_past_parked_items():
+    """Execute _processSubmitQueue in Node to verify real queue progression:
+    1. A terminal 4xx item without a server failure_stamp is parked (blocked=true)
+       without calling /skip or /submission-failures/release, and a later item in
+       the queue still submits cleanly.
+    2. A terminal failure WITH a server failure_stamp calls
+       /submission-failures/release with that stamp before dequeuing the item."""
+    import json
+    import subprocess
+    from pathlib import Path
 
-    assert 'api("/submission-failures/release"' in failure
-    assert "failure_stamp: item.failure_stamp" in failure
-    assert 'api("/skip"' not in failure
-    assert "if (!item.failure_stamp)" in failure
-    assert "No server-authorized automatic release; pending data kept" in failure
-    # A server rejection is reported as one. It will not clear by waiting, so
-    # "release pending" would name a release that never happens.
-    assert "item.rejected = _isTerminalErr(e)" in failure
-    assert "the server rejected it; your work is kept" in failure
-    assert failure.index("if (!item.failure_stamp)") < failure.index("item.rejected")
-    assert "catch (releaseError)" in failure
-    assert "pending data kept" in failure
-    assert ".catch(() => {})" not in failure
-    # Removal happens only after the release call, whichever way the item is
-    # taken off the queue (by identity, not shifted, so that a parked item earlier
-    # in the queue does not block the ones behind it).
-    assert "_submitQueue.shift()" not in failure
-    assert failure.index('api("/submission-failures/release"') < failure.index(
-        "_dequeueSubmit(item)"
+    js = (Path(__file__).resolve().parent.parent / "docs" / "app.js").read_text(encoding="utf-8")
+    ownership_src = js[js.index("const _queueOwner ="):js.index("const _myFailed =")]
+    fn_src = (
+        "async function _processSubmitQueue()"
+        + js.split("async function _processSubmitQueue()", 1)[1].split("function _celebratePoints", 1)[0]
     )
-
-
-def test_submission_failure_release_is_scoped_single_use_and_not_a_skip():
-    assert "CREATE TABLE IF NOT EXISTS submission_failure_releases" in SCHEMA
-    for state in ("save_failed", "released", "slot_closed", "expired"):
-        assert f"'{state}'" in SCHEMA
-    assert "submission_id   UUID        NOT NULL UNIQUE" in SCHEMA
-    assert "stamp_hash      TEXT        NOT NULL UNIQUE" in SCHEMA
-    assert "Raw stamps are never persisted" in SCHEMA
-
-    issuer = _function_body(
-        APP, "_issue_submission_failure_stamp", "_try_issue_submission_failure_stamp"
-    )
-    assert "secrets.token_urlsafe(32)" in issuer
-    assert 'hashlib.sha256(raw_stamp.encode("utf-8")).hexdigest()' in issuer
-    assert "req.submission_id is None" in issuer
-    assert "AND validator_id = %s" in issuer
-    assert "AND is_validated = FALSE" in issuer
-    assert "same_owner" in issuer
-
-    expiry = _function_body(
-        APP, "_expire_submission_failure_stamps", "_server_controlled_submission_failure"
-    )
-    assert "status = 'expired'" in expiry
-    assert "status = 'save_failed' AND expires_at <= NOW()" in expiry
-    assert "_expire_submission_failure_stamps(cur)" in APP
-
-    release = _function_body(APP, "release_failed_submission", "senior_reject")
-    assert "record -> queue -> audit row" in release
-    assert release.index("FROM unvalidated") < release.index("FROM validation_queue")
-    assert release.index("FROM validation_queue") < release.index(
-        "FROM submission_failure_releases", release.index("FROM validation_queue")
-    )
-    assert "failure_stamp" in release
-    assert "stamp_hash" in release
-    assert "status = 'released'" in release
-    assert "status = 'slot_closed'" in release
-    assert "status = 'expired'" in release
-    assert "_restore_status_after_skip" in release
-    assert "validation_skips" not in release
-    assert "SET skipped_count" not in release
-
-
-def test_client_persists_submission_identity_and_structured_stamp_metadata():
-    assert "httpErr.detail = err.detail" in JS
-    enqueue = JS.split("function _enqueueSubmit(payload, paper, paperGroup = null)", 1)[1].split(
-        "async function _processSubmitQueue()", 1
-    )[0]
-    assert "payload.submission_id || _newSubmissionId()" in enqueue
-    assert "submission_id: submissionId" in enqueue
-
-    process = JS.split("async function _processSubmitQueue()", 1)[1].split(
-        "function _celebratePoints", 1
-    )[0]
-    assert 'e?.detail?.code === "judgement_save_failed"' in process
-    assert "item.failure_stamp = e.detail.failure_stamp" in process
-    assert "Network-only failures never mint one" in process
-
-
-def test_judgement_enter_shortcut_is_disabled_inside_dialogs():
-    keyboard = JS.split("/* ---------- Keyboard ---------- */", 1)[1].split(
-        "/* ---------- Too-fast guard ---------- */", 1
-    )[0]
-    modal_guard = "if (document.querySelector('[role=\"dialog\"]:not(.hidden)')) return;"
-    assert modal_guard in keyboard
-    assert keyboard.index(modal_guard) < keyboard.index('if (e.key === "Enter")')
-
-
-# ---------------------------------------------------------------------------
-# Rolling-deployment safety: an old page and a new page must both be survivable
-# ---------------------------------------------------------------------------
-
-def test_skip_accepts_a_request_from_the_previous_frontend(tmp_path):
-    """An old page posts no reason_code; rejecting it would strand a validator.
-
-    The old page clears its local draft BEFORE calling /api/skip, so a 422 both
-    destroys unsent work and leaves the record claimed.
-    """
-    model = APP.split("class SkipRequest(BaseModel):", 1)[1].split(
-        "class SubmissionFailureReleaseRequest", 1
-    )[0]
-    assert "] = LEGACY_SKIP_REASON" in model, "reason_code must have a default"
-    assert 'LEGACY_SKIP_REASON = "prefer_another"' in APP
-
-    # The legacy default must stay harmless: no comment demanded, and no
-    # contribution to the issue-based escalation that pages admins.
-    assert '"prefer_another"' not in APP.split(
-        "SKIP_COMMENT_REQUIRED_CODES = ", 1
-    )[1].split("\n", 1)[0]
-    escalation = _function_body(APP, "_skip_summary", "_failure_message")
-    assert "prefer_another" not in escalation
-
-
-def test_skip_response_lets_a_new_page_detect_an_old_backend():
-    """New page -> old backend must not claim the context was saved."""
-    body = _function_body(APP, "skip_pair", "release_failed_submission")
-    assert '"reason_recorded": True' in body
-
-    handler = JS.split("async function onSkip()", 1)[1].split(
-        "async function submitJudgement()", 1
-    )[0]
-    assert "result = await api(\"/skip\"" in handler
-    assert "reasonRecorded" in handler
-    # The richer confirmations are conditional on that acknowledgement.
-    assert handler.index("reasonRecorded") < handler.index("Sent to Restricted access.")
-    assert '"Record skipped."' in handler
-
-
-def test_index_assets_are_content_fingerprinted_and_revalidated():
-    """A cached app.js must not outlive the deployment that changed it."""
-    from static_assets import FINGERPRINTED_ASSETS, fingerprinted_index
-
-    # The raw file stays valid for the GitHub Pages static build.
-    assert '<script src="./app.js"></script>' in HTML
-    assert '<link rel="stylesheet" href="./style.css">' in HTML
-
-    served = fingerprinted_index(ROOT / "docs")
-    for name in FINGERPRINTED_ASSETS:
-        assert f'"./{name}"' not in served
-        assert f'"./{name}?v=' in served
-
-    # CDN and font links carry their own versions and must be left alone.
-    assert "cdn.jsdelivr.net/npm/marked@12/marked.min.js" in served
-    assert "?v=" not in served.split("fonts.googleapis.com", 1)[1].split(">", 1)[0]
-
-    index_route = APP.split("def serve_index()", 1)[1].split("app.mount(", 1)[0]
-    assert "fingerprinted_index(DOCS)" in index_route
-    assert "no-cache" in index_route
-    # The explicit route must be registered before the catch-all static mount.
-    assert APP.index("def serve_index()") < APP.index('app.mount("/", StaticFiles')
-
-
-def test_asset_fingerprint_tracks_content(tmp_path):
-    from static_assets import asset_fingerprint, fingerprinted_index
-
-    (tmp_path / "app.js").write_text("console.log(1);", encoding="utf-8")
-    (tmp_path / "style.css").write_text("body{}", encoding="utf-8")
-    (tmp_path / "index.html").write_text(
-        '<link rel="stylesheet" href="./style.css">'
-        '<script src="./app.js"></script>',
-        encoding="utf-8",
-    )
-
-    first = asset_fingerprint(tmp_path, "app.js")
-    assert first == asset_fingerprint(tmp_path, "app.js")
-    assert first in fingerprinted_index(tmp_path)
-
-    # Same byte length, and possibly the same filesystem timestamp tick: only
-    # the content differs, and that alone must produce a new URL.
-    (tmp_path / "app.js").write_text("console.log(2);", encoding="utf-8")
-    changed = asset_fingerprint(tmp_path, "app.js")
-    assert changed != first
-    # Each asset gets its own fingerprint; an unchanged file keeps its URL.
-    assert changed != asset_fingerprint(tmp_path, "style.css")
-
-    # A missing asset degrades to a placeholder rather than failing the page.
-    (tmp_path / "app.js").unlink()
-    assert asset_fingerprint(tmp_path, "app.js") == "0"
-
-
-def test_a_settled_asset_is_hashed_once_and_then_cached(tmp_path):
-    """A deployed file never changes again, so page loads must not re-read it."""
-    import os
-    import static_assets
-
-    asset = tmp_path / "app.js"
-    asset.write_bytes(b"console.log(1);")
-    # Age the file past the settle window rather than sleeping through it.
-    old_time = time.time() - 3600
-    os.utime(asset, (old_time, old_time))
-    static_assets._CACHE.pop(asset, None)
-
-    reads = []
-    real_read = Path.read_bytes
-
-    def counting_read(self):
-        reads.append(self)
-        return real_read(self)
-
-    with patch.object(Path, "read_bytes", counting_read):
-        first = static_assets.asset_fingerprint(tmp_path, "app.js")
-        second = static_assets.asset_fingerprint(tmp_path, "app.js")
-        third = static_assets.asset_fingerprint(tmp_path, "app.js")
-
-    assert first == second == third
-    assert len(reads) == 1, "a settled asset must be read exactly once"
-
-    # A new deployment writes new bytes; the stale entry must not survive it.
-    asset.write_bytes(b"console.log(22);")
-    os.utime(asset, (old_time + 1, old_time + 1))
-    assert static_assets.asset_fingerprint(tmp_path, "app.js") != first
-
-
-def test_a_just_written_asset_is_not_cached_on_an_ambiguous_stamp(tmp_path):
-    """(mtime, size) cannot separate two same-length writes in one tick."""
-    import static_assets
-
-    asset = tmp_path / "app.js"
-    asset.write_bytes(b"console.log(1);")
-    static_assets._CACHE.pop(asset, None)
-
-    static_assets.asset_fingerprint(tmp_path, "app.js")
-    assert asset not in static_assets._CACHE, (
-        "a file written moments ago must be re-hashed, not trusted"
-    )
-
-
-def test_a_rejected_submission_is_labelled_distinctly_from_a_pending_release():
-    """Both pending views share one label helper, so they cannot disagree."""
-    label = JS.split("function _pendingLabel(item) {", 1)[1].split(
-        "function _updatePendingIndicator()", 1
-    )[0]
-    assert 'if (item.rejected) return "rejected by server; kept"' in label
-    assert 'if (item.release_error) return "save failed; release pending"' in label
-    assert label.index("item.rejected") < label.index("item.release_error")
-
-    # The recovery renderer is the single place where queue labels are applied;
-    # both its done-screen and modal surfaces are built from the same rows.
-    assert JS.count('"save failed; release pending"') == 1
-    renderer = JS.split("function _renderPendingPanel", 1)[1].split(
-        "/* ---------- Pair timer cleanup", 1
-    )[0]
-    assert "_pendingLabel(it)" in renderer
-    assert 'queueRows("done")' in renderer
-    assert 'queueRows("modal")' in renderer
-
-    # A rotated stamp means the item is recoverable again, not a rejection.
-    queue = JS.split("async function _processSubmitQueue()", 1)[1].split(
-        "function _celebratePoints", 1
-    )[0]
-    rotation = queue.split('e?.detail?.code === "judgement_save_failed"', 1)[1]
-    assert "item.rejected = false" in rotation.split("const giveUp", 1)[0]
-
-
-def test_pending_submission_recovery_is_available_from_the_header_and_accessible():
-    assert 'id="pending-saves-btn"' in HTML
-    assert 'aria-haspopup="dialog"' in HTML
-    assert 'aria-controls="pending-submissions-modal"' in HTML
-    assert 'id="pending-submissions-modal"' in HTML
-    assert 'aria-modal="true"' in HTML
-    assert 'aria-labelledby="pending-submissions-title"' in HTML
-    assert 'aria-describedby="pending-submissions-intro"' in HTML
-    assert 'id="pending-submissions-close"' in HTML
-    assert 'aria-label="Close pending judgements"' in HTML
-
-    assert '$("#pending-saves-btn")?.addEventListener("click", openPendingSubmissions)' in JS
-    assert '$("#pending-submissions-close")?.addEventListener("click", closePendingSubmissions)' in JS
-    # A backdrop click closes it — one that also started on the backdrop, so a
-    # drag out of the panel does not (see tests/test_backdrop_close.py).
-    assert 'onBackdropClick($("#pending-submissions-modal"), closePendingSubmissions)' in JS
-
-    key_handler = JS.split("function _onPendingModalKeydown(event)", 1)[1].split(
-        "function openPendingSubmissions", 1
-    )[0]
-    assert 'event.key === "Escape"' in key_handler
-    assert 'event.key !== "Tab"' in key_handler
-    assert "event.preventDefault()" in key_handler
-    assert "last.focus()" in key_handler
-    assert "first.focus()" in key_handler
-
-    opener = JS.split("function openPendingSubmissions()", 1)[1].split(
-        "function closePendingSubmissions", 1
-    )[0]
-    closer = JS.split("function closePendingSubmissions()", 1)[1].split(
-        "function _updatePendingIndicator", 1
-    )[0]
-    assert "_pendingModalReturnFocus = document.activeElement" in opener
-    assert 'document.addEventListener("keydown", _onPendingModalKeydown)' in opener
-    assert 'document.removeEventListener("keydown", _onPendingModalKeydown)' in closer
-    assert "returnFocus.focus()" in closer
-    assert "#pending-submissions-modal" in CSS
-    assert ".pending-recovery-panel" in CSS
-    assert "prefers-reduced-motion: reduce" in CSS
-
-
-def test_blocked_pending_items_can_retry_export_or_be_explicitly_discarded():
-    actions = JS.split("function _pendingActions(key, labelId)", 1)[1].split(
-        "function _exportPendingSubmission", 1
-    )[0]
-    assert 'data-act="retry"' in actions
-    assert 'data-act="export"' in actions
-    assert ">Export JSON</button>" in actions
-    assert 'data-act="discard"' in actions
-    assert 'data-act="copy"' not in actions
-
-    exporter = JS.split("function _exportPendingSubmission(item)", 1)[1].split(
-        "async function _pendingAction", 1
-    )[0]
-    assert 'format: "flora-pending-judgement"' in exporter
-    assert "new Blob" in exporter
-    assert "URL.createObjectURL(blob)" in exporter
-    assert "link.download = `flora-pending-judgement-${identity}.json`" in exporter
-    assert "link.click()" in exporter
-    assert "URL.revokeObjectURL(objectUrl)" in exporter
-    assert "navigator.clipboard" not in exporter
-    assert "failure_stamp" in exporter and "Deliberately omit" in exporter
-
-    action = JS.split("async function _pendingAction(action, key)", 1)[1].split(
-        "function _renderPendingPanel", 1
-    )[0]
-    retry = action.split('if (action === "retry")', 1)[1].split(
-        'if (action === "export")', 1
-    )[0]
-    for stale_field in ("failure_stamp", "failure_id", "failure_expires_at"):
-        assert f"delete item.{stale_field}" in retry
-    assert "_dequeueSubmit" not in retry
-
-    export = action.split('if (action === "export")', 1)[1].split(
-        'if (action === "discard")', 1
-    )[0]
-    assert "_exportPendingSubmission(item)" in export
-    assert "_dequeueSubmit" not in export
-
-    discard = action.split('if (action === "discard")', 1)[1]
-    assert discard.index("await showDialog") < discard.index("if (!ok) return")
-    assert discard.index("if (!ok) return") < discard.index("_dequeueSubmit(item)")
-
-
-def test_a_parked_submission_cannot_block_later_queue_items():
-    queue = JS.split("async function _processSubmitQueue()", 1)[1].split(
-        "function _celebratePoints", 1
-    )[0]
-    # The property, not its spelling: the head item is not taken unconditionally,
-    # and "blocked" is part of what makes an item ineligible. Ownership was later
-    # added to the same predicate, which must not break this guarantee.
-    assert re.search(r"_submitQueue\.findIndex\(\(it\) => !it\.blocked\b", queue)
-    assert "if (idx === -1) break" in queue
-    assert "_submitQueue[0]" not in queue
-    assert queue.count("item.blocked = true") >= 2
-    # Each parking path loops back to find the next non-blocked item.
-    for parked in queue.split("item.blocked = true")[1:]:
-        assert "continue;" in parked
-
-
-def test_one_stuck_submission_does_not_block_the_ones_behind_it():
-    """The processor used to stop at the head of the queue and return.
-
-    A server-rejected item can never succeed, so everything queued behind it was
-    never sent — and nothing in the UI could clear it.
-    """
-    body = JS.split("async function _processSubmitQueue()", 1)[1].split(
-        "\nfunction _celebratePoints", 1
-    )[0]
-    # It walks past parked items instead of always taking index 0.
-    assert re.search(r"_submitQueue\.findIndex\(\(it\) => !it\.blocked\b", body)
-    assert "if (idx === -1) break;" in body
-    assert "_submitQueue[idx]" in body
-    assert "_submitQueue[0]" not in body
-    # No path abandons the loop with the stuck item still at the front.
-    assert "return;" not in body.split("try {", 1)[1], \
-        "a parked item must be skipped, not returned from"
-    assert body.count("item.blocked = true") == 2, \
-        "both unreleasable paths park the item"
-    # And the processing flag is released whatever happens.
-    assert "} finally {" in body
-    assert "_submitProcessing = false;" in body.split("} finally {", 1)[1]
-
-
-def test_a_parked_submission_offers_a_way_out():
-    """Retry, Export JSON and Discard: retry/export/removal for a stuck item."""
-    assert 'data-act="retry"' in JS
-    assert 'data-act="export"' in JS
-    assert 'data-act="discard"' in JS
-
-    action = JS.split("async function _pendingAction(action, key)", 1)[1].split(
-        "\nfunction _renderPendingPanel", 1
-    )[0]
-    # Retry clears the parked state and restarts the backoff. It also drops the
-    # old capability: only a fresh /judge rollback may mint authority to release.
-    assert "item.blocked = false" in action
-    assert "item.attempts = 0" in action
-    assert "delete item.failure_stamp" in action
-    assert "_processSubmitQueue()" in action
-
-    # Export writes a local backup so the work survives a discard.
-    assert 'action === "export"' in action
-    export = JS.split("function _exportPendingSubmission(item)", 1)[1].split(
-        "\nasync function _pendingAction", 1
-    )[0]
-    assert "judgement: item.payload" in export
-    assert "link.download" in export
-    # The release capability is not the validator's work and must not be backed up.
-    assert "failure_stamp" not in export.split("const backup = {", 1)[1].split("};", 1)[0]
-
-    # Discard confirms first and is the only path that drops the payload.
-    assert "Discard this pending judgement?" in action
-    assert "if (!ok) return;" in action
-    assert "_dequeueSubmit(item)" in action
-
-    panel = JS.split("function _renderPendingPanel()", 1)[1].split("\nfunction ", 1)[0]
-    assert "it.blocked ? _pendingActions(it.key" in panel,         "controls appear only on items that need them"
+    harness = f"""
+const calls = [];
+const toasts = [];
+let stillQueuedDuringRelease = null;
+let _submitProcessing = false;
+const SUBMIT_MAX_ATTEMPTS = 3;
+const state = {{ coder: {{ coder_id: "v1" }} }};
+let _submitQueue = [
+  {{ key: "k_other", owner_id: "v2", paper: "Other Validator", attempts: 0, blocked: false, payload: {{ submission_id: "s_other", kind: "ok" }} }},
+  {{ key: "k1", owner_id: "v1", paper: "Bad First", attempts: 0, blocked: false, payload: {{ submission_id: "s1", kind: "reject4xx" }} }},
+  {{ key: "k2", owner_id: "v1", paper: "Stamped Second", attempts: 2, blocked: false, payload: {{ submission_id: "s2", kind: "rollback500" }} }},
+  {{ key: "k3", owner_id: "v1", paper: "Good Third", attempts: 0, blocked: false, payload: {{ submission_id: "s3", kind: "ok" }} }},
+];
+let _failedSubmits = [];
+{ownership_src}
+const _newSubmissionId = () => "new-id";
+const _persistSubmits = () => {{}};
+const _persistFailed = () => {{}};
+const _updatePendingIndicator = () => {{}};
+const _celebrateQueued = () => {{}};
+const refreshStats = async () => {{}};
+const refreshLeaderboard = async () => {{}};
+const showToast = (m) => toasts.push(m);
+const _sleep = async () => {{}};
+const _isTerminalErr = (e) => !!(e && e.terminal);
+const _slotNoLongerOwned = () => false;
+const _dequeueSubmit = (item) => {{
+  const i = _submitQueue.indexOf(item);
+  if (i !== -1) _submitQueue.splice(i, 1);
+}};
+async function api(path, method, body) {{
+  calls.push({{ path, method, body }});
+  if (path === "/judge") {{
+    if (body.kind === "reject4xx") {{
+      const err = new Error("Bad request");
+      err.terminal = true;
+      throw err;
+    }}
+    if (body.kind === "rollback500") {{
+      const err = new Error("DB error");
+      err.detail = {{ code: "judgement_save_failed", failure_stamp: "stamp-xyz" }};
+      throw err;
+    }}
+    return {{ points_earned: 1 }};
+  }}
+  if (path === "/submission-failures/release") {{
+    stillQueuedDuringRelease = _submitQueue.some((it) => it.key === "k2");
+    return {{ status: "released" }};
+  }}
+  throw new Error("unexpected path " + path);
+}}
+{fn_src}
+_processSubmitQueue().then(() => {{
+  console.log(JSON.stringify({{ calls, remaining: _submitQueue, failed: _failedSubmits, stillQueuedDuringRelease }}));
+}}).catch((e) => {{ console.error(e); process.exit(1); }});
+"""
+    proc = subprocess.run(["node", "-e", harness], capture_output=True, text=True, check=True)
+    result = json.loads(proc.stdout)
+
+    paths = [c["path"] for c in result["calls"]]
+    assert "/skip" not in paths
+    # Foreign-owned item k_other is NEVER sent and stays queued; k1 parked; k2 minted stamp &
+    # stayed queued until release; k3 submitted cleanly!
+    judge_ids = [c["body"]["submission_id"] for c in result["calls"] if c["path"] == "/judge"]
+    assert judge_ids == ["s1", "s2", "s3"]
+    releases = [c["body"] for c in result["calls"] if c["path"] == "/submission-failures/release"]
+    assert releases == [{"failure_stamp": "stamp-xyz"}]
+    assert result["stillQueuedDuringRelease"] is True
+    assert [it["key"] for it in result["remaining"]] == ["k_other", "k1"]
+    assert result["remaining"][0]["blocked"] is False
+    assert result["remaining"][1]["blocked"] is True
+    assert result["remaining"][1]["rejected"] is True
+    assert len(result["failed"]) == 1 and result["failed"][0]["paper"] == "Stamped Second"

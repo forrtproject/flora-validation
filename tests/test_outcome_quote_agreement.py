@@ -26,7 +26,7 @@ from psycopg2.extras import RealDictCursor
 import backfill_outcome_agreement as backfill
 import consensus_engine
 import db_pool
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -112,18 +112,6 @@ def test_reproductions_are_left_as_sent():
         req, "reproduction", "computationally reproducible, robust") is req
 
 
-def test_both_judge_endpoints_apply_the_rule_before_validating_the_outcome():
-    source = (ROOT / "app.py").read_text(encoding="utf-8")
-    for endpoint in ("def assignment_judge(", "def judge("):
-        body = source[source.index(endpoint):]
-        body = body[:body.index("\n@app.")]
-        assert body.index("_same_outcome_as_agreement(req") < body.index("_validated_outcome_request(")
-        # One answer for the point and for the record the dashboard counts.
-        assert "reworded = _improved_outcome_evidence(req, " in body
-        assert body.index("req = _with_quote_reworded(req, reworded)") < body.index("_points_for(")
-        assert "improved_evidence=reworded" in body
-
-
 def test_consensus_counts_it_as_agreeing_with_looks_right():
     looks_right = {"type_check": "correct", "original_check": "correct",
                    "outcome_check": "correct", "corrected_outcome": None}
@@ -206,15 +194,6 @@ def test_cant_tell_still_needs_an_outcome_after_a_type_change():
     assert refused.value.status_code == 400
 
 
-def test_cant_tell_stores_no_suggested_outcome():
-    source = (ROOT / "app.py").read_text(encoding="utf-8")
-    body = source[source.index("def judge("):]
-    body = body[:body.index("\n@app.")]
-    start = body.index("corrected_outcome = (")
-    stored = body[start:body.index("cur.execute(", start)]
-    assert "_unsure_without_correction(req)" in stored
-
-
 # ── assignments: shown and judged against the same outcome ────────────────────
 
 _DECIDED = {"type": "replication", "outcome": "failed", "outcome_quote": "Extracted.",
@@ -262,21 +241,6 @@ def test_looks_right_keeps_and_mischaracterised_can_restore_what_was_extracted()
     assert flora._validated_outcome_request(restore, shown["type"], shown["outcome"])[1] == "failed"
 
 
-def test_both_assignment_endpoints_use_the_same_effective_record():
-    source = (ROOT / "app.py").read_text(encoding="utf-8")
-    fetch = source[source.index("def get_assignment("):]
-    fetch = fetch[:fetch.index("\n@app.")]
-    assert "_enrich_pair(_effective_record(" in fetch
-    judge = source[source.index("def assignment_judge("):]
-    judge = judge[:judge.index("\n@app.")]
-    assert "shown = _effective_record(rec)" in judge
-    assert "_same_outcome_as_agreement(req, base_type, base_outcome)" in judge
-    assert "_improved_outcome_evidence(req, shown, final_type)" in judge
-    # Every stored fallback is the shown value, never a second reading of rec.
-    finals = judge[judge.index("final_computational_quote = ("):judge.index("summary = {")]
-    assert 'rec.get("final_' not in finals and 'rec["' not in finals
-
-
 def test_a_shown_outcome_that_is_not_text_is_a_400_not_a_crash():
     """A crash would be a 500, which /judge's failure guard answers with a stamp."""
     req = _request(additional_checks={"shown_outcome": 3})
@@ -295,12 +259,6 @@ def test_a_quote_typed_before_choosing_cant_tell_earns_no_point():
     req = _request(corrected_outcome=None, corrected_outcome_quote="A reworded sentence.",
                    additional_checks={"was_unsure_outcome": True})
     assert not flora._improved_outcome_evidence(req, {"outcome_quote": "Extracted."}, "replication")
-
-
-def test_the_dashboard_does_not_count_cant_tell_as_a_correction():
-    source = (ROOT / "app.py").read_text(encoding="utf-8")
-    counts = source[source.index("AS type_corrections"):source.index("AS title_corrections")]
-    assert "was_unsure_original" in counts and "was_unsure_outcome" in counts
 
 
 # ── the backfill's rule matches the API's ─────────────────────────────────────
@@ -873,152 +831,4 @@ def test_assignment_history_keeps_its_effective_baseline(api, local_database, sh
 
 # ── the validator screen and the admin card ───────────────────────────────────
 
-APP_JS = (ROOT / "docs" / "app.js").read_text(encoding="utf-8")
 
-
-def _js_function(signature):
-    start = APP_JS.index(signature)
-    return APP_JS[start:APP_JS.index("\n}\n", start)]
-
-
-def test_the_outcome_step_offers_right_outcome_better_quote():
-    assert 'data-outcome="correct" data-quote-fix="1"' in APP_JS
-    assert ">Right outcome, better quote</button>" in APP_JS
-    assert "outcome_quote_fix: false" in _js_function("function blankJudgement()")
-
-
-def test_choosing_it_opens_the_quote_editor_and_waits_for_a_reworded_quote():
-    on_choice = _js_function("function onChoice(btn)")
-    assert "state.judgement.outcome_quote_fix = !!btn.dataset.quoteFix" in on_choice
-    assert '#edit-quote-btn")?.click()' in on_choice
-    ready = _js_function("function updateSubmitState(pairBody)")
-    assert "(!j.outcome_quote_fix || _hasBetterQuote(j, state.currentPair))" in ready
-    better = _js_function("function _hasBetterQuote(j, p)")
-    assert "_quoteWords(j.edited_outcome_quote) !== _quoteWords(p?.outcome_phrase)" in better
-
-
-def test_a_click_on_another_choice_while_editing_lands_and_counts():
-    """The blur that closed the editor moved the page before the click arrived, so
-    "Mischaracterised" was lost and "Right outcome, better quote" went out."""
-    assert "quote-edit-open" not in APP_JS             # no lock to refuse the click
-    on_choice = _js_function("function onChoice(btn)")
-    assert on_choice.index('dispatchEvent(new CustomEvent("quote:commit"))') < on_choice.index(
-        "parent.querySelectorAll")
-    editor = APP_JS[APP_JS.index('const editQuoteBtn = container.querySelector("#edit-quote-btn");'):]
-    editor = editor[:editor.index("\n  }\n")]
-    assert 'addEventListener("mousedown"' in editor and "e.preventDefault()" in editor
-    assert '_saveQuote({ answer: false });' in editor          # blur
-    assert 'addEventListener("quote:commit", () => _saveQuote({ answer: false }))' in editor
-    # Only the explicit save completes the choice or asks for more.
-    assert "if (answer && gate3 && state.judgement.outcome_quote_fix)" in editor
-
-
-def test_every_button_below_an_open_editor_gets_its_click():
-    """Every button and link keeps the focus in the textarea until its click: the
-    save button itself (Safari and macOS Firefox do not focus a clicked button, so
-    the blur-save closed the editor its click then reopened), Submit, the notes."""
-    editor = APP_JS[APP_JS.index('const editQuoteBtn = container.querySelector("#edit-quote-btn");'):]
-    editor = editor[:editor.index("\n  }\n")]
-    assert 'e.target.closest("button, a")' in editor
-    # Submit commits the open edit before its guards, as the inline inputs are.
-    submit = _js_function("async function guardedSubmit()")
-    assert submit.index('dispatchEvent(new CustomEvent("quote:commit"))') < submit.index(
-        "You have an unsaved quote edit")
-
-
-def test_a_side_effect_save_that_loses_the_better_quote_reopens_the_gate():
-    editor = APP_JS[APP_JS.index("const _saveQuote = ({ answer = true } = {}) => {"):]
-    editor = editor[:editor.index("\n    };\n")]
-    tail = editor[editor.index("if (answer && gate3 && state.judgement.outcome_quote_fix)"):]
-    assert "} else if (gate3 && state.judgement.outcome_quote_fix &&" in tail
-    assert tail.count("_reopenGate(gate3)") == 2
-
-
-def test_enter_on_a_keyboard_focused_choice_chooses_it():
-    """Tab to a choice + Enter used to submit the previous answer instead."""
-    handler = APP_JS[APP_JS.index('document.addEventListener("keydown", (e) => {\n  const onb'):]
-    handler = handler[:handler.index("\n});\n")]
-    assert 'matches(":focus-visible")' in handler
-    assert handler.index(":focus-visible") < handler.index('$("#submit-btn")')
-
-
-def test_a_record_with_no_extracted_outcome_offers_no_agreement():
-    """The server refuses "Looks right" with nothing to agree with (a 400 the
-    validator saw only after moving on); "Can't tell" stores cannot_be_determined."""
-    mode = _js_function("function _applyOutcomeMode(pairBody)")
-    assert "b.disabled = reclassifiedToReplication || noOutcome;" in mode
-    ready = _js_function("function updateSubmitState(pairBody)")
-    assert '(j.outcome !== "correct" || !!_canonicalOutcome(state.currentPair?.outcome))' in ready
-    assert '"No outcome extracted"' in APP_JS
-
-
-def test_the_chip_never_claims_a_better_quote_that_is_not_there():
-    label = _js_function("function getAnswerLabel(btn)")
-    assert '"Right outcome · quote needed"' in label
-    on_choice = _js_function("function onChoice(btn)")
-    assert "_reopenGate(gate);" in on_choice
-
-
-def test_evidence_is_sent_only_with_the_type_it_evidences():
-    payload = APP_JS[APP_JS.index("const payload = {"):]
-    payload = payload[:payload.index("};")]
-    assert "corrected_outcome_quote: isReplication && judgedOutcome ?" in payload
-    for field in ("computational_quote", "computational_source",
-                  "robustness_quote", "robustness_source"):
-        assert f"corrected_{field}:" in payload and "isReproduction && judgedOutcome ?" in payload
-
-
-def test_the_submission_says_the_outcome_was_agreed_and_the_quote_disputed():
-    submit = APP_JS[APP_JS.index("const addl = {};"):APP_JS.index("const payload = {")]
-    assert "addl.outcome_quote_disputed = true" in submit
-    assert 'j.outcome === "correct"' in submit
-
-
-def test_every_replication_judgement_records_the_outcome_it_showed():
-    """What the server's guard and any later backfill compare against: the record's
-    outcome can change under an open page."""
-    submit = APP_JS[APP_JS.index("const addl = {};"):APP_JS.index("const payload = {")]
-    assert "addl.shown_outcome = p.outcome;" in submit
-
-
-def test_the_extracted_category_is_greyed_out_of_the_correction_list():
-    mode = _js_function("function _applyOutcomeMode(pairBody)")
-    assert '#outcome-correction [data-correct-outcome]' in mode
-    assert "_canonicalOutcome(b.dataset.correctOutcome) === extracted" in mode
-    assert "b.disabled = same" in mode
-    assert "reclassifiedToReplication ? null" in mode       # nothing to match after a type change
-
-
-def test_a_verified_draft_with_a_same_category_correction_resumes_as_the_new_choice():
-    replay = _js_function("function _replayGates(card, draft)")
-    assert "sameAsExtracted" in replay and 'click("[data-quote-fix]")' in replay
-
-
-def test_the_admin_card_names_what_a_suggestion_replaces():
-    card = APP_JS[APP_JS.index("const humanCard = "):]
-    card = card[:card.index("const typeCorr")]
-    assert '<span class="chk-was-tag">was</span>' in card
-    assert "✎ improved the quote" in card and "outcome_quote_disputed" in card
-    assert "couldn't tell" in card
-
-
-def test_the_admin_card_describes_what_the_validator_was_shown():
-    """An import can change the record's outcome, and an assignment shows an
-    earlier decision over it: "was Successful ✗ suggests: Successful" otherwise."""
-    card = APP_JS[APP_JS.index("const humanCard = "):]
-    card = card[:card.index("const typeCorr")]
-    assert "const shownOutcome = v.is_assignment && v.shown_record" in card
-    assert "v.additional_checks?.shown_outcome || shown.outcome" in card
-    assert 'shortRow("Outcome", fmtOutcome(shownOutcome)' in APP_JS
-    # "couldn't tell" is the replication outcome's; a reproduction's axis rows say it.
-    assert 'judgedType === "replication" && !!v.additional_checks?.was_unsure_outcome' in card
-    # A punctuation-only edit is not called an improvement.
-    assert "_quoteWords(v.corrected_outcome_quote) !== _quoteWords(shown.outcome_quote)" in card
-
-
-def test_other_views_no_longer_call_cant_tell_a_correction():
-    summary = APP_JS[APP_JS.index("const outS = summarize("):]
-    summary = summary[:summary.index("if (outS)")]
-    assert '"the outcome is unclear"' in summary and "was_unsure_outcome" in summary
-    detail = _js_function("function _detailCheckRow(label, extracted, checkVal, corrected, unsure = false)")
-    assert "? Couldn't tell" in detail

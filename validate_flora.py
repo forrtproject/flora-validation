@@ -98,51 +98,7 @@ DOI_RE = re.compile(r"^10\.[0-9]{4,}/\S+$")
 NA_STRINGS = {"NA", "N/A", "na", "n/a", "NULL", "None"}
 
 
-def _blank(value) -> bool:
-    return (value is None or (isinstance(value, float) and pd.isna(value))
-            or not str(value).strip())
-
-
-def _text(value) -> str:
-    return "" if _blank(value) else str(value).strip()
-
-
-def row_id(row) -> str:
-    """`doi_o | doi_r-or-url_r`, the pair as the R report names a row. Shown after
-    the FLoRA ID, so a reader recognises the papers without looking the ID up."""
-    right = _text(row.get("doi_r")) or _text(row.get("url_r"))
-    return f"{_text(row.get('doi_o'))} | {right}"
-
-
-# ── findings ──────────────────────────────────────────────────────────────────
-
-def finding_key(check, flora_ids, column, value) -> str:
-    """(check, sorted FLoRA IDs, column, normalised value) as one string.
-
-    The same finding gets the same key on every run, whatever else in the row
-    changes, and a new key once the value it flagged changes. Only the value can
-    hold a "|", and it comes last, so the key splits back unambiguously.
-    """
-    normalised = " ".join(_text(value).split()).casefold()
-    return "|".join([check, ",".join(sorted(flora_ids)), column or "", normalised])
-
-
-def finding(check, rows, column, value, detail, label=None) -> dict:
-    """One finding about one or more rows.
-
-    `detail` is plain text saying what is wrong; the value it is about is kept
-    apart, for the key and for whoever shows it. `label` is the rows' `doi_o |
-    doi_r`, by default the one they all share.
-    """
-    rows = list(rows)
-    flora_ids = sorted({_text(row.get("flora_id")) for row in rows} - {""})
-    if label is None:
-        labels = {row_id(row) for row in rows}
-        label = labels.pop() if len(labels) == 1 else ""
-    value = None if _blank(value) else str(value).strip()
-    return {"check": check, "flora_ids": flora_ids, "column": column, "value": value,
-            "detail": detail, "label": label,
-            "key": finding_key(check, flora_ids, column, value)}
+from pipeline.schema import _blank, _text, finding, finding_key, row_id
 
 
 def _edit_distance(a: str, b: str) -> int:

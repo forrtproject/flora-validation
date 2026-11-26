@@ -21,7 +21,7 @@ from psycopg2.extras import RealDictCursor
 import consensus_engine
 import db_pool
 import llm_validator
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 ROOT = Path(__file__).resolve().parent.parent
 

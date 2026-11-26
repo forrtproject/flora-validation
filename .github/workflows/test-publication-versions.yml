@@ -10,6 +10,9 @@ on:
       - export_validated.py
       - sync_validated.py
       - transform_sources.py
+      - pipeline/**
+      - extractor/**
+      - shared/**
       - tests/**
       - .github/workflows/**
   workflow_dispatch: {}

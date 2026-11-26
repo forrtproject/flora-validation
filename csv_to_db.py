@@ -1196,7 +1196,15 @@ class RetireManifestError(ValueError):
 # holds it exclusively for its whole transaction, before it locks any row; a withdrawal
 # takes it shared, or gives up with a retryable 409. The two lock entry rows in different
 # orders (CSV order, record_id order), so without it they could deadlock.
-IMPORT_WITHDRAW_LOCK_ID = 7_342_025_100
+from extractor.config import (
+    GITHUB_BRANCH as _GITHUB_BRANCH,
+    GITHUB_REPO as _GITHUB_REPO,
+    IMPORT_WITHDRAW_LOCK_ID,
+    PIPELINE_ADVISORY_LOCK_ID,
+    build_github_raw_url as _build_url,
+    github_branch as _github_branch,
+    github_repo as _github_repo,
+)
 
 
 WRITE_SURFACE_LOCK_SQL = """
@@ -1495,7 +1503,13 @@ def _print_retire_plan(plan: list) -> None:
 RETIRE_MANIFEST_REPO_PATH = "data/retired_pairs.csv"
 
 
-def fetch_retire_manifest(dest: Path, commit: "str | None" = None) -> "Path | None":
+def fetch_retire_manifest(
+    dest: Path,
+    commit: "str | None" = None,
+    *,
+    repo: "str | None" = None,
+    branch: "str | None" = None,
+) -> "Path | None":
     """Download flora-extractor's manifest the way sync_csv downloads the CSV.
 
     Same repository and token. *commit* pins it to the commit the imported CSV
@@ -1505,9 +1519,8 @@ def fetch_retire_manifest(dest: Path, commit: "str | None" = None) -> "Path | No
     no manifest (HTTP 404): nothing is named, so nothing is retired.
     """
     import requests
-    from sync_csv import _GITHUB_BRANCH, _GITHUB_REPO, _build_url
 
-    url = _build_url(_GITHUB_REPO, commit or _GITHUB_BRANCH, RETIRE_MANIFEST_REPO_PATH)
+    url = _build_url(_github_repo(repo), commit or _github_branch(branch), RETIRE_MANIFEST_REPO_PATH)
     print(f"Fetching {url} …")
     token = os.environ.get("GITHUB_TOKEN", "")
     response = requests.get(url, headers={"Authorization": f"token {token}"} if token
@@ -1618,7 +1631,6 @@ def run_retire(manifest_path: Path, csv_path: Path, apply: bool = False,
                   f"--expect-retire {sum(s['action'] == 'retire' for s in plan)}")
             return plan
 
-        from extractor_maintenance import PIPELINE_ADVISORY_LOCK_ID
         took_lock = False
         with conn.cursor() as cur:
             cur.execute("SELECT to_regclass('public.retired_records') IS NOT NULL")
@@ -1768,6 +1780,9 @@ if __name__ == "__main__":
     parser.add_argument("--retire-commit", default=None,
                         help="With --retire github: read the manifest at this "
                              "flora-extractor commit instead of the branch.")
+    parser.add_argument("--retire-repo", default=None,
+                        help="With --retire github: read the manifest from this "
+                             "GitHub owner/repo instead of GITHUB_REPO.")
     # extractor_maintenance.py's automatic stage: apply inside that run's lock.
     parser.add_argument("--maintenance-run-id", default=None, help=argparse.SUPPRESS)
     args = parser.parse_args()
@@ -1780,7 +1795,8 @@ if __name__ == "__main__":
         import tempfile
         with tempfile.TemporaryDirectory() as scratch:
             manifest = (fetch_retire_manifest(Path(scratch) / "retired_pairs.csv",
-                                              args.retire_commit)
+                                              args.retire_commit,
+                                              repo=args.retire_repo)
                         if args.retire == "github" else Path(args.retire))
             if manifest is None:
                 print("No data/retired_pairs.csv at that commit; nothing to retire.")

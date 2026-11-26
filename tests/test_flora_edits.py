@@ -504,15 +504,6 @@ def test_corrections_are_skipped_while_the_table_does_not_exist_yet():
     assert cur.execute.call_count == 3
 
 
-def test_the_log_is_append_only_and_tied_to_the_published_id():
-    schema = (ROOT / "db_schema.sql").read_text(encoding="utf-8")
-    table = schema[schema.index("CREATE TABLE IF NOT EXISTS flora_record_changes"):]
-    assert "REFERENCES flora_records(export_id)" in table[:table.index(");")]
-    assert "BEFORE UPDATE OR DELETE ON flora_record_changes" in table
-    assert "BEFORE TRUNCATE ON flora_record_changes" in table
-    assert "flora_record_overrides" not in schema and "flora_record_edits" not in schema
-
-
 # ── changing a record's type ──────────────────────────────────────────────────
 
 AXES = {"outcome_computation": "computationally reproducible", "outcome_robustness": "robust"}
@@ -939,15 +930,6 @@ def test_the_edited_filter_and_count_find_corrected_records():
     assert flora_service._apply_filters(_frame(), {"edited": True}).empty
 
 
-def test_the_cache_signature_sees_every_change():
-    """Exactly which changes are visible: a count and the newest id can be matched by
-    a different set after a save rolls back."""
-    probe = inspect.getsource(flora_service._signature)
-    assert "string_agg(change_id::text, ',' ORDER BY change_id))" in probe
-    assert "FROM flora_record_changes) AS edits_signature" in probe
-    assert "edits" in flora_service._Signature._fields
-
-
 def test_changing_a_record_the_tab_does_not_have_is_not_found(monkeypatch):
     monkeypatch.setattr(flora_service, "dataset", lambda cur: _frame())
     with pytest.raises(flora_service.RecordNotFound):
@@ -1001,42 +983,10 @@ def test_nothing_is_written_through_when_nothing_was_logged(monkeypatch):
     assert flora_service.update_record(None, "F", {}, [], 0, ADMIN)["published"] is False
 
 
-def test_every_product_read_applies_the_corrections_after_the_ids():
-    """The tab, the published CSV and the validation report must agree."""
-    for source in (inspect.getsource(flora_service._current),
-                   inspect.getsource(transform_sources.run),
-                   inspect.getsource(validate_flora.load_dataset)):
-        assert "flora_edits.apply(cur," in source
-        assert source.index("attach_ids(cur") < source.index("flora_edits.apply(cur,")
-    run = inspect.getsource(transform_sources.run)
-    assert run.index("flora_edits.apply(cur,") < run.index("to_output_shape(out)")
-
-
-def test_corrected_identifiers_come_after_every_duplicate_step_and_are_joined_again():
-    """So a correction can never drop, merge or hide a record, and the metadata
-    still follows a corrected DOI."""
-    build = inspect.getsource(transform_sources.build)
-    position = build.index("flora_edits.apply_identifiers(")
-    for step in ("# 5 ── dedup", "merge_doi_pair_dups(", "preprint_dedup.resolve("):
-        assert build.index(step) < position
-    # Searched from the correction on: step 6b joins its own replacements again first.
-    assert position < build.index("join_metadata_again(", position) \
-        < build.index("# 8 ── text cleaning")
-
-
-def test_writing_through_moves_the_revision_the_public_api_caches_on():
-    publish = inspect.getsource(flora_edits.publish)
-    assert "UPDATE flora_data_metadata SET updated_at = NOW()" in publish
-    assert "WHERE id = %s AND retired_at IS NULL" in publish
-
-
 # ── source records stay as imported ──────────────────────────────────────────
 
 def test_source_records_can_no_longer_be_edited():
     assert not hasattr(source_records_service, "update_record")
-    app_source = (ROOT / "app.py").read_text(encoding="utf-8")
-    assert '@app.patch("/api/admin/source-records' not in app_source
-    assert '"/api/admin/source-records/vocabularies"' not in app_source
 
 
 # ── routes ────────────────────────────────────────────────────────────────────

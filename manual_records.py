@@ -167,7 +167,7 @@ def clean(cur, values: dict) -> dict:
     "not checked". A quote source left blank is worked out from the abstract, as
     consensus does.
     """
-    from consensus_engine import quote_source_for      # local: it imports the validators' stack
+    from extractor_vocab import quote_source_for
     values = values or {}
     kind = _text(values.get("type"))
     if kind not in OUTCOME_FIELDS:
@@ -974,15 +974,8 @@ def source_row(rec: dict) -> dict:
 
 
 def _next_display_id(cur) -> str:
-    cur.execute(
-        """
-        INSERT INTO source_display_counters (source, last_value) VALUES (%s, 1)
-        ON CONFLICT (source) DO UPDATE SET last_value = source_display_counters.last_value + 1
-        RETURNING last_value
-        """,
-        (SOURCE_KEY,),
-    )
-    return f"{DISPLAY_PREFIX}-{cur.fetchone()['last_value']:06d}"
+    from shared.display_id import next_display_id
+    return next_display_id(cur, SOURCE_KEY, DISPLAY_PREFIX)
 
 
 def _project(cur, manual_id: str) -> dict:

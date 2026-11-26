@@ -66,683 +66,90 @@ use_utf8_output()
 ROOT = Path(__file__).parent
 DEFAULT_OUTPUT = ROOT / "output" / "flora_entry_sheets.csv"
 
-# The column set the FLoRA pipeline works with (flora_cols in the R notebook).
-FLORA_COLUMNS = [
-    "doi_o", "ref_o", "url_o",
-    "doi_r", "ref_r", "url_r",
-    "abstract_r",
-    "outcome", "outcome_quote", "outcome_quote_source",
-    "type", "source",
-    "alt_identifier_o", "alt_identifier_r",
-    # Reproductions only; NULL on replications. The independent coded axes and
-    # their evidence are exported alongside the derived flat outcome. New columns
-    # go LAST so positional readers of the existing export keep working.
-    "outcome_computation", "outcome_computational_quote", "out_quote_computational_source",
-    "outcome_robustness", "outcome_robustness_quote", "out_quote_robust_source",
-]
-
-# The FLoRA *output* contract — `output_cols` in the R notebook, the shape of
-# flora.csv. FLORA_COLUMNS above is the notebook's *input* selection (`flora_cols`);
-# this is what it emits after enrichment.
-#
-# 15 of these we produce ourselves. The other 20 are enrichment the R pipeline fetches
-# from CrossRef (title/author/journal/year/volume/issue/pages/bibtex), OpenAlex
-# (language) and Unpaywall (oa_url). They are emitted as EMPTY columns rather than
-# omitted, so the file has the right shape and the pipeline's left_join/coalesce steps
-# fill them — an absent column would make those joins fail, a blank one just gets
-# filled.
-FLORA_OUTPUT_COLUMNS = [
-    "doi_o", "alt_identifier_o", "doi_o_hash", "title_o", "author_o", "journal_o",
-    "year_o", "volume_o", "issue_o", "pages_o", "apa_ref_o", "bibtex_ref_o",
-    "url_o", "language_o",
-    "doi_r", "alt_identifier_r", "doi_r_hash", "title_r", "author_r", "journal_r",
-    "year_r", "volume_r", "issue_r", "pages_r", "apa_ref_r", "bibtex_ref_r",
-    "url_r", "language_r",
-    "oa_url_o", "oa_url_r",
-    "outcome", "outcome_quote", "outcome_quote_source", "type", "source",
-]
-
-# Filled from work_metadata by the enrichment join in build(). Named here so the
-# projection inside build() keeps them — reindexing to FLORA_COLUMNS alone silently
-# dropped every one of them before to_output_shape could ever see them.
-ENRICHMENT_COLUMNS = [
-    f"{field}_{side}"
-    for side in ("o", "r")
-    for field in ("title", "author", "journal", "year", "volume", "issue",
-                  "pages", "language", "oa_url", "oa_work_id", "bibtex_ref")
-]
-
-# Computed by build() rather than read or fetched. Named here for the same reason
-# ENRICHMENT_COLUMNS is: the projection at the end of build() reindexes to an
-# explicit list, so a column missing from it is silently dropped before
-# to_output_shape can ever see it.
-DERIVED_COLUMNS = ["author_overlap", "author_overlap_pct"]
-
-# Kept on the built frame for the FLoRA tab, never published: to_output_shape
-# leaves them out. outcome_conflict is a clash of duplicates' outcomes no rule
-# settled (preprint_dedup.CONFLICT_COLUMN), listed under Conflicts until a person does.
-REVIEW_COLUMNS = ["outcome_conflict"]
-
-# Our columns under the output contract's names.
-OUTPUT_RENAMES = {"ref_o": "apa_ref_o", "ref_r": "apa_ref_r"}
-
-# The admin grid retains source registry keys; the published CSV uses the names
-# from the supplied preparation notebook and reference snapshot.
-OUTPUT_SOURCES = {
-    "entry_sheet_replications": "replications",
-    "entry_sheet_reproductions": "reproductions",
-    "fred_replication_success": "COS",
-    "score_2025": "SCORE",
-}
-
-# Kept AFTER the 35 rather than dropped. The output contract has no home for them,
-# but abstract_r feeds downstream classification and the reproduction axes are the
-# authoritative coded fields the flat `outcome` is derived FROM — discarding either
-# to match a column list exactly would lose data the database is the only copy of.
-# Readers select by name, so trailing columns cost nothing.
-#
-# oa_work_id_* is OpenAlex's own identifier for the paper ('W2168190474'), which is
-# what lets a row be looked up in OpenAlex without a DOI round-trip. enrich_works.py
-# has always stored it; until now nothing joined it in, so it sat in the cache while
-# the product carried only oa_url_*, the open-access LINK. Those are different things:
-# a paper has a work id whether or not anyone has posted a free copy of it.
-OUTPUT_EXTRAS = [
-    "oa_work_id_o", "oa_work_id_r",
-    # How many family names the two author lists share, and that as a percentage of
-    # the replication team. A replication by the original authors is a different
-    # kind of evidence from one by strangers, and nothing else in the output says so.
-    "author_overlap", "author_overlap_pct",
-    "abstract_r",
-    "outcome_computation", "outcome_computational_quote", "out_quote_computational_source",
-    "outcome_robustness", "outcome_robustness_quote", "out_quote_robust_source",
-    *final_export.REPLICATION_COLUMNS,
-]
-
-
-# Step 9d of the R notebook. Replication papers that aggregate many studies: a
-# reference to one of these alone does not tell a reader which of the aggregated
-# studies a row is about, so the row's own url_r is appended to the reference.
-#
-# Kept as a list here, as the notebook keeps it: it is a curated judgement, not
-# something a sheet supplies. The candidate warning below is what keeps it current.
-META_PAPER_DOIS = {
-    "10.1038/s41562-024-02062-9",   # Holzmeister et al. 2024
-    "10.3389/fcomm.2022.1048896",   # 10 cases of sensory research
-    "10.1073/pnas.2103313118",      # scarcity effects
-    "10.1007/s13164-018-0400-9",    # X-PHI
-    "10.1038/s41562-018-0399-z",    # Camerer 2018
-    "10.1098/rsos.231240",          # Boyce
-    "10.1027/1864-9335/a000178",    # ML1
-    "10.1177/2515245918810225",     # ML2
-    "10.1016/j.jesp.2015.10.012",   # ML3
-    "10.1126/science.aac4716",      # RP:P
-    "10.1177/08902070221094216",    # SVO development
-    "10.1126/science.aaf0918",      # Camerer 2016
-}
-
-META_PAPER_NOTE = "Individual report available at"
-
-# A replication DOI carrying this many distinct url_r values is probably a
-# meta-paper nobody has classified yet.
-META_PAPER_CANDIDATE_URLS = 5
-
-# JATS/HTML markup that reaches us inside titles and abstracts: <i>, <sup>, <scp>,
-# and whole <mml:math> blocks from publisher XML. A tag by its shape: a name, "?" or
-# "!" straight after "<" or "</", and no "<" inside: "<i>", "<?Pub Caret?>",
-# "<!-- -->", but not "< .05" or "<1.0E-6". Those are comparisons, and anything looser
-# takes the text up to the next ">" with them, however far off it is. Nor is a name with
-# a hyphen before a digit: "<halshs-01945777>" is a HAL archive's identifier.
-_TAG_RE = re.compile(r"</?(?![\w:.-]*-\d)[A-Za-z!?][^<>]*>")
-# Tags side by side are replaced as one, by what the text either side of them all needs.
-_TAG_RUN_RE = re.compile(f"(?:{_TAG_RE.pattern})+")
-# A tag's name without its namespace: "p" in <jats:p>, "br" in <br/>.
-_TAG_NAME_RE = re.compile(r"</?(?:[\w.-]+:)?([\w.-]*)")
-# Tags that end a paragraph, namespaced or not (<jats:title>, <ns3:sec>): the heading in
-# "<h3>Introduction</h3> Achilles…" is not the first word of the sentence after it.
-_BLOCK_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6", "p", "div", "sec", "title",
-                         "li", "br"})
-# Tags around a part of the word before them: CO<sub>2</sub>, 10<sup>-3</sup>.
-_ATTACHED_TAGS = frozenset({"sub", "sup"})
-# A footnote marker closing a title: "…Decision Makers<sup>1</sup>", "…Comparisons?
-# <sup>1</sup>". Only at the very end, after a word of three letters or more or after
-# punctuation, so "in km<sup>2</sup>" and "R<sup>2</sup>" keep their exponent.
-_FOOTNOTE_MARK = r"(?:\d{1,2}|[*†‡§¶#]{1,3})"
-_TRAILING_FOOTNOTE_RE = re.compile(
-    r"(?:(?<=[^\W\d_]{3})|(?<=[.?!:)\]\"'”’]))"
-    rf"\s*<sup>\s*{_FOOTNOTE_MARK}(?:\s*,\s*{_FOOTNOTE_MARK})*\s*</sup>\s*$")
-# A single newline inside a paragraph is a PDF copy artefact — the sentence simply
-# continued. Two or more are a real paragraph break and are preserved.
-_SOFT_BREAK_RE = re.compile(r"(?<!\n)\n(?!\n)")
-# However many newlines, and whatever spaces between them: one paragraph break.
-_PARAGRAPH_BREAK_RE = re.compile(r"\n\s*\n")
-# The Unicode spaces too: a four-per-em space (U+2005) published "84  TIMP2".
-_WS_RE = re.compile(r"[ \t\xa0\u2000-\u200a\u202f\u205f\u3000]+")
-# Text whose paragraphs are kept. Every other cleaned column is shown on one line, and
-# a title is part of validated's key, so a <jats:title> inside one must not break it.
-PARAGRAPH_COLUMNS = ("abstract_r", "outcome_quote", "outcome_computational_quote",
-                     "outcome_robustness_quote")
-
-
-def _s(value) -> str:
-    """Stripped string, with NaN/None as empty. Used by the reporting paths."""
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return ""
-    return str(value).strip()
-
-
-_ENTITY_RE = re.compile(r"&[A-Za-z]{2,8};")
-
-
-def _lower_unknown_entity(match):
-    """`&Amp;` -> `&amp;`, but `&Auml;` left exactly as it is.
-
-    Lowercasing every entity is NOT safe: 375 of the HTML5 named entities differ
-    only by case and mean different characters. `&Auml;` is Ä and `&auml;` is ä, so
-    a blanket lowercase turns Ängström into ängström and, in a statistics title,
-    &Delta; (Δ) into δ and &Omega; (Ω) into ω. The capitalised forms CrossRef
-    actually mis-emits — `&Amp;`, `&Rsquo;` — are not entities under any casing,
-    which is what separates them from the ones that must be left alone.
-    """
-    name = match.group(0)[1:]                 # "Amp;" / "Auml;"
-    if name in html5 or name.lower() not in html5:
-        return match.group(0)
-    return match.group(0).lower()
-
-
-# Enough for the double encoding OpenAlex and the validated set send ("&amp;amp;"),
-# with a margin; a bound so text that keeps producing entities cannot loop forever.
-_UNESCAPE_PASSES = 3
-# An entity written out in full, with its semicolon.
-_WHOLE_ENTITY_RE = re.compile(r"&(?:#\d+|#[xX][0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]*);")
-
-
-def _decode_whole_entity(match):
-    """`&amp;` -> `&`; `&region;` left alone, which html.unescape makes `®ion;`."""
-    entity = match.group(0)
-    if entity[1] == "#" or entity[1:] in html5:
-        return html.unescape(entity)
-    return entity
-
-
-def unescape_entities(text):
-    """Entities decoded until none are left.
-
-    One pass is not enough: titles arrive double-encoded ("Rich &amp;amp; Gureckis",
-    "A&amp;nbsp;replication"), and a single pass published "&amp;".
-
-    Only whole entities, never html.unescape's legacy forms without a semicolon:
-    those read "Smith &notes" as "Smith ¬es" and a link's "&region=us" as "®ion=us".
-    No source cell needs them, and without them decoding text already decoded leaves
-    it as it is, so a FLoRA tab correction is not changed by being cleaned again.
-    """
-    for _ in range(_UNESCAPE_PASSES):
-        decoded = _WHOLE_ENTITY_RE.sub(_decode_whole_entity,
-                                       _ENTITY_RE.sub(_lower_unknown_entity, text))
-        if decoded == text:
-            break
-        text = decoded
-    return text
-
-
-def _replace_tags(match):
-    """What a run of tags leaves: a paragraph break for a block, nothing beside a sub-
-    or superscript, and a space only between two words, so "TIMP2</i>AND" reads
-    "TIMP2 AND" and "<i>et al</i>." reads "et al."."""
-    names = {_TAG_NAME_RE.match(tag).group(1).lower()
-             for tag in _TAG_RE.findall(match.group(0))}
-    if names & _BLOCK_TAGS:
-        return "\n\n"
-    if names & _ATTACHED_TAGS:
-        return ""
-    text, start, end = match.string, match.start(), match.end()
-    between_words = (0 < start and end < len(text)
-                     and text[start - 1].isalnum() and text[end].isalnum())
-    return " " if between_words else ""
-
-
-def _mojibake_alphabet(codec):
-    """Each byte 0x80-0xFF as `codec` shows it. Bytes cp1252 leaves undefined (0x81,
-    0x8D, 0x8F, 0x90, 0x9D) arrive as the control character of the same number."""
-    return {byte: bytes([byte]).decode(codec, errors="ignore") or chr(byte)
-            for byte in range(0x80, 0x100)}
-
-
-def _mojibake_pattern(alphabet, leads):
-    """UTF-8 sequences as `alphabet` mis-decodes them, as a regex alternative.
-
-    `leads` lists each allowed lead byte range with the number of continuation bytes
-    it takes, so only a well-formed UTF-8 sequence matches. A fourth item, when
-    given, is the lowest first continuation byte the lead may take.
-    """
-    def chars(lo, hi):
-        return "".join(re.escape(alphabet[b]) for b in range(lo, hi + 1))
-    parts = []
-    for lo, hi, n, *first in leads:
-        start = first[0] if first else 0x80
-        tail = f"[{chars(start, 0xBF)}]" + (f"[{chars(0x80, 0xBF)}]{{{n - 1}}}" if n > 1 else "")
-        parts.append(f"[{chars(lo, hi)}]{tail}")
-    return "|".join(parts)
-
-
-# UTF-8 text decoded as Windows-1252 ("learnerâ€™s", "KÃ¶bach") and as Mac Roman
-# ("Kruger‚Äôs"), as provider metadata and pasted sheet cells deliver it. Narrowed to
-# the lead bytes those sources produce, because a pattern this short can also be
-# real text: Mac Roman shows "“É" as a two-byte sequence, and French "à « " (with a
-# no-break space) reads as a three-byte one. So two-byte sequences are repaired only
-# for U+0080 to U+017F (Â, Ã, Ä, Å leads: accented Latin letters and Polish/Czech
-# ones) and Greek (Î, Ï: "Î±" for α), and three-byte ones only for U+2000 to U+2FFF
-# (â€™ for ’, â€“ for –, ‚Äô in Mac Roman): punctuation and symbols.
-# One pattern, Mac Roman first: scanning left to right, "‚â•‚ÄÖ" must read as Mac
-# Roman's "≥" and a six-per-em space, not as Windows-1252's "â•‚" in its middle.
-_CP1252 = _mojibake_alphabet("cp1252")
-_MAC_ROMAN = _mojibake_alphabet("mac_roman")
-# Mac Roman's "¬" (0xC2) is the lead of Latin-1 symbols ("¬±" is ±, "¬∞" is °),
-# common in reported statistics. Greek leads (Î, Ï) need a continuation byte above
-# 0xA0, so "Î" before a no-break space stays as written.
-_MOJIBAKE_RE = re.compile(
-    f"(?P<mac_roman>{_mojibake_pattern(_MAC_ROMAN, [(0xE2, 0xE2, 2), (0xC2, 0xC2, 1)])})"
-    f"|(?P<cp1252>{_mojibake_pattern(_CP1252, [(0xC2, 0xC5, 1), (0xCE, 0xCF, 1, 0xA1), (0xE2, 0xE2, 2)])})")
-_TO_BYTE = {"mac_roman": {char: byte for byte, char in _MAC_ROMAN.items()},
-            "cp1252": {char: byte for byte, char in _CP1252.items()}}
-# Enough for text mis-decoded three times ("ÃƒÅ½Ã‚Â±" is α), with a bound.
-_MOJIBAKE_PASSES = 4
-
-
-def _undo_mojibake(match):
-    to_byte = _TO_BYTE[match.lastgroup]
-    raw = bytes(to_byte[char] for char in match.group(0))
-    try:
-        decoded = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        return match.group(0)
-    # A control or format character is no repair: "Â" before a C1 control byte, or
-    # "â" and a no-break space before "«" (U+202B), which is real Portuguese text.
-    if unicodedata.category(decoded) in ("Cc", "Cf"):
-        return match.group(0)
-    return decoded
-
-
-def has_mojibake(value) -> bool:
-    """Whether text holds UTF-8 that was decoded with the wrong character set."""
-    return isinstance(value, str) and repair_mojibake(value) != value
-
-
-def repair_mojibake(value):
-    """`value` with mis-decoded UTF-8 decoded again; other text left exactly as it is.
-
-    Only well-formed UTF-8 sequences in the alphabets above are touched, so a real
-    "Köbach" or "Ä" stays. Non-strings pass through.
-    """
-    if not isinstance(value, str):
-        return value
-    for _ in range(_MOJIBAKE_PASSES):
-        repaired = _MOJIBAKE_RE.sub(_undo_mojibake, value)
-        if repaired == value:
-            break
-        value = repaired
-    return value
-
-
-def clean_text(value, one_line=False):
-    """Strip markup, decode entities, and repair PDF-copied line breaks.
-
-    Step 7c of the R notebook. Runs before anything compares strings, so a title
-    differing only by an `<i>` is not mistaken for a different paper.
-
-    Paragraphs come out separated by one blank line, or by a space with `one_line`,
-    for a column outside PARAGRAPH_COLUMNS. A one-line value also drops a footnote
-    marker at its end, which would otherwise read "Decision Makers1".
-    """
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return None
-    text = str(value)
-    if not text.strip():
-        return None
-    if one_line:
-        text = _TRAILING_FOOTNOTE_RE.sub("", text)
-    text = _TAG_RUN_RE.sub(_replace_tags, text)
-    # Unrecognised capitalised entities are lowercased before unescaping: CrossRef
-    # returns forms ("&Amp;", "&Rsquo;") that html.unescape does not recognise, and
-    # which then reach the published reference verbatim. Only an entity that is not
-    # itself a real one is touched — see _lower_unknown_entity.
-    text = unescape_entities(text)
-    # After the entities: "&acirc;&euro;&trade;" is mojibake once decoded.
-    text = repair_mojibake(text)
-    # Tags stripped again: publisher XML double-encodes, so &amp;lt;i&amp;gt; only
-    # becomes a literal tag once unescaped.
-    if "<" in text and ">" in text:
-        text = _TAG_RUN_RE.sub(_replace_tags, text)
-    # A carriage return, written out or as the &#13; decoded above, is a line break
-    # like any other: left in, a page that keeps an abstract's breaks shows each one.
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    text = _SOFT_BREAK_RE.sub(" ", text)
-    text = _WS_RE.sub(" ", text)
-    paragraphs = (part.strip() for part in _PARAGRAPH_BREAK_RE.split(text))
-    return (" " if one_line else "\n\n").join(part for part in paragraphs if part) or None
-
-
-def drop_untitled(frame):
-    """Rows with a title on both sides — the notebook's Step 10 filter.
-
-    Shared by the export and by validate_flora's load_dataset so that what ships
-    and what gets validated are the same set of rows. Two copies of this predicate
-    would drift, and the report would then flag rows nobody can act on because they
-    were never published.
-    """
-    if not {"title_o", "title_r"} <= set(frame.columns):
-        return frame
-    # astype(bool): mapping an EMPTY str column keeps the str dtype, and two string
-    # arrays cannot be combined with &.
-    return frame[frame["title_o"].map(lambda value: bool(_s(value))).astype(bool)
-                 & frame["title_r"].map(lambda value: bool(_s(value))).astype(bool)]
-
-
-def missing_title_report(frame):
-    """Rows the R notebook's Step 10 drops for want of a title, with the reason.
-
-    Returned rather than written here so the caller decides where it goes — and so
-    the report exists even when the filter itself is off.
-    """
-    def _blank(value):
-        return value is None or (isinstance(value, float) and pd.isna(value)) \
-            or not str(value).strip()
-
-    rows = []
-    for _, row in frame.iterrows():
-        no_o, no_r = _blank(row.get("title_o")), _blank(row.get("title_r"))
-        if not (no_o or no_r):
-            continue
-        if no_o and no_r:
-            reason = "missing both title_o and title_r"
-        elif no_o:
-            reason = "missing title_o"
-        else:
-            reason = "missing title_r"
-        rows.append({
-            "reason": reason,
-            "flora_id": row.get("flora_id"),
-            "source": row.get("source"),
-            "doi_o": row.get("doi_o"),
-            "apa_ref_o": row.get("ref_o"),
-            "doi_r": row.get("doi_r"),
-            "url_r": row.get("url_r"),
-            "apa_ref_r": row.get("ref_r"),
-        })
-    return pd.DataFrame(rows)
-
-
-def doi_hash(value):
-    """First 3 hex chars of the DOI's md5 — `substr(openssl::md5(doi), 1, 3)` in R.
-
-    A privacy-preserving bucket for API lookup, not an identifier: three characters
-    is 4,096 buckets, so it is deliberately lossy.
-    """
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    return hashlib.md5(text.encode("utf-8")).hexdigest()[:3]
-
-
-def to_output_shape(frame, keep_extras: bool = True):
-    """Project a built frame onto the FLoRA output contract.
-
-    Columns we cannot fill are created empty rather than omitted — see
-    FLORA_OUTPUT_COLUMNS.
-    """
-    from bibliographic_helpers import normalise_author_json
-    out = frame.rename(columns=OUTPUT_RENAMES).copy()
-    # Use the same normalisation for scoring plain bylines and publishing them.
-    # Export preserves unresolved entries and uses the scorer's plain-name rules,
-    # so recomputing overlap from the published author lists gives the same result.
-    author_overlap.augment(out, verbose=False)
-    # Every author cell as fred-data's compact JSON list, whatever its source wrote.
-    # (Workbook escapes such as "_x000D_" are decoded where a workbook is read, not
-    # here: text of our own can contain the pattern, e.g. a BibTeX key "…_x394e_v3".)
-    for column in ("author_o", "author_r"):
-        if column in out.columns:
-            out[column] = out[column].map(lambda value: normalise_author_json(value, preserve_unresolved=True))
-    # One separator in the identifier lists, corrections included: ", ".
-    for column in ("alt_identifier_o", "alt_identifier_r"):
-        if column in out.columns:
-            out[column] = out[column].map(lambda v: normalise_identifier_list(v)
-                                          if isinstance(v, str) else v)
-    out["doi_o_hash"] = out["doi_o"].apply(doi_hash)
-    out["doi_r_hash"] = out["doi_r"].apply(doi_hash)
-    if "source" in out:
-        out["source"] = out["source"].replace(OUTPUT_SOURCES)
-
-    out = final_export.with_replication_columns(final_export.with_identity(out))
-    columns = final_export.IDENTITY_COLUMNS + list(FLORA_OUTPUT_COLUMNS)
-    if keep_extras:
-        columns += [c for c in OUTPUT_EXTRAS if c in out.columns]
-        columns += [c for c in PROVENANCE_COLUMNS if c in out.columns]
-    return out.reindex(columns=columns)
-
-
-# Traceability columns appended to the FLoRA set. Appended, never inserted: the
-# comment above is explicit that positional readers of the existing export must keep
-# working, and flora_id arriving first would break every one of them.
-PROVENANCE_COLUMNS = ["flora_id", "source_display_id", "source_record_id"]
-
-# Placeholder DOIs used upstream for papers with no real identifier (book
-# chapters and the like). Kept through the join, stripped before output.
-DUMMY_DOI_RE = re.compile(r"^dummy[_\-]", re.I)
-
-
-def clean_doi(value):
-    """Normalise a scraped DOI to a bare '10.…' form.
-
-    Real garbage this handles, taken from the live data:
-        '10.1002/pits.22106digital object identifier (doi)'
-        'https://doi.org/10.1016/0010-0285(92)90013-R'
-        '10.1016/j.learninstruc.2018.04.010 get rights and content'
-        '10.1002/(sici)1099-0771(199806)11:2%3c107::aid-bdm292%3e3.0.co;2-y'
-    DOIs cannot contain whitespace, so everything from the first space is dropped.
-    A percent-encoded DOI is decoded: copied from a link, a Wiley SICI DOI arrives
-    with %3c and %3e for < and >, which never match a citation of the paper and
-    which doi.org does not resolve.
-    """
-    from shared.doi import clean_scraped_doi
-
-    return clean_scraped_doi(value)
-
-
-def decode_doi_escapes(value: str) -> str:
-    """A DOI copied from a link, percent-decoded once: "%3c" is "<".
-
-    Before lowercasing, so an escaped capital becomes the same letter as a typed
-    one. Left as it is when it holds an escaped percent sign ("%25"): decoding that
-    would make a new escape, and a second pass a different DOI.
-    """
-    from shared.doi import decode_doi_escapes as _decode_doi_escapes
-
-    return _decode_doi_escapes(value)
-
-
-_SHEET_YEAR_RE = re.compile(r"^(1[5-9]\d{2}|2\d{3})(?:\.0+)?$")
-
-
-def _sheet_year(value):
-    """A hand-entered year_r from the sheet, or None if it is not one.
-
-    244 of the stored values read "2020.0": the column travelled through a float
-    somewhere in the sheet import, and publishing that spelling beside OpenAlex's
-    "2020" would put two formats in one column. Anything that is not a plausible
-    four-digit year is dropped rather than guessed at — this is a fallback for rows
-    the DOI lookup could not answer, not a second source of truth.
-    """
-    text = _s(value)
-    match = _SHEET_YEAR_RE.match(text)
-    return match.group(1) if match else None
-
-
-_DOI_URL_RE = re.compile(r"^10\.\d{4,}/")
-
-
-def _doi_url(value):
-    """The DOI's landing page, which R's formatted metadata carries, or None.
-
-    Normalises through _s() rather than truth-testing the cell. pandas 3 hands a
-    missing str value to .map() as a float NaN, and NaN is TRUTHY, so a bare
-    `if value` guard let it through to re.match and took the whole build down
-    with a TypeError on every row that has no original DOI.
-    """
-    doi = _s(value)
-    # "#" and "?" would end the link's path; the rest of a DOI is written as it is.
-    return ("https://doi.org/" + doi.replace("#", "%23").replace("?", "%3F")
-            if _DOI_URL_RE.match(doi) else None)
-
-
-def _without_tracking(url):
-    """url without its utm_ query parameters, and without the '?' once none is left.
-
-    Campaign tags say how a reader arrived, not which page it is: FRED-000520 and
-    FRED-000521 are one thesis, linked once plainly and once with ?utm_source=….
-    Every other parameter can name a different page or file, so it stays, in order.
-    """
-    url, hash_mark, fragment = url.partition("#")
-    base, _, query = url.partition("?")
-    params = query.split("&")
-    if not any(param.lower().startswith("utm_") for param in params):
-        return url + hash_mark + fragment
-    # Only the tags go: "?a=1&&utm_x=2" keeps its empty parameter, as "?a=1&&" does.
-    kept = [param for param in params if not param.lower().startswith("utm_")]
-    return base + ("?" + "&".join(kept) if any(kept) else "") + hash_mark + fragment
-
-
-def norm_url(value):
-    """A URL as the exclusions and the duplicate steps compare it: lowercase, without
-    the scheme, a leading www., tracking parameters or a trailing slash."""
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return None
-    v = str(value).strip().lower()
-    v = re.sub(r"^https?://", "", v)
-    v = re.sub(r"^www\.", "", v)
-    # Before the slash is stripped: "…/5025/?utm_source=…" is "…/5025" once untagged.
-    v = _without_tracking(v)
-    v = v.rstrip("/")
-    return v or None
-
-
-# The one separator of a multi-value identifier column (alt_identifier_o/_r) as
-# published: ", ", as preprint_dedup.append_alt_identifier writes it. A semicolon
-# cannot be one, because SICI DOIs hold them ("…<107::aid-bdm292>3.0.co;2-y"); it is
-# read as a separator only before whitespace or the start of another identifier.
-IDENTIFIER_SEPARATOR = ", "
-# Where one identifier ends and the next begins. Only before something that starts
-# an identifier, or at a comma followed by a space as the published lists are
-# written: a URL may hold a bare comma ("…/a,b") and a SICI DOI a semicolon.
-_NEXT_IDENTIFIER = r"(?=10\.\d|https?://|doi:|www\.)"
-_IDENTIFIER_SPLIT_RE = re.compile(
-    r"\s*,\s+|\s*,(?=\s*" + _NEXT_IDENTIFIER[3:]                 # a comma
-    + r"|\s*;\s*" + _NEXT_IDENTIFIER + r"|\s*;\s+"            # a semicolon between identifiers
-    + r"|\s*\|\s*"                                            # a pipe
-    + r"|\s+" + _NEXT_IDENTIFIER                                # whitespace before an identifier
-    + r"|\s*\n\s*", re.I)                                     # a line break
-
-
-def _identifier_key(part):
-    """How two listed identifiers compare: a DOI, bare or as a doi.org link,
-    ignoring case as DOIs do; any other link exactly (a path's case can name a
-    different file)."""
-    doi = re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", "", part, flags=re.I)
-    return doi.lower() if re.match(r"10\.\d", doi) else part
-
-
-def normalise_identifier_list(value):
-    """An alt_identifier cell as one list joined by ", ": other separators (a
-    semicolon between identifiers, a pipe, a line break, a space) become it, and a
-    repeated identifier is kept once. Blank stays None."""
-    if not isinstance(value, str) or not value.strip():
-        return None if not isinstance(value, str) else (value.strip() or None)
-    parts, seen = [], set()
-    for part in _IDENTIFIER_SPLIT_RE.split(value.strip()):
-        part = part.strip()
-        if not re.match(r"https?://", part, re.I):   # a link may end in a comma
-            part = part.rstrip(";,").strip()
-        if part and _identifier_key(part) not in seen:
-            seen.add(_identifier_key(part))
-            parts.append(part)
-    return IDENTIFIER_SEPARATOR.join(parts) or None
-
-
-def strip_redundant_url(row):
-    """Drop url_r when it only restates doi_r.
-
-    In FLoRA, url_r should mean 'a link to something that isn't the DOI' — an OSF
-    page, a report. 1,403 of the replication rows carry https://doi.org/<doi_r>,
-    which is the DOI written twice.
-    """
-    doi, url = row.get("doi_r"), row.get("url_r")
-    if not doi or not url:
-        return url
-    return None if clean_doi(doi) == clean_doi(url) else url
-
-
-def matching_exclusion(exclusions, doi_o, doi_r, url_r):
-    """The transform_exclusions row that removes a row with these identifiers, or
-    None. The same rules as step 3: an exclusion with doi_o set matches the pair,
-    one without it matches doi_r or url_r alone."""
-    d_o, d_r, u_r = clean_doi(doi_o), clean_doi(doi_r), norm_url(url_r)
-    for exclusion in exclusions:
-        if exclusion.get("doi_o"):
-            if exclusion.get("doi_r") and (clean_doi(exclusion["doi_o"]), clean_doi(exclusion["doi_r"])) == (d_o, d_r):
-                return exclusion
-            continue
-        if exclusion.get("doi_r") and d_r and clean_doi(exclusion["doi_r"]) == d_r:
-            return exclusion
-        if exclusion.get("url_r") and u_r and norm_url(exclusion["url_r"]) == u_r:
-            return exclusion
-    return None
-
-
-def _identifiers(df):
-    """doi_o, doi_r and url_r as step 5 compares them."""
-    return pd.DataFrame({"doi_o": df["doi_o"].apply(clean_doi),
-                         "doi_r": df["doi_r"].apply(clean_doi),
-                         "url_r": df["url_r"].apply(norm_url)}, index=df.index)
-
-
-def dedup_keys(df):
-    """type | doi_o | doi_r | url_r, as step 5 collapses on. A Series.
-
-    Every identifier counts: two reports of one paper pair (individual reports under
-    a meta-paper) differ only in url_r, and are two records, as in R, whose key is
-    doi_o with url_r, else doi_r. Rows that differ only because one lacks a url_r are
-    left to preprint_dedup.merge_doi_pair_dups, which combines them rather than
-    dropping one. A key says nothing about a row with no identifiers at all: see
-    has_identifier(). Which rows the duplicate steps make one record: record_keys().
-    """
-    ids = _identifiers(df).fillna("")
-    return (df["type"].fillna("") + "|" + ids["doi_o"] + "|" + ids["doi_r"]
-            + "|" + ids["url_r"])
-
-
-def has_identifier(df):
-    """Whether each row has a doi_o, doi_r or url_r. A row with none shares its key
-    with every other such row of its type, yet is the same record as none of them."""
-    return _identifiers(df).notna().any(axis=1)
-
-
-def record_keys(df):
-    """For each row, the key of the record the duplicate steps would make of it, by
-    its identifiers: rows with one key would publish as one record. A Series.
-
-    A row's own key (dedup_keys, step 5), except in a paper pair whose rows carry at
-    most one url_r between them, which step 5b combines: there each row takes the key
-    of the row with the url_r. Missing for a row with no identifier, as it is no other
-    row's duplicate. Rulings play no part, so this is what the identifiers say: what
-    the warnings about corrected identifiers compare.
-    """
-    ids = _identifiers(df)
-    pair = df["type"].fillna("") + "|" + ids["doi_o"].fillna("") + "|" + ids["doi_r"].fillna("")
-    # Grouped by position, so the frame's index, which need not be unique, plays no part.
-    urls = ids["url_r"].groupby(pair.to_numpy())
-    combined = ids["doi_o"].notna() & ids["doi_r"].notna() & urls.transform("nunique").le(1)
-    url_r = ids["url_r"].where(~combined, urls.transform("first"))
-    return (pair + "|" + url_r.fillna("")).where(has_identifier(df))
+from pipeline.schema import (  # noqa: F401
+    DERIVED_COLUMNS,
+    DUMMY_DOI_RE,
+    ENRICHMENT_COLUMNS,
+    FLORA_COLUMNS,
+    FLORA_OUTPUT_COLUMNS,
+    IDENTIFIER_SEPARATOR,
+    JOINED_COLUMNS,
+    JOIN_FALLBACKS,
+    META_PAPER_CANDIDATE_URLS,
+    META_PAPER_DOIS,
+    META_PAPER_NOTE,
+    OUTPUT_EXTRAS,
+    OUTPUT_RENAMES,
+    OUTPUT_SOURCES,
+    PARAGRAPH_COLUMNS,
+    PROVENANCE_COLUMNS,
+    REVIEW_COLUMNS,
+    WORK_ID_HINT,
+    _CP1252,
+    _DOI_URL_RE,
+    _ENTITY_RE,
+    _IDENTIFIER_SPLIT_RE,
+    _MAC_ROMAN,
+    _MOJIBAKE_PASSES,
+    _MOJIBAKE_RE,
+    _OPENALEX_WORK_RE,
+    _PARAGRAPH_BREAK_RE,
+    _SHEET_YEAR_RE,
+    _SOFT_BREAK_RE,
+    _TAG_NAME_RE,
+    _TAG_RE,
+    _TAG_RUN_RE,
+    _TO_BYTE,
+    _TRAILING_FOOTNOTE_RE,
+    _UNESCAPE_PASSES,
+    _WHOLE_ENTITY_RE,
+    _WS_RE,
+    _decode_whole_entity,
+    _doi_url,
+    _identifier_key,
+    _identifiers,
+    _join_axes,
+    _join_parts,
+    _lower_unknown_entity,
+    _mojibake_alphabet,
+    _mojibake_pattern,
+    _replace_tags,
+    _s,
+    _sheet_year,
+    _undo_mojibake,
+    _without_tracking,
+    clean_doi,
+    clean_text,
+    decode_doi_escapes,
+    dedup_keys,
+    derive_quote,
+    derive_quote_source,
+    doi_hash,
+    drop_untitled,
+    has_identifier,
+    has_mojibake,
+    matching_exclusion,
+    missing_title_report,
+    norm_url,
+    normalise_identifier_list,
+    openalex_work_id,
+    openalex_work_ids,
+    record_keys,
+    repair_mojibake,
+    strip_redundant_url,
+    to_output_shape,
+    unescape_entities,
+)
+from pipeline.transform.context import BuildContext
+from pipeline.transform.stages import (
+    stage_clean_and_finalize,
+    stage_dois_and_confirmed_resolutions,
+    stage_enrich_and_preprint_dedup,
+    stage_exact_dedup_and_pair_merge,
+    stage_exclusions_and_redundant_urls,
+    stage_identifier_corrections_and_quotes,
+    stage_outcomes_and_quotes,
+)
 
 
 def load(cur):
@@ -891,89 +298,6 @@ def derive_outcome(row, aliases, problems):
     return canonical
 
 
-def _join_parts(*values):
-    """Join the non-empty values with ' || ', dropping blanks and repeats.
-
-    `if p` is NOT a sufficient emptiness test here: df.apply(axis=1) hands back
-    the column's NA sentinel, and float('nan') is truthy while str(nan) == 'nan'
-    — which is how the literal string "nan" ends up in a shipped dataset. Use
-    pd.isna, and de-duplicate so an identical quote on both dimensions is not
-    emitted twice.
-    """
-    parts = []
-    for v in values:
-        if v is None or (not isinstance(v, str) and pd.isna(v)):
-            continue
-        text = str(v).strip()
-        if text and text.lower() != "nan" and text not in parts:
-            parts.append(text)
-    return " || ".join(parts) if parts else None
-
-
-def _join_axes(computational, robustness):
-    """A reproduction's two values as one, each labelled with its axis.
-
-    fred-data's combine_reproduction_quotes, which readers of the old flora.csv
-    rely on: "Computational: A || Robustness: B", one labelled value when only one
-    axis has text, and an identical pair collapsed to one unlabelled value.
-    """
-    comp, rob = _join_parts(computational), _join_parts(robustness)
-    if comp and rob:
-        return comp if comp == rob else f"Computational: {comp} || Robustness: {rob}"
-    if comp:
-        return f"Computational: {comp}"
-    if rob:
-        return f"Robustness: {rob}"
-    return None
-
-
-def derive_quote(row):
-    """Reproductions have two quotes; join them rather than picking one, so no
-    coder's text is silently dropped."""
-    if row["type"] != "reproduction":
-        return row.get("outcome_quote")
-    return _join_axes(row.get("outcome_computational_quote"),
-                      row.get("outcome_robustness_quote"))
-
-
-def derive_quote_source(row):
-    if row["type"] != "reproduction":
-        return row.get("out_quote_source")
-    return _join_axes(row.get("out_quote_computational_source"),
-                      row.get("out_quote_robust_source"))
-
-
-# The columns the metadata join keeps from the source where no provider resolves the
-# work: the sheet's reference, abstract and year, and the original's landing page.
-# year_o has no source value: the sheets carry only the replication's year.
-JOIN_FALLBACKS = ("ref_o", "url_o", "ref_r", "abstract_r", "year_r")
-# Everything the join writes for one side.
-JOINED_COLUMNS = {
-    side: [f"{field}_{side}" for field in ("title", "author", "journal", "volume", "issue",
-                                           "pages", "language", "oa_url", "oa_work_id",
-                                           "bibtex_ref", "year", "ref", "url")]
-          + (["abstract_r"] if side == "r" else [])
-    for side in ("o", "r")
-}
-
-
-# A working column for step 6c: the url a correction replaced, which can be the
-# OpenAlex record of a work with no DOI.
-WORK_ID_HINT = "_replaced_work_id_{side}"
-_OPENALEX_WORK_RE = re.compile(r"openalex\.org/(?:works/)?(W\d{5,})", re.I)
-
-
-def openalex_work_ids(value) -> list:
-    """The W-ids of the OpenAlex links in `value` (a URL or an identifier list)."""
-    if not isinstance(value, str):
-        return []
-    return [match.group(1).upper() for match in _OPENALEX_WORK_RE.finditer(value)]
-
-
-def openalex_work_id(value) -> "str | None":
-    """The W-id of the first OpenAlex link in `value`."""
-    ids = openalex_work_ids(value)
-    return ids[0] if ids else None
 
 
 def join_metadata(df, meta, sides=("o", "r")):
@@ -1109,29 +433,17 @@ def join_metadata_again(df, rows, side, meta, fallbacks, kept_urls=()):
         df.loc[rows, column] = part[column]
 
 
+
+
 def build(cur, verbose: bool = True,
           review_issue: bool = False, *,
           rows: "pd.DataFrame | None" = None,
           metadata: "dict | None" = None) -> pd.DataFrame:
     """The prepared FLoRA dataset, as a DataFrame. Reads only; writes nothing.
 
-    Carries three provenance columns beyond the FLoRA set so a produced row can be
-    traced back to what it came from:
-
-        source_record_id   the surviving source_records row (dedup keeps the first
-                           row and what only a dropped row had; a website-validated
-                           duplicate decides its values)
-        source_display_id  that row's human id, e.g. REPL-000397
-        merged_record_ids  rows the dedup collapsed into it, if any
-
-    flora_id is NOT added here: assigning one is a write, and this stays a pure
-    function of the database. flora_registry.refresh() attaches it.
-
-    `rows` and `metadata` are a caller's still-current load(cur) and
-    enrich_works.load_metadata(cur) results. Those two reads are nearly all of a
-    build's database egress (every source row and every cached abstract), so the
-    FLoRA tab passes them in when only a small table — a preprint ruling, an
-    exclusion — has changed. `rows` is copied, never modified.
+    Orchestrates the build stages in pipeline.transform.stages while keeping
+    all database loaders injected through module lookups so existing monkeypatches
+    on enrich_works and flora_edits remain effective.
     """
     def say(*args):
         if verbose:
@@ -1150,556 +462,52 @@ def build(cur, verbose: bool = True,
         say("No rows to transform.")
         return pd.DataFrame(columns=FLORA_COLUMNS + PROVENANCE_COLUMNS)
     say(f"  loaded: {len(df)} rows "
-          f"({(df['type'] == 'replication').sum()} replication, "
-          f"{(df['type'] == 'reproduction').sum()} reproduction)")
+        f"({(df['type'] == 'replication').sum()} replication, "
+        f"{(df['type'] == 'reproduction').sum()} reproduction)")
 
-    df[preprint_dedup.CONFLICT_COLUMN] = None     # set by the merges and drops below
-    # A hand record that is already a FLoRA record keeps it, its id and its values,
-    # against rows arriving later, which only fill its blanks (preprint_dedup._yields):
-    # the duplicate steps have to know which rows are a live record's source row.
-    # Asked only when there are rows added by hand.
+    df[preprint_dedup.CONFLICT_COLUMN] = None
     if df["source"].eq(preprint_dedup.MANUAL_SOURCE).any():
         df[preprint_dedup.REGISTERED_COLUMN] = df["record_id"].isin(load_live_primaries(cur))
 
-    # 1 ── outcome
-    problems = {"unknown_alias": [], "bad_alias": [], "invalid_axis": []}
-    for axis in ("outcome_computation", "outcome_robustness"):
-        df[axis] = df.apply(lambda r, col=axis: _canonical_axis(r, col, problems), axis=1)
-    outcome_before = list(df["outcome"]) if "outcome" in df.columns else []
-    df["outcome"] = df.apply(lambda r: derive_outcome(r, aliases, problems), axis=1)
-    df["outcome_quote"] = df.apply(derive_quote, axis=1)
-    df["outcome_quote_source"] = df.apply(derive_quote_source, axis=1)
+    import enrich_works
+    import flora_edits
 
-    # 1b ── COS coder shorthand -> a sentence that reads on its own
-    # The notebook does this as the COS sheet is read; here the sheets are already
-    # in source_records, so it runs on the derived quote instead — the same text,
-    # one step later. rewrite_one returns anything it does not recognise unchanged,
-    # so a real quote is never touched.
-    before_quotes = df["outcome_quote"].copy()
-    df["outcome_quote"] = cos_quote_rewrite.rewrite(df["outcome_quote"])
-    changed_quotes = before_quotes.fillna("") != df["outcome_quote"].fillna("")
-    rewritten = int(changed_quotes.sum())
-    if rewritten:
-        say(f"  rewrote {rewritten} shorthand outcome quote(s) into readable form")
-    # A rewritten quote is the coder's note, not a quotation from the report, so its
-    # source says so (FReD-data#173). Before any merge joins rows with " || ", so the
-    # mark stays on this row's part. Replications only: a reproduction's combined
-    # source is rebuilt from its axes.
-    noted = changed_quotes & df["type"].ne("reproduction")
-    df.loc[noted, "outcome_quote_source"] = (
-        df.loc[noted, "outcome_quote_source"].map(cos_quote_rewrite.mark_coding_note))
-    n_repro = int((df["type"] == "reproduction").sum())
-    say(f"  outcome normalized/derived; {df['outcome'].notna().sum()} row(s) have one")
-    # Which spellings were recoded, and how often. A value appearing here for the
-    # first time is usually a vocabulary change upstream.
-    recodes = {}
-    for raw, canonical in zip(outcome_before, df["outcome"]):
-        raw_text, canonical_text = _s(raw), _s(canonical)
-        if raw_text and canonical_text and raw_text != canonical_text:
-            recodes[(raw_text, canonical_text)] = recodes.get((raw_text, canonical_text), 0) + 1
-    if recodes:
-        say(f"  recoded {sum(recodes.values())} outcome value(s):")
-        for (raw_text, canonical_text), n in sorted(recodes.items(), key=lambda kv: -kv[1]):
-            say(f"      {raw_text!r} -> {canonical_text!r} ({n})")
-    if n_repro:
-        say(f"  {n_repro} reproduction row(s) carry two authoritative axes")
+    ctx = BuildContext(
+        verbose=verbose,
+        review_issue=review_issue,
+        say=say,
+        aliases=aliases,
+        exclusions=exclusions,
+        dedup_decisions=dedup_decisions,
+        cross_type=cross_type,
+    )
 
-    # 2 ── DOIs
-    before_o, before_r = df["doi_o"].copy(), df["doi_r"].copy()
-    df["doi_o"] = df["doi_o"].apply(clean_doi)
-    df["doi_r"] = df["doi_r"].apply(clean_doi)
-    changed = int(((before_o != df["doi_o"]) & before_o.notna()).sum() +
-                  ((before_r != df["doi_r"]) & before_r.notna()).sum())
-    say(f"  DOIs cleaned: {changed} value(s) changed")
-
-    # Step 5: a DOI that does not start with "10." after cleaning is not a DOI.
-    # Reported, never dropped — DUMMY_ placeholders are legitimate here and are
-    # stripped at output, and a real mistake is for a reviewer to correct.
-    for column in ("doi_o", "doi_r"):
-        bad = [v for v in df[column] if _s(v) and not _s(v).lower().startswith("10.")]
-        if bad:
-            shown = bad if len(bad) < 10 else bad[:5]
-            label = "" if len(bad) < 10 else " (first 5)"
-            say(f"  ⚠ {len(bad)} {column} value(s) are not DOIs{label}: "
-                + ", ".join(repr(v) for v in shown))
-
-    # 2b ── confirmed preprint/publication resolutions (notebook Step 6a)
-    # Before enrichment on purpose: this rewrites doi_o to the canonical form, and
-    # fetching metadata first would spend requests on DOIs about to be discarded.
-    def _normalise_outcome(value):
-        text = "" if value is None or (isinstance(value, float) and pd.isna(value)) \
-            else str(value).strip()
-        return aliases.get(text, text) or None
-
-    # Every (doi_o, doi_r) merge that resolved an outcome clash, from whichever
-    # step performed it. Written by run() to output/dup_outcome_conflicts.csv;
-    # build() stays read-only.
-    conflicts = []
-    # What rows added by hand fill, noted by each duplicate step and filled once the
-    # last of them (6b) is done: an entry never competes with another source's rows in
-    # a merge (preprint_dedup.apply_hand_fills).
-    hand_fills = []
-
-    # Protect identifier choices made on the product before a publication-pair
-    # merge can absorb its source row. Reuse the same snapshot at step 6c.
-    publication_identifiers = None
-    publication_guards = {}
-    if any(row.get("side", "").endswith("(publication link)") for row in dedup_decisions):
-        import flora_edits
-        publication_identifiers = flora_edits.load_identifiers(cur)
-        for ids, fields in publication_identifiers.get("records", []):
-            for source_id in ids:
-                publication_guards.setdefault(source_id, fields)
-
-    df = preprint_dedup.apply_confirmed(
-        df, normalise_outcome=_normalise_outcome, verbose=verbose,
-        conflicts_out=conflicts, rulings=dedup_decisions, hand_fills=hand_fills,
-        publication_guards=publication_guards)
-
-    # 3 ── exclusions
-    # Runs BEFORE url_r is stripped: an operator registering an exclusion copies
-    # the URL as it appears in the review UI, and stripping first would leave
-    # nothing for a url-keyed exclusion to match.
-    # An exclusion with doi_o set matches the PAIR; without it, doi_r/url_r alone.
-    # The distinction matters: a replication DOI can be a non-replication against one
-    # original and a perfectly good entry against another, so excluding it outright
-    # would take valid rows with it.
-    pairs = {(clean_doi(e["doi_o"]), clean_doi(e["doi_r"]))
-             for e in exclusions if e.get("doi_o") and e["doi_r"]}
-    excl_dois = {clean_doi(e["doi_r"])
-                 for e in exclusions if e["doi_r"] and not e.get("doi_o")}
-    excl_urls = {norm_url(e["url_r"])
-                 for e in exclusions if e["url_r"] and not e.get("doi_o")}
-
-    if pairs or excl_dois or excl_urls:
-        clean_r = df["doi_r"].apply(clean_doi)
-        mask = (clean_r.isin(excl_dois - {None}) |
-                df["url_r"].apply(norm_url).isin(excl_urls - {None}))
-        if pairs:
-            pair_key = list(zip(df["doi_o"].apply(clean_doi), clean_r))
-            mask = mask | pd.Series([k in pairs for k in pair_key], index=df.index)
-        n_pair = int(pd.Series([k in pairs for k in
-                                zip(df["doi_o"].apply(clean_doi), clean_r)]).sum()) if pairs else 0
-        say(f"  excluded: {int(mask.sum())} row(s) via transform_exclusions"
-            + (f" ({n_pair} by (doi_o, doi_r) pair)" if n_pair else ""))
-        df = df[~mask]
-    else:
-        say("  excluded: 0 (transform_exclusions is empty)")
-
-    # 4 ── redundant url_r
-    before_urls = df["url_r"].notna().sum()
-    df["url_r"] = df.apply(strip_redundant_url, axis=1)
-    say(f"  redundant url_r stripped: {before_urls - df['url_r'].notna().sum()}")
-
-    # 5 ── dedup
-    # Rows a reviewer explicitly ruled 'distinct' are exempt: they share
-    # identifiers but were judged to be different records, and an automatic
-    # collapse would silently overrule that decision.
-    before = len(df)
-
-    # The key is every identifier (dedup_keys), so this step drops only a row entered
-    # twice. Two url_r values under one doi_o and doi_r are two reports and stay apart,
-    # as in R (whose key is doi_o with url_r, else doi_r); rows that differ only because
-    # one lacks a url_r are combined by the merge below (5b) rather than one being
-    # dropped here. The Source Records duplicate detector (sync_sources._fingerprint)
-    # keys on coalesce(doi_r, url_r) without the type: it only puts a group in front of
-    # a person, so a wider net costs a look there, where a collapse here deletes a
-    # record unseen.
-    # `type` belongs in the key: it is one of the 14 output columns, so a
-    # replication and a reproduction of the same paper are not interchangeable
-    # and collapsing them silently deletes the reproduction.
-    key = dedup_keys(df)
-    # Rows that only fill blanks (preprint_dedup._yields): rows added by hand, or the
-    # rows arriving after a hand record that is already a FLoRA record. They go after
-    # the others, so they are never a key's first row. None without rows added by hand.
-    yields = preprint_dedup.yielding(df, key)
-    if yields.any():
-        order = list(df.index[~yields.to_numpy()]) + list(df.index[yields.to_numpy()])
-        df, key, yields = df.loc[order], key.loc[order], yields.loc[order]
-
-    exempt = df["duplicate_status"].eq("distinct")
-    # The survivor of each key is its first row, as it always was: which row a key
-    # becomes is its published identity, so nothing here moves it. A record validated
-    # on this website decides the VALUES instead (below), whatever its position. A row
-    # that only fills blanks is never first beside one that does not (above).
-    # A row with no identifier at all shares nothing with another, whatever its type.
-    collides = key.duplicated() & has_identifier(df)
-    survivors = df.index[~key.duplicated()]
-
-    # Which rows each survivor absorbs. Captured BEFORE the drop: afterwards the
-    # collapsed rows are simply gone and their record_ids with them, and those ids
-    # are what makes a produced row traceable back to its sources.
-    df = df.assign(_key=key)
-    dropped = df[collides & ~exempt]
-    # A dropped row hands over its own id AND whatever an earlier merge (step 2b)
-    # already folded into it; the survivor then adds these to its own list rather
-    # than replacing it, so no absorbed id is lost between the two steps.
-    prior = (df["merged_record_ids"] if "merged_record_ids" in df.columns
-             else pd.Series([[] for _ in range(len(df))], index=df.index))
-    merged_by_key = {}
-    for idx in dropped.index:
-        ids = merged_by_key.setdefault(df.at[idx, "_key"], [])
-        ids.append(df.at[idx, "record_id"])
-        ids.extend(prior[idx] if isinstance(prior[idx], list) else [])
-
-    # A dropped row adds what the survivor lacks and never overwrites it, so the drop
-    # cannot lose the only outcome there is (preprint_dedup.fill_blanks).
-    # A website-validated row that is dropped still decides the survivor's values:
-    # its judgement wins, as in the merge below (preprint_dedup.website_overrides).
-    # A row ruled 'distinct' is its own record and is never dropped, so it never
-    # speaks for another. And a drop settles a disagreement as silently as a merge
-    # does, so it is logged the same way.
-    survivor_of = {df.at[idx, "_key"]: idx for idx in survivors}
-    axis_columns = {column for axis in preprint_dedup.REPRODUCTION_AXES for column in axis}
-    # Rows added by hand dropped here fill the record only once it is made: a later
-    # merge (5b, 6b) may still combine this survivor with other rows, and a blank
-    # filled now would be a value that competes with theirs (hand_fills).
-    for k, group in dropped.groupby("_key"):
-        kept = survivor_of[k]
-        rows = [df.loc[kept], *(group.loc[i] for i in group.index)]
-        hand = [r for r in rows[1:] if yields[r.name]]
-        if hand and not yields[kept]:
-            hand_fills.append((df.at[kept, "record_id"], [h.to_dict() for h in hand], False))
-            rows = [r for r in rows if not any(r is h for h in hand)]
-        added = preprint_dedup.fill_blanks(rows)
-        for column, value in added.items():
-            df.at[kept, column] = value
-        if added.keys() & axis_columns:
-            # A reproduction's quote and quote source are derived from its axes, as
-            # in step 1, so they follow the axes a dropped row supplied.
-            survivor = df.loc[kept]
-            df.at[kept, "outcome_quote"] = cos_quote_rewrite.rewrite_one(derive_quote(survivor))
-            df.at[kept, "outcome_quote_source"] = derive_quote_source(survivor)
-        # A row added by hand only fills blanks, so beside another source's rows it
-        # takes no part in what the website record decides, and its outcome is no
-        # clash, as in the pair merge (merge_doi_pair_dups).
-        judged = [r for r in rows if not yields[r.name]] or rows
-        overrides = preprint_dedup.website_overrides(judged, _normalise_outcome)
-        for column, value in overrides.items():
-            if column in df.columns:
-                df.at[kept, column] = value
-        outcomes = {o for o in (_normalise_outcome(r.get("outcome")) for r in judged) if o}
-        # A clash an earlier merge left undecided on one of these rows stays one.
-        undecided_before = next(
-            (r.get(preprint_dedup.CONFLICT_COLUMN) for r in judged
-             if not preprint_dedup._blank(r.get(preprint_dedup.CONFLICT_COLUMN))), None)
-        if len(outcomes) > 1:
-            # Nothing settles a dropped row's outcome but a website record: the
-            # survivor's stands in (the first there is, if it had none), and a person
-            # decides (FLoRA tab, Conflicts).
-            settled = "outcome" in overrides
-            conflicts.append({
-                "doi_o": df.at[kept, "doi_o"], "doi_r": df.at[kept, "doi_r"],
-                "type": df.at[kept, "type"],
-                "outcomes": " | ".join(sorted(outcomes)),
-                "resolved_to": _normalise_outcome(df.at[kept, "outcome"]),
-                "resolved_by": "website record" if settled else preprint_dedup.NEEDS_DECISION,
-                "url_r": df.at[kept, "url_r"],
-                "sources": " | ".join(dict.fromkeys(str(r.get("source")) for r in rows)),
-            })
-            df.at[kept, preprint_dedup.CONFLICT_COLUMN] = (
-                None if settled else " | ".join(sorted(outcomes)))
-        elif undecided_before is not None and "outcome" not in overrides:
-            df.at[kept, preprint_dedup.CONFLICT_COLUMN] = undecided_before
-
-    keep = ~(collides & ~exempt)
-    survivor_set = set(survivors)
-    # A record is a live FLoRA record's when any row folded into it is one.
-    registered = preprint_dedup.REGISTERED_COLUMN
-    registered_by_key = (dropped.groupby("_key")[registered].any().to_dict()
-                         if registered in df.columns and not dropped.empty else {})
-    df = df[keep].copy()
-    if registered_by_key:
-        df[registered] = [bool(flag) or (idx in survivor_set and registered_by_key.get(k, False))
-                          for idx, flag, k in zip(df.index, df[registered], df["_key"])]
-    df["merged_record_ids"] = [
-        (list(prior[idx]) if isinstance(prior[idx], list) else [])
-        + (merged_by_key.get(k, []) if idx in survivor_set else [])
-        for idx, k in zip(df.index, df["_key"])
-    ]
-    df["dedup_key"] = df["_key"]
-    df = df.drop(columns=["_key"])
-    rescued = int((collides & exempt).sum())
-    say(f"  deduplicated: {before - len(df)} row(s) collapsed"
-          + (f"; {rescued} kept as reviewer-confirmed distinct" if rescued else ""))
-
-    # 5b ── merge rows that share (doi_o, doi_r) with compatible url_r values.
-    # The step above DROPS a colliding row; this one COMBINES them, because a row
-    # about to be discarded can hold the only outcome_quote there is. Two distinct
-    # url_r values mean two different reports and are left alone.
-    df, outcome_conflicts = preprint_dedup.merge_doi_pair_dups(
-        df, _normalise_outcome, verbose=verbose, hand_fills=hand_fills)
-    if not outcome_conflicts.empty:
-        conflicts.extend(outcome_conflicts.to_dict("records"))
-
-    # 6 ── project
-    df["source"] = df["source"].replace({"replications": "entry_sheet_replications",
-                                         "reproductions": "entry_sheet_reproductions"})
-
-    # 7 ── bibliographic enrichment
-    # Fills the half of the output contract the R notebook fetched from CrossRef,
-    # OpenAlex and Unpaywall. Cached per DOI in work_metadata by enrich_works.py, so
-    # this is a dictionary join, not network traffic.
-    from enrich_works import load_metadata          # local: avoids an import cycle
-    meta = load_metadata(cur) if metadata is None else metadata
-    # What the source supplied for the columns the join falls back on, for joining
-    # again a row whose identifiers change after the join (steps 6b and 6c).
-    join_fallbacks = df.set_index("record_id")[
-        [c for c in JOIN_FALLBACKS if c in df.columns]].copy()
-    join_fallbacks = join_fallbacks[~join_fallbacks.index.duplicated()]
-    join_metadata(df, meta)
-
-    enriched = int(df["title_o"].notna().sum())
-    say(f"  enriched: {enriched}/{len(df)} row(s) have original-side metadata")
-
-    # 6b ── preprint/publication duplicates (notebook Step 7d)
-    # After enrichment because detection needs titles and authors, which only
-    # arrive with the metadata join.
-    # No file here: build() stays read-only. run() writes the log beside the
-    # output, and the FLoRA tab reads it from the frame.
-    doi_o_before = dict(zip(df["record_id"], df["doi_o"]))
-    df, dedup_log = preprint_dedup.resolve(
-        df, candidates_out=None, normalise_outcome=_normalise_outcome,
-        verbose=verbose, conflicts_out=conflicts, open_review_issue=review_issue,
-        rulings=dedup_decisions, hand_fills=hand_fills)
-    # An automatic original-side decision replaces doi_o after the join (a confirmed
-    # one did at 2b, before it), so the rows it moved are joined again: their title,
-    # authors and journal describe the DOI they now carry. That includes a row which
-    # absorbed a moved one in the merge after the replacement, and may hold its values.
-    moved = [idx for idx, record_id, doi, merged in zip(
-                 df.index, df["record_id"], df["doi_o"], df["merged_record_ids"])
-             if any(sid in doi_o_before and _s(doi_o_before[sid]) != _s(doi)
-                    for sid in [record_id, *(merged if isinstance(merged, list) else [])])]
-    if moved:
-        join_metadata_again(df, moved, "o", meta, join_fallbacks)
-        say(f"  joined to the metadata again after an original-side replacement: "
-            f"{len(moved)} row(s)")
-    # The last duplicate step is done: rows added by hand fill their records' blanks.
-    # A reproduction's quote follows the axes it then has at 7e.
-    filled = {}
-    df = preprint_dedup.apply_hand_fills(df, hand_fills, filled)
-    # What they filled is the record's own from now on: a corrected identifier joins
-    # the record to the metadata again (6c) from these fallbacks, which must not undo it.
-    for record_id, columns in filled.items():
-        for column, value in columns.items():
-            if column in join_fallbacks.columns and record_id in join_fallbacks.index:
-                join_fallbacks[column] = join_fallbacks[column].astype(object)
-                join_fallbacks.at[record_id, column] = value
-
-    # 6c ── identifiers corrected on FLoRA records (flora_edits.py)
-    # After every duplicate step — exact (5), pair merge (5b) and preprint (6b) — so
-    # a correction can never drop, merge or hide a record: those steps see the
-    # identifiers the source supplied. The corrected rows are then joined to the
-    # metadata again, from the source's own fallbacks, so the title, authors and
-    # journal follow the corrected DOI instead of describing the paper it replaced.
-    # Every other correction is applied to the finished frame, once ids are attached.
-    import flora_edits                              # local: flora_edits imports this module
-    identifier_edits = flora_edits.apply_identifiers(df, flora_edits.load_identifiers(cur)
-                                                    if publication_identifiers is None else publication_identifiers)
-    if identifier_edits:
-        say(f"  identifiers corrected on FLoRA records: {len(identifier_edits)} row(s)")
-        for side in ("o", "r"):
-            corrected = [rid for rid, fields in identifier_edits.items()
-                         if fields.keys() & {f"doi_{side}", f"url_{side}"}]
-            rows = df.index[df["record_id"].isin(corrected)]
-            # A url corrected from the OpenAlex record to the work's own page keeps
-            # that record as the metadata key: it is a work with no DOI.
-            hint = WORK_ID_HINT.format(side=side)
-            df[hint] = df["record_id"].map(
-                lambda rid: (identifier_edits.get(rid) or {}).get(f"url_{side}"))
-            if len(rows):
-                join_metadata_again(
-                    df, rows, side, meta, join_fallbacks,
-                    kept_urls={rid for rid in corrected
-                               if f"url_{side}" in identifier_edits[rid]})
-        df = df.drop(columns=[WORK_ID_HINT.format(side=side) for side in ("o", "r")], errors="ignore")
-        # An exclusion added after a correction still removes the record: the
-        # exclusion is the decision. A save refuses a correction onto one outright.
-        excluded = pd.Series(False, index=df.index)
-        for idx in df.index[df["record_id"].isin(identifier_edits)]:
-            excluded[idx] = matching_exclusion(
-                exclusions, df.at[idx, "doi_o"], df.at[idx, "doi_r"], df.at[idx, "url_r"]) is not None
-        if excluded.any():
-            say(f"  ⚠ {int(excluded.sum())} row(s) corrected onto an excluded identifier "
-                "were left out: " + ", ".join(df.loc[excluded, "display_id"].astype(str)))
-            df = df[~excluded]
-        # The duplicate steps never see corrected identifiers, so say when a
-        # correction makes two records look like one to them: it may be one study
-        # twice. record_keys, as the save's warning (flora_edits.duplicate_warnings).
-        keys = record_keys(df)
-        shared = (df["record_id"].isin(identifier_edits) & keys.notna()
-                  & keys.duplicated(keep=False))
-        if shared.any():
-            say(f"  ⚠ {int(shared.sum())} corrected row(s) now match another record's "
-                "identifiers: " + ", ".join(df.loc[shared, "display_id"].astype(str))
-                + " — rule a duplicate in Source Records if it is the same study")
-
-    # 7e ── a reproduction's quote and quote source from the axes it publishes
-    # The pair merges (2b, 5b, 6b: preprint_dedup.merge_doi_pair_dups) take the axes
-    # whole from one row but paste every row's quote together, which published
-    # "Computational: A || Computational: B || Robustness: C" beside axes saying A and
-    # C. Once, here, after the last of them, as step 1 derived them.
-    reproduction = df["type"].eq("reproduction")
-    if reproduction.any():
-        df.loc[reproduction, "outcome_quote"] = df[reproduction].apply(
-            lambda row: cos_quote_rewrite.rewrite_one(derive_quote(row)), axis=1)
-        df.loc[reproduction, "outcome_quote_source"] = df[reproduction].apply(
-            derive_quote_source, axis=1)
-
-    # 8 ── text cleaning (Step 7c of the notebook)
-    # After enrichment, because titles and journals arrive from OpenAlex carrying
-    # JATS markup, and before anything compares strings.
-    for column in ("title_o", "title_r", "journal_o", "journal_r",
-                   "ref_o", "ref_r", "abstract_r", "outcome_quote"):
-        if column not in df.columns:
-            continue
-        before = df[column].copy()
-        df[column] = df[column].apply(clean_text, one_line=column not in PARAGRAPH_COLUMNS)
-        # Reported per column, as the R side does: a sudden jump in one column is
-        # how a new markup dialect upstream announces itself.
-        changed = int((before.fillna("") != df[column].fillna("")).sum())
-        if changed:
-            say(f"      cleaned {column}: {changed} cell(s) changed")
-    # Columns clean_text would reshape (JSON author lists, BibTeX, the reproduction
-    # quotes kept as entered) still get mis-decoded characters repaired: "KÃ¶bach"
-    # in author_o otherwise feeds the overlap and the citation. Whatever a column
-    # holds, only the mis-decoded sequences change.
-    for column in ("author_o", "author_r", "bibtex_ref_o", "bibtex_ref_r",
-                   "outcome_computational_quote", "outcome_robustness_quote",
-                   "outcome_replication_quote"):
-        if column in df.columns:
-            df[column] = df[column].map(repair_mojibake)
-    # Links only unescaped: the rest of clean_text would rewrite a URL. An OpenAlex
-    # link arrives as "...?article=1063&amp;amp;context=trr", which no browser opens.
-    for column in ("oa_url_o", "oa_url_r"):
-        if column in df.columns:
-            df[column] = df[column].map(lambda url: unescape_entities(url)
-                                        if isinstance(url, str) else url)
-
-    # 8b ── last-resort title recovery from the reference text
-    # Placed HERE, after the dedup in 6b, deliberately: dedup matches on title
-    # similarity, so supplying these titles earlier would change which rows survive
-    # rather than only what the survivors report. See apa_references.
-    # Also after the cleaning above, so a title is parsed out of cleaned text.
-    for _side in ("o", "r"):
-        apa_references.augment(df, _side, verbose=verbose)
-
-    # 8c ── author overlap (augmentation.R)
-    # How independent the replication team was. Arithmetic over author_o/author_r,
-    # which enrichment already filled, so it costs nothing and needs no network.
-    # After 8b so a name parsed out of a reference string counts too.
-    author_overlap.augment(df, verbose=verbose)
-
-    # 9 ── meta-paper annotation (Step 9d)
-    # A reference to an aggregate paper does not say which of its studies a row is
-    # about, so the row's own report URL is appended to it.
-    clean_r = df["doi_r"].apply(clean_doi)
-    has_url = df["url_r"].notna() & df["url_r"].astype(str).str.strip().ne("")
-    annotate = clean_r.isin(META_PAPER_DOIS) & has_url
-
-    if annotate.any():
-        def _annotate(row):
-            ref = row["ref_r"]
-            # Idempotent: a re-run must not append the note a second time.
-            if not ref or META_PAPER_NOTE in str(ref):
-                return ref
-            return f"{str(ref).rstrip()} {META_PAPER_NOTE} {row['url_r']}"
-        df.loc[annotate, "ref_r"] = df[annotate].apply(_annotate, axis=1)
-    say(f"  meta-paper rows annotated with their report URL: {int(annotate.sum())}")
-
-    # Candidates nobody has classified yet. Reported, never applied automatically:
-    # deciding a paper is an aggregate is a judgement, and guessing it would rewrite
-    # references on rows where the URL means something else.
-    linked = df[df["url_r"].notna() & df["doi_r"].notna()].copy()
-    if not linked.empty:
-        linked["_doi"] = linked["doi_r"].apply(clean_doi)
-        url_counts = linked.groupby("_doi")["url_r"].nunique()
-        candidates = [(d, n) for d, n in url_counts.items()
-                      if n >= META_PAPER_CANDIDATE_URLS and d not in META_PAPER_DOIS]
-        if candidates:
-            say(f"  ⚠ {len(candidates)} DOI(s) carry >= {META_PAPER_CANDIDATE_URLS} "
-                f"distinct url_r but are not listed as meta-papers:")
-            for doi, n in sorted(candidates, key=lambda c: -c[1])[:10]:
-                say(f"      {doi} ({n} distinct urls)")
-            say("    → add to META_PAPER_DOIS if they are aggregate reports")
-
-    df["source_record_id"] = df["record_id"]
-    df["source_display_id"] = df["display_id"]
-    df["flora_id"] = None          # filled in by flora_registry.refresh()
-    out = df.reindex(columns=FLORA_COLUMNS + ENRICHMENT_COLUMNS
-                             + DERIVED_COLUMNS + PROVENANCE_COLUMNS + REVIEW_COLUMNS)
-    # Beside the frame rather than in a column: a list per row would have to be
-    # serialised into the CSV, and only the registry needs it.
-    out.attrs["merged_record_ids"] = dict(zip(df["record_id"], df["merged_record_ids"]))
-    out.attrs["dedup_key"] = dict(zip(df["record_id"], df["dedup_key"]))
-    out.attrs["outcome_conflicts"] = conflicts
-    # NaN never equals itself, and pandas compares attrs when it combines frames.
-    out.attrs["preprint_dedup_log"] = [
-        {k: (None if isinstance(v, float) and pd.isna(v) else v) for k, v in row.items()}
-        for row in dedup_log.to_dict("records")
-    ]
-    out.attrs["cross_type_duplicates"] = cross_type
-    # The values step 6a replaced, for the editor to show beside each correction.
-    out.attrs["identifier_edits"] = identifier_edits
-
-    # DUMMY_* placeholders keyed manual references upstream; they are not DOIs.
-    for col in ("doi_o", "doi_r"):
-        dummy = out[col].astype(str).str.match(DUMMY_DOI_RE, na=False)
-        if dummy.any():
-            say(f"  stripped {int(dummy.sum())} DUMMY_* placeholder(s) from {col}")
-            out.loc[dummy, col] = None
-
-    say(f"\n  final: {len(out)} rows × {len(out.columns)} columns")
-
-    unknown_alias = problems["unknown_alias"]
-    bad_alias = problems["bad_alias"]
-    invalid_axis = problems["invalid_axis"]
-    missing = int(out["outcome"].isna().sum())
-    if missing:
-        invalid_rows = {display_id for display_id, _, _ in invalid_axis}
-        blank = missing - len(unknown_alias) - len(bad_alias) - len(invalid_rows)
-        if blank > 0:
-            say(f"  ⚠ {blank} row(s) have no outcome — blank or incomplete in the source sheet")
-
-    say("\n  outcome distribution:")
-    for value, n in out["outcome"].value_counts(dropna=True).items():
-        say(f"      {str(value):55} {n}")
-
-    # An unrecognised spelling is not a gap to fill later — it means a real outcome
-    # would be published as blank, or (worse, before this check) verbatim and
-    # unrecognised. Report every one, then refuse to write: a partial export that
-    # looks complete is what makes this class of bug expensive.
-    #
-    # Reproduction outcomes bypass aliases because they are derived from axes,
-    # which are validated by database constraints on the way in.
-    if unknown_alias or bad_alias or invalid_axis:
-        say()
-        if unknown_alias:
-            say(f"  ✗ {len(unknown_alias)} row(s) carry an outcome spelling absent from outcome_alias:")
-            for display_id, raw in unknown_alias[:10]:
-                say(f"      {display_id}: {raw!r}")
-            say("    → add a row to outcome_alias mapping it to a canonical value, and re-run")
-        if bad_alias:
-            say(f"  ✗ {len(bad_alias)} row(s) alias onto a value the app does not accept:")
-            for display_id, raw, canonical in bad_alias[:10]:
-                say(f"      {display_id}: {raw!r} → {canonical!r}")
-            say("    → fix the outcome_alias row, or add the value to "
-                  "extractor_vocab.REPLICATION_OUTCOMES and the CHECK constraint")
-        if invalid_axis:
-            say(f"  INVALID: {len(invalid_axis)} reproduction axis value(s):")
-            for display_id, column, raw in invalid_axis[:10]:
-                say(f"      {display_id}: {column}={raw!r}")
-            say("    fix the value at its source (sheet or validated record) and re-sync, or add "
-                "the spelling to AXIS_VALUE_ALIASES in extractor_vocab.py, and re-run")
-        problem_count = len(unknown_alias) + len(bad_alias) + len(invalid_axis)
-        raise ValueError(
-            f"{problem_count} outcome or axis value(s) are not recognised; "
-            f"refusing to produce an export. "
-            f"Raised under --stats-only too, so a dry run reports the problem "
-            f"rather than passing."
-        )
-
-    return out
+    df = stage_outcomes_and_quotes(
+        df, ctx, canonical_axis=_canonical_axis, derive_outcome=derive_outcome
+    )
+    df = stage_dois_and_confirmed_resolutions(
+        df, cur, ctx, load_identifiers=flora_edits.load_identifiers
+    )
+    df = stage_exclusions_and_redundant_urls(df, ctx)
+    df = stage_exact_dedup_and_pair_merge(df, ctx)
+    df = stage_enrich_and_preprint_dedup(
+        df,
+        cur,
+        ctx,
+        metadata=metadata,
+        load_metadata=enrich_works.load_metadata,
+        join_metadata=join_metadata,
+        join_metadata_again=join_metadata_again,
+    )
+    df = stage_identifier_corrections_and_quotes(
+        df,
+        cur,
+        ctx,
+        load_identifiers=flora_edits.load_identifiers,
+        apply_identifiers=flora_edits.apply_identifiers,
+        join_metadata_again=join_metadata_again,
+    )
+    return stage_clean_and_finalize(df, ctx)
 
 
 def _has_text(series):

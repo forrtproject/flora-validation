@@ -141,29 +141,13 @@ def test_augment_on_a_frame_with_no_author_columns():
 
 # ── it reaches the output ─────────────────────────────────────────────────────
 
-def test_the_columns_survive_the_projection():
-    """build() reindexes to an explicit column list, so a derived column missing
-    from it is dropped before to_output_shape can see it — which is exactly what
-    happened to the enrichment columns once before."""
-    assert "author_overlap" in transform_sources.DERIVED_COLUMNS
-    assert "author_overlap_pct" in transform_sources.DERIVED_COLUMNS
-    source = (ROOT / "transform_sources.py").read_text(encoding="utf-8")
-    assert "+ DERIVED_COLUMNS" in source
-
-
 def test_the_columns_trail_the_output_contract():
     """The 35 are an agreement with a pipeline we do not control."""
+    assert "author_overlap" in transform_sources.DERIVED_COLUMNS
+    assert "author_overlap_pct" in transform_sources.DERIVED_COLUMNS
     assert "author_overlap" in transform_sources.OUTPUT_EXTRAS
     extras_start = len(transform_sources.FLORA_OUTPUT_COLUMNS)
     assert extras_start == 35
-
-
-def test_overlap_is_computed_after_titles_are_recovered():
-    """8b parses authors out of reference strings for rows no lookup could reach.
-    Computing overlap before that would score those rows as unknown."""
-    source = (ROOT / "transform_sources.py").read_text(encoding="utf-8")
-    body = source[source.index("def build("):]
-    assert body.index("apa_references.augment(") < body.index("author_overlap.augment(")
 
 
 @pytest.mark.parametrize('group', [

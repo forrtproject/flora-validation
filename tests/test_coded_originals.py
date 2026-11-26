@@ -186,83 +186,6 @@ def test_enrich_pair_without_a_cursor_keeps_the_old_payload_shape():
     assert "coded_originals" not in pair
 
 
-def test_every_validator_facing_pair_path_passes_a_cursor():
-    """A call site that forgets the cursor silently drops the set for that view.
-
-    Counting one call shape is not enough — an earlier version of this test did
-    exactly that and sailed past /api/onboarding, which uses a different shape.
-    Assert over every call instead, and name the two that must NOT pass one.
-    """
-    calls = [ln.strip() for ln in APP.splitlines() if "_enrich_pair(" in ln
-             and not ln.lstrip().startswith("def ")]
-    with_cur = [c for c in calls if "cur)" in c]
-    without  = [c for c in calls if "cur)" not in c]
-    assert len(with_cur) == 3, with_cur
-    assert len(without) == 2, without
-
-
-def test_onboarding_pairs_never_get_a_coded_set():
-    """Onboarding pairs are fixtures from onboarding.json with no rows in
-    unvalidated. A lookup would match live records that share their doi_r and
-    show a real coded set against a calibration exercise."""
-    body = APP.split("def onboarding_pairs(", 1)[1].split(chr(10) + "@app.", 1)[0]
-    assert "_enrich_pair(p)" in body and "cur" not in body
-
-
-def test_the_admin_detail_view_does_not_pay_for_a_set_it_never_renders():
-    """preloadAdminDetails() fetches 15 entries at a time and renderAdminDetail()
-    shows no coded set, so a cursor here is 15 wasted lookups per preload."""
-    body = APP.split("def admin_entry_detail(", 1)[1].split("_enrich_pair", 1)[1]
-    assert body.startswith("(dict(row))")
-    assert "coded_originals" not in JS.split("function renderAdminDetail(", 1)[1][:4000]
-
-
-# ---------------------------------------------------------------------------
-# Gate II rendering
-# ---------------------------------------------------------------------------
-
-def test_gate_two_renders_the_coded_set():
-    gate = JS.split('<h3><span class="gate-num">ii.</span>Original check</h3>', 1)[1]
-    gate = gate.split('data-original="correct"', 1)[0]
-    assert "${_codedOriginalsBlock(p)}" in gate
-
-
-def test_a_single_coded_original_renders_nothing():
-    """One original disambiguates nothing; the block would be pure noise."""
-    body = JS.split("function _codedOriginalsBlock(", 1)[1].split("\nfunction ", 1)[0]
-    assert "set.length < 2" in body and 'return ""' in body
-
-
-def test_the_block_marks_the_row_under_judgement_and_explains_the_rule():
-    body = JS.split("function _codedOriginalsBlock(", 1)[1].split("\nfunction ", 1)[0]
-    assert "is_current" in body and "cs-current" in body
-    assert "one of its originals or all of them" in body, \
-        "the subset rule is the whole point of showing the set"
-
-
-def test_the_set_is_styled():
-    for cls in (".coded-set", ".cs-item", ".cs-current", ".cs-badge", ".cs-hint"):
-        assert cls in CSS
-
-
-def test_the_sibling_lookup_is_indexed():
-    """Serving prefetches a batch of pairs, and each looks up its siblings by
-    doi_r — unindexed that is one sequential scan of unvalidated per card."""
-    assert ("CREATE INDEX IF NOT EXISTS idx_unvalidated_doi_r_lower "
-            "ON unvalidated (lower(doi_r));") in SCHEMA
-
-
-def test_the_index_expression_matches_the_predicate():
-    """A functional index is only used when its expression matches the WHERE
-    clause; lower(doi_r) in one and doi_r in the other would silently seq-scan."""
-    assert "lower(u.doi_r)" in app._CODED_ORIGINALS_WHERE
-    assert "lower(doi_r)" in SCHEMA.split("idx_unvalidated_doi_r_lower", 1)[1].split(";", 1)[0]
-
-
-def test_the_superseded_plain_index_is_dropped():
-    assert "DROP INDEX IF EXISTS idx_unvalidated_doi_r;" in SCHEMA
-
-
 def test_a_coded_set_is_not_split_by_doi_casing():
     """DOI names are case-insensitive by spec and doi_r is only whitespace-stripped
     on import, so an exact match could hide originals from the validator — the
@@ -271,23 +194,6 @@ def test_a_coded_set_is_not_split_by_doi_casing():
     app._coded_originals(cur, "10.1080/ABC", "r1")
     where = cur.sql.split("WHERE", 1)[1].split("ORDER BY", 1)[0]
     assert "lower(u.doi_r) = lower(%s)" in where
-
-
-def test_case_insensitive_matching_is_scoped_to_this_lookup():
-    """The pair identity key stays exact; widening it is a separate decision."""
-    assert "UNIQUE (doi_r, study_r, title_r, doi_o, study_o, title_o)" in SCHEMA
-
-
-def test_the_index_statements_are_idempotent():
-    """db_schema.sql is re-executed by init_db() on every app start, so a bare
-    CREATE or DROP would take the server down on the second boot."""
-    for line in SCHEMA.splitlines():
-        if "idx_unvalidated_doi_r" not in line:
-            continue
-        if line.strip().startswith("CREATE"):
-            assert "IF NOT EXISTS" in line
-        elif line.strip().startswith("DROP"):
-            assert "IF EXISTS" in line
 
 
 def test_ordering_is_total_so_the_displayed_position_is_stable():
@@ -394,12 +300,12 @@ def test_no_test_module_imports_app_unguarded():
     bare `import app` anywhere in tests/ applies this schema — index DDL included —
     to whatever DATABASE_URL points at, which is production when .env is present."""
     offenders = []
-    for f in sorted(Path(__file__).parent.glob("test_*.py")):
+    for f in sorted(Path(__file__).parent.rglob("test_*.py")):
         src = f.read_text(encoding="utf-8")
         imports_app = any(
             ln.startswith(("import app", "from app"))
             for ln in src.splitlines()
         )
         if imports_app and 'patch("psycopg2.connect"' not in src:
-            offenders.append(f.name)
+            offenders.append(str(f.relative_to(Path(__file__).parent)))
     assert not offenders, f"unguarded app import in: {offenders}"

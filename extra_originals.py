@@ -644,10 +644,9 @@ def _child_values(index: int, item: dict, published: dict, admin: dict) -> dict:
     Every identity column is '' rather than NULL, as the import stores them: a
     NULL never equals anything in the unique key, so a duplicate would slip in.
     """
-    from consensus_engine import quote_source_for
     from extractor_vocab import (REPLICATION_OUTCOMES, derive_reproduction_outcome,
                                  normalize_axis_value, normalize_outcome,
-                                 normalize_quote_source)
+                                 normalize_quote_source, quote_source_for)
     doi_o = normalize_doi(item.get("doi_o"))
     title_o = text(item.get("title_o"))
     ref_o = text(item.get("ref_o"))

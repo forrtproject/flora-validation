@@ -2094,19 +2094,19 @@ the constraint-invalid empty string.
 python backfill_oa_work_ids.py --dry-run
 python backfill_oa_work_ids.py
 
-python backfill_quote_source.py
-python backfill_quote_source.py --apply
-python backfill_quote_source.py --recompute-all
-python backfill_quote_source.py --recompute-all --apply
+python scripts/archive/backfill_quote_source.py
+python scripts/archive/backfill_quote_source.py --apply
+python scripts/archive/backfill_quote_source.py --recompute-all
+python scripts/archive/backfill_quote_source.py --recompute-all --apply
 
-python backfill_flora_history.py --fred-data ../fred-data
-python backfill_flora_history.py --fred-data ../fred-data --apply
+python scripts/archive/backfill_flora_history.py --fred-data ../fred-data
+python scripts/archive/backfill_flora_history.py --fred-data ../fred-data --apply
 
 python backfill_author_orcids.py
 python backfill_author_orcids.py --apply
 
-python fetch_oa.py
-python build_static.py
+python scripts/archive/fetch_oa.py
+python scripts/archive/build_static.py
 ```
 
 Quote-source backfill updates `validated` only. It never overwrites a source
@@ -2142,8 +2142,8 @@ count and payload-hash gates depend on previous runs.
 # Copy old pairs/coders/judgements schema into the current tables
 python db_migrate.py
 
-# Interactive destructive reset
-python db_reset.py
+# Interactive destructive reset (archived one-off script)
+python scripts/archive/db_reset.py
 ```
 
 `db_migrate.py` is intended for a legacy database and should run before the app.

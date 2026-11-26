@@ -25,6 +25,9 @@ that cannot print is worse than no error at all.
 """
 
 
+import re
+
+
 class VocabularyDriftError(ValueError):
     """A CSV carries a value this module has never heard of.
 
@@ -513,3 +516,23 @@ def check_csv_vocabulary(df) -> None:
             + "\n\n  ".join(problems)
             + "\n\nRefusing to import rather than silently skipping the affected rows."
         )
+
+
+def _normalize_for_quote_match(text: str | None) -> str:
+    """Lowercase, strip punctuation and whitespace — used for fuzzy abstract comparison."""
+    if not text:
+        return ""
+    return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+def quote_source_for(quote: str | None, abstract: str | None) -> str | None:
+    """Where does this outcome quote come from?
+      'abstract'  — the (normalised) quote is contained in the (normalised) abstract
+      'full_text' — it isn't (so it must have come from the paper body)
+      None        — there is no quote to place.
+    Normalising (lowercase, drop punctuation/whitespace) makes the match robust to
+    the light edits validators make to quotes."""
+    nq = _normalize_for_quote_match(quote)
+    if not nq:
+        return None
+    return "abstract" if nq in _normalize_for_quote_match(abstract) else "full_text"

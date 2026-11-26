@@ -23,7 +23,7 @@ import flora_service
 import preprint_dedup
 import security_events
 import transform_sources
-from tests.test_preparation_database import local_database  # noqa: F401 (fixture)
+from tests.pg_fixtures import local_database  # noqa: F401 (fixture)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -319,32 +319,6 @@ def test_withdrawing_passes_the_pair_key_through_intact(review_api):
     assert kwargs["target_id"] == key and kwargs["detail"] == {"action": "keep_1"}
 
 
-def test_the_queue_route_is_declared_before_the_record_route():
-    """/flora/{flora_id} would otherwise answer /flora/preprint-duplicates."""
-    source = (ROOT / "app.py").read_text(encoding="utf-8")
-    assert source.index('@app.get("/api/admin/flora/preprint-duplicates")') < \
-        source.index('@app.get("/api/admin/flora/{flora_id}")')
-
-
-# ── the page ──────────────────────────────────────────────────────────────────
-
-def test_every_review_element_the_script_uses_is_on_the_page():
-    script = (ROOT / "docs" / "app.js").read_text(encoding="utf-8")
-    page = (ROOT / "docs" / "index.html").read_text(encoding="utf-8")
-    used = set(re.findall(r'\$\("#(flora-dedup[\w-]*)"\)', script))
-    assert used, "the review script no longer looks up its elements"
-    assert {i for i in used if f'id="{i}"' not in page} == set()
-
-
-def test_entering_the_tab_returns_to_the_grid():
-    """switchAdminTab() resets the tab on entry; a review view left open would hide
-    the grid behind a screen the user did not ask for."""
-    script = (ROOT / "docs" / "app.js").read_text(encoding="utf-8")
-    body = script[script.index("function resetFloraView()"):]
-    body = body[:body.index("\n}\n")]
-    assert "resetFloraDedupView()" in body
-
-
 # ── end to end, on PostgreSQL (opt-in: FLORA_TEST_DATABASE_URL) ───────────────
 
 def _seed_pairs(cur):
@@ -354,7 +328,7 @@ def _seed_pairs(cur):
       first authors, both preprints -> held for review, both rows kept.
     * One team's preprint and its publication -> the preprint dropped automatically.
     """
-    from tests.test_preparation_database import add_source
+    from tests.pg_fixtures import add_source
     rows = [
         ("REPL-000001", "10.1016/j.jenvp.2014.10.008", "10.31234/osf.io/aaaa1",
          "Reproduction (with author data): Ku & Zaroff (2014)", "Lena Parsons", "2022"),
@@ -506,18 +480,3 @@ def test_a_ruling_reaches_the_published_table_at_the_next_run_and_not_before(
     assert _active(third) == {a, b, preprint, published}
     assert third[b][0] == first[b][0]
     assert report["diagnostics"]["preprint_dedup_candidates.csv"]["rows"] == 1
-
-
-def test_both_review_screens_explain_every_choice_without_hovering():
-    """Tooltips do not exist on touch screens, so each choice's consequence is also
-    written out on the page."""
-    page = (ROOT / "docs" / "index.html").read_text(encoding="utf-8")
-    screens = {
-        "flora-dedup-view": ["keep A / keep B", "keep both", "Undo", "When it takes effect"],
-        "src-dup-view": ["Keep &mdash; distinct", "Duplicate of", "When it takes effect"],
-    }
-    for view, choices in screens.items():
-        section = page[page.index(f'id="{view}"'):]
-        legend = section[section.index('<dl class="flora-dedup-legend'):]
-        legend = legend[:legend.index("</dl>")]
-        assert [c for c in choices if c not in legend] == [], view

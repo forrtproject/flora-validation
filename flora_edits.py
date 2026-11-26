@@ -47,7 +47,9 @@ from psycopg2.extras import Json
 
 import author_overlap
 import flora_store
-import transform_sources
+from pipeline import edit_queries as _edit_queries
+from pipeline import schema as _schema
+from pipeline.edit_queries import _table_exists, change_watermark, changed_since
 from extractor_vocab import (
     OUTCOME_COMPUTATION_VALUES,
     OUTCOME_ROBUSTNESS_VALUES,
@@ -137,7 +139,7 @@ def field_spec(record_type) -> list:
     """The editable fields in display order, as the editor renders them."""
     groups = FIELD_GROUPS.get(record_type, FIELD_GROUPS["replication"])
     return [{"field": field, "group": group,
-             "label": transform_sources.OUTPUT_RENAMES.get(field, field),
+             "label": _schema.OUTPUT_RENAMES.get(field, field),
              "long": field in LONG_FIELDS, "choices": CHOICES.get(field)}
             for group, fields in groups for field in fields]
 
@@ -193,15 +195,15 @@ def clean_value(field: str, value, record_type) -> "str | None":
     if text is None:
         return None
     if field in CLEANED_FIELDS:
-        text = transform_sources.clean_text(
-            text, one_line=field not in transform_sources.PARAGRAPH_COLUMNS)
+        text = _schema.clean_text(
+            text, one_line=field not in _schema.PARAGRAPH_COLUMNS)
     if field in ("doi_o", "doi_r"):
-        doi = transform_sources.clean_doi(text)
+        doi = _schema.clean_doi(text)
         if not doi or not doi.startswith("10."):
             raise ValueError(f"{field} must be a DOI starting with 10. (leave it blank for none)")
         return doi
     if field in ("alt_identifier_o", "alt_identifier_r"):
-        return transform_sources.normalise_identifier_list(text)
+        return _schema.normalise_identifier_list(text)
     if field == "outcome":
         outcome = normalize_outcome(text)
         if outcome not in REPLICATION_OUTCOMES:
@@ -260,13 +262,6 @@ def _corrected_type(export_id, fields: dict):
         return value
     print(f"[flora_edits] correction skipped on {export_id}: {value!r} is not a record type")
     return None
-
-
-def _table_exists(cur) -> bool:
-    """The nightly job runs from the repository and can reach the database before
-    the deployed site's init_db() has created the table."""
-    cur.execute("SELECT to_regclass('flora_record_changes') IS NOT NULL AS present")
-    return bool(cur.fetchone()["present"])
 
 
 def load(cur) -> dict:
@@ -376,7 +371,7 @@ def apply_identifiers(df, identifiers: dict) -> dict:
         for field, value in fields.items():
             before = _text(df.at[idx, field]) if field in df.columns else None
             if field in ("doi_o", "doi_r") and before \
-                    and transform_sources.DUMMY_DOI_RE.match(before):
+                    and _schema.DUMMY_DOI_RE.match(before):
                 before = None                       # the build strips placeholders
             replaced.setdefault(source_record_id, {})[field] = before
             _set(df, idx, field, value)
@@ -387,8 +382,8 @@ def _from_axes(row) -> dict:
     """What a reproduction's axes make its outcome, quote and quote source."""
     return {"outcome": derive_reproduction_outcome(row.get("outcome_computation"),
                                                    row.get("outcome_robustness")),
-            "outcome_quote": transform_sources.clean_text(transform_sources.derive_quote(row)),
-            "outcome_quote_source": transform_sources.derive_quote_source(row)}
+            "outcome_quote": _schema.clean_text(_schema.derive_quote(row)),
+            "outcome_quote_source": _schema.derive_quote_source(row)}
 
 
 def apply(cur, frame, corrections: "dict | None" = None):
@@ -857,7 +852,7 @@ def _refuse_excluded(cur, record, derived, in_force, corrections):
         return derived[field] if field in derived else _text(record.get(field))
 
     cur.execute("SELECT doi_o, doi_r, url_r, reason FROM transform_exclusions")
-    match = transform_sources.matching_exclusion(
+    match = _schema.matching_exclusion(
         [dict(row) for row in cur.fetchall()], value("doi_o"), value("doi_r"), value("url_r"))
     if match is not None:
         raise ValueError("These identifiers are on the exclusion list, so the record would "
@@ -876,11 +871,11 @@ def duplicate_warnings(frame, record: dict) -> list:
     mine = frame["export_id"] == record["export_id"]
     if not mine.any():
         return []
-    groups = transform_sources.record_keys(frame)
+    groups = _schema.record_keys(frame)
     group = groups[mine].iloc[0]
     if pd.isna(group):
         return []                                   # no identifiers to compare
-    keys = transform_sources.dedup_keys(frame)
+    keys = _schema.dedup_keys(frame)
     key = keys[mine].iloc[0]
     others = (groups == group) & ~mine
     return [f"{row.get('flora_id') or row.get('source_display_id')} "
@@ -892,22 +887,6 @@ def duplicate_warnings(frame, record: dict) -> list:
             for row, other in zip(frame[others].to_dict("records"), keys[others])]
 
 
-def change_watermark(cur) -> int:
-    """The newest change id, which a pipeline run notes as it starts."""
-    if not _table_exists(cur):
-        return 0
-    cur.execute("SELECT COALESCE(MAX(change_id), 0) AS v FROM flora_record_changes")
-    return int(cur.fetchone()["v"])
-
-
-def changed_since(cur, watermark: int) -> set:
-    """The records changed after a pipeline run noted the watermark. Each change
-    rewrote its own row in flora_data, so the run keeps those rows as they are."""
-    if not _table_exists(cur):
-        return set()
-    cur.execute("SELECT DISTINCT export_id FROM flora_record_changes WHERE change_id > %s",
-                (int(watermark or 0),))
-    return {row["export_id"] for row in cur.fetchall()}
 
 
 # ── writing a change through to the FLoRA table ──────────────────────────────
@@ -916,7 +895,7 @@ def _published(row: dict) -> dict:
     """One FLoRA tab row as flora_data stores it: the output contract, serialised
     and read back exactly as a pipeline snapshot is, so a value written here
     equals the one the next run would write."""
-    _, records, _ = flora_store._snapshot(transform_sources.to_output_shape(pd.DataFrame([row])))
+    _, records, _ = flora_store._snapshot(_schema.to_output_shape(pd.DataFrame([row])))
     return records[0]
 
 
@@ -934,7 +913,7 @@ def publish(cur, before: dict, after: dict) -> bool:
     makes a pipeline run that started before the change rebuild rather than
     overwrite it.
     """
-    if transform_sources.drop_untitled(pd.DataFrame([after])).empty:
+    if _schema.drop_untitled(pd.DataFrame([after])).empty:
         return False
     old, new = _published(before), _published(after)
     changed = {column: value for column, value in new.items()

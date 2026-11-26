@@ -18,7 +18,7 @@ from psycopg2.extras import RealDictCursor
 
 import enrich_works
 import validate_flora_network as network
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 from validate_flora import POSSIBLE_PROBLEM, PROBLEM
 
 OK, FAILED, UNCHECKED = network.OK, network.FAILED, network.UNCHECKED

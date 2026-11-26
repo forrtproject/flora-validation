@@ -10,7 +10,7 @@ import uuid
 import pytest
 
 import preprint_dedup
-from tests.test_preparation_database import add_source, local_database  # noqa: F401
+from tests.pg_fixtures import add_source, local_database  # noqa: F401
 
 ORIGINAL, REPORT = "10.1037/xge0000001", "10.1016/j.replication.2020"
 

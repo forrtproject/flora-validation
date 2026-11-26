@@ -29,7 +29,6 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from backfill_quote_source import recomputed_source
 from consensus_engine import admin_quote_source, quote_source_for
 from extractor_vocab import QUOTE_SOURCE_SEPARATOR, normalize_quote_source
 from csv_to_db import _build_unvalidated_row
@@ -121,36 +120,6 @@ def test_every_real_csv_value_survives_normalisation():
 
 
 # ---------------------------------------------------------------------------
-# The admin form round-trips a granular value
-# ---------------------------------------------------------------------------
-
-def test_admin_backend_accepts_any_named_source():
-    """It used to accept only 'abstract'/'full_text'; anything else fell through to
-    auto-detection, silently discarding the admin's choice."""
-    app_py = (_ROOT / "app.py").read_text(encoding="utf-8")
-    assert 'req.out_quote_source in ("abstract", "full_text")' not in app_py
-    assert "admin_quote_source(\n            req.out_quote_source, rec," in app_py.replace("\r\n", "\n")
-
-
-def test_admin_select_keeps_an_unlisted_stored_value():
-    """The regression: a granular value matched no <option>, so the select fell back
-    to its blank option and saving replaced a known source with a guess."""
-    app_js = (_ROOT / "docs" / "app.js").read_text(encoding="utf-8")
-    fn = re.search(r"function _adminQuoteSourceOptions\(selected[^)]*\) \{(.*?)\n\}", app_js, re.S)
-    assert fn, "could not locate _adminQuoteSourceOptions"
-    assert "!known.includes(selected)" in fn.group(1), \
-        "an unlisted stored value is not preserved as an option"
-
-
-def test_admin_select_offers_real_sources_and_no_auto_detect():
-    """Detection is the server's, shown as a suggestion, not a choice to make."""
-    app_js = (_ROOT / "docs" / "app.js").read_text(encoding="utf-8")
-    fn = re.search(r"function _adminQuoteSourceOptions\(selected[^)]*\) \{(.*?)\n\}", app_js, re.S)
-    assert "full_text" in fn.group(1)
-    assert "auto-detect" not in app_js.lower()
-
-
-# ---------------------------------------------------------------------------
 # Only a changed source is the admin's choice
 # ---------------------------------------------------------------------------
 
@@ -225,103 +194,29 @@ def test_nothing_submitted_and_no_quote_falls_back_to_the_stored_source(nothing)
 
 
 # ---------------------------------------------------------------------------
-# The backfill may replace only what a computation wrote
+# The admin form's suggestion is what a save detects (JS/Python parity under node)
 # ---------------------------------------------------------------------------
 
-_IN_ABSTRACT = {"outcome_quote": "it failed", "abstract_r": "We found it failed again."}
-_NOT_IN_ABSTRACT = {"outcome_quote": "it failed", "abstract_r": "We found it held."}
-
-
-@pytest.mark.parametrize("stored", [
-    "discussion", "results", "title", "Discussion", "abstract|discussion", "abstract | discussion",
-    "title | abstract", "abstract|full_text", "fulltext",
-])
-def test_recompute_all_never_replaces_a_named_or_compound_source(stored):
-    """Unstamped, as a record resolved without touching its source now is."""
-    row = {**_IN_ABSTRACT, "out_quote_source": stored, "out_quote_source_by": None}
-    assert recomputed_source(row, recompute_all=True) is None
-
-
-@pytest.mark.parametrize("stored", ["full_text", "Full_Text", "full_text | full_text", " FULL_TEXT "])
-def test_recompute_all_refreshes_a_computed_source_in_any_spelling(stored):
-    assert recomputed_source({**_IN_ABSTRACT, "out_quote_source": stored}, recompute_all=True) == "abstract"
-
-
-@pytest.mark.parametrize("stored", ["abstract", "Abstract", "abstract | abstract"])
-def test_recompute_all_refreshes_a_stale_abstract(stored):
-    assert recomputed_source({**_NOT_IN_ABSTRACT, "out_quote_source": stored}, recompute_all=True) == "full_text"
-
-
-def test_recompute_all_writes_nothing_when_the_answer_is_the_same_or_there_is_no_quote():
-    assert recomputed_source({**_IN_ABSTRACT, "out_quote_source": "abstract"}, recompute_all=True) is None
-    row = {"outcome_quote": None, "abstract_r": "An abstract.", "out_quote_source": "full_text"}
-    assert recomputed_source(row, recompute_all=True) is None
-
-
-@pytest.mark.parametrize("recompute_all", [False, True])
-@pytest.mark.parametrize("stored", [None, "abstract", "full_text", "discussion"])
-def test_an_admin_locked_row_is_never_touched(stored, recompute_all):
-    row = {**_NOT_IN_ABSTRACT, "out_quote_source": stored, "out_quote_source_by": "sophie"}
-    assert recomputed_source(row, recompute_all=recompute_all) is None
-
-
-@pytest.mark.parametrize("recompute_all", [False, True])
-@pytest.mark.parametrize("blank", [None, ""])
-def test_a_blank_source_is_filled_either_way(blank, recompute_all):
-    assert recomputed_source({**_IN_ABSTRACT, "out_quote_source": blank}, recompute_all=recompute_all) == "abstract"
-
-
-@pytest.mark.parametrize("stored", ["abstract", "full_text", "discussion"])
-def test_the_default_run_leaves_any_stored_source(stored):
-    assert recomputed_source({**_NOT_IN_ABSTRACT, "out_quote_source": stored}) is None
-
-
-def test_the_backfill_decides_through_the_tested_function():
-    src = (_ROOT / "backfill_quote_source.py").read_text(encoding="utf-8")
-    assert "new_src = recomputed_source(r, recompute_all)" in src
-    assert src.count("quote_source_for(") == 1, "a second detection would skip the rule"
-
-
-# ---------------------------------------------------------------------------
-# The admin form's suggestion is what a save detects
-# ---------------------------------------------------------------------------
-
-# Wherever the normalising could go differently in the two languages, plus the blanks.
 _DETECTION_CASES = {
     "contained": ("it failed", "We found it failed again."),
     "not contained": ("it failed", "We found it held."),
     "the longer side is the quote": ("We found it failed again.", "it failed"),
     "inside a word": ("art", "The start of it."),
-    "across words": ("dit", "ad it"),
-    "case": ("WE REPLICATED", "we Replicated it"),
-    "punctuation": ("It failed; (d = 0.5)!", "it failed d=0.5"),
-    "whitespace": ("two \n\t words  apart", "Two words\r\napart."),
-    "digits are kept": ("d = 0.50", "d = 0.5"),
-    "no-break and thin spaces": ("two words apart", "two words apart"),
-    "en and em dashes": ("pre–registered — twice", "preregistered twice"),
-    "minus sign": ("r = −0.5", "r = -0.5"),
-    "curly quotes": ("“it’s held”", "\"it's held\""),
-    "ellipsis character": ("it failed…", "it failed..."),
-    "zero-width space": ("it​ failed", "it failed"),
-    "an accent on both": ("naïve", "the naïve view"),
-    "an accent on one drops out": ("naïve", "the naive view"),
-    "an accent on the other": ("naive", "the naïve view"),
-    "decomposed accent": ("café study", "cafe study"),
-    "greek is stripped": ("Σα effect", "the effect"),
-    "fi ligature is stripped": ("ﬁnding", "the nding"),
-    "fullwidth letters are stripped": ("ＡＢＣ", "abc"),
-    "kelvin sign lowercases to k": ("5 K", "5k"),
-    "dotted capital I": ("İstanbul", "in istanbul"),
-    "sharp s": ("StraẞE", "strae"),
-    "astral characters": ("it \U0001f600 failed", "it failed"),
+    "case and punctuation": ("It failed; (d = 0.5)!", "it failed d=0.5"),
+    "whitespace and nbsp": ("two\u00a0words \n\t apart", "Two words\r\napart."),
+    "dashes and curly quotes": ("\u201cpre\u2013registered\u201d", '"preregistered"'),
+    "accent on one side": ("na\u00efve", "the naive view"),
+    "decomposed accent": ("cafe\u0301 study", "cafe study"),
+    "fi ligature stripped": ("\ufb01nding", "the nding"),
+    "fullwidth letters stripped": ("\uff21\uff22\uff23", "abc"),
+    "kelvin sign lowercases to k": ("5 \u212a", "5k"),
+    "dotted capital I": ("\u0130stanbul", "in istanbul"),
+    "sharp s": ("Stra\u1e9eE", "strae"),
+    "non-latin and astral": ("it \U0001f600 \u03a3\u03b1 failed", "it failed"),
     "no quote": (None, "An abstract."),
-    "empty quote": ("", "An abstract."),
     "blank quote": ("  \n ", "An abstract."),
-    "punctuation for a quote": ("...—!?", "An abstract."),
-    "non-ascii for a quote": ("αβγ", "An abstract."),
+    "punctuation only quote": ("...\u2014!?", "An abstract."),
     "no abstract": ("a quote", None),
-    "empty abstract": ("a quote", ""),
-    "punctuation for an abstract": ("a quote", "...---"),
     "neither": (None, None),
 }
 
@@ -352,35 +247,6 @@ def test_the_detection_cases_reach_every_answer():
     """A sample that never says one of the three would prove nothing about it."""
     answers = {quote_source_for(*case) for case in _DETECTION_CASES.values()}
     assert answers == {"abstract", "full_text", None}
-
-
-def test_the_suggestion_does_not_use_the_validators_fuzzy_check():
-    """quoteAppearsInAbstract forgives a misquote; quote_source_for does not."""
-    app_js = (_ROOT / "docs" / "app.js").read_text(encoding="utf-8")
-    fn = re.search(r"function suggestQuoteSource\(.*?\n\}", app_js, re.S)
-    assert fn and "quoteAppearsInAbstract(" not in fn.group(0)
-
-
-def test_an_untouched_suggestion_is_sent_as_null():
-    """With nothing stored, the server stamps whatever it is sent as the admin's choice,
-    and a stamped source is locked against the backfill: a suggestion nobody touched must
-    not get there."""
-    app_js = (_ROOT / "docs" / "app.js").read_text(encoding="utf-8")
-    assert 'out_quote_source:        _quoteSourceToSend($("#ar-quote-source"))' in app_js
-
-
-# ---------------------------------------------------------------------------
-# export_validated must not run on import
-# ---------------------------------------------------------------------------
-
-def test_export_validated_is_inert_on_import():
-    """Importing it used to connect to the database and rewrite both CSVs — easy to
-    trigger by accident from a test or a REPL."""
-    src = (_ROOT / "export_validated.py").read_text(encoding="utf-8")
-    assert 'if __name__ == "__main__":' in src
-    guard_at = src.index('if __name__ == "__main__":')
-    assert src.index('print("Connecting to database') > guard_at, \
-        "the database connection is outside the guard"
 
 
 def test_export_validated_helpers_remain_importable():

@@ -15,7 +15,7 @@ from psycopg2.extras import RealDictCursor
 import adjudication
 from adjudication import export, judging, review
 from tests.test_adjudication_judging import DIFFERENT, NEITHER, REPRODUCTION, SAME, _judge, _record
-from tests.test_preparation_database import local_database  # noqa: F401
+from tests.pg_fixtures import local_database  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
