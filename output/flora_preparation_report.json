@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-26T03:31:21+00:00",
+  "generated_at": "2026-11-27T03:08:55+00:00",
   "mode": "database_pipeline",
   "status": "needs_attention",
-  "rows": 2970,
+  "rows": 3004,
   "stages": [
     {
       "name": "build flora.csv and check IDs",
@@ -12,7 +12,7 @@
     {
       "name": "structural validation",
       "status": "needs_attention",
-      "detail": "21 problems and 11 possible problems"
+      "detail": "32 problems and 11 possible problems"
     },
     {
       "name": "network validation",
@@ -25,7 +25,7 @@
     {
       "name": "store dataset",
       "status": "passed",
-      "detail": "2,970 rows in flora_data"
+      "detail": "3,004 rows in flora_data"
     },
     {
       "name": "write output files",
@@ -33,11 +33,11 @@
     }
   ],
   "warnings": [
-    "54 records left out for a missing title; see flora_export_log.csv.",
+    "59 records left out for a missing title; see flora_export_log.csv.",
     "65 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.",
     "25 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.",
-    "Structural validation found 21 problems and 11 possible problems.",
-    "Network validation needs review: 19 problems and 71 possible problems. Original work types unavailable for 5 DOI(s); previous review decisions retained. This screening is advisory.."
+    "Structural validation found 32 problems and 11 possible problems.",
+    "Network validation needs review: 19 problems and 72 possible problems. Original work types unavailable for 2 DOI(s); previous review decisions retained. This screening is advisory.."
   ],
   "errors": [],
   "warning_count": 5,
@@ -45,7 +45,7 @@
   "diagnostics": {
     "flora_export_log.csv": {
       "description": "records left out for a missing title",
-      "rows": 54,
+      "rows": 59,
       "records": [
         {
           "reason": "missing title_o",
@@ -586,6 +586,56 @@
           "doi_r": "",
           "url_r": "http://hdl.handle.net/1871/50108",
           "apa_ref_r": "Vermeulen · 2014 · Digital Academic REpository of VU University Amsterdam (Vrije Universiteit Amsterdam)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000631",
+          "source": "validated",
+          "doi_o": "10.1016/j.brat.2003.07.001",
+          "apa_ref_o": "Radomsky, A. S., & Rachman, S. (2004). Symmetry, ordering and arranging compulsive behaviour. Behaviour Research and Therapy, 42(8), 893–913. https://doi.org/10.1016/j.brat.2003.07.001",
+          "doi_r": "",
+          "url_r": "https://huskiecommons.lib.niu.edu/cgi/viewcontent.cgi?article=8288&context=allgraduate-thesesdissertations",
+          "apa_ref_r": "R. · 2018 · Huskie Commons (Northern Illinois University)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000637",
+          "source": "validated",
+          "doi_o": "10.1002/smj.3322",
+          "apa_ref_o": "Tong, S., Jia, N., Luo, X., & Fang, Z. (2021). The Janus face of artificial intelligence feedback: Deployment versus disclosure effects on employee performance. Strategic Management Journal, 42(9), 1600–1631. Portico. https://doi.org/10.1002/smj.3322",
+          "doi_r": "",
+          "url_r": "https://osf.io/c6qpb",
+          "apa_ref_r": "Hudecek · 2026 · PsyArXiv (OSF Preprints)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000650",
+          "source": "validated",
+          "doi_o": "10.1037/0033-295x.93.2.136",
+          "apa_ref_o": "Kahneman, D., & Miller, D. T. (1986). Norm theory: Comparing reality to its alternatives. Psychological Review, 93(2), 136–153. https://doi.org/10.1037/0033-295x.93.2.136",
+          "doi_r": "",
+          "url_r": "http://api.osf.io/v2/nodes/fnmk4/",
+          "apa_ref_r": "Feldman · 2019 · OSF Preprints (OSF Preprints)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000651",
+          "source": "validated",
+          "doi_o": "10.1177/0146167286124014",
+          "apa_ref_o": "Miller, D. T., & McFarland, C. (1986). Counterfactual Thinking and Victim Compensation. Personality and Social Psychology Bulletin, 12(4), 513–519. https://doi.org/10.1177/0146167286124014",
+          "doi_r": "",
+          "url_r": "http://api.osf.io/v2/nodes/fnmk4/",
+          "apa_ref_r": "Feldman · 2019 · OSF Preprints (OSF Preprints)"
+        },
+        {
+          "reason": "missing title_r",
+          "flora_id": "VAL-000654",
+          "source": "validated",
+          "doi_o": "10.1007/s12671-015-0450-3",
+          "apa_ref_o": "Tincher, M. M., Lebois, L. A. M., & Barsalou, L. W. (2015). Mindful Attention Reduces Linguistic Intergroup Bias. Mindfulness, 7(2), 349–360. https://doi.org/10.1007/s12671-015-0450-3",
+          "doi_r": "",
+          "url_r": "https://opencommons.uconn.edu/cgi/viewcontent.cgi?article=2302&context=gs_theses",
+          "apa_ref_r": "Devonshire · 2018 · OpenCommons - UConn (University of Connecticut)"
         }
       ]
     },
@@ -1954,8 +2004,8 @@
   },
   "identity": {
     "status": "passed",
-    "rows": 2970,
-    "unique_ids": 2970
+    "rows": 3004,
+    "unique_ids": 3004
   },
   "columns": [
     "id",
@@ -2021,8 +2071,141 @@
         "name": "All links are valid URLs",
         "heading": "Invalid URLs",
         "description": "A url column holds something other than one complete http(s) link.",
-        "items": [],
-        "passed": true
+        "items": [
+          {
+            "check": "invalid_url",
+            "flora_ids": [
+              "VAL-000639"
+            ],
+            "column": "url_r",
+            "value": "10.1027/1864-9335/a000178",
+            "detail": "url_r holds a DOI, not a link",
+            "label": "10.1126/science.7455683 | 10.1027/1864-9335/a000178",
+            "key": "invalid_url|VAL-000639|url_r|10.1027/1864-9335/a000178",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_url",
+            "flora_ids": [
+              "VAL-000640"
+            ],
+            "column": "url_r",
+            "value": "10.1027/1864-9335/a000178",
+            "detail": "url_r holds a DOI, not a link",
+            "label": "10.1086/265467 | 10.1027/1864-9335/a000178",
+            "key": "invalid_url|VAL-000640|url_r|10.1027/1864-9335/a000178",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_url",
+            "flora_ids": [
+              "VAL-000641"
+            ],
+            "column": "url_r",
+            "value": "10.1027/1864-9335/a000178",
+            "detail": "url_r holds a DOI, not a link",
+            "label": "10.1016/j.jesp.2010.05.014 | 10.1027/1864-9335/a000178",
+            "key": "invalid_url|VAL-000641|url_r|10.1027/1864-9335/a000178",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_url",
+            "flora_ids": [
+              "VAL-000642"
+            ],
+            "column": "url_r",
+            "value": "10.1027/1864-9335/a000178",
+            "detail": "url_r holds a DOI, not a link",
+            "label": "10.1086/268936 | 10.1027/1864-9335/a000178",
+            "key": "invalid_url|VAL-000642|url_r|10.1027/1864-9335/a000178",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_url",
+            "flora_ids": [
+              "VAL-000643"
+            ],
+            "column": "url_r",
+            "value": "10.1027/1864-9335/a000178",
+            "detail": "url_r holds a DOI, not a link",
+            "label": "10.1080/00224545.1936.9919891 | 10.1027/1864-9335/a000178",
+            "key": "invalid_url|VAL-000643|url_r|10.1027/1864-9335/a000178",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_url",
+            "flora_ids": [
+              "VAL-000644"
+            ],
+            "column": "url_r",
+            "value": "10.1027/1864-9335/a000178",
+            "detail": "url_r holds a DOI, not a link",
+            "label": "10.1017/s1930297500001170 | 10.1027/1864-9335/a000178",
+            "key": "invalid_url|VAL-000644|url_r|10.1027/1864-9335/a000178",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_url",
+            "flora_ids": [
+              "VAL-000645"
+            ],
+            "column": "url_r",
+            "value": "10.1027/1864-9335/a000178",
+            "detail": "url_r holds a DOI, not a link",
+            "label": "10.1177/01461672952111004 | 10.1027/1864-9335/a000178",
+            "key": "invalid_url|VAL-000645|url_r|10.1027/1864-9335/a000178",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_url",
+            "flora_ids": [
+              "VAL-000646"
+            ],
+            "column": "url_r",
+            "value": "10.1027/1864-9335/a000178",
+            "detail": "url_r holds a DOI, not a link",
+            "label": "10.1177/0956797611414726 | 10.1027/1864-9335/a000178",
+            "key": "invalid_url|VAL-000646|url_r|10.1027/1864-9335/a000178",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_url",
+            "flora_ids": [
+              "VAL-000647"
+            ],
+            "column": "url_r",
+            "value": "10.1027/1864-9335/a000178",
+            "detail": "url_r holds a DOI, not a link",
+            "label": "10.1037/0022-3514.83.1.44 | 10.1027/1864-9335/a000178",
+            "key": "invalid_url|VAL-000647|url_r|10.1027/1864-9335/a000178",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_url",
+            "flora_ids": [
+              "VAL-000648"
+            ],
+            "column": "url_r",
+            "value": "10.1027/1864-9335/a000178",
+            "detail": "url_r holds a DOI, not a link",
+            "label": "10.1037/a0029288 | 10.1027/1864-9335/a000178",
+            "key": "invalid_url|VAL-000648|url_r|10.1027/1864-9335/a000178",
+            "level": "problem"
+          },
+          {
+            "check": "invalid_url",
+            "flora_ids": [
+              "VAL-000649"
+            ],
+            "column": "url_r",
+            "value": "10.1027/1864-9335/a000178",
+            "detail": "url_r holds a DOI, not a link",
+            "label": "10.1016/j.jesp.2009.03.009 | 10.1027/1864-9335/a000178",
+            "key": "invalid_url|VAL-000649|url_r|10.1027/1864-9335/a000178",
+            "level": "problem"
+          }
+        ],
+        "passed": false
       },
       {
         "code": "invalid_outcome",
@@ -2598,11 +2781,11 @@
       }
     ],
     "suppressed": 0,
-    "problems": 21,
+    "problems": 32,
     "possible_problems": 11,
     "has_problems": true,
     "has_issues": true,
-    "rows": 2970
+    "rows": 3004
   },
   "network": {
     "status": "needs_attention",
@@ -3738,6 +3921,18 @@
             "label": "10.1163/9789004270848_008 | 10.5117/tvt2017.1.jans",
             "key": "original_target_format|VAL-000620|doi_o|10.1163/9789004270848_008",
             "level": "possible_problem"
+          },
+          {
+            "check": "original_target_format",
+            "flora_ids": [
+              "VAL-000633"
+            ],
+            "column": "doi_o",
+            "value": "10.1038/ng.175",
+            "detail": "Publication-format review. OpenAlex type: review. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1038/ng.175",
+            "label": "10.1038/ng.175 | 10.1097/mib.0b013e3182a3eaeb",
+            "key": "original_target_format|VAL-000633|doi_o|10.1038/ng.175",
+            "level": "possible_problem"
           }
         ],
         "passed": false
@@ -3752,36 +3947,6 @@
           ],
           "flora_ids": [
             "REPL-000806"
-          ],
-          "reason": "Original work type unavailable or stale; previous review retained"
-        },
-        {
-          "target": "10.1093/gerona/glaa163",
-          "columns": [
-            "doi_o"
-          ],
-          "flora_ids": [
-            "REPRO-000132"
-          ],
-          "reason": "Original work type unavailable or stale; previous review retained"
-        },
-        {
-          "target": "10.1371/journal.pmed.1003244",
-          "columns": [
-            "doi_o"
-          ],
-          "flora_ids": [
-            "REPRO-000125"
-          ],
-          "reason": "Original work type unavailable or stale; previous review retained"
-        },
-        {
-          "target": "10.3390/jcm9103350",
-          "columns": [
-            "doi_o"
-          ],
-          "flora_ids": [
-            "REPRO-000142"
           ],
           "reason": "Original work type unavailable or stale; previous review retained"
         },
@@ -3862,14 +4027,14 @@
       "originals": []
     },
     "notices": [
-      "Original work types unavailable for 5 DOI(s); previous review decisions retained. This screening is advisory."
+      "Original work types unavailable for 2 DOI(s); previous review decisions retained. This screening is advisory."
     ],
     "coverage": {
       "work_types": {
-        "targets": 2660,
-        "cached": 2655,
-        "checked": 2660,
-        "unchecked": 5,
+        "targets": 2685,
+        "cached": 2683,
+        "checked": 2685,
+        "unchecked": 2,
         "deferred": 0,
         "advisory": true
       },
@@ -3877,43 +4042,43 @@
         "status": "checked"
       },
       "dois": {
-        "targets": 5002,
-        "cached": 4912,
-        "checked": 90,
+        "targets": 5044,
+        "cached": 5009,
+        "checked": 35,
         "deferred": 0,
         "unchecked": 0
       },
       "urls": {
-        "targets": 3501,
-        "cached": 3428,
-        "checked": 73,
+        "targets": 3537,
+        "cached": 3506,
+        "checked": 31,
         "deferred": 0,
         "unchecked": 6
       },
       "originals": {
         "targets": 31,
-        "cached": 31,
-        "checked": 0,
+        "cached": 29,
+        "checked": 2,
         "deferred": 0,
         "unchecked": 0
       }
     },
     "suppressed": 0,
     "problems": 19,
-    "possible_problems": 71,
-    "issue_count": 90,
-    "rows": 2970
+    "possible_problems": 72,
+    "issue_count": 91,
+    "rows": 3004
   },
   "release": {
     "schema_version": 1,
     "status": "prepared_locally",
     "published": false,
-    "generated_at": "2026-11-26T03:36:41+00:00",
+    "generated_at": "2026-11-27T03:12:19+00:00",
     "filename": "flora.csv",
-    "bytes": 14753175,
-    "sha256": "1b1f2040bb6214bbed01d9ba952e32e0edddf40cf07049947fc92d35d727c815",
-    "md5": "ef10d14bd9d2019dae016fda093d9d52",
-    "rows": 2970,
+    "bytes": 15008552,
+    "sha256": "a08fda16ca02c0ea7502c42be71e6f4df623a28757558c5210a001fc15ee1ffb",
+    "md5": "d945fe544b7a7cdec61fdbf4f9dee6f6",
+    "rows": 3004,
     "columns": [
       "id",
       "id_md5",
@@ -3974,22 +4139,22 @@
     "release_notes": "",
     "source_kind": "authoritative_publication",
     "data_version": {
-      "stored_at": "2026-11-26T03:36:42.164708+00:00",
+      "stored_at": "2026-11-27T03:12:20.200295+00:00",
       "change_watermark": 1412
     }
   },
   "storage": {
-    "rows": 2970,
-    "inserted": 23,
-    "updated": 230,
-    "unchanged": 2717,
-    "retired": 15,
+    "rows": 3004,
+    "inserted": 4,
+    "updated": 0,
+    "unchanged": 3000,
+    "retired": 0,
     "reactivated": 0,
     "preserved": 0,
     "table": "flora_data",
-    "snapshot_sha256": "1b1f2040bb6214bbed01d9ba952e32e0edddf40cf07049947fc92d35d727c815",
-    "stored_at": "2026-11-26T03:36:42.164708+00:00",
+    "snapshot_sha256": "a08fda16ca02c0ea7502c42be71e6f4df623a28757558c5210a001fc15ee1ffb",
+    "stored_at": "2026-11-27T03:12:20.200295+00:00",
     "status": "committed"
   },
-  "finished_at": "2026-11-26T03:36:46+00:00"
+  "finished_at": "2026-11-27T03:12:24+00:00"
 }

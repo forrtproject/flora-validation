@@ -1,10 +1,28 @@
 ## FLoRA structural validation
 
-_Generated: 2026-11-26 03:34:00 UTC | Dataset: 2,970 rows_
+_Generated: 2026-11-27 03:10:31 UTC | Dataset: 3,004 rows_
 
 Each item names the FLoRA record by its FLoRA ID and `doi_o | doi_r` (or `url_r`), says what is wrong and, after the dash, gives the value.
 
-### Problems (21)
+### Problems (32)
+
+<details><summary><b>Invalid URLs</b> (11 findings)</summary>
+
+_A url column holds something other than one complete http(s) link._
+
+- VAL-000639 (`10.1126/science.7455683 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000640 (`10.1086/265467 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000641 (`10.1016/j.jesp.2010.05.014 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000642 (`10.1086/268936 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000643 (`10.1080/00224545.1936.9919891 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000644 (`10.1017/s1930297500001170 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000645 (`10.1177/01461672952111004 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000646 (`10.1177/0956797611414726 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000647 (`10.1037/0022-3514.83.1.44 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000648 (`10.1037/a0029288 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000649 (`10.1016/j.jesp.2009.03.009 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+
+</details>
 
 **Duplicate records** (6 findings):
 
@@ -73,7 +91,6 @@ _One row's doi_o and doi_r are another row's doi_r and doi_o._
 
 **Checks passed:**
 
-- All links are valid URLs
 - Outcome values valid
 - Text fields hold text
 - Type values valid

@@ -1,8 +1,8 @@
 ## FLoRA network validation
 
-_Generated: 2026-11-26 03:36:41 UTC | Dataset: 2,970 rows_
+_Generated: 2026-11-27 03:12:19 UTC | Dataset: 3,004 rows_
 
-**Original work types unavailable for 5 DOI(s); previous review decisions retained. This screening is advisory..**
+**Original work types unavailable for 2 DOI(s); previous review decisions retained. This screening is advisory..**
 
 Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says what is wrong and, after the dash, gives the DOI or link.
 
@@ -37,7 +37,7 @@ Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says wha
 
 </details>
 
-### Possible problems (71)
+### Possible problems (72)
 
 _Heuristics: a person decides whether each one is a problem._
 
@@ -55,7 +55,7 @@ _Heuristics: a person decides whether each one is a problem._
 
 **Original target needs review (higher priority):** none
 
-<details><summary><b>Original publication format needs review</b> (65 findings)</summary>
+<details><summary><b>Original publication format needs review</b> (66 findings)</summary>
 
 - REPL-000015 (`10.1037/bar0000276 | 10.1002/bin.70067`): Publication-format review. OpenAlex type: letter. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1037/bar0000276 — `10.1037/bar0000276`
 - REPL-000019 (`10.1145/3328778.3366948 | 10.1080/08993408.2022.2071543`): Publication-format review. OpenAlex type: conference-paper. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1145/3328778.3366948 — `10.1145/3328778.3366948`
@@ -122,19 +122,17 @@ _Heuristics: a person decides whether each one is a problem._
 - VAL-000459 (`10.1038/ng.2397 | 10.1038/s41598-017-07404-4`): Publication-format review. OpenAlex type: review. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1038/ng.2397 — `10.1038/ng.2397`
 - VAL-000545 (`10.1016/j.ejpoleco.2003.10.001 | 10.1177/1091142114568659`): Publication-format review. OpenAlex type: review. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1016/j.ejpoleco.2003.10.001 — `10.1016/j.ejpoleco.2003.10.001`
 - VAL-000620 (`10.1163/9789004270848_008 | 10.5117/tvt2017.1.jans`): Publication-format review. OpenAlex type: book-chapter. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1163/9789004270848_008 — `10.1163/9789004270848_008`
+- VAL-000633 (`10.1038/ng.175 | 10.1097/mib.0b013e3182a3eaeb`): Publication-format review. OpenAlex type: review. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1038/ng.175 — `10.1038/ng.175`
 
 </details>
 
-<details><summary><b>Could not check</b> (5 original work types, 6 links)</summary>
+<details><summary><b>Could not check</b> (2 original work types, 6 links)</summary>
 
-_Not findings: no answer could be had for these 11, and they are checked again on the next run._
+_Not findings: no answer could be had for these 8, and they are checked again on the next run._
 
-**Original work types (advisory)** (5):
+**Original work types (advisory)** (2):
 
 - REPL-000806, doi_o: Original work type unavailable or stale; previous review retained — `10.1026/0949-3946.48.2.94`
-- REPRO-000132, doi_o: Original work type unavailable or stale; previous review retained — `10.1093/gerona/glaa163`
-- REPRO-000125, doi_o: Original work type unavailable or stale; previous review retained — `10.1371/journal.pmed.1003244`
-- REPRO-000142, doi_o: Original work type unavailable or stale; previous review retained — `10.3390/jcm9103350`
 - REPL-000025, doi_o: Original work type unavailable or stale; previous review retained — `10.6129/cjp.2003.4501.07`
 
 **Links** (6):
@@ -151,7 +149,7 @@ _Not findings: no answer could be had for these 11, and they are checked again o
 
 **Network validation status: needs review**
 
-- Original work types (advisory): 2,660 distinct; 2,655 cached, 2,660 checked (5 could not be checked), 0 deferred.
-- DOIs: 5,002 distinct; 4,912 cached, 90 checked, 0 deferred.
-- Links: 3,501 distinct; 3,428 cached, 73 checked (6 could not be checked), 0 deferred.
-- Originals without a DOI: 31 distinct; 31 cached, 0 checked, 0 deferred.
+- Original work types (advisory): 2,685 distinct; 2,683 cached, 2,685 checked (2 could not be checked), 0 deferred.
+- DOIs: 5,044 distinct; 5,009 cached, 35 checked, 0 deferred.
+- Links: 3,537 distinct; 3,506 cached, 31 checked (6 could not be checked), 0 deferred.
+- Originals without a DOI: 31 distinct; 29 cached, 2 checked, 0 deferred.

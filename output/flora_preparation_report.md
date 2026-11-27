@@ -1,37 +1,37 @@
 # FLoRA preparation report
 
-Generated: 2026-11-26T03:31:21+00:00
+Generated: 2026-11-27T03:08:55+00:00
 
 Status: **needs review**
 
 Mode: built from the database
 
-Rows: 2,970
+Rows: 3,004
 
 ## Stages
 
 - build flora.csv and check IDs: passed
-- structural validation: needs review — 21 problems and 11 possible problems
+- structural validation: needs review — 32 problems and 11 possible problems
 - network validation: needs review
 - release files and history: passed
-- store dataset: passed — 2,970 rows in flora_data
+- store dataset: passed — 3,004 rows in flora_data
 - write output files: passed
 
 ## Warnings
 
-- 54 records left out for a missing title; see flora_export_log.csv.
+- 59 records left out for a missing title; see flora_export_log.csv.
 - 65 merged records whose duplicates gave different outcomes; see dup_outcome_conflicts.csv.
 - 25 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates); see preprint_dedup_candidates.csv.
-- Structural validation found 21 problems and 11 possible problems.
-- Network validation needs review: 19 problems and 71 possible problems. Original work types unavailable for 5 DOI(s); previous review decisions retained. This screening is advisory..
+- Structural validation found 32 problems and 11 possible problems.
+- Network validation needs review: 19 problems and 72 possible problems. Original work types unavailable for 2 DOI(s); previous review decisions retained. This screening is advisory..
 
 ## Stored dataset
 
-- 2,970 rows stored in `flora_data`, which Download full CSV and the public API serve.
+- 3,004 rows stored in `flora_data`, which Download full CSV and the public API serve.
 
 ## Diagnostic files
 
-- flora_export_log.csv: 54 records left out for a missing title.
+- flora_export_log.csv: 59 records left out for a missing title.
 - dup_outcome_conflicts.csv: 65 merged records whose duplicates gave different outcomes.
 - preprint_dedup_candidates.csv: 25 preprint duplicate pairs awaiting a decision (FLoRA tab, Preprint duplicates).
 
@@ -39,11 +39,29 @@ The JSON report lists the affected records.
 
 ## FLoRA structural validation
 
-_Generated: 2026-11-26 03:36:46 UTC | Dataset: 2,970 rows_
+_Generated: 2026-11-27 03:12:24 UTC | Dataset: 3,004 rows_
 
 Each item names the FLoRA record by its FLoRA ID and `doi_o | doi_r` (or `url_r`), says what is wrong and, after the dash, gives the value.
 
-### Problems (21)
+### Problems (32)
+
+<details><summary><b>Invalid URLs</b> (11 findings)</summary>
+
+_A url column holds something other than one complete http(s) link._
+
+- VAL-000639 (`10.1126/science.7455683 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000640 (`10.1086/265467 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000641 (`10.1016/j.jesp.2010.05.014 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000642 (`10.1086/268936 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000643 (`10.1080/00224545.1936.9919891 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000644 (`10.1017/s1930297500001170 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000645 (`10.1177/01461672952111004 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000646 (`10.1177/0956797611414726 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000647 (`10.1037/0022-3514.83.1.44 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000648 (`10.1037/a0029288 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+- VAL-000649 (`10.1016/j.jesp.2009.03.009 | 10.1027/1864-9335/a000178`): url_r holds a DOI, not a link — `10.1027/1864-9335/a000178`
+
+</details>
 
 **Duplicate records** (6 findings):
 
@@ -112,7 +130,6 @@ _One row's doi_o and doi_r are another row's doi_r and doi_o._
 
 **Checks passed:**
 
-- All links are valid URLs
 - Outcome values valid
 - Text fields hold text
 - Type values valid
@@ -131,9 +148,9 @@ _One row's doi_o and doi_r are another row's doi_r and doi_o._
 
 ## FLoRA network validation
 
-_Generated: 2026-11-26 03:36:46 UTC | Dataset: 2,970 rows_
+_Generated: 2026-11-27 03:12:24 UTC | Dataset: 3,004 rows_
 
-**Original work types unavailable for 5 DOI(s); previous review decisions retained. This screening is advisory..**
+**Original work types unavailable for 2 DOI(s); previous review decisions retained. This screening is advisory..**
 
 Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says what is wrong and, after the dash, gives the DOI or link.
 
@@ -168,7 +185,7 @@ Each item names the FLoRA records carrying the DOI or link by FLoRA ID, says wha
 
 </details>
 
-### Possible problems (71)
+### Possible problems (72)
 
 _Heuristics: a person decides whether each one is a problem._
 
@@ -186,7 +203,7 @@ _Heuristics: a person decides whether each one is a problem._
 
 **Original target needs review (higher priority):** none
 
-<details><summary><b>Original publication format needs review</b> (65 findings)</summary>
+<details><summary><b>Original publication format needs review</b> (66 findings)</summary>
 
 - REPL-000015 (`10.1037/bar0000276 | 10.1002/bin.70067`): Publication-format review. OpenAlex type: letter. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1037/bar0000276 — `10.1037/bar0000276`
 - REPL-000019 (`10.1145/3328778.3366948 | 10.1080/08993408.2022.2071543`): Publication-format review. OpenAlex type: conference-paper. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1145/3328778.3366948 — `10.1145/3328778.3366948`
@@ -253,19 +270,17 @@ _Heuristics: a person decides whether each one is a problem._
 - VAL-000459 (`10.1038/ng.2397 | 10.1038/s41598-017-07404-4`): Publication-format review. OpenAlex type: review. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1038/ng.2397 — `10.1038/ng.2397`
 - VAL-000545 (`10.1016/j.ejpoleco.2003.10.001 | 10.1177/1091142114568659`): Publication-format review. OpenAlex type: review. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1016/j.ejpoleco.2003.10.001 — `10.1016/j.ejpoleco.2003.10.001`
 - VAL-000620 (`10.1163/9789004270848_008 | 10.5117/tvt2017.1.jans`): Publication-format review. OpenAlex type: book-chapter. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1163/9789004270848_008 — `10.1163/9789004270848_008`
+- VAL-000633 (`10.1038/ng.175 | 10.1097/mib.0b013e3182a3eaeb`): Publication-format review. OpenAlex type: review. Check that this original is the study the replication tests. If valid, mark Not a problem with a reason; otherwise correct the identifier or review an extraneous original row. This warning changes no record. https://openalex.org/works/doi:10.1038/ng.175 — `10.1038/ng.175`
 
 </details>
 
-<details><summary><b>Could not check</b> (5 original work types, 6 links)</summary>
+<details><summary><b>Could not check</b> (2 original work types, 6 links)</summary>
 
-_Not findings: no answer could be had for these 11, and they are checked again on the next run._
+_Not findings: no answer could be had for these 8, and they are checked again on the next run._
 
-**Original work types (advisory)** (5):
+**Original work types (advisory)** (2):
 
 - REPL-000806, doi_o: Original work type unavailable or stale; previous review retained — `10.1026/0949-3946.48.2.94`
-- REPRO-000132, doi_o: Original work type unavailable or stale; previous review retained — `10.1093/gerona/glaa163`
-- REPRO-000125, doi_o: Original work type unavailable or stale; previous review retained — `10.1371/journal.pmed.1003244`
-- REPRO-000142, doi_o: Original work type unavailable or stale; previous review retained — `10.3390/jcm9103350`
 - REPL-000025, doi_o: Original work type unavailable or stale; previous review retained — `10.6129/cjp.2003.4501.07`
 
 **Links** (6):
@@ -282,14 +297,14 @@ _Not findings: no answer could be had for these 11, and they are checked again o
 
 **Network validation status: needs review**
 
-- Original work types (advisory): 2,660 distinct; 2,655 cached, 2,660 checked (5 could not be checked), 0 deferred.
-- DOIs: 5,002 distinct; 4,912 cached, 90 checked, 0 deferred.
-- Links: 3,501 distinct; 3,428 cached, 73 checked (6 could not be checked), 0 deferred.
-- Originals without a DOI: 31 distinct; 31 cached, 0 checked, 0 deferred.
+- Original work types (advisory): 2,685 distinct; 2,683 cached, 2,685 checked (2 could not be checked), 0 deferred.
+- DOIs: 5,044 distinct; 5,009 cached, 35 checked, 0 deferred.
+- Links: 3,537 distinct; 3,506 cached, 31 checked (6 could not be checked), 0 deferred.
+- Originals without a DOI: 31 distinct; 29 cached, 2 checked, 0 deferred.
 
 
 ## Release files
 
-- flora.csv: 2,970 rows, SHA-256 `1b1f2040bb6214bbed01d9ba952e32e0edddf40cf07049947fc92d35d727c815`.
+- flora.csv: 3,004 rows, SHA-256 `a08fda16ca02c0ea7502c42be71e6f4df623a28757558c5210a001fc15ee1ffb`.
 - Also written: the release manifest and notes, and today's counts in flora_history.csv and flora_dataset_summary.md.
 - Publication: The repository copy (`output/` on GitHub) is committed by two workflows, each when flora.csv changed: the nightly job, with its own run's files, and Publish FLoRA, with the stored dataset. Website and local command-line runs commit nothing. Nothing is uploaded to OSF.
