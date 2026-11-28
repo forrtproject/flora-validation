@@ -1,12 +1,12 @@
 # FLoRA preparation report
 
-Generated: 2026-11-27T03:08:55+00:00
+Generated: 2026-11-28T03:08:54+00:00
 
 Status: **needs review**
 
 Mode: built from the database
 
-Rows: 3,004
+Rows: 3,025
 
 ## Stages
 
@@ -14,7 +14,7 @@ Rows: 3,004
 - structural validation: needs review — 32 problems and 11 possible problems
 - network validation: needs review
 - release files and history: passed
-- store dataset: passed — 3,004 rows in flora_data
+- store dataset: passed — 3,025 rows in flora_data
 - write output files: passed
 
 ## Warnings
@@ -27,7 +27,7 @@ Rows: 3,004
 
 ## Stored dataset
 
-- 3,004 rows stored in `flora_data`, which Download full CSV and the public API serve.
+- 3,025 rows stored in `flora_data`, which Download full CSV and the public API serve.
 
 ## Diagnostic files
 
@@ -39,7 +39,7 @@ The JSON report lists the affected records.
 
 ## FLoRA structural validation
 
-_Generated: 2026-11-27 03:12:24 UTC | Dataset: 3,004 rows_
+_Generated: 2026-11-28 03:14:52 UTC | Dataset: 3,025 rows_
 
 Each item names the FLoRA record by its FLoRA ID and `doi_o | doi_r` (or `url_r`), says what is wrong and, after the dash, gives the value.
 
@@ -148,7 +148,7 @@ _One row's doi_o and doi_r are another row's doi_r and doi_o._
 
 ## FLoRA network validation
 
-_Generated: 2026-11-27 03:12:24 UTC | Dataset: 3,004 rows_
+_Generated: 2026-11-28 03:14:52 UTC | Dataset: 3,025 rows_
 
 **Original work types unavailable for 2 DOI(s); previous review decisions retained. This screening is advisory..**
 
@@ -274,37 +274,39 @@ _Heuristics: a person decides whether each one is a problem._
 
 </details>
 
-<details><summary><b>Could not check</b> (2 original work types, 6 links)</summary>
+<details><summary><b>Could not check</b> (2 original work types, 8 links)</summary>
 
-_Not findings: no answer could be had for these 8, and they are checked again on the next run._
+_Not findings: no answer could be had for these 10, and they are checked again on the next run._
 
 **Original work types (advisory)** (2):
 
 - REPL-000806, doi_o: Original work type unavailable or stale; previous review retained — `10.1026/0949-3946.48.2.94`
 - REPL-000025, doi_o: Original work type unavailable or stale; previous review retained — `10.6129/cjp.2003.4501.07`
 
-**Links** (6):
+**Links** (8):
 
 - REPL-001176, oa_url_r: timed out — `https://cdr.lib.unc.edu/downloads/7w62fg56x`
 - REPL-001436, oa_url_o: timed out — `http://hdl.handle.net/2328/35450`
+- FRED-000652, oa_url_o: timed out — `https://edoc.unibas.ch/30945/3/Reinhard-Greifeneder-Scharmach_2013_Unconscious_processes_improve_lie_detection_manuscri…`
 - VAL-000159, oa_url_r: TLS: unable to get local issuer certificate — `https://polipapers.upv.es/index.php/MUSE/article/download/10390/11334`
 - REPL-001417, url_r: redirect loop — `https://www.proquest.com/docview/221001969?pq-origsite=gscholar&fromopenview=true&sourcetype=Scholarly%20Journals`
 - REPL-001618, url_o: redirect loop — `https://www.proquest.com/docview/1470800730`
 - FRED-000798, oa_url_o: ConnectionResetError: \[Errno 104\] Connection reset by peer — `http://ira.lib.polyu.edu.hk/bitstream/10397/97105/1/Huang_Influence_Product_Anthropomorphism.pdf`
+- VAL-000666, oa_url_o: timed out — `http://hdl.handle.net/20.500.11940/813`
 
 </details>
 
 
 **Network validation status: needs review**
 
-- Original work types (advisory): 2,685 distinct; 2,683 cached, 2,685 checked (2 could not be checked), 0 deferred.
-- DOIs: 5,044 distinct; 5,009 cached, 35 checked, 0 deferred.
-- Links: 3,537 distinct; 3,506 cached, 31 checked (6 could not be checked), 0 deferred.
-- Originals without a DOI: 31 distinct; 29 cached, 2 checked, 0 deferred.
+- Original work types (advisory): 2,703 distinct; 2,701 cached, 2,703 checked (2 could not be checked), 0 deferred.
+- DOIs: 5,082 distinct; 5,028 cached, 54 checked, 0 deferred.
+- Links: 3,563 distinct; 3,504 cached, 59 checked (8 could not be checked), 0 deferred.
+- Originals without a DOI: 31 distinct; 28 cached, 3 checked, 0 deferred.
 
 
 ## Release files
 
-- flora.csv: 3,004 rows, SHA-256 `a08fda16ca02c0ea7502c42be71e6f4df623a28757558c5210a001fc15ee1ffb`.
+- flora.csv: 3,025 rows, SHA-256 `ec14164dc8bce41cc6bc41f6e3b184e32452ae92db4d6b36721e960de6689806`.
 - Also written: the release manifest and notes, and today's counts in flora_history.csv and flora_dataset_summary.md.
 - Publication: The repository copy (`output/` on GitHub) is committed by two workflows, each when flora.csv changed: the nightly job, with its own run's files, and Publish FLoRA, with the stored dataset. Website and local command-line runs commit nothing. Nothing is uploaded to OSF.

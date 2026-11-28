@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-27T03:08:55+00:00",
+  "generated_at": "2026-11-28T03:08:54+00:00",
   "mode": "database_pipeline",
   "status": "needs_attention",
-  "rows": 3004,
+  "rows": 3025,
   "stages": [
     {
       "name": "build flora.csv and check IDs",
@@ -25,7 +25,7 @@
     {
       "name": "store dataset",
       "status": "passed",
-      "detail": "3,004 rows in flora_data"
+      "detail": "3,025 rows in flora_data"
     },
     {
       "name": "write output files",
@@ -2004,8 +2004,8 @@
   },
   "identity": {
     "status": "passed",
-    "rows": 3004,
-    "unique_ids": 3004
+    "rows": 3025,
+    "unique_ids": 3025
   },
   "columns": [
     "id",
@@ -2785,7 +2785,7 @@
     "possible_problems": 11,
     "has_problems": true,
     "has_issues": true,
-    "rows": 3004
+    "rows": 3025
   },
   "network": {
     "status": "needs_attention",
@@ -3984,6 +3984,16 @@
           ]
         },
         {
+          "target": "https://edoc.unibas.ch/30945/3/Reinhard-Greifeneder-Scharmach_2013_Unconscious_processes_improve_lie_detection_manuscript.pdf",
+          "columns": [
+            "oa_url_o"
+          ],
+          "reason": "timed out",
+          "flora_ids": [
+            "FRED-000652"
+          ]
+        },
+        {
           "target": "https://polipapers.upv.es/index.php/MUSE/article/download/10390/11334",
           "columns": [
             "oa_url_r"
@@ -4022,6 +4032,16 @@
           "flora_ids": [
             "FRED-000798"
           ]
+        },
+        {
+          "target": "http://hdl.handle.net/20.500.11940/813",
+          "columns": [
+            "oa_url_o"
+          ],
+          "reason": "timed out",
+          "flora_ids": [
+            "VAL-000666"
+          ]
         }
       ],
       "originals": []
@@ -4031,9 +4051,9 @@
     ],
     "coverage": {
       "work_types": {
-        "targets": 2685,
-        "cached": 2683,
-        "checked": 2685,
+        "targets": 2703,
+        "cached": 2701,
+        "checked": 2703,
         "unchecked": 2,
         "deferred": 0,
         "advisory": true
@@ -4042,23 +4062,23 @@
         "status": "checked"
       },
       "dois": {
-        "targets": 5044,
-        "cached": 5009,
-        "checked": 35,
+        "targets": 5082,
+        "cached": 5028,
+        "checked": 54,
         "deferred": 0,
         "unchecked": 0
       },
       "urls": {
-        "targets": 3537,
-        "cached": 3506,
-        "checked": 31,
+        "targets": 3563,
+        "cached": 3504,
+        "checked": 59,
         "deferred": 0,
-        "unchecked": 6
+        "unchecked": 8
       },
       "originals": {
         "targets": 31,
-        "cached": 29,
-        "checked": 2,
+        "cached": 28,
+        "checked": 3,
         "deferred": 0,
         "unchecked": 0
       }
@@ -4067,18 +4087,18 @@
     "problems": 19,
     "possible_problems": 72,
     "issue_count": 91,
-    "rows": 3004
+    "rows": 3025
   },
   "release": {
     "schema_version": 1,
     "status": "prepared_locally",
     "published": false,
-    "generated_at": "2026-11-27T03:12:19+00:00",
+    "generated_at": "2026-11-28T03:14:46+00:00",
     "filename": "flora.csv",
-    "bytes": 15008552,
-    "sha256": "a08fda16ca02c0ea7502c42be71e6f4df623a28757558c5210a001fc15ee1ffb",
-    "md5": "d945fe544b7a7cdec61fdbf4f9dee6f6",
-    "rows": 3004,
+    "bytes": 15116572,
+    "sha256": "ec14164dc8bce41cc6bc41f6e3b184e32452ae92db4d6b36721e960de6689806",
+    "md5": "7358159a5ba9cef101a2362925bfc493",
+    "rows": 3025,
     "columns": [
       "id",
       "id_md5",
@@ -4139,22 +4159,22 @@
     "release_notes": "",
     "source_kind": "authoritative_publication",
     "data_version": {
-      "stored_at": "2026-11-27T03:12:20.200295+00:00",
+      "stored_at": "2026-11-28T03:14:47.605697+00:00",
       "change_watermark": 1412
     }
   },
   "storage": {
-    "rows": 3004,
-    "inserted": 4,
+    "rows": 3025,
+    "inserted": 21,
     "updated": 0,
-    "unchanged": 3000,
+    "unchanged": 3004,
     "retired": 0,
     "reactivated": 0,
     "preserved": 0,
     "table": "flora_data",
-    "snapshot_sha256": "a08fda16ca02c0ea7502c42be71e6f4df623a28757558c5210a001fc15ee1ffb",
-    "stored_at": "2026-11-27T03:12:20.200295+00:00",
+    "snapshot_sha256": "ec14164dc8bce41cc6bc41f6e3b184e32452ae92db4d6b36721e960de6689806",
+    "stored_at": "2026-11-28T03:14:47.605697+00:00",
     "status": "committed"
   },
-  "finished_at": "2026-11-27T03:12:24+00:00"
+  "finished_at": "2026-11-28T03:14:52+00:00"
 }
